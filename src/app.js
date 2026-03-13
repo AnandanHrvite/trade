@@ -429,7 +429,8 @@ scheduleEODTokenClear();
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, "127.0.0.1", () => {
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
   console.log(`\n🚀 Trading App running at http://localhost:${PORT} (localhost only)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${INSTRUMENT}`);
