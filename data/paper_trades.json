@@ -1,0 +1,83 @@
+{
+  "capital": 105720.5,
+  "totalPnl": 5720.5,
+  "sessions": [
+    {
+      "date": "2026-03-13",
+      "strategy": "STRATEGY_1",
+      "instrument": "NIFTY_OPTIONS",
+      "startTime": "13/3/2026, 11:25:07 am",
+      "endTime": "13/3/2026, 3:30:00 pm",
+      "trades": [
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2631723400PE",
+          "qty": 65,
+          "entryPrice": 23340.65,
+          "exitPrice": 23335.65,
+          "spotAtEntry": 23340.65,
+          "spotAtExit": 23335.7,
+          "optionEntryLtp": 259,
+          "optionExitLtp": 257.4,
+          "entryTime": "13/3/2026, 12:02:05 pm",
+          "exitTime": "13/3/2026, 12:13:21 pm",
+          "pnl": -184,
+          "pnlMode": "option premium: entry ₹259 → exit ₹257.4",
+          "exitReason": "SL hit @ ₹23335.65",
+          "entryReason": "EMA9 touch PE (low=23340.65 <= EMA9=23388.32) | SAR_BEAR @ 23506.49 | RSI=32.0 | EMA9slope=-9.09pts (<=-6 ok) | ADX=46.2 | SL=23506.49 | [STRONG]",
+          "stopLoss": 23335.65,
+          "optionExpiry": "17 MAR 2026",
+          "optionStrike": 23400,
+          "optionType": "PE"
+        },
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2631723400PE",
+          "qty": 65,
+          "entryPrice": 23336.55,
+          "exitPrice": 23198.15,
+          "spotAtEntry": 23336.55,
+          "spotAtExit": 23199.25,
+          "optionEntryLtp": 258.75,
+          "optionExitLtp": 358.85,
+          "entryTime": "13/3/2026, 12:15:00 pm",
+          "exitTime": "13/3/2026, 1:31:17 pm",
+          "pnl": 6426.5,
+          "pnlMode": "option premium: entry ₹258.75 → exit ₹358.85",
+          "exitReason": "SL hit @ ₹23198.15",
+          "entryReason": "EMA9 touch PE (low=23317.95 <= EMA9=23386.98) | SAR_BEAR @ 23506.49 | RSI=31.8 | EMA9slope=-10.43pts (<=-6 ok) | ADX=46.4 | SL=23506.49 | [STRONG]",
+          "stopLoss": 23198.15,
+          "optionExpiry": "17 MAR 2026",
+          "optionStrike": 23400,
+          "optionType": "PE"
+        },
+        {
+          "side": "PE",
+          "symbol": "NSE:NIFTY2631723200PE",
+          "qty": 65,
+          "entryPrice": 23159.45,
+          "exitPrice": 23167.83,
+          "spotAtEntry": 23159.45,
+          "spotAtExit": 23168,
+          "optionEntryLtp": 273.5,
+          "optionExitLtp": 266.7,
+          "entryTime": "13/3/2026, 1:45:00 pm",
+          "exitTime": "13/3/2026, 2:06:19 pm",
+          "pnl": -522,
+          "pnlMode": "option premium: entry ₹273.5 → exit ₹266.7",
+          "exitReason": "50% rule — ltp ₹23168 > prev mid ₹23167.83",
+          "entryReason": "EMA9 touch PE (low=23133 <= EMA9=23252.91) | SAR_BEAR @ 23316.97 | RSI=25.2 | EMA9slope=-20.45pts (<=-6 ok) | ADX=52.6 | SL=23316.97 | [STRONG]",
+          "stopLoss": 23167.83,
+          "optionExpiry": "17 MAR 2026",
+          "optionStrike": 23200,
+          "optionType": "PE"
+        }
+      ],
+      "totalTrades": 3,
+      "wins": 1,
+      "losses": 2,
+      "winRate": "33.3%",
+      "sessionPnl": 5720.5
+    }
+  ]
+}
