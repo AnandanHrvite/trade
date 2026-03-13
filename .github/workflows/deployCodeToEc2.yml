@@ -30,7 +30,4 @@ jobs:
             source ~/.nvm/nvm.sh
             cd /var/www/html/trade/ 
             npm install
-            pm2 stop src/app.js
-            pm2 delete src/app.js
-            pm2 start src/app.js
-            pm2 save
+            npm run dev
