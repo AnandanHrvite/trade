@@ -9,7 +9,7 @@ and **Zerodha Kite Connect** exclusively for live order placement.
 ## Architecture
 
 ```
-App (127.0.0.1 only)
+App (127.0.0.1 only) 
  ├── Fyers API v3        — market data: WebSocket spot ticks, REST quotes, historical candles
  ├── Zerodha Kite Connect — order placement: live trades only (never used in paper/backtest)
  ├── Strategy Engine     — auto-discovered from src/strategies/
