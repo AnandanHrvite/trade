@@ -1,25 +1,30 @@
-name:  API_Deployment_on_Ec2
-on: 
+name: API_Deployment_on_EC2
+
+on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
     name: Push to EC2 Instance
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout the code
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
 
-      - name: Deploy to my EC2 instance
+      - name: Sync files to EC2
         uses: easingthemes/ssh-deploy@main
         env:
           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
           SOURCE: "./"
           REMOTE_HOST: ${{ secrets.HOST_DNS }}
-          REMOTE_USER:  ${{ secrets.USERNAME }}
-          TARGET:  "/var/www/html/trade/"
-      - name: executing remote ssh commands using ssh key
+          REMOTE_USER: ${{ secrets.USERNAME }}
+          TARGET: "/var/www/html/trade/"
+          # Exclude things that shouldn't be overwritten on server
+          EXCLUDE: ".env, node_modules/"
+
+      - name: Install deps & restart app via PM2
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.HOST_DNS }}
@@ -28,6 +33,14 @@ jobs:
           script: |
             export NVM_DIR=~/.nvm
             source ~/.nvm/nvm.sh
-            cd /var/www/html/trade/ 
-            npm install
-            npm run dev
+
+            cd /var/www/html/trade/
+
+            npm install --omit=dev
+
+            # Start or reload — won't error if app doesn't exist yet
+            pm2 describe trading-bot > /dev/null 2>&1 \
+              && pm2 reload trading-bot \
+              || pm2 start src/app.js --name trading-bot
+
+            pm2 save
