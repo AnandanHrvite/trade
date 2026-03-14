@@ -14,8 +14,8 @@ function buildNav(active) {
     ["dashboard",  "/",                   "Dashboard"],
     ["backtest",   "/backtest",            "🔍 Backtest"],
     ["paper",      "/paperTrade/status",   "📋 Paper"],
-
     ["live",       "/trade/status",        "🔴 Live"],
+    ["logs",       "/logs",               "📜 Logs"],
   ];
   const links = pages.map(([key, href, label]) => {
     const on = key === active;

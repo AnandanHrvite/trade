@@ -1,14 +1,16 @@
 require("dotenv").config();
-const express = require("express");
+require("./services/logger");              // ← MUST be first: intercepts all console.* from here on
+
+const express  = require("express");
+const https    = require("https");
+const fs       = require("fs");
 const { ACTIVE, getActiveStrategy } = require("./strategies");
 const { INSTRUMENT } = require("./config/instrument");
-const zerodha = require("./services/zerodhaBroker");
+const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
 
 const app = express();
 app.use(express.json());
-const https = require('https');
-const fs = require('fs');
 
 // ── Local security — simple secret token ────────────────────────────────────
 // Set API_SECRET in .env. Pass as ?secret=xxx or header x-api-secret: xxx
@@ -18,6 +20,10 @@ const fs = require('fs');
 // Since this app runs on localhost only, protection is mainly against accidental browser hits.
 const OPEN_PATHS = [
   "/",
+  "/logs",              // log viewer — read-only
+  "/logs/stream",       // SSE stream — read-only
+  "/logs/export",       // export txt
+  "/logs/export-json",  // export json
   "/trade/status",          // read-only status page
   "/paperTrade/status",     // read-only status page
   "/paperTrade/history",    // read-only history
@@ -50,6 +56,7 @@ app.use("/backtest",   require("./routes/backtest"));
 app.use("/result",     require("./routes/result"));
 app.use("/paperTrade", require("./routes/paperTrade"));
 app.use("/trade",      require("./routes/trade"));
+app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
@@ -236,6 +243,7 @@ app.get("/", (req, res) => {
     <a href="/backtest">🔍 Backtest</a>
     <a href="/paperTrade/status">📋 Paper</a>
     <a href="/trade/status">🔴 Live</a>
+    <a href="/logs">📜 Logs</a>
   </div>
 </nav>
 
@@ -428,25 +436,44 @@ function scheduleEODTokenClear() {
 }
 
 scheduleEODTokenClear();
- 
-const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
-// SSL options
-const sslOptions = {
-  key: fs.readFileSync('./certs/key.pem'),
-  cert: fs.readFileSync('./certs/cert.pem')
-};
 
-// Start HTTPS server
-https.createServer(sslOptions, app).listen(3000, '0.0.0.0', () => {
-  console.log('HTTPS server running on https://43.205.26.92:3000');
-});
-/* app.listen(PORT, HOST, () => {
-  console.log(`\n🚀 Trading App running at http://43.205.26.92:${PORT} (AWS)`);
+// ── HTTPS Server ──────────────────────────────────────────────────────────────
+// Generate cert once on EC2 (never commit certs/ to git):
+//
+//   mkdir -p certs
+//   openssl req -x509 -newkey rsa:4096 \
+//     -keyout certs/key.pem -out certs/cert.pem \
+//     -days 3650 -nodes -subj "/CN=43.205.26.92"
+//
+// Add to .gitignore:  certs/
+
+const PORT   = process.env.PORT   || 3000;
+const HOST   = "0.0.0.0";
+const EC2_IP = process.env.EC2_IP || "43.205.26.92"; // override via .env if IP changes
+
+// Fail fast with a clear message if certs are missing
+let sslOptions;
+try {
+  sslOptions = {
+    key:  fs.readFileSync("./certs/key.pem"),
+    cert: fs.readFileSync("./certs/cert.pem"),
+  };
+} catch (e) {
+  console.error("\n❌  SSL certificates not found. Generate them on EC2:\n");
+  console.error("    mkdir -p certs");
+  console.error(`    openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 3650 -nodes -subj "/CN=${EC2_IP}"\n`);
+  process.exit(1);
+}
+
+https.createServer(sslOptions, app).listen(PORT, HOST, () => {
+  console.log(`\n🚀 Trading App running at https://${EC2_IP}:${PORT} (AWS — HTTPS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${INSTRUMENT}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
-  console.log(`\n📖 Dashboard → http://43.205.26.92:${PORT}\n`);
-}); */
+  console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
+  console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
+  console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);
+});
+
