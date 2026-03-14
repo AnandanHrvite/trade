@@ -141,3 +141,6 @@ vite.config.ts.timestamp-*
 
 # Skip all the zip
 *.zip
+
+# SSL cert
+certs

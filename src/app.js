@@ -7,6 +7,8 @@ const { clearFyersToken } = require("./config/fyers");
 
 const app = express();
 app.use(express.json());
+const https = require('https');
+const fs = require('fs');
 
 // ── Local security — simple secret token ────────────────────────────────────
 // Set API_SECRET in .env. Pass as ?secret=xxx or header x-api-secret: xxx
@@ -429,7 +431,17 @@ scheduleEODTokenClear();
  
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
-app.listen(PORT, HOST, () => {
+// SSL options
+const sslOptions = {
+  key: fs.readFileSync('./certs/key.pem'),
+  cert: fs.readFileSync('./certs/cert.pem')
+};
+
+// Start HTTPS server
+https.createServer(sslOptions, app).listen(3000, '0.0.0.0', () => {
+  console.log('HTTPS server running on https://43.205.26.92:3000');
+});
+/* app.listen(PORT, HOST, () => {
   console.log(`\n🚀 Trading App running at http://43.205.26.92:${PORT} (AWS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${INSTRUMENT}`);
@@ -437,4 +449,4 @@ app.listen(PORT, HOST, () => {
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
   console.log(`\n📖 Dashboard → http://43.205.26.92:${PORT}\n`);
-});
+}); */
