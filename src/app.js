@@ -430,11 +430,11 @@ scheduleEODTokenClear();
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 app.listen(PORT, HOST, () => {
-  console.log(`\n🚀 Trading App running at http://localhost:${PORT} (localhost only)`);
+  console.log(`\n🚀 Trading App running at http://43.205.26.92:${PORT} (AWS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${INSTRUMENT}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
-  console.log(`\n📖 Dashboard → http://localhost:${PORT}\n`);
+  console.log(`\n📖 Dashboard → http://43.205.26.92:${PORT}\n`);
 });
