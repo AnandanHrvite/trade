@@ -112,6 +112,13 @@ let tradeState = {
   // ── Pre-fetched option symbols (populated after each candle close, used at entry) ──
   _cachedCE: null,  // { symbol, expiry, strike, spot, invalid } pre-fetched CE symbol
   _cachedPE: null,  // { symbol, expiry, strike, spot, invalid } pre-fetched PE symbol
+  // ── 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles ──
+  // Mirrors paperTrade — prevents re-entering same choppy conditions immediately
+  _fiftyPctPauseUntil: null,
+  // ── Intra-candle entry throttle for 15-min: only re-run getSignal when bar
+  // high/low actually changes — avoids running full indicator stack every tick ──
+  _lastCheckedBarHigh: null,
+  _lastCheckedBarLow:  null,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -126,7 +133,7 @@ function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   tradeState.log.push(entry);
-  if (tradeState.log.length > 300) tradeState.log.shift();
+  if (tradeState.log.length > 2000) tradeState.log.shift(); // match logStore MAX_LOGS
 }
 
 function getTradeResolution() { return TRADE_RES; } // kept for legacy callers; prefer TRADE_RES directly
@@ -520,6 +527,17 @@ async function squareOff(exitPrice, reason) {
   tradeState.position     = null;
   _squareOffInFlight      = false; // release only AFTER position is cleared
 
+  // ── 50%-rule exit pause (mirrors paperTrade) ──────────────────────────────
+  // If exit was caused by 50% rule, pause re-entry for 2 candles to avoid
+  // re-entering same choppy conditions immediately.
+  if (reason && reason.toLowerCase().includes('50% rule')) {
+    const pauseCandles = 2;
+    const pauseMs      = pauseCandles * TRADE_RES * 60 * 1000;
+    tradeState._fiftyPctPauseUntil = Date.now() + pauseMs;
+    const resumeTime = new Date(tradeState._fiftyPctPauseUntil).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+    log(`⏸ [LIVE] 50%-rule exit — choppy market. Entry paused for ${pauseCandles} candles (~${pauseCandles * TRADE_RES} min, resume ~${resumeTime})`);
+  }
+
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = getActiveStrategy();
   if (typeof activeStrat.onTradeClosed === "function") activeStrat.onTradeClosed();
@@ -767,6 +785,23 @@ async function onCandleClose(candle) {
   }
 }
 
+// ── Dynamic trail gap — mirrors paperTrade exactly ───────────────────────────
+// Tightens as profit grows so large moves are captured, not given back.
+// Tier thresholds configurable via .env (same keys as paperTrade):
+//   TRAIL_TIER1_UPTO=40  → gap=TRAIL_TIER1_GAP=60pt  (early, noise buffer)
+//   TRAIL_TIER2_UPTO=70  → gap=TRAIL_TIER2_GAP=40pt  (confirmed profit)
+//   above TIER2_UPTO     → gap=TRAIL_TIER3_GAP=30pt  (big move — lock in)
+function getDynamicTrailGap(moveInFavour) {
+  const T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+  const T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
+  const T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+  const T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+  const T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
+  if (moveInFavour < T1_UPTO) return T1_GAP;
+  if (moveInFavour < T2_UPTO) return T2_GAP;
+  return T3_GAP;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tick handler — NIFTY spot ticks ONLY
 // ─────────────────────────────────────────────────────────────────────────────
@@ -782,8 +817,10 @@ function onSpotTick(tick) {
 
   if (!tradeState.currentBar || tradeState.barStartTime !== bucketStart) {
     if (tradeState.currentBar) onCandleClose(tradeState.currentBar).catch(console.error);
-    // New candle — clear the SL-hit block from the previous candle
-    tradeState._slHitCandleTime = null;
+    // New candle — clear the SL-hit block and intra-candle entry throttle
+    tradeState._slHitCandleTime    = null;
+    tradeState._lastCheckedBarHigh = null;
+    tradeState._lastCheckedBarLow  = null;
     tradeState.currentBar   = {
       time:   Math.floor(bucketStart / 1000),
       open:   tick.ltp, high: tick.ltp, low: tick.ltp, close: tick.ltp,
@@ -801,10 +838,25 @@ function onSpotTick(tick) {
   const ltp = tick.ltp;
   const bar = tradeState.currentBar;
 
-  // ── ENTRY: Intra-candle check on every tick (5-min resolution ONLY) ─────────
-  // For 15-min+ resolutions, entries fire only on candle closes (see onCandleClose below).
-  // Intra-tick entry on higher timeframes causes premature entries on partial candle data.
-  if (!tradeState.position && bar && tradeState.candles.length >= 30 && !tradeState._entryPending && TRADE_RES === 5) {
+  // ── ENTRY: Intra-candle STRONG signal entry (5-min and 15-min) ──────────────
+  // 5-min:  fires on every tick (all signals)
+  // 15-min: fires only when bar high/low changes AND signal is STRONG
+  //         (mirrors paperTrade — prevents premature entries on partial candle data)
+  // SAFETY: 15-min requires _cachedClosedCandleSL (at least 1 closed candle)
+  const barHighChanged = bar && bar.high !== tradeState._lastCheckedBarHigh;
+  const barLowChanged  = bar && bar.low  !== tradeState._lastCheckedBarLow;
+  const shouldCheckSignal = TRADE_RES === 5 || barHighChanged || barLowChanged;
+
+  if (!tradeState.position && bar && tradeState.candles.length >= 30
+      && !tradeState._entryPending && shouldCheckSignal
+      && (TRADE_RES === 5 || _cachedClosedCandleSL !== null)) {
+
+    // Update throttle — record the high/low we're about to evaluate against
+    if (TRADE_RES !== 5) {
+      tradeState._lastCheckedBarHigh = bar.high;
+      tradeState._lastCheckedBarLow  = bar.low;
+    }
+
     // Block re-entry on the same candle where an SL/50% exit just occurred
     const _currentBarTime = tradeState.currentBar ? tradeState.currentBar.time : null;
     if (tradeState._slHitCandleTime !== null && tradeState._slHitCandleTime === _currentBarTime) {
@@ -813,35 +865,38 @@ function onSpotTick(tick) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
+    } else if (tradeState._fiftyPctPauseUntil && Date.now() < tradeState._fiftyPctPauseUntil) {
+      // 50%-rule pause active — silently skip to avoid log spam
     } else if (tradeState.sessionTrades.length >= parseInt(process.env.MAX_DAILY_TRADES || "20", 10)) {
       // Daily max trades cap reached
       if (!tradeState._maxTradesLoggedCandle || tradeState._maxTradesLoggedCandle !== _currentBarTime) {
         log(`🚫 [LIVE] Daily max trades (${process.env.MAX_DAILY_TRADES || 20}) reached — no more entries today`);
         tradeState._maxTradesLoggedCandle = _currentBarTime;
       }
+    } else if (!isMarketHours()) {
+      // Outside market hours — security block
     } else {
-    const strategy     = getActiveStrategy();
-    // ── Single getSignal call using push/pop (no array copy, no duplicate computation) ──
-    // Push live bar, run strategy, immediately pop — bar stays out of candles array.
-    // SAR stopLoss from _cachedClosedCandleSL (set at each candle close) — stable, no recompute per tick.
+    const strategy = getActiveStrategy();
     tradeState.candles.push(bar);
-    const { signal, reason } = strategy.getSignal(tradeState.candles);
+    const { signal, reason, signalStrength } = strategy.getSignal(tradeState.candles, { silent: true });
     tradeState.candles.pop();
     const stopLoss = _cachedClosedCandleSL;
-    if (signal === "BUY_CE" || signal === "BUY_PE") {
+
+    // 15-min: STRONG signals only (steep slope + committed RSI) → enter intra-candle at EMA touch
+    // 5-min:  all signals enter intra-candle
+    const isStrongSignal = signalStrength === "STRONG";
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       tradeState._entryPending = true;
-      setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000) // reduced from 10000ms;
-      log(`⚡ [LIVE] Intra-candle ENTRY signal @ ₹${ltp} | ${reason}`);
+      setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
+      log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | [${TRADE_RES}m bar] ${reason}`);
 
-      const INSTR = INSTRUMENT; // top-level constant — no inline require needed
+      const INSTR = INSTRUMENT;
 
       let symbolPromise;
       if (INSTR === "NIFTY_FUTURES") {
         symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
       } else {
-        // ── Use pre-fetched symbol if available and spot hasn't moved > 25 pts ──
-        // Pre-fetch runs in background after each candle close — no REST delay at entry.
         const cached = getCachedSymbol(side, ltp);
         if (cached) {
           log(`⚡ [LIVE] Using pre-fetched symbol: ${cached.symbol} (spot delta: ${Math.abs(cached.spot - ltp).toFixed(0)} pts)`);
@@ -871,15 +926,12 @@ function onSpotTick(tick) {
           return;
         }
 
-        // ── SECURITY: confirm we're still in market hours before placing real order ─
         if (!isMarketHours()) {
           log(`🚫 [LIVE] Security block — market hours ended. Aborting intra-tick entry.`);
           tradeState._entryPending = false;
           return;
         }
 
-        // Options: always BUY (we buy the CE or PE contract)
-        // Futures: CE=LONG=BUY(1), PE=SHORT=SELL(-1)
         const orderSide = (INSTR === "NIFTY_FUTURES" && side === "PE") ? -1 : 1;
         const result = await placeMarketOrder(symbol, orderSide, getLotQty());
 
@@ -893,7 +945,6 @@ function onSpotTick(tick) {
           return;
         }
 
-        // Guard: candle-close entry may have fired while Zerodha order was in-flight
         if (tradeState.position) {
           log(`⚠️ [LIVE] Position already set while intra-tick order was in-flight — ignoring duplicate`);
           tradeState._entryPending = false;
@@ -901,7 +952,6 @@ function onSpotTick(tick) {
         }
 
         const optDetails   = parseOptionDetails(symbol);
-        // Use candles[length-1] = the last fully closed candle at this moment (correct prev candle)
         const entryPrevMid = tradeState.candles.length >= 1
           ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
           : null;
@@ -919,25 +969,22 @@ function onSpotTick(tick) {
           orderId:           result.orderId || null,
           entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
           entryPrevMid,
-          // Option metadata
           optionExpiry:      optDetails?.expiry     || expiry || null,
           optionStrike:      optDetails?.strike     || strike || null,
           optionType:        optDetails?.optionType || side,
-          // Option premium tracking
           optionEntryLtp:    null,
           optionCurrentLtp:  null,
           optionEntryLtpTime: null,
         };
 
         tradeState.optionSymbol = symbol;
-        tradeState._entryPending = false; // release guard only after position is fully set
+        tradeState._entryPending = false;
         log(`📊 [LIVE] Starting LTP polling (REST/3s): ${symbol}`);
         startOptionPolling(symbol);
         const entryLabel2 = INSTR === "NIFTY_FUTURES"
           ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
           : `BUY ${getLotQty()} × ${symbol}`;
         log(`📝 [LIVE] ${entryLabel2} @ SPOT ₹${ltp} | SL: ₹${stopLoss} | OrderID: ${result.orderId || "?"}`);
-        // ── Telegram notification ─────────────────────────────────────────────
         notifyEntry({
           mode:           "LIVE",
           side,
@@ -945,7 +992,7 @@ function onSpotTick(tick) {
           strike:         tradeState.position.optionStrike,
           expiry:         tradeState.position.optionExpiry,
           spotAtEntry:    ltp,
-          optionEntryLtp: null,  // captured async by polling
+          optionEntryLtp: null,
           stopLoss:       stopLoss || null,
           qty:            getLotQty(),
           reason,
@@ -955,68 +1002,64 @@ function onSpotTick(tick) {
         tradeState._entryPending = false;
       });
     }
-    } // end entry guards (SL-hit / pause / daily cap)
-  }
-  // Only applies from the NEXT candle after entry — skip on entry bar itself.
-  if (tradeState.position && tradeState.position.entryPrevMid) {
-    const currentBarTime = tradeState.currentBar ? tradeState.currentBar.time : null;
-    const onEntryBar     = currentBarTime !== null && currentBarTime === tradeState.position.entryBarTime;
-    if (!onEntryBar) {
-      const mid = tradeState.position.entryPrevMid;
-      if (tradeState.position.side === "CE" && ltp < mid) {
-        log(`🛑 [LIVE] 50% rule CE tick — ltp ₹${ltp} < prev mid ₹${mid}`);
-        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
-        squareOff(mid, `50% rule — ltp ₹${ltp} < prev mid ₹${mid}`).catch(console.error);
-        return;
-      }
-      if (tradeState.position.side === "PE" && ltp > mid) {
-        log(`🛑 [LIVE] 50% rule PE tick — ltp ₹${ltp} > prev mid ₹${mid}`);
-        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
-        squareOff(mid, `50% rule — ltp ₹${ltp} > prev mid ₹${mid}`).catch(console.error);
-        return;
-      }
-    }
+    } // end entry guards
   }
 
+  // ── NOTE: Intra-tick 50% rule REMOVED (matches paperTrade behaviour) ─────────
+  // On 15-min candles Nifty routinely wicks through prevMid and recovers within the candle.
+  // A single tick > prevMid was triggering exit on trades the backtest would HOLD.
+  // 50% rule fires only at candle CLOSE (see onCandleClose above) — identical to backtest.
+
   // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
-  // SL is updated each candle close as SAR dot moves in our favour.
-  // ADDITIONALLY: intra-candle points trail kicks in after TRAIL_ACTIVATE_PTS gain,
-  // then trails TRAIL_GAP pts behind best price (wide enough to survive normal Nifty noise).
+  // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
   // PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
   if (tradeState.position && tradeState.position.stopLoss !== null) {
     const pos = tradeState.position;
 
-    const TRAIL_GAP      = parseFloat(process.env.TRAIL_GAP_PTS      || "60");
     const TRAIL_ACTIVATE = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
 
     if (pos.side === "CE") {
+      const prevBestCE = pos.bestPrice;
       if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.bestPrice - pos.spotAtEntry;
       if (moveInFavour >= TRAIL_ACTIVATE) {
-        const trailSL = parseFloat((pos.bestPrice - TRAIL_GAP).toFixed(2));
+        const dynamicGap = getDynamicTrailGap(moveInFavour);
+        const trailSL    = parseFloat((pos.bestPrice - dynamicGap).toFixed(2));
         if (trailSL > pos.stopLoss) {
-          log(`📈 [LIVE] Points trail CE: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${trailSL}`);
+          log(`📈 [LIVE] Trail CE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${trailSL}`);
           pos.stopLoss = trailSL;
         }
+      } else if (pos.bestPrice !== prevBestCE) {
+        const needed = parseFloat((TRAIL_ACTIVATE - moveInFavour).toFixed(1));
+        log(`⏳ [LIVE] Trail CE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
       }
       if (ltp <= pos.stopLoss) {
-        log(`🛑 [LIVE] SL HIT CE — ltp ${ltp} <= SL ${pos.stopLoss}`);
+        const gaveBack = parseFloat((pos.bestPrice - ltp).toFixed(1));
+        const peakGain = parseFloat((pos.bestPrice - pos.spotAtEntry).toFixed(1));
+        log(`🛑 [LIVE] SL HIT CE — ltp ₹${ltp} <= SL ₹${pos.stopLoss} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt`);
         tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
         squareOff(pos.stopLoss, `SL hit @ ₹${pos.stopLoss}`).catch(console.error);
         return;
       }
     } else {
+      const prevBestPE = pos.bestPrice;
       if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.spotAtEntry - pos.bestPrice;
       if (moveInFavour >= TRAIL_ACTIVATE) {
-        const trailSL = parseFloat((pos.bestPrice + TRAIL_GAP).toFixed(2));
+        const dynamicGap = getDynamicTrailGap(moveInFavour);
+        const trailSL    = parseFloat((pos.bestPrice + dynamicGap).toFixed(2));
         if (trailSL < pos.stopLoss) {
-          log(`📉 [LIVE] Points trail PE: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${trailSL}`);
+          log(`📉 [LIVE] Trail PE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${trailSL}`);
           pos.stopLoss = trailSL;
         }
+      } else if (pos.bestPrice !== prevBestPE) {
+        const needed = parseFloat((TRAIL_ACTIVATE - moveInFavour).toFixed(1));
+        log(`⏳ [LIVE] Trail PE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
       }
       if (ltp >= pos.stopLoss) {
-        log(`🛑 [LIVE] SL HIT PE — ltp ${ltp} >= SL ${pos.stopLoss}`);
+        const gaveBack = parseFloat((ltp - pos.bestPrice).toFixed(1));
+        const peakGain = parseFloat((pos.spotAtEntry - pos.bestPrice).toFixed(1));
+        log(`🛑 [LIVE] SL HIT PE — ltp ₹${ltp} >= SL ₹${pos.stopLoss} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt`);
         tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
         squareOff(pos.stopLoss, `SL hit @ ₹${pos.stopLoss}`).catch(console.error);
         return;
@@ -1073,6 +1116,9 @@ router.get("/start", async (req, res) => {
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
   tradeState._cachedCE             = null; // clear pre-fetch cache on session start
   tradeState._cachedPE             = null;
+  tradeState._fiftyPctPauseUntil   = null;
+  tradeState._lastCheckedBarHigh   = null;
+  tradeState._lastCheckedBarLow    = null;
   tradeState._maxTradesLoggedCandle = null;
   _cachedClosedCandleSL     = null; // reset cached SL on fresh session start
   _orderInFlight            = false;
@@ -1267,8 +1313,8 @@ router.get("/status/data", (req, res) => {
         pnl:     typeof t.pnl === "number" ? t.pnl : null,
         reason:  t.exitReason     || "",
       })),
-      logTotal: tradeState.log.length,   // full count (never capped) — used by AJAX to detect new entries
-      logs: [...tradeState.log].reverse().slice(0, 100),
+      logTotal: tradeState.log.length,   // full count — used by AJAX to detect new entries
+      logs: [...tradeState.log].reverse(),
     });
   } catch (err) {
     console.error("[trade/status/data] Error:", err.message);
@@ -1605,13 +1651,13 @@ router.get("/status", (req, res) => {
 
   ${tradeState.currentBar ? `
   <div style="margin-bottom:24px;">
-    <div class="section-title">Current 5-Min Bar (forming)</div>
+    <div class="section-title">Current ${getTradeResolution()}-Min Bar (forming)</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ajax-lt-bar-${k}" style="font-size:1rem;">${inr(tradeState.currentBar[k])}</div></div>`).join("")}
     </div>
   </div>` : `
   <div style="margin-bottom:24px;">
-    <div class="section-title">Current 5-Min Bar (forming)</div>
+    <div class="section-title">Current ${getTradeResolution()}-Min Bar (forming)</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ajax-lt-bar-${k}" style="font-size:1rem;">\u2014</div></div>`).join("")}
     </div>

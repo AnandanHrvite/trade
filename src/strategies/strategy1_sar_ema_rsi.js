@@ -128,7 +128,10 @@ function isInTradingWindow(unixSec) {
  *
  * Stop loss = SAR dot (Logic 1 & 2) | EMA9 (Logic 3 override)
  */
-function getSignal(candles) {
+function getSignal(candles, opts) {
+  // silent=true suppresses per-tick console.log spam — used by intra-candle tick evaluation.
+  // At candle CLOSE (called from onCandleClose), silent is unset → full logs fire once per candle.
+  var silent = (opts && opts.silent === true);
   // Warm-up: 20 candles (reduced from 30)
   // 30×15min = 7.5 hours — burns the entire first trading day in backtest.
   // 20 candles covers RSI(14) warm-up + SAR initialisation + EMA9(9) comfortably.
@@ -306,7 +309,7 @@ function getSignal(candles) {
   var _sarFlipStr  = sarJustFlippedBull ? "↑FLIP" : sarJustFlippedBear ? "↓FLIP" : "";
   var _touchStr    = emaTouchCE ? "CE-TOUCH" : emaTouchPE ? "PE-TOUCH" : "no-touch";
   var _bodyStr     = Math.abs(signalCandle.close - signalCandle.open).toFixed(1);
-  console.log(
+  if (!silent) console.log(
     "[STRAT " + _istTime + "] " + _touchStr +
     " | EMA9=" + ema9.toFixed(1) + "(slope=" + ema9SlopeValue + "pt) " +
     "| RSI=" + rsi.toFixed(1) +
@@ -344,58 +347,58 @@ function getSignal(candles) {
     // Sanity check: SAR SL must be BELOW current price for CE (dot below = bullish support)
     // If SL > close, the SAR dot is above price — trade would be in loss from the start
     if (sarSL >= signalCandle.close) {
-      console.log("  ❌ CE gate FAIL: SAR SL " + sarSL + " >= close " + signalCandle.close + " (SL would be above entry — invalid position)");
+      if (!silent) console.log("  ❌ CE gate FAIL: SAR SL " + sarSL + " >= close " + signalCandle.close + " (SL would be above entry — invalid position)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked: SAR SL ₹" + sarSL + " >= close ₹" + signalCandle.close + " (SL above price — invalid)",
       });
     }
-    console.log("  ✓ CE gate PASS: SAR SL " + sarSL + " < close " + signalCandle.close + " (gap=" + (signalCandle.close - sarSL).toFixed(1) + "pt)");
+    if (!silent) console.log("  ✓ CE gate PASS: SAR SL " + sarSL + " < close " + signalCandle.close + " (gap=" + (signalCandle.close - sarSL).toFixed(1) + "pt)");
     // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
     // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
     var sarDistCE = parseFloat((signalCandle.close - sarSL).toFixed(2));
     if (sarDistCE < 55) {
-      console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 55pt minimum (SL within candle noise)");
+      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 55pt minimum (SL within candle noise)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < 55 min for 15-min) — insufficient buffer",
       });
     }
-    console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >= 55pt");
+    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >= 55pt");
     // Candle body filter: require a BULLISH body (close > open) AND body >= 10pt.
     // A bearish close (close <= open) = price recovered downward after wicking up to EMA — no bullish conviction.
     var candleBodyCE = Math.abs(signalCandle.close - signalCandle.open);
     if (signalCandle.close <= signalCandle.open) {
-      console.log("  ❌ CE gate FAIL: candle is BEARISH (close=" + signalCandle.close + " <= open=" + signalCandle.open + ") — wick-only EMA touch, no bullish conviction");
+      if (!silent) console.log("  ❌ CE gate FAIL: candle is BEARISH (close=" + signalCandle.close + " <= open=" + signalCandle.open + ") — wick-only EMA touch, no bullish conviction");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked: bearish candle body (close <= open) — EMA wick rejection, not bullish conviction",
       });
     }
     if (candleBodyCE < 10) {
-      console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 10pt (doji/spinning top — unreliable EMA touch)");
+      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 10pt (doji/spinning top — unreliable EMA touch)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
       });
     }
-    console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
+    if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
-      console.log("  ❌ CE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging — no established trend)");
+      if (!silent) console.log("  ❌ CE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging — no established trend)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked [EMA+SAR+RSI ok]: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " — market ranging, EMA touch unreliable",
       });
     }
-    console.log("  ✓ CE gate PASS: ADX=" + adxDisplay.toFixed(1) + " >= " + ADX_MIN_TREND + " (trending)");
+    if (!silent) console.log("  ✓ CE gate PASS: ADX=" + adxDisplay.toFixed(1) + " >= " + ADX_MIN_TREND + " (trending)");
     if (rsi > RSI_CE_MIN) {
-      console.log("  ✓ CE gate PASS: RSI=" + rsi.toFixed(1) + " > " + RSI_CE_MIN + " (bullish momentum confirmed)");
+      if (!silent) console.log("  ✓ CE gate PASS: RSI=" + rsi.toFixed(1) + " > " + RSI_CE_MIN + " (bullish momentum confirmed)");
       // Signal strength: STRONG = enter intra-candle (steep slope + committed RSI)
       //                  MARGINAL = wait for candle close
       var isCEstrong = ema9SlopeValue >= STRONG_SLOPE_CE && rsi > STRONG_RSI_CE;
       var ceStrength = isCEstrong ? "STRONG" : "MARGINAL";
-      console.log("  🟢 BUY_CE SIGNAL [" + ceStrength + "] — all gates passed. Entry @ close=" + signalCandle.close + " SL=" + sarSL);
+      if (!silent) console.log("  🟢 BUY_CE SIGNAL [" + ceStrength + "] — all gates passed. Entry @ close=" + signalCandle.close + " SL=" + sarSL);
       return Object.assign({}, base, {
         signal:         "BUY_CE",
         signalStrength: ceStrength,
@@ -406,7 +409,7 @@ function getSignal(candles) {
                 " | ADX=" + adxDisplay.toFixed(1) + " | SL=" + sarSL + " | [" + ceStrength + "]",
       });
     }
-    console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " <= " + RSI_CE_MIN + " (insufficient bullish momentum)");
+    if (!silent) console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " <= " + RSI_CE_MIN + " (insufficient bullish momentum)");
     return Object.assign({}, base, {
       signal: "NONE",
       reason: "CE blocked [EMA+SAR ok]: RSI " + rsi.toFixed(1) + " <= " + RSI_CE_MIN,
@@ -418,59 +421,59 @@ function getSignal(candles) {
     // Sanity check: SAR SL must be ABOVE current price for PE (dot above = bearish pressure)
     // If SL < close, the SAR dot is below price — trade would be in loss from the start
     if (sarSL <= signalCandle.close) {
-      console.log("  ❌ PE gate FAIL: SAR SL " + sarSL + " <= close " + signalCandle.close + " (SL would be below entry — invalid position)");
+      if (!silent) console.log("  ❌ PE gate FAIL: SAR SL " + sarSL + " <= close " + signalCandle.close + " (SL would be below entry — invalid position)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked: SAR SL ₹" + sarSL + " <= close ₹" + signalCandle.close + " (SL below price — invalid)",
       });
     }
-    console.log("  ✓ PE gate PASS: SAR SL " + sarSL + " > close " + signalCandle.close + " (gap=" + (sarSL - signalCandle.close).toFixed(1) + "pt)");
+    if (!silent) console.log("  ✓ PE gate PASS: SAR SL " + sarSL + " > close " + signalCandle.close + " (gap=" + (sarSL - signalCandle.close).toFixed(1) + "pt)");
     // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
     // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
     var sarDistPE = parseFloat((sarSL - signalCandle.close).toFixed(2));
     if (sarDistPE < 55) {
-      console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 55pt minimum");
+      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 55pt minimum");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < 55 min for 15-min) — insufficient buffer",
       });
     }
-    console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt >= 55pt");
+    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt >= 55pt");
     // Candle body filter: require a BEARISH body (close < open) AND body >= 10pt.
     // A bullish close (close >= open) = price recovered after wicking EMA — no bearish conviction.
     // Such candles also fail the 50% entry gate, so this gives an earlier clear rejection.
     var candleBodyPE = Math.abs(signalCandle.close - signalCandle.open);
     if (signalCandle.close >= signalCandle.open) {
-      console.log("  ❌ PE gate FAIL: candle is BULLISH (close=" + signalCandle.close + " >= open=" + signalCandle.open + ") — wick-only EMA touch, no bearish conviction");
+      if (!silent) console.log("  ❌ PE gate FAIL: candle is BULLISH (close=" + signalCandle.close + " >= open=" + signalCandle.open + ") — wick-only EMA touch, no bearish conviction");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked: bullish candle body (close >= open) — EMA wick rejection, not bearish conviction",
       });
     }
     if (candleBodyPE < 10) {
-      console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 10pt (doji/spinning top)");
+      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 10pt (doji/spinning top)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
       });
     }
-    console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
+    if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
-      console.log("  ❌ PE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging)");
+      if (!silent) console.log("  ❌ PE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked [EMA+SAR ok]: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " — market ranging, EMA touch unreliable",
       });
     }
-    console.log("  ✓ PE gate PASS: ADX=" + adxDisplay.toFixed(1) + " >= " + ADX_MIN_TREND + " (trending)");
+    if (!silent) console.log("  ✓ PE gate PASS: ADX=" + adxDisplay.toFixed(1) + " >= " + ADX_MIN_TREND + " (trending)");
     if (rsi < RSI_PE_MAX) {
-      console.log("  ✓ PE gate PASS: RSI=" + rsi.toFixed(1) + " < " + RSI_PE_MAX + " (bearish momentum confirmed)");
+      if (!silent) console.log("  ✓ PE gate PASS: RSI=" + rsi.toFixed(1) + " < " + RSI_PE_MAX + " (bearish momentum confirmed)");
       // Signal strength: STRONG = enter intra-candle (steep slope + committed RSI)
       //                  MARGINAL = wait for candle close
       var isPEstrong = ema9SlopeValue <= STRONG_SLOPE_PE && rsi < STRONG_RSI_PE;
       var peStrength = isPEstrong ? "STRONG" : "MARGINAL";
-      console.log("  🔴 BUY_PE SIGNAL [" + peStrength + "] — all gates passed. Entry @ close=" + signalCandle.close + " SL=" + sarSL);
+      if (!silent) console.log("  🔴 BUY_PE SIGNAL [" + peStrength + "] — all gates passed. Entry @ close=" + signalCandle.close + " SL=" + sarSL);
       return Object.assign({}, base, {
         signal:         "BUY_PE",
         signalStrength: peStrength,
@@ -481,7 +484,7 @@ function getSignal(candles) {
                 " | ADX=" + adxDisplay.toFixed(1) + " | SL=" + sarSL + " | [" + peStrength + "]",
       });
     }
-    console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " >= " + RSI_PE_MAX + " (insufficient bearish momentum)");
+    if (!silent) console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " >= " + RSI_PE_MAX + " (insufficient bearish momentum)");
     return Object.assign({}, base, {
       signal: "NONE",
       reason: "PE blocked [EMA+SAR ok]: RSI " + rsi.toFixed(1) + " >= " + RSI_PE_MAX,

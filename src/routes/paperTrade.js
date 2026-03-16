@@ -974,7 +974,7 @@ function onTick(tick) {
     // This avoids the expensive [...candles, bar] spread AND the duplicate getSignal call.
     // SAR stopLoss comes from _cachedClosedCandleSL — stable value set at candle close, never recomputed per-tick.
     ptState.candles.push(bar);
-    const { signal, reason, signalStrength } = strategy.getSignal(ptState.candles);
+    const { signal, reason, signalStrength } = strategy.getSignal(ptState.candles, { silent: true });
     ptState.candles.pop();
     const stopLoss = _cachedClosedCandleSL;
     // ── Strength gate: intra-candle entry ONLY for STRONG signals ─────────────
