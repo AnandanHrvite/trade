@@ -20,8 +20,8 @@ router.get("/stream", (req, res) => {
   res.setHeader("X-Accel-Buffering",   "no"); // prevent nginx buffering
   res.flushHeaders();
 
-  // Send last 100 entries immediately on connect so page isn't empty
-  const history = logStore.slice(-100);
+  // Send ALL stored entries immediately on connect so page shows full history
+  const history = logStore.slice(-2000);
   res.write(`data: ${JSON.stringify({ type: "history", logs: history })}\n\n`);
 
   // Then stream each new log as it arrives

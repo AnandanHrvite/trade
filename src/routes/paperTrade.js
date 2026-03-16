@@ -113,7 +113,7 @@ function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   ptState.log.push(entry);
-  if (ptState.log.length > 300) ptState.log.shift();
+  if (ptState.log.length > 2000) ptState.log.shift(); // match logStore MAX_LOGS
 }
 
 function getTradeResolution() { return TRADE_RES; } // kept for legacy callers; prefer TRADE_RES directly
@@ -844,6 +844,38 @@ async function onCandleClose(candle) {
   }
 }
 
+// ── Dynamic trail gap — tightens as profit grows ─────────────────────────────
+// Fixed 60pt gap throughout means giving back 65% of any move on reversal.
+// Instead: wide early (noise protection) → tight late (profit lock).
+//
+// Tier thresholds (configurable via .env):
+//   TRAIL_TIER1_UPTO  = 40   pts  → gap = TRAIL_TIER1_GAP  (default 60pt)
+//   TRAIL_TIER2_UPTO  = 70   pts  → gap = TRAIL_TIER2_GAP  (default 40pt)
+//   above TIER2_UPTO         → gap = TRAIL_TIER3_GAP  (default 30pt)
+//
+// Example with today's 92pt PE trade:
+//   0–40pt  move: SL stays 60pt behind best  (early noise buffer)
+//   40–70pt move: SL tightens to 40pt behind (confirmed profit zone)
+//   70pt+   move: SL tightens to 30pt behind (lock in big move)
+//   → At peak 92pt: SL = peak + 30 → exits ~62pt profit vs 32pt with fixed 60pt
+//
+// Why these numbers:
+//   60pt early: Nifty 15-min bars regularly wick 40-50pt — need room to breathe
+//   40pt mid:   After 40pt move we have confirmed momentum, 40pt still safe
+//   30pt late:  After 70pt move, tighten hard — don't give back more than ~30pt
+//
+function getDynamicTrailGap(moveInFavour) {
+  const T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+  const T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
+  const T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+  const T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+  const T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
+
+  if (moveInFavour < T1_UPTO) return T1_GAP;   // 15–40pt:  60pt gap
+  if (moveInFavour < T2_UPTO) return T2_GAP;   // 40–70pt:  40pt gap
+  return T3_GAP;                                 // 70pt+:    30pt gap
+}
+
 // ── Tick → candle builder (NIFTY SPOT ONLY) ──────────────────────────────────────────
 // This handler receives ONLY NSE:NIFTY50-INDEX ticks from the dedicated SPOT socket.
 // Option ticks are handled separately in simulateBuy's startOption() callback.
@@ -1012,17 +1044,11 @@ function onTick(tick) {
   if (ptState.position && ptState.position.stopLoss !== null) {
     const pos = ptState.position;
 
-    // ── Intra-candle trailing: update best price & tighten SL once activated ─
-    // TRAIL_GAP_PTS: breathing room behind the best price. Must exceed Nifty's
-    // typical 15-min intraday pullback (40-70pt) so normal noise doesn't stop us out.
-    // Default 60pt: survived a 41pt bounce on 9-Mar-26 where 40pt was stopped out.
-    // TRAIL_ACTIVATE_PTS: minimum move in our favour before trail kicks in.
-    // Lowered from 50 → 15pt: activates trail much earlier so partial profit is locked
-    // as soon as the trade moves meaningfully in our direction. On 13-Mar-26 the PE
-    // trade reached +25pt (₹1000 unrealised) before reversing — a 15pt activation
-    // would have set an intra-candle SL floor well before the reversal wiped the gain.
-    // Both are tunable in .env without code changes.
-    const TRAIL_GAP_PTS      = parseFloat(process.env.TRAIL_GAP_PTS      || "60");
+    // ── Intra-candle trailing: dynamic tiered gap (tightens as profit grows) ──
+    // Trail activates after TRAIL_ACTIVATE_PTS (default 15pt).
+    // Gap is NOT fixed — it shrinks in tiers as moveInFavour increases.
+    // See getDynamicTrailGap() above for tier values and rationale.
+    // 50% rule floor/ceiling still applies as before — never moves SL into loss.
     const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
 
     if (pos.side === "CE") {
@@ -1031,25 +1057,21 @@ function onTick(tick) {
       if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.bestPrice - pos.spotAtEntry;
       if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
-        const trailSL = parseFloat((pos.bestPrice - TRAIL_GAP_PTS).toFixed(2));
-        // 50% rule floor: while trail is below entryPrevMid, cap it there.
-        // This prevents trail from sitting in loss territory (trail below prevMid = worse than 50% cut).
-        // Once trail naturally rises above prevMid, it tracks bestPrice freely — no artificial floor.
-        // NOTE: profitLock (entry+5) was REMOVED — it was snapping the SL to within 5pt of entry
-        // the instant the prevMid clip released, killing profits on any move < 65pt. The prevMid
-        // clip already provides loss protection; we don't need a second overlapping cap.
-        const fiftyPctFloor = pos.entryPrevMid;
-        const clipped = fiftyPctFloor !== null && trailSL < fiftyPctFloor;
+        const dynamicGap = getDynamicTrailGap(moveInFavour);
+        const trailSL    = parseFloat((pos.bestPrice - dynamicGap).toFixed(2));
+        // 50% rule floor: cap trail at entryPrevMid until trail rises above it naturally.
+        // Prevents SL sitting in loss territory during early small moves.
+        const fiftyPctFloor    = pos.entryPrevMid;
+        const clipped          = fiftyPctFloor !== null && trailSL < fiftyPctFloor;
         const effectiveTrailSL = clipped ? fiftyPctFloor : trailSL;
         if (effectiveTrailSL > pos.stopLoss) {
-          const cushion    = parseFloat((ltp - effectiveTrailSL).toFixed(1));
-          const optStr     = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          const clipStr    = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
-          log(`📈 [PAPER] Points trail CE: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
+          const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
+          const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
+          log(`📈 [PAPER] Trail CE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestCE) {
-        // Trail not yet active — log new best so waiting progress is visible
         const needed = parseFloat((TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
         log(`⏳ [PAPER] Trail CE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
       }
@@ -1059,25 +1081,21 @@ function onTick(tick) {
       if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.spotAtEntry - pos.bestPrice;
       if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
-        const trailSL = parseFloat((pos.bestPrice + TRAIL_GAP_PTS).toFixed(2));
-        // 50% rule ceiling: while trail is above entryPrevMid, cap it there.
-        // This prevents trail from sitting in loss territory (trail above prevMid = worse than 50% cut).
-        // Once trail naturally falls below prevMid, it tracks bestPrice freely — no artificial ceiling.
-        // NOTE: profitLock (entry-5) was REMOVED — it was snapping the SL to within 5pt of entry
-        // the instant the prevMid clip released, killing profits on any move < 65pt. The prevMid
-        // clip already provides loss protection; we don't need a second overlapping cap.
-        const fiftyPctCeiling = pos.entryPrevMid;
-        const clipped = fiftyPctCeiling !== null && trailSL > fiftyPctCeiling;
+        const dynamicGap = getDynamicTrailGap(moveInFavour);
+        const trailSL    = parseFloat((pos.bestPrice + dynamicGap).toFixed(2));
+        // 50% rule ceiling: cap trail at entryPrevMid until trail falls below it naturally.
+        // Prevents SL sitting in loss territory during early small moves.
+        const fiftyPctCeiling  = pos.entryPrevMid;
+        const clipped          = fiftyPctCeiling !== null && trailSL > fiftyPctCeiling;
         const effectiveTrailSL = clipped ? fiftyPctCeiling : trailSL;
         if (effectiveTrailSL < pos.stopLoss) {
           const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
-          log(`📉 [PAPER] Points trail PE: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          log(`📉 [PAPER] Trail PE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestPE) {
-        // Trail not yet active — log new best so waiting progress is visible
         const needed = parseFloat((TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
         log(`⏳ [PAPER] Trail PE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
       }
@@ -1227,7 +1245,7 @@ router.get("/start", async (req, res) => {
   log(`   Instrument : ${INSTRUMENT}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   log(`   Filters     : EMA slope>=6pt | RSI CE>55 PE<45 | ADX>=25 | SAR gap>=55pt | body>=10pt`);
-  log(`   Trail       : gap=${process.env.TRAIL_GAP_PTS||60}pt activates after +${process.env.TRAIL_ACTIVATE_PTS||15}pt | prevMid-clip only (profitLock removed) | 50%-rule=candle-close-only (intra-tick removed) | entryBarTime-fix: candle-close entries get 50% check from candle-1`);
+  log(`   Trail       : DYNAMIC TIERED — T1 0-${process.env.TRAIL_TIER1_UPTO||40}pt=gap${process.env.TRAIL_TIER1_GAP||60}pt | T2 ${process.env.TRAIL_TIER1_UPTO||40}-${process.env.TRAIL_TIER2_UPTO||70}pt=gap${process.env.TRAIL_TIER2_GAP||40}pt | T3 ${process.env.TRAIL_TIER2_UPTO||70}pt+=gap${process.env.TRAIL_TIER3_GAP||30}pt | activates after +${process.env.TRAIL_ACTIVATE_PTS||15}pt | prevMid-clip | 50%-rule=candle-close-only`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | 3 losses → daily kill | OPT_STOP=50%-candle-mid (option SL = entryLTP − spotGapToPrevMid)`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -1548,9 +1566,9 @@ router.get("/status/data", (req, res) => {
         pnl:     typeof t.pnl === "number" ? t.pnl : null,
         reason:  t.exitReason     || "",
       })),
-      // Activity log — last 100 entries newest-first
-      logTotal: ptState.log.length,   // full count (never capped) — used by AJAX to detect new entries
-      logs: [...ptState.log].reverse().slice(0, 100),
+      // Activity log — all entries newest-first (up to 2000 — matches ptState.log buffer)
+      logTotal: ptState.log.length,   // full count — used by AJAX to detect new entries
+      logs: [...ptState.log].reverse(),
     });
   } catch (err) {
     console.error("[paperTrade/status/data] Error:", err.message);
