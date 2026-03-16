@@ -47,6 +47,8 @@ class SocketManager {
   /** Stop everything — call on session stop. */
   stop() {
     this._stopped = true;
+    this._onSpotTick = null;  // ← clear callback FIRST — prevents any residual/SDK-internal
+                               //   ticks from reaching onTick() even if Fyers SDK reconnects
     this._clearRetry();
     this._clearWatchdog();
     this._closeSocket();
@@ -87,6 +89,7 @@ class SocketManager {
     });
 
     skt.on('message', (msg) => {
+      if (this._stopped) return;                    // ← guard: drop ticks after stop() is called
       this._lastTickAt = Date.now();
       const ticks = Array.isArray(msg) ? msg : [msg];
       ticks.forEach(t => { if (t && t.ltp && this._onSpotTick) this._onSpotTick(t); });

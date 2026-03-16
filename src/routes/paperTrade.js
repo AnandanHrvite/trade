@@ -851,6 +851,7 @@ async function onCandleClose(candle) {
 
 function onTick(tick) {
   if (!tick || !tick.ltp) return;
+  if (!ptState.running) return;  // ← guard: ignore ticks after stop (Fyers SDK may still fire)
 
   // ── Everything below: NIFTY index tick ───────────────────────────────────
   ptState.tickCount++;
@@ -1332,6 +1333,7 @@ router.get("/stop", async (req, res) => {
   socketManager.stop();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clear();
+  ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
   log("⏹ [PAPER] Paper trading stopped");
 
   const session = saveSession();
