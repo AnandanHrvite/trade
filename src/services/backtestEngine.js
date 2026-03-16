@@ -180,7 +180,8 @@ function runBacktest(candles, strategy, capital) {
 
     // ── Get signal from current window (entry candle included) ────────────────
     // window already contains candles[0..i] — no slice needed.
-    const { signal, reason, stopLoss: signalSL, signalStrength, ...indicators } = strategy.getSignal(window);
+    // silent=true: backtest runs 1000+ candles — suppress per-candle strategy console.log spam
+    const { signal, reason, stopLoss: signalSL, signalStrength, ...indicators } = strategy.getSignal(window, { silent: true });
 
     // Debug: log first few signal evaluations so 0-trade runs are diagnosable
     if (_dbgSignalCount < 5) {

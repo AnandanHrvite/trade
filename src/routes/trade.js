@@ -184,11 +184,7 @@ async function fetchOptionLtp(symbol) {
     const response = await fyers.getQuotes([symbol]);
 
     // Debug log once per session so we can verify field names
-    if (!fetchOptionLtp._debugLogged) {
-      log(`[DEBUG] getQuotes raw: s=${response.s} | d=${JSON.stringify(response.d || []).slice(0, 400)}`);
-      fetchOptionLtp._debugLogged = true;
-      setTimeout(() => { delete fetchOptionLtp._debugLogged; }, 60000);
-    }
+    // Fyers getQuotes confirmed working — debug log removed after field validation
 
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
