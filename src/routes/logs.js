@@ -77,10 +77,10 @@ router.get("/", (req, res) => {
     body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; display:flex; flex-direction:column; height:100vh; overflow:hidden; }
 
     /* ── NAV ── */
-    nav { display:flex; align-items:center; justify-content:space-between; padding:10px 24px; border-bottom:1px solid #1a2236; background:#0d1320; flex-shrink:0; }
+    nav { display:flex; align-items:center; justify-content:space-between; padding:10px 24px; border-bottom:1px solid #1a2236; background:#0d1320; flex-shrink:0; flex-wrap:wrap; gap:6px; }
     .brand { font-size:0.92rem; font-weight:700; color:#fff; white-space:nowrap; }
     .brand span { color:#3b82f6; }
-    .nav-links { display:flex; gap:4px; }
+    .nav-links { display:flex; gap:4px; flex-wrap:wrap; }
     .nav-links a { font-size:0.76rem; color:#6b7a99; text-decoration:none; padding:6px 12px; border-radius:6px; border:1px solid transparent; white-space:nowrap; }
     .nav-links a:hover { color:#c8d8f0; background:#161b22; border-color:#1a2236; }
     .nav-links a.active { color:#3b82f6; background:#0a1e3d; border-color:#1d3b6e; }
@@ -88,7 +88,7 @@ router.get("/", (req, res) => {
     /* ── TOOLBAR ── */
     .toolbar { display:flex; align-items:center; gap:8px; padding:8px 16px; background:#0d1320; border-bottom:1px solid #1a2236; flex-shrink:0; flex-wrap:wrap; }
     .tb-left  { display:flex; align-items:center; gap:8px; flex:1; flex-wrap:wrap; }
-    .tb-right { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+    .tb-right { display:flex; align-items:center; gap:6px; flex-shrink:0; flex-wrap:wrap; }
 
     /* Live badge */
     .badge-live { display:flex; align-items:center; gap:5px; font-size:0.62rem; font-weight:700; color:#10b981; background:#06180e; border:1px solid #0a3018; padding:3px 8px; border-radius:4px; white-space:nowrap; }
@@ -143,6 +143,23 @@ router.get("/", (req, res) => {
     .lvl-ERROR { color:#f87171; }
 
     .empty-state { text-align:center; padding:80px 24px; color:#1e3050; font-size:0.8rem; }
+
+    /* ── MOBILE — switch from fixed-height flex to normal scroll ── */
+    @media (max-width:640px) {
+      html, body { height:auto; }
+      body { display:block; height:auto; overflow-x:hidden; }
+      nav { padding:8px 12px; }
+      .brand { font-size:0.8rem; }
+      .nav-links a { font-size:0.7rem; padding:5px 8px; }
+      .toolbar { padding:6px 10px; }
+      #search { width:100%; }
+      .tb-right { width:100%; justify-content:flex-start; }
+      .log-wrap { overflow-y:auto; height:70vh; min-height:400px; }
+      .log-row { padding:2px 8px; }
+      .log-time { min-width:58px; font-size:0.62rem; }
+      .log-lvl  { min-width:36px; font-size:0.62rem; }
+      .log-msg  { font-size:0.65rem; }
+    }
     .empty-state .icon { font-size:2rem; margin-bottom:12px; }
   </style>
 </head>

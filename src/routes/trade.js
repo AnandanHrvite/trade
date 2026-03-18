@@ -1551,8 +1551,8 @@ router.get("/status", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk',sans-serif;background:#080c14;color:#c8d8f0;padding-bottom:60px;}
-    nav{display:flex;align-items:center;justify-content:space-between;padding:16px 32px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:10;}
+    body{font-family:'Space Grotesk',sans-serif;background:#080c14;color:#c8d8f0;padding-bottom:60px;overflow-x:hidden;}
+    nav{display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:10;flex-wrap:wrap;gap:6px;}
     nav .brand{font-size:1rem;font-weight:700;color:#fff;}nav .brand span{color:#ef4444;}
     nav a{font-size:0.78rem;color:#4a6080;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;}
     nav a:hover{color:#c8d8f0;border-color:#1a2236;background:#1a2236;}
@@ -1564,12 +1564,21 @@ router.get("/status", (req, res) => {
     .section-title{font-size:0.73rem;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#4a6080;margin-bottom:12px;display:flex;align-items:center;gap:10px;}
     .section-title::after{content:'';flex:1;height:1px;background:#1a2236;}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+    /* ── MOBILE ── */
+    @media (max-width:640px) {
+      nav { padding:8px 12px !important; flex-wrap:wrap; gap:6px; }
+      .brand { font-size:0.82rem !important; }
+      .page { padding:16px 12px !important; }
+      .stat-grid { grid-template-columns:1fr 1fr !important; gap:8px !important; }
+      .sc { padding:12px !important; }
+      .sc-val { font-size:1rem !important; }
+    }
   </style>
 </head>
 <body>
 <nav style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:100;gap:12px;">
   <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#ef4444;">LIVE BOT</span></div>
-  <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center;">
+  <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
     <a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>
     <a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>
@@ -1648,13 +1657,13 @@ router.get("/status", (req, res) => {
   ${tradeState.currentBar ? `
   <div style="margin-bottom:24px;">
     <div class="section-title">Current ${getTradeResolution()}-Min Bar (forming)</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ajax-lt-bar-${k}" style="font-size:1rem;">${inr(tradeState.currentBar[k])}</div></div>`).join("")}
     </div>
   </div>` : `
   <div style="margin-bottom:24px;">
     <div class="section-title">Current ${getTradeResolution()}-Min Bar (forming)</div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ajax-lt-bar-${k}" style="font-size:1rem;">\u2014</div></div>`).join("")}
     </div>
   </div>`}
@@ -1675,7 +1684,7 @@ router.get("/status", (req, res) => {
     </div>
     ${tradeState.sessionTrades.length === 0
       ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:#4a6080;font-size:0.82rem;">No completed trades this session.</div>`
-      : `<div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;margin-bottom:10px;">
+      : `<div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;margin-bottom:10px;">
           <table style="width:100%;border-collapse:collapse;">
             <thead><tr style="background:#0a0f1c;">
               <th onclick="ltSort('side')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side ▲▼</th>
@@ -1846,7 +1855,7 @@ router.get("/status", (req, res) => {
 
       const contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
         + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">📋 Option Contract</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
         + cell('Symbol', t.symbol || '—', '#a0f0c0')
         + cell('Strike', t.strike || '—', '#fff')
         + cell('Expiry', t.expiry || '—', '#f59e0b')
@@ -1857,7 +1866,7 @@ router.get("/status", (req, res) => {
 
       const entryHtml = '<div style="background:#060c18;border:1px solid #0d2040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
         + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">🟢 Entry</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
         + cell('Entry Time', t.entry || '—', '#c8d8f0')
         + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
         + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
@@ -1868,7 +1877,7 @@ router.get("/status", (req, res) => {
 
       const exitHtml = '<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
         + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">🔴 Exit</div>'
-        + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
         + cell('Exit Time', t.exit || '—', '#c8d8f0')
         + cell('NIFTY Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
         + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')

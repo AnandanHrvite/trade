@@ -144,7 +144,7 @@ app.get("/", (req, res) => {
   <title>Palani Andawar thunai — Dashboard</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-    body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; min-height:100vh; }
+    body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; min-height:100vh; overflow-x:hidden; }
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 
     /* ── NAV ── */
@@ -232,6 +232,24 @@ app.get("/", (req, res) => {
     .cfg-val.disabled { color:#ef4444; }
     .live-note { margin:0 18px 14px; padding:10px 14px; background:#0a0a14; border:1px solid #252540; border-radius:8px; font-size:0.7rem; color:#3a5070; }
     .live-note code { color:#a0b0c0; font-family:'IBM Plex Mono',monospace; font-weight:600; }
+
+    /* ── MOBILE ── */
+    @media (max-width:640px) {
+      nav { flex-wrap:wrap; gap:6px; padding:8px 14px; }
+      .brand { font-size:0.82rem; }
+      .nav-links { flex-wrap:wrap; gap:3px; }
+      .nav-links a { font-size:0.7rem; padding:5px 8px; }
+      .page { padding:14px 12px 40px; gap:10px; }
+      .broker-grid { grid-template-columns:1fr; }
+      .trade-grid  { grid-template-columns:1fr; }
+      .cfg-grid    { grid-template-columns:1fr 1fr; }
+      .cfg-cell    { border-right:none; border-bottom:1px solid #1a2236; }
+      .cfg-cell:nth-child(odd) { border-right:1px solid #1a2236; }
+      .cfg-cell:last-child { border-bottom:none; }
+      .bt-bar { flex-direction:column; align-items:stretch; }
+      .bt-strat { margin-left:0; text-align:center; }
+      .bt-run { align-self:flex-start; }
+    }
   </style>
 </head>
 <body>
