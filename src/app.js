@@ -381,12 +381,19 @@ function runBT(){
 }
 function hardReset(){
   if(!confirm('Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.')) return;
-  var secret = prompt('Enter API_SECRET (leave blank if not set):') || '';
+  var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
   var url = '/admin/reset' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
   fetch(url, {method:'POST'})
-    .then(r=>r.json())
-    .then(d=>{ alert(d.message + '\\n\\nPage will reload in 5 seconds.'); setTimeout(()=>location.reload(), 5000); })
-    .catch(()=>{ alert('Reset sent. Server restarting — reload in a few seconds.'); setTimeout(()=>location.reload(), 5000); });
+    .then(function(r){
+      if(r.status === 403){ alert('Wrong API_SECRET — reset blocked.\\nCheck API_SECRET in your .env and try again.'); return null; }
+      return r.json();
+    })
+    .then(function(d){
+      if(!d) return;
+      if(d.success){ alert(d.message + '\\nPage will reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); }
+      else { alert('Reset failed: ' + (d.error || JSON.stringify(d))); }
+    })
+    .catch(function(){ alert('Reset sent — server restarting. Reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); });
 }
 </script>
 </body>
