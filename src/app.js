@@ -285,10 +285,14 @@ app.get("/", (req, res) => {
         </div>
 
       </div>
+
+      <!-- Hard Reset -->
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #1a2236;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:0.67rem;color:#3a5070;">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
+        <button onclick="hardReset()" style="background:#1a0808;border:1px solid #5a1010;color:#f87171;padding:6px 14px;border-radius:7px;font-size:0.75rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;margin-left:16px;">🔄 Hard Reset</button>
+      </div>
     </div>
   </div>
-
-  <!-- ② BACKTEST -->
   <div class="card">
     <div class="card-hdr">
       <span class="card-hdr-icon">🔍</span>
@@ -375,6 +379,15 @@ function runBT(){
   if(f>=t){alert('From must be before To');return;}
   window.open('/backtest?from='+f+'&to='+t+'&resolution='+r,'_blank');
 }
+function hardReset(){
+  if(!confirm('Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.')) return;
+  var secret = prompt('Enter API_SECRET (leave blank if not set):') || '';
+  var url = '/admin/reset' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
+  fetch(url, {method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{ alert(d.message + '\\n\\nPage will reload in 5 seconds.'); setTimeout(()=>location.reload(), 5000); })
+    .catch(()=>{ alert('Reset sent. Server restarting — reload in a few seconds.'); setTimeout(()=>location.reload(), 5000); });
+}
 </script>
 </body>
 </html>`;
@@ -393,6 +406,21 @@ Check your .env file — common causes:
 • Missing required env vars
 </pre>`);
   }
+});
+
+// ── Admin: Token Clear + Hard Restart ────────────────────────────────────────
+// POST /admin/reset  (requires API_SECRET)
+// Clears both Fyers & Zerodha tokens from disk/memory, then exits.
+// PM2 / nodemon auto-restarts the process — fresh SDK singletons, clean slate.
+// Use this whenever the Fyers socket enters a broken state mid-session (e.g.
+// EOD token clear without a server restart causes fyersDataSocket singleton
+// to hold a dead auth context that getInstance() keeps returning).
+app.post("/admin/reset", (req, res) => {
+  console.log("🔄 [ADMIN] Hard reset requested — clearing tokens & restarting...");
+  try { clearFyersToken(); }    catch (_) {}
+  try { zerodha.clearZerodhaToken(); } catch (_) {}
+  res.json({ success: true, message: "Tokens cleared. Server restarting now..." });
+  setTimeout(() => process.exit(0), 300); // brief delay so response flushes
 });
 
 // ── Global error handlers ─────────────────────────────────────────────────────
@@ -476,4 +504,3 @@ https.createServer(sslOptions, app).listen(PORT, HOST, () => {
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);
 });
-
