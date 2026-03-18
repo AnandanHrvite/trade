@@ -12,6 +12,11 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+// NOTE: fyersDataSocket.getInstance() is a singleton — it returns the same cached
+// instance regardless of the token passed, causing -15 "invalid token" after an
+// EOD token clear when the server keeps running overnight.
+// We destructure the class itself so we can call `new fyersDataSocket(...)` each
+// time _connect() runs, guaranteeing a fresh instance with the current token.
 const { fyersDataSocket } = require('fyers-api-v3');
 
 const HEARTBEAT_MS = 20_000;
@@ -77,7 +82,7 @@ class SocketManager {
     const token = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
     this._log(`📡 [SOCKET] Connecting... symbol: ${this._symbol}`);
 
-    const skt = fyersDataSocket.getInstance(token, './logs', true);
+    const skt = new fyersDataSocket(token, './logs', true);
 
     skt.on('connect', () => {
       if (this._stopped) { this._closeSocket(); return; }
