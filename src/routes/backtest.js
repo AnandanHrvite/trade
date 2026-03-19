@@ -36,7 +36,7 @@ router.get("/", async (req, res) => {
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
       </head><body>
 <div class="app-shell">
-${_sb('backtest',true)}
+${buildSidebar('backtest', true)}
 <div class="main-content">
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
         <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
@@ -169,7 +169,7 @@ ${_sb('backtest',true)}
 </head>
 <body>
 <div class="app-shell">
-${_sb('backtest', liveActive)}
+${buildSidebar('backtest', liveActive)}
 <div class="main-content">
 
 <div class="page">
@@ -497,7 +497,8 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,sans-serif;background:#080c14;color:#c8d0e0;min-height:100vh;}
-    .page{max-width:1200px;margin:0 auto;padding:28px 24px;}
+    ${sidebarCSS()}
+    .page{padding:28px 24px;}
     .card{background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:22px;margin-bottom:18px;}
     label{font-size:0.75rem;color:#4a6080;display:block;margin-bottom:4px;}
     input,select{background:#fff;border:1.5px solid #3b82f6;color:#0f172a;border-radius:7px;padding:7px 10px;font-size:0.83rem;color-scheme:light;cursor:pointer;}
