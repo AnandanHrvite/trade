@@ -2631,7 +2631,7 @@ router.get("/history", (req, res) => {
                   <th style="padding:10px 16px;text-align:left;font-size:0.65rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;font-weight:600;">Reason</th>
                 </tr>
               </thead>
-              <tbody style="font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+              <tbody style="font-family:'IBM Plex Mono',monospace;font-size:0.78rem;">
                 ${tradeRows}
               </tbody>
             </table>
@@ -2649,47 +2649,64 @@ router.get("/history", (req, res) => {
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:'Space Grotesk',sans-serif;background:#080c14;color:#c8d8f0;padding-bottom:60px;overflow-x:hidden;}
-    nav{display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:10;flex-wrap:wrap;gap:6px;}
-    nav .brand{font-size:1rem;font-weight:700;color:#fff;}nav .brand span{color:#3b82f6;}
-    nav a{font-size:0.78rem;color:#4a6080;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;}
-    nav a:hover{color:#c8d8f0;border-color:#1a2236;background:#1a2236;}
-    .page{max-width:1100px;margin:0 auto;padding:36px 24px;}
-    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:28px;}
-    .sc{background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:18px;}
-    .sc-label{font-size:0.68rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;margin-bottom:8px;}
-    .sc-val{font-size:1.4rem;font-weight:700;font-family:'JetBrains Mono',monospace;}
-    .section-title{font-size:0.73rem;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:#4a6080;margin-bottom:14px;display:flex;align-items:center;gap:10px;}
-    .section-title::after{content:'';flex:1;height:1px;background:#1a2236;}
-    tbody tr{border-top:1px solid #1a2236;}tbody tr:hover{background:#0d1726;}
-    tbody td{padding:11px 16px;}
-    @media (max-width:640px) {
-      nav { padding:8px 12px !important; flex-wrap:wrap; gap:6px; }
-      .page { padding:14px 12px !important; }
-      .stat-grid { grid-template-columns:1fr 1fr !important; gap:8px !important; }
-      .sc { padding:12px !important; }
-      .sc-val { font-size:1rem !important; }
-      tbody td { padding:8px 10px !important; font-size:0.72rem !important; }
+    body{font-family:'Inter',sans-serif;background:#060e06;color:#c0d8b0;overflow-x:hidden;}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+    @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
+    .top-nav{background:rgba(6,14,6,0.97);border-bottom:0.5px solid #0d1a0d;padding:8px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100;backdrop-filter:blur(8px);}
+    .tn-brand{display:flex;align-items:center;gap:10px;}
+    .tn-brand-lamp{width:30px;height:30px;background:#0f1f07;border:1px solid #1a3010;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;}
+    .tn-brand-text{font-size:0.8rem;font-weight:600;color:#a0c880;}
+    .tn-brand-text span{color:#7ab850;}
+    .tn-pill-nav{display:flex;background:#0a160a;border:0.5px solid #162416;border-radius:22px;padding:3px;gap:1px;}
+    .tn-pill{font-size:0.7rem;padding:5px 13px;border-radius:18px;color:#2a4020;cursor:pointer;transition:all 0.12s;font-weight:500;text-decoration:none;display:block;}
+    .tn-pill:hover{color:#6a9840;}
+    .tn-pill.active{background:#142a0a;color:#8cca50;font-weight:600;}
+    .tn-pill.disabled{color:#1a2a18;cursor:not-allowed;opacity:0.5;}
+    .tn-actions{display:flex;align-items:center;gap:6px;}
+    .tn-btn{font-size:0.68rem;font-weight:700;padding:5px 11px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;border:1px solid;transition:all 0.12s;background:transparent;}
+    .page{max-width:1100px;margin:0 auto;padding:22px 20px 60px;}
+    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:16px;}
+    .sc{background:#090f09;border:0.5px solid #162416;border-radius:8px;padding:12px 14px;position:relative;overflow:hidden;}
+    .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;background:var(--at,#1a3010);}
+    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#2a3a20;margin-bottom:5px;}
+    .sc-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c0d8b0;}
+    .section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#2a3a20;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+    .section-title::after{content:'';flex:1;height:0.5px;background:#162416;}
+    tbody tr{border-top:0.5px solid #0d1a0d;}tbody tr:hover{background:#0a100a;}
+    tbody td{padding:9px 14px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:#4a6040;}
+    @media(max-width:640px){
+      .top-nav{padding:8px 12px;flex-wrap:wrap;gap:8px;}
+      .tn-pill-nav{display:none;}
+      .page{padding:14px 12px 40px;}
+      .stat-grid{grid-template-columns:1fr 1fr;gap:7px;}
     }
   </style>
 </head>
 <body>
-<nav style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:100;gap:12px;">
-  <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#3b82f6;">Trading BOT</span></div>
-  <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
-    <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
+<nav class="top-nav">
+  <div class="tn-brand">
+    <div class="tn-brand-lamp">🪔</div>
+    <div class="tn-brand-text">Palani Andawar thunai — <span>Trading BOT</span></div>
+  </div>
+  <div class="tn-pill-nav">
+    <a href="/" class="tn-pill">⌂ Dashboard</a>
     ${sharedSocketState.getMode()==="LIVE_TRADE"
-      ? '<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 🔍 Backtest</span>'
-      : '<a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>'}
-    <a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>
-    <a href="/trade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔴 Live</a>
-    ${sharedSocketState.getMode()==="LIVE_TRADE" ? '<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>' : ""}
+      ? `<span class="tn-pill disabled">🔍 Backtest</span>`
+      : `<a href="/backtest" class="tn-pill">🔍 Backtest</a>`}
+    <a href="/paperTrade/status" class="tn-pill">📋 Paper</a>
+    <a href="/paperTrade/history" class="tn-pill active">📊 History</a>
+    <a href="/trade/status" class="tn-pill">🔴 Live</a>
+    <a href="/logs" class="tn-pill">📜 Logs</a>
+  </div>
+  <div class="tn-actions">
+    ${sharedSocketState.getMode()==="LIVE_TRADE" ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.65rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);border:0.5px solid rgba(239,68,68,0.3);padding:3px 8px;border-radius:4px;"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE</span>` : ""}
+    <a href="/paperTrade/status" class="tn-btn" style="border-color:#162416;color:#3a5030;">← Status</a>
   </div>
 </nav>
 <div class="page">
   <div style="margin-bottom:28px;">
-    <h1 style="font-size:1.5rem;font-weight:700;color:#fff;letter-spacing:-0.5px;">Paper Trade History</h1>
-    <p style="font-size:0.85rem;color:#4a6080;margin-top:6px;">${data.sessions.length} sessions · ${allTrades.length} total trades</p>
+    <h1 style="font-size:1.3rem;font-weight:700;color:#a0c880;letter-spacing:-0.3px;margin-bottom:6px;">Paper Trade History</h1>
+    <p style="font-size:0.72rem;color:#2a3a20;margin-top:2px;">${data.sessions.length} sessions · ${allTrades.length} total trades</p>
   </div>
 
   <div class="stat-grid">
@@ -2697,11 +2714,11 @@ router.get("/history", (req, res) => {
       <div class="sc-label">Starting Capital</div>
       <div class="sc-val" style="color:#fff;">${inr(getCapitalFromEnv())}</div>
     </div>
-    <div class="sc" style="border-top:2px solid ${pnlColor(data.capital - getCapitalFromEnv())};">
+    <div class="sc" style="--at:${(data.capital-getCapitalFromEnv())>=0?'#5a9030':'#8a2020'};">
       <div class="sc-label">Current Capital</div>
       <div class="sc-val" style="color:${pnlColor(data.capital - getCapitalFromEnv())};">${inr(data.capital)}</div>
     </div>
-    <div class="sc" style="border-top:2px solid ${pnlColor(data.totalPnl)};">
+    <div class="sc" style="--at:${data.totalPnl>=0?'#5a9030':'#8a2020'};">
       <div class="sc-label">Total PnL</div>
       <div class="sc-val" style="color:${pnlColor(data.totalPnl)};">${inr(data.totalPnl)}</div>
     </div>
@@ -2720,7 +2737,7 @@ router.get("/history", (req, res) => {
     </div>
   </div>
 
-  <div class="section-title">Sessions (newest first)</div>
+  <div class="section-title" style="margin-top:16px;">Sessions (newest first)</div>
   ${sessionCards}
 </div>
 </body>
