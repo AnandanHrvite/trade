@@ -1612,9 +1612,10 @@ router.get("/status", (req, res) => {
   <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#ef4444;">LIVE BOT</span></div>
   <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
-    <a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>
-    <a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>
+    <span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 🔍 Backtest</span>
+    <span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 📋 Paper</span>
     <a href="/trade/status" style="font-size:0.76rem;color:#ef4444;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #7f1d1d;background:#2d0a0a;white-space:nowrap;">🔴 Live</a>
+    ${tradeState.running ? '<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>LIVE ACTIVE</span>' : ""}
     ${pos ? `<button onclick="ltHandleExit(this)" style="cursor:pointer;font-family:inherit;font-size:0.76rem;color:#fca5a5;border:1px solid #7f1d1d;background:#1a0707;font-weight:700;padding:6px 12px;border-radius:6px;white-space:nowrap;">🚪 Exit Trade</button>` : ""}
     ${tradeState.running
       ? `<button onclick="ltHandleStop(this)" style="cursor:pointer;font-family:inherit;font-size:0.76rem;font-weight:700;color:#ef4444;background:#1a0707;border:1px solid #7f1d1d;padding:6px 14px;border-radius:6px;white-space:nowrap;">■ Stop</button>`

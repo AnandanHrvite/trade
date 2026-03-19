@@ -1856,9 +1856,12 @@ router.get("/status", (req, res) => {
   <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#3b82f6;">Trading BOT</span></div>
   <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
-    <a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>
+    ${sharedSocketState.getMode()==="LIVE_TRADE"
+      ? '<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 🔍 Backtest</span>'
+      : '<a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>'}
     <a href="/paperTrade/status" style="font-size:0.76rem;color:#f6ad55;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #744210;background:#2d1f00;white-space:nowrap;">📋 Paper</a>
     <a href="/trade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔴 Live</a>
+    ${sharedSocketState.getMode()==="LIVE_TRADE" ? '<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>' : ""}
     ${ptState.position ? `<button onclick="ptHandleExit(this)" style="cursor:pointer;font-family:inherit;font-size:0.76rem;color:#fca5a5;border:1px solid #7f1d1d;background:#1a0707;font-weight:700;padding:6px 12px;border-radius:6px;white-space:nowrap;">🚪 Exit Trade</button>` : ""}
     ${ptState.running
       ? `<button onclick="handleStop(this)" style="cursor:pointer;font-family:inherit;font-size:0.76rem;font-weight:700;color:#ef4444;background:#1a0707;border:1px solid #7f1d1d;padding:6px 14px;border-radius:6px;">⏹ Stop</button>`
@@ -2630,9 +2633,12 @@ router.get("/history", (req, res) => {
   <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#3b82f6;">Trading BOT</span></div>
   <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
     <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
-    <a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>
+    ${sharedSocketState.getMode()==="LIVE_TRADE"
+      ? '<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 🔍 Backtest</span>'
+      : '<a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>'}
     <a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>
     <a href="/trade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔴 Live</a>
+    ${sharedSocketState.getMode()==="LIVE_TRADE" ? '<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>' : ""}
   </div>
 </nav>
 <div class="page">

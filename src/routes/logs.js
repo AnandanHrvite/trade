@@ -11,6 +11,7 @@
 const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
+const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── SSE — live log stream ─────────────────────────────────────────────────────
 router.get("/stream", (req, res) => {
@@ -63,6 +64,14 @@ router.post("/clear", (req, res) => {
 
 // ── Logs UI page ──────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
+  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveBanner = liveActive
+    ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span>`
+    : "";
+  const disabledLink = (label) =>
+    `<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;cursor:not-allowed;opacity:0.38;">🔒 ${label}</span>`;
+  const btLink  = liveActive ? disabledLink("🔍 Backtest") : `<a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>`;
+  const ptLink  = liveActive ? disabledLink("📋 Paper")    : `<a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>`;
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -168,11 +177,13 @@ router.get("/", (req, res) => {
 <nav>
   <div class="brand">🪔 Palani Andawar thunai — <span>Trading BOT</span></div>
   <div class="nav-links">
-    <a href="/">Dashboard</a>
-    <a href="/backtest">🔍 Backtest</a>
-    <a href="/paperTrade/status">📋 Paper</a>
-    <a href="/trade/status">🔴 Live</a>
-    <a href="/logs" class="active">📜 Logs</a>
+    <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
+    ${btLink}
+    ${ptLink}
+    <a href="/trade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔴 Live</a>
+    <a href="/logs" class="active" style="font-size:0.76rem;color:#3b82f6;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #1d3b6e;background:#0a1e3d;white-space:nowrap;">📜 Logs</a>
+    ${liveBanner}
+    <style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>
   </div>
 </nav>
 

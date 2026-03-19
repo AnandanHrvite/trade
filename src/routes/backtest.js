@@ -3,13 +3,24 @@ const router  = express.Router();
 const { fetchCandles, runBacktest } = require("../services/backtestEngine");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
+const sharedSocketState = require("../utils/sharedSocketState");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
 const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
 
-// Shared nav used by all pages
-function buildNav(active) {
+// Shared nav used by all pages in this router.
+// liveActive=true → grey out Paper Trade and Backtest links to prevent
+// accidental clicks / logs while a live session is running.
+function buildNav(active, liveActive) {
+  const LIVE_BANNER = liveActive
+    ? `<div style="display:flex;align-items:center;gap:6px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;" title="Live trade is running">
+        <span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>
+        LIVE ACTIVE
+       </div>
+       <style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
+    : "";
+
   const pages = [
     ["dashboard",  "/",                   "Dashboard"],
     ["backtest",   "/backtest",            "🔍 Backtest"],
@@ -17,22 +28,55 @@ function buildNav(active) {
     ["live",       "/trade/status",        "🔴 Live"],
     ["logs",       "/logs",               "📜 Logs"],
   ];
+
+  const DISABLED_KEYS = liveActive ? ["backtest", "paper"] : [];
+
   const links = pages.map(([key, href, label]) => {
-    const on = key === active;
+    const on       = key === active;
+    const disabled = DISABLED_KEYS.includes(key);
+    if (disabled) {
+      return `<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;cursor:not-allowed;opacity:0.38;">🔒 ${label}</span>`;
+    }
     return `<a href="${href}" style="font-size:0.76rem;color:${on?"#3b82f6":"#6b7a99"};text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid ${on?"#1d3b6e":"transparent"};background:${on?"#0a1e3d":"transparent"};white-space:nowrap;">${label}</a>`;
   }).join("");
+
   return `<nav style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:100;gap:12px;">
   <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#3b82f6;">Trading BOT</span></div>
-  <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center;">${links}</div>
+  <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center;">${LIVE_BANNER}${links}</div>
 </nav>`;
 }
 
 router.get("/", async (req, res) => {
+  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
   const from       = req.query.from       || process.env.BACKTEST_FROM || "2024-01-01";
   const to         = req.query.to         || process.env.BACKTEST_TO   || "2024-12-31";
   const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "15";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
+
+  // Block backtest while live trade is running — would compete for Fyers API calls
+  // and pollute the log viewer with backtest noise during a live session.
+  if (liveActive) {
+    res.setHeader("Content-Type", "text/html");
+    return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+      <meta name="viewport" content="width=device-width,initial-scale=1"/>
+      <title>Backtest blocked — Live trade active</title>
+      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:system-ui,sans-serif;background:#080c14;color:#c8d8f0;min-height:100vh;display:flex;flex-direction:column;}</style>
+      </head><body>
+      ${buildNav("backtest", true)}
+      <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
+        <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
+          <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
+          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">Backtest blocked</h2>
+          <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
+            Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
+            Stop the live trade first, then run your backtest.
+          </p>
+          <a href="/trade/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+        </div>
+      </div>
+      </body></html>`);
+  }
 
   if (!process.env.ACCESS_TOKEN) {
     res.setHeader("Content-Type", "text/html");
@@ -148,7 +192,7 @@ router.get("/", async (req, res) => {
   </style>
 </head>
 <body>
-${buildNav("backtest")}
+${buildNav("backtest", liveActive)}
 
 <div class="page">
   <!-- Header -->
@@ -459,14 +503,14 @@ document.getElementById('btModal').addEventListener('click',function(e){
     console.error("Backtest error:", err.message, err.stack);
     // Re-render the backtest page with an inline error toast instead of navigating away.
     // User keeps their date/resolution settings and sees the error in the top-right corner.
-    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message);
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, err.message, liveActive);
     res.setHeader("Content-Type", "text/html");
     return res.status(200).send(errHtml);
   }
 });
 
-function buildBacktestPageWithToast(from, to, resolution, errMsg) {
-  const nav = buildNav("backtest");
+function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
+  const nav = buildNav("backtest", liveActive);
   const resOptions = ["1","3","5","15","30","60"].map(v =>
     `<option value="${v}"${String(v)===String(resolution)?" selected":""}>${v}-min</option>`).join("");
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
