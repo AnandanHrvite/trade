@@ -209,20 +209,23 @@ app.get("/", (req, res) => {
     .bt-strat { margin-left:auto; font-size:0.72rem; color:#3a5070; align-self:center; white-space:nowrap; }
     .bt-strat strong { color:#3b82f6; }
 
-    /* ── TRADE PANELS (Paper + Live) ── */
-    .trade-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:0; }
-    .tp { display:block; text-decoration:none; color:inherit; border-radius:12px; padding:20px 22px; border:1px solid; transition:filter 0.15s; }
-    .tp:hover { filter:brightness(1.1); }
-    .tp.paper { background:#06100a; border-color:#0d3018; }
-    .tp.live  { background:#120608; border-color:#3a1010; }
-    .tp-badge { font-size:0.52rem; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; margin-bottom:9px; }
-    .tp.paper .tp-badge { color:#2a5030; }
-    .tp.live  .tp-badge { color:#5a2020; }
-    .tp-path { font-family:'IBM Plex Mono',monospace; font-size:1.15rem; font-weight:600; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between; }
-    .tp.paper .tp-path { color:#c89828; }
-    .tp.live  .tp-path { color:#c84040; }
-    .tp-links { font-size:0.67rem; color:#2a4060; }
-    .tp-links span { color:#3a5878; }
+    /* ── TRADE STATUS PANELS ── */
+    .ts-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
+    .ts-cell { padding:12px 16px; border-right:1px solid #1a2236; }
+    .ts-cell:last-child { border-right:none; }
+    .ts-label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.4px; color:#3a5070; margin-bottom:5px; }
+    .ts-val { font-size:0.95rem; font-weight:700; color:#e0eaf8; }
+    .ts-val.pos { color:#4ade80; }
+    .ts-val.neg { color:#f87171; }
+    .ts-val.flat { color:#3a5070; }
+    .ts-sub { font-size:0.62rem; color:#3a5070; margin-top:2px; }
+    .ts-pos-bar { margin:10px 18px 0; padding:10px 14px; background:#0a0f14; border:1px solid #1a2a3a; border-radius:8px; display:flex; flex-wrap:wrap; gap:10px 24px; }
+    .ts-pos-item { font-size:0.68rem; color:#3a5878; }
+    .ts-pos-item strong { color:#a0c0e0; font-weight:600; }
+    .ts-pos-item.pnl-pos strong { color:#4ade80; }
+    .ts-pos-item.pnl-neg strong { color:#f87171; }
+    .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
+    @media (max-width:640px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
     /* ── ACTIVE CONFIGURATION ── */
     .cfg-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0; }
@@ -243,7 +246,7 @@ app.get("/", (req, res) => {
       .nav-links a { font-size:0.7rem; padding:5px 8px; }
       .page { padding:14px 12px 40px; gap:10px; }
       .broker-grid { grid-template-columns:1fr; }
-      .trade-grid  { grid-template-columns:1fr; }
+      .ts-grid     { grid-template-columns:1fr 1fr; }
       .cfg-grid    { grid-template-columns:1fr 1fr; }
       .cfg-cell    { border-right:none; border-bottom:1px solid #1a2236; }
       .cfg-cell:nth-child(odd) { border-right:1px solid #1a2236; }
@@ -343,21 +346,36 @@ app.get("/", (req, res) => {
     </div>
   </div>
 
-  <!-- ③ PAPER TRADE + ④ LIVE TRADE -->
-  <div class="trade-grid">
+  <!-- ③ PAPER TRADE STATUS -->
+  <div class="card" id="paper-status-card">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">📋</span>
+        <span class="card-hdr-title">Paper Trade</span>
+        <span id="paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
+        <span id="paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
+      </div>
+      <a href="/paperTrade/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
+    </div>
+    <div id="paper-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
+    </div>
+  </div>
 
-    <a href="/paperTrade/status" class="tp paper">
-      <div class="tp-badge">📋 Paper Trading · Fyers Data · Simulated Orders</div>
-      <div class="tp-path">Paper Trade <span style="opacity:0.3;">→</span></div>
-      <div class="tp-links"><span>Start/stop</span> · Position · Unrealised PnL · Capital · Session log</div>
-    </a>
-
-    <a href="/trade/status" class="tp live">
-      <div class="tp-badge">🔴 Live Trading · Fyers + Zerodha · Real Orders</div>
-      <div class="tp-path">Live Trade <span style="opacity:0.3;">→</span></div>
-      <div class="tp-links"><span>Start/stop</span> · Position · Option premium PnL · Activity log</div>
-    </a>
-
+  <!-- ④ LIVE TRADE STATUS -->
+  <div class="card" id="live-status-card">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">🔴</span>
+        <span class="card-hdr-title">Live Trade</span>
+        <span id="live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
+        <span id="live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
+      </div>
+      <a href="/trade/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
+    </div>
+    <div id="live-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
+    </div>
   </div>
 
   <!-- ⑤ ACTIVE CONFIGURATION -->
@@ -404,6 +422,84 @@ function runBT(){
   if(f>=t){alert('From must be before To');return;}
   window.open('/backtest?from='+f+'&to='+t+'&resolution='+r,'_blank');
 }
+// ── Dashboard: Paper & Live trade status panels ──────────────────────────────
+function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
+function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
+
+function renderPaperStatus(d){
+  var rb=document.getElementById('paper-run-badge'), sb=document.getElementById('paper-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry Spot <strong>\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\u20b9'+p.optionEntryLtp+'</strong></span>':'')
+      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Unrealised <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\u20b9'+p.stopLoss+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  var capital=d.capital!=null?'\u20b9'+parseFloat(d.capital).toFixed(0):'—';
+  document.getElementById('paper-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Unrealised PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">'+(d.pnlSource||'—')+'</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Capital</div><div class="ts-val">'+capital+'</div><div class="ts-sub">Simulated</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Total PnL (all-time)</div><div class="ts-val '+fmtPnl(d.totalPnl).cls+'">'+fmtPnl(d.totalPnl).txt+'</div><div class="ts-sub">From saved data</div></div>'
+    +'</div>'
+    +posHtml;
+}
+
+function renderLiveStatus(d){
+  var rb=document.getElementById('live-run-badge'), sb=document.getElementById('live-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry Spot <strong>\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\u20b9'+p.optionEntryLtp+'</strong></span>':'')
+      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Opt Premium PnL <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\u20b9'+p.stopLoss+'</strong></span>':'')
+      +(p.orderId?'<span class="ts-pos-item">Order <strong>'+p.orderId+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  var fyers=d.fyersOk?'<span style="color:#4ade80;">●</span> Fyers':'<span style="color:#f87171;">●</span> Fyers';
+  var zerodha=d.zerodhaOk?'<span style="color:#4ade80;">●</span> Zerodha':'<span style="color:#f87171;">●</span> Zerodha';
+  document.getElementById('live-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val" style="font-size:0.75rem;">'+fyers+' &nbsp; '+zerodha+'</div><div class="ts-sub">Broker connections</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Ticks / Candles</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">This session</div></div>'
+    +'</div>'
+    +posHtml;
+}
+
+async function pollDashboardStatus(){
+  try {
+    var pr = await fetch('/paperTrade/status/data',{cache:'no-store'});
+    if(pr.ok){ var pd=await pr.json(); renderPaperStatus(pd); }
+  } catch(e){}
+  try {
+    var lr = await fetch('/trade/status/data',{cache:'no-store'});
+    if(lr.ok){ var ld=await lr.json(); renderLiveStatus(ld); }
+  } catch(e){}
+}
+pollDashboardStatus();
+setInterval(pollDashboardStatus, 4000);
+// ─────────────────────────────────────────────────────────────────────────────
+
 function hardReset(){
   if(!confirm('Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.')) return;
   var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
