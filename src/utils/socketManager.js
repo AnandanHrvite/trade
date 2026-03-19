@@ -1,22 +1,19 @@
 /**
- * socketManager.js — FINAL ARCHITECTURE
+ * socketManager.js
  * ─────────────────────────────────────────────────────────────────────────────
- * ONE permanent WebSocket → NSE:NIFTY50-INDEX only. NEVER reconnected.
+ * ONE permanent WebSocket → NSE:NIFTY50-INDEX only.
  * Option LTP → Fyers REST API polled every 3 seconds. No socket changes.
  *
- * Why this is better:
- *   - Fyers SDK singleton can only reliably handle ONE stable connection
- *   - Adding/removing symbols forces a reconnect = ticks drop = bugs
- *   - REST getQuotes() is perfectly fast enough for option premium display
- *   - SL logic runs on spot ticks = uninterrupted forever
+ * FIX: Fyers SDK enforces a hard singleton — calling `new fyersDataSocket()`
+ * more than once throws "Only one instance of DataSocket is allowed."
+ * The old workaround of using `new` on every reconnect broke in the current
+ * SDK version. The correct approach:
+ *   - Create the SDK instance ONCE per process lifetime (first connect)
+ *   - On every reconnect: reuse the same instance, just call connect() again
+ *   - Only null the instance reference when the process/session fully ends
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-// NOTE: fyersDataSocket.getInstance() is a singleton — it returns the same cached
-// instance regardless of the token passed, causing -15 "invalid token" after an
-// EOD token clear when the server keeps running overnight.
-// We destructure the class itself so we can call `new fyersDataSocket(...)` each
-// time _connect() runs, guaranteeing a fresh instance with the current token.
 const { fyersDataSocket } = require('fyers-api-v3');
 
 const HEARTBEAT_MS = 20_000;
@@ -28,7 +25,7 @@ class SocketManager {
     this._symbol     = null;
     this._onSpotTick = null;
     this._onLog      = null;
-    this._skt        = null;
+    this._skt        = null;   // SDK instance — created once, reused on reconnects
     this._stopped    = true;
     this._retryCount = 0;
     this._retryTimer = null;
@@ -38,7 +35,6 @@ class SocketManager {
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
-  /** Start permanent NIFTY spot socket. Call once per session. */
   start(spotSymbol, onSpotTick, onLog) {
     this._symbol     = spotSymbol;
     this._onSpotTick = onSpotTick;
@@ -49,14 +45,15 @@ class SocketManager {
     this._startWatchdog();
   }
 
-  /** Stop everything — call on session stop. */
   stop() {
-    this._stopped = true;
-    this._onSpotTick = null;  // ← clear callback FIRST — prevents any residual/SDK-internal
-                               //   ticks from reaching onTick() even if Fyers SDK reconnects
+    this._stopped    = true;
+    this._onSpotTick = null;  // clear callback FIRST — prevents residual ticks reaching onTick()
     this._clearRetry();
     this._clearWatchdog();
-    this._closeSocket();
+    this._detachListeners();
+    this._closeConnection();
+    // Null the instance ONLY here so the next session can create a fresh one.
+    this._skt = null;
     this._log('🔴 [SOCKET] Stopped');
   }
 
@@ -67,25 +64,54 @@ class SocketManager {
     else console.log(msg);
   }
 
-  _closeSocket() {
+  _detachListeners() {
     if (this._skt) {
       try { this._skt.removeAllListeners(); } catch (_) {}
-      try { this._skt.close(); }             catch (_) {}
-      this._skt = null;
+    }
+  }
+
+  _closeConnection() {
+    if (this._skt) {
+      try { this._skt.close(); } catch (_) {}
+      // NOTE: Do NOT set this._skt = null here.
+      // The Fyers SDK is a hard singleton. We keep the reference so _connect()
+      // can call skt.connect() on the existing instance instead of re-instantiating.
     }
   }
 
   _connect() {
     if (this._stopped) return;
-    this._closeSocket();
+
+    // Remove stale listeners before re-attaching (prevents duplicate handlers on reconnect)
+    this._detachListeners();
+    this._closeConnection();
 
     const token = `${process.env.APP_ID}:${process.env.ACCESS_TOKEN}`;
     this._log(`📡 [SOCKET] Connecting... symbol: ${this._symbol}`);
 
-    const skt = new fyersDataSocket(token, './logs', true);
+    // Acquire SDK instance:
+    // - First connect this session → create via `new`
+    // - All reconnects → reuse the same instance (re-creating throws)
+    if (!this._skt) {
+      try {
+        this._skt = new fyersDataSocket(token, './logs', true);
+      } catch (err) {
+        // SDK singleton already exists from a prior session in this process.
+        this._log(`⚠️  [SOCKET] SDK singleton exists — using getInstance()`);
+        try {
+          this._skt = fyersDataSocket.getInstance();
+        } catch (e2) {
+          this._log(`❌ [SOCKET] Cannot acquire SDK instance: ${e2.message}`);
+          this._scheduleReconnect();
+          return;
+        }
+      }
+    }
+
+    const skt = this._skt;
 
     skt.on('connect', () => {
-      if (this._stopped) { this._closeSocket(); return; }
+      if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
       this._retryCount = 0;
       this._lastTickAt = Date.now();
       this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
@@ -94,7 +120,7 @@ class SocketManager {
     });
 
     skt.on('message', (msg) => {
-      if (this._stopped) return;                    // ← guard: drop ticks after stop() is called
+      if (this._stopped) return;
       this._lastTickAt = Date.now();
       const ticks = Array.isArray(msg) ? msg : [msg];
       ticks.forEach(t => { if (t && t.ltp && this._onSpotTick) this._onSpotTick(t); });
@@ -106,12 +132,11 @@ class SocketManager {
 
     skt.on('close', () => {
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
-      this._skt = null;
+      // NOTE: Do NOT set this._skt = null here — we need it for the reconnect.
       if (!this._stopped) this._scheduleReconnect();
     });
 
     skt.connect();
-    this._skt = skt;
   }
 
   _scheduleReconnect() {
