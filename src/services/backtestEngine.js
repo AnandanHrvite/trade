@@ -45,15 +45,30 @@ function toIST(unixSec) {
   return new Date(unixSec * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 }
 
-/** Get IST date string "YYYY-MM-DD" from unix seconds */
+/** Get IST date string "YYYY-MM-DD" from unix seconds — memoized by timestamp */
+const _istDateCache = new Map();
 function getISTDateStr(unixSec) {
-  return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  let v = _istDateCache.get(unixSec);
+  if (v === undefined) {
+    v = new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    // Cap cache at 2000 entries (one backtest run ≈ 400–4000 candles)
+    if (_istDateCache.size > 2000) _istDateCache.clear();
+    _istDateCache.set(unixSec, v);
+  }
+  return v;
 }
 
-/** Get IST hour*60+min from unix seconds */
+/** Get IST hour*60+min from unix seconds — memoized by timestamp */
+const _istHHMMCache = new Map();
 function getISTHHMM(unixSec) {
-  const d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  return d.getHours() * 60 + d.getMinutes();
+  let v = _istHHMMCache.get(unixSec);
+  if (v === undefined) {
+    const d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    v = d.getHours() * 60 + d.getMinutes();
+    if (_istHHMMCache.size > 2000) _istHHMMCache.clear();
+    _istHHMMCache.set(unixSec, v);
+  }
+  return v;
 }
 
 /**
@@ -100,6 +115,10 @@ function runBacktest(candles, strategy, capital) {
   // once the trade is +15pt in favour. Lowered from 50pt so partial gains are protected.
   const TRAIL_GAP_PTS      = parseFloat(process.env.TRAIL_GAP_PTS      || "60");
   const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+
+  // Clear IST memoization caches so back-to-back backtests don't cross-pollute
+  _istDateCache.clear();
+  _istHHMMCache.clear();
 
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();

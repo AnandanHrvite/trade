@@ -26,6 +26,26 @@ const socketManager = require("../utils/socketManager"); // ← robust socket wr
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
 
+// ── Trail tier config — cached at module load (never changes at runtime) ─────
+// getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
+// Pre-reading these once eliminates 750+ env reads/min when in position.
+const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
+const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
+const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
+const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+
+// ── EOD stop time — cached at module load ─────────────────────────────────────
+// parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
+const _STOP_MINS = (function() {
+  const raw = process.env.TRADE_STOP_TIME || "15:30";
+  const [h, m] = raw.split(":").map(Number);
+  return h * 60 + (isNaN(m) ? 0 : m);
+})();
+
 // ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
 // Called on every NIFTY tick (100-200/min). Creates a Date object each call.
 // Cache for 60 seconds — market hours don't change tick-to-tick.
@@ -324,7 +344,7 @@ function startOptionPolling(symbol) {
         );
       }
     }
-  }, 1000); // reduced from 3000ms — tighter SL monitoring
+  }, 1000); // 1000ms — tight option LTP SL monitoring (primary spot SL fires every tick)
 }
 
 function stopOptionPolling() {
@@ -534,7 +554,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // If session loss exceeds MAX_DAILY_LOSS (set in .env, default ₹5000),
   // latch _dailyLossHit = true and block ALL new entries for the rest of the day.
   // This is a hard stop — consecutive-loss pause does NOT clear it. Only session restart resets it.
-  const MAX_DAILY_LOSS = parseFloat(process.env.MAX_DAILY_LOSS || '5000');
+  const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
   if (!ptState._dailyLossHit && ptState.sessionPnl <= -Math.abs(MAX_DAILY_LOSS)) {
     ptState._dailyLossHit = true;
     log(`🛑 [PAPER] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(ptState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
@@ -800,7 +820,7 @@ async function onCandleClose(candle) {
     // Set _entryPending BEFORE the async call so that ticks arriving while symbol lookup
     // is in-flight do not fire a second entry.
     ptState._entryPending = true;
-    setTimeout(() => { if (ptState._entryPending) ptState._entryPending = false; }, 4000) // reduced from 10000ms;
+    const _ptEntryTimer = setTimeout(() => { if (ptState._entryPending) ptState._entryPending = false; }, 4000);
 
     let symbolPromise;
     if (INSTR === "NIFTY_FUTURES") {
@@ -817,7 +837,7 @@ async function onCandleClose(candle) {
     }
 
     symbolPromise.then(({ symbol, expiry, strike, invalid }) => {
-      if (ptState.position) { ptState._entryPending = false; return; } // already entered by tick
+      if (ptState.position) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; } // already entered by tick
       if (INSTR === "NIFTY_FUTURES") {
         log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${candle.close} | ${reason}`);
         log(`📌 Futures symbol: ${symbol}`);
@@ -829,13 +849,16 @@ async function onCandleClose(candle) {
       if (invalid) {
         log(`❌ [PAPER] Cannot enter — symbol ${symbol} invalid on Fyers (next week not live yet). Skipping trade.`);
         ptState._entryPending = false;
+        clearTimeout(_ptEntryTimer);
         return;
       }
       simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close);
       ptState._entryPending = false;
+      clearTimeout(_ptEntryTimer);
     }).catch(err => {
       log(`❌ [PAPER] Symbol validation error: ${err.message}. Skipping trade.`);
       ptState._entryPending = false;
+      clearTimeout(_ptEntryTimer);
     });
   }
 }
@@ -861,15 +884,11 @@ async function onCandleClose(candle) {
 //   30pt late:  After 70pt move, tighten hard — don't give back more than ~30pt
 //
 function getDynamicTrailGap(moveInFavour) {
-  const T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
-  const T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
-  const T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
-  const T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
-  const T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
-
-  if (moveInFavour < T1_UPTO) return T1_GAP;   // 15–40pt:  60pt gap
-  if (moveInFavour < T2_UPTO) return T2_GAP;   // 40–70pt:  40pt gap
-  return T3_GAP;                                 // 70pt+:    30pt gap
+  // Uses module-level cached constants (parsed once at startup) instead of
+  // reading process.env on every tick — eliminates 750+ env reads/min.
+  if (moveInFavour < _TRAIL_T1_UPTO) return _TRAIL_T1_GAP;
+  if (moveInFavour < _TRAIL_T2_UPTO) return _TRAIL_T2_GAP;
+  return _TRAIL_T3_GAP;
 }
 
 // ── Tick → candle builder (NIFTY SPOT ONLY) ──────────────────────────────────────────
@@ -982,7 +1001,7 @@ function onTick(tick) {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
-      setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
+      const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
       log(`⚡ [PAPER] Intra-candle STRONG entry @ ₹${ltp} | [${TRADE_RES}m bar] ${reason}`);
       const INSTR = INSTRUMENT; // top-level constant — no inline require needed
 
@@ -1001,7 +1020,7 @@ function onTick(tick) {
       }
 
       symbolPromise.then(({ symbol, expiry, strike, invalid }) => {
-        if (ptState.position) { ptState._entryPending = false; return; } // already entered
+        if (ptState.position) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; } // already entered
         if (INSTR === "NIFTY_FUTURES") {
           log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${ltp} | ${reason}`);
           log(`📌 Futures symbol: ${symbol}`);
@@ -1013,13 +1032,16 @@ function onTick(tick) {
         if (invalid) {
           log(`❌ [PAPER] Cannot enter — symbol ${symbol} invalid on Fyers. Skipping.`);
           ptState._entryPending = false;
+          clearTimeout(_ptIntraTimer);
           return;
         }
         simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true); // isIntraCandle=true
         ptState._entryPending = false;
+        clearTimeout(_ptIntraTimer);
       }).catch(err => {
         log(`❌ [PAPER] Symbol lookup error: ${err.message}`);
         ptState._entryPending = false;
+        clearTimeout(_ptIntraTimer);
       });
     }
     } // end SL-hit candle guard
@@ -1045,14 +1067,14 @@ function onTick(tick) {
     // Gap is NOT fixed — it shrinks in tiers as moveInFavour increases.
     // See getDynamicTrailGap() above for tier values and rationale.
     // 50% rule floor/ceiling still applies as before — never moves SL into loss.
-    const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+    const TRAIL_ACTIVATE_PTS = _TRAIL_ACTIVATE_PTS;
 
     if (pos.side === "CE") {
       // For CE: profit when price goes UP. Track highest ltp seen.
       const prevBestCE = pos.bestPrice;
       if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.bestPrice - pos.spotAtEntry;
-      if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
+      if (moveInFavour >= _TRAIL_ACTIVATE_PTS) {
         const dynamicGap = getDynamicTrailGap(moveInFavour);
         const trailSL    = parseFloat((pos.bestPrice - dynamicGap).toFixed(2));
         // 50% rule floor: cap trail at entryPrevMid until trail rises above it naturally.
@@ -1064,19 +1086,25 @@ function onTick(tick) {
           const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
-          log(`📈 [PAPER] Trail CE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          log(`📈 [PAPER] Trail CE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestCE) {
-        const needed = parseFloat((TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
-        log(`⏳ [PAPER] Trail CE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
+        // Throttle "waiting" log to once per candle to avoid flooding the log buffer.
+        // Previously fired on every tick where bestPrice moved (~150 times/min).
+        const _curBarTime = ptState.currentBar ? ptState.currentBar.time : 0;
+        if (!pos._trailWaitLoggedAt || pos._trailWaitLoggedAt !== _curBarTime) {
+          pos._trailWaitLoggedAt = _curBarTime;
+          const needed = parseFloat((_TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
+          log(`⏳ [PAPER] Trail CE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
+        }
       }
     } else {
       // For PE: profit when price goes DOWN. Track lowest ltp seen.
       const prevBestPE = pos.bestPrice;
       if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp;
       const moveInFavour = pos.spotAtEntry - pos.bestPrice;
-      if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
+      if (moveInFavour >= _TRAIL_ACTIVATE_PTS) {
         const dynamicGap = getDynamicTrailGap(moveInFavour);
         const trailSL    = parseFloat((pos.bestPrice + dynamicGap).toFixed(2));
         // 50% rule ceiling: cap trail at entryPrevMid until trail falls below it naturally.
@@ -1088,12 +1116,17 @@ function onTick(tick) {
           const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
-          log(`📉 [PAPER] Trail PE [T${moveInFavour<(parseFloat(process.env.TRAIL_TIER1_UPTO||40))?1:moveInFavour<(parseFloat(process.env.TRAIL_TIER2_UPTO||70))?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          log(`📉 [PAPER] Trail PE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestPE) {
-        const needed = parseFloat((TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
-        log(`⏳ [PAPER] Trail PE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
+        // Throttle "waiting" log to once per candle (same fix as CE above).
+        const _curBarTime = ptState.currentBar ? ptState.currentBar.time : 0;
+        if (!pos._trailWaitLoggedAt || pos._trailWaitLoggedAt !== _curBarTime) {
+          pos._trailWaitLoggedAt = _curBarTime;
+          const needed = parseFloat((_TRAIL_ACTIVATE_PTS - moveInFavour).toFixed(1));
+          log(`⏳ [PAPER] Trail PE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate`);
+        }
       }
     }
 
