@@ -72,13 +72,6 @@ app.get("/", (req, res) => {
   const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
   const activeStrategyName = getActiveStrategy().NAME;
 
-  // Backtest default date range — last 30 days to yesterday
-  const todayIST     = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const yesterdayIST = new Date(todayIST); yesterdayIST.setDate(todayIST.getDate() - 1);
-  const monthAgoIST  = new Date(todayIST); monthAgoIST.setDate(todayIST.getDate() - 30);
-  const backtestTo   = yesterdayIST.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  const backtestFrom = monthAgoIST.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-
   // ── Token expiry warning ─────────────────────────────────────────────────
   const nowIST     = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const istHour    = nowIST.getHours();
@@ -87,18 +80,12 @@ app.get("/", (req, res) => {
   const pastExpiry = istHour >= 6 && istHour < 9;   // 6:00–8:59 AM: already expired
 
   const zerodhaExpiryHtml = zerodhaOk && pastExpiry
-    ? `<div style="margin-top:8px;padding:8px 12px;background:#2d1800;border:1px solid #c05621;border-radius:6px;font-size:0.75rem;color:#f6ad55;">
-        ⚠️ <strong>Token expired at 6 AM.</strong> Please re-login with Zerodha before starting live trading.
-       </div>`
+    ? `⚠️ <strong>Token expired at 6 AM.</strong> Please re-login with Zerodha before starting live trading.`
     : zerodhaOk && nearExpiry
-    ? `<div style="margin-top:8px;padding:8px 12px;background:#2d1800;border:1px solid #744210;border-radius:6px;font-size:0.75rem;color:#fbd38d;">
-        ⏰ <strong>Token expires at 6 AM</strong> — Re-login now if you plan to trade after 6 AM.
-       </div>`
+    ? `⏰ <strong>Token expires at 6 AM</strong> — Re-login now if you plan to trade after 6 AM.`
     : zerodhaOk
-    ? `<div style="margin-top:8px;padding:6px 10px;background:#080d14;border:1px solid #1a3050;border-radius:6px;font-size:0.72rem;color:#4a7090;">
-        ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.
-       </div>`
-    : "";
+    ? `ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.`
+    : ``;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -132,46 +119,95 @@ app.get("/", (req, res) => {
     .card-hdr-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.8px; color:#4a6080; }
     .card-body { padding:16px 18px; }
 
-    /* ── BROKER GRID ── */
-    .broker-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    .bk { border-radius:9px; padding:14px 16px; border:1px solid; }
-    .bk.ok-green  { background:#06100a; border-color:#0d3a18; }
-    .bk.err-red   { background:#120609; border-color:#3a0d12; }
-    .bk.ok-blue   { background:#060c18; border-color:#0d2040; }
-    .bk.no-conf   { background:#0c0c14; border-color:#252540; }
-    .bk-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-    .bk-name { font-size:0.88rem; font-weight:700; color:#e0eaf8; }
-    .bk-badge { font-size:0.52rem; font-weight:700; padding:2px 7px; border-radius:3px; text-transform:uppercase; letter-spacing:0.8px; }
-    .bk-badge.ok-g  { background:#072014; border:1px solid #0e4020; color:#34d399; }
-    .bk-badge.ok-b  { background:#071428; border:1px solid #0e2850; color:#60a5fa; }
-    .bk-badge.err   { background:#200710; border:1px solid #400e20; color:#f87171; }
-    .bk-desc { font-size:0.67rem; color:#3a5070; line-height:1.5; margin-bottom:10px; }
-    .bk-btn { display:flex; align-items:center; justify-content:space-between; padding:7px 11px; border-radius:7px; font-size:0.75rem; font-weight:600; text-decoration:none; cursor:pointer; font-family:inherit; border:1px solid; width:100%; }
-    .bk-btn.g { background:#06180e; border-color:#0a3018; color:#34d399; }
-    .bk-btn.b { background:#0a1e3d; border-color:#1d3b6e; color:#fff; text-align:center; justify-content:center; }
-    .bk-relogin { font-size:0.62rem; color:#2a4060; }
-
-    /* ── BACKTEST BAR ── */
-    .bt-bar { display:flex; align-items:flex-end; gap:12px; flex-wrap:wrap; padding:16px 18px; }
-    .bt-f { display:flex; flex-direction:column; gap:3px; }
-    .bt-f label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; color:#3a5070; }
-    .bt-f input, .bt-f select {
-      background:#fff;
-      border:1.5px solid #3b82f6;
-      color:#0f172a;
-      padding:5px 8px;
-      border-radius:6px;
-      font-size:0.78rem;
-      font-family:'IBM Plex Mono',monospace;
-      outline:none;
-      cursor:pointer;
-      color-scheme:light;
+    /* ── BROKER CONNECTIONS — redesigned ── */
+    .broker-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .broker-card {
+      position:relative; border-radius:12px; padding:20px 22px 18px;
+      border:1px solid; overflow:hidden; transition:border-color 0.2s;
     }
-    .bt-f input:focus, .bt-f select:focus { border-color:#2563eb; }
-    .bt-run { background:#3b82f6; border:none; color:#fff; padding:7px 18px; border-radius:7px; font-size:0.8rem; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap; align-self:flex-end; transition:background 0.15s; }
-    .bt-run:hover { background:#2563eb; }
-    .bt-strat { margin-left:auto; font-size:0.72rem; color:#3a5070; align-self:center; white-space:nowrap; }
-    .bt-strat strong { color:#3b82f6; }
+    .broker-card::before {
+      content:''; position:absolute; inset:0; opacity:0.04;
+      background:repeating-linear-gradient(45deg,currentColor 0,currentColor 1px,transparent 0,transparent 50%);
+      background-size:8px 8px; pointer-events:none;
+    }
+    .broker-card.connected-green { background:#04100a; border-color:#0d3a1e; color:#10b981; }
+    .broker-card.connected-blue  { background:#030b18; border-color:#0d2545; color:#3b82f6; }
+    .broker-card.error-state     { background:#100408; border-color:#3a0f1c; color:#ef4444; }
+    .broker-card.no-config       { background:#0a0a12; border-color:#1e1e36; color:#4a5878; }
+
+    .broker-card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+    .broker-identity { display:flex; align-items:center; gap:10px; }
+    .broker-logo { width:36px; height:36px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:1.1rem; flex-shrink:0; }
+    .broker-logo.fyers-logo  { background:#0d2a14; border:1px solid #0e4020; }
+    .broker-logo.zerodha-logo { background:#0e0a28; border:1px solid #1e1550; }
+    .broker-name-wrap { }
+    .broker-name { font-size:1rem; font-weight:700; color:#e0eaf8; letter-spacing:-0.2px; }
+    .broker-role { font-size:0.62rem; color:#3a5070; margin-top:1px; }
+    .broker-status-pill {
+      display:inline-flex; align-items:center; gap:5px;
+      font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+      padding:3px 9px; border-radius:20px; border:1px solid;
+    }
+    .broker-status-pill.ok-green { background:#071e0f; border-color:#0e4020; color:#34d399; }
+    .broker-status-pill.ok-blue  { background:#07112e; border-color:#0e2860; color:#60a5fa; }
+    .broker-status-pill.err      { background:#1c0610; border-color:#500e20; color:#f87171; }
+    .broker-status-pill.grey     { background:#0e0e1e; border-color:#2a2a48; color:#4a5878; }
+    .broker-status-dot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+    .broker-status-dot.pulse { animation:pulse 1.5s infinite; }
+
+    .broker-meta { font-size:0.66rem; color:#3a5070; line-height:1.6; margin-bottom:14px; }
+    .broker-meta .tag {
+      display:inline-block; font-size:0.57rem; font-weight:600; text-transform:uppercase;
+      letter-spacing:0.8px; padding:1px 6px; border-radius:3px; margin-right:4px;
+      background:#0e1828; border:1px solid #1a2a40; color:#3a5878;
+    }
+
+    .broker-action { }
+    .broker-connected-bar {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 12px; border-radius:8px; font-size:0.78rem; font-weight:600;
+    }
+    .broker-connected-bar.green { background:#071e0f; border:1px solid #0e3018; color:#34d399; }
+    .broker-connected-bar.blue  { background:#07112e; border:1px solid #0e2045; color:#60a5fa; }
+    .broker-connected-bar .relogin-link {
+      font-size:0.65rem; font-weight:500; color:#2a4060;
+      text-decoration:none; transition:color 0.15s;
+    }
+    .broker-connected-bar .relogin-link:hover { color:#60a5fa; }
+    .broker-login-btn {
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      width:100%; padding:9px 16px; border-radius:8px; font-size:0.8rem;
+      font-weight:700; text-decoration:none; cursor:pointer; font-family:inherit;
+      border:1px solid; transition:filter 0.15s; letter-spacing:0.2px;
+    }
+    .broker-login-btn:hover { filter:brightness(1.15); }
+    .broker-login-btn.fyers-btn  { background:#0d3a18; border-color:#1a6030; color:#fff; }
+    .broker-login-btn.zerodha-btn{ background:#1a4a8a; border-color:#2a6aaa; color:#fff; }
+    .broker-no-config {
+      padding:9px 12px; border-radius:8px; font-size:0.7rem; color:#3a4060;
+      background:#0c0c18; border:1px dashed #252550; text-align:center;
+    }
+    .broker-no-config code { color:#6070a0; font-family:monospace; }
+    .broker-expiry-warn {
+      margin-top:10px; padding:7px 10px; border-radius:7px; font-size:0.7rem; line-height:1.5;
+    }
+    .broker-expiry-warn.expired  { background:#2d1600; border:1px solid #c05621; color:#f6ad55; }
+    .broker-expiry-warn.expiring { background:#2a1600; border:1px solid #744210; color:#fbd38d; }
+    .broker-expiry-warn.valid    { background:#070d14; border:1px solid #1a3050; color:#4a7090; }
+
+    .broker-divider { margin:14px 0 12px; height:1px; background:#1a2236; }
+    .hard-reset-row { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+    .hard-reset-hint { font-size:0.64rem; color:#2a3a52; line-height:1.5; }
+    .hard-reset-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      background:#150608; border:1px solid #5a1010; color:#f87171;
+      padding:6px 14px; border-radius:7px; font-size:0.73rem; font-weight:600;
+      cursor:pointer; font-family:inherit; white-space:nowrap; transition:background 0.15s;
+      flex-shrink:0;
+    }
+    .hard-reset-btn:hover { background:#2d0a0a; border-color:#ef4444; }
+
+    @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
 
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
@@ -215,9 +251,7 @@ app.get("/", (req, res) => {
       .cfg-cell    { border-right:none; border-bottom:1px solid #1a2236; }
       .cfg-cell:nth-child(odd) { border-right:1px solid #1a2236; }
       .cfg-cell:last-child { border-bottom:none; }
-      .bt-bar { flex-direction:column; align-items:stretch; }
-      .bt-strat { margin-left:0; text-align:center; }
-      .bt-run { align-self:flex-start; }
+      .bt-bar { display:none; } /* backtest removed */
     }
   </style>
 </head>
@@ -241,7 +275,7 @@ app.get("/", (req, res) => {
 
 <div class="page">
 
-  <!-- ① BROKER CONNECTIONS -->
+  <!-- ① BROKER CONNECTIONS — redesigned -->
   <div class="card">
     <div class="card-hdr">
       <span class="card-hdr-icon">🔌</span>
@@ -250,63 +284,78 @@ app.get("/", (req, res) => {
     <div class="card-body">
       <div class="broker-grid">
 
-        <div class="bk ${fyersOk ? 'ok-green' : 'err-red'}">
-          <div class="bk-top">
-            <span style="font-size:1.1rem;">📊</span>
-            <span class="bk-name">Fyers</span>
-            <span class="bk-badge ${fyersOk ? 'ok-g' : 'err'}">${fyersOk ? 'CONNECTED' : 'DISCONNECTED'}</span>
+        <!-- Fyers Card -->
+        <div class="broker-card ${fyersOk ? 'connected-green' : 'error-state'}">
+          <div class="broker-card-top">
+            <div class="broker-identity">
+              <div class="broker-logo fyers-logo">📊</div>
+              <div class="broker-name-wrap">
+                <div class="broker-name">Fyers</div>
+                <div class="broker-role">Market Data · Websocket · REST</div>
+              </div>
+            </div>
+            <div class="broker-status-pill ${fyersOk ? 'ok-green' : 'err'}">
+              <span class="broker-status-dot ${fyersOk ? 'pulse' : ''}"></span>
+              ${fyersOk ? 'Connected' : 'Disconnected'}
+            </div>
           </div>
-          <div class="bk-desc">Data · WebSocket · REST quotes · Historical candles<br>Used by: Backtest · Paper Trade · Live Trade</div>
-          ${fyersOk
-            ? `<div class="bk-btn g"><span>✅ Connected</span><a href="/auth/login" class="bk-relogin">re-login</a></div>`
-            : `<a href="/auth/login" class="bk-btn" style="background:#1a4a2a;border-color:#2a6a3a;color:#fff;text-align:center;justify-content:center;">🔐 Login with Fyers</a>`}
+          <div class="broker-meta">
+            <span class="tag">WebSocket</span><span class="tag">REST Quotes</span><span class="tag">Historical</span>
+            <br/>Used by: Backtest · Paper Trade · Live Trade
+          </div>
+          <div class="broker-action">
+            ${fyersOk
+              ? `<div class="broker-connected-bar green">
+                  <span>✅ Token active</span>
+                  <a href="/auth/login" class="relogin-link">re-login →</a>
+                 </div>`
+              : `<a href="/auth/login" class="broker-login-btn fyers-btn">🔐 Login with Fyers</a>`
+            }
+          </div>
         </div>
 
-        <div class="bk ${zerodhaOk ? 'ok-blue' : zerodhaConf ? 'err-red' : 'no-conf'}">
-          <div class="bk-top">
-            <span style="width:17px;height:17px;background:#7c3aed;border-radius:50%;display:inline-block;flex-shrink:0;"></span>
-            <span class="bk-name">Zerodha</span>
-            <span class="bk-badge ${zerodhaOk ? 'ok-b' : 'err'}">${zerodhaOk ? 'CONNECTED' : 'DISCONNECTED'}</span>
+        <!-- Zerodha Card -->
+        <div class="broker-card ${zerodhaOk ? 'connected-blue' : zerodhaConf ? 'error-state' : 'no-config'}">
+          <div class="broker-card-top">
+            <div class="broker-identity">
+              <div class="broker-logo zerodha-logo">
+                <span style="width:16px;height:16px;background:#7c3aed;border-radius:50%;display:inline-block;"></span>
+              </div>
+              <div class="broker-name-wrap">
+                <div class="broker-name">Zerodha</div>
+                <div class="broker-role">Order Execution · Live Trade</div>
+              </div>
+            </div>
+            <div class="broker-status-pill ${zerodhaOk ? 'ok-blue' : zerodhaConf ? 'err' : 'grey'}">
+              <span class="broker-status-dot ${zerodhaOk ? 'pulse' : ''}"></span>
+              ${zerodhaOk ? 'Connected' : zerodhaConf ? 'Disconnected' : 'Not Configured'}
+            </div>
           </div>
-          <div class="bk-desc">Orders · Live Trade only · Free Personal API<br>Used by: Live Trade only</div>
-          ${zerodhaOk
-            ? `<div class="bk-btn g" style="background:#06100e;border-color:#0a2820;"><span style="color:#60a5fa;">✅ Connected</span><a href="/auth/zerodha/logout" class="bk-relogin" style="color:#ef4444;" onclick="return confirm('Clear Zerodha token? You will need to login again.')">logout</a></div>`
-            : zerodhaConf
-              ? `<a href="/auth/zerodha/login" class="bk-btn b">🔐 Login with Zerodha</a>`
-              : `<div style="padding:7px 10px;background:#0c0c18;border:1px dashed #252550;border-radius:7px;font-size:0.7rem;color:#3a4060;text-align:center;">Add <code style="color:#6070a0;font-family:monospace;">ZERODHA_API_KEY</code> to .env</div>`}
+          <div class="broker-meta">
+            <span class="tag">Orders API</span><span class="tag">Free Personal</span>
+            <br/>Used by: Live Trade only
+          </div>
+          <div class="broker-action">
+            ${zerodhaOk
+              ? `<div class="broker-connected-bar blue">
+                  <span>✅ Token active</span>
+                  <a href="/auth/zerodha/login" class="relogin-link">re-login →</a>
+                 </div>
+                 ${zerodhaExpiryHtml ? `<div class="broker-expiry-warn ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}`
+              : zerodhaConf
+                ? `<a href="/auth/zerodha/login" class="broker-login-btn zerodha-btn">🔐 Login with Zerodha</a>`
+                : `<div class="broker-no-config">Add <code>ZERODHA_API_KEY</code> &amp; <code>ZERODHA_API_SECRET</code> to .env</div>`
+            }
+          </div>
         </div>
 
       </div>
 
-      <!-- Hard Reset -->
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid #1a2236;display:flex;align-items:center;justify-content:space-between;">
-        <span style="font-size:0.67rem;color:#3a5070;">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
-        <button onclick="hardReset()" style="background:#1a0808;border:1px solid #5a1010;color:#f87171;padding:6px 14px;border-radius:7px;font-size:0.75rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;margin-left:16px;">🔄 Hard Reset</button>
+      <div class="broker-divider"></div>
+      <div class="hard-reset-row">
+        <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
+        <button onclick="hardReset()" class="hard-reset-btn">🔄 Hard Reset</button>
       </div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-hdr-icon">🔍</span>
-      <span class="card-hdr-title">Backtest</span>
-    </div>
-    <div class="bt-bar">
-      <div class="bt-f">
-        <label>From</label>
-        <input type="date" id="bt-from" value="${backtestFrom}"/>
-      </div>
-      <div class="bt-f">
-        <label>To</label>
-        <input type="date" id="bt-to" value="${backtestTo}"/>
-      </div>
-      <div class="bt-f">
-        <label>Candle</label>
-        <select id="bt-res">
-          ${["3","5","15","60"].map(v => `<option value="${v}"${String(process.env.TRADE_RESOLUTION||"15")===v?" selected":""}>${v}-min</option>`).join("")}
-        </select>
-      </div>
-      <button class="bt-run" onclick="runBT()">🔍 Run →</button>
-      <span class="bt-strat">Strategy: <strong>${ACTIVE}</strong> · Opens in new tab</span>
     </div>
   </div>
 
@@ -378,14 +427,6 @@ app.get("/", (req, res) => {
 </div>
 
 <script>
-function runBT(){
-  var f=document.getElementById('bt-from').value;
-  var t=document.getElementById('bt-to').value;
-  var r=document.getElementById('bt-res').value;
-  if(!f||!t){alert('Set both dates');return;}
-  if(f>=t){alert('From must be before To');return;}
-  window.open('/backtest?from='+f+'&to='+t+'&resolution='+r,'_blank');
-}
 // ── Dashboard: Paper & Live trade status panels ──────────────────────────────
 function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
 function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
