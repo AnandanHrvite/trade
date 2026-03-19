@@ -13,38 +13,45 @@ const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444
 // liveActive=true → grey out Paper Trade and Backtest links to prevent
 // accidental clicks / logs while a live session is running.
 function buildNav(active, liveActive) {
-  const LIVE_BANNER = liveActive
-    ? `<div style="display:flex;align-items:center;gap:6px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;" title="Live trade is running">
-        <span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>
-        LIVE ACTIVE
-       </div>
+  const LIVE_BADGE = liveActive
+    ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);border:0.5px solid rgba(239,68,68,0.3);padding:3px 8px;border-radius:4px;" title="Live trade is running">
+        <span style="width:4px;height:4px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE
+       </span>
        <style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
     : "";
 
   const pages = [
-    ["dashboard",  "/",                   "Dashboard"],
-    ["backtest",   "/backtest",            "🔍 Backtest"],
-    ["paper",      "/paperTrade/status",   "📋 Paper"],
-    ["live",       "/trade/status",        "🔴 Live"],
-    ["logs",       "/logs",               "📜 Logs"],
+    ["dashboard", "/",                 "⌂", "Dashboard"],
+    ["backtest",  "/backtest",         "🔍", "Backtest"],
+    ["paper",     "/paperTrade/status","📋", "Paper"],
+    ["live",      "/trade/status",     "🔴", "Live"],
+    ["logs",      "/logs",             "📜", "Logs"],
   ];
 
   const DISABLED_KEYS = liveActive ? ["backtest", "paper"] : [];
 
-  const links = pages.map(([key, href, label]) => {
-    const on       = key === active;
-    const disabled = DISABLED_KEYS.includes(key);
-    if (disabled) {
-      return `<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;cursor:not-allowed;opacity:0.38;">🔒 ${label}</span>`;
+  const tabs = pages.map(([key, href, icon, label]) => {
+    const isActive   = key === active;
+    const isDisabled = DISABLED_KEYS.includes(key);
+    const activeStyle = isActive
+      ? `color:#60a5fa;border-bottom:2px solid #3b82f6;`
+      : `color:#1e3050;border-bottom:2px solid transparent;`;
+    if (isDisabled) {
+      return `<span style="display:flex;align-items:center;gap:5px;padding:0 14px;font-size:0.7rem;color:#111a28;cursor:not-allowed;opacity:0.35;font-family:'IBM Plex Mono',monospace;">${icon} ${label}</span>`;
     }
-    return `<a href="${href}" style="font-size:0.76rem;color:${on?"#3b82f6":"#6b7a99"};text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid ${on?"#1d3b6e":"transparent"};background:${on?"#0a1e3d":"transparent"};white-space:nowrap;">${label}</a>`;
+    return `<a href="${href}" style="display:flex;align-items:center;gap:5px;padding:0 14px;font-size:0.7rem;text-decoration:none;${activeStyle};transition:color 0.12s;font-family:'IBM Plex Mono',monospace;" onmouseover="if(this.style.borderBottomColor!='rgb(59, 130, 246)')this.style.color='#4a6080'" onmouseout="if(this.style.borderBottomColor!='rgb(59, 130, 246)')this.style.color='#1e3050'">${icon} ${label}</a>`;
   }).join("");
 
-  return `<nav style="display:flex;align-items:center;justify-content:space-between;padding:10px 24px;border-bottom:1px solid #1a2236;background:#0d1320;position:sticky;top:0;z-index:100;gap:12px;">
-  <div style="font-size:0.92rem;font-weight:700;color:#fff;white-space:nowrap;">🪔 Palani Andawar thunai — <span style="color:#3b82f6;">Trading BOT</span></div>
-  <div style="display:flex;gap:4px;flex-wrap:nowrap;align-items:center;">${LIVE_BANNER}${links}</div>
+  return `<nav style="background:#040810;border-bottom:0.5px solid #0e1428;display:flex;align-items:stretch;height:44px;position:sticky;top:0;z-index:100;">
+  <div style="display:flex;align-items:center;gap:10px;padding:0 16px;border-right:0.5px solid #0e1428;margin-right:4px;flex-shrink:0;">
+    <div style="width:26px;height:26px;background:#0a1230;border:1px solid #1e3080;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;">🪔</div>
+    <span style="font-size:0.65rem;font-weight:700;color:#2a3a5a;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">TRADING BOT</span>
+  </div>
+  <div style="display:flex;align-items:stretch;flex:1;">${tabs}</div>
+  <div style="display:flex;align-items:center;gap:8px;padding:0 16px;">${LIVE_BADGE}</div>
 </nav>`;
 }
+
 
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
@@ -61,7 +68,7 @@ router.get("/", async (req, res) => {
     return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
       <meta name="viewport" content="width=device-width,initial-scale=1"/>
       <title>Backtest blocked — Live trade active</title>
-      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:system-ui,sans-serif;background:#080c14;color:#c8d8f0;min-height:100vh;display:flex;flex-direction:column;}</style>
+      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
       </head><body>
       ${buildNav("backtest", true)}
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
@@ -148,22 +155,23 @@ router.get("/", async (req, res) => {
   <title>Backtest — Palani Andawar thunai</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#080c14;color:#c8d8f0;min-height:100vh;}
-    .page{max-width:1300px;margin:0 auto;padding:20px;}
+    body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;}
+    @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
+    .page{max-width:1300px;margin:0 auto;padding:16px 20px 40px;}
 
     .stat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
-    .sc{background:#0d1320;border:1px solid #1a2236;border-radius:9px;padding:14px;position:relative;overflow:hidden;}
+    .sc{background:#08091a;border:0.5px solid #0e1428;border-radius:7px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
     .sc.blue::before{background:#3b82f6;}.sc.green::before{background:#10b981;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}
-    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;margin-bottom:5px;}
-    .sc-val{font-size:1.15rem;font-weight:700;color:#fff;font-family:monospace;line-height:1.2;}
+    .sc-label{font-size:0.56rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:5px;font-family:"IBM Plex Mono",monospace;}
+    .sc-val{font-size:1.05rem;font-weight:700;color:#a0b8d8;font-family:"IBM Plex Mono",monospace;line-height:1.2;}
     .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
 
-    .run-bar{display:flex;align-items:flex-end;gap:10px;background:#0d1320;border:1px solid #1a2236;border-radius:9px;padding:12px 16px;margin-bottom:14px;flex-wrap:wrap;}
+    .run-bar{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
     .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;display:block;margin-bottom:3px;}
-    .run-bar input,.run-bar select{background:#fff;border:1.5px solid #3b82f6;color:#0f172a;padding:5px 8px;border-radius:6px;font-size:0.8rem;font-family:inherit;cursor:pointer;color-scheme:light;}
-    .run-btn{background:#3b82f6;color:#fff;border:none;padding:7px 16px;border-radius:6px;font-size:0.8rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;}
+    .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
+    .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
     .run-btn:hover{background:#2563eb;}
 
     .tbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
@@ -172,14 +180,14 @@ router.get("/", async (req, res) => {
     .tbar-label{color:#4a6080;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
     .tbar-count{color:#4a6080;font-size:0.7rem;}
 
-    .tw{border:1px solid #1a2236;border-radius:9px;overflow:hidden;margin-bottom:10px;}
+    .tw{border:0.5px solid #0e1428;border-radius:8px;overflow:hidden;margin-bottom:10px;}
     table{width:100%;border-collapse:collapse;}
-    thead th{background:#06090f;padding:8px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;user-select:none;white-space:nowrap;}
+    thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;cursor:pointer;user-select:none;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
     thead th:hover{color:#c8d8f0;}
     thead th.sorted{color:#3b82f6;}
-    tbody tr{border-top:1px solid #1a2236;}
-    tbody tr:hover{background:#0d1726;}
-    tbody td{padding:8px 12px;font-size:0.77rem;font-family:monospace;}
+    tbody tr{border-top:0.5px solid #080e1a;}
+    tbody tr:hover{background:#060c1a;}
+    tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;}
 
     .pag{display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
     .pag button{background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 9px;border-radius:5px;font-size:0.72rem;cursor:pointer;font-family:inherit;}
@@ -195,15 +203,14 @@ router.get("/", async (req, res) => {
 ${buildNav("backtest", liveActive)}
 
 <div class="page">
-  <!-- Header -->
-  <div style="margin-bottom:14px;margin-top:4px;">
-    <div style="margin-bottom:5px;">
-      <span style="font-size:0.62rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;background:#0a1e3d;color:#3b82f6;border:1px solid #1d3b6e;margin-right:5px;">BACKTEST</span>
-      <span style="font-size:0.62rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;background:#052e16;color:#10b981;border:1px solid #065f46;margin-right:5px;">${ACTIVE}</span>
-      <span style="font-size:0.62rem;font-weight:700;padding:2px 7px;border-radius:4px;text-transform:uppercase;background:#2d1f00;color:#f59e0b;border:1px solid #78350f;">${from} \u2192 ${to}</span>
-    </div>
-    <h1 style="font-size:1.25rem;font-weight:700;color:#fff;">${s.strategy || ACTIVE} Backtest Results</h1>
-    <p style="font-size:0.75rem;color:#4a6080;margin-top:2px;">${resolution}-min candles \u00b7 ${candles.length.toLocaleString()} candles \u00b7 Capital \u20b9${capital.toLocaleString("en-IN")}</p>
+  <!-- Context breadcrumb bar -->
+  <div style="background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:44px;z-index:90;">
+    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(59,130,246,0.12);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.25);text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">BACKTEST</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);text-transform:uppercase;font-family:'IBM Plex Mono',monospace;">${ACTIVE}</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);font-family:'IBM Plex Mono',monospace;">${from} → ${to}</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;">${resolution}-min · ${candles.length.toLocaleString()} candles · ₹${capital.toLocaleString("en-IN")}</span>
   </div>
 
   <!-- Run Again -->
@@ -520,7 +527,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,sans-serif;background:#080c14;color:#c8d0e0;min-height:100vh;}
     .page{max-width:1200px;margin:0 auto;padding:28px 24px;}
-    .card{background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:24px;margin-bottom:20px;}
+    .card{background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:22px;margin-bottom:18px;}
     label{font-size:0.75rem;color:#4a6080;display:block;margin-bottom:4px;}
     input,select{background:#fff;border:1.5px solid #3b82f6;color:#0f172a;border-radius:7px;padding:7px 10px;font-size:0.83rem;color-scheme:light;cursor:pointer;}
     .run-btn{background:#3b82f6;color:#fff;border:none;border-radius:8px;padding:9px 20px;font-weight:600;font-size:0.83rem;cursor:pointer;display:flex;align-items:center;gap:6px;}
