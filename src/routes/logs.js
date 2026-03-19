@@ -12,6 +12,7 @@ const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
 const sharedSocketState = require("../utils/sharedSocketState");
+const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
 
 // ── SSE — live log stream ─────────────────────────────────────────────────────
 router.get("/stream", (req, res) => {
@@ -65,13 +66,6 @@ router.post("/clear", (req, res) => {
 // ── Logs UI page ──────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
-  const liveBanner = liveActive
-    ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span>`
-    : "";
-  const disabledLink = (label) =>
-    `<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;cursor:not-allowed;opacity:0.38;">🔒 ${label}</span>`;
-  const btLink  = liveActive ? disabledLink("🔍 Backtest") : `<a href="/backtest" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔍 Backtest</a>`;
-  const ptLink  = liveActive ? disabledLink("📋 Paper")    : `<a href="/paperTrade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">📋 Paper</a>`;
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -83,16 +77,8 @@ router.get("/", (req, res) => {
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     html, body { height:100%; }
-    body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-
-    /* ── NAV ── */
-    nav { display:flex; align-items:center; justify-content:space-between; padding:10px 24px; border-bottom:1px solid #1a2236; background:#0d1320; flex-shrink:0; flex-wrap:wrap; gap:6px; }
-    .brand { font-size:0.92rem; font-weight:700; color:#fff; white-space:nowrap; }
-    .brand span { color:#3b82f6; }
-    .nav-links { display:flex; gap:4px; flex-wrap:wrap; }
-    .nav-links a { font-size:0.76rem; color:#6b7a99; text-decoration:none; padding:6px 12px; border-radius:6px; border:1px solid transparent; white-space:nowrap; }
-    .nav-links a:hover { color:#c8d8f0; background:#161b22; border-color:#1a2236; }
-    .nav-links a.active { color:#3b82f6; background:#0a1e3d; border-color:#1d3b6e; }
+    body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; }
+    ${sidebarCSS()}
 
     /* ── TOOLBAR ── */
     .toolbar { display:flex; align-items:center; gap:8px; padding:8px 16px; background:#0d1320; border-bottom:1px solid #1a2236; flex-shrink:0; flex-wrap:wrap; }
@@ -173,22 +159,22 @@ router.get("/", (req, res) => {
   </style>
 </head>
 <body>
+<div class="app-shell">
+${buildSidebar('logs', liveActive)}
+<div class="main-content" style="display:flex;flex-direction:column;height:100vh;overflow:hidden;">
 
-<nav>
-  <div class="brand">🪔 Palani Andawar thunai — <span>Trading BOT</span></div>
-  <div class="nav-links">
-    <a href="/" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">Dashboard</a>
-    ${btLink}
-    ${ptLink}
-    <a href="/trade/status" style="font-size:0.76rem;color:#6b7a99;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">🔴 Live</a>
-    <a href="/logs" class="active" style="font-size:0.76rem;color:#3b82f6;text-decoration:none;padding:6px 12px;border-radius:6px;border:1px solid #1d3b6e;background:#0a1e3d;white-space:nowrap;">📜 Logs</a>
-    ${liveBanner}
-    <style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>
+<div class="top-bar">
+  <div>
+    <div class="top-bar-title">📜 Activity Logs</div>
+    <div class="top-bar-meta">Live SSE stream · all console output · ${liveActive ? '<span style="color:#ef4444;">LIVE TRADE ACTIVE</span>' : 'idle'}</div>
   </div>
-</nav>
+  <div class="top-bar-right">
+    ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE</span>' : '<span class="top-bar-badge">● IDLE</span>'}
+  </div>
+</div>
 
-<div class="toolbar">
-  <div class="tb-left">
+<div class="toolbar" style="display:flex;align-items:center;gap:8px;padding:8px 16px;background:#040c18;border-bottom:1px solid #0e1e36;flex-shrink:0;flex-wrap:wrap;">
+  <div class="tb-left" style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap;">
     <span class="badge-live"><span class="dot"></span>LIVE</span>
     <span class="counter" id="count">0 entries</span>
     <div class="filters">
@@ -200,7 +186,7 @@ router.get("/", (req, res) => {
     </div>
     <input id="search" type="text" placeholder="Search logs…" oninput="applySearch()"/>
   </div>
-  <div class="tb-right">
+  <div class="tb-right" style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;">
     <button class="btn btn-scroll on" id="scrollBtn" onclick="toggleScroll()">📌 Auto-scroll</button>
     <a href="/logs/export"       class="btn btn-export">⬇ TXT</a>
     <a href="/logs/export-json"  class="btn btn-exportj">⬇ JSON</a>
@@ -347,6 +333,7 @@ router.get("/", (req, res) => {
 
   connect();
 </script>
+</div></div>
 </body>
 </html>`);
 });

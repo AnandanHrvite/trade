@@ -879,10 +879,10 @@ function onSpotTick(tick) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (tradeState._fiftyPctPauseUntil && Date.now() < tradeState._fiftyPctPauseUntil) {
       // 50%-rule pause active — silently skip to avoid log spam
-    } else if (tradeState.sessionTrades.length >= parseInt(process.env.MAX_DAILY_TRADES || "20", 10)) {
+    } else if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       // Daily max trades cap reached
       if (!tradeState._maxTradesLoggedCandle || tradeState._maxTradesLoggedCandle !== _currentBarTime) {
-        log(`🚫 [LIVE] Daily max trades (${process.env.MAX_DAILY_TRADES || 20}) reached — no more entries today`);
+        log(`🚫 [LIVE] Daily max trades (${_MAX_DAILY_TRADES}) reached — no more entries today`);
         tradeState._maxTradesLoggedCandle = _currentBarTime;
       }
     } else if (!isMarketHours()) {

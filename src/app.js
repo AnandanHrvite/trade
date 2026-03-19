@@ -8,6 +8,7 @@ const { ACTIVE, getActiveStrategy } = require("./strategies");
 const { INSTRUMENT } = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
+const { buildSidebar, sidebarCSS } = require("./utils/sharedNav");
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const app = express();
@@ -32,7 +33,6 @@ const OPEN_PATHS = [
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
-  "/paperTrade/export-csv", // read-only export
   "/result",                // read-only results
   "/result/all",
   "/auth/status",           // read-only auth status
@@ -100,17 +100,10 @@ app.get("/", (req, res) => {
     body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; min-height:100vh; overflow-x:hidden; }
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
 
-    /* ── NAV ── */
-    nav { display:flex; align-items:center; justify-content:space-between; padding:10px 24px; border-bottom:1px solid #1a2236; background:#0d1320; position:sticky; top:0; z-index:100; }
-    .brand { font-size:0.92rem; font-weight:700; color:#fff; white-space:nowrap; }
-    .brand span { color:#3b82f6; }
-    .nav-links { display:flex; gap:4px; }
-    .nav-links a { font-size:0.76rem; color:#6b7a99; text-decoration:none; padding:6px 12px; border-radius:6px; border:1px solid transparent; white-space:nowrap; }
-    .nav-links a:hover { color:#c8d8f0; background:#161b22; border-color:#1a2236; }
-    .nav-links a.active { color:#3b82f6; background:#0a1e3d; border-color:#1d3b6e; }
+    ${sidebarCSS()}
 
     /* ── PAGE WRAPPER ── */
-    .page { max-width:960px; margin:0 auto; padding:28px 24px 48px; display:flex; flex-direction:column; gap:12px; }
+    .page { padding:28px 24px 48px; display:flex; flex-direction:column; gap:12px; }
 
     /* ── SECTION CARD ── */
     .card { background:#0d1320; border:1px solid #1a2236; border-radius:12px; overflow:hidden; }
@@ -240,10 +233,7 @@ app.get("/", (req, res) => {
 
     /* ── MOBILE ── */
     @media (max-width:640px) {
-      nav { flex-wrap:wrap; gap:6px; padding:8px 14px; }
-      .brand { font-size:0.82rem; }
-      .nav-links { flex-wrap:wrap; gap:3px; }
-      .nav-links a { font-size:0.7rem; padding:5px 8px; }
+      .main-content { margin-left:0; }
       .page { padding:14px 12px 40px; gap:10px; }
       .broker-grid { grid-template-columns:1fr; }
       .ts-grid     { grid-template-columns:1fr 1fr; }
@@ -251,27 +241,22 @@ app.get("/", (req, res) => {
       .cfg-cell    { border-right:none; border-bottom:1px solid #1a2236; }
       .cfg-cell:nth-child(odd) { border-right:1px solid #1a2236; }
       .cfg-cell:last-child { border-bottom:none; }
-      .bt-bar { display:none; } /* backtest removed */
     }
   </style>
 </head>
 <body>
-
-<nav>
-  <div class="brand">🪔 Palani Andawar thunai — <span>Trading BOT</span></div>
-  <div class="nav-links">
-    <a href="/" class="active">Dashboard</a>
-    ${liveActive
-      ? '<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 🔍 Backtest</span>'
-      : '<a href="/backtest">🔍 Backtest</a>'}
-    ${liveActive
-      ? '<span title="Disabled — Live trade is running" style="font-size:0.76rem;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 📋 Paper</span>'
-      : '<a href="/paperTrade/status">📋 Paper</a>'}
-    <a href="/trade/status">🔴 Live</a>
-    <a href="/logs">📜 Logs</a>
-    ${liveActive ? '<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>' : ""}
+<div class="app-shell">
+${buildSidebar('dashboard', liveActive)}
+<div class="main-content">
+  <div class="top-bar">
+    <div>
+      <div class="top-bar-title">⌂ Dashboard</div>
+      <div class="top-bar-meta">System overview · Broker connections · Session status</div>
+    </div>
+    <div class="top-bar-right">
+      ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : '<span class="top-bar-badge">● IDLE</span>'}
+    </div>
   </div>
-</nav>
 
 <div class="page">
 
@@ -522,6 +507,7 @@ function hardReset(){
     .catch(function(){ alert('Reset sent — server restarting. Reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); });
 }
 </script>
+</div></div>
 </body>
 </html>`;
 

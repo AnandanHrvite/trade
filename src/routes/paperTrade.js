@@ -21,6 +21,7 @@ const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { getSymbol, getLotQty, INSTRUMENT, validateAndGetOptionSymbol } = require("../config/instrument");
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
+const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -810,7 +811,7 @@ async function onCandleClose(candle) {
       log(`⏸ [PAPER] 50%-rule pause active — candle-close entry blocked until ~${resumeTime}`);
       return;
     }
-    if (ptState.sessionTrades.length >= parseInt(process.env.MAX_DAILY_TRADES || "20", 10)) {
+    if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       log(`🚫 [PAPER] Daily max trades reached — candle-close entry blocked (${signal})`);
       return;
     }
@@ -976,11 +977,11 @@ function onTick(tick) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (ptState._fiftyPctPauseUntil && Date.now() < ptState._fiftyPctPauseUntil) {
       // 50%-rule pause active — silently skip to avoid log spam
-    } else if (ptState.sessionTrades.length >= parseInt(process.env.MAX_DAILY_TRADES || "20", 10)) {
+    } else if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       // Daily max trades cap reached — protect brokerage and capital
       // Log only once per candle to avoid spam
       if (!ptState._maxTradesLoggedCandle || ptState._maxTradesLoggedCandle !== currentBarTime) {
-        log(`🚫 [PAPER] Daily max trades (${process.env.MAX_DAILY_TRADES || 20}) reached — no more entries today`);
+        log(`🚫 [PAPER] Daily max trades (${_MAX_DAILY_TRADES}) reached — no more entries today`);
         ptState._maxTradesLoggedCandle = currentBarTime;
       }
     } else {
@@ -1829,40 +1830,13 @@ router.get("/status", (req, res) => {
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#060e06;color:#c0d8b0;overflow-x:hidden;}
+${sidebarCSS()}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
-    /* ── TOP NAV — PILL STYLE ── */
-    .top-nav{background:rgba(6,14,6,0.97);border-bottom:0.5px solid #0d1a0d;padding:8px 20px;display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100;backdrop-filter:blur(8px);}
-    .tn-brand{display:flex;align-items:center;gap:10px;}
-    .tn-brand-lamp{width:30px;height:30px;background:#0f1f07;border:1px solid #1a3010;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;}
-    .tn-brand-text{font-size:0.8rem;font-weight:600;color:#a0c880;letter-spacing:-0.2px;}
-    .tn-brand-text span{color:#7ab850;}
-    .tn-pill-nav{display:flex;background:#0a160a;border:0.5px solid #162416;border-radius:22px;padding:3px;gap:1px;}
-    .tn-pill{font-size:0.7rem;padding:5px 13px;border-radius:18px;color:#2a4020;cursor:pointer;transition:all 0.12s;font-weight:500;text-decoration:none;display:block;}
-    .tn-pill:hover{color:#6a9840;}
-    .tn-pill.active{background:#142a0a;color:#8cca50;font-weight:600;}
-    .tn-pill.disabled{color:#1a2a18;cursor:not-allowed;opacity:0.5;}
-    .tn-actions{display:flex;align-items:center;gap:6px;}
-    .tn-btn{font-size:0.68rem;font-weight:700;padding:5px 11px;border-radius:6px;cursor:pointer;font-family:'Inter',sans-serif;border:1px solid;transition:all 0.12s;background:transparent;}
-    .tn-start{border-color:#1a4a0a;color:#7ab850;}
-    .tn-start:hover{background:rgba(122,184,80,0.08);}
-    .tn-stop{border-color:#5a1010;color:#f87171;}
-    .tn-stop:hover{background:rgba(248,113,113,0.08);}
-    .tn-csv{border-color:#162416;color:#3a5030;font-size:0.65rem;}
-    .tn-reset{border-color:rgba(248,113,113,0.25);color:#f87171;font-size:0.65rem;}
-
-    /* ── SUBHEADER ── */
-    .sub-header{background:#04080a;border-bottom:0.5px solid #0d1a0d;padding:6px 20px;display:flex;align-items:center;gap:8px;}
-    .sh-mode{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;padding:2px 8px;border-radius:3px;background:rgba(140,202,80,0.1);color:#8cca50;border:0.5px solid rgba(140,202,80,0.25);}
-    .sh-sep{width:0.5px;height:12px;background:#162416;}
-    .sh-strat{font-size:0.68rem;color:#3a5030;}
-    .sh-strat strong{color:#6a9840;}
-    .sh-candle{font-size:0.68rem;color:#2a3a20;}
-    .sh-status{margin-left:auto;font-size:0.65rem;color:#1a2a18;}
 
     /* ── PAGE BODY ── */
-    .page{max-width:1100px;margin:0 auto;padding:22px 20px 60px;}
+    .page{padding:22px 20px 60px;}
 
     /* ── CAPITAL STRIP ── */
     .capital-strip{display:flex;background:#090f09;border:0.5px solid #162416;border-radius:9px;overflow:hidden;margin-bottom:14px;}
@@ -1900,37 +1874,31 @@ router.get("/status", (req, res) => {
   </style>
 </head>
 <body>
-<nav class="top-nav">
-  <div class="tn-brand">
-    <div class="tn-brand-lamp">🪔</div>
-    <div class="tn-brand-text">Palani Andawar thunai — <span>Trading BOT</span></div>
+<div class="app-shell">
+${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.running, {
+  showExitBtn:  !!ptState.position,
+  showStopBtn:  ptState.running,
+  showStartBtn: !ptState.running,
+  exitBtnJs:    'ptHandleExit(this)',
+  stopBtnJs:    'handleStop(this)',
+  startBtnJs:   'handleStart(this)',
+  exitLabel:    '🚪 Exit Trade',
+  stopLabel:    '■ Stop Paper',
+  startLabel:   '▶ Start Paper',
+})}
+<div class="main-content">
+  <div class="top-bar">
+    <div>
+      <div class="top-bar-title">📋 Paper Trade</div>
+      <div class="top-bar-meta">Strategy: ${ACTIVE} — ${strategy.NAME} · ${getTradeResolution()}-min candles · ${ptState.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    </div>
+    <div class="top-bar-right">
+      ${ptState.running
+        ? '<span class="top-bar-badge paper-active"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>RUNNING</span>'
+        : '<span class="top-bar-badge">● IDLE</span>'}
+      <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
+    </div>
   </div>
-  <div class="tn-pill-nav">
-    <a href="/" class="tn-pill">⌂ Dashboard</a>
-    ${sharedSocketState.getMode()==="LIVE_TRADE"
-      ? `<span class="tn-pill disabled">🔍 Backtest</span>`
-      : `<a href="/backtest" class="tn-pill">🔍 Backtest</a>`}
-    <a href="/paperTrade/status" class="tn-pill active">📋 Paper</a>
-    <a href="/trade/status" class="tn-pill">🔴 Live</a>
-    <a href="/logs" class="tn-pill">📜 Logs</a>
-  </div>
-  <div class="tn-actions">
-    ${sharedSocketState.getMode()==="LIVE_TRADE" ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.65rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);border:0.5px solid rgba(239,68,68,0.3);padding:3px 8px;border-radius:4px;"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE</span>` : ""}
-    <button onclick="window.location='/paperTrade/export-csv'" class="tn-btn tn-csv">⬇ CSV</button>
-    <button onclick="ptHandleReset(this)" class="tn-btn tn-reset">↺ Reset</button>
-    ${ptState.position ? `<button onclick="ptHandleExit(this)" class="tn-btn tn-stop">🚪 Exit</button>` : ""}
-    ${ptState.running
-      ? `<button onclick="handleStop(this)" class="tn-btn tn-stop">■ Stop</button>`
-      : `<button onclick="handleStart(this)" class="tn-btn tn-start">▶ Start</button>`}
-  </div>
-</nav>
-<div class="sub-header">
-  <span class="sh-mode">${ptState.running ? '● RUNNING' : '● PAPER'}</span>
-  <span class="sh-sep"></span>
-  <span class="sh-strat"><strong>${ACTIVE} — ${strategy.NAME}</strong></span>
-  <span class="sh-candle">· ${getTradeResolution()}-min candles</span>
-  <span class="sh-status">${ptState.running ? 'Auto-refreshes every 2s' : 'Not refreshing — trading stopped'}</span>
-</div>
 
 <div class="page">
   <!-- Capital strip -->
@@ -2558,6 +2526,7 @@ logFilter();
   }
 })();
 </script>
+</div></div>
 </body>
 </html>`;
 
@@ -2806,41 +2775,8 @@ router.get("/client.js", (req, res) => {
 
 
 
-/**
- * GET /paperTrade/export-csv
- * Server-side CSV export — works even if client JS is broken
- */
-router.get("/export-csv", (req, res) => {
-  const data = loadPaperData();
-  const allTrades = (data.sessions || []).flatMap(s => s.trades || []);
-  
-  if (allTrades.length === 0) {
-    return res.status(404).send("No trades to export.");
-  }
-
-  const header = ["Side","Symbol","Entry Time","Exit Time","Entry NIFTY","Entry Option LTP","Exit NIFTY","Exit Option LTP","PnL (pts)","Exit Reason"];
-  const rows = allTrades.map(t => [
-    t.side || "",
-    t.symbol || "",
-    t.entryTime || "",
-    t.exitTime || "",
-    t.entrySpot || t.entryPrice || "",
-    t.entryOptionLtp || t.optionEntryLtp || "",
-    t.exitSpot || t.exitPrice || "",
-    t.exitOptionLtp || "",
-    t.pnl != null ? t.pnl : "",
-    (t.exitReason || t.reason || "").replace(/,/g, ";")
-  ]);
-
-  const csv = [header, ...rows]
-    .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-
-  const dateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", `attachment; filename="paper_trades_${dateStr}.csv"`);
-  res.send("\uFEFF" + csv); // BOM for Excel compatibility
-});
+// CSV export route removed — server-side CSV no longer available.
+// All console output is accessible via the /logs page.
 
 
 module.exports = router;

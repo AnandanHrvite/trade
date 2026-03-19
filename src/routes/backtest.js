@@ -4,52 +4,17 @@ const { fetchCandles, runBacktest } = require("../services/backtestEngine");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
+const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
 const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
 
-// Shared nav used by all pages in this router.
-// liveActive=true → grey out Paper Trade and Backtest links to prevent
-// accidental clicks / logs while a live session is running.
+// buildNav kept for backward-compat — now delegates to shared sidebar
 function buildNav(active, liveActive) {
   const LIVE_BADGE = liveActive
-    ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;color:#ef4444;background:rgba(239,68,68,0.1);border:0.5px solid rgba(239,68,68,0.3);padding:3px 8px;border-radius:4px;" title="Live trade is running">
-        <span style="width:4px;height:4px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE
-       </span>
-       <style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
-    : "";
-
-  const pages = [
-    ["dashboard", "/",                 "⌂", "Dashboard"],
-    ["backtest",  "/backtest",         "🔍", "Backtest"],
-    ["paper",     "/paperTrade/status","📋", "Paper"],
-    ["live",      "/trade/status",     "🔴", "Live"],
-    ["logs",      "/logs",             "📜", "Logs"],
-  ];
-
-  const DISABLED_KEYS = liveActive ? ["backtest", "paper"] : [];
-
-  const tabs = pages.map(([key, href, icon, label]) => {
-    const isActive   = key === active;
-    const isDisabled = DISABLED_KEYS.includes(key);
-    const activeStyle = isActive
-      ? `color:#60a5fa;border-bottom:2px solid #3b82f6;`
-      : `color:#1e3050;border-bottom:2px solid transparent;`;
-    if (isDisabled) {
-      return `<span style="display:flex;align-items:center;gap:5px;padding:0 14px;font-size:0.7rem;color:#111a28;cursor:not-allowed;opacity:0.35;font-family:'IBM Plex Mono',monospace;">${icon} ${label}</span>`;
-    }
-    return `<a href="${href}" style="display:flex;align-items:center;gap:5px;padding:0 14px;font-size:0.7rem;text-decoration:none;${activeStyle};transition:color 0.12s;font-family:'IBM Plex Mono',monospace;" onmouseover="if(this.style.borderBottomColor!='rgb(59, 130, 246)')this.style.color='#4a6080'" onmouseout="if(this.style.borderBottomColor!='rgb(59, 130, 246)')this.style.color='#1e3050'">${icon} ${label}</a>`;
-  }).join("");
-
-  return `<nav style="background:#040810;border-bottom:0.5px solid #0e1428;display:flex;align-items:stretch;height:44px;position:sticky;top:0;z-index:100;">
-  <div style="display:flex;align-items:center;gap:10px;padding:0 16px;border-right:0.5px solid #0e1428;margin-right:4px;flex-shrink:0;">
-    <div style="width:26px;height:26px;background:#0a1230;border:1px solid #1e3080;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;">🪔</div>
-    <span style="font-size:0.65rem;font-weight:700;color:#2a3a5a;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">TRADING BOT</span>
-  </div>
-  <div style="display:flex;align-items:stretch;flex:1;">${tabs}</div>
-  <div style="display:flex;align-items:center;gap:8px;padding:0 16px;">${LIVE_BADGE}</div>
-</nav>`;
+    // Delegated to sharedNav — this stub preserved for backward compat
+    return buildSidebar(active, liveActive);
 }
 
 
@@ -70,7 +35,9 @@ router.get("/", async (req, res) => {
       <title>Backtest blocked — Live trade active</title>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
       </head><body>
-      ${buildNav("backtest", true)}
+<div class="app-shell">
+${_sb('backtest',true)}
+<div class="main-content">
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
         <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
           <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
@@ -82,7 +49,7 @@ router.get("/", async (req, res) => {
           <a href="/trade/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
-      </body></html>`);
+      </div></div></body></html>`);
   }
 
   if (!process.env.ACCESS_TOKEN) {
@@ -157,7 +124,7 @@ router.get("/", async (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
-    .page{max-width:1300px;margin:0 auto;padding:16px 20px 40px;}
+    .page{padding:16px 20px 40px;}
 
     .stat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
@@ -197,10 +164,13 @@ router.get("/", async (req, res) => {
     .pag-info{font-size:0.7rem;color:#4a6080;padding:0 4px;}
 
     #tooltip{position:fixed;z-index:9999;background:#1e293b;color:#e2e8f0;border:1px solid #3b82f6;border-radius:7px;padding:8px 12px;font-size:0.72rem;max-width:340px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,.7);pointer-events:none;display:none;line-height:1.5;font-family:sans-serif;}
+    ${sidebarCSS()}
   </style>
 </head>
 <body>
-${buildNav("backtest", liveActive)}
+<div class="app-shell">
+${_sb('backtest', liveActive)}
+<div class="main-content">
 
 <div class="page">
   <!-- Context breadcrumb bar -->
@@ -503,6 +473,7 @@ document.getElementById('btModal').addEventListener('click',function(e){
   if(e.target===this) this.style.display='none';
 });
 </script>
+</div></div>
 </body>
 </html>`);
 
@@ -535,7 +506,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
     @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}
     #err-toast{position:fixed;top:20px;right:20px;z-index:9999;background:#0d1320;border:1px solid #7f1d1d;border-left:4px solid #ef4444;border-radius:10px;padding:14px 18px;min-width:320px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,0.5);animation:slideIn 0.25s ease;}
   </style></head>
-  <body>${nav}
+  <body><div class="app-shell">${nav}<div class="main-content">
   <div id="err-toast">
     <div style="display:flex;align-items:flex-start;gap:10px;">
       <span style="font-size:1.2rem;flex-shrink:0">⚠️</span>
@@ -561,7 +532,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
     </div>
   </div>
   <script>setTimeout(function(){var t=document.getElementById('err-toast');if(t)t.remove();},8000);</script>
-  </body></html>`;
+  </div></div></body></html>`;
 }
 
 function errorPage(title, msg, from, to, resolution) {
