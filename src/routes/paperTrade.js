@@ -1258,6 +1258,7 @@ router.get("/start", async (req, res) => {
   ptState.optionSymbol   = null;
   ptState._consecutiveLosses   = 0;
   ptState._pauseUntilTime      = null;
+  ptState._fiftyPctPauseUntil  = null; // ← fix: was missing — stale pause from prev session blocked entries
   ptState._dailyLossHit        = false; // reset daily kill switch on new session
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
@@ -1793,7 +1794,7 @@ router.get("/status", (req, res) => {
         <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct})</div>
           <div id="ajax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
+          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry ₹" + optEntryLtp.toFixed(2) + " − " + optStopPct : "awaiting entry LTP"}</div>
         </div>
         <div id="ajax-trail-card" style="background:#071a12;border:1px solid ${trailActive && trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail Status</div>

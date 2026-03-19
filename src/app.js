@@ -26,7 +26,9 @@ const OPEN_PATHS = [
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
   "/trade/status",          // read-only status page
+  "/trade/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
   "/paperTrade/status",     // read-only status page
+  "/paperTrade/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
@@ -77,23 +79,7 @@ app.get("/", (req, res) => {
   const backtestTo   = yesterdayIST.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const backtestFrom = monthAgoIST.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
-  // ── Dual broker connection panel ──────────────────────────────────────────
-  const fyersCardBorder    = fyersOk   ? "#065f46" : "#9b2c2c";
-  const fyersCardBg        = fyersOk   ? "#0a1f0a" : "#1a0808";
-  const zerodhaCardBorder  = zerodhaOk ? "#1a4a7a" : (zerodhaConf ? "#9b2c2c" : "#4a5568");
-  const zerodhaCardBg      = zerodhaOk ? "#080f1a" : "#0a0a14";
-
-  const fyersBtnHtml = fyersOk
-    ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:#0a2a0a;border:1px solid #065f46;border-radius:8px;">
-        <span style="color:#10b981;font-weight:700;font-size:0.88rem;">✅ Connected</span>
-        <a href="/auth/login" style="font-size:0.72rem;color:#4a6080;text-decoration:none;margin-left:auto;">re-login</a>
-       </div>`
-    : `<a href="/auth/login" style="display:block;text-align:center;background:#276749;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;font-size:0.88rem;transition:background 0.15s;"
-        onmouseover="this.style.background='#2f855a'" onmouseout="this.style.background='#276749'">
-        🔐 Login with Fyers
-       </a>`;
-
-  // ── 6 AM token expiry warning ─────────────────────────────────────────────
+  // ── Token expiry warning ─────────────────────────────────────────────────
   const nowIST     = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const istHour    = nowIST.getHours();
   const istMin     = nowIST.getMinutes();
@@ -113,28 +99,6 @@ app.get("/", (req, res) => {
         ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.
        </div>`
     : "";
-
-  const zerodhaBtnHtml = zerodhaOk
-    ? `<div style="display:flex;align-items:center;gap:8px;padding:10px 16px;background:#080f1a;border:1px solid #1a4a7a;border-radius:8px;">
-        <span style="color:#63b3ed;font-weight:700;font-size:0.88rem;">✅ Connected</span>
-        <a href="/auth/zerodha/login" style="font-size:0.72rem;color:#4a6080;text-decoration:none;margin-left:auto;">re-login</a>
-       </div>${zerodhaExpiryHtml}`
-    : zerodhaConf
-      ? `<a href="/auth/zerodha/login" style="display:block;text-align:center;background:#1a4a7a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;font-size:0.88rem;transition:background 0.15s;"
-          onmouseover="this.style.background='#2a5a9a'" onmouseout="this.style.background='#1a4a7a'">
-          🔐 Login with Zerodha
-         </a>`
-      : `<div style="text-align:center;padding:10px 16px;background:#1a1a2e;border:1px dashed #4a5568;border-radius:8px;font-size:0.78rem;color:#4a6080;">
-          ⚠️ Add <code style="color:#a0aec0;">ZERODHA_API_KEY</code> &amp; <code style="color:#a0aec0;">ZERODHA_API_SECRET</code> to .env
-         </div>`;
-
-  // Panel status chips for the big panels
-  const ptStatus  = `<div class="panel-badge" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fbbf24;">📋 PAPER</div>`;
-  const liveStatus = liveReady
-    ? `<div class="panel-badge" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#f87171;"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#ef4444;animation:pulse 1.5s infinite;margin-right:5px;vertical-align:middle;"></span>LIVE READY</div>`
-    : liveEnabled
-      ? `<div class="panel-badge" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.25);color:#fbbf24;">⚠ NEEDS LOGIN</div>`
-      : `<div class="panel-badge" style="background:rgba(74,88,120,0.1);border:1px solid rgba(74,88,120,0.2);color:#4a5878;">🔒 DISABLED</div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -406,9 +370,9 @@ app.get("/", (req, res) => {
         <div class="cfg-sub">${liveReady ? 'All systems ready' : liveEnabled ? 'Broker login required' : 'Set LIVE_TRADE_ENABLED=true in .env'}</div>
       </div>
     </div>
-    <div class="live-note">
+    ${!liveReady ? `<div class="live-note">
       🔒 Live trading disabled. Set <code>LIVE_TRADE_ENABLED=true</code> in .env when ready.
-    </div>
+    </div>` : ''}
   </div>
 
 </div>
