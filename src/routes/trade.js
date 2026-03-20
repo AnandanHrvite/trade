@@ -38,7 +38,7 @@ const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
 const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
 const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
 const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
-const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "10");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 
@@ -284,18 +284,29 @@ function startOptionPolling(symbol) {
         log(`📌 Option entry LTP captured: ₹${ltp} (REST)`);
       }
 
-      // ── Option LTP % stop (mirrors paperTrade) ───────────────────────────
-      // If option premium drops OPT_STOP_PCT below entry LTP, exit immediately.
-      // Catches hard reversals where spot SAR SL hasn't triggered yet but the
-      // option is bleeding fast (e.g. Nifty running 180pt against us intra-bar).
-      // Default 20% — env: OPT_STOP_PCT (e.g. 0.20 = 20%).
-      const OPT_STOP_PCT = parseFloat(process.env.OPT_STOP_PCT || "0.20");
+      // ── Option LTP stop — tied to prev-candle 50% mid (mirrors paperTrade) ─
+      // optionSL = entryOptionLtp − |entrySpot − prevMid|
+      // This is tighter and more meaningful than a flat 20% cut.
+      // Example: entry option ₹268, entrySpot ₹23342, prevMid ₹23283
+      //   → spotGap = 59pt → optionSL = ₹268 − 59 = ₹209  (vs 20% = ₹214)
+      // Minimum gap of 20pt to prevent instant exit when entry is very close to prevMid.
+      // Fallback: flat OPT_STOP_PCT (default 15%) if prevMid not available.
+      const OPT_STOP_PCT = parseFloat(process.env.OPT_STOP_PCT || "0.15");
       const entryLtp     = tradeState.position.optionEntryLtp;
-      if (entryLtp && ltp < entryLtp * (1 - OPT_STOP_PCT)) {
+      const entrySpot    = tradeState.position.spotAtEntry;
+      const prevMid      = tradeState.position.entryPrevMid;
+      let optStopPrice   = null;
+      if (entryLtp && entrySpot && prevMid) {
+        const spotGap  = Math.max(Math.abs(entrySpot - prevMid), 20);
+        optStopPrice   = parseFloat((entryLtp - spotGap).toFixed(2));
+      } else if (entryLtp) {
+        optStopPrice = parseFloat((entryLtp * (1 - OPT_STOP_PCT)).toFixed(2));
+      }
+      if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
         const dropPct = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
         const dropAmt = (entryLtp - ltp).toFixed(2);
         const pnlEst  = ((ltp - entryLtp) * (tradeState.position.qty || getLotQty())).toFixed(0);
-        log(`🔻 [LIVE] Option LTP stop hit — entry ₹${entryLtp} → now ₹${ltp} (−${dropPct}%, −₹${dropAmt}/lot, est. PnL ₹${pnlEst})`);
+        log(`🔻 [LIVE] Option LTP stop hit [50% mid] — entry ₹${entryLtp} → now ₹${ltp} (−${dropPct}%, −₹${dropAmt}/lot, est. PnL ₹${pnlEst})`);
         tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
         await squareOff(`Option LTP stop — premium dropped ${dropPct}% (₹${entryLtp} → ₹${ltp})`);
       }
@@ -1023,10 +1034,30 @@ function onSpotTick(tick) {
     } // end entry guards
   }
 
-  // ── NOTE: Intra-tick 50% rule REMOVED (matches paperTrade behaviour) ─────────
-  // On 15-min candles Nifty routinely wicks through prevMid and recovers within the candle.
-  // A single tick > prevMid was triggering exit on trades the backtest would HOLD.
-  // 50% rule fires only at candle CLOSE (see onCandleClose above) — identical to backtest.
+  // ── EXIT: Intra-tick 50% rule ─────────────────────────────────────────────
+  // Fires on every tick AFTER the entry candle closes.
+  // Skips entry candle itself (same as candle-close version).
+  // CE: exit if spot ticks BELOW prevMid | PE: exit if spot ticks ABOVE prevMid
+  if (tradeState.position) {
+    const pos50 = tradeState.position;
+    const isEntryCandle50 = pos50.entryBarTime !== null &&
+                            tradeState.currentBar &&
+                            tradeState.currentBar.time === pos50.entryBarTime;
+    if (!isEntryCandle50 && pos50.entryPrevMid !== null) {
+      if (pos50.side === "CE" && ltp < pos50.entryPrevMid) {
+        log(`🛑 [LIVE] 50% rule CE (intra-tick) — spot ₹${ltp} < prev mid ₹${pos50.entryPrevMid}`);
+        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+        squareOff(pos50.entryPrevMid, `50% rule (tick) — spot ₹${ltp} < prev mid ₹${pos50.entryPrevMid}`).catch(console.error);
+        return;
+      }
+      if (pos50.side === "PE" && ltp > pos50.entryPrevMid) {
+        log(`🛑 [LIVE] 50% rule PE (intra-tick) — spot ₹${ltp} > prev mid ₹${pos50.entryPrevMid}`);
+        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+        squareOff(pos50.entryPrevMid, `50% rule (tick) — spot ₹${ltp} > prev mid ₹${pos50.entryPrevMid}`).catch(console.error);
+        return;
+      }
+    }
+  }
 
   // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
   // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
@@ -1564,9 +1595,9 @@ router.get("/status", (req, res) => {
   const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const tokenPastExpiry = nowIST.getHours() >= 6 && nowIST.getHours() < 9;
   const tokenNearExpiry = nowIST.getHours() === 5 && nowIST.getMinutes() >= 45;
-  const expiryBanner = zerodhaOk && tokenPastExpiry
+  const expiryBanner = zerodhaOk && tokenPastExpiry && !tradeState.running
     ? `<div style="background:#2d1000;border:1px solid #c05621;border-radius:10px;padding:12px 18px;margin-bottom:20px;font-size:0.85rem;color:#f6ad55;">⚠️ <strong>Zerodha token expired at 6 AM.</strong> Re-login at <a href="/auth/zerodha/login" style="color:#63b3ed;">/auth/zerodha/login</a>.</div>`
-    : zerodhaOk && tokenNearExpiry
+    : zerodhaOk && tokenNearExpiry && !tradeState.running
     ? `<div style="background:#2d1800;border:1px solid #744210;border-radius:10px;padding:12px 18px;margin-bottom:20px;font-size:0.85rem;color:#fbd38d;">⏰ <strong>Zerodha token expires at 6 AM.</strong> Re-login before market hours.</div>`
     : "";
 
