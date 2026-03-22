@@ -24,7 +24,7 @@ const socketManager     = require("../utils/socketManager");
 const fyers             = require("../config/fyers");
 const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
-const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol } = require("../config/instrument");
+const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = require("../config/instrument");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -57,7 +57,7 @@ let _mktHoursCache   = null;
 let _mktHoursCacheTs = 0;
 let _mktHoursParamsTs = 0; // invalidate cache if env changes (unlikely but safe)
 const sharedSocketState = require("../utils/sharedSocketState");
-const { notifyEntry, notifyExit } = require("../utils/notify");
+const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { fetchCandles } = require("../services/backtestEngine");
 // ── Live session persistence (mirrors paperTrade) ────────────────────────────
 const LT_DIR  = path.join(__dirname, "../../data");
@@ -92,8 +92,117 @@ function saveLiveSession() {
     ensureLiveDir();
     fs.writeFileSync(LT_FILE, JSON.stringify(data, null, 2));
     log(`💾 [LIVE] Session saved — ${tradeState.sessionTrades.length} trades, PnL: ₹${tradeState.sessionPnl}`);
+
+    // ── Feature 3: Daily Trade Journal / Report ──────────────────────────────
+    generateDailyReport(tradeState.sessionTrades, tradeState.sessionPnl);
   } catch (err) {
     log(`⚠️ [LIVE] Could not save session: ${err.message}`);
+  }
+}
+
+function generateDailyReport(trades, sessionPnl) {
+  try {
+    if (!trades || trades.length === 0) return;
+
+    const wins    = trades.filter(t => t.pnl > 0);
+    const losses  = trades.filter(t => t.pnl <= 0);
+    const winRate = ((wins.length / trades.length) * 100).toFixed(1);
+    const avgWin  = wins.length   ? (wins.reduce((s, t) => s + t.pnl, 0) / wins.length).toFixed(0)   : 0;
+    const avgLoss = losses.length ? (losses.reduce((s, t) => s + t.pnl, 0) / losses.length).toFixed(0) : 0;
+    const bestTrade  = trades.reduce((b, t) => t.pnl > b.pnl ? t : b, trades[0]);
+    const worstTrade = trades.reduce((w, t) => t.pnl < w.pnl ? t : w, trades[0]);
+
+    // Exit reason breakdown
+    const exitGroups = {};
+    trades.forEach(t => {
+      const label = t.exitReason.includes("50% rule")       ? "50% Rule"
+                  : t.exitReason.includes("SL hit")         ? "SL Hit"
+                  : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
+                  : t.exitReason.includes("Opposite")       ? "Opposite Signal"
+                  : t.exitReason.includes("EOD")            ? "EOD Square-off"
+                  : t.exitReason.includes("Manual")         ? "Manual Exit"
+                  : "Other";
+      if (!exitGroups[label]) exitGroups[label] = { count: 0, pnl: 0, wins: 0 };
+      exitGroups[label].count++;
+      exitGroups[label].pnl += t.pnl;
+      if (t.pnl > 0) exitGroups[label].wins++;
+    });
+
+    const dateStr = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+    const pnlEmoji = sessionPnl >= 0 ? "🟢" : "🔴";
+
+    // Console report
+    log(`\n${"═".repeat(54)}`);
+    log(`📊 DAILY TRADE JOURNAL — ${dateStr}`);
+    log(`${"─".repeat(54)}`);
+    log(`   Trades    : ${trades.length} (${wins.length}W / ${losses.length}L)`);
+    log(`   Win Rate  : ${winRate}%`);
+    log(`   Session PnL: ${pnlEmoji} ₹${sessionPnl}`);
+    log(`   Avg Win   : ₹${avgWin} | Avg Loss: ₹${avgLoss}`);
+    log(`   Best Trade: ₹${bestTrade.pnl} (${bestTrade.side} ${bestTrade.exitReason})`);
+    log(`   Worst Trade: ₹${worstTrade.pnl} (${worstTrade.side} ${worstTrade.exitReason})`);
+    log(`${"─".repeat(54)}`);
+    log(`   Exit Breakdown:`);
+    Object.entries(exitGroups)
+      .sort((a, b) => b[1].count - a[1].count)
+      .forEach(([label, g]) => {
+        const wr = ((g.wins / g.count) * 100).toFixed(0);
+        log(`     ${label.padEnd(18)}: ${g.count}x | WR=${wr}% | PnL=₹${g.pnl.toFixed(0)}`);
+      });
+    log(`${"─".repeat(54)}`);
+    log(`   Trade Log:`);
+    trades.forEach((t, i) => {
+      const pnlSign = t.pnl >= 0 ? "+" : "";
+      const optInfo = t.optionEntryLtp ? ` | Opt ₹${t.optionEntryLtp}→₹${t.optionExitLtp || "?"}` : "";
+      log(`     ${String(i+1).padStart(2)}. ${t.side} @ ₹${t.entryPrice}→₹${t.exitPrice} | ${pnlSign}₹${t.pnl}${optInfo} | ${t.exitReason}`);
+    });
+    log(`${"═".repeat(54)}\n`);
+
+    // Telegram report
+    if (isConfigured()) {
+      const exitBreakdown = Object.entries(exitGroups)
+        .sort((a, b) => b[1].count - a[1].count)
+        .map(([label, g]) => `  ${label}: ${g.count}x (WR${((g.wins/g.count)*100).toFixed(0)}% PnL ₹${g.pnl.toFixed(0)})`)
+        .join("\n");
+
+      const telegramLines = [
+        `⚡ LIVE TRADE — DAILY REPORT`,
+        `📅 ${dateStr}`,
+        ``,
+        `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
+        `Win Rate : ${winRate}%`,
+        `Session  : ${pnlEmoji} ₹${sessionPnl}`,
+        `Avg Win  : ₹${avgWin}  |  Avg Loss: ₹${avgLoss}`,
+        ``,
+        `Exit Breakdown:`,
+        exitBreakdown,
+        ``,
+        `Best : ₹${bestTrade.pnl} — ${bestTrade.side} ${bestTrade.exitReason}`,
+        `Worst: ₹${worstTrade.pnl} — ${worstTrade.side} ${worstTrade.exitReason}`,
+      ];
+      sendTelegram(telegramLines.join("\n"));
+    }
+
+    // Save report to disk
+    try {
+      const reportDir  = path.join(LT_DIR, "reports");
+      if (!fs.existsSync(reportDir)) fs.mkdirSync(reportDir, { recursive: true });
+      const reportDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const reportPath = path.join(reportDir, `live_report_${reportDate}.json`);
+      const report = {
+        date: reportDate, strategy: ACTIVE, instrument: INSTRUMENT,
+        totalTrades: trades.length, wins: wins.length, losses: losses.length,
+        winRate: `${winRate}%`, sessionPnl, avgWin: parseFloat(avgWin), avgLoss: parseFloat(avgLoss),
+        bestPnl: bestTrade.pnl, worstPnl: worstTrade.pnl,
+        exitBreakdown: exitGroups, trades,
+      };
+      fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+      log(`📁 [LIVE] Daily report saved: ${reportPath}`);
+    } catch (saveErr) {
+      log(`⚠️ [LIVE] Could not save report file: ${saveErr.message}`);
+    }
+  } catch (err) {
+    log(`⚠️ [LIVE] Daily report error: ${err.message}`);
   }
 }
 
@@ -139,6 +248,7 @@ let tradeState = {
   // high/low actually changes — avoids running full indicator stack every tick ──
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
+  _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -856,6 +966,7 @@ function onSpotTick(tick) {
     tradeState._slHitCandleTime    = null;
     tradeState._lastCheckedBarHigh = null;
     tradeState._lastCheckedBarLow  = null;
+    tradeState._missedLoggedCandle = null;
     tradeState.currentBar   = {
       time:   Math.floor(bucketStart / 1000),
       open:   tick.ltp, high: tick.ltp, low: tick.ltp, close: tick.ltp,
@@ -895,7 +1006,7 @@ function onSpotTick(tick) {
     // Block re-entry on the same candle where an SL/50% exit just occurred
     const _currentBarTime = tradeState.currentBar ? tradeState.currentBar.time : null;
     if (tradeState._slHitCandleTime !== null && tradeState._slHitCandleTime === _currentBarTime) {
-      // silently skip — no re-entry allowed this candle
+      // silently skip — no re-entry allowed this candle (SL hit guard)
     } else if (tradeState._dailyLossHit) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
@@ -920,6 +1031,17 @@ function onSpotTick(tick) {
     // 15-min: STRONG signals only (steep slope + committed RSI) → enter intra-candle at EMA touch
     // 5-min:  all signals enter intra-candle
     const isStrongSignal = signalStrength === "STRONG";
+
+    // ── Signal Missed Log ────────────────────────────────────────────────────
+    // If strategy fires a valid signal but it can't enter (wrong strength for 15-min,
+    // or signal is NONE), log it once per candle so you can see what was skipped.
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && TRADE_RES >= 15 && !isStrongSignal) {
+      if (!tradeState._missedLoggedCandle || tradeState._missedLoggedCandle !== _currentBarTime) {
+        tradeState._missedLoggedCandle = _currentBarTime;
+        log(`⚠️ [LIVE] Signal MISSED — ${signal} [MARGINAL] @ ₹${ltp} — waiting for candle close | ${reason}`);
+      }
+    }
+
     if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       tradeState._entryPending = true;
@@ -1214,6 +1336,7 @@ router.get("/start", async (req, res) => {
   tradeState._lastCheckedBarHigh   = null;
   tradeState._lastCheckedBarLow    = null;
   tradeState._maxTradesLoggedCandle = null;
+  tradeState._missedLoggedCandle   = null;
   _cachedClosedCandleSL     = null; // reset cached SL on fresh session start
   _orderInFlight            = false;
   _squareOffInFlight        = false;
@@ -1224,6 +1347,59 @@ router.get("/start", async (req, res) => {
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
   log(`   Instrument : ${INSTRUMENT}`);
   log(`   Lot Qty    : ${getLotQty()}`);
+
+  // ── Feature 2: Pre-Market Checklist ─────────────────────────────────────────
+  // Runs async checks in parallel before the WebSocket starts.
+  // Any failure is logged clearly — session still starts (soft checks, not hard blocks).
+  log(`\n📋 [LIVE] Running pre-market checklist...`);
+  try {
+    const checkResults = await Promise.allSettled([
+      // Check 1: Fyers token is valid (can fetch spot)
+      getLiveSpot().then(spot => {
+        if (!spot || spot <= 0) throw new Error("NIFTY spot returned 0 or null");
+        return spot;
+      }),
+    ]);
+
+    const [spotResult] = checkResults;
+
+    if (spotResult.status === "fulfilled") {
+      const spot = spotResult.value;
+      const atmStrike = Math.round(spot / 50) * 50;
+      log(`   ✅ Fyers data feed OK — NIFTY spot: ₹${spot} | ATM: ${atmStrike}`);
+      // Check 2: Option symbol resolvable for both CE and PE
+      try {
+        const [ceCheck, peCheck] = await Promise.all([
+          validateAndGetOptionSymbol(spot, "CE"),
+          validateAndGetOptionSymbol(spot, "PE"),
+        ]);
+        if (!ceCheck.invalid && ceCheck.symbol) {
+          log(`   ✅ Option symbol OK — CE: ${ceCheck.symbol} | PE: ${peCheck.symbol}`);
+        } else {
+          log(`   ⚠️  Option symbol check: CE invalid=${ceCheck.invalid} | next week may not be live yet`);
+        }
+      } catch (symErr) {
+        log(`   ⚠️  Option symbol check failed: ${symErr.message}`);
+      }
+    } else {
+      log(`   ❌ Fyers data feed FAIL — could not fetch NIFTY spot: ${spotResult.reason?.message || spotResult.reason}`);
+      log(`   ⚠️  Check Fyers token — you may need to re-login at /auth/login`);
+    }
+
+    // Check 3: Zerodha auth
+    if (zerodha.isAuthenticated()) {
+      log(`   ✅ Zerodha token active`);
+    } else {
+      log(`   ❌ Zerodha token MISSING — re-login at /auth/zerodha/login`);
+    }
+
+    // Check 4: Risk config summary
+    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Trail T1=${_TRAIL_T1_GAP}→T2=${_TRAIL_T2_GAP}→T3=${_TRAIL_T3_GAP}pt | ActivateFloor: +${_TRAIL_ACTIVATE_PTS}pt`);
+    log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
+    log(`✅ [LIVE] Pre-market checklist complete\n`);
+  } catch (checkErr) {
+    log(`⚠️ [LIVE] Pre-market checklist error: ${checkErr.message} — continuing anyway`);
+  }
 
   // Pre-load candles (same as paperTrade)
   try {

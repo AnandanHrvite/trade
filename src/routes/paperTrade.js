@@ -122,6 +122,7 @@ let ptState = {
   // actually changes — avoids running the full indicator stack on every single tick.
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
+  _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -930,6 +931,7 @@ function onTick(tick) {
     ptState._slHitCandleTime    = null;
     ptState._lastCheckedBarHigh = null;
     ptState._lastCheckedBarLow  = null;
+    ptState._missedLoggedCandle = null;
     ptState.currentBar = {
       time:   Math.floor(bucket / 1000),
       open:   tick.ltp,
@@ -1011,6 +1013,17 @@ function onTick(tick) {
     // MARGINAL = borderline slope/RSI → wait for candle close to confirm
     // This prevents entering on fake EMA touches mid-candle in ranging markets.
     const isStrongSignal = signalStrength === "STRONG";
+
+    // ── Signal Missed Log ────────────────────────────────────────────────────
+    // If strategy fires a valid signal but it's MARGINAL (15-min waits for candle close),
+    // log it once per candle so you can see what was seen intra-candle vs what entered.
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && TRADE_RES >= 15 && !isStrongSignal) {
+      if (!ptState._missedLoggedCandle || ptState._missedLoggedCandle !== currentBarTime) {
+        ptState._missedLoggedCandle = currentBarTime;
+        log(`⚠️ [PAPER] Signal SEEN intra-candle — ${signal} [MARGINAL] @ ₹${ltp} — waiting for candle close | ${reason}`);
+      }
+    }
+
     if ((signal === "BUY_CE" || signal === "BUY_PE") && isStrongSignal) {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
@@ -1281,6 +1294,7 @@ router.get("/start", async (req, res) => {
   ptState._slHitCandleTime     = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
+  ptState._missedLoggedCandle  = null;
   stopOptionPolling();
 
   log(`\n════════════════════════════════════════════════════════════════════`);
