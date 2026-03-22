@@ -225,7 +225,7 @@ function getCapitalFromEnv() {
 // This avoids ALL Fyers singleton reconnect issues permanently.
 
 const fyers = require('../config/fyers');
-const { notifyEntry, notifyExit } = require('../utils/notify');
+const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require('../utils/notify');
 const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
@@ -668,6 +668,18 @@ async function onCandleClose(candle) {
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
   log(`   Signal: ${signal} [${signalStrength||"n/a"}] | ${reason}`);
+
+  // Telegram: candle close signal update (only when flat — no position open)
+  if (!ptState.position && signal !== null) {
+    const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+    const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
+    const _shortReason = reason ? reason.slice(0, 120) : "—";
+    sendTelegram([
+      `${_signalEmoji} [PAPER] ${_candleIST} — ${signal}`,
+      `Spot: ₹${candle.close}`,
+      `${_shortReason}`,
+    ].join("\n"));
+  }
   if (ptState.position) {
     const _p    = ptState.position;
     const _est  = _p.side === "CE" ? (candle.close - _p.spotAtEntry).toFixed(1) : (_p.spotAtEntry - candle.close).toFixed(1);
@@ -1307,6 +1319,20 @@ router.get("/start", async (req, res) => {
   log(`   Trail       : DYNAMIC TIERED — T1 0-${process.env.TRAIL_TIER1_UPTO||40}pt=gap${process.env.TRAIL_TIER1_GAP||60}pt | T2 ${process.env.TRAIL_TIER1_UPTO||40}-${process.env.TRAIL_TIER2_UPTO||70}pt=gap${process.env.TRAIL_TIER2_GAP||40}pt | T3 ${process.env.TRAIL_TIER2_UPTO||70}pt+=gap${process.env.TRAIL_TIER3_GAP||30}pt | activates after +${process.env.TRAIL_ACTIVATE_PTS||15}pt | prevMid-clip | 50%-rule=candle-close-only`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | 3 losses → daily kill | OPT_STOP=50%-candle-mid (option SL = entryLTP − spotGapToPrevMid)`);
   log(`════════════════════════════════════════════════════════════════════\n`);
+
+  // Telegram: session started
+  sendTelegram([
+    `📄 PAPER TRADE STARTED`,
+    ``,
+    `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+    `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+    ``,
+    `Strategy  : ${ACTIVE}`,
+    `Instrument: ${INSTRUMENT}`,
+    `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
+    `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
+    `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
+  ].join("\n"));
 
   // ── PRE-LOAD today's historical candles so strategy fires immediately ────────
   // Without this, EMA (needs 25 candles) / RSI (needs 16) won't fire for hours

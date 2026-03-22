@@ -708,6 +708,19 @@ async function onCandleClose(candle) {
 
   log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | ${reason}`);
 
+  // Telegram: candle close signal update (only when flat — no position open)
+  // Tells you exactly why a trade was/wasn't taken every 15 min candle
+  if (!tradeState.position && signal !== null) {
+    const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+    const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
+    const _shortReason = reason ? reason.slice(0, 120) : "—";
+    sendTelegram([
+      `${_signalEmoji} [LIVE] ${_candleIST} — ${signal}`,
+      `Spot: ₹${candle.close}`,
+      `${_shortReason}`,
+    ].join("\n"));
+  }
+
   // ── entryPrevMid is FIXED at entry time — never update it here ──────────────
   // Set once at position creation = mid of the last fully closed candle at entry.
   // The 50% rule reference must not roll forward as new candles close.
@@ -1349,57 +1362,91 @@ router.get("/start", async (req, res) => {
   log(`   Lot Qty    : ${getLotQty()}`);
 
   // ── Feature 2: Pre-Market Checklist ─────────────────────────────────────────
-  // Runs async checks in parallel before the WebSocket starts.
-  // Any failure is logged clearly — session still starts (soft checks, not hard blocks).
+  // Collect all check results first, then send ONE combined Telegram alert.
   log(`\n📋 [LIVE] Running pre-market checklist...`);
-  try {
-    const checkResults = await Promise.allSettled([
-      // Check 1: Fyers token is valid (can fetch spot)
-      getLiveSpot().then(spot => {
-        if (!spot || spot <= 0) throw new Error("NIFTY spot returned 0 or null");
-        return spot;
-      }),
-    ]);
 
-    const [spotResult] = checkResults;
+  const _checks = {
+    fyers:   { ok: false, msg: "" },
+    symbol:  { ok: false, msg: "" },
+    zerodha: { ok: false, msg: "" },
+    spot:    null,
+  };
+
+  try {
+    // Check 1: Fyers spot
+    const [spotResult] = await Promise.allSettled([
+      getLiveSpot().then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
+    ]);
 
     if (spotResult.status === "fulfilled") {
       const spot = spotResult.value;
-      const atmStrike = Math.round(spot / 50) * 50;
-      log(`   ✅ Fyers data feed OK — NIFTY spot: ₹${spot} | ATM: ${atmStrike}`);
-      // Check 2: Option symbol resolvable for both CE and PE
+      const atm  = Math.round(spot / 50) * 50;
+      _checks.spot = spot;
+      _checks.fyers = { ok: true, msg: `NIFTY ₹${spot} | ATM ${atm}` };
+      log(`   ✅ Fyers data feed OK — NIFTY spot: ₹${spot} | ATM: ${atm}`);
+
+      // Check 2: Option symbols
       try {
-        const [ceCheck, peCheck] = await Promise.all([
+        const [ce, pe] = await Promise.all([
           validateAndGetOptionSymbol(spot, "CE"),
           validateAndGetOptionSymbol(spot, "PE"),
         ]);
-        if (!ceCheck.invalid && ceCheck.symbol) {
-          log(`   ✅ Option symbol OK — CE: ${ceCheck.symbol} | PE: ${peCheck.symbol}`);
+        if (!ce.invalid && ce.symbol) {
+          _checks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
+          log(`   ✅ Option symbol OK — CE: ${ce.symbol} | PE: ${pe.symbol}`);
         } else {
-          log(`   ⚠️  Option symbol check: CE invalid=${ceCheck.invalid} | next week may not be live yet`);
+          _checks.symbol = { ok: false, msg: `CE invalid — next expiry may not be live` };
+          log(`   ⚠️  Option symbol: CE invalid=${ce.invalid}`);
         }
       } catch (symErr) {
+        _checks.symbol = { ok: false, msg: symErr.message };
         log(`   ⚠️  Option symbol check failed: ${symErr.message}`);
       }
     } else {
-      log(`   ❌ Fyers data feed FAIL — could not fetch NIFTY spot: ${spotResult.reason?.message || spotResult.reason}`);
-      log(`   ⚠️  Check Fyers token — you may need to re-login at /auth/login`);
+      _checks.fyers = { ok: false, msg: spotResult.reason?.message || "could not fetch spot" };
+      log(`   ❌ Fyers data feed FAIL — ${_checks.fyers.msg}`);
+      log(`   ⚠️  Re-login at /auth/login`);
     }
 
-    // Check 3: Zerodha auth
+    // Check 3: Zerodha
     if (zerodha.isAuthenticated()) {
+      _checks.zerodha = { ok: true, msg: "token active" };
       log(`   ✅ Zerodha token active`);
     } else {
+      _checks.zerodha = { ok: false, msg: "token missing — re-login at /auth/zerodha/login" };
       log(`   ❌ Zerodha token MISSING — re-login at /auth/zerodha/login`);
     }
 
-    // Check 4: Risk config summary
+    // Check 4: Risk config summary (always logs)
     log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Trail T1=${_TRAIL_T1_GAP}→T2=${_TRAIL_T2_GAP}→T3=${_TRAIL_T3_GAP}pt | ActivateFloor: +${_TRAIL_ACTIVATE_PTS}pt`);
     log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
-    log(`✅ [LIVE] Pre-market checklist complete\n`);
+
+    const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
+    log(`${_allOk ? "✅" : "⚠️ "} [LIVE] Pre-market checklist ${_allOk ? "complete — all systems ready" : "done with warnings — check above"}\n`);
+
   } catch (checkErr) {
     log(`⚠️ [LIVE] Pre-market checklist error: ${checkErr.message} — continuing anyway`);
   }
+
+  // ── Telegram: Session Started + Checklist results (one combined message) ─────
+  const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
+  sendTelegram([
+    `${_allOk ? "✅" : "⚠️"} LIVE TRADE STARTED`,
+    ``,
+    `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+    `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+    ``,
+    `Strategy  : ${ACTIVE}`,
+    `Instrument: ${INSTRUMENT}`,
+    `Lot Qty   : ${getLotQty()}`,
+    `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
+    `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
+    ``,
+    `Pre-Market Checklist:`,
+    `${_checks.fyers.ok   ? "✅" : "❌"} Fyers   : ${_checks.fyers.msg}`,
+    `${_checks.symbol.ok  ? "✅" : "⚠️"} Symbols : ${_checks.symbol.msg || "not checked"}`,
+    `${_checks.zerodha.ok ? "✅" : "❌"} Zerodha : ${_checks.zerodha.msg}`,
+  ].join("\n"));
 
   // Pre-load candles (same as paperTrade)
   try {
