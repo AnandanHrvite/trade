@@ -101,6 +101,11 @@ function getISTHHMM(unixSec) {
  *   - TRAIL_GAP_PTS: 10 → 25 → 40 → 60 (15-min optimised)
  *   - Strategy filters (RSI 51/49, dead zone 12-12:30, min SAR dist 20pt) apply
  *     automatically via getSignal() — no backtest changes needed for those
+ * FIX v-final (full sync with paper/live — all 3 modes now identical):
+ *   - Trail gap: flat 60pt → tiered dynamic (T1/T2/T3, mirrors paper/live exactly)
+ *   - Trail activation: dynamic per-trade = 25% of initial SAR gap, min TRAIL_ACTIVATE_PTS
+ *   - getDynamicTrailGap() added — same tier logic as paper/live
+ *   - initialStopLoss + trailActivatePts stored on position (matches paper/live)
  */
 function runBacktest(candles, strategy, capital) {
   const trades    = [];
@@ -108,13 +113,23 @@ function runBacktest(candles, strategy, capital) {
   const BROKERAGE = 80;
   const LOT_SIZE  = getLotQty();
 
-  // Trail gap = 60 pts default (env: TRAIL_GAP_PTS).
-  // Nifty 15-min intraday pullbacks regularly hit 40-70pt — 40pt was too tight.
-  // 60pt gives enough breathing room.
-  // Activation threshold = 15pt (env: TRAIL_ACTIVATE_PTS) — trail locks profit
-  // once the trade is +15pt in favour. Lowered from 50pt so partial gains are protected.
-  const TRAIL_GAP_PTS      = parseFloat(process.env.TRAIL_GAP_PTS      || "60");
+  // Trail gap — tiered dynamic (mirrors paper/live exactly):
+  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 60pt — wide, early move)
+  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 40pt — tightening)
+  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 30pt — locking profit)
+  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 15pt).
+  const TRAIL_T1_UPTO      = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+  const TRAIL_T2_UPTO      = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
+  const TRAIL_T1_GAP       = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+  const TRAIL_T2_GAP       = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+  const TRAIL_T3_GAP       = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
   const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+
+  function getDynamicTrailGap(moveInFavour) {
+    if (moveInFavour < TRAIL_T1_UPTO) return TRAIL_T1_GAP;
+    if (moveInFavour < TRAIL_T2_UPTO) return TRAIL_T2_GAP;
+    return TRAIL_T3_GAP;
+  }
 
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
@@ -154,7 +169,7 @@ function runBacktest(candles, strategy, capital) {
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
   console.log(`   50%-rule pause: ${2 * candleResolutionMins} min (2 candles) after each 50%-rule exit`);
-  console.log(`   TRAIL_GAP: ${TRAIL_GAP_PTS}pts | TRAIL_ACTIVATE: ${TRAIL_ACTIVATE_PTS}pts | ADX_MIN: 25 | RSI CE>55 PE<45`);
+  console.log(`   TRAIL tiers: T1 0-${TRAIL_T1_UPTO}pt=gap${TRAIL_T1_GAP}pt | T2 ${TRAIL_T1_UPTO}-${TRAIL_T2_UPTO}pt=gap${TRAIL_T2_GAP}pt | T3 ${TRAIL_T2_UPTO}pt+=gap${TRAIL_T3_GAP}pt | activate=25%SARgap(min${TRAIL_ACTIVATE_PTS}pt) | ADX_MIN: 25 | RSI CE>55 PE<45`);
 
   // 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
@@ -229,24 +244,22 @@ function runBacktest(candles, strategy, capital) {
     }
 
     // ── SIMULATE INTRA-CANDLE TRAIL ───────────────────────────────────────────
-    // Trail from the very first favourable move (no minimum trigger distance).
-    // 50% floor applied: trail cannot cross entryPrevMid until price clears it.
+    // Tiered dynamic gap (mirrors paper/live exactly): gap tightens as profit grows.
+    // 50% floor/ceiling applied: trail cannot cross entryPrevMid until price clears it.
     // Uses candle high/low as best price proxy (tick-level not available in backtest).
-    // Mirrors paper/live: SL = bestPrice ± TRAIL_GAP_PTS, tighten only.
+    // trailActivatePts: dynamic per-trade — 25% of initial SAR gap, min TRAIL_ACTIVATE_PTS.
     if (position) {
-      // 50% floor + activation threshold: mirrors paper trade exactly.
-      // Trail only activates after TRAIL_ACTIVATE_PTS move in our favour (same as paper).
-      // Trail SL cannot cross entryPrevMid until price has moved past it.
-      // TRAIL_ACTIVATE_PTS is declared at function top — read from env (default 50).
       if (position.side === "CE") {
         const bestThisCandle = candle.high;
         if (!position.bestPrice || bestThisCandle > position.bestPrice) position.bestPrice = bestThisCandle;
         const moveInFavour = position.bestPrice - position.entryPrice;
-        if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
-          const trailSL = parseFloat((position.bestPrice - TRAIL_GAP_PTS).toFixed(2));
+        const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
+        if (moveInFavour >= activatePts) {
+          const dynamicGap       = getDynamicTrailGap(moveInFavour);
+          const trailSL          = parseFloat((position.bestPrice - dynamicGap).toFixed(2));
           const effectiveTrailSL = position.entryPrevMid !== null ? Math.min(trailSL, position.entryPrevMid) : trailSL;
           if (effectiveTrailSL > position.stopLoss) {
-            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt → trailSL=${trailSL} (floor=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
+            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} (floor=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
             position.stopLoss = effectiveTrailSL;
           }
         }
@@ -254,11 +267,13 @@ function runBacktest(candles, strategy, capital) {
         const bestThisCandle = candle.low;
         if (!position.bestPrice || bestThisCandle < position.bestPrice) position.bestPrice = bestThisCandle;
         const moveInFavour = position.entryPrice - position.bestPrice;
-        if (moveInFavour >= TRAIL_ACTIVATE_PTS) {
-          const trailSL = parseFloat((position.bestPrice + TRAIL_GAP_PTS).toFixed(2));
+        const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
+        if (moveInFavour >= activatePts) {
+          const dynamicGap       = getDynamicTrailGap(moveInFavour);
+          const trailSL          = parseFloat((position.bestPrice + dynamicGap).toFixed(2));
           const effectiveTrailSL = position.entryPrevMid !== null ? Math.max(trailSL, position.entryPrevMid) : trailSL;
           if (effectiveTrailSL < position.stopLoss) {
-            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt → trailSL=${trailSL} (floor=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
+            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} (ceil=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
             position.stopLoss = effectiveTrailSL;
           }
         }
@@ -380,16 +395,21 @@ function runBacktest(candles, strategy, capital) {
         }
       }
 
+      // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
+      const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
+      const _dynTrailActivateBT = Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25));
+
       position = {
         side,
         entryPrice,
-        entryTime:      candle.time,
-        entryReason:    reason,
-        stopLoss:       prevSignalSL || null,   // SL from closed candles only (will trail)
-        initialStopLoss: prevSignalSL || null, // original SL at entry — never changes
-        bestPrice:      null,
-        entryPrevMid,                            // fixed mid for 50% rule — never changes
-        signalStrength: strength,
+        entryTime:       candle.time,
+        entryReason:     reason,
+        stopLoss:        prevSignalSL || null,
+        initialStopLoss: prevSignalSL || null,
+        trailActivatePts: _dynTrailActivateBT,
+        bestPrice:       null,
+        entryPrevMid,
+        signalStrength:  strength,
         indicators,
       };
       const priceNote = strength === "STRONG"
