@@ -448,9 +448,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     }
   }
 
-  // Dynamic trail activation: 25% of initial SAR gap, floored at _TRAIL_ACTIVATE_PTS.
+  // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
+  // Without cap: wide SAR gaps (eg 546pt) give unreasonable activation thresholds.
   const _initialSARgapPaper = stopLoss ? Math.abs((spotAtEntry || price) - stopLoss) : 0;
-  const _dynTrailActivatePaper = Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25));
+  const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
 
   ptState.position = {
     side,
@@ -1469,6 +1470,14 @@ router.get("/exit", (req, res) => {
   const exitSpot   = ptState.currentBar ? ptState.currentBar.close : (ptState.lastTickPrice || 0);
   const exitOption = ptState.optionLtp || null;
   log(`🖐️ [PAPER] MANUAL EXIT triggered by user | NIFTY spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
+
+  // ── Block re-entry for 1 full candle after manual exit ──────────────────────
+  ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+  const _manualPauseMs = TRADE_RES * 60 * 1000;
+  ptState._fiftyPctPauseUntil = Date.now() + _manualPauseMs;
+  const _resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+  log(`⏸ [PAPER] Manual exit — re-entry paused for 1 candle (~${TRADE_RES} min, resume ~${_resumeTime})`);
+
   simulateSell(exitSpot, "Manual exit by user", exitSpot);
 
   // Return JSON so the fetch() handler in the browser works correctly

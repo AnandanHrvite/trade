@@ -891,10 +891,11 @@ async function onCandleClose(candle) {
         ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
         : null;
 
-      // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts.
-      // Wider SL at entry (bigger SAR gap) = need more move before locking profit.
+      // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
+      // Without cap: a 546pt SAR gap gives 137pt activation — trail never fires in practice.
+      // Cap at 40pt ensures trail always activates within a reasonable profit move.
       const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
-      const _dynTrailActivate = Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25));
+      const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
 
       tradeState.position = {
         side,
@@ -1130,9 +1131,9 @@ function onSpotTick(tick) {
           ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
           : null;
 
-        // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts.
+        // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
         const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
-        const _dynTrailActivateIntra = Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25));
+        const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
 
         tradeState.position = {
           side,
@@ -1516,6 +1517,18 @@ router.get("/exit", async (req, res) => {
   const exitSpot   = tradeState.currentBar.close;
   const exitOption = tradeState.optionLtp || null;
   log(`🖐️ [LIVE] MANUAL EXIT | NIFTY spot: ₹${exitSpot} | Option LTP: ${exitOption ? "₹" + exitOption : "N/A"}`);
+
+  // ── Block re-entry for 1 full candle after manual exit ──────────────────────
+  // Without this, if a signal fires at the same candle close, the bot immediately
+  // re-enters — which is not what the user wants when manually exiting.
+  // Use _slHitCandleTime to block same-candle re-entry AND _fiftyPctPauseUntil
+  // to block the next candle too (1 full candle pause = TRADE_RES minutes).
+  tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+  const _manualPauseMs = TRADE_RES * 60 * 1000; // 1 candle pause
+  tradeState._fiftyPctPauseUntil = Date.now() + _manualPauseMs;
+  const _resumeTime = new Date(tradeState._fiftyPctPauseUntil).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+  log(`⏸ [LIVE] Manual exit — re-entry paused for 1 candle (~${TRADE_RES} min, resume ~${_resumeTime})`);
+
   await squareOff(exitSpot, "Manual exit by user");
 
   return res.redirect("/trade/status");

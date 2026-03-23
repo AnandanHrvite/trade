@@ -397,7 +397,7 @@ function runBacktest(candles, strategy, capital) {
 
       // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
       const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
-      const _dynTrailActivateBT = Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25));
+      const _dynTrailActivateBT = Math.min(40, Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25)));
 
       position = {
         side,
