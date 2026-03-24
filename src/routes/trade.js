@@ -380,6 +380,16 @@ function startOptionPolling(symbol) {
       }
     }
   });
+
+  // ── 10s timeout: if option LTP still null, use last tick price as proxy ───────
+  setTimeout(() => {
+    if (tradeState.position && !tradeState.position.optionEntryLtp && tradeState.lastTickPrice) {
+      const proxy = tradeState.lastTickPrice;
+      tradeState.position.optionEntryLtp     = proxy;
+      tradeState.position.optionEntryLtpTime = istNow();
+      log(`⚠️ [LIVE] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
+    }
+  }, 10000);
   // Then every 3 seconds
   _optionPollTimer = setInterval(async () => {
     if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }

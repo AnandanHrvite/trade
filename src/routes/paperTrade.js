@@ -294,12 +294,22 @@ function startOptionPolling(symbol) {
       ptState.position.optionCurrentLtp = ltp;
       if (!ptState.position.optionEntryLtp) {
         ptState.position.optionEntryLtp = ltp;
-        // Also store the entry LTP fetch time for display
         ptState.position.optionEntryLtpTime = istNow();
         log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
       }
     }
   });
+
+  // ── 10s timeout: if option LTP still null, use spot as proxy entry LTP ───────
+  // This prevents the "Fetching…" stuck state on illiquid/expiry-day options.
+  setTimeout(() => {
+    if (ptState.position && !ptState.position.optionEntryLtp && ptState.lastTickPrice) {
+      const proxy = ptState.lastTickPrice;
+      ptState.position.optionEntryLtp = proxy;
+      ptState.position.optionEntryLtpTime = istNow();
+      log(`⚠️ [PAPER] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
+    }
+  }, 10000);
   // Then every 3 seconds
   _optionPollTimer = setInterval(async () => {
     if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
@@ -1221,14 +1231,98 @@ function saveSession() {
 
   data.sessions.push(session);
   data.totalPnl = parseFloat((data.totalPnl + ptState.sessionPnl).toFixed(2));
-
-  // Accumulate capital from previous capital (not from env — that would reset it)
-  data.capital = parseFloat((data.capital + ptState.sessionPnl).toFixed(2));
+  data.capital  = parseFloat((data.capital  + ptState.sessionPnl).toFixed(2));
 
   savePaperData(data);
   log(`💾 Session saved. Running capital: ₹${data.capital} | Total PnL: ₹${data.totalPnl}`);
 
+  // ── Daily Report + Telegram EOD ──────────────────────────────────────────────
+  generatePaperDailyReport(ptState.sessionTrades, ptState.sessionPnl);
+
   return session;
+}
+
+function generatePaperDailyReport(trades, sessionPnl) {
+  try {
+    if (!trades || trades.length === 0) {
+      sendTelegram([
+        `📄 PAPER TRADE — DAILY REPORT`,
+        `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`,
+        ``,
+        `No trades taken today.`,
+        `Session PnL: ₹0`,
+      ].join("\n"));
+      return;
+    }
+
+    const wins    = trades.filter(t => t.pnl > 0);
+    const losses  = trades.filter(t => t.pnl <= 0);
+    const winRate = ((wins.length / trades.length) * 100).toFixed(1);
+    const avgWin  = wins.length   ? (wins.reduce((s, t) => s + t.pnl, 0)   / wins.length).toFixed(0)   : 0;
+    const avgLoss = losses.length ? (losses.reduce((s, t) => s + t.pnl, 0) / losses.length).toFixed(0) : 0;
+    const best    = trades.reduce((b, t) => t.pnl > b.pnl ? t : b, trades[0]);
+    const worst   = trades.reduce((w, t) => t.pnl < w.pnl ? t : w, trades[0]);
+
+    const exitGroups = {};
+    trades.forEach(t => {
+      const label = t.exitReason.includes("50% rule")  ? "50% Rule"
+                  : t.exitReason.includes("SL hit")    ? "SL Hit"
+                  : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
+                  : t.exitReason.includes("Opposite")  ? "Opposite Signal"
+                  : t.exitReason.includes("EOD") || t.exitReason.includes("stop") ? "EOD/Stop"
+                  : t.exitReason.includes("Manual")    ? "Manual Exit"
+                  : "Other";
+      if (!exitGroups[label]) exitGroups[label] = { count: 0, pnl: 0, wins: 0 };
+      exitGroups[label].count++;
+      exitGroups[label].pnl += t.pnl;
+      if (t.pnl > 0) exitGroups[label].wins++;
+    });
+
+    const pnlEmoji = sessionPnl >= 0 ? "🟢" : "🔴";
+    const dateStr  = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" });
+
+    // Console log
+    log(`\n${"═".repeat(54)}`);
+    log(`📊 PAPER DAILY JOURNAL — ${dateStr}`);
+    log(`${"─".repeat(54)}`);
+    log(`   Trades    : ${trades.length} (${wins.length}W / ${losses.length}L)`);
+    log(`   Win Rate  : ${winRate}%`);
+    log(`   Session PnL: ${pnlEmoji} ₹${sessionPnl}`);
+    log(`   Avg Win   : ₹${avgWin} | Avg Loss: ₹${avgLoss}`);
+    log(`   Best : ₹${best.pnl} | Worst: ₹${worst.pnl}`);
+    log(`${"─".repeat(54)}`);
+    Object.entries(exitGroups)
+      .sort((a, b) => b[1].count - a[1].count)
+      .forEach(([label, g]) => {
+        log(`   ${label.padEnd(18)}: ${g.count}x WR=${((g.wins/g.count)*100).toFixed(0)}% PnL=₹${g.pnl.toFixed(0)}`);
+      });
+    log(`${"═".repeat(54)}\n`);
+
+    // Telegram
+    const exitBreakdown = Object.entries(exitGroups)
+      .sort((a, b) => b[1].count - a[1].count)
+      .map(([label, g]) => `  ${label}: ${g.count}x WR${((g.wins/g.count)*100).toFixed(0)}% ₹${g.pnl.toFixed(0)}`)
+      .join("\n");
+
+    sendTelegram([
+      `📄 PAPER TRADE — DAILY REPORT`,
+      `📅 ${dateStr}`,
+      ``,
+      `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
+      `Win Rate : ${winRate}%`,
+      `Session  : ${pnlEmoji} ₹${sessionPnl}`,
+      `Avg Win  : ₹${avgWin}  |  Avg Loss: ₹${avgLoss}`,
+      ``,
+      `Exit Breakdown:`,
+      exitBreakdown,
+      ``,
+      `Best : ₹${best.pnl} — ${best.side} ${best.exitReason}`,
+      `Worst: ₹${worst.pnl} — ${worst.side} ${worst.exitReason}`,
+    ].join("\n"));
+
+  } catch (err) {
+    log(`⚠️ [PAPER] Daily report error: ${err.message}`);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1321,9 +1415,36 @@ router.get("/start", async (req, res) => {
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | 3 losses → daily kill | OPT_STOP=50%-candle-mid (option SL = entryLTP − spotGapToPrevMid)`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
-  // Telegram: session started
+  // Telegram: session started + checklist (same as live trade)
+  const _ptChecks = { fyers: { ok: false, msg: "" }, symbol: { ok: false, msg: "" } };
+  try {
+    const { getLiveSpot, validateAndGetOptionSymbol } = require("../config/instrument");
+    const [spotResult] = await Promise.allSettled([
+      getLiveSpot().then(s => { if (!s || s <= 0) throw new Error("spot=0"); return s; }),
+    ]);
+    if (spotResult.status === "fulfilled") {
+      const spot = spotResult.value;
+      const atm  = Math.round(spot / 50) * 50;
+      _ptChecks.fyers = { ok: true, msg: `NIFTY ₹${spot} | ATM ${atm}` };
+      try {
+        const [ce, pe] = await Promise.all([
+          validateAndGetOptionSymbol(spot, "CE"),
+          validateAndGetOptionSymbol(spot, "PE"),
+        ]);
+        if (!ce.invalid && ce.symbol) {
+          _ptChecks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
+        } else {
+          _ptChecks.symbol = { ok: false, msg: "CE invalid — next expiry may not be live" };
+        }
+      } catch (e) { _ptChecks.symbol = { ok: false, msg: e.message }; }
+    } else {
+      _ptChecks.fyers = { ok: false, msg: spotResult.reason?.message || "could not fetch spot" };
+    }
+  } catch (_) {}
+
+  const _ptAllOk = _ptChecks.fyers.ok && _ptChecks.symbol.ok;
   sendTelegram([
-    `📄 PAPER TRADE STARTED`,
+    `${_ptAllOk ? "✅" : "⚠️"} PAPER TRADE STARTED`,
     ``,
     `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
     `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
@@ -1333,6 +1454,10 @@ router.get("/start", async (req, res) => {
     `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
     `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
     `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
+    ``,
+    `Pre-Market Checklist:`,
+    `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
+    `${_ptChecks.symbol.ok ? "✅" : "⚠️"} Symbols : ${_ptChecks.symbol.msg || "not checked"}`,
   ].join("\n"));
 
   // ── PRE-LOAD today's historical candles so strategy fires immediately ────────
