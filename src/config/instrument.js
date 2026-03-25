@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fyers = require("./fyers");
+const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require("../utils/nseHolidays");
 
 /**
  * instrument.js — Auto Strike & Auto Expiry
@@ -66,6 +67,9 @@ function getLastTuesdayOfMonth() {
  * Get the nearest upcoming TUESDAY (NIFTY weekly expiry day — changed from Thursday in 2024)
  * If today IS Tuesday and market hasn't expired yet, use today
  * Otherwise rolls to next Tuesday
+ *
+ * ⚠️  NOTE: This function does NOT check for holidays. Use validateAndGetOptionSymbol() instead,
+ * which calls getNearestExpiryFromOptionChain() first (holiday-aware via Fyers API).
  *
  * NOTE: NIFTY 50 index options switched to TUESDAY weekly expiry.
  * BankNifty = Wednesday, FinNifty = Tuesday, Nifty = Tuesday.
@@ -276,6 +280,34 @@ function expiryTimestampToCode(ts) {
 }
 
 /**
+ * Convert expiry code (e.g. "26331") to Date object
+ * Format: YYMDD where M is month code (1-9, O, N, D)
+ */
+function expiryCodeToDate(code) {
+  // e.g. "26331" = 2026-03-31
+  const yy = code.substring(0, 2);
+  const mCode = code.substring(2, 3);
+  const dd = code.substring(3, 5);
+  
+  const year = 2000 + parseInt(yy);
+  const monthIndex = MONTH_CODE.indexOf(mCode);
+  const day = parseInt(dd);
+  
+  return new Date(year, monthIndex, day);
+}
+
+/**
+ * Convert Date object to expiry code (e.g. "26331")
+ * Format: YYMDD where M is month code (1-9, O, N, D)
+ */
+function dateToExpiryCode(date) {
+  const yy = String(date.getFullYear()).slice(2);
+  const mCode = MONTH_CODE[date.getMonth()];
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yy}${mCode}${dd}`;
+}
+
+/**
  * Call the Fyers Option Chain REST API directly (bypasses the JS SDK which lacks optionchain()).
  * Returns the nearest expiry as a symbol code string like "26303", or null on failure.
  *
@@ -401,12 +433,34 @@ async function validateAndGetOptionSymbol(spot, side) {
     return { symbol, expiry: chainExpiry, strike, side };
   }
 
-  // ── Step 2: Computed weekly expiry (next Tuesday) + getQuotes() validation ──
+  // ── Step 2: Computed weekly expiry (next Tuesday) with holiday check ──
   const weeklyExpiry = getNearestThursdayExpiry();
   const weeklySymbol = `NSE:NIFTY${weeklyExpiry}${strike}${side}`;
-  if (await isSymbolValidViaQuotes(weeklySymbol)) {
-    console.log(`[instrument] ✅ Weekly expiry validated: ${weeklySymbol}`);
-    return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side };
+  
+  // Check if the computed Tuesday is a holiday
+  const weeklyDate = expiryCodeToDate(weeklyExpiry);
+  const isHoliday = await isNonTradingDay(weeklyDate);
+  
+  if (isHoliday) {
+    console.warn(`[instrument] ⚠️  Computed expiry ${weeklyExpiry} (${formatDateToYYYYMMDD(weeklyDate)}) is a holiday/weekend`);
+    
+    // Try previous trading day (preponed expiry - usually Monday)
+    const preponedDate = await getPreviousTradingDay(weeklyDate);
+    const preponedExpiry = dateToExpiryCode(preponedDate);
+    const preponedSymbol = `NSE:NIFTY${preponedExpiry}${strike}${side}`;
+    
+    console.log(`[instrument] 🔄 Trying preponed expiry: ${preponedExpiry} (${formatDateToYYYYMMDD(preponedDate)})`);
+    
+    if (await isSymbolValidViaQuotes(preponedSymbol)) {
+      console.log(`[instrument] ✅ Preponed expiry validated: ${preponedSymbol}`);
+      return { symbol: preponedSymbol, expiry: preponedExpiry, strike, side };
+    }
+  } else {
+    // Not a holiday, validate normally
+    if (await isSymbolValidViaQuotes(weeklySymbol)) {
+      console.log(`[instrument] ✅ Weekly expiry validated: ${weeklySymbol}`);
+      return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side };
+    }
   }
   
   // ── Step 3: Monthly expiry (last Tuesday of month) + getQuotes() validation ──
@@ -418,17 +472,17 @@ async function validateAndGetOptionSymbol(spot, side) {
     return { symbol: monthlySymbol, expiry: monthlyExpiry, strike, side };
   }
 
-  // ── Step 4: Scan next 21 days — check ALL days (Fyers can have any expiry day) ──
-  console.warn(`[instrument] ⚠️  Both weekly and monthly failed, scanning next 21 days...`);
+  // ── Step 4: Scan next 21 days — check ALL days, skip weekends & holidays ──
+  console.warn(`[instrument] ⚠️  Both weekly and monthly failed, scanning next 21 days (excluding holidays)...`);
   const now = new Date();
   const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   
   for (let offset = 1; offset <= 21; offset++) {
     const tryDate = new Date(ist);
     tryDate.setDate(ist.getDate() + offset);
-    const day = tryDate.getDay();
-    // Skip weekends — NSE is closed Sat(6) & Sun(0)
-    if (day === 0 || day === 6) continue;
+    
+    // Skip weekends & holidays
+    if (await isNonTradingDay(tryDate)) continue;
 
     const dd    = String(tryDate.getDate()).padStart(2, "0");
     const mCode = MONTH_CODE[tryDate.getMonth()];
@@ -437,7 +491,7 @@ async function validateAndGetOptionSymbol(spot, side) {
     const testSymbol = `NSE:NIFTY${expCode}${strike}${side}`;
 
     if (await isSymbolValidViaQuotes(testSymbol)) {
-      console.warn(`[instrument] ✅ Found valid expiry +${offset}d: ${testSymbol}`);
+      console.warn(`[instrument] ✅ Found valid expiry +${offset}d: ${testSymbol} (${formatDateToYYYYMMDD(tryDate)})`);
       return { symbol: testSymbol, expiry: expCode, strike, side };
     }
   }
