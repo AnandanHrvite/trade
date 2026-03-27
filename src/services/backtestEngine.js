@@ -456,18 +456,13 @@ function runBacktest(candles, strategy, capital) {
         }
       }
 
-      // ── 50% entry gate — mirrors paper trade exactly ──────────────────────────
-      // If entry spot is already on wrong side of prev candle mid, the 50% exit rule
-      // would fire on the very first candle — no room to hold. Block the entry.
-      // CE needs room to rise  → entry must be ABOVE prevMid
-      // PE needs room to fall  → entry must be BELOW prevMid
-      const violates50 = (side === "PE" && entryPrice > entryPrevMid) ||
-                         (side === "CE" && entryPrice < entryPrevMid);
-      if (violates50) {
-        console.log(`  🚫 Entry BLOCKED [50% gate]: ${side} @ ${entryPrice} ${side === "PE" ? ">" : "<"} prevMid ${entryPrevMid} — no directional room`);
-        _cachedPrevSL = signalSL ?? null;
-        continue; // eslint-disable-line no-continue
-      }
+      // NOTE: 50% entry gate is intentionally NOT applied here.
+      // In paper/live trade, the gate blocks intra-candle entries where price hasn't
+      // yet cleared prevMid — correct, because there's no room to hold.
+      // In backtest, entry is at candle CLOSE — price has already closed in the signal
+      // direction, confirming the move. Blocking close-confirmed entries based on prevMid
+      // position artificially inflates the trade sample's difficulty and produces
+      // misleading low win rates that don't reflect real candle-close entries.
 
       // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
       const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;

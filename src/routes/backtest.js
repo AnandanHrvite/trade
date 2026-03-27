@@ -198,10 +198,8 @@ ${buildSidebar('backtest', liveActive)}
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
     <div><label>Candle</label>
       <select id="r">
-        <option value="3"  ${resolution==="3" ?"selected":""}>3-min</option>
         <option value="5"  ${resolution==="5" ?"selected":""}>5-min</option>
         <option value="15" ${resolution==="15"?"selected":""}>15-min</option>
-        <option value="60" ${resolution==="60"?"selected":""}>60-min</option>
       </select>
     </div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){alert('Set dates');return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
@@ -250,9 +248,9 @@ ${buildSidebar('backtest', liveActive)}
         <th onclick="doSort('side')"   id="h-side">Side &#9660;</th>
         <th onclick="doSort('entry')"  id="h-entry" class="sorted">Entry Time &#9660;</th>
         <th onclick="doSort('exit')"   id="h-exit">Exit Time</th>
-        <th onclick="doSort('ePrice')" id="h-ePrice">Entry &#8377;</th>
-        <th onclick="doSort('xPrice')" id="h-xPrice">Exit &#8377;</th>
-        <th onclick="doSort('sl')"     id="h-sl">SL &#8377;</th>
+        <th onclick="doSort('ePrice')" id="h-ePrice">Entry (pts)</th>
+        <th onclick="doSort('xPrice')" id="h-xPrice">Exit (pts)</th>
+        <th onclick="doSort('sl')"     id="h-sl">SL (pts)</th>
         <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(₹ sim)" : "(pts)"}</th>
         <th onclick="doSort('risk_pts')" id="h-risk">Risk (pts)</th>
         <th onclick="doSort('rr')"     id="h-rr">R:R</th>
@@ -286,7 +284,7 @@ var TRADES = JSON.parse(document.getElementById('trades-data').textContent);
 var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;
 
-function fmt(n){ return n!=null ? '\u20b9'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\u2014'; }
+function fmt(n){ return n!=null ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\u2014'; }
 var OPT_SIM = ${s.optionSim ? "true" : "false"};
 function fpts(n, spotPts){
   if(n==null) return '\u2014';
@@ -510,7 +508,7 @@ document.getElementById('btModal').addEventListener('click',function(e){
 
 function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   const nav = buildNav("backtest", liveActive);
-  const resOptions = ["1","3","5","15","30","60"].map(v =>
+  const resOptions = ["5","15"].map(v =>
     `<option value="${v}"${String(v)===String(resolution)?" selected":""}>${v}-min</option>`).join("");
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
