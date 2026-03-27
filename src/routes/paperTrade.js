@@ -240,14 +240,14 @@ async function prefetchOptionSymbols(spot) {
     
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
     if (ce.invalid) {
-      log(`⚠️ [PAPER] CE symbol invalid (${ce.symbol}) — skipping cache, will use live lookup`);
+      log(`⚠️ [PAPER] CE symbol invalid (${ce.symbol}) — all expiry fallbacks exhausted, will retry live at entry`);
       ptState._cachedCE = null;
     } else {
       ptState._cachedCE = { ...ce, spot };
     }
     
     if (pe.invalid) {
-      log(`⚠️ [PAPER] PE symbol invalid (${pe.symbol}) — skipping cache, will use live lookup`);
+      log(`⚠️ [PAPER] PE symbol invalid (${pe.symbol}) — all expiry fallbacks exhausted, will retry live at entry`);
       ptState._cachedPE = null;
     } else {
       ptState._cachedPE = { ...pe, spot };

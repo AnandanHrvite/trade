@@ -68,8 +68,8 @@ function getLastTuesdayOfMonth() {
  * If today IS Tuesday and market hasn't expired yet, use today
  * Otherwise rolls to next Tuesday
  *
- * ⚠️  NOTE: This function does NOT check for holidays. Use validateAndGetOptionSymbol() instead,
- * which calls getNearestExpiryFromOptionChain() first (holiday-aware via Fyers API).
+ * ⚠️  NOTE: This is a SYNCHRONOUS function and does NOT check for holidays.
+ * For holiday-aware expiry, use validateAndGetOptionSymbol() which is async.
  *
  * NOTE: NIFTY 50 index options switched to TUESDAY weekly expiry.
  * BankNifty = Wednesday, FinNifty = Tuesday, Nifty = Tuesday.
@@ -100,6 +100,7 @@ function getNearestThursdayExpiry() {
   const mCode = MONTH_CODE[expiry.getMonth()]; // e.g. "3" for March
   const yy    = String(expiry.getFullYear()).slice(2);
 
+  console.log(`[instrument] getNearestThursdayExpiry() computed: ${yy}${mCode}${dd} (${formatDateToYYYYMMDD(expiry)}) - WARNING: NOT holiday-checked`);
   return `${yy}${mCode}${dd}`; // e.g. "26306" = year26 month3 day06
 }
 
@@ -431,9 +432,12 @@ function parseDateToCode(dateStr) {
  */
 async function validateAndGetOptionSymbol(spot, side) {
   const strike = calcATMStrike(spot, side);
+  console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}`);
 
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
+  console.log(`[instrument] Step 1: Calling Option Chain API...`);
   const chainExpiry = await getNearestExpiryFromOptionChain();
+  console.log(`[instrument] Step 1: Option Chain returned: ${chainExpiry || 'null'}`);
   if (chainExpiry) {
     // Validate the Option Chain expiry is not a holiday
     const chainDate = expiryCodeToDate(chainExpiry);
@@ -574,19 +578,50 @@ async function validateAndGetOptionSymbol(spot, side) {
 async function isSymbolValidViaQuotes(symbol) {
   try {
     const res = await fyers.getQuotes([symbol]);
-    if (res.s === "ok" && res.d && res.d.length > 0) {
+
+    // ── Auth / session errors — treat as "inconclusive", not "invalid symbol" ──
+    // If Fyers returns a top-level error (expired token, rate limit, etc.) we
+    // must NOT mark the symbol as invalid — that would cause all fallbacks to
+    // silently fail and ultimately skip a valid trade.
+    if (res.s !== "ok") {
+      const topMsg = (res.message || res.msg || "").toLowerCase();
+      const isAuthErr = topMsg.includes("token") || topMsg.includes("auth") ||
+                        topMsg.includes("session") || topMsg.includes("unauthorized") ||
+                        topMsg.includes("limit") || topMsg.includes("rate");
+      if (isAuthErr) {
+        console.warn(`[instrument] ⚠️  getQuotes auth/rate error for ${symbol}: "${res.message || res.msg}" — assuming symbol VALID to avoid false-invalid`);
+        return true; // optimistic: don't discard the symbol due to API issues
+      }
+      console.log(`[instrument] Symbol validation failed: ${symbol} - top-level s="${res.s}" msg="${res.message || ""}"`);
+      return false;
+    }
+
+    if (res.d && res.d.length > 0) {
       const v = res.d[0].v || res.d[0];
+      const errmsg = (v.errmsg || "").toLowerCase();
+
+      // Auth / session errors inside the data array — same optimistic treatment
+      const isAuthErr = errmsg.includes("token") || errmsg.includes("auth") ||
+                        errmsg.includes("session") || errmsg.includes("unauthorized") ||
+                        errmsg.includes("limit") || errmsg.includes("rate");
+      if (isAuthErr) {
+        console.warn(`[instrument] ⚠️  getQuotes data-level auth error for ${symbol}: "${v.errmsg}" — assuming VALID`);
+        return true;
+      }
+
       const isValid = !v.errmsg && v.s !== "error";
       if (!isValid) {
         console.log(`[instrument] Symbol validation failed: ${symbol} - error: ${v.errmsg || v.s}`);
       }
       return isValid;
     }
+
     console.log(`[instrument] Symbol validation failed: ${symbol} - no data in response`);
     return false;
   } catch (e) {
-    console.log(`[instrument] Symbol validation error: ${symbol} - ${e.message}`);
-    return false;
+    // Network / timeout errors are also inconclusive — don't mark symbol invalid
+    console.warn(`[instrument] ⚠️  getQuotes threw for ${symbol}: ${e.message} — assuming VALID`);
+    return true;
   }
 }
 
@@ -604,4 +639,3 @@ module.exports = {
   getProductType,
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
 };
-
