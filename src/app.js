@@ -594,34 +594,49 @@ function hardReset(){
 function refreshHolidays(){
   var btn = document.getElementById('holiday-refresh-btn');
   if(!btn) return;
-  btn.disabled = true;
-  btn.textContent = '⏳ Refreshing...';
   
   var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
   var url = '/api/holidays/refresh' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
   
+  // Show loading state
+  btn.disabled = true;
+  btn.textContent = '⏳ Refreshing...';
+  btn.style.opacity = '0.6';
+  
   fetch(url, {method:'POST'})
     .then(function(r){
-      if(r.status === 403){ 
-        alert('Wrong API_SECRET — refresh blocked.\\nCheck API_SECRET in your .env and try again.'); 
-        return null; 
+      if(r.status === 403){
+        btn.disabled = false;
+        btn.textContent = '📅 Refresh Holidays';
+        btn.style.opacity = '1';
+        alert('❌ Wrong API_SECRET — refresh blocked.\\n\\nCheck API_SECRET in your .env and try again.');
+        return null;
+      }
+      if(!r.ok){
+        throw new Error('HTTP ' + r.status + ': ' + r.statusText);
       }
       return r.json();
     })
     .then(function(d){
       btn.disabled = false;
       btn.textContent = '📅 Refresh Holidays';
+      btn.style.opacity = '1';
+      
       if(!d) return;
-      if(d.success){ 
-        alert('✅ Holiday list refreshed successfully!\\n\\nFetched ' + d.count + ' holidays from NSE API.\\nCache updated.'); 
-      } else { 
-        alert('❌ Refresh failed: ' + (d.error || 'Unknown error') + '\\n\\nUsing fallback holiday list.'); 
+      
+      if(d.success){
+        alert('✅ Holiday list refreshed successfully!\\n\\nFetched ' + d.count + ' holidays from NSE API.\\nCache updated.\\n\\nThe trading status check will now use the updated holiday list.');
+        // Trigger immediate trading status check to reflect new holidays
+        checkTradingStatus();
+      } else {
+        alert('❌ Refresh failed: ' + (d.error || 'Unknown error') + '\\n\\nUsing fallback holiday list.\\n\\nPlease check your internet connection and try again.');
       }
     })
-    .catch(function(err){ 
+    .catch(function(err){
       btn.disabled = false;
       btn.textContent = '📅 Refresh Holidays';
-      alert('❌ Network error: ' + err.message); 
+      btn.style.opacity = '1';
+      alert('❌ Network error: ' + err.message + '\\n\\nPlease check your internet connection and try again.');
     });
 }
 }
