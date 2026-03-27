@@ -25,6 +25,7 @@ const fyers             = require("../config/fyers");
 const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = require("../config/instrument");
+const { isTradingAllowed } = require("../utils/nseHolidays");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -1318,6 +1319,16 @@ router.get("/start", async (req, res) => {
   if (process.env.LIVE_TRADE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set LIVE_TRADE_ENABLED=true in .env." });
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
   if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /paperTrade/stop" });
+  
+  // ── NEW: Trading session validation (holidays + time check) ────────────────
+  const tradingCheck = await isTradingAllowed();
+  if (!tradingCheck.allowed) {
+    return res.status(400).json({
+      success: false,
+      error: `❌ ${tradingCheck.reason}`,
+    });
+  }
+  
   // Allow starting before 9:15 for history pre-fetch — executions still gated by isMarketHours()
   if (!isStartAllowed()) {
     const stopMins = parseMins("TRADE_STOP_TIME", "15:30");

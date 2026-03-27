@@ -294,6 +294,79 @@ function clearCache() {
   console.log('[nseHolidays] Cache cleared');
 }
 
+/**
+ * Check if current time is within trading hours (7 AM - 4 PM IST)
+ * @returns {boolean}
+ */
+function isWithinTradingHours() {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const hour = now.getHours();
+  return hour >= 7 && hour < 16; // 7 AM to 3:59 PM
+}
+
+/**
+ * Check if trading is allowed (valid trading day + within trading hours)
+ * @returns {Promise<{allowed: boolean, reason: string}>}
+ */
+async function isTradingAllowed() {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  
+  // Check if it's a weekend
+  if (isWeekend(now)) {
+    return {
+      allowed: false,
+      reason: 'Trading not allowed on weekends (Saturday/Sunday)'
+    };
+  }
+  
+  // Check if it's a holiday
+  const isHoliday = await isNSEHoliday(now);
+  if (isHoliday) {
+    return {
+      allowed: false,
+      reason: 'Trading not allowed on NSE holidays'
+    };
+  }
+  
+  // Check trading hours
+  if (!isWithinTradingHours()) {
+    const hour = now.getHours();
+    return {
+      allowed: false,
+      reason: `Trading allowed only between 7 AM - 4 PM IST (current time: ${hour}:${String(now.getMinutes()).padStart(2, '0')})`
+    };
+  }
+  
+  return {
+    allowed: true,
+    reason: 'Trading allowed'
+  };
+}
+
+/**
+ * Force refresh holiday cache from NSE API
+ * @returns {Promise<{success: boolean, count: number, error?: string}>}
+ */
+async function refreshHolidayCache() {
+  try {
+    console.log('[nseHolidays] Manual refresh requested...');
+    clearCache();
+    const holidays = await getNSEHolidays();
+    return {
+      success: true,
+      count: holidays.length,
+      holidays: holidays
+    };
+  } catch (error) {
+    console.error('[nseHolidays] Manual refresh failed:', error.message);
+    return {
+      success: false,
+      count: 0,
+      error: error.message
+    };
+  }
+}
+
 module.exports = {
   getNSEHolidays,
   isNSEHoliday,
@@ -302,7 +375,10 @@ module.exports = {
   getNextTradingDay,
   getPreviousTradingDay,
   clearCache,
-  formatDateToYYYYMMDD
+  formatDateToYYYYMMDD,
+  isWithinTradingHours,
+  isTradingAllowed,
+  refreshHolidayCache
 };
 
 // Made with Bob

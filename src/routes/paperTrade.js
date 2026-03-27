@@ -22,6 +22,7 @@ const { getSymbol, getLotQty, INSTRUMENT, validateAndGetOptionSymbol } = require
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
+const { isTradingAllowed } = require("../utils/nseHolidays");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -1349,6 +1350,15 @@ router.get("/start", async (req, res) => {
     return res.status(400).json({
       success: false,
       error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /trade/stop`,
+    });
+  }
+
+  // ── NEW: Trading session validation (holidays + time check) ────────────────
+  const tradingCheck = await isTradingAllowed();
+  if (!tradingCheck.allowed) {
+    return res.status(400).json({
+      success: false,
+      error: `❌ ${tradingCheck.reason}`,
     });
   }
 

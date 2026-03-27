@@ -38,8 +38,10 @@ const OPEN_PATHS = [
   "/auth/status",           // read-only auth status
   "/auth/zerodha/status",
   "/auth/zerodha/logout",
+  "/api/holidays",          // read-only holiday list
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
+  // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
 app.use((req, res, next) => {
   const secret = process.env.API_SECRET;
@@ -60,6 +62,27 @@ app.use("/result",     require("./routes/result"));
 app.use("/paperTrade", require("./routes/paperTrade"));
 app.use("/trade",      require("./routes/trade"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
+
+// ── Holiday Management API ────────────────────────────────────────────────────
+const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
+
+app.post("/api/holidays/refresh", async (req, res) => {
+  try {
+    const result = await refreshHolidayCache();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get("/api/holidays", async (req, res) => {
+  try {
+    const holidays = await getNSEHolidays();
+    res.json({ success: true, holidays, count: holidays.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
@@ -258,6 +281,9 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
   </div>
 
+  <!-- Trading Status Alert Banner -->
+  <div id="trading-status-alert" style="display:none;"></div>
+
 <div class="page">
 
   <!-- ① BROKER CONNECTIONS — redesigned -->
@@ -340,6 +366,14 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="hard-reset-row">
         <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
         <button onclick="hardReset()" class="hard-reset-btn">🔄 Hard Reset</button>
+      
+      <div class="broker-divider"></div>
+      <div class="hard-reset-row">
+        <span class="hard-reset-hint">📅 NSE Holiday list is auto-fetched daily. Click to manually refresh from NSE API (updates cache immediately).</span>
+        <button onclick="refreshHolidays()" class="hard-reset-btn" style="background:#0a0f14;border-color:#1a4a8a;color:#60a5fa;" id="holiday-refresh-btn">
+          📅 Refresh Holidays
+        </button>
+      </div>
       </div>
     </div>
   </div>
@@ -487,6 +521,57 @@ async function pollDashboardStatus(){
   } catch(e){}
 }
 pollDashboardStatus();
+
+// ── Check Trading Status (Holiday/Weekend/Time) ──────────────────────────────
+async function checkTradingStatus(){
+  try {
+    var alertDiv = document.getElementById('trading-status-alert');
+    if(!alertDiv) return;
+    
+    var now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    var day = now.getDay();
+    var hour = now.getHours();
+    
+    // Check if weekend
+    if(day === 0 || day === 6){
+      alertDiv.style.display = 'block';
+      alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#1a0a0a;border:2px solid #5a1010;border-radius:10px;';
+      alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🏖️</span><div><div style="font-size:0.95rem;font-weight:700;color:#f87171;margin-bottom:4px;">Weekend - Markets Closed</div><div style="font-size:0.75rem;color:#a0a0b0;">Trading is not allowed on ' + (day === 0 ? 'Sunday' : 'Saturday') + '. Markets resume on Monday at 9:15 AM IST.</div></div></div>';
+      return;
+    }
+    
+    // Check if outside trading hours
+    if(hour < 7 || hour >= 16){
+      alertDiv.style.display = 'block';
+      alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#0a0a14;border:2px solid #2a2a50;border-radius:10px;';
+      var timeMsg = hour < 7 ? 'Markets open at 7:00 AM IST' : 'Markets closed at 4:00 PM IST';
+      alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🕐</span><div><div style="font-size:0.95rem;font-weight:700;color:#60a5fa;margin-bottom:4px;">Outside Trading Hours</div><div style="font-size:0.75rem;color:#a0a0b0;">Trading allowed only between 7:00 AM - 4:00 PM IST. ' + timeMsg + '.</div></div></div>';
+      return;
+    }
+    
+    // Check if holiday (fetch from API)
+    var res = await fetch('/api/holidays', {cache:'no-store'});
+    if(res.ok){
+      var data = await res.json();
+      if(data.success && data.holidays){
+        var todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        if(data.holidays.includes(todayStr)){
+          alertDiv.style.display = 'block';
+          alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#1a0a00;border:2px solid#5a3010;border-radius:10px;';
+          alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🎉</span><div><div style="font-size:0.95rem;font-weight:700;color:#fbbf24;margin-bottom:4px;">NSE Holiday - Markets Closed</div><div style="font-size:0.75rem;color:#a0a0b0;">Today is an NSE trading holiday. Markets will resume on the next trading day.</div></div></div>';
+          return;
+        }
+      }
+    }
+    
+    // All checks passed - hide alert
+    alertDiv.style.display = 'none';
+  } catch(e){
+    console.error('Trading status check failed:', e);
+  }
+}
+checkTradingStatus();
+setInterval(checkTradingStatus, 60000); // Check every minute
 setInterval(pollDashboardStatus, 4000);
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -505,6 +590,40 @@ function hardReset(){
       else { alert('Reset failed: ' + (d.error || JSON.stringify(d))); }
     })
     .catch(function(){ alert('Reset sent — server restarting. Reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); });
+
+function refreshHolidays(){
+  var btn = document.getElementById('holiday-refresh-btn');
+  if(!btn) return;
+  btn.disabled = true;
+  btn.textContent = '⏳ Refreshing...';
+  
+  var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
+  var url = '/api/holidays/refresh' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
+  
+  fetch(url, {method:'POST'})
+    .then(function(r){
+      if(r.status === 403){ 
+        alert('Wrong API_SECRET — refresh blocked.\\nCheck API_SECRET in your .env and try again.'); 
+        return null; 
+      }
+      return r.json();
+    })
+    .then(function(d){
+      btn.disabled = false;
+      btn.textContent = '📅 Refresh Holidays';
+      if(!d) return;
+      if(d.success){ 
+        alert('✅ Holiday list refreshed successfully!\\n\\nFetched ' + d.count + ' holidays from NSE API.\\nCache updated.'); 
+      } else { 
+        alert('❌ Refresh failed: ' + (d.error || 'Unknown error') + '\\n\\nUsing fallback holiday list.'); 
+      }
+    })
+    .catch(function(err){ 
+      btn.disabled = false;
+      btn.textContent = '📅 Refresh Holidays';
+      alert('❌ Network error: ' + err.message); 
+    });
+}
 }
 </script>
 </div></div>
