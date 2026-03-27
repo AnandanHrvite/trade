@@ -222,66 +222,47 @@ ${buildSidebar('logs', liveActive)}
   // ── Polling connection (replaces SSE — works with self-signed HTTPS certs) ──
   // SSE (EventSource) silently fails on self-signed certs in Chrome even after
   // the user clicks "Proceed anyway". Regular fetch() calls work fine.
-  // Poll every 2s for new logs since last known index.
+  // Poll every 2s — works reliably with self-signed HTTPS certs (unlike SSE/EventSource)
   var nextFrom = 0;
   var pollTimer = null;
-  var pollFailCount = 0;
+  var firstPoll = true;
 
   function poll() {
     fetch("/logs/data?from=" + nextFrom, { cache: "no-store" })
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
       .then(function(d) {
-        pollFailCount = 0;
+        // Always clear "Connecting..." on first successful response
+        if (firstPoll) {
+          firstPoll = false;
+          if (emptyEl) {
+            if (!d.total) {
+              emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+            } else {
+              emptyEl.remove();
+              emptyEl = null;
+            }
+          }
+        }
+        // Add any new log rows
         if (d.logs && d.logs.length > 0) {
           if (emptyEl) { emptyEl.remove(); emptyEl = null; }
           d.logs.forEach(addRow);
-          nextFrom = d.total;
-        } else if (nextFrom === 0 && d.total === 0) {
-          // No logs yet — show a cleaner waiting message
-          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade to see activity.';
         }
-        // On first successful poll, remove "Connecting..." regardless
-        if (nextFrom === 0 && d.total !== undefined) {
-          nextFrom = d.total;
-          if (emptyEl && d.total === 0) {
-            emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
-          }
-        }
+        // Update cursor
+        if (typeof d.total === "number") nextFrom = d.total;
         pollTimer = setTimeout(poll, 2000);
       })
-      .catch(function() {
-        pollFailCount++;
-        if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot connect to log server. Retrying...';
-        // Back off on repeated failures
-        var delay = Math.min(2000 * pollFailCount, 15000);
-        pollTimer = setTimeout(poll, delay);
+      .catch(function(err) {
+        if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot reach server — retrying...';
+        pollTimer = setTimeout(poll, 4000);
       });
   }
 
-  // Start polling immediately
+  // Start immediately
   poll();
-
-  // Legacy SSE connect kept as secondary attempt (works on trusted certs)
-  function connect() {
-    try {
-      var es = new EventSource("/logs/stream");
-      var sseFailed = false;
-      var sseTimeout = setTimeout(function() {
-        // SSE didn't deliver within 4s — polling is already working, ignore SSE
-        es.close();
-      }, 4000);
-      es.onmessage = function(e) {
-        clearTimeout(sseTimeout);
-        // SSE working! But polling is already running — just close SSE to avoid duplication
-        es.close();
-      };
-      es.onerror = function() {
-        clearTimeout(sseTimeout);
-        es.close(); // Polling handles it
-      };
-    } catch(_) {}
-  }
-  connect();
 
   // ── Add a single log row ────────────────────────────────────────────────────
   function addRow(entry) {
@@ -380,7 +361,6 @@ ${buildSidebar('logs', liveActive)}
       .replace(/"/g, "&quot;");
   }
 
-  connect();
 </script>
 </div></div>
 </body>
