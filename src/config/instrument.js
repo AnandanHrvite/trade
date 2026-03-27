@@ -378,10 +378,10 @@ async function getNearestExpiryFromOptionChain() {
     return null;
   } catch (e) {
     console.warn("[instrument] Option chain REST call failed:", e.message);
-    // Fallback: Try multiple expiry strategies
+    // Fallback: Try multiple expiry strategies with holiday checking
     const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     
-    // Strategy 1: Try next Tuesday (weekly)
+    // Strategy 1: Try next Tuesday (weekly) - check if it's a holiday
     let nextExpiry = new Date(today);
     const EXPIRY_DAY = 2; // Tuesday
     let daysUntil = (EXPIRY_DAY - today.getDay() + 7) % 7;
@@ -391,11 +391,18 @@ async function getNearestExpiryFromOptionChain() {
     if (daysUntil === 0) daysUntil = 7; // same day before expiry -> use next week
     nextExpiry.setDate(today.getDate() + daysUntil);
     
+    // Check if computed Tuesday is a holiday - if so, prepone to previous trading day
+    const isHoliday = await isNonTradingDay(nextExpiry);
+    if (isHoliday) {
+      console.warn(`[instrument] Fallback expiry ${formatDateToYYYYMMDD(nextExpiry)} is a holiday, preponing...`);
+      nextExpiry = await getPreviousTradingDay(nextExpiry);
+    }
+    
     const yy = String(nextExpiry.getFullYear()).slice(-2);
     const mCode = MONTH_CODE[nextExpiry.getMonth()];
     const dd = String(nextExpiry.getDate()).padStart(2, '0');
     const fallbackCode = yy + mCode + dd;
-    console.warn(`[instrument] Using fallback expiry code (weekly): ${fallbackCode}`);
+    console.warn(`[instrument] Using fallback expiry code (weekly): ${fallbackCode} (${formatDateToYYYYMMDD(nextExpiry)})`);
     return fallbackCode;
   }
 }
