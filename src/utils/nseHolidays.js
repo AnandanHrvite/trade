@@ -69,6 +69,13 @@ async function fetchNSEHolidays() {
 
       res.on('end', () => {
         try {
+          // Check if response looks like HTML (NSE sometimes returns HTML error pages)
+          if (data.trim().startsWith('<') || data.trim().startsWith('<!DOCTYPE')) {
+            console.warn('[nseHolidays] ⚠️  NSE API returned HTML instead of JSON (likely blocked or rate limited)');
+            reject(new Error('NSE API returned HTML instead of JSON - API may be blocking requests'));
+            return;
+          }
+          
           const json = JSON.parse(data);
           const holidays = [];
           
@@ -82,6 +89,12 @@ async function fetchNSEHolidays() {
                 if (date) holidays.push(date);
               }
             });
+          }
+          
+          if (holidays.length === 0) {
+            console.warn('[nseHolidays] ⚠️  NSE API returned valid JSON but no holidays found');
+            reject(new Error('No holidays found in NSE API response'));
+            return;
           }
           
           console.log(`[nseHolidays] ✅ Fetched ${holidays.length} NSE holidays from API`);
