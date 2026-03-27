@@ -509,11 +509,17 @@ async function pollDashboardStatus(){
   try {
     var pr = await fetch('/paperTrade/status/data',{cache:'no-store'});
     if(pr.ok){ var pd=await pr.json(); renderPaperStatus(pd); }
-  } catch(e){}
+    else { renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'}); }
+  } catch(e){
+    renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'});
+  }
   try {
     var lr = await fetch('/trade/status/data',{cache:'no-store'});
     if(lr.ok){ var ld=await lr.json(); renderLiveStatus(ld); }
-  } catch(e){}
+    else { renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0}); }
+  } catch(e){
+    renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
+  }
 }
 pollDashboardStatus();
 
