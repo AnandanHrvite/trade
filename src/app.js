@@ -364,9 +364,9 @@ ${buildSidebar('dashboard', liveActive)}
 
       <div class="broker-divider"></div>
       <div class="hard-reset-row">
-        <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
-      </div>
+        <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens & restarts the Node process (PM2 auto-revives).</span>
         <button onclick="hardReset()" class="hard-reset-btn">🔄 Hard Reset</button>
+      </div>
       
       <div class="broker-divider"></div>
       <div class="hard-reset-row">
@@ -374,7 +374,6 @@ ${buildSidebar('dashboard', liveActive)}
         <button onclick="refreshHolidays()" class="hard-reset-btn" style="background:#0a0f14;border-color:#1a4a8a;color:#60a5fa;" id="holiday-refresh-btn">
           📅 Refresh Holidays
         </button>
-      </div>
       </div>
     </div>
   </div>
@@ -640,7 +639,6 @@ function refreshHolidays(){
       btn.style.opacity = '1';
       alert('❌ Network error: ' + err.message + '\\n\\nPlease check your internet connection and try again.');
     });
-}
 }
 </script>
 </div></div>
