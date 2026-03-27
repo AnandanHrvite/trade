@@ -24,10 +24,10 @@
  *   Similarly for CE: SAR dots below (trend=1), price touches EMA9 from below.
  *
  * EXIT: SAR trailing SL (on every tick) | Opposite signal | EOD 3:20 PM
- * Timeframe: 15-min (set TRADE_RESOLUTION=15 in .env) | EMA: OHLC4 | Window: 9:45 AM–3:00 PM IST
+ * Timeframe: 15-min (set TRADE_RESOLUTION=15 in .env) | EMA: OHLC4 | Window: 9:30 AM–3:00 PM IST
  *
  * ── 15-MIN TUNING (applied in-place — strategy unchanged, params scaled) ────
- *  1. Session start    : 9:30 AM → 9:45 AM   (pre-loaded history fully warms up indicators; 10:00 AM was overly conservative)
+ *  1. Session start    : 9:30 AM             (15-min candles stable enough after first candle; earlier entry opportunities)
  *  2. Dead zone        : REMOVED entirely     (12–12:30 skip = only 2 candles on 15-min, not worth it)
  *  3. Warm-up candles  : 30 (ADX(14) needs ~29 candles minimum before producing output)
  *  4. Min SAR gap (CE) : 55 pts              (15-min candles move 3× more — 20pt = tick noise)
@@ -85,18 +85,17 @@ function calcSAR(candles, step, max) {
 }
 
 // ── Trading window — tuned for 15-min candles ─────────────────────────────
-// Start: 9:45 AM (lowered from 10:00 AM) — pre-loaded history (99 candles) fully warms up
-//        SAR, EMA9, RSI and ADX before the first live tick. By 9:45 AM we have
-//        3 formed live 15-min candles (9:15, 9:30, 9:45) on top of the seeded history,
-//        so all indicators are stable. The 10:00 AM gate was conservative and caused
-//        us to miss high-quality early-session bearish/bullish moves.
+// Start: 9:30 AM — pre-loaded history (99 candles) fully warms up
+//        SAR, EMA9, RSI and ADX before the first live tick. By 9:30 AM we have
+//        1 formed live 15-min candle (9:15-9:30) on top of the seeded history,
+//        which is sufficient for 15-min candles to stabilize indicators.
 // End  : 3:00 PM (unchanged)
 // Dead zone REMOVED — on 15-min, 12:00–12:30 is only 2 candles. Not worth skipping.
 function isInTradingWindow(unixSec) {
   var d        = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  // 9:45 AM – 3:00 PM (no dead zone on 15-min)
-  if (totalMin < 585)  return { ok: false, reason: "Before 9:45 AM — waiting for indicators to stabilise on 15-min" };
+  // 9:30 AM – 3:00 PM (no dead zone on 15-min)
+  if (totalMin < 570)  return { ok: false, reason: "Before 9:30 AM — waiting for indicators to stabilise on 15-min" };
   if (totalMin >= 900) return { ok: false, reason: "After 3:00 PM — no new entries" };
   return { ok: true, reason: null };
 }

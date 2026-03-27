@@ -1,6 +1,32 @@
 # CHANGELOG — Palani Andawar Trading App
 
 ---
+## v-final-2 — Trading Start Time Adjustment (2026-03-27)
+
+### Summary
+Adjusted trading start time from 9:45 AM to 9:30 AM IST for 15-minute candle strategy.
+This allows earlier entry opportunities while maintaining indicator stability.
+
+---
+
+### Change — Trading Window Start Time
+
+**File:** `src/strategies/strategy1_sar_ema_rsi.js`
+
+**Before:** Trading window started at 9:45 AM IST (`totalMin < 585`)
+**After:** Trading window starts at 9:30 AM IST (`totalMin < 570`)
+
+**Why it matters:** 
+- Market opens at 9:15 AM IST
+- By 9:30 AM, one complete 15-min candle (9:15-9:30) has formed
+- Pre-loaded historical data (99 candles) ensures all indicators (SAR, EMA9, RSI, ADX) are already warmed up
+- The 9:45 AM gate was overly conservative and caused the bot to miss high-quality early-session moves
+- 15-minute candles are stable enough after the first candle to start trading
+
+**Impact:** Bot can now capture early morning momentum moves between 9:30-9:45 AM that were previously missed.
+
+---
+
 
 ## v-final — SL & Trailing SL Overhaul (2026-03-22)
 
