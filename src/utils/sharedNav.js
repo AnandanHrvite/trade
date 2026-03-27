@@ -25,11 +25,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   } = opts;
 
   const pages = [
-    { key: 'dashboard', href: '/',                  icon: '⌂',  label: 'Dashboard' },
-    { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
-    { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
-    { key: 'live',      href: '/trade/status',       icon: '●',  label: 'Live'      },
-    { key: 'logs',      href: '/logs',               icon: '📜', label: 'Logs'      },
+    { key: 'dashboard', href: '/',                     icon: '⌂',  label: 'Dashboard' },
+    { key: 'backtest',  href: '/backtest',              icon: '🔍', label: 'Backtest'  },
+    { key: 'paper',     href: '/paperTrade/status',     icon: '📋', label: 'Paper'     },
+    { key: 'history',   href: '/paperTrade/history',    icon: '📊', label: 'History'   },
+    { key: 'live',      href: '/trade/status',          icon: '●',  label: 'Live'      },
+    { key: 'logs',      href: '/logs',                  icon: '📜', label: 'Logs'      },
   ];
 
   // Keys blocked during live trade
