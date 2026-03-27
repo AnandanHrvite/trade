@@ -543,14 +543,17 @@ async function loadCacheInfo(){
 loadCacheInfo();
 
 // ── Check Trading Status — slim dismissible notification pill ────────────────
+function dismissStatusAlert(){
+  var d=document.getElementById('trading-status-alert');
+  if(d){d._dismissed=true;d.style.display='none';}
+}
 function showStatusPill(alertDiv, icon, msg, color){
   if(alertDiv._dismissed) return;
   alertDiv.style.display = 'block';
-  alertDiv.innerHTML =
-    '<div style="display:inline-flex;align-items:center;gap:6px;background:#07111f;border:0.5px solid '+color+';border-radius:20px;padding:3px 10px 3px 8px;font-size:0.68rem;color:'+color+';white-space:nowrap;">'
-    +'<span>'+icon+'</span><span>'+msg+'</span>'
-    +'<span onclick="var d=document.getElementById('trading-status-alert');if(d){d._dismissed=true;d.style.display='none';}" '
-    +'style="cursor:pointer;opacity:0.5;margin-left:4px;">✕</span>'
+  alertDiv.innerHTML = '<div style="display:inline-flex;align-items:center;gap:6px;background:#07111f;border:0.5px solid '
+    +color+';border-radius:20px;padding:3px 10px 3px 8px;font-size:0.68rem;color:'+color+';white-space:nowrap;">'
+    +'<span>'+icon+'</span> <span>'+msg+'</span>'
+    +' <span onclick="dismissStatusAlert()" style="cursor:pointer;opacity:0.5;margin-left:4px;">&#x2715;</span>'
     +'</div>';
 }
 async function checkTradingStatus(){
