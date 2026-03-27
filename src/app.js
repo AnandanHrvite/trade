@@ -365,6 +365,7 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="broker-divider"></div>
       <div class="hard-reset-row">
         <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens &amp; restarts the Node process (PM2 auto-revives).</span>
+      </div>
         <button onclick="hardReset()" class="hard-reset-btn">🔄 Hard Reset</button>
       
       <div class="broker-divider"></div>
@@ -590,6 +591,7 @@ function hardReset(){
       else { alert('Reset failed: ' + (d.error || JSON.stringify(d))); }
     })
     .catch(function(){ alert('Reset sent — server restarting. Reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); });
+}
 
 function refreshHolidays(){
   var btn = document.getElementById('holiday-refresh-btn');
