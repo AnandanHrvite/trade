@@ -71,7 +71,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   return `<nav class="sidebar">
   <div class="sb-brand">
     <div class="sb-brand-icon">🪔</div>
-    <div class="sb-brand-name">Palani Andawar thunai</div>
+    <div class="sb-brand-name">ௐ Palani Andawar Thunai ॐ</div>
     <div class="sb-brand-sub">TRADING BOT</div>
   </div>
   <div class="sb-nav">
