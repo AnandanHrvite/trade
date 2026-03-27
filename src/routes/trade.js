@@ -346,9 +346,25 @@ async function prefetchOptionSymbols(spot) {
       validateAndGetOptionSymbol(spot, 'CE'),
       validateAndGetOptionSymbol(spot, 'PE'),
     ]);
-    tradeState._cachedCE = { ...ce, spot };
-    tradeState._cachedPE = { ...pe, spot };
-    log(`🔮 [LIVE] Pre-fetched options @ spot ₹${spot} → CE: ${ce.symbol} | PE: ${pe.symbol}`);
+    
+    // Only cache valid symbols (reject invalid ones to force live lookup at entry)
+    if (ce.invalid) {
+      log(`⚠️ [LIVE] CE symbol invalid (${ce.symbol}) — skipping cache, will use live lookup`);
+      tradeState._cachedCE = null;
+    } else {
+      tradeState._cachedCE = { ...ce, spot };
+    }
+    
+    if (pe.invalid) {
+      log(`⚠️ [LIVE] PE symbol invalid (${pe.symbol}) — skipping cache, will use live lookup`);
+      tradeState._cachedPE = null;
+    } else {
+      tradeState._cachedPE = { ...pe, spot };
+    }
+    
+    if (!ce.invalid && !pe.invalid) {
+      log(`🔮 [LIVE] Pre-fetched options @ spot ₹${spot} → CE: ${ce.symbol} | PE: ${pe.symbol}`);
+    }
   } catch (err) {
     log(`⚠️ [LIVE] Pre-fetch failed: ${err.message} — will fall back to live lookup at entry`);
     tradeState._cachedCE = null;

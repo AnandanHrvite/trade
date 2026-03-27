@@ -428,9 +428,33 @@ async function validateAndGetOptionSymbol(spot, side) {
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
   const chainExpiry = await getNearestExpiryFromOptionChain();
   if (chainExpiry) {
-    const symbol = `NSE:NIFTY${chainExpiry}${strike}${side}`;
-    console.log(`[instrument] ✅ Option Chain expiry confirmed: ${chainExpiry} → ${symbol}`);
-    return { symbol, expiry: chainExpiry, strike, side };
+    // Validate the Option Chain expiry is not a holiday
+    const chainDate = expiryCodeToDate(chainExpiry);
+    const isChainHoliday = await isNonTradingDay(chainDate);
+    
+    if (isChainHoliday) {
+      console.warn(`[instrument] ⚠️  Option Chain expiry ${chainExpiry} (${formatDateToYYYYMMDD(chainDate)}) is a holiday/weekend`);
+      
+      // Try previous trading day (preponed expiry)
+      const preponedDate = await getPreviousTradingDay(chainDate);
+      const preponedExpiry = dateToExpiryCode(preponedDate);
+      const preponedSymbol = `NSE:NIFTY${preponedExpiry}${strike}${side}`;
+      
+      console.log(`[instrument] 🔄 Trying preponed expiry from Option Chain: ${preponedExpiry} (${formatDateToYYYYMMDD(preponedDate)})`);
+      
+      if (await isSymbolValidViaQuotes(preponedSymbol)) {
+        console.log(`[instrument] ✅ Preponed expiry validated: ${preponedSymbol}`);
+        return { symbol: preponedSymbol, expiry: preponedExpiry, strike, side };
+      }
+      
+      // If preponed validation fails, fall through to Step 2
+      console.warn(`[instrument] ⚠️  Preponed expiry ${preponedExpiry} validation failed, trying computed weekly...`);
+    } else {
+      // Not a holiday, use the Option Chain expiry directly
+      const symbol = `NSE:NIFTY${chainExpiry}${strike}${side}`;
+      console.log(`[instrument] ✅ Option Chain expiry confirmed: ${chainExpiry} → ${symbol}`);
+      return { symbol, expiry: chainExpiry, strike, side };
+    }
   }
 
   // ── Step 2: Computed weekly expiry (next Tuesday) with holiday check ──
