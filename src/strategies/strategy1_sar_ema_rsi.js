@@ -429,15 +429,19 @@ function getSignal(candles, opts) {
     if (!silent) console.log("  ✓ PE gate PASS: SAR SL " + sarSL + " > close " + signalCandle.close + " (gap=" + (sarSL - signalCandle.close).toFixed(1) + "pt)");
     // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
     // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
+    // EXCEPTION: Logic3 bull-override uses EMA9 as SL. EMA9 is JUST above close by definition
+    // (Logic3 requires close < ema9). Applying the 55pt gate here would block ALL Logic3 entries
+    // since ema9 - close is typically only a few points. Logic3's own gates (SAR 50pt below,
+    // RSI < 42, EMA9 slope >= 6pt) are strong enough — skip the 55pt min for that path.
     var sarDistPE = parseFloat((sarSL - signalCandle.close).toFixed(2));
-    if (sarDistPE < 55) {
+    if (!sarBullOverridePE && sarDistPE < 55) {
       if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 55pt minimum");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < 55 min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt >= 55pt");
+    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — 55pt check skipped)" : " >= 55pt"));
     // Candle body filter: require a BEARISH body (close < open) AND body >= 10pt.
     // A bullish close (close >= open) = price recovered after wicking EMA — no bearish conviction.
     // Such candles also fail the 50% entry gate, so this gives an earlier clear rejection.

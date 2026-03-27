@@ -19,6 +19,10 @@ let holidayCache = {
   lastFetch: null
 };
 
+// In-flight singleton: prevents duplicate fetchNSEHolidays() calls when
+// Promise.all triggers two concurrent getNSEHolidays() calls before cache is set.
+let _fetchInflight = null;
+
 // Hardcoded fallback holidays for 2026 (in case API fails)
 // Source: NSE Holiday Calendar 2026
 const FALLBACK_HOLIDAYS_2026 = [
@@ -158,40 +162,37 @@ async function getNSEHolidays() {
   const cacheValid = holidayCache.year === currentYear && cacheAge < 24 * 60 * 60 * 1000;
   
   if (cacheValid && holidayCache.holidays.length > 0) {
-    console.log(`[nseHolidays] Using cached holidays (${holidayCache.holidays.length} days)`);
     return holidayCache.holidays;
   }
-  
-  // Try to fetch from NSE API
-  try {
-    const holidays = await fetchNSEHolidays();
-    
-    // Filter for current year only
-    const yearHolidays = holidays.filter(h => h.startsWith(String(currentYear)));
-    
-    if (yearHolidays.length > 0) {
-      holidayCache = {
-        year: currentYear,
-        holidays: yearHolidays,
-        lastFetch: Date.now()
-      };
-      return yearHolidays;
+
+  // Singleton inflight guard: if a fetch is already in progress (e.g. from a concurrent
+  // Promise.all at session start), reuse the same promise instead of firing a second
+  // NSE API request. Prevents duplicate network calls and double-log noise.
+  if (_fetchInflight) return _fetchInflight;
+
+  _fetchInflight = (async () => {
+    try {
+      const holidays = await fetchNSEHolidays();
+      const yearHolidays = holidays.filter(h => h.startsWith(String(currentYear)));
+      if (yearHolidays.length > 0) {
+        holidayCache = { year: currentYear, holidays: yearHolidays, lastFetch: Date.now() };
+        console.log(`[nseHolidays] Fetched ${yearHolidays.length} holidays for ${currentYear}`);
+        return yearHolidays;
+      }
+    } catch (e) {
+      console.warn('[nseHolidays] API fetch failed, using fallback');
     }
-  } catch (e) {
-    console.warn('[nseHolidays] ⚠️  API fetch failed, using fallback');
+    const fallback = currentYear === 2026 ? FALLBACK_HOLIDAYS_2026 : [];
+    console.log(`[nseHolidays] Using fallback holidays for ${currentYear} (${fallback.length} days)`);
+    holidayCache = { year: currentYear, holidays: fallback, lastFetch: Date.now() };
+    return fallback;
+  })();
+
+  try {
+    return await _fetchInflight;
+  } finally {
+    _fetchInflight = null;
   }
-  
-  // Fallback to hardcoded holidays
-  const fallback = currentYear === 2026 ? FALLBACK_HOLIDAYS_2026 : [];
-  console.log(`[nseHolidays] Using fallback holidays for ${currentYear} (${fallback.length} days)`);
-  
-  holidayCache = {
-    year: currentYear,
-    holidays: fallback,
-    lastFetch: Date.now()
-  };
-  
-  return fallback;
 }
 
 /**

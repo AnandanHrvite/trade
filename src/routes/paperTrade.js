@@ -63,7 +63,12 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory cache of paper_trades.json — avoids synchronous disk I/O on every
+// 2-second AJAX poll. Updated only in savePaperData() when sessions actually change.
+let _paperDataCache = null;
+
 function loadPaperData() {
+  if (_paperDataCache) return _paperDataCache; // serve from cache (hot path)
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
     const initial = {
@@ -72,14 +77,17 @@ function loadPaperData() {
       sessions: [],
     };
     fs.writeFileSync(PT_FILE, JSON.stringify(initial, null, 2));
+    _paperDataCache = initial;
     return initial;
   }
-  return JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
+  _paperDataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
+  return _paperDataCache;
 }
 
 function savePaperData(data) {
   ensureDir();
   fs.writeFileSync(PT_FILE, JSON.stringify(data, null, 2));
+  _paperDataCache = data; // keep cache in sync after every write
 }
 
 // ── State (in-memory for current session) ───────────────────────────────────
@@ -124,6 +132,9 @@ let ptState = {
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
   _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
+  // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
+  _sessionWins:   0,
+  _sessionLosses: 0,
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -272,14 +283,12 @@ function getCachedSymbol(side, currentSpot) {
 }
 
 let _optionPollTimer = null;
+let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
 
 async function fetchOptionLtp(symbol) {
   try {
     // Fyers v3 getQuotes accepts a comma-separated symbol string directly
     const response = await fyers.getQuotes([symbol]);
-
-    // Log full response once per entry so we can see the actual field names
-    // Fyers getQuotes confirmed working — debug log removed after field validation
 
     if (response.s === 'ok' && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
@@ -301,24 +310,74 @@ async function fetchOptionLtp(symbol) {
   return null;
 }
 
-function startOptionPolling(symbol) {
-  stopOptionPolling(); // clear any previous
-  // Fetch immediately on entry — this captures the entry LTP ASAP
-  fetchOptionLtp(symbol).then(ltp => {
+// ── Option LTP poll tick — shared logic used by immediate fetch + recurring loop ──
+async function _optionPollTick(symbol) {
+  if (_optionPollBusy) return; // skip if previous call still in flight
+  _optionPollBusy = true;
+  try {
+    if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
+    const ltp = await fetchOptionLtp(symbol);
     if (!ltp) return;
     ptState.optionLtp = ltp;
-    if (ptState.position) {
-      ptState.position.optionCurrentLtp = ltp;
-      if (!ptState.position.optionEntryLtp) {
-        ptState.position.optionEntryLtp = ltp;
-        ptState.position.optionEntryLtpTime = istNow();
-        log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
-      }
+    if (!ptState.position) return; // position may have closed while we awaited
+    ptState.position.optionCurrentLtp = ltp;
+    if (!ptState.position.optionEntryLtp) {
+      ptState.position.optionEntryLtp = ltp;
+      ptState.position.optionEntryLtpTime = istNow();
+      log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
     }
-  });
 
-  // ── 10s timeout: if option LTP still null, use spot as proxy entry LTP ───────
-  // This prevents the "Fetching…" stuck state on illiquid/expiry-day options.
+    // ── Option LTP stop — tied to prev-candle 50% mid ───────────────────
+    const entryLtp  = ptState.position.optionEntryLtp;
+    const entrySpot = ptState.position.spotAtEntry;
+    const prevMid   = ptState.position.entryPrevMid;
+    let optStopPrice = null;
+    if (entryLtp && entrySpot && prevMid) {
+      const spotGap = Math.max(Math.abs(entrySpot - prevMid), 20);
+      optStopPrice  = parseFloat((entryLtp - spotGap).toFixed(2));
+    } else if (entryLtp) {
+      optStopPrice = parseFloat((entryLtp * 0.80).toFixed(2));
+    }
+    if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
+      const dropPct = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
+      const dropAmt = (entryLtp - ltp).toFixed(2);
+      const pnlEst  = ((ltp - entryLtp) * (ptState.position.qty || getLotQty())).toFixed(0);
+      log(`🔻 [PAPER] Option LTP stop hit [50% mid] — entry ₹${entryLtp} → now ₹${ltp} (−${dropPct}%, −₹${dropAmt}/lot, est. PnL ₹${pnlEst})`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      simulateSell(
+        ptState.currentBar ? ptState.currentBar.close : ptState.lastTickPrice,
+        `Option LTP stop [50% mid] — premium dropped ₹${dropAmt} (₹${entryLtp} → ₹${ltp})`,
+        ptState.lastTickPrice
+      );
+    }
+  } finally {
+    _optionPollBusy = false;
+  }
+}
+
+function startOptionPolling(symbol) {
+  stopOptionPolling(); // clear any previous
+  _optionPollBusy = false;
+
+  // ── Recursive setTimeout loop (replaces setInterval) ──────────────────────
+  // setInterval fires regardless of whether the previous async call has resolved.
+  // If getQuotes() takes >1s (slow network), calls accumulate and pile up.
+  // setTimeout-chaining guarantees exactly 1s gap BETWEEN calls, not 1s PERIOD.
+  function scheduleNext() {
+    if (!_optionPollTimer) return; // polling was stopped
+    _optionPollTimer = setTimeout(async () => {
+      await _optionPollTick(symbol);
+      scheduleNext(); // reschedule only after this call finishes
+    }, 1000);
+  }
+
+  // Kick off with an immediate tick, then start the loop
+  _optionPollTick(symbol).then(scheduleNext);
+
+  // Mark polling as active (non-null timer signals "running" to stopOptionPolling)
+  _optionPollTimer = true; // placeholder until first setTimeout fires
+
+  // ── 10s timeout: if option LTP still null, use spot as proxy entry LTP ──
   setTimeout(() => {
     if (ptState.position && !ptState.position.optionEntryLtp && ptState.lastTickPrice) {
       const proxy = ptState.lastTickPrice;
@@ -327,57 +386,14 @@ function startOptionPolling(symbol) {
       log(`⚠️ [PAPER] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
     }
   }, 10000);
-  // Then every 3 seconds
-  _optionPollTimer = setInterval(async () => {
-    if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
-    const ltp = await fetchOptionLtp(symbol);
-    if (!ltp) return;
-    ptState.optionLtp = ltp;
-    if (ptState.position) {
-      ptState.position.optionCurrentLtp = ltp;
-      if (!ptState.position.optionEntryLtp) {
-        ptState.position.optionEntryLtp = ltp;
-        ptState.position.optionEntryLtpTime = istNow();
-        log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
-      }
-
-      // ── Option LTP stop — tied to prev-candle 50% mid ───────────────────
-      // The option SL mirrors the same 50%-rule reference used for spot exit.
-      // When spot falls to prevMid (CE) or rises to prevMid (PE), the option
-      // is expected to have moved by the same number of points (delta ≈ 1 ITM).
-      // optionSL = entryOptionLtp − |entrySpot − prevMid|
-      // Example: entry option ₹361, entrySpot ₹24224.6, prevMid ₹24203.58
-      //   → spotGap = 21pt → optionSL = ₹361 − 21 = ₹340  (vs 20% = ₹288, a 72pt drop)
-      const entryLtp   = ptState.position.optionEntryLtp;
-      const entrySpot  = ptState.position.spotAtEntry;
-      const prevMid    = ptState.position.entryPrevMid;
-      let optStopPrice = null;
-      if (entryLtp && entrySpot && prevMid) {
-        // Minimum gap of 20pt to prevent instant exit when entry is very close to prevMid
-        const spotGap   = Math.max(Math.abs(entrySpot - prevMid), 20);
-        optStopPrice    = parseFloat((entryLtp - spotGap).toFixed(2));
-      } else if (entryLtp) {
-        // fallback: no prevMid — use 20% to keep position guarded
-        optStopPrice = parseFloat((entryLtp * 0.80).toFixed(2));
-      }
-      if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
-        const dropPct  = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
-        const dropAmt  = (entryLtp - ltp).toFixed(2);
-        const pnlEst   = ((ltp - entryLtp) * (ptState.position.qty || getLotQty())).toFixed(0);
-        log(`🔻 [PAPER] Option LTP stop hit [50% mid] — entry ₹${entryLtp} → now ₹${ltp} (−${dropPct}%, −₹${dropAmt}/lot, est. PnL ₹${pnlEst})`);
-        ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-        simulateSell(
-          ptState.currentBar ? ptState.currentBar.close : ptState.lastTickPrice,
-          `Option LTP stop [50% mid] — premium dropped ₹${dropAmt} (₹${entryLtp} → ₹${ltp})`,
-          ptState.lastTickPrice
-        );
-      }
-    }
-  }, 1000); // 1000ms — tight option LTP SL monitoring (primary spot SL fires every tick)
 }
 
 function stopOptionPolling() {
-  if (_optionPollTimer) { clearInterval(_optionPollTimer); _optionPollTimer = null; }
+  if (_optionPollTimer && _optionPollTimer !== true) {
+    clearTimeout(_optionPollTimer);
+  }
+  _optionPollTimer = null;
+  _optionPollBusy  = false;
 }
 
 // ── Simulated order (NO real API call) ──────────────────────────────────────
@@ -585,6 +601,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   ptState.sessionTrades.push(trade);
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
+  // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
+  if (netPnl > 0) { ptState._sessionWins++;   }
+  else             { ptState._sessionLosses++; }
 
   // ── Daily loss kill switch ────────────────────────────────────────────────────
   // If session loss exceeds MAX_DAILY_LOSS (set in .env, default ₹5000),
@@ -807,18 +826,18 @@ async function onCandleClose(candle) {
   }
 
   // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
+  // Use module-level cached _STOP_MINS (parsed once at startup) — no env read per candle.
   const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const _stopMins   = parseMins("TRADE_STOP_TIME", "15:30");
-  const _stopLabel  = String(Math.floor(_stopMins/60)).padStart(2,"0") + ":" + String(_stopMins%60).padStart(2,"0");
-  if (ist.getHours() * 60 + ist.getMinutes() >= _stopMins) {
+  const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
+  if (ist.getHours() * 60 + ist.getMinutes() >= _STOP_MINS) {
     if (ptState.position) {
       log("⏰ [PAPER] EOD " + _stopLabel + " — auto square off");
       simulateSell(candle.close, "EOD square-off " + _stopLabel, candle.close);
     }
     // Auto-stop the engine — no more trading after TRADE_STOP_TIME
     if (ptState.running) {
-      const _w=(ptState.sessionTrades||[]).filter(t=>(t.pnl||0)>0).length;
-      const _l=(ptState.sessionTrades||[]).filter(t=>(t.pnl||0)<=0).length;
+      const _w = ptState._sessionWins;
+      const _l = ptState._sessionLosses;
       log(`\n📅 [PAPER] ──── SESSION COMPLETE ────────────────────────────────────`);
       log(`   Trades: ${(ptState.sessionTrades||[]).length} | ${_w}W / ${_l}L | PnL=₹${ptState.sessionPnl||0}`);
       log(`   Result: ${(ptState.sessionPnl||0)>0?"✅ PROFIT":(ptState.sessionPnl||0)<0?"❌ LOSS":"➖ BREAKEVEN"}`);
@@ -1227,8 +1246,8 @@ function onTick(tick) {
 function saveSession() {
   const data = loadPaperData();
 
-  const wins   = ptState.sessionTrades.filter(t => t.pnl > 0);
-  const losses = ptState.sessionTrades.filter(t => t.pnl <= 0);
+  const wins   = { length: ptState._sessionWins };
+  const losses = { length: ptState._sessionLosses };
 
   const session = {
     date:        new Date().toISOString().split("T")[0],
@@ -1428,6 +1447,8 @@ router.get("/start", async (req, res) => {
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
+  ptState._sessionWins         = 0;
+  ptState._sessionLosses       = 0;
   stopOptionPolling();
 
   log(`\n════════════════════════════════════════════════════════════════════`);
@@ -1761,8 +1782,8 @@ router.get("/status/data", (req, res) => {
       dailyLossHit:      ptState._dailyLossHit || false,
       sessionStart:      ptState.sessionStart,
       tradeCount:        ptState.sessionTrades.length,
-      wins:              ptState.sessionTrades.filter(t => t.pnl > 0).length,
-      losses:            ptState.sessionTrades.filter(t => t.pnl <= 0).length,
+      wins:              ptState._sessionWins,
+      losses:            ptState._sessionLosses,
       capital:           data.capital,
       totalPnl:          data.totalPnl,
       // Position block (null when flat)
@@ -2043,7 +2064,6 @@ router.get("/status", (req, res) => {
   <title>Palani Andawar thunai — Paper Trade</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <style>
-  <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#060e06;color:#c0d8b0;overflow-x:hidden;}
 ${sidebarCSS()}
@@ -2142,7 +2162,7 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
     <div class="sc" style="border-top:1.5px solid #6a5090;">
       <div class="sc-label">Trades Today</div>
       <div class="sc-val"><span id="ajax-trade-count">${ptState.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${process.env.MAX_DAILY_TRADES || 20}</span></div>
-      <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${ptState.sessionTrades.filter(t=>t.pnl>0).length}W &middot; ${ptState.sessionTrades.filter(t=>t.pnl<=0).length}L</div>
+      <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${ptState._sessionWins}W &middot; ${ptState._sessionLosses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${(ptState._consecutiveLosses||0) >= 2 ? '#ef4444' : '#4a6080'};" id="ajax-sc-cl">
       <div class="sc-label">Loss Streak</div>
