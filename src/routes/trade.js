@@ -60,6 +60,7 @@ let _mktHoursParamsTs = 0; // invalidate cache if env changes (unlikely but safe
 const sharedSocketState = require("../utils/sharedSocketState");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { fetchCandles } = require("../services/backtestEngine");
+const { fetchCandlesCached } = require("../utils/candleCache");
 // ── Live session persistence ──────────────────────────────────────────────────
 // Stored at ~/trading-data/ — outside project dir, survives git pull / redeploys.
 const _HOME_LT = require("os").homedir();
@@ -1502,8 +1503,8 @@ router.get("/start", async (req, res) => {
 
   // Pre-load candles (same as paperTrade)
   try {
-    log(`📥 Pre-loading candles (${fromStr} → ${todayStr})...`);
-    const candles = await fetchCandles(NIFTY_INDEX_SYMBOL, String(getTradeResolution()), fromStr, todayStr);
+    log(`📥 Pre-loading candles (${fromStr} → ${todayStr}) — using cache if available...`);
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(getTradeResolution()), fromStr, todayStr, fetchCandles);
     if (candles.length > 0) {
       tradeState.candles = candles.slice(0, -1);
       log(`✅ Pre-loaded ${tradeState.candles.length} candles`);

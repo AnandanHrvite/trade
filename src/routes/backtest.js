@@ -198,8 +198,7 @@ ${buildSidebar('backtest', liveActive)}
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
     <div><label>Candle</label>
       <select id="r">
-        <option value="5"  ${resolution==="5" ?"selected":""}>5-min</option>
-        <option value="15" ${resolution==="15"?"selected":""}>15-min</option>
+        <option value="15" selected>15-min</option>
       </select>
     </div>
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){alert('Set dates');return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
@@ -508,8 +507,7 @@ document.getElementById('btModal').addEventListener('click',function(e){
 
 function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   const nav = buildNav("backtest", liveActive);
-  const resOptions = ["5","15"].map(v =>
-    `<option value="${v}"${String(v)===String(resolution)?" selected":""}>${v}-min</option>`).join("");
+  const resOptions = `<option value="15" selected>15-min</option>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Backtest — Palani Andawar thunai</title>

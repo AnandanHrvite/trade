@@ -33,14 +33,16 @@ const OPEN_PATHS = [
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
-  "/tracker/status",        // read-only tracker page
-  "/tracker/status/data",   // AJAX poll — must be open
+  "/tracker/status",          // read-only tracker page
+  "/tracker/status/data",     // AJAX poll — must be open
+  "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
   "/result",                // read-only results
   "/result/all",
   "/auth/status",           // read-only auth status
   "/auth/zerodha/status",
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
+  "/api/cache-info",        // read-only candle cache stats
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
@@ -84,6 +86,17 @@ app.get("/api/holidays", async (req, res) => {
     res.json({ success: true, holidays, count: holidays.length });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── Candle Cache Info ─────────────────────────────────────────────────────────
+app.get("/api/cache-info", (req, res) => {
+  try {
+    const { getCacheInfo } = require("./utils/candleCache");
+    const info = getCacheInfo("NSE:NIFTY50-INDEX", "15");
+    res.json({ success: true, cache: info });
+  } catch (e) {
+    res.json({ success: false, cache: null });
   }
 });
 
@@ -229,7 +242,7 @@ app.get("/", (req, res) => {
     @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
 
     /* ── TRADE STATUS PANELS ── */
-    .ts-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:0; }
+    .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
     .ts-cell { padding:12px 16px; border-right:1px solid #1a2236; }
     .ts-cell:last-child { border-right:none; }
     .ts-label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.4px; color:#3a5070; margin-bottom:5px; }
@@ -244,7 +257,8 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
-    @media (max-width:640px) { .ts-grid { grid-template-columns:1fr 1fr; } }
+    #trade-row { grid-template-columns:1fr 1fr; }
+    @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } #trade-row { grid-template-columns:1fr; } }
 
     /* ── ACTIVE CONFIGURATION ── */
     .cfg-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0; }
@@ -378,10 +392,16 @@ ${buildSidebar('dashboard', liveActive)}
           📅 Refresh Holidays
         </button>
       </div>
+      <div class="broker-divider"></div>
+      <div class="hard-reset-row">
+        <span class="hard-reset-hint" id="cache-hint">📦 Candle cache: <span id="cache-info-txt" style="color:#4a6080;">checking...</span></span>
+      </div>
     </div>
   </div>
 
-  <!-- ③ PAPER TRADE STATUS -->
+  <!-- ③ PAPER + LIVE TRADE side by side -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" id="trade-row">
+
   <div class="card" id="paper-status-card">
     <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -397,7 +417,6 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
   </div>
 
-  <!-- ④ LIVE TRADE STATUS -->
   <div class="card" id="live-status-card">
     <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:8px;">
@@ -412,6 +431,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
+
+  </div><!-- end trade-row -->
 
   <!-- ⑤ ACTIVE CONFIGURATION -->
   <div class="card">
@@ -524,6 +545,25 @@ async function pollDashboardStatus(){
   } catch(e){}
 }
 pollDashboardStatus();
+
+// ── Candle cache info ─────────────────────────────────────────────────────────
+async function loadCacheInfo(){
+  try {
+    var r = await fetch('/api/cache-info', {cache:'no-store'});
+    if (!r.ok) return;
+    var d = await r.json();
+    var el = document.getElementById('cache-info-txt');
+    if (!el) return;
+    if (d.cache) {
+      el.style.color = '#10b981';
+      el.textContent = d.cache.candles + ' candles stored (' + d.cache.from + ' → ' + d.cache.to + ') · ' + d.cache.sizeKB + ' KB  — server restart will reuse this, no API call needed';
+    } else {
+      el.style.color = '#4a6080';
+      el.textContent = 'No cache yet — will be built on first Paper/Live/Tracker start';
+    }
+  } catch(_){}
+}
+loadCacheInfo();
 
 // ── Check Trading Status (Holiday/Weekend/Time) ──────────────────────────────
 async function checkTradingStatus(){

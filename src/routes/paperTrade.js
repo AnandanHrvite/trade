@@ -1538,13 +1538,15 @@ router.get("/start", async (req, res) => {
   try {
     log(`📥 Pre-loading historical candles so strategy warms up instantly...`);
     const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandlesCached } = require("../utils/candleCache");
 
     // Go back 5 calendar days to cover weekends/holidays and guarantee 30+ candles
     const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     fromDate.setDate(fromDate.getDate() - 5);
     const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
-    const todayCandles = await fetchCandles(subscribeSymbol, String(getTradeResolution()), fromStr, todayStr);
+    // fetchCandlesCached: reads cache first, only calls Fyers API for missing/today's candles
+    const todayCandles = await fetchCandlesCached(subscribeSymbol, String(getTradeResolution()), fromStr, todayStr, fetchCandles);
 
     if (todayCandles.length > 0) {
       // Load all but the last candle (last one is still forming — live ticks will complete it)
