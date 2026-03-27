@@ -630,7 +630,14 @@ function refreshHolidays(){
         // Trigger immediate trading status check to reflect new holidays
         checkTradingStatus();
       } else {
-        alert('❌ Refresh failed: ' + (d.error || 'Unknown error') + '\\n\\nUsing fallback holiday list.\\n\\nPlease check your internet connection and try again.');
+        var errorMsg = '⚠️ NSE API Unavailable\\n\\n';
+        errorMsg += 'NSE API is currently blocking requests or unavailable.\\n\\n';
+        errorMsg += '✅ Using fallback holiday list (' + (d.count || 17) + ' holidays for 2026)\\n\\n';
+        errorMsg += 'Your trading bot will continue working normally with the hardcoded holiday list.\\n\\n';
+        errorMsg += 'Note: This is expected behavior when NSE API is down or rate-limiting requests.';
+        alert(errorMsg);
+        // Still trigger trading status check with fallback holidays
+        checkTradingStatus();
       }
     })
     .catch(function(err){
