@@ -450,10 +450,14 @@ async function validateAndGetOptionSymbol(spot, side) {
       // If preponed validation fails, fall through to Step 2
       console.warn(`[instrument] ⚠️  Preponed expiry ${preponedExpiry} validation failed, trying computed weekly...`);
     } else {
-      // Not a holiday, use the Option Chain expiry directly
+      // Not a holiday, validate the Option Chain expiry via getQuotes
       const symbol = `NSE:NIFTY${chainExpiry}${strike}${side}`;
-      console.log(`[instrument] ✅ Option Chain expiry confirmed: ${chainExpiry} → ${symbol}`);
-      return { symbol, expiry: chainExpiry, strike, side };
+      if (await isSymbolValidViaQuotes(symbol)) {
+        console.log(`[instrument] ✅ Option Chain expiry validated: ${chainExpiry} → ${symbol}`);
+        return { symbol, expiry: chainExpiry, strike, side };
+      } else {
+        console.warn(`[instrument] ⚠️  Option Chain expiry ${chainExpiry} validation failed, trying computed weekly...`);
+      }
     }
   }
 
@@ -478,12 +482,16 @@ async function validateAndGetOptionSymbol(spot, side) {
     if (await isSymbolValidViaQuotes(preponedSymbol)) {
       console.log(`[instrument] ✅ Preponed expiry validated: ${preponedSymbol}`);
       return { symbol: preponedSymbol, expiry: preponedExpiry, strike, side };
+    } else {
+      console.warn(`[instrument] ⚠️  Preponed expiry ${preponedExpiry} validation failed via getQuotes()`);
     }
   } else {
     // Not a holiday, validate normally
     if (await isSymbolValidViaQuotes(weeklySymbol)) {
       console.log(`[instrument] ✅ Weekly expiry validated: ${weeklySymbol}`);
       return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side };
+    } else {
+      console.warn(`[instrument] ⚠️  Weekly expiry ${weeklyExpiry} validation failed via getQuotes()`);
     }
   }
   
@@ -496,10 +504,40 @@ async function validateAndGetOptionSymbol(spot, side) {
     return { symbol: monthlySymbol, expiry: monthlyExpiry, strike, side };
   }
 
-  // ── Step 4: Scan next 21 days — check ALL days, skip weekends & holidays ──
-  console.warn(`[instrument] ⚠️  Both weekly and monthly failed, scanning next 21 days (excluding holidays)...`);
+  // ── Step 4: Try PREVIOUS week's expiry (current week if next week not available yet) ──
+  console.warn(`[instrument] ⚠️  Next week's expiry not available, trying current/previous week...`);
   const now = new Date();
   const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  
+  // Calculate previous Tuesday (7 days back from next Tuesday)
+  const prevTuesday = new Date(ist);
+  const daysToSubtract = (ist.getDay() - 2 + 7) % 7 || 7; // Days since last Tuesday
+  prevTuesday.setDate(ist.getDate() - daysToSubtract);
+  
+  // Check if previous Tuesday is a holiday
+  const isPrevHoliday = await isNonTradingDay(prevTuesday);
+  if (isPrevHoliday) {
+    // Use preponed expiry (Monday)
+    const prevMonday = await getPreviousTradingDay(prevTuesday);
+    const prevExpiry = dateToExpiryCode(prevMonday);
+    const prevSymbol = `NSE:NIFTY${prevExpiry}${strike}${side}`;
+    console.log(`[instrument] 🔄 Trying previous week's preponed expiry: ${prevExpiry} (${formatDateToYYYYMMDD(prevMonday)})`);
+    if (await isSymbolValidViaQuotes(prevSymbol)) {
+      console.log(`[instrument] ✅ Previous week's preponed expiry validated: ${prevSymbol}`);
+      return { symbol: prevSymbol, expiry: prevExpiry, strike, side };
+    }
+  } else {
+    const prevExpiry = dateToExpiryCode(prevTuesday);
+    const prevSymbol = `NSE:NIFTY${prevExpiry}${strike}${side}`;
+    console.log(`[instrument] 🔄 Trying previous week's expiry: ${prevExpiry} (${formatDateToYYYYMMDD(prevTuesday)})`);
+    if (await isSymbolValidViaQuotes(prevSymbol)) {
+      console.log(`[instrument] ✅ Previous week's expiry validated: ${prevSymbol}`);
+      return { symbol: prevSymbol, expiry: prevExpiry, strike, side };
+    }
+  }
+
+  // ── Step 5: Scan next 21 days — check ALL days, skip weekends & holidays ──
+  console.warn(`[instrument] ⚠️  Previous week also failed, scanning next 21 days (excluding holidays)...`);
   
   for (let offset = 1; offset <= 21; offset++) {
     const tryDate = new Date(ist);
@@ -520,9 +558,9 @@ async function validateAndGetOptionSymbol(spot, side) {
     }
   }
 
-  // ── Step 5: All failed — skip trade ──
-  console.error(`[instrument] ❌ No valid expiry found in next 21 days. Cannot enter trade.`);
-  console.error(`[instrument] ❌ Tried: Weekly=${weeklyExpiry}, Monthly=${monthlyExpiry}, Scan=21 days`);
+  // ── Step 6: All failed — skip trade ──
+  console.error(`[instrument] ❌ No valid expiry found. Cannot enter trade.`);
+  console.error(`[instrument] ❌ Tried: Option Chain, Weekly (next/prev), Monthly, 21-day scan`);
   return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side, invalid: true };
 }
 
@@ -531,10 +569,16 @@ async function isSymbolValidViaQuotes(symbol) {
     const res = await fyers.getQuotes([symbol]);
     if (res.s === "ok" && res.d && res.d.length > 0) {
       const v = res.d[0].v || res.d[0];
-      return !v.errmsg && v.s !== "error";
+      const isValid = !v.errmsg && v.s !== "error";
+      if (!isValid) {
+        console.log(`[instrument] Symbol validation failed: ${symbol} - error: ${v.errmsg || v.s}`);
+      }
+      return isValid;
     }
+    console.log(`[instrument] Symbol validation failed: ${symbol} - no data in response`);
     return false;
   } catch (e) {
+    console.log(`[instrument] Symbol validation error: ${symbol} - ${e.message}`);
     return false;
   }
 }
