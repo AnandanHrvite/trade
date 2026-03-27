@@ -68,7 +68,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     showStartBtn ? `<button onclick="${startBtnJs}" class="sb-action-btn sb-start-btn">${startLabel}</button>` : '',
   ].filter(Boolean).join('\n');
 
-  return `<nav class="sidebar">
+  return `
+<button class="hamburger" onclick="toggleSidebar()" aria-label="Menu" style="display:none;">
+  <span></span><span></span><span></span>
+</button>
+<div class="sidebar-overlay" id="sb-overlay" onclick="closeSidebar()"></div>
+<nav class="sidebar" id="main-sidebar">
   <div class="sb-brand">
     <div class="sb-brand-icon">🪔</div>
     <div class="sb-brand-name">ௐ Palani Andawar Thunai ॐ</div>
@@ -84,7 +89,36 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     </div>
     ${bottomBtns}
   </div>
-</nav>`;
+</nav>
+<script>
+(function(){
+  if(window.innerWidth<=768){
+    var hb=document.querySelector('.hamburger');
+    if(hb) hb.style.display='flex';
+  }
+  window.addEventListener('resize',function(){
+    var hb=document.querySelector('.hamburger');
+    if(!hb) return;
+    hb.style.display=window.innerWidth<=768?'flex':'none';
+    if(window.innerWidth>768) closeSidebar();
+  });
+})();
+function toggleSidebar(){
+  var sb=document.getElementById('main-sidebar');
+  var ov=document.getElementById('sb-overlay');
+  if(!sb) return;
+  var open=sb.classList.toggle('mobile-open');
+  if(ov) ov.classList.toggle('active',open);
+  document.body.style.overflow=open?'hidden':'';
+}
+function closeSidebar(){
+  var sb=document.getElementById('main-sidebar');
+  var ov=document.getElementById('sb-overlay');
+  if(sb) sb.classList.remove('mobile-open');
+  if(ov) ov.classList.remove('active');
+  document.body.style.overflow='';
+}
+</script>`;
 }
 
 /**
@@ -172,13 +206,41 @@ function sidebarCSS() {
     .data-table th{padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;background:#0a0f1c;}
     .data-table td{padding:8px 12px;border-top:1px solid #1a2236;font-family:monospace;font-size:0.78rem;vertical-align:top;}
 
-    /* ── MOBILE ── */
+    /* ── MOBILE (iPhone 15 = 393px) ── */
     @media(max-width:768px){
-      .sidebar{transform:translateX(-100%);transition:transform 0.2s;}
+      /* Sidebar: hidden by default, toggled by hamburger */
+      .sidebar{transform:translateX(-100%);transition:transform 0.25s ease;z-index:200;}
+      .sidebar.mobile-open{transform:translateX(0);}
       .main-content{margin-left:0;}
-      .stat-grid{grid-template-columns:1fr 1fr;}
+
+      /* Hamburger button */
+      .hamburger{display:flex;flex-direction:column;gap:4px;cursor:pointer;padding:8px;background:none;border:none;position:fixed;top:8px;left:12px;z-index:300;}
+      .hamburger span{display:block;width:20px;height:2px;background:#4a6080;border-radius:2px;transition:all 0.2s;}
+
+      /* Overlay when sidebar open */
+      .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
+      .sidebar-overlay.active{display:block;}
+
+      /* Top bar: compress */
+      .top-bar{padding:7px 12px 7px 48px;}
+      .top-bar-meta{display:none;}
+
+      /* Page padding */
+      .page{padding:14px 12px 60px;}
+
+      /* Stat grid: 2 columns */
+      .stat-grid{grid-template-columns:1fr 1fr;gap:8px;}
+      .sc{padding:10px 12px;}
+      .sc-val{font-size:0.95rem;}
+
+      /* Data table: scrollable */
+      .data-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      .data-table{min-width:600px;}
     }
-  `;
+    @media(max-width:400px){
+      .stat-grid{grid-template-columns:1fr;}
+    }`
+    ;
 }
 
 /**

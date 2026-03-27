@@ -241,6 +241,11 @@ app.get("/", (req, res) => {
     .hard-reset-btn:hover { background:#2d0a0a; border-color:#ef4444; }
 
     @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
+    /* ── iPhone 15 (393px) ── */
+    @media (max-width:768px) {
+      #trade-row { flex-wrap:wrap; }
+      #trade-row .card { flex:none; width:100%; }
+    }
 
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
@@ -259,7 +264,7 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
     #trade-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
-    @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } #trade-row { flex-wrap:wrap; } }
+    @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
     /* cfg-grid removed — config shown as strip in broker card */
     /* cfg-cell/live-note styles removed — config shown as strip in broker card */
@@ -267,13 +272,17 @@ app.get("/", (req, res) => {
     /* ── MOBILE ── */
     @media (max-width:640px) {
       .main-content { margin-left:0; }
-      .page { padding:14px 12px 40px; gap:10px; }
+      .page { padding:12px 10px 40px; gap:10px; }
       .broker-grid { grid-template-columns:1fr; }
       .ts-grid     { grid-template-columns:1fr 1fr; }
-      .cfg-grid    { grid-template-columns:1fr 1fr; }
-      .cfg-cell    { border-right:none; border-bottom:1px solid #1a2236; }
-      .cfg-cell:nth-child(odd) { border-right:1px solid #1a2236; }
-      .cfg-cell:last-child { border-bottom:none; }
+      /* 3-col action row stacks to 1 col on mobile */
+      .action-3col { grid-template-columns:1fr !important; }
+      /* trade-row: stack Paper+Live vertically */
+      #trade-row { flex-wrap:wrap; }
+      #trade-row .card { width:100%; flex:none; }
+      /* top-bar: hide meta on mobile */
+      .top-bar-meta { display:none; }
+      .top-bar { padding:7px 10px 7px 48px; }
     }
   </style>
 </head>
@@ -371,7 +380,7 @@ ${buildSidebar('dashboard', liveActive)}
       </div>
 
       <div class="broker-divider"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;">
+      <div class="action-3col" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;">
 
         <div style="padding:12px 16px;border-right:1px solid #1a2236;">
           <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">⚠️ Socket / Tokens</div>

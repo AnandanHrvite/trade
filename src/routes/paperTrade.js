@@ -2886,7 +2886,7 @@ router.get("/history", (req, res) => {
           </div>
           ${trades.length > 0 ? `
           <div style="overflow-x:auto;">
-            <table class="tbl">
+            <div class="tbl-wrap"><table class="tbl">
               <thead><tr>
                 <th>Side</th><th>Strike</th><th>Entry Time</th><th>Exit Time</th>
                 <th>Entry NIFTY / Opt</th><th>Exit NIFTY / Opt</th><th>PnL</th><th>Reason</th>
@@ -2923,7 +2923,18 @@ router.get("/history", (req, res) => {
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
     .export-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
     .export-btn:hover{border-color:#3b82f6;color:#60a5fa;}
-    @media(max-width:768px){.sidebar{transform:translateX(-100%)}.main-content{margin-left:0}.tbl td,.tbl th{padding:6px 8px;font-size:0.68rem;}}
+    @media(max-width:768px){
+      .sidebar{transform:translateX(-100%);}
+      .main-content{margin-left:0;}
+      .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      .tbl{min-width:700px;}
+      .tbl td,.tbl th{padding:6px 8px;font-size:0.68rem;}
+      .top-bar{padding:7px 10px 7px 48px;}
+      .top-bar-meta{display:none;}
+      .stat-grid{grid-template-columns:1fr 1fr;}
+      .top-bar-right{gap:4px;}
+      .export-btn{padding:4px 8px;font-size:0.62rem;}
+    }
   </style>
 </head>
 <body>
