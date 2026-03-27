@@ -21,7 +21,6 @@ jobs:
           REMOTE_HOST: ${{ secrets.HOST_DNS }}
           REMOTE_USER: ${{ secrets.USERNAME }}
           TARGET: "/var/www/html/trade/"
-          # Exclude things that shouldn't be overwritten on server
           EXCLUDE: ".env, node_modules/"
 
       - name: Install deps & restart app via PM2
@@ -31,14 +30,22 @@ jobs:
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Fix npm prefix conflict that breaks nvm
+            npm config delete prefix 2>/dev/null || true
+
             export NVM_DIR=~/.nvm
             source ~/.nvm/nvm.sh
+
+            # Pin Node 16 — works on Amazon Linux 2 (GLIBC 2.17+)
+            # Node 18/20 requires GLIBC 2.28 which Amazon Linux 2 does NOT have
+            nvm use 16 2>/dev/null || (nvm install 16 && nvm use 16)
+            nvm alias default 16
 
             cd /var/www/html/trade/
 
             npm install --omit=dev
 
-            # Start or reload — won't error if app doesn't exist yet
+            # Start or reload
             pm2 describe trading-bot > /dev/null 2>&1 \
               && pm2 reload trading-bot \
               || pm2 start src/app.js --name trading-bot

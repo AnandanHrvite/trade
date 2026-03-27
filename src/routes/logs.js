@@ -219,50 +219,62 @@ ${buildSidebar('logs', liveActive)}
   var countEl   = document.getElementById("count");
   var scrollBtn = document.getElementById("scrollBtn");
 
-  // ── Polling connection (replaces SSE — works with self-signed HTTPS certs) ──
-  // SSE (EventSource) silently fails on self-signed certs in Chrome even after
-  // the user clicks "Proceed anyway". Regular fetch() calls work fine.
-  // Poll every 2s — works reliably with self-signed HTTPS certs (unlike SSE/EventSource)
+  // ── Connection — SSE primary, polling fallback ──────────────────────────────
   var nextFrom = 0;
-  var pollTimer = null;
-  var firstPoll = true;
+  var sseWorking = false;
 
-  function poll() {
-    fetch("/logs/data?from=" + nextFrom, { cache: "no-store" })
-      .then(function(r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      })
-      .then(function(d) {
-        // Always clear "Connecting..." on first successful response
-        if (firstPoll) {
-          firstPoll = false;
-          if (emptyEl) {
-            if (!d.total) {
-              emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
-            } else {
-              emptyEl.remove();
-              emptyEl = null;
-            }
-          }
-        }
-        // Add any new log rows
-        if (d.logs && d.logs.length > 0) {
+  // SSE (primary — zero latency, works when cert is trusted)
+  function connectSSE() {
+    var es = new EventSource("/logs/stream");
+    var timeout = setTimeout(function() {
+      if (!sseWorking) { es.close(); startPolling(); }
+    }, 5000); // if no message in 5s, fall back to polling
+
+    es.onmessage = function(e) {
+      clearTimeout(timeout);
+      sseWorking = true;
+      try {
+        var data = JSON.parse(e.data);
+        if (data.type === "history") {
           if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-          d.logs.forEach(addRow);
+          data.logs.forEach(addRow);
+          nextFrom = data.logs.length;
+        } else if (data.type === "log") {
+          if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+          addRow(data.log);
+          nextFrom++;
         }
-        // Update cursor
-        if (typeof d.total === "number") nextFrom = d.total;
-        pollTimer = setTimeout(poll, 2000);
-      })
-      .catch(function(err) {
-        if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot reach server — retrying...';
-        pollTimer = setTimeout(poll, 4000);
-      });
+      } catch(_) {}
+    };
+
+    es.onerror = function() {
+      clearTimeout(timeout);
+      es.close();
+      if (!sseWorking) { startPolling(); }
+      else { setTimeout(connectSSE, 3000); } // reconnect if SSE drops after working
+    };
   }
 
-  // Start immediately
-  poll();
+  // Polling fallback (used when SSE fails e.g. self-signed cert issue)
+  function startPolling() {
+    if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+    function poll() {
+      fetch("/logs/data?from=" + nextFrom, { cache: "no-store" })
+        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(function(d) {
+          if (d.logs && d.logs.length > 0) {
+            if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+            d.logs.forEach(addRow);
+          }
+          if (typeof d.total === "number") nextFrom = d.total;
+          setTimeout(poll, 2000);
+        })
+        .catch(function() { setTimeout(poll, 5000); });
+    }
+    poll();
+  }
+
+  connectSSE();
 
   // ── Add a single log row ────────────────────────────────────────────────────
   function addRow(entry) {
