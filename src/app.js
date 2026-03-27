@@ -286,12 +286,10 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="top-bar-meta">System overview · Broker connections · Session status</div>
     </div>
     <div class="top-bar-right">
+      <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : '<span class="top-bar-badge">● IDLE</span>'}
     </div>
   </div>
-
-  <!-- Trading Status Alert Banner -->
-  <div id="trading-status-alert" style="display:none;"></div>
 
 <div class="page">
 
@@ -538,53 +536,41 @@ async function loadCacheInfo(){
 }
 loadCacheInfo();
 
-// ── Check Trading Status (Holiday/Weekend/Time) ──────────────────────────────
+// ── Check Trading Status — slim dismissible notification pill ────────────────
+function showStatusPill(alertDiv, icon, msg, color){
+  if(alertDiv._dismissed) return;
+  alertDiv.style.display = 'block';
+  alertDiv.innerHTML =
+    '<div style="display:inline-flex;align-items:center;gap:6px;background:#07111f;border:0.5px solid '+color+';border-radius:20px;padding:3px 10px 3px 8px;font-size:0.68rem;color:'+color+';white-space:nowrap;">'
+    +'<span>'+icon+'</span><span>'+msg+'</span>'
+    +'<span onclick="var d=document.getElementById('trading-status-alert');if(d){d._dismissed=true;d.style.display='none';}" '
+    +'style="cursor:pointer;opacity:0.5;margin-left:4px;">✕</span>'
+    +'</div>';
+}
 async function checkTradingStatus(){
   try {
     var alertDiv = document.getElementById('trading-status-alert');
-    if(!alertDiv) return;
-    
+    if(!alertDiv || alertDiv._dismissed) return;
     var now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    var day = now.getDay();
-    var hour = now.getHours();
-    
-    // Check if weekend
+    var day = now.getDay(); var hour = now.getHours();
     if(day === 0 || day === 6){
-      alertDiv.style.display = 'block';
-      alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#1a0a0a;border:2px solid #5a1010;border-radius:10px;';
-      alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🏖️</span><div><div style="font-size:0.95rem;font-weight:700;color:#f87171;margin-bottom:4px;">Weekend - Markets Closed</div><div style="font-size:0.75rem;color:#a0a0b0;">Trading is not allowed on ' + (day === 0 ? 'Sunday' : 'Saturday') + '. Markets resume on Monday at 9:15 AM IST.</div></div></div>';
-      return;
+      showStatusPill(alertDiv, '🏖️', 'Weekend — markets resume Monday 9:15 AM', '#ef4444'); return;
     }
-    
-    // Check if outside trading hours
     if(hour < 7 || hour >= 16){
-      alertDiv.style.display = 'block';
-      alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#0a0a14;border:2px solid #2a2a50;border-radius:10px;';
-      var timeMsg = hour < 7 ? 'Markets open at 7:00 AM IST' : 'Markets closed at 4:00 PM IST';
-      alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🕐</span><div><div style="font-size:0.95rem;font-weight:700;color:#60a5fa;margin-bottom:4px;">Outside Trading Hours</div><div style="font-size:0.75rem;color:#a0a0b0;">Trading allowed only between 7:00 AM - 4:00 PM IST. ' + timeMsg + '.</div></div></div>';
-      return;
+      showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa'); return;
     }
-    
-    // Check if holiday (fetch from API)
     var res = await fetch('/api/holidays', {cache:'no-store'});
     if(res.ok){
       var data = await res.json();
       if(data.success && data.holidays){
-        var todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        var todayStr = now.toISOString().split('T')[0];
         if(data.holidays.includes(todayStr)){
-          alertDiv.style.display = 'block';
-          alertDiv.style.cssText = 'margin:0 0 12px;padding:14px 18px;background:#1a0a00;border:2px solid#5a3010;border-radius:10px;';
-          alertDiv.innerHTML = '<div style="display:flex;align-items:center;gap:12px;"><span style="font-size:1.8rem;">🎉</span><div><div style="font-size:0.95rem;font-weight:700;color:#fbbf24;margin-bottom:4px;">NSE Holiday - Markets Closed</div><div style="font-size:0.75rem;color:#a0a0b0;">Today is an NSE trading holiday. Markets will resume on the next trading day.</div></div></div>';
-          return;
+          showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24'); return;
         }
       }
     }
-    
-    // All checks passed - hide alert
     alertDiv.style.display = 'none';
-  } catch(e){
-    console.error('Trading status check failed:', e);
-  }
+  } catch(e){}
 }
 checkTradingStatus();
 setInterval(checkTradingStatus, 60000); // Check every minute

@@ -130,9 +130,9 @@ function sidebarCSS() {
 
     /* ── MAIN CONTENT ── */
     .main-content{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
-    .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
-    .top-bar-title{font-size:0.88rem;font-weight:700;color:#e0eaf8;}
-    .top-bar-meta{font-size:0.65rem;color:#2a4060;margin-top:1px;}
+    .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:7px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
+    .top-bar-title{font-size:0.82rem;font-weight:700;color:#e0eaf8;}
+    .top-bar-meta{font-size:0.62rem;color:#2a4060;margin-top:1px;}
     .top-bar-right{display:flex;align-items:center;gap:8px;}
     .top-bar-badge{display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:#60a5fa;}
     .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
