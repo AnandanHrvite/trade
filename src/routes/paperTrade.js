@@ -2990,11 +2990,9 @@ var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
 
 async function handleHistoryReset(btn) {
   if (!confirm('⚠️ Reset ALL paper trade history?\nThis wipes every session and restores starting capital.\nCannot be undone.')) return;
-  var secret = prompt('Enter API_SECRET from your .env\n(leave blank if API_SECRET is not set in .env):') || '';
   if (btn) { btn.textContent = '⏳ Resetting...'; btn.disabled = true; }
   try {
-    var url = '/paperTrade/reset' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
-    var res = await fetch(url);
+    var res = await fetch('/paperTrade/reset');
     var data = await res.json();
     if (!data.success) {
       alert('❌ ' + (data.error || 'Reset failed'));

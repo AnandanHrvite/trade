@@ -33,6 +33,7 @@ const OPEN_PATHS = [
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
+  "/paperTrade/reset",      // wipe history — protected by confirm() dialog, no secret needed
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
