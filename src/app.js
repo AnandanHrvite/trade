@@ -257,19 +257,11 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
-    #trade-row { flex-wrap:nowrap; }
+    #trade-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
     @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } #trade-row { flex-wrap:wrap; } }
 
-    /* ── ACTIVE CONFIGURATION ── */
-    .cfg-grid { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0; }
-    .cfg-cell { padding:16px 18px; border-right:1px solid #1a2236; }
-    .cfg-cell:last-child { border-right:none; }
-    .cfg-label { font-size:0.52rem; font-weight:600; text-transform:uppercase; letter-spacing:1.5px; color:#3a5070; margin-bottom:6px; }
-    .cfg-val { font-size:1rem; font-weight:700; color:#e0eaf8; margin-bottom:3px; }
-    .cfg-sub { font-size:0.65rem; color:#3a5070; }
-    .cfg-val.disabled { color:#ef4444; }
-    .live-note { margin:0 18px 14px; padding:10px 14px; background:#0a0a14; border:1px solid #252540; border-radius:8px; font-size:0.7rem; color:#3a5070; }
-    .live-note code { color:#a0b0c0; font-family:'IBM Plex Mono',monospace; font-weight:600; }
+    /* cfg-grid removed — config shown as strip in broker card */
+    /* cfg-cell/live-note styles removed — config shown as strip in broker card */
 
     /* ── MOBILE ── */
     @media (max-width:640px) {
@@ -396,11 +388,19 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="hard-reset-row">
         <span class="hard-reset-hint" id="cache-hint">📦 Candle cache: <span id="cache-info-txt" style="color:#4a6080;">checking...</span></span>
       </div>
+      <div class="broker-divider"></div>
+      <div style="padding:10px 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <span style="font-size:0.58rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-right:4px;">Config</span>
+        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#60a5fa;">${ACTIVE} · ${activeStrategyName}</span>
+        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#a78bfa;">NIFTY OPTIONS · 65 qty/lot</span>
+        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#f59e0b;">${process.env.TRADE_RESOLUTION || "15"}-min candles</span>
+        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid ${liveReady ? '#10b981' : liveEnabled ? '#f59e0b' : '#374151'};border-radius:5px;padding:3px 10px;color:${liveReady ? '#10b981' : liveEnabled ? '#f59e0b' : '#6b7280'};">${liveReady ? '⚡ Live Ready' : liveEnabled ? '⚠ Needs Login' : '🔒 Live Disabled'}</span>
+      </div>
     </div>
   </div>
 
   <!-- ③ PAPER + LIVE TRADE side by side -->
-  <div style="display:flex;gap:12px;align-items:stretch;" id="trade-row">
+  <div id="trade-row">
 
   <div class="card" id="paper-status-card" style="flex:1;min-width:0;">
     <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
@@ -434,38 +434,7 @@ ${buildSidebar('dashboard', liveActive)}
 
   </div><!-- end trade-row -->
 
-  <!-- ⑤ ACTIVE CONFIGURATION -->
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-hdr-icon">⚙️</span>
-      <span class="card-hdr-title">Active Configuration</span>
-    </div>
-    <div class="cfg-grid">
-      <div class="cfg-cell" style="border-top:2px solid #3b82f6;">
-        <div class="cfg-label">Strategy</div>
-        <div class="cfg-val">${ACTIVE}</div>
-        <div class="cfg-sub">${activeStrategyName}</div>
-      </div>
-      <div class="cfg-cell" style="border-top:2px solid #8b5cf6;">
-        <div class="cfg-label">Instrument</div>
-        <div class="cfg-val">NIFTY OPTIONS</div>
-        <div class="cfg-sub">1 lot = 65 qty (Jan 2026+)</div>
-      </div>
-      <div class="cfg-cell" style="border-top:2px solid #f59e0b;">
-        <div class="cfg-label">Trade Resolution</div>
-        <div class="cfg-val">${process.env.TRADE_RESOLUTION || "5"}-min</div>
-        <div class="cfg-sub">TRADE_RESOLUTION in .env</div>
-      </div>
-      <div class="cfg-cell" style="border-top:2px solid #ef4444;">
-        <div class="cfg-label">Live Trading</div>
-        <div class="cfg-val ${liveReady ? '' : 'disabled'}">${liveReady ? '⚡ ENABLED' : liveEnabled ? '⚠ NEEDS LOGIN' : '🔒 DISABLED'}</div>
-        <div class="cfg-sub">${liveReady ? 'All systems ready' : liveEnabled ? 'Broker login required' : 'Set LIVE_TRADE_ENABLED=true in .env'}</div>
-      </div>
-    </div>
-    ${!liveReady ? `<div class="live-note">
-      🔒 Live trading disabled. Set <code>LIVE_TRADE_ENABLED=true</code> in .env when ready.
-    </div>` : ''}
-  </div>
+
 
 </div>
 
