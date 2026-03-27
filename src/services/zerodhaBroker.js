@@ -16,10 +16,10 @@ const fs   = require("fs");
 const path = require("path");
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Token persistence — saved to disk, survives nodemon restarts
+// Token persistence — stored at ~/trading-data/ outside project, survives redeploys
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TOKEN_FILE = path.join(__dirname, "../../data/.zerodha_token");
+const TOKEN_FILE = path.join(require("os").homedir(), "trading-data", ".zerodha_token");
 
 function saveZerodhaToken(token) {
   try {

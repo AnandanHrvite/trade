@@ -60,9 +60,23 @@ let _mktHoursParamsTs = 0; // invalidate cache if env changes (unlikely but safe
 const sharedSocketState = require("../utils/sharedSocketState");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { fetchCandles } = require("../services/backtestEngine");
-// ── Live session persistence (mirrors paperTrade) ────────────────────────────
-const LT_DIR  = path.join(__dirname, "../../data");
-const LT_FILE = path.join(LT_DIR, "live_trades.json");
+// ── Live session persistence ──────────────────────────────────────────────────
+// Stored at ~/trading-data/ — outside project dir, survives git pull / redeploys.
+const _HOME_LT = require("os").homedir();
+const LT_DIR   = path.join(_HOME_LT, "trading-data");
+const LT_FILE  = path.join(LT_DIR, "live_trades.json");
+
+// One-time migration from old ./data/live_trades.json
+const _OLD_LT_FILE = path.join(__dirname, "../../data/live_trades.json");
+(function migrateLiveOnce() {
+  try {
+    if (!fs.existsSync(LT_FILE) && fs.existsSync(_OLD_LT_FILE)) {
+      if (!fs.existsSync(LT_DIR)) fs.mkdirSync(LT_DIR, { recursive: true });
+      fs.copyFileSync(_OLD_LT_FILE, LT_FILE);
+      console.log("[trade] Migrated live_trades.json → ~/trading-data/");
+    }
+  } catch (e) { console.warn("[trade] Live migration check:", e.message); }
+})();
 
 function ensureLiveDir() {
   if (!fs.existsSync(LT_DIR)) fs.mkdirSync(LT_DIR, { recursive: true });

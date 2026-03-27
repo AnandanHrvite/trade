@@ -110,8 +110,38 @@ function getISTHHMM(unixSec) {
 function runBacktest(candles, strategy, capital) {
   const trades    = [];
   let position    = null;
-  const BROKERAGE = 80;
+  const BROKERAGE = 80;    // ₹ per trade (applied to option P&L)
   const LOT_SIZE  = getLotQty();
+
+  // ── Option premium simulation ────────────────────────────────────────────────
+  // Backtest doesn't have real option prices. We simulate them with two factors:
+  //
+  // 1. DELTA: How much the option premium moves per 1-pt NIFTY move.
+  //    ATM options (strike ≈ spot): delta ≈ 0.50
+  //    ITM options (strike 50pt inside spot): delta ≈ 0.65
+  //    This bot enters ITM (calcATMStrike returns strike 50pts ITM).
+  //    We use delta=0.55 as a conservative ITM approximation.
+  //    Real delta varies — 0.55 is a reasonable mid-point for 1-week ITM options.
+  //
+  // 2. THETA DECAY: Options lose value every minute they're held.
+  //    Approximation: ATM weekly option ≈ ₹8–12 theta/day on 15-min bars.
+  //    We deduct theta proportional to candles held (1 candle = 15 min = 1/26 of trading day).
+  //    THETA_PER_DAY: configurable via env, defaults to ₹10/day (conservative).
+  //    This makes long holds cost more — matching real trading where theta kills
+  //    a position that "wins" on spot direction but loses on time decay.
+  //
+  // pnlRupees = (spotPnlPts × DELTA × LOT_SIZE) - (theta × candlesHeld / candlesPerDay) - BROKERAGE
+  //
+  // This is the #1 reason backtest looks better than live — without this, a 100pt
+  // NIFTY move shows 100pt profit, but your real option only gained ~55pt × ₹65 = ₹3575,
+  // not ₹6500 (100pt × ₹65). After theta on a 4-candle hold: ~₹3575 − ₹6 − ₹80 = ₹3489.
+  //
+  // To disable simulation and revert to raw index points (old behaviour):
+  //   set BACKTEST_OPTION_SIM=false in .env
+  const OPTION_SIM   = process.env.BACKTEST_OPTION_SIM !== "false"; // true by default
+  const DELTA        = parseFloat(process.env.BACKTEST_DELTA        || "0.55");
+  const THETA_PER_DAY = parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
+  const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
 
   // Trail gap — tiered dynamic (mirrors paper/live exactly):
   //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 60pt — wide, early move)
@@ -143,6 +173,7 @@ function runBacktest(candles, strategy, capital) {
   console.log(`   Entry : signal from strategy at candle close`);
   console.log(`   Exit  : 50% rule + trail SL + SAR SL + opposite signal + EOD/day`);
   console.log(`   Brok  : ₹${BROKERAGE} per trade`);
+  console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log("══════════════════════════════════════════════");
 
   // ── Optimisation: cache the SL from the previous candle's getSignal ──────────
@@ -230,6 +261,9 @@ function runBacktest(candles, strategy, capital) {
     // Mirrors paper/live: SL always taken from last fully closed candle's SAR.
     // _cachedPrevSL was set at the end of the previous iteration = getSignal(candles[0..i-1]).
     const prevSignalSL = _cachedPrevSL;
+
+    // Count candles held (used for theta decay in PnL calculation)
+    if (position) position.candlesHeld = (position.candlesHeld || 0) + 1;
 
     // ── UPDATE TRAILING SAR SL (tighten only) ────────────────────────────────
     if (position && signalSL !== null && signalSL !== undefined) {
@@ -324,7 +358,29 @@ function runBacktest(candles, strategy, capital) {
       }
 
       if (exitReason) {
-        const pnlPoints = parseFloat(((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+        // ── PnL Calculation — realistic option simulation ─────────────────────
+        // spotPnlPts: NIFTY index point move in our favour
+        const spotPnlPts = parseFloat(((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+
+        let pnlRupees;
+        let pnlMode;
+        if (OPTION_SIM) {
+          // Option premium change ≈ spotPnlPts × delta
+          const premiumMovePts = spotPnlPts * DELTA;
+          // Theta decay: proportional to candles held
+          const candlesHeld    = position.candlesHeld || 1;
+          const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
+          // Net option PnL per unit
+          const netPremiumPts  = premiumMovePts - thetaDecay;
+          // Total rupees = net premium pts × lot size − brokerage
+          pnlRupees = parseFloat(((netPremiumPts * LOT_SIZE) - BROKERAGE).toFixed(2));
+          pnlMode   = `opt_sim (spot=${spotPnlPts}pt × δ${DELTA}=${premiumMovePts.toFixed(1)}pt − θ${thetaDecay}pt) × ${LOT_SIZE}lots − ₹${BROKERAGE}brok`;
+        } else {
+          // Legacy mode: raw index points (no delta/theta/lot/brokerage)
+          pnlRupees = spotPnlPts;
+          pnlMode   = "raw_pts";
+        }
+
         trades.push({
           side:           position.side,
           entryTime:      toDateString(position.entryTime),
@@ -336,15 +392,20 @@ function runBacktest(candles, strategy, capital) {
           stopLoss:        position.stopLoss || "N/A",
           initialStopLoss: position.initialStopLoss || position.stopLoss || "N/A",
           bestPrice:       position.bestPrice || null,
-          pnl:             pnlPoints,
+          candlesHeld:     position.candlesHeld || 1,
+          spotPnlPts,           // raw NIFTY point move (for display in UI)
+          pnl:             pnlRupees,  // realistic ₹ PnL (or raw pts if sim disabled)
+          pnlMode,
           exitReason,
           entryReason:     position.entryReason,
           signalStrength:  position.signalStrength || "MARGINAL",
           indicators:      position.indicators,
         });
-        const exitIcon = pnlPoints > 0 ? "✅" : "❌";
-        console.log(`  🚪 EXIT ${position.side} @ ${exitPrice}  PnL=${pnlPoints > 0 ? "+" : ""}${pnlPoints}pts ${exitIcon}  reason=${exitReason}`);
-        console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | Entry=${position.entryPrice} | entryPrevMid=${position.entryPrevMid}`);
+        const exitIcon = pnlRupees > 0 ? "✅" : "❌";
+        const pnlLabel = OPTION_SIM ? `₹${pnlRupees}` : `${spotPnlPts}pts`;
+        console.log(`  🚪 EXIT ${position.side} @ ${exitPrice}  PnL=${pnlRupees >= 0 ? "+" : ""}${pnlLabel} ${exitIcon}  reason=${exitReason}`);
+        if (OPTION_SIM) console.log(`     [${pnlMode}]`);
+        console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice} | entryPrevMid=${position.entryPrevMid}`);
 
         // ── 50%-rule exit → set pause for 2 candles ────────────────────────
         // 50% rule firing = price reversed immediately = choppy market.
@@ -395,6 +456,19 @@ function runBacktest(candles, strategy, capital) {
         }
       }
 
+      // ── 50% entry gate — mirrors paper trade exactly ──────────────────────────
+      // If entry spot is already on wrong side of prev candle mid, the 50% exit rule
+      // would fire on the very first candle — no room to hold. Block the entry.
+      // CE needs room to rise  → entry must be ABOVE prevMid
+      // PE needs room to fall  → entry must be BELOW prevMid
+      const violates50 = (side === "PE" && entryPrice > entryPrevMid) ||
+                         (side === "CE" && entryPrice < entryPrevMid);
+      if (violates50) {
+        console.log(`  🚫 Entry BLOCKED [50% gate]: ${side} @ ${entryPrice} ${side === "PE" ? ">" : "<"} prevMid ${entryPrevMid} — no directional room`);
+        _cachedPrevSL = signalSL ?? null;
+        continue; // eslint-disable-line no-continue
+      }
+
       // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
       const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
       const _dynTrailActivateBT = Math.min(40, Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25)));
@@ -411,6 +485,7 @@ function runBacktest(candles, strategy, capital) {
         entryPrevMid,
         signalStrength:  strength,
         indicators,
+        candlesHeld:     0,  // for theta decay calculation
       };
       const priceNote = strength === "STRONG"
         ? `(EMA9=${indicators.ema9} < close=${candle.close} → entered at EMA9 touch)`
@@ -427,7 +502,18 @@ function runBacktest(candles, strategy, capital) {
   // Square off any still-open position at end of run
   if (position) {
     const lastCandle = candles[candles.length - 1];
-    const pnlPoints  = parseFloat(((lastCandle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+    const spotPnlPts = parseFloat(((lastCandle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+    let pnlRupees, pnlMode;
+    if (OPTION_SIM) {
+      const premiumMovePts = spotPnlPts * DELTA;
+      const candlesHeld    = position.candlesHeld || 1;
+      const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
+      pnlRupees = parseFloat((((premiumMovePts - thetaDecay) * LOT_SIZE) - BROKERAGE).toFixed(2));
+      pnlMode   = `opt_sim`;
+    } else {
+      pnlRupees = spotPnlPts;
+      pnlMode   = "raw_pts";
+    }
     trades.push({
       side:        position.side,
       entryTime:   toDateString(position.entryTime),
@@ -439,7 +525,10 @@ function runBacktest(candles, strategy, capital) {
       stopLoss:         position.stopLoss || "N/A",
       initialStopLoss:  position.initialStopLoss || position.stopLoss || "N/A",
       bestPrice:        position.bestPrice || null,
-      pnl:         pnlPoints,
+      candlesHeld:      position.candlesHeld || 1,
+      spotPnlPts,
+      pnl:         pnlRupees,
+      pnlMode,
       exitReason:  "EOD square-off (run end)",
       entryReason: position.entryReason,
       indicators:  position.indicators,
@@ -452,17 +541,19 @@ function runBacktest(candles, strategy, capital) {
   const totalPnl      = trades.reduce((sum, t) => sum + t.pnl, 0);
   const wins          = trades.filter((t) => t.pnl > 0);
   const losses        = trades.filter((t) => t.pnl <= 0);
-  const maxDrawdown   = trades.reduce((dd, t) => Math.min(dd, t.pnl), 0);  // worst single loss
-  const totalDrawdown = losses.reduce((sum, t) => sum + t.pnl, 0);         // sum of all losses
-  const maxProfit     = trades.reduce((mp, t) => Math.max(mp, t.pnl), 0);  // best single win
+  const maxDrawdown   = trades.reduce((dd, t) => Math.min(dd, t.pnl), 0);
+  const totalDrawdown = losses.reduce((sum, t) => sum + t.pnl, 0);
+  const maxProfit     = trades.reduce((mp, t) => Math.max(mp, t.pnl), 0);
   const avgWin        = wins.length   ? wins.reduce((s, t)   => s + t.pnl, 0) / wins.length   : 0;
   const avgLoss       = losses.length ? losses.reduce((s, t) => s + t.pnl, 0) / losses.length : 0;
   const riskReward    = avgLoss !== 0 ? Math.abs(avgWin / avgLoss) : null;
 
-  // ── STRONG vs MARGINAL breakdown — helps calibrate thresholds ────────────────
-  // Shows whether STRONG signals have higher win rate than MARGINAL.
-  // If STRONG win rate >> MARGINAL win rate → thresholds are well-calibrated.
-  // If similar → thresholds need tuning (slope/RSI gates not discriminating enough).
+  // Total spot PnL in raw pts (always available regardless of sim mode)
+  const totalSpotPts  = trades.reduce((s, t) => s + (t.spotPnlPts || t.pnl), 0);
+
+  const pnlUnit  = OPTION_SIM ? "₹" : "pts";
+  const fmtPnl   = (n) => `${n >= 0 ? "+" : ""}${n.toFixed(OPTION_SIM ? 0 : 2)}${OPTION_SIM ? "" : " pts"}`;
+
   const strongTrades   = trades.filter((t) => t.signalStrength === "STRONG");
   const marginalTrades = trades.filter((t) => t.signalStrength !== "STRONG");
   const strongWins     = strongTrades.filter((t) => t.pnl > 0);
@@ -470,32 +561,33 @@ function runBacktest(candles, strategy, capital) {
   const strongPnl      = strongTrades.reduce((s, t) => s + t.pnl, 0);
   const marginalPnl    = marginalTrades.reduce((s, t) => s + t.pnl, 0);
 
-  // ── Full terminal summary ──────────────────────────────────────────────────
   const totalPnlFinal = parseFloat(totalPnl.toFixed(2));
   const wrFinal = trades.length ? ((wins.length / trades.length) * 100).toFixed(1) : "N/A";
   console.log("\n══════════════════════════════════════════════");
   console.log(`📊 BACKTEST COMPLETE — ${strategy.NAME}`);
-  console.log(`   Period   : ${trades.length > 0 ? trades[trades.length-1].exitTime + " to end" : "no trades"}`);
+  console.log(`   Period   : ${trades.length > 0 ? trades[0].entryTime + " → " + trades[trades.length-1].exitTime : "no trades"}`);
   console.log(`   Candles  : ${candles.length} (${candleResolutionMins}-min)`);
+  console.log(`   PnL unit : ${OPTION_SIM ? `₹ (option sim: δ=${DELTA} θ=₹${THETA_PER_DAY}/day lot=${LOT_SIZE})` : "index pts (raw)"}`);
   console.log("──────────────────────────────────────────────");
   console.log(`   Trades   : ${trades.length} (${wins.length}W / ${losses.length}L)`);
   console.log(`   Win Rate : ${wrFinal}%`);
   console.log(`   R:R      : 1:${riskReward ? riskReward.toFixed(2) : "N/A"}`);
-  console.log(`   Avg Win  : +${avgWin.toFixed(1)} pts`);
-  console.log(`   Avg Loss : ${avgLoss.toFixed(1)} pts`);
-  console.log(`   Total PnL: ${totalPnlFinal >= 0 ? "+" : ""}${totalPnlFinal} pts`);
-  console.log(`   Max Win  : +${maxProfit.toFixed(1)} pts`);
-  console.log(`   Max Loss : ${maxDrawdown.toFixed(1)} pts`);
-  console.log(`   Total DD : ${totalDrawdown.toFixed(1)} pts (sum of all losses)`);
+  console.log(`   Avg Win  : ${fmtPnl(avgWin)}`);
+  console.log(`   Avg Loss : ${fmtPnl(avgLoss)}`);
+  console.log(`   Total PnL: ${fmtPnl(totalPnlFinal)}${OPTION_SIM ? ` (spot total: ${totalSpotPts >= 0 ? "+" : ""}${totalSpotPts.toFixed(1)} NIFTY pts)` : ""}`);
+  console.log(`   Max Win  : ${fmtPnl(maxProfit)}`);
+  console.log(`   Max Loss : ${fmtPnl(maxDrawdown)}`);
+  console.log(`   Total DD : ${fmtPnl(totalDrawdown)} (sum of all losses)`);
+  if (OPTION_SIM) {
+    console.log(`   Final Cap: ₹${(capital + totalPnlFinal).toLocaleString("en-IN", { maximumFractionDigits: 0 })} (started ₹${capital.toLocaleString("en-IN")})`);
+  }
   console.log("──────────────────────────────────────────────");
   console.log("── Signal Strength Breakdown ──────────────────────");
-  console.log(`  STRONG  : ${strongTrades.length} trades | ${strongWins.length}W/${strongTrades.length - strongWins.length}L | WR=${strongTrades.length ? ((strongWins.length/strongTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${strongPnl.toFixed(1)}pts`);
-  console.log(`  MARGINAL: ${marginalTrades.length} trades | ${marginalWins.length}W/${marginalTrades.length - marginalWins.length}L | WR=${marginalTrades.length ? ((marginalWins.length/marginalTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${marginalPnl.toFixed(1)}pts`);
+  console.log(`  STRONG  : ${strongTrades.length} trades | ${strongWins.length}W/${strongTrades.length - strongWins.length}L | WR=${strongTrades.length ? ((strongWins.length/strongTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${fmtPnl(strongPnl)}`);
+  console.log(`  MARGINAL: ${marginalTrades.length} trades | ${marginalWins.length}W/${marginalTrades.length - marginalWins.length}L | WR=${marginalTrades.length ? ((marginalWins.length/marginalTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${fmtPnl(marginalPnl)}`);
 
-  // ── Exit reason breakdown ────────────────────────────────────────────────────
   const exitGroups = {};
   trades.forEach(t => {
-    const key = t.exitReason.split(' ')[0] + (t.exitReason.includes('50% rule') ? ' rule' : t.exitReason.includes('SL hit') ? ' hit' : '');
     const label = t.exitReason.includes('50% rule') ? '50% rule' : t.exitReason.includes('SL hit') ? 'SL hit' : t.exitReason.includes('Opposite') ? 'Opposite signal' : t.exitReason.includes('EOD') ? 'EOD square-off' : 'Other';
     if (!exitGroups[label]) exitGroups[label] = { count:0, wins:0, pnl:0 };
     exitGroups[label].count++;
@@ -504,7 +596,7 @@ function runBacktest(candles, strategy, capital) {
   });
   console.log("── Exit Reason Breakdown ──────────────────────────");
   Object.entries(exitGroups).sort((a,b) => b[1].count - a[1].count).forEach(([label, g]) => {
-    console.log(`  ${label.padEnd(18)}: ${g.count} trades | ${g.wins}W/${g.count-g.wins}L | WR=${((g.wins/g.count)*100).toFixed(0)}% | PnL=${g.pnl.toFixed(1)}pts`);
+    console.log(`  ${label.padEnd(18)}: ${g.count} trades | ${g.wins}W/${g.count-g.wins}L | WR=${((g.wins/g.count)*100).toFixed(0)}% | PnL=${fmtPnl(g.pnl)}`);
   });
   console.log("══════════════════════════════════════════════\n");
 
@@ -512,19 +604,26 @@ function runBacktest(candles, strategy, capital) {
     summary: {
       strategy:        strategy.NAME,
       description:     strategy.DESCRIPTION,
+      optionSim:       OPTION_SIM,
+      pnlUnit:         OPTION_SIM ? "₹" : "pts",
+      delta:           OPTION_SIM ? DELTA : null,
+      thetaPerDay:     OPTION_SIM ? THETA_PER_DAY : null,
+      lotSize:         LOT_SIZE,
       totalTrades:     trades.length,
       wins:            wins.length,
       losses:          losses.length,
       winRate:         trades.length ? `${((wins.length / trades.length) * 100).toFixed(1)}%` : "N/A",
       totalPnl:        parseFloat(totalPnl.toFixed(2)),
+      totalSpotPts:    parseFloat(totalSpotPts.toFixed(2)),
       maxProfit:       parseFloat(maxProfit.toFixed(2)),
       maxDrawdown:     parseFloat(maxDrawdown.toFixed(2)),
       totalDrawdown:   parseFloat(totalDrawdown.toFixed(2)),
       avgWin:          parseFloat(avgWin.toFixed(2)),
       avgLoss:         parseFloat(avgLoss.toFixed(2)),
       riskReward:      riskReward ? `1:${riskReward.toFixed(2)}` : "N/A",
-      finalCapital:    parseFloat((capital + totalPnl).toFixed(2)),
-      // Signal strength breakdown (v54)
+      // finalCapital: only meaningful in option sim mode (₹ + ₹ is valid)
+      // In raw pts mode it was wrong (pts + ₹ = nonsense) — now shows null
+      finalCapital:    OPTION_SIM ? parseFloat((capital + totalPnl).toFixed(2)) : null,
       strongTrades:    strongTrades.length,
       strongWinRate:   strongTrades.length ? `${((strongWins.length/strongTrades.length)*100).toFixed(1)}%` : "N/A",
       strongPnl:       parseFloat(strongPnl.toFixed(2)),

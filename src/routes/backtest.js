@@ -9,6 +9,12 @@ const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
 const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
+// Smart formatter: shows ₹ when option sim is on, pts when off
+const fmtPnl   = (n, s) => {
+  if (typeof n !== "number") return "\u2014";
+  if (s && s.optionSim) return (n >= 0 ? "+" : "") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  return pts(n);
+};
 
 // buildNav kept for backward-compat — now delegates to shared sidebar
 function buildNav(active, liveActive) {
@@ -90,6 +96,9 @@ ${buildSidebar('backtest', true)}
       sl:        (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null,
       initialSL: (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss) : ((t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null),
       pnl:       typeof t.pnl === "number" ? t.pnl : null,
+      spotPts:   typeof t.spotPnlPts === "number" ? t.spotPnlPts : null,
+      pnlMode:   t.pnlMode || null,
+      held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
       reason:    String(t.exitReason || ""),
       risk_pts:  (() => {
         const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
@@ -202,10 +211,10 @@ ${buildSidebar('backtest', liveActive)}
   <!-- Summary -->
   <div class="stat-grid">
     <div class="sc blue"><div class="sc-label">Total Trades</div><div class="sc-val">${s.totalTrades}</div><div class="sc-sub">${s.wins}W \u00b7 ${s.losses}L</div></div>
-    <div class="sc green"><div class="sc-label">Max Profit</div><div class="sc-val" style="color:#10b981;">${pts(s.maxProfit)}</div><div class="sc-sub">Best single trade</div></div>
-    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${pts(s.totalPnl)}</div><div class="sc-sub">CE: exit\u2212entry | PE: entry\u2212exit</div></div>
-    <div class="sc red"><div class="sc-label">Max Drawdown</div><div class="sc-val" style="color:#ef4444;">${pts(s.maxDrawdown)}</div><div class="sc-sub">Worst single loss</div></div>
-    <div class="sc red"><div class="sc-label">Total Drawdown</div><div class="sc-val" style="color:#ef4444;">${pts(s.totalDrawdown)}</div><div class="sc-sub">Sum of all losses</div></div>
+    <div class="sc green"><div class="sc-label">Max Profit</div><div class="sc-val" style="color:#10b981;">${fmtPnl(s.maxProfit, s)}</div><div class="sc-sub">Best single trade</div></div>
+    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${fmtPnl(s.totalPnl, s)}</div><div class="sc-sub">${s.optionSim ? `Option sim: δ=${s.delta} θ=₹${s.thetaPerDay}/day` : "Raw NIFTY index pts — enable BACKTEST_OPTION_SIM=true"}</div></div>
+    <div class="sc red"><div class="sc-label">Max Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.maxDrawdown, s)}</div><div class="sc-sub">Worst single trade</div></div>
+    <div class="sc red"><div class="sc-label">Total Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.totalDrawdown, s)}</div><div class="sc-sub">Sum of all losses</div></div>
     <div class="sc purple"><div class="sc-label">Risk/Reward</div><div class="sc-val">${s.riskReward||"\u2014"}</div><div class="sc-sub">1 : avg win \u00f7 avg loss</div></div>
     <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val">${s.winRate||"\u2014"}</div><div class="sc-sub">${s.wins} wins of ${s.totalTrades}</div></div>
   </div>
@@ -244,7 +253,7 @@ ${buildSidebar('backtest', liveActive)}
         <th onclick="doSort('ePrice')" id="h-ePrice">Entry &#8377;</th>
         <th onclick="doSort('xPrice')" id="h-xPrice">Exit &#8377;</th>
         <th onclick="doSort('sl')"     id="h-sl">SL &#8377;</th>
-        <th onclick="doSort('pnl')"    id="h-pnl">PnL (pts)</th>
+        <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(₹ sim)" : "(pts)"}</th>
         <th onclick="doSort('risk_pts')" id="h-risk">Risk (pts)</th>
         <th onclick="doSort('rr')"     id="h-rr">R:R</th>
         <th>Exit Reason</th>
@@ -278,7 +287,16 @@ var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;
 
 function fmt(n){ return n!=null ? '\u20b9'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\u2014'; }
-function fpts(n){ return n!=null ? (n>=0?'+':'')+n.toFixed(2)+' pts' : '\u2014'; }
+var OPT_SIM = ${s.optionSim ? "true" : "false"};
+function fpts(n, spotPts){
+  if(n==null) return '\u2014';
+  if(OPT_SIM){
+    var r = (n>=0?'+':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+    if(spotPts!=null) r += '<span style="font-size:0.65rem;color:#4a6080;margin-left:4px;">('+( spotPts>=0?'+':'')+spotPts.toFixed(1)+'pt)</span>';
+    return r;
+  }
+  return (n>=0?'+':'')+n.toFixed(2)+' pts';
+}
 
 function doFilter(){
   var s=document.getElementById('fSearch').value.toLowerCase();
@@ -346,7 +364,7 @@ function render(){
       +'<td>'+fmt(t.ePrice)+'</td>'
       +'<td>'+fmt(t.xPrice)+'</td>'
       +'<td style="color:#f59e0b;">'+(t.sl!=null?fmt(t.sl):'\u2014')+'</td>'
-      +'<td style="color:'+pc+';font-weight:700;">'+fpts(t.pnl)+'</td>'
+      +'<td style="color:'+pc+';font-weight:700;">'+fpts(t.pnl, t.spotPts)+'</td>'
       +'<td style="color:#94a3b8;font-family:monospace;font-size:0.72rem;">'+(t.risk_pts!=null?'\u00b1'+t.risk_pts.toFixed(2)+' pts':'\u2014')+'</td>'
       +'<td style="color:'+rrc+';font-weight:700;font-family:monospace;">'+(t.rr||'\u2014')+'</td>'
       +'<td style="font-size:0.7rem;color:#4a6080;cursor:default;" data-reason="'+t.reason.replace(/"/g,'&quot;')+'">'+sr+'</td>'
@@ -455,8 +473,11 @@ function showBTModal(t){
     +cell('Exit Time',      t.exit||'—',    '#c8d8f0')
     +cell('NIFTY Spot @ Exit', fmt(t.xPrice), '#fff', 'Spot price at exit')
     +cell('NIFTY Move (pts)', pnlPts!=null?(pnlPts>=0?'+':'')+pnlPts+' pts':'—', pnlPts!=null?(pnlPts>=0?'#10b981':'#ef4444'):'#c8d8f0', t.side==='PE'?'Entry−Exit (PE profits on fall)':'Exit−Entry (CE profits on rise)')
-    +cell('PnL (pts)',      t.pnl!=null?(t.pnl>=0?'+':'')+t.pnl.toFixed(2)+' pts':'—', pc, 'Simulated index points')
-    +cell('R:R Ratio',      t.rr||'—', t.pnl!=null&&t.pnl>=0?'#10b981':'#ef4444', 'Reward ÷ Risk')
+    +cell('PnL',           t.pnl!=null?(t.pnl>=0?'+':'')+( OPT_SIM ? '₹'+Math.abs(t.pnl).toLocaleString('en-IN',{maximumFractionDigits:0}) : t.pnl.toFixed(2)+' pts' ):'—', pc, OPT_SIM ? 'Option sim: spot×δ−θ−brok (see pnlMode)' : 'Raw NIFTY index pts')
+    +cell('Spot PnL (pts)',t.spotPts!=null?(t.spotPts>=0?'+':'')+t.spotPts.toFixed(2)+' pts':'—', t.spotPts!=null?(t.spotPts>=0?'#10b981':'#ef4444'):'#4a6080', 'Raw NIFTY index point move')
+    +cell('Held (candles)',t.held!=null?t.held+' candles':'—', '#94a3b8', 'Candles held — affects theta decay')
+    +cell('PnL Method',   t.pnlMode||'—', '#4a6080', 'How PnL was calculated')
+    +cell('R:R Ratio',     t.rr||'—', t.pnl!=null&&t.pnl>=0?'#10b981':'#ef4444', 'Reward ÷ Risk')
     +'</div></div>';
 
   var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'

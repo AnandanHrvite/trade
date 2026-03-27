@@ -19,7 +19,9 @@ fyers.setAppId(process.env.APP_ID);
 fyers.setRedirectUrl(process.env.REDIRECT_URL);
 
 // ── Token persistence ─────────────────────────────────────────────────────────
-const TOKEN_FILE = path.join(__dirname, "../../data/.fyers_token");
+// Stored at ~/trading-data/ — outside project dir, survives git pull / redeploys.
+const _HOME_FY = require("os").homedir();
+const TOKEN_FILE = path.join(_HOME_FY, "trading-data", ".fyers_token");
 
 function todayIST() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

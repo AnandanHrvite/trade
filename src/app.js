@@ -33,6 +33,8 @@ const OPEN_PATHS = [
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
+  "/tracker/status",        // read-only tracker page
+  "/tracker/status/data",   // AJAX poll — must be open
   "/result",                // read-only results
   "/result/all",
   "/auth/status",           // read-only auth status
@@ -61,6 +63,7 @@ app.use("/backtest",   require("./routes/backtest"));
 app.use("/result",     require("./routes/result"));
 app.use("/paperTrade", require("./routes/paperTrade"));
 app.use("/trade",      require("./routes/trade"));
+app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 
 // ── Holiday Management API ────────────────────────────────────────────────────

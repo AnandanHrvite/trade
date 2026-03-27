@@ -639,3 +639,4 @@ module.exports = {
   getProductType,
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
 };
+
