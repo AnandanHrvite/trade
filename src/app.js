@@ -372,21 +372,25 @@ ${buildSidebar('dashboard', liveActive)}
       </div>
 
       <div class="broker-divider"></div>
-      <div class="hard-reset-row">
-        <span class="hard-reset-hint">⚠️ Socket stuck or tokens in bad state? Hard reset clears all tokens & restarts the Node process (PM2 auto-revives).</span>
-        <button onclick="hardReset()" class="hard-reset-btn">🔄 Hard Reset</button>
-      </div>
-      
-      <div class="broker-divider"></div>
-      <div class="hard-reset-row">
-        <span class="hard-reset-hint">📅 NSE Holiday list is auto-fetched daily. Click to manually refresh from NSE API (updates cache immediately).</span>
-        <button onclick="refreshHolidays()" class="hard-reset-btn" style="background:#0a0f14;border-color:#1a4a8a;color:#60a5fa;" id="holiday-refresh-btn">
-          📅 Refresh Holidays
-        </button>
-      </div>
-      <div class="broker-divider"></div>
-      <div class="hard-reset-row">
-        <span class="hard-reset-hint" id="cache-hint">📦 Candle cache: <span id="cache-info-txt" style="color:#4a6080;">checking...</span></span>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;">
+
+        <div style="padding:12px 16px;border-right:1px solid #1a2236;">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">⚠️ Socket / Tokens</div>
+          <div style="font-size:0.7rem;color:#4a6080;margin-bottom:8px;line-height:1.4;">Stuck or bad state? Clears all tokens &amp; restarts process (PM2 revives).</div>
+          <button onclick="hardReset()" class="hard-reset-btn" style="width:100%;justify-content:center;">🔄 Hard Reset</button>
+        </div>
+
+        <div style="padding:12px 16px;border-right:1px solid #1a2236;">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">📅 NSE Holidays</div>
+          <div style="font-size:0.7rem;color:#4a6080;margin-bottom:8px;line-height:1.4;">Auto-fetched daily. Click to force-refresh from NSE API immediately.</div>
+          <button onclick="refreshHolidays()" class="hard-reset-btn" style="background:#0a0f14;border-color:#1a4a8a;color:#60a5fa;width:100%;justify-content:center;" id="holiday-refresh-btn">📅 Refresh Holidays</button>
+        </div>
+
+        <div style="padding:12px 16px;">
+          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">📦 Candle Cache</div>
+          <div style="font-size:0.7rem;color:#4a6080;line-height:1.4;" id="cache-info-txt">checking...</div>
+        </div>
+
       </div>
       <div class="broker-divider"></div>
       <div style="padding:10px 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
@@ -525,7 +529,7 @@ async function loadCacheInfo(){
     if (!el) return;
     if (d.cache) {
       el.style.color = '#10b981';
-      el.textContent = d.cache.candles + ' candles stored (' + d.cache.from + ' → ' + d.cache.to + ') · ' + d.cache.sizeKB + ' KB  — server restart will reuse this, no API call needed';
+      el.innerHTML = d.cache.candles + ' candles<br><span style="color:#3a5070;">' + d.cache.from + ' → ' + d.cache.to + ' · ' + d.cache.sizeKB + ' KB</span>';
     } else {
       el.style.color = '#4a6080';
       el.textContent = 'No cache yet — will be built on first Paper/Live/Tracker start';
