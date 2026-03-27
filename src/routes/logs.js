@@ -14,27 +14,33 @@ const { logStore, logEvents } = require("../services/logger");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
 
-// ── SSE — live log stream ─────────────────────────────────────────────────────
+// ── SSE — live log stream (kept for clients that support it) ─────────────────
 router.get("/stream", (req, res) => {
   res.setHeader("Content-Type",        "text/event-stream");
   res.setHeader("Cache-Control",       "no-cache");
   res.setHeader("Connection",          "keep-alive");
-  res.setHeader("X-Accel-Buffering",   "no"); // prevent nginx buffering
+  res.setHeader("X-Accel-Buffering",   "no");
   res.flushHeaders();
 
-  // Send ALL stored entries immediately on connect so page shows full history
-  const history = logStore; // Send all logs (no limit)
+  const history = logStore;
   res.write(`data: ${JSON.stringify({ type: "history", logs: history })}\n\n`);
 
-  // Then stream each new log as it arrives
   const onLog = (entry) => {
     res.write(`data: ${JSON.stringify({ type: "log", log: entry })}\n\n`);
   };
 
   logEvents.on("log", onLog);
-
-  // Clean up when browser disconnects
   req.on("close", () => logEvents.off("log", onLog));
+});
+
+// ── Polling endpoint — reliable fallback (works with self-signed certs) ───────
+// Returns logs since a given index. Client polls every 2s.
+// GET /logs/data?from=0 → returns all logs from index 0 onwards
+router.get("/data", (req, res) => {
+  const from  = parseInt(req.query.from || "0", 10);
+  const total = logStore.length;
+  const slice = from < total ? logStore.slice(from) : [];
+  res.json({ total, from, logs: slice });
 });
 
 // ── Export as plain text ──────────────────────────────────────────────────────
@@ -213,26 +219,69 @@ ${buildSidebar('logs', liveActive)}
   var countEl   = document.getElementById("count");
   var scrollBtn = document.getElementById("scrollBtn");
 
-  // ── SSE connection with auto-reconnect ──────────────────────────────────────
-  function connect() {
-    var es = new EventSource("/logs/stream");
+  // ── Polling connection (replaces SSE — works with self-signed HTTPS certs) ──
+  // SSE (EventSource) silently fails on self-signed certs in Chrome even after
+  // the user clicks "Proceed anyway". Regular fetch() calls work fine.
+  // Poll every 2s for new logs since last known index.
+  var nextFrom = 0;
+  var pollTimer = null;
+  var pollFailCount = 0;
 
-    es.onmessage = function(e) {
-      var data = JSON.parse(e.data);
-      if (data.type === "history") {
-        if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-        data.logs.forEach(addRow);
-      } else if (data.type === "log") {
-        if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-        addRow(data.log);
-      }
-    };
-
-    es.onerror = function() {
-      es.close();
-      setTimeout(connect, 3000); // reconnect in 3s
-    };
+  function poll() {
+    fetch("/logs/data?from=" + nextFrom, { cache: "no-store" })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        pollFailCount = 0;
+        if (d.logs && d.logs.length > 0) {
+          if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+          d.logs.forEach(addRow);
+          nextFrom = d.total;
+        } else if (nextFrom === 0 && d.total === 0) {
+          // No logs yet — show a cleaner waiting message
+          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade to see activity.';
+        }
+        // On first successful poll, remove "Connecting..." regardless
+        if (nextFrom === 0 && d.total !== undefined) {
+          nextFrom = d.total;
+          if (emptyEl && d.total === 0) {
+            emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+          }
+        }
+        pollTimer = setTimeout(poll, 2000);
+      })
+      .catch(function() {
+        pollFailCount++;
+        if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot connect to log server. Retrying...';
+        // Back off on repeated failures
+        var delay = Math.min(2000 * pollFailCount, 15000);
+        pollTimer = setTimeout(poll, delay);
+      });
   }
+
+  // Start polling immediately
+  poll();
+
+  // Legacy SSE connect kept as secondary attempt (works on trusted certs)
+  function connect() {
+    try {
+      var es = new EventSource("/logs/stream");
+      var sseFailed = false;
+      var sseTimeout = setTimeout(function() {
+        // SSE didn't deliver within 4s — polling is already working, ignore SSE
+        es.close();
+      }, 4000);
+      es.onmessage = function(e) {
+        clearTimeout(sseTimeout);
+        // SSE working! But polling is already running — just close SSE to avoid duplication
+        es.close();
+      };
+      es.onerror = function() {
+        clearTimeout(sseTimeout);
+        es.close(); // Polling handles it
+      };
+    } catch(_) {}
+  }
+  connect();
 
   // ── Add a single log row ────────────────────────────────────────────────────
   function addRow(entry) {

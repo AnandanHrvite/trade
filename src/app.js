@@ -24,6 +24,7 @@ const OPEN_PATHS = [
   "/",
   "/logs",              // log viewer — read-only
   "/logs/stream",       // SSE stream — read-only
+  "/logs/data",         // polling endpoint — read-only
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
   "/trade/status",          // read-only status page
