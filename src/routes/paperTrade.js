@@ -203,29 +203,36 @@ function parseMins(envKey, defaultVal) {
   return h * 60 + (isNaN(m) ? 0 : m);
 }
 
-// Trade EXECUTION gate: TRADE_START_TIME → (TRADE_STOP_TIME - 10 min)
-// No new entries within 10 min of auto-stop to avoid orphaned positions.
-// Cached with 60-second TTL — called on every tick, Date object is expensive at 200 ticks/min.
+// ── Fast IST minutes helper ───────────────────────────────────────────────────
+// toLocaleString("en-US", {timeZone:"Asia/Kolkata"}) is expensive — it invokes
+// V8's ICU timezone library. At 150 ticks/min this adds up significantly on t2.micro.
+// Fix: IST = UTC + 5:30 (19800 seconds). Simple integer arithmetic, zero allocations.
+function getISTMinutes() {
+  const utcSec = Math.floor(Date.now() / 1000);
+  const istSec = utcSec + 19800; // UTC+5:30
+  const istMin = Math.floor(istSec / 60);
+  return (istMin % 1440); // minutes since midnight IST (0–1439)
+}
+
+// Cached start/stop mins — read from env ONCE at module load, never again
+const _START_MINS = parseMins("TRADE_START_TIME", "09:15");
+// _STOP_MINS already defined above (for EOD candle close)
+// Stop gate is STOP_MINS - 10 to avoid orphaned positions near close
+const _ENTRY_STOP_MINS = _STOP_MINS - 10;
+
+// Trade EXECUTION gate: cached 60s TTL, uses fast integer IST calc
 function isMarketHours() {
   const now = Date.now();
   if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
-  const ist   = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const total = ist.getHours() * 60 + ist.getMinutes();
-  const start = parseMins("TRADE_START_TIME", "09:15");
-  const stop  = parseMins("TRADE_STOP_TIME",  "15:30") - 10;
-  _mktHoursCache   = total >= start && total < stop;
+  const total = getISTMinutes();
+  _mktHoursCache   = total >= _START_MINS && total < _ENTRY_STOP_MINS;
   _mktHoursCacheTs = now;
   return _mktHoursCache;
 }
 
-// START gate: allow any time before TRADE_STOP_TIME — no lower bound.
-// Start at 8:00, 7:30, whenever — history will be pre-fetched.
-// Trade execution is separately gated by isMarketHours().
+// START gate: allow any time before TRADE_STOP_TIME
 function isStartAllowed() {
-  const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const total = ist.getHours() * 60 + ist.getMinutes();
-  const stop  = parseMins("TRADE_STOP_TIME", "15:30");
-  return total < stop; // allow any time before stop — no lower bound
+  return getISTMinutes() < _STOP_MINS;
 }
 
 // ── Auto-stop timer handle (cleared on manual stop) ─────────────────────────────
@@ -235,7 +242,7 @@ let _autoStopTimer = null;
 // Set TRADE_STOP_TIME=HH:MM in .env to override.
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  const stopMins = parseMins("TRADE_STOP_TIME", "15:30");
+  const stopMins = _STOP_MINS; // cached at module load — no env read
   const stopH    = Math.floor(stopMins / 60);
   const stopM    = stopMins % 60;
   const stopLabel = String(stopH).padStart(2,"0") + ":" + String(stopM).padStart(2,"0") + " IST";
@@ -1427,7 +1434,7 @@ router.get("/start", async (req, res) => {
   // No lower bound — start at 8:00, 7:30, any time to pre-fetch history.
   // Trade execution is gated by isMarketHours() inside onTick.
   if (!isStartAllowed()) {
-    const stopMins = parseMins("TRADE_STOP_TIME", "15:30");
+    const stopMins = _STOP_MINS; // cached at module load
     const stopLabel = String(Math.floor(stopMins/60)).padStart(2,"0") + ":" + String(stopMins%60).padStart(2,"0");
     return res.status(400).json({
       success: false,
@@ -1577,9 +1584,8 @@ router.get("/start", async (req, res) => {
   // ── Pre-market warmup mode ─────────────────────────────────────────────────
   // Started before TRADE_START_TIME (default 09:15)? History is pre-loaded.
   // Fyers ticks only arrive from 9:15 IST — bot waits silently until market opens.
-  const nowIst  = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const nowMins = nowIst.getHours() * 60 + nowIst.getMinutes();
-  const _tradeStartMins  = parseMins("TRADE_START_TIME", "09:15");
+  const nowMins = getISTMinutes();
+  const _tradeStartMins  = _START_MINS; // cached at module load
   const _tradeStartLabel = String(Math.floor(_tradeStartMins/60)).padStart(2,"0") + ":" + String(_tradeStartMins%60).padStart(2,"0");
   if (nowMins < _tradeStartMins) {
     const waitMin = _tradeStartMins - nowMins;
@@ -1588,7 +1594,7 @@ router.get("/start", async (req, res) => {
   }
 
   // ── Schedule auto-stop at TRADE_STOP_TIME ────────────────────────────────
-  const _stopMinsAtStart = parseMins("TRADE_STOP_TIME", "15:30");
+  const _stopMinsAtStart = _STOP_MINS; // cached at module load
   const _stopLabelAtStart = String(Math.floor(_stopMinsAtStart/60)).padStart(2,"0") + ":" + String(_stopMinsAtStart%60).padStart(2,"0");
   scheduleAutoStop((msg) => {
     log(msg);

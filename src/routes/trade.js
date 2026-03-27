@@ -52,11 +52,19 @@ const _STOP_MINS = (function() {
 })();
 
 // ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
-// Called on every NIFTY tick (100-200/min). Creates a Date object each call.
-// Cache the result for 60 seconds — market hours don't change tick-to-tick.
 let _mktHoursCache   = null;
 let _mktHoursCacheTs = 0;
-let _mktHoursParamsTs = 0; // invalidate cache if env changes (unlikely but safe)
+let _mktHoursParamsTs = 0;
+
+// Cached start/stop mins — read from .env once at module load
+const _START_MINS      = (function(){ const [h,m]=(process.env.TRADE_START_TIME||"09:15").split(":").map(Number); return h*60+(isNaN(m)?0:m); })();
+const _ENTRY_STOP_MINS = _STOP_MINS - 10;
+
+// Fast IST minutes (no Date/ICU allocation) — UTC+5:30 = +19800s
+function getISTMinutes() {
+  const istSec = Math.floor(Date.now()/1000) + 19800;
+  return Math.floor(istSec/60) % 1440;
+}
 const sharedSocketState = require("../utils/sharedSocketState");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { fetchCandles } = require("../services/backtestEngine");
@@ -301,21 +309,14 @@ function parseMins(envKey, defaultVal) {
 function isMarketHours() {
   const now = Date.now();
   if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
-  const ist      = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const totalMin = ist.getHours() * 60 + ist.getMinutes();
-  const start    = parseMins("TRADE_START_TIME", "09:15");
-  const stop     = parseMins("TRADE_STOP_TIME",  "15:30") - 10;
-  _mktHoursCache   = totalMin >= start && totalMin < stop;
+  const total = getISTMinutes(); // fast: integer arithmetic only, no Date/ICU
+  _mktHoursCache   = total >= _START_MINS && total < _ENTRY_STOP_MINS;
   _mktHoursCacheTs = now;
   return _mktHoursCache;
 }
 
-// START gate: allow from any time before TRADE_STOP_TIME (pre-market warm-up supported)
 function isStartAllowed() {
-  const now = new Date();
-  const ist = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const totalMin = ist.getHours() * 60 + ist.getMinutes();
-  return totalMin < parseMins("TRADE_STOP_TIME", "15:30");
+  return getISTMinutes() < _STOP_MINS;
 }
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -834,7 +835,7 @@ async function onCandleClose(candle) {
 
   // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
   const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const _eodStopMins  = parseMins("TRADE_STOP_TIME", "15:30");
+  const _eodStopMins  = _STOP_MINS /* cached */;
   const _eodStopLabel = String(Math.floor(_eodStopMins/60)).padStart(2,"0") + ":" + String(_eodStopMins%60).padStart(2,"0");
   if (ist.getHours() * 60 + ist.getMinutes() >= _eodStopMins) {
     if (tradeState.position) {
@@ -1362,7 +1363,7 @@ router.get("/start", async (req, res) => {
   
   // Allow starting before 9:15 for history pre-fetch — executions still gated by isMarketHours()
   if (!isStartAllowed()) {
-    const stopMins = parseMins("TRADE_STOP_TIME", "15:30");
+    const stopMins = _STOP_MINS /* cached */;
     const stopLabel = String(Math.floor(stopMins/60)).padStart(2,"0") + ":" + String(stopMins%60).padStart(2,"0");
     return res.status(400).json({ success: false, error: "Trading session already closed for today (" + stopLabel + " IST). Restart tomorrow." });
   }
