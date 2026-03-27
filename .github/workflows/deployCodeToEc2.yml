@@ -1,5 +1,4 @@
 name: API_Deployment_on_EC2
-
 on:
   push:
     branches: [main]
