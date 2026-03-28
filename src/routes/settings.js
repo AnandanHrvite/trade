@@ -370,14 +370,16 @@ router.get("/", (req, res) => {
       </div>`;
   }
 
-  const sectionsHtml = SETTINGS_SCHEMA.map(s => `
-    <div class="settings-section">
+  const sectionsHtml = SETTINGS_SCHEMA.map(s => {
+    const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
+    return `
+    <div class="settings-section" data-section="${sectionId}">
       <div class="section-title">${s.icon} ${s.section}</div>
       <div class="section-card">
         ${s.fields.map(renderField).join("")}
       </div>
-    </div>
-  `).join("");
+    </div>`;
+  }).join("");
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -722,6 +724,20 @@ router.get("/", (req, res) => {
   });
   window._originals = originals;
   window._dirtyKeys = new Set();
+
+  // Toggle VIX Filter section visibility based on VIX toggle
+  function updateVixSectionVisibility() {
+    var vixToggle = document.querySelector('[data-key="VIX_FILTER_ENABLED"]');
+    var vixSection = document.querySelector('[data-section="vix-filter"]');
+    if (vixToggle && vixSection) {
+      vixSection.style.display = vixToggle.checked ? '' : 'none';
+    }
+  }
+  var vixToggleEl = document.querySelector('[data-key="VIX_FILTER_ENABLED"]');
+  if (vixToggleEl) {
+    vixToggleEl.addEventListener('change', updateVixSectionVisibility);
+  }
+  updateVixSectionVisibility();
 })();
 
 function markDirty(el) {
