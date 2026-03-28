@@ -4,7 +4,7 @@ const { fetchCandles, runBacktest } = require("../services/backtestEngine");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 
@@ -198,6 +198,7 @@ ${buildSidebar('backtest', true)}
 
     #tooltip{position:fixed;z-index:9999;background:#1e293b;color:#e2e8f0;border:1px solid #3b82f6;border-radius:7px;padding:8px 12px;font-size:0.72rem;max-width:340px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,.7);pointer-events:none;display:none;line-height:1.5;font-family:sans-serif;}
     ${sidebarCSS()}
+    ${modalCSS()}
   </style>
 </head>
 <body>
@@ -225,7 +226,7 @@ ${buildSidebar('backtest', liveActive)}
         <option value="15" selected>15-min</option>
       </select>
     </div>
-    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){alert('Set dates');return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
 
@@ -304,6 +305,7 @@ ${buildSidebar('backtest', liveActive)}
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
 <script>
+${modalJS()}
 var TRADES = JSON.parse(document.getElementById('trades-data').textContent);
 var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;
@@ -540,6 +542,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:system-ui,sans-serif;background:#080c14;color:#c8d0e0;min-height:100vh;}
     ${sidebarCSS()}
+    ${modalCSS()}
     .page{padding:28px 24px;}
     .card{background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:22px;margin-bottom:18px;}
     label{font-size:0.75rem;color:#4a6080;display:block;margin-bottom:4px;}
@@ -570,11 +573,13 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
         <div><label>FROM</label><input id="f" type="date" value="${from}"></div>
         <div><label>TO</label><input id="t" type="date" value="${to}"></div>
         <div><label>CANDLE</label><select id="r">${resOptions}</select></div>
-        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){alert('Set dates');return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
       </div>
     </div>
   </div>
-  <script>setTimeout(function(){var t=document.getElementById('err-toast');if(t)t.remove();},8000);</script>
+  <script>
+${modalJS()}
+setTimeout(function(){var t=document.getElementById('err-toast');if(t)t.remove();},8000);</script>
   </div></div></body></html>`;
 }
 

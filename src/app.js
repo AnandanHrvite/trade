@@ -8,11 +8,93 @@ const { ACTIVE, getActiveStrategy } = require("./strategies");
 const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
-const { buildSidebar, sidebarCSS } = require("./utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("./utils/sharedNav");
 const sharedSocketState = require("./utils/sharedSocketState");
 
+const crypto = require("crypto");
 const app = express();
 app.use(express.json());
+
+// ── Login gate — page-level password protection ─────────────────────────────
+// Set LOGIN_SECRET in .env. If set, every page requires a login cookie first.
+// If empty/unset, all pages are open normally.
+const LOGIN_COOKIE = "__trade_login";
+function loginPageHTML(error) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login — Trading Bot</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪔</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;}
+.login-box{background:#0d1320;border:1px solid #1a2236;border-radius:14px;padding:40px 36px;width:360px;max-width:90vw;box-shadow:0 8px 40px rgba(0,0,0,0.5);}
+.login-icon{font-size:2rem;text-align:center;margin-bottom:12px;}
+.login-title{font-size:1rem;font-weight:700;color:#e0eaf8;text-align:center;margin-bottom:4px;}
+.login-sub{font-size:0.7rem;color:#3a5070;text-align:center;margin-bottom:24px;}
+.login-input{width:100%;padding:11px 14px;border-radius:8px;border:1px solid #1a2a40;background:#070d18;color:#e0eaf8;font-size:0.85rem;font-family:inherit;outline:none;transition:border-color 0.15s;}
+.login-input:focus{border-color:#3b82f6;}
+.login-btn{width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#1e40af;color:#fff;font-size:0.82rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;}
+.login-btn:hover{background:#2563eb;}
+.login-error{margin-top:12px;padding:8px 12px;border-radius:7px;background:#1c0610;border:1px solid #500e20;color:#f87171;font-size:0.75rem;text-align:center;display:${error ? 'block' : 'none'};}
+</style></head><body>
+<div class="login-box">
+<div class="login-icon">🔒</div>
+<div class="login-title">Trading Bot</div>
+<div class="login-sub">Enter password to continue</div>
+<form method="POST" action="/login">
+<input type="password" name="password" class="login-input" placeholder="Password" autofocus required>
+<button type="submit" class="login-btn">Login</button>
+</form>
+<div class="login-error">${error || ''}</div>
+</div></body></html>`;
+}
+
+// URL-encoded body parser for login form
+app.use(express.urlencoded({ extended: false }));
+
+app.get("/login", (req, res) => {
+  const secret = process.env.LOGIN_SECRET;
+  if (!secret) return res.redirect("/");
+  res.setHeader("Content-Type", "text/html");
+  res.send(loginPageHTML());
+});
+
+app.post("/login", (req, res) => {
+  const secret = process.env.LOGIN_SECRET;
+  if (!secret) return res.redirect("/");
+  if (req.body.password === secret) {
+    const token = crypto.createHash("sha256").update(secret).digest("hex");
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`);
+    return res.redirect("/");
+  }
+  res.setHeader("Content-Type", "text/html");
+  res.send(loginPageHTML("Wrong password. Please try again."));
+});
+
+app.get("/logout", (req, res) => {
+  res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=; Path=/; HttpOnly; Max-Age=0`);
+  res.redirect("/login");
+});
+
+// Login gate middleware — must come before all other routes
+app.use((req, res, next) => {
+  const secret = process.env.LOGIN_SECRET;
+  if (!secret) return next(); // no login secret → open
+  if (req.path === "/login") return next();
+  // Parse cookie
+  const cookies = (req.headers.cookie || "").split(";").reduce((acc, c) => {
+    const [k, v] = c.trim().split("=");
+    if (k) acc[k] = v;
+    return acc;
+  }, {});
+  const expectedToken = crypto.createHash("sha256").update(secret).digest("hex");
+  if (cookies[LOGIN_COOKIE] === expectedToken) return next();
+  // Not authenticated — redirect HTML pages, block API calls
+  if (req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect("/login");
+  }
+  return res.status(401).json({ success: false, error: "Not authenticated" });
+});
 
 // ── Local security — simple secret token ────────────────────────────────────
 // Set API_SECRET in .env. Pass as ?secret=xxx or header x-api-secret: xxx
@@ -34,7 +116,6 @@ const OPEN_PATHS = [
   "/paperTrade/history",    // read-only history
   "/paperTrade/debug",      // read-only debug
   "/paperTrade/client.js",  // static asset
-  "/paperTrade/reset",      // wipe history — protected by confirm() dialog, no secret needed
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -289,6 +370,7 @@ app.get("/", (req, res) => {
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
     }
+    ${modalCSS()}
   </style>
 </head>
 <body>
@@ -456,6 +538,7 @@ ${buildSidebar('dashboard', liveActive)}
 </div>
 
 <script>
+${modalJS()}
 // ── Dashboard: Paper & Live trade status panels ──────────────────────────────
 function fmtPnl(v){ if(v===null||v===undefined) return {txt:'—',cls:'flat'}; var n=parseFloat(v); return {txt:(n>=0?'+':'')+'\u20b9'+n.toFixed(0),cls:n>0?'pos':n<0?'neg':'flat'}; }
 function fmtNum(v,prefix,suffix){ if(v===null||v===undefined) return '—'; return (prefix||'')+v+(suffix||''); }
@@ -601,77 +684,58 @@ setInterval(checkTradingStatus, 60000); // Check every minute
 setInterval(pollDashboardStatus, 4000);
 // ─────────────────────────────────────────────────────────────────────────────
 
-function hardReset(){
-  if(!confirm('Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.')) return;
-  var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
-  var url = '/admin/reset' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
-  fetch(url, {method:'POST'})
-    .then(function(r){
-      if(r.status === 403){ alert('Wrong API_SECRET — reset blocked.\\nCheck API_SECRET in your .env and try again.'); return null; }
-      return r.json();
-    })
-    .then(function(d){
-      if(!d) return;
-      if(d.success){ alert(d.message + '\\nPage will reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); }
-      else { alert('Reset failed: ' + (d.error || JSON.stringify(d))); }
-    })
-    .catch(function(){ alert('Reset sent — server restarting. Reload in 6 seconds.'); setTimeout(function(){ location.reload(); }, 6000); });
+async function hardReset(){
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Hard Reset',
+    message: 'Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.',
+    confirmText: 'Reset', confirmClass: 'modal-btn-danger'
+  });
+  if(!ok) return;
+  try {
+    var res = await secretFetch('/admin/reset', {method:'POST'});
+    if(!res) return;
+    var d = await res.json();
+    if(d.success){
+      await showAlert({icon:'✅',title:'Reset Complete',message:d.message+'\\nPage will reload in 6 seconds.',btnClass:'modal-btn-success'});
+      setTimeout(function(){ location.reload(); }, 6000);
+    } else {
+      showAlert({icon:'❌',title:'Reset Failed',message:d.error||JSON.stringify(d),btnClass:'modal-btn-danger'});
+    }
+  } catch(e){
+    showAlert({icon:'🔄',title:'Server Restarting',message:'Reset sent — server restarting. Reload in 6 seconds.',btnClass:'modal-btn-primary'});
+    setTimeout(function(){ location.reload(); }, 6000);
+  }
 }
 
-function refreshHolidays(){
+async function refreshHolidays(){
   var btn = document.getElementById('holiday-refresh-btn');
   if(!btn) return;
-  
-  var secret = prompt('Enter API_SECRET from your .env\\n(leave blank if API_SECRET is not set):') || '';
-  var url = '/api/holidays/refresh' + (secret ? '?secret=' + encodeURIComponent(secret) : '');
-  
-  // Show loading state
+
   btn.disabled = true;
   btn.textContent = '⏳ Refreshing...';
   btn.style.opacity = '0.6';
-  
-  fetch(url, {method:'POST'})
-    .then(function(r){
-      if(r.status === 403){
-        btn.disabled = false;
-        btn.textContent = '📅 Refresh Holidays';
-        btn.style.opacity = '1';
-        alert('❌ Wrong API_SECRET — refresh blocked.\\n\\nCheck API_SECRET in your .env and try again.');
-        return null;
-      }
-      if(!r.ok){
-        throw new Error('HTTP ' + r.status + ': ' + r.statusText);
-      }
-      return r.json();
-    })
-    .then(function(d){
-      btn.disabled = false;
-      btn.textContent = '📅 Refresh Holidays';
-      btn.style.opacity = '1';
-      
-      if(!d) return;
-      
-      if(d.success){
-        alert('✅ Holiday list refreshed successfully!\\n\\nFetched ' + d.count + ' holidays from NSE API.\\nCache updated.\\n\\nThe trading status check will now use the updated holiday list.');
-        // Trigger immediate trading status check to reflect new holidays
-        checkTradingStatus();
-      } else {
-        var errorMsg = '⚠️ NSE API Unavailable\\n\\n';
-        errorMsg += 'NSE API is currently blocking requests or unavailable.\\n\\n';
-        errorMsg += '✅ Using fallback holiday list (' + (d.count || 17) + ' holidays for 2026)\\n\\n';
-        errorMsg += 'Your trading bot will continue working normally with the hardcoded holiday list.\\n\\n';
-        errorMsg += 'Note: This is expected behavior when NSE API is down or rate-limiting requests.';
-        alert(errorMsg);
-        // Still trigger trading status check with fallback holidays
-        checkTradingStatus();
-      }
-    })
-    .catch(function(err){
-      btn.disabled = false;
-      btn.textContent = '📅 Refresh Holidays';
-      btn.style.opacity = '1';
-      alert('❌ Network error: ' + err.message + '\\n\\nPlease check your internet connection and try again.');
-    });
+
+  try {
+    var res = await secretFetch('/api/holidays/refresh', {method:'POST'});
+    btn.disabled = false;
+    btn.textContent = '📅 Refresh Holidays';
+    btn.style.opacity = '1';
+    if(!res) return;
+    if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    var d = await res.json();
+    if(d.success){
+      await showAlert({icon:'✅',title:'Holidays Refreshed',message:'Fetched ' + d.count + ' holidays from NSE API.\\nCache updated. Trading status check will use the updated list.',btnClass:'modal-btn-success'});
+      checkTradingStatus();
+    } else {
+      await showAlert({icon:'⚠️',title:'NSE API Unavailable',message:'NSE API is currently blocking requests or unavailable.\\n\\nUsing fallback holiday list (' + (d.count||17) + ' holidays for 2026).\\nYour trading bot will continue working normally.',btnClass:'modal-btn-primary'});
+      checkTradingStatus();
+    }
+  } catch(err){
+    btn.disabled = false;
+    btn.textContent = '📅 Refresh Holidays';
+    btn.style.opacity = '1';
+    showAlert({icon:'❌',title:'Network Error',message:err.message+'\\n\\nPlease check your internet connection and try again.',btnClass:'modal-btn-danger'});
+  }
 }
 </script>
 </div></div>

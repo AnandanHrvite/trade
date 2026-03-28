@@ -12,7 +12,7 @@ const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 // ── SSE — live log stream (kept for clients that support it) ─────────────────
 router.get("/stream", (req, res) => {
@@ -93,6 +93,7 @@ router.get("/", (req, res) => {
     html, body { height:100%; }
     body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; }
     ${sidebarCSS()}
+    ${modalCSS()}
 
     /* ── TOOLBAR ── */
     .toolbar { display:flex; align-items:center; gap:8px; padding:8px 16px; background:#0d1320; border-bottom:1px solid #1a2236; flex-shrink:0; flex-wrap:wrap; }
@@ -221,6 +222,7 @@ ${buildSidebar('logs', liveActive)}
 </div>
 
 <script>
+  ${modalJS()}
   var autoScroll   = true;
   var activeFilter = "ALL";
   var searchTerm   = "";
@@ -426,8 +428,9 @@ ${buildSidebar('logs', liveActive)}
   });
 
   // ── Clear ───────────────────────────────────────────────────────────────────
-  function clearLogs() {
-    if (!confirm("Clear all logs from memory? (This cannot be undone)")) return;
+  async function clearLogs() {
+    var ok = await showConfirm({icon:'🧹',title:'Clear Logs',message:'Clear all logs from memory?\\nThis cannot be undone.',confirmText:'Clear',confirmClass:'modal-btn-danger'});
+    if (!ok) return;
     fetch("/logs/clear", { method: "POST" }).then(function() {
       wrap.innerHTML = '<div class="empty-state"><div class="icon">🧹</div>Logs cleared — new entries will appear below.</div>';
       emptyEl    = null;

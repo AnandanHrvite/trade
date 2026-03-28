@@ -17,7 +17,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -414,6 +414,7 @@ router.get("/", (req, res) => {
     body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
 
     ${sidebarCSS()}
+    ${modalCSS()}
 
     /* ── Top bar ─────────────────────────────────────────── */
     .top-bar {
@@ -715,6 +716,7 @@ router.get("/", (req, res) => {
 <div class="toast" id="toast"></div>
 
 <script>
+${modalJS()}
 (function() {
   // Track original values for dirty detection
   var originals = {};
@@ -808,13 +810,17 @@ function saveSettings() {
     return;
   }
 
-  fetch('/settings/save', {
+  secretFetch('/settings/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ updates: updates }),
   })
-  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (!res) { btn.disabled = false; btn.textContent = 'Save Changes'; return null; }
+    return res.json();
+  })
   .then(function(data) {
+    if (!data) return;
     btn.disabled = false;
     btn.textContent = 'Save Changes';
     if (data.success) {
@@ -865,13 +871,17 @@ function addCustomVar(n) {
   if (!key) { showToast('Enter a valid key name', 'error'); keyEl.focus(); return; }
   if (!val) { showToast('Enter a value', 'error'); valEl.focus(); return; }
 
-  fetch('/settings/save', {
+  secretFetch('/settings/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ updates: { [key]: val } }),
   })
-  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (!res) return null;
+    return res.json();
+  })
   .then(function(data) {
+    if (!data) return;
     if (data.success) {
       showToast(key + '=' + val + ' added to .env', 'success');
       keyEl.value = '';
@@ -885,14 +895,19 @@ function addCustomVar(n) {
   });
 }
 
-function restartServer() {
+async function restartServer() {
   var btn = document.getElementById('restartBtn');
-  if (!confirm('This will restart the server and stop any active trading sessions.\\n\\nAre you sure?')) return;
+  var ok = await showConfirm({
+    icon: '🔄', title: 'Restart Server',
+    message: 'This will restart the server and stop any active trading sessions.\\n\\nAre you sure?',
+    confirmText: 'Restart', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
   btn.disabled = true;
   btn.innerHTML = '<span>⏳</span> Restarting...';
   showToast('Restarting server — page will reload in 5 seconds...', 'info');
 
-  fetch('/settings/restart', {
+  secretFetch('/settings/restart', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   }).catch(function() {}); // will fail when server dies — that's expected

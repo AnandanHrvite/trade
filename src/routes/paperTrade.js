@@ -22,7 +22,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
-const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -2144,6 +2144,7 @@ router.get("/status", (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#060e06;color:#c0d8b0;overflow-x:hidden;}
 ${sidebarCSS()}
+${modalCSS()}
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
@@ -2594,6 +2595,9 @@ function logRender(){
 function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP),p)); logRender(); }
 logFilter();
 </script>
+<script>
+${modalJS()}
+</script>
 <script src="/paperTrade/client.js"></script>
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
@@ -2953,6 +2957,7 @@ router.get("/history", (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
     ${sidebarCSS()}
+    ${modalCSS()}
     .session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:18px;}
     .session-head{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;}
     .session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;margin-bottom:4px;}
@@ -3040,11 +3045,12 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
 </div>
 
 <script>
+${modalJS()}
 // Flatten all trades for CSV export
 var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
 
 function exportAllCSV() {
-  if (!ALL_TRADES_JSON.length) { alert('No trades to export'); return; }
+  if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
   var header = ['Session Date','Side','Symbol','Strike','Expiry','Entry Time','Exit Time','Entry NIFTY','Entry Option','Exit NIFTY','Exit Option','SL','PnL','Exit Reason'];
   var rows = ALL_TRADES_JSON.map(function(t) {
     return [
@@ -3126,7 +3132,111 @@ router.get("/debug", (req, res) => {
 router.get("/client.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript");
   res.setHeader("Cache-Control", "no-cache");
-  res.send('async function handleStart(btn) {\n  if (btn) { btn.textContent = \'⏳ Starting...\'; btn.disabled = true; }\n  try {\n    const res = await fetch(\'/paperTrade/start\');\n    let data;\n    try { data = await res.json(); } catch(_) { data = { success: false, error: \'Server error (non-JSON response)\' }; }\n    if (!data.success) {\n      const errMsg = data.error || \'Failed to start\';\n      showToast(\'❌ \' + errMsg, \'#ef4444\');\n      if (btn) { btn.textContent = \'▶ Start\'; btn.disabled = false; }\n      return;\n    }\n    showToast(\'✅ Paper trading started!\', \'#10b981\');\n    setTimeout(() => location.reload(), 1200);\n  } catch(e) {\n    showToast(\'❌ \' + e.message, \'#ef4444\');\n    if (btn) { btn.textContent = \'▶ Start\'; btn.disabled = false; }\n  }\n}\nasync function handleStop(btn) {\n  if (btn) { btn.textContent = \'⏳ Stopping...\'; btn.disabled = true; }\n  try {\n    await fetch(\'/paperTrade/stop\');\n    showToast(\'⏹ Paper trading stopped.\', \'#ef4444\');\n    setTimeout(() => location.reload(), 1000);\n  } catch(e) {\n    showToast(\'❌ \' + e.message, \'#ef4444\');\n    if (btn) { btn.textContent = \'⏹ Stop\'; btn.disabled = false; }\n  }\n}\nasync function ptHandleReset(btn) {\n  if (!confirm(\'⚠️ Reset ALL paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.\')) return;\n  if (btn) { btn.textContent = \'⏳...\'; btn.disabled = true; }\n  try {\n    const res = await fetch(\'/paperTrade/reset\');\n    let data;\n    try { data = await res.json(); } catch(_) { data = { success: false, error: \'Server error (status \' + res.status + \')\' }; }\n    if (!data.success) {\n      const errMsg = data.error || \'Reset failed\';\n      showToast(\'❌ \' + errMsg, \'#ef4444\');\n      if (btn) { btn.textContent = \'🔄 Reset\'; btn.disabled = false; }\n      return;\n    }\n    showToast(\'✅ \' + data.message, \'#10b981\');\n    setTimeout(() => location.reload(), 1500);\n  } catch(e) {\n    showToast(\'❌ \' + e.message, \'#ef4444\');\n    if (btn) { btn.textContent = \'🔄 Reset\'; btn.disabled = false; }\n  }\n}\nfunction ptExportCSV() {\n  var PT = typeof PT_ALL !== \'undefined\' ? PT_ALL : [];\n  if (!PT.length) { showToast(\'⚠️ No trades to export\', \'#f59e0b\'); return; }\n  var header = [\'Side\',\'Symbol\',\'Entry Time\',\'Exit Time\',\'Entry NIFTY\',\'Entry Option\',\'Exit NIFTY\',\'Exit Option\',\'PnL\',\'Exit Reason\'];\n  var rows = PT.map(function(t){\n    return [\n      t.side||\'\', t.symbol||\'\',\n      t.entryTime||\'\', t.exitTime||\'\',\n      t.entryPrice||\'\', t.optionEntryLtp||\'\',\n      t.spotAtExit||\'\', t.optionExitLtp||\'\',\n      t.pnl!=null?t.pnl:\'\', t.reason||\'\'\n    ];\n  });\n  var csv = [header].concat(rows).map(function(r){\n    return r.map(function(v){ return \'"\'+String(v||\'\').replace(/"/g,\'""\')+\'"\'; }).join(\',\');\n  }).join(\'\\n\');\n  var d = new Date().toLocaleDateString(\'en-CA\',{timeZone:\'Asia/Kolkata\'});\n  var a = document.createElement(\'a\');\n  a.href = \'data:text/csv;charset=utf-8,\\uFEFF\' + encodeURIComponent(csv);\n  a.download = \'paper_trades_\' + d + \'.csv\';\n  a.click();\n  showToast(\'✅ CSV downloaded — \' + PT.length + \' trades\', \'#10b981\');\n}\nasync function ptHandleExit(btn) {\n  if (btn) { btn.textContent = \'⏳ Exiting...\'; btn.disabled = true; }\n  try {\n    const res = await fetch(\'/paperTrade/exit\');\n    const data = await res.json();\n    if (!data.success) {\n      showToast(\'❌ \' + (data.error || \'Exit failed\'), \'#ef4444\');\n      if (btn) { btn.textContent = \'🚪 Exit Trade\'; btn.disabled = false; }\n      return;\n    }\n    showToast(\'🚪 Trade exited!\', \'#f59e0b\');\n    setTimeout(() => location.reload(), 1000);\n  } catch(e) {\n    showToast(\'❌ \' + e.message, \'#ef4444\');\n    if (btn) { btn.textContent = \'🚪 Exit Trade\'; btn.disabled = false; }\n  }\n}\nfunction showToast(msg, color) {\n  const t = document.createElement(\'div\');\n  t.textContent = msg;\n  t.style.cssText = \'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);background:#0d1320;border:1px solid \'+color+\';color:\'+color+\';padding:12px 24px;border-radius:10px;font-size:0.85rem;font-weight:700;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);letter-spacing:0.5px;\';\n  document.body.appendChild(t);\n  setTimeout(() => t.remove(), color === \'#ef4444\' ? 7000 : 4000); // errors stay longer\n}\n');
+  res.send(`async function handleStart(btn) {
+  if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
+  try {
+    const res = await secretFetch('/paperTrade/start');
+    if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
+    let data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (non-JSON response)' }; }
+    if (!data.success) {
+      showToast('❌ ' + (data.error || 'Failed to start'), '#ef4444');
+      if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
+      return;
+    }
+    showToast('✅ Paper trading started!', '#10b981');
+    setTimeout(() => location.reload(), 1200);
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
+  }
+}
+async function handleStop(btn) {
+  if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
+  try {
+    const res = await secretFetch('/paperTrade/stop');
+    if (!res) { if (btn) { btn.textContent = '⏹ Stop'; btn.disabled = false; } return; }
+    showToast('⏹ Paper trading stopped.', '#ef4444');
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '⏹ Stop'; btn.disabled = false; }
+  }
+}
+async function ptHandleReset(btn) {
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Reset Paper Trade',
+    message: 'Reset ALL paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    const res = await secretFetch('/paperTrade/reset');
+    if (!res) { if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; } return; }
+    let data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      showToast('❌ ' + (data.error || 'Reset failed'), '#ef4444');
+      if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; }
+      return;
+    }
+    showToast('✅ ' + data.message, '#10b981');
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; }
+  }
+}
+function ptExportCSV() {
+  var PT = typeof PT_ALL !== 'undefined' ? PT_ALL : [];
+  if (!PT.length) { showToast('⚠️ No trades to export', '#f59e0b'); return; }
+  var header = ['Side','Symbol','Entry Time','Exit Time','Entry NIFTY','Entry Option','Exit NIFTY','Exit Option','PnL','Exit Reason'];
+  var rows = PT.map(function(t){
+    return [
+      t.side||'', t.symbol||'',
+      t.entryTime||'', t.exitTime||'',
+      t.entryPrice||'', t.optionEntryLtp||'',
+      t.spotAtExit||'', t.optionExitLtp||'',
+      t.pnl!=null?t.pnl:'', t.reason||''
+    ];
+  });
+  var csv = [header].concat(rows).map(function(r){
+    return r.map(function(v){ return '"'+String(v||'').replace(/"/g,'""')+'"'; }).join(',');
+  }).join('\\n');
+  var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
+  a.download = 'paper_trades_' + d + '.csv';
+  a.click();
+  showToast('✅ CSV downloaded — ' + PT.length + ' trades', '#10b981');
+}
+async function ptHandleExit(btn) {
+  if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
+  try {
+    const res = await secretFetch('/paperTrade/exit');
+    if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
+    const data = await res.json();
+    if (!data.success) {
+      showToast('❌ ' + (data.error || 'Exit failed'), '#ef4444');
+      if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; }
+      return;
+    }
+    showToast('🚪 Trade exited!', '#f59e0b');
+    setTimeout(() => location.reload(), 1000);
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; }
+  }
+}
+function showToast(msg, color) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);background:#0d1320;border:1px solid '+color+';color:'+color+';padding:12px 24px;border-radius:10px;font-size:0.85rem;font-weight:700;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);letter-spacing:0.5px;';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), color === '#ef4444' ? 7000 : 4000);
+}
+`);
 });
 
 

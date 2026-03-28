@@ -16,7 +16,7 @@ const express = require("express");
 const router  = express.Router();
 const fyers   = require("../config/fyers");
 const { sendTelegram } = require("../utils/notify");
-const { buildSidebar, sidebarCSS, toastJS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, toastJS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 // Trail tier config (same as paper/live)
@@ -292,6 +292,7 @@ router.get("/status", (req, res) => {
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
     ${sidebarCSS()}
+    ${modalCSS()}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:14px 16px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--accent,#1e3080);}
     .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:6px;}
@@ -389,6 +390,7 @@ ${buildSidebar("tracker", sharedSocketState.getMode()==="LIVE_TRADE", !!pos, {
 </div>
 <script id="init-logs" type="application/json">${logsJSON}</script>
 <script>
+${modalJS()}
 ${toastJS()}
 var LOGS=JSON.parse(document.getElementById('init-logs').textContent);
 function renderLogs(logs){
@@ -449,10 +451,13 @@ async function handleFetch(btn){
   }
 }
 async function handleExit(btn){
-  if(!confirm('Stop tracking?\\nClose your position in Zerodha too.'))return;
+  var ok=await showConfirm({icon:'🛑',title:'Stop Tracking',message:'Stop tracking?\\nClose your position in Zerodha too.',confirmText:'Stop',confirmClass:'modal-btn-danger'});
+  if(!ok)return;
   if(btn){btn.textContent='⏳...';btn.disabled=true;}
   try{
-    var res=await fetch('/tracker/exit');var data=await res.json();
+    var res=await secretFetch('/tracker/exit');
+    if(!res){if(btn){btn.textContent='🛑 Stop Tracking';btn.disabled=false;}return;}
+    var data=await res.json();
     if(data.success)setTimeout(function(){location.reload();},1000);
     else{if(btn){btn.textContent='🛑 Stop Tracking';btn.disabled=false;}}
   }catch(e){if(btn){btn.textContent='🛑 Stop Tracking';btn.disabled=false;}}

@@ -19,6 +19,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
+const { modalCSS, modalJS } = require("../utils/sharedNav");
 
 const socketManager     = require("../utils/socketManager");
 const fyers             = require("../config/fyers");
@@ -2059,7 +2060,7 @@ router.get("/status", (req, res) => {
       .main-content{margin-left:0;}
       .stat-grid{grid-template-columns:1fr 1fr;}
     }
-
+    ${modalCSS()}
   </style>
 </head>
 <body>
@@ -2489,6 +2490,7 @@ function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP)
 logFilter();
 </script>
 <script>
+${modalJS()}
 function ltShowToast(msg, color) {
   var t = document.createElement('div');
   t.textContent = msg;
@@ -2499,7 +2501,8 @@ function ltShowToast(msg, color) {
 async function ltHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    var res = await fetch('/trade/exit');
+    var res = await secretFetch('/trade/exit');
+    if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
       ltShowToast('❌ ' + (data.error || 'Exit failed'), '#ef4444');
@@ -2516,7 +2519,8 @@ async function ltHandleExit(btn) {
 async function ltHandleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    var res = await fetch('/trade/start');
+    var res = await secretFetch('/trade/start');
+    if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
       ltShowToast('❌ ' + (data.error || 'Failed to start'), '#ef4444');
@@ -2533,7 +2537,8 @@ async function ltHandleStart(btn) {
 async function ltHandleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    var res = await fetch('/trade/stop');
+    var res = await secretFetch('/trade/stop');
+    if (!res) { if (btn) { btn.textContent = '■ Stop'; btn.disabled = false; } return; }
     var data = await res.json();
     ltShowToast('⏹ Live trading stopped.', '#ef4444');
     setTimeout(function(){ location.reload(); }, 1200);
