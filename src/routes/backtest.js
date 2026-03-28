@@ -5,6 +5,7 @@ const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
+const { VIX_ENABLED, VIX_SYMBOL } = require("../services/vixFilter");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -68,7 +69,16 @@ ${buildSidebar('backtest', true)}
 
   try {
     const strategy = getActiveStrategy();
-    const candles  = await fetchCandles(symbol, resolution, from, to);
+    // Fetch NIFTY candles and VIX daily candles in parallel
+    const [candles, vixCandles] = await Promise.all([
+      fetchCandles(symbol, resolution, from, to),
+      VIX_ENABLED
+        ? fetchCandles(VIX_SYMBOL, "D", from, to).catch(err => {
+            console.warn(`[Backtest] VIX candle fetch failed: ${err.message} — VIX filter will be bypassed`);
+            return [];
+          })
+        : Promise.resolve([]),
+    ]);
 
     if (candles.length < 30) {
       res.setHeader("Content-Type", "text/html");
@@ -77,7 +87,11 @@ ${buildSidebar('backtest', true)}
         from, to, resolution));
     }
 
-    const result = runBacktest(candles, strategy, capital);
+    if (VIX_ENABLED) {
+      console.log(`   VIX candles loaded: ${vixCandles.length} days`);
+    }
+
+    const result = runBacktest(candles, strategy, capital, vixCandles);
     saveResult(ACTIVE, { ...result, params: { from, to, resolution, symbol, capital } });
 
     const s = result.summary;
@@ -223,6 +237,7 @@ ${buildSidebar('backtest', liveActive)}
     <div class="sc red"><div class="sc-label">Total Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.totalDrawdown, s)}</div><div class="sc-sub">Sum of all losses</div></div>
     <div class="sc purple"><div class="sc-label">Risk/Reward</div><div class="sc-val">${s.riskReward||"\u2014"}</div><div class="sc-sub">1 : avg win \u00f7 avg loss</div></div>
     <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val">${s.winRate||"\u2014"}</div><div class="sc-sub">${s.wins} wins of ${s.totalTrades}</div></div>
+    ${s.vixEnabled ? `<div class="sc ${s.vixBlocked > 0 ? 'red' : 'green'}"><div class="sc-label">VIX Filter</div><div class="sc-val">${s.vixBlocked}</div><div class="sc-sub">entries blocked (max=${s.vixMaxEntry}, strong-only=${s.vixStrongOnly})</div></div>` : ''}
   </div>
 
   <!-- Filter bar -->

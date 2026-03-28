@@ -2,6 +2,7 @@ require("dotenv").config();
 const fyers = require("../config/fyers");
 const { toDateString } = require("../utils/time");
 const { getLotQty } = require("../config/instrument");
+const { buildVixLookup, checkBacktestVix, VIX_ENABLED, VIX_MAX_ENTRY, VIX_STRONG_ONLY, VIX_SYMBOL } = require("./vixFilter");
 
 function maxDaysForResolution(resolution) {
   if (["D", "W", "M"].includes(resolution)) return 365 * 10;
@@ -107,11 +108,15 @@ function getISTHHMM(unixSec) {
  *   - getDynamicTrailGap() added — same tier logic as paper/live
  *   - initialStopLoss + trailActivatePts stored on position (matches paper/live)
  */
-function runBacktest(candles, strategy, capital) {
+function runBacktest(candles, strategy, capital, vixCandles) {
   const trades    = [];
   let position    = null;
   const BROKERAGE = 80;    // ₹ per trade (applied to option P&L)
   const LOT_SIZE  = getLotQty();
+
+  // ── VIX filter for backtest ─────────────────────────────────────────────────
+  const lookupVix = buildVixLookup(vixCandles || []);
+  let _vixBlockCount = 0;
 
   // ── Option premium simulation ────────────────────────────────────────────────
   // Backtest doesn't have real option prices. We simulate them with two factors:
@@ -174,6 +179,7 @@ function runBacktest(candles, strategy, capital) {
   console.log(`   Exit  : 50% rule + trail SL + SAR SL + opposite signal + EOD/day`);
   console.log(`   Brok  : ₹${BROKERAGE} per trade`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
+  console.log(`   VIX filter : ${VIX_ENABLED ? `ON (max=${VIX_MAX_ENTRY}, strong-only=${VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
   console.log("══════════════════════════════════════════════");
 
   // ── Optimisation: cache the SL from the previous candle's getSignal ──────────
@@ -440,6 +446,21 @@ function runBacktest(candles, strategy, capital) {
       const entryPrevMid = parseFloat(((prevCandle.high + prevCandle.low) / 2).toFixed(2));
       const strength = signalStrength || "MARGINAL";
 
+      // ── VIX filter: block entry in high-volatility regimes ──────────────────
+      const _btVix = lookupVix(candle.time);
+      const _btVixCheck = checkBacktestVix(_btVix, strength);
+      if (!_btVixCheck.allowed) {
+        _vixBlockCount++;
+        if (_vixBlockCount <= 5) {
+          console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} [${strength}] at ${toIST(candle.time)}`);
+        } else if (_vixBlockCount === 6) {
+          console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
+        }
+        // Cache current SL for next iteration's prevSignalSL
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+
       // ── Entry price: STRONG vs MARGINAL ──────────────────────────────────────
       // STRONG  → strategy confirmed intra-candle EMA9 touch: simulate entry AT EMA9.
       //           CE: EMA9 is the first touch point going up → entry below close = better fill.
@@ -577,6 +598,9 @@ function runBacktest(candles, strategy, capital) {
     console.log(`   Final Cap: ₹${(capital + totalPnlFinal).toLocaleString("en-IN", { maximumFractionDigits: 0 })} (started ₹${capital.toLocaleString("en-IN")})`);
   }
   console.log("──────────────────────────────────────────────");
+  if (VIX_ENABLED && vixCandles && vixCandles.length > 0) {
+    console.log(`  VIX blocked: ${_vixBlockCount} entries (signals matched but VIX too high)`);
+  }
   console.log("── Signal Strength Breakdown ──────────────────────");
   console.log(`  STRONG  : ${strongTrades.length} trades | ${strongWins.length}W/${strongTrades.length - strongWins.length}L | WR=${strongTrades.length ? ((strongWins.length/strongTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${fmtPnl(strongPnl)}`);
   console.log(`  MARGINAL: ${marginalTrades.length} trades | ${marginalWins.length}W/${marginalTrades.length - marginalWins.length}L | WR=${marginalTrades.length ? ((marginalWins.length/marginalTrades.length)*100).toFixed(1) : "N/A"}% | PnL=${fmtPnl(marginalPnl)}`);
@@ -625,6 +649,10 @@ function runBacktest(candles, strategy, capital) {
       marginalTrades:  marginalTrades.length,
       marginalWinRate: marginalTrades.length ? `${((marginalWins.length/marginalTrades.length)*100).toFixed(1)}%` : "N/A",
       marginalPnl:     parseFloat(marginalPnl.toFixed(2)),
+      vixEnabled:      VIX_ENABLED,
+      vixBlocked:      _vixBlockCount,
+      vixMaxEntry:     VIX_MAX_ENTRY,
+      vixStrongOnly:   VIX_STRONG_ONLY,
     },
     trades,
   };
