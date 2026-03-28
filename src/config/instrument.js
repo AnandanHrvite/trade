@@ -205,16 +205,12 @@ function calcATMStrike(spot, side) {
   const base = Math.round(spot / 50) * 50;
   if (!side) return base;
   if (side === "CE") {
-    const atm = base + getStrikeOffsetCE();
-    // CE ITM = strike strictly BELOW spot. Always 1 strike below ATM.
-    // e.g. spot=25300.70 → atm=25300 → ITM=25250
-    return atm - 50;
+    // CE: offset -50=1 ITM (below spot), 0=ATM, +50=1 OTM (above spot)
+    return base + getStrikeOffsetCE();
   }
   if (side === "PE") {
-    const atm = base + getStrikeOffsetPE();
-    // PE ITM = strike strictly ABOVE spot. Always 1 strike above ATM.
-    // e.g. spot=25300.70 → atm=25300 → ITM=25350
-    return atm + 50;
+    // PE: offset +50=1 ITM (above spot), 0=ATM, -50=1 OTM (below spot)
+    return base + getStrikeOffsetPE();
   }
   return base;
 }
