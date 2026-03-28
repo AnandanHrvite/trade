@@ -384,7 +384,10 @@ function modalJS() {
   document.body.appendChild(ov);
   // Backdrop click — dismiss modal (click on overlay, not the box)
   ov.addEventListener('click', function(e) {
-    if (e.target === ov) _hideModal();
+    if (e.target === ov) {
+      _hideModal();
+      if (_modalResolve) { _modalResolve(null); _modalResolve = null; }
+    }
   });
 })();
 
