@@ -43,12 +43,32 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 <div class="login-icon">🔒</div>
 <div class="login-title">Trading Bot</div>
 <div class="login-sub">Enter password to continue</div>
-<form method="POST" action="/login">
-<input type="password" name="password" class="login-input" placeholder="Password" autofocus required>
+<form id="loginForm" method="POST" action="/login">
+<input type="password" name="password" id="pwdInput" class="login-input" placeholder="Password" autofocus required>
+<input type="hidden" name="lat" id="lat">
+<input type="hidden" name="lon" id="lon">
+<input type="hidden" name="geoCity" id="geoCity">
 <button type="submit" class="login-btn">Login</button>
 </form>
 <div class="login-error">${error || ''}</div>
-</div></body></html>`;
+</div>
+<script>
+// Request browser GPS on page load (silent — if denied, fields stay empty)
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    document.getElementById('lat').value = pos.coords.latitude.toFixed(6);
+    document.getElementById('lon').value = pos.coords.longitude.toFixed(6);
+    // Reverse geocode for city name (best-effort)
+    fetch('https://nominatim.openstreetmap.org/reverse?lat=' + pos.coords.latitude + '&lon=' + pos.coords.longitude + '&format=json&zoom=10')
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        var city = (d.address && (d.address.city || d.address.town || d.address.village || d.address.state_district)) || '';
+        document.getElementById('geoCity').value = city;
+      }).catch(function(){});
+  }, function(){}, { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 });
+}
+</script>
+</body></html>`;
 }
 
 // URL-encoded body parser for login form
@@ -74,31 +94,41 @@ app.post("/login", (req, res) => {
   const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
            || req.socket?.remoteAddress || "unknown";
   const now = new Date();
+  const browserLat = parseFloat(req.body.lat);
+  const browserLon = parseFloat(req.body.lon);
+  const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
   const entry = {
     time: now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
     date: now.toISOString().slice(0, 10),
     ip,
     password: req.body.password || "",
     userAgent: req.headers["user-agent"] || "",
-    lat: null, lon: null, city: null,
+    lat: hasBrowserGPS ? browserLat : null,
+    lon: hasBrowserGPS ? browserLon : null,
+    city: (hasBrowserGPS && req.body.geoCity) ? req.body.geoCity : null,
+    geoSource: hasBrowserGPS ? "gps" : "ip",
   };
-  // Best-effort IP geolocation (non-blocking, fire-and-forget)
-  try {
-    const geoUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=lat,lon,city,status`;
-    const geoReq = require("http").get(geoUrl, { timeout: 3000 }, (geoRes) => {
-      let body = "";
-      geoRes.on("data", c => body += c);
-      geoRes.on("end", () => {
-        try {
-          const g = JSON.parse(body);
-          if (g.status === "success") { entry.lat = g.lat; entry.lon = g.lon; entry.city = g.city || null; }
-        } catch {}
-        loginLogStore.addEntry(entry);
+  // If no browser GPS, fall back to IP geolocation
+  if (!hasBrowserGPS) {
+    try {
+      const geoUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=lat,lon,city,status`;
+      const geoReq = require("http").get(geoUrl, { timeout: 3000 }, (geoRes) => {
+        let body = "";
+        geoRes.on("data", c => body += c);
+        geoRes.on("end", () => {
+          try {
+            const g = JSON.parse(body);
+            if (g.status === "success") { entry.lat = g.lat; entry.lon = g.lon; entry.city = g.city || null; }
+          } catch {}
+          loginLogStore.addEntry(entry);
+        });
       });
-    });
-    geoReq.on("error", () => loginLogStore.addEntry(entry));
-    geoReq.on("timeout", () => { geoReq.destroy(); loginLogStore.addEntry(entry); });
-  } catch { loginLogStore.addEntry(entry); }
+      geoReq.on("error", () => loginLogStore.addEntry(entry));
+      geoReq.on("timeout", () => { geoReq.destroy(); loginLogStore.addEntry(entry); });
+    } catch { loginLogStore.addEntry(entry); }
+  } else {
+    loginLogStore.addEntry(entry);
+  }
 
   res.setHeader("Content-Type", "text/html");
   res.send(loginPageHTML("Wrong password. Please try again."));
