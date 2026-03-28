@@ -17,7 +17,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -389,6 +389,7 @@ router.get("/", (req, res) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  ${faviconLink()}
   <title>Settings — Palani Andawar Trading Bot</title>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
   <style>

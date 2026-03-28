@@ -12,7 +12,7 @@ const express  = require("express");
 const router   = express.Router();
 const { logStore, logEvents } = require("../services/logger");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 
 // ── SSE — live log stream (kept for clients that support it) ─────────────────
 router.get("/stream", (req, res) => {
@@ -86,6 +86,7 @@ router.get("/", (req, res) => {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  ${faviconLink()}
   <title>Logs — Trading BOT</title>
   <style>
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }

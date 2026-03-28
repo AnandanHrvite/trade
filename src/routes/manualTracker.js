@@ -16,7 +16,7 @@ const express = require("express");
 const router  = express.Router();
 const fyers   = require("../config/fyers");
 const { sendTelegram } = require("../utils/notify");
-const { buildSidebar, sidebarCSS, toastJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, toastJS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 // Trail tier config (same as paper/live)
@@ -285,6 +285,7 @@ router.get("/status", (req, res) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  ${faviconLink()}
   <title>Trade Tracker</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <style>

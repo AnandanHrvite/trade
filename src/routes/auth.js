@@ -18,6 +18,7 @@
 
 const express = require("express");
 const router  = express.Router();
+const { faviconLink } = require("../utils/sharedNav");
 const fyers   = require("../config/fyers");
 const zerodha = require("../services/zerodhaBroker");
 
@@ -181,6 +182,7 @@ router.get("/status/all", (req, res) => {
 
 function buildSuccessPage(title, message) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title>
+  ${faviconLink()}
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
   .card{background:#1a1f2e;border:1px solid #065f46;border-radius:16px;padding:40px 48px;text-align:center;max-width:480px;}
   .icon{font-size:3rem;margin-bottom:16px;}h1{font-size:1.3rem;font-weight:700;color:#10b981;margin-bottom:12px;}
@@ -191,6 +193,7 @@ function buildSuccessPage(title, message) {
 
 function buildErrorPage(title, message) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${title}</title>
+  ${faviconLink()}
   <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;}
   .card{background:#1a1f2e;border:1px solid #9b2c2c;border-radius:16px;padding:40px 48px;text-align:center;max-width:520px;}
   .icon{font-size:3rem;margin-bottom:16px;}h1{font-size:1.3rem;font-weight:700;color:#fc8181;margin-bottom:12px;}
