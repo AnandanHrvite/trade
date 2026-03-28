@@ -19,6 +19,7 @@ app.use(express.json());
 // Set LOGIN_SECRET in .env. If set, every page requires a login cookie first.
 // If empty/unset, all pages are open normally.
 const LOGIN_COOKIE = "__trade_login";
+const LOGIN_MAX_AGE = 900; // 15 minutes idle timeout (seconds)
 function loginPageHTML(error) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login — Trading Bot</title>
@@ -64,7 +65,7 @@ app.post("/login", (req, res) => {
   if (!secret) return res.redirect("/");
   if (req.body.password === secret) {
     const token = crypto.createHash("sha256").update(secret).digest("hex");
-    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400`);
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
     return res.redirect("/");
   }
   res.setHeader("Content-Type", "text/html");
@@ -81,14 +82,18 @@ app.use((req, res, next) => {
   const secret = process.env.LOGIN_SECRET;
   if (!secret) return next(); // no login secret → open
   if (req.path === "/login") return next();
-  // Parse cookie
+  // Parse cookie (split on first = only — values may contain =)
   const cookies = (req.headers.cookie || "").split(";").reduce((acc, c) => {
-    const [k, v] = c.trim().split("=");
-    if (k) acc[k] = v;
+    const idx = c.indexOf("=");
+    if (idx > 0) acc[c.substring(0, idx).trim()] = c.substring(idx + 1).trim();
     return acc;
   }, {});
   const expectedToken = crypto.createHash("sha256").update(secret).digest("hex");
-  if (cookies[LOGIN_COOKIE] === expectedToken) return next();
+  if (cookies[LOGIN_COOKIE] === expectedToken) {
+    // Sliding expiry — refresh cookie on every request to reset the 15-min timer
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
+    return next();
+  }
   // Not authenticated — redirect HTML pages, block API calls
   if (req.headers.accept && req.headers.accept.includes("text/html")) {
     return res.redirect("/login");

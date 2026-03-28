@@ -93,6 +93,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   </div>
 </nav>
 <script>
+window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
 (function(){
   if(window.innerWidth<=768){
     var hb=document.querySelector('.hamburger');
@@ -373,14 +374,24 @@ function modalCSS() {
 function modalJS() {
   return `
 // ── Modal System ────────────────────────────────────────────────────────────
+// Guard: only create overlay once (safe when modalJS is injected multiple times on a page)
 (function(){
-  // Create overlay container once
+  if (document.getElementById('modal-overlay')) return;
   var ov = document.createElement('div');
   ov.className = 'modal-overlay';
   ov.id = 'modal-overlay';
   ov.innerHTML = '<div class="modal-box" id="modal-box"></div>';
   document.body.appendChild(ov);
+  // Backdrop click — dismiss modal (click on overlay, not the box)
+  ov.addEventListener('click', function(e) {
+    if (e.target === ov) _hideModal();
+  });
 })();
+
+// Guard: only define functions once
+if (typeof _showModal === 'undefined') {
+
+var _modalResolve = null; // current modal's resolve callback
 
 function _showModal(html) {
   var ov = document.getElementById('modal-overlay');
@@ -392,100 +403,67 @@ function _showModal(html) {
 }
 
 function _hideModal() {
-  document.getElementById('modal-overlay').classList.remove('active');
+  var ov = document.getElementById('modal-overlay');
+  if (ov) ov.classList.remove('active');
 }
 
-/**
- * showAlert({icon, title, message, btnText, btnClass}) → Promise<void>
- */
 function showAlert(opts) {
   opts = opts || {};
   return new Promise(function(resolve) {
-    var icon = opts.icon || 'ℹ️';
-    var title = opts.title || '';
-    var msg = opts.message || '';
-    var btnText = opts.btnText || 'OK';
-    var btnClass = opts.btnClass || 'modal-btn-primary';
+    _modalResolve = function(){ resolve(); };
     _showModal(
-      '<div class="modal-icon">' + icon + '</div>'
-      + (title ? '<div class="modal-title">' + title + '</div>' : '')
-      + '<div class="modal-msg">' + msg + '</div>'
-      + '<div class="modal-btns"><button class="modal-btn ' + btnClass + '" id="modal-ok-btn">' + btnText + '</button></div>'
+      '<div class="modal-icon">' + (opts.icon || 'ℹ️') + '</div>'
+      + (opts.title ? '<div class="modal-title">' + opts.title + '</div>' : '')
+      + '<div class="modal-msg">' + (opts.message || '') + '</div>'
+      + '<div class="modal-btns"><button class="modal-btn ' + (opts.btnClass || 'modal-btn-primary') + '" id="modal-ok-btn">' + (opts.btnText || 'OK') + '</button></div>'
     );
-    document.getElementById('modal-ok-btn').onclick = function(){ _hideModal(); resolve(); };
+    document.getElementById('modal-ok-btn').onclick = function(){ _hideModal(); _modalResolve(); };
   });
 }
 
-/**
- * showConfirm({icon, title, message, confirmText, cancelText, confirmClass}) → Promise<boolean>
- */
 function showConfirm(opts) {
   opts = opts || {};
   return new Promise(function(resolve) {
-    var icon = opts.icon || '⚠️';
-    var title = opts.title || 'Confirm';
-    var msg = opts.message || 'Are you sure?';
-    var confirmText = opts.confirmText || 'Yes';
-    var cancelText = opts.cancelText || 'Cancel';
-    var confirmClass = opts.confirmClass || 'modal-btn-danger';
+    _modalResolve = function(v){ resolve(v); };
     _showModal(
-      '<div class="modal-icon">' + icon + '</div>'
-      + '<div class="modal-title">' + title + '</div>'
-      + '<div class="modal-msg">' + msg + '</div>'
+      '<div class="modal-icon">' + (opts.icon || '⚠️') + '</div>'
+      + '<div class="modal-title">' + (opts.title || 'Confirm') + '</div>'
+      + '<div class="modal-msg">' + (opts.message || 'Are you sure?') + '</div>'
       + '<div class="modal-btns">'
-      + '<button class="modal-btn modal-btn-cancel" id="modal-cancel-btn">' + cancelText + '</button>'
-      + '<button class="modal-btn ' + confirmClass + '" id="modal-confirm-btn">' + confirmText + '</button>'
+      + '<button class="modal-btn modal-btn-cancel" id="modal-cancel-btn">' + (opts.cancelText || 'Cancel') + '</button>'
+      + '<button class="modal-btn ' + (opts.confirmClass || 'modal-btn-danger') + '" id="modal-confirm-btn">' + (opts.confirmText || 'Yes') + '</button>'
       + '</div>'
     );
-    document.getElementById('modal-cancel-btn').onclick = function(){ _hideModal(); resolve(false); };
-    document.getElementById('modal-confirm-btn').onclick = function(){ _hideModal(); resolve(true); };
+    document.getElementById('modal-cancel-btn').onclick = function(){ _hideModal(); _modalResolve(false); };
+    document.getElementById('modal-confirm-btn').onclick = function(){ _hideModal(); _modalResolve(true); };
   });
 }
 
-/**
- * showPrompt({icon, title, message, placeholder, inputType}) → Promise<string|null>
- */
 function showPrompt(opts) {
   opts = opts || {};
   return new Promise(function(resolve) {
-    var icon = opts.icon || '🔑';
-    var title = opts.title || '';
-    var msg = opts.message || '';
-    var placeholder = opts.placeholder || '';
-    var inputType = opts.inputType || 'password';
+    _modalResolve = function(v){ resolve(v); };
     _showModal(
-      '<div class="modal-icon">' + icon + '</div>'
-      + (title ? '<div class="modal-title">' + title + '</div>' : '')
-      + (msg ? '<div class="modal-msg">' + msg + '</div>' : '')
-      + '<input type="' + inputType + '" class="modal-input" id="modal-input" placeholder="' + placeholder + '">'
+      '<div class="modal-icon">' + (opts.icon || '🔑') + '</div>'
+      + (opts.title ? '<div class="modal-title">' + opts.title + '</div>' : '')
+      + (opts.message ? '<div class="modal-msg">' + opts.message + '</div>' : '')
+      + '<input type="' + (opts.inputType || 'password') + '" class="modal-input" id="modal-input" placeholder="' + (opts.placeholder || '') + '">'
       + '<div class="modal-btns">'
       + '<button class="modal-btn modal-btn-cancel" id="modal-cancel-btn">Cancel</button>'
       + '<button class="modal-btn modal-btn-primary" id="modal-ok-btn">Submit</button>'
       + '</div>'
     );
     var inp = document.getElementById('modal-input');
-    inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ _hideModal(); resolve(inp.value); } });
-    document.getElementById('modal-cancel-btn').onclick = function(){ _hideModal(); resolve(null); };
-    document.getElementById('modal-ok-btn').onclick = function(){ _hideModal(); resolve(inp.value); };
+    inp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); _hideModal(); _modalResolve(inp.value); } });
+    document.getElementById('modal-cancel-btn').onclick = function(){ _hideModal(); _modalResolve(null); };
+    document.getElementById('modal-ok-btn').onclick = function(){ _hideModal(); _modalResolve(inp.value); };
   });
 }
 
 // ── API_SECRET session helper ───────────────────────────────────────────────
-// Stores API_SECRET in sessionStorage so the user only enters it once per tab.
-// All protected fetch calls use secretFetch() which attaches the header.
+function getApiSecret() { return sessionStorage.getItem('__api_secret') || ''; }
+function setApiSecret(val) { sessionStorage.setItem('__api_secret', val); }
 
-function getApiSecret() {
-  return sessionStorage.getItem('__api_secret') || '';
-}
-
-function setApiSecret(val) {
-  sessionStorage.setItem('__api_secret', val);
-}
-
-/**
- * askApiSecret() — prompt user for API_SECRET if not already stored.
- * Returns the secret string, or null if cancelled.
- */
 async function askApiSecret() {
   var stored = getApiSecret();
   if (stored) return stored;
@@ -501,27 +479,16 @@ async function askApiSecret() {
   return val || '';
 }
 
-/**
- * secretFetch(url, opts) — fetch wrapper that attaches x-api-secret header.
- * If server returns 403, clears stored secret and re-prompts once.
- */
 async function secretFetch(url, opts) {
   opts = opts || {};
   var secret = await askApiSecret();
-  if (secret === null) return null; // user cancelled
+  if (secret === null) return null;
   opts.headers = opts.headers || {};
   if (secret) opts.headers['x-api-secret'] = secret;
   var res = await fetch(url, opts);
   if (res.status === 403) {
-    // Secret was wrong — clear and re-prompt
     sessionStorage.removeItem('__api_secret');
-    await showAlert({
-      icon: '🚫',
-      title: 'Wrong API Secret',
-      message: 'The API secret was incorrect. Please try again.',
-      btnClass: 'modal-btn-danger'
-    });
-    // Retry once with fresh prompt
+    await showAlert({ icon: '🚫', title: 'Wrong API Secret', message: 'The API secret was incorrect. Please try again.', btnClass: 'modal-btn-danger' });
     secret = await askApiSecret();
     if (secret === null) return null;
     opts.headers['x-api-secret'] = secret;
@@ -529,6 +496,59 @@ async function secretFetch(url, opts) {
   }
   return res;
 }
+
+// ── Idle timeout — auto-logout after 15 min of no activity ──────────────────
+(function(){
+  if (!window.__LOGIN_GATE_ACTIVE) return;
+  var IDLE_MS = 15 * 60 * 1000;
+  var WARN_MS = 14 * 60 * 1000;
+  var _idleTimer = null;
+  var _warnTimer = null;
+  var _loggedOut = false;
+
+  function resetIdle() {
+    if (_loggedOut) return;
+    clearTimeout(_idleTimer);
+    clearTimeout(_warnTimer);
+    _warnTimer = setTimeout(onWarn, WARN_MS);
+    _idleTimer = setTimeout(onIdle, IDLE_MS);
+  }
+
+  function onWarn() {
+    if (_loggedOut) return;
+    showAlert({
+      icon: '⏰', title: 'Session Expiring',
+      message: 'You will be logged out in 1 minute due to inactivity.\\nMove your mouse or press a key to stay logged in.',
+      btnText: 'Stay Logged In', btnClass: 'modal-btn-success'
+    }).then(function() { resetIdle(); });
+  }
+
+  function onIdle() {
+    _loggedOut = true;
+    showAlert({
+      icon: '🔒', title: 'Session Expired',
+      message: 'Logged out due to 15 minutes of inactivity.',
+      btnText: 'Login Again', btnClass: 'modal-btn-primary'
+    }).then(function() { window.location.href = '/logout'; });
+    setTimeout(function() { window.location.href = '/logout'; }, 5000);
+  }
+
+  // Throttled activity tracker — resets idle timer at most once per 200ms
+  var _throttle = null;
+  function onActivity() {
+    if (_loggedOut || _throttle) return;
+    _throttle = setTimeout(function() { _throttle = null; }, 200);
+    resetIdle();
+  }
+
+  ['mousemove','mousedown','keydown','touchstart','scroll','click'].forEach(function(evt) {
+    document.addEventListener(evt, onActivity, { passive: true });
+  });
+
+  resetIdle();
+})();
+
+} // end guard: typeof _showModal === 'undefined'
 `;
 }
 
