@@ -2948,7 +2948,6 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
     </div>
     <div class="top-bar-right">
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
-      <button onclick="handleHistoryReset(this)" class="export-btn" style="color:#ef4444;border-color:#3a1010;">🗑 Reset History</button>
       <a href="/paperTrade/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
   </div>
@@ -2998,25 +2997,6 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
 <script>
 // Flatten all trades for CSV export
 var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
-
-async function handleHistoryReset(btn) {
-  if (!confirm('⚠️ Reset ALL paper trade history?\nThis wipes every session and restores starting capital.\nCannot be undone.')) return;
-  if (btn) { btn.textContent = '⏳ Resetting...'; btn.disabled = true; }
-  try {
-    var res = await fetch('/paperTrade/reset');
-    var data = await res.json();
-    if (!data.success) {
-      alert('❌ ' + (data.error || 'Reset failed'));
-      if (btn) { btn.textContent = '🗑 Reset History'; btn.disabled = false; }
-      return;
-    }
-    alert('✅ ' + data.message);
-    location.reload();
-  } catch(e) {
-    alert('❌ ' + e.message);
-    if (btn) { btn.textContent = '🗑 Reset History'; btn.disabled = false; }
-  }
-}
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { alert('No trades to export'); return; }
