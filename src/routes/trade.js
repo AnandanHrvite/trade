@@ -488,7 +488,8 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
   log(`📤 [LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Zerodha...`);
   try {
     const result = await zerodha.placeMarketOrder(
-      fyersSymbol, side, qty, `${ACTIVE}_LIVE`.substring(0, 20)
+      fyersSymbol, side, qty, `${ACTIVE}_LIVE`.substring(0, 20),
+      { isFutures: INSTRUMENT === "NIFTY_FUTURES" }
     );
     if (result.success) {
       log(`✅ [LIVE] Zerodha order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
@@ -968,8 +969,12 @@ async function onCandleClose(candle) {
       tradeState.optionSymbol = symbol;
       tradeState._entryPending = false; // release guard only after position is fully set
       clearTimeout(_ltEntryTimer);
-      log(`📊 [LIVE] Starting LTP polling (REST/3s): ${symbol}`);
-      startOptionPolling(symbol);
+      if (INSTR !== "NIFTY_FUTURES") {
+        log(`📊 [LIVE] Starting LTP polling (REST/3s): ${symbol}`);
+        startOptionPolling(symbol);
+      } else {
+        log(`📊 [LIVE] Futures mode — skipping option LTP polling`);
+      }
       const entryLabel = INSTR === "NIFTY_FUTURES"
         ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
         : `BUY ${getLotQty()} × ${symbol}`;
@@ -1204,8 +1209,12 @@ function onSpotTick(tick) {
         tradeState.optionSymbol = symbol;
         tradeState._entryPending = false;
         clearTimeout(_ltIntraTimer);
-        log(`📊 [LIVE] Starting LTP polling (REST/3s): ${symbol}`);
-        startOptionPolling(symbol);
+        if (INSTR !== "NIFTY_FUTURES") {
+          log(`📊 [LIVE] Starting LTP polling (REST/3s): ${symbol}`);
+          startOptionPolling(symbol);
+        } else {
+          log(`📊 [LIVE] Futures mode — skipping option LTP polling`);
+        }
         const entryLabel2 = INSTR === "NIFTY_FUTURES"
           ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
           : `BUY ${getLotQty()} × ${symbol}`;

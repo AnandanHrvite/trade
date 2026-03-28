@@ -199,18 +199,20 @@ function convertSymbol(fyersSymbol) {
 // Order placement
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE") {
+async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", { isFutures = false } = {}) {
   if (!isAuthenticated()) {
     throw new Error("Zerodha not authenticated. Complete Zerodha login first.");
   }
   const kite = getKite();
   const { exchange, tradingsymbol } = convertSymbol(fyersSymbol);
   const transactionType = side === 1 ? kite.TRANSACTION_TYPE_BUY : kite.TRANSACTION_TYPE_SELL;
+  // Options: MIS (intraday) — Futures: NRML (normal, avoids auto-squareoff penalty)
+  const product = isFutures ? kite.PRODUCT_NRML : kite.PRODUCT_MIS;
   const orderParams = {
     exchange, tradingsymbol,
     transaction_type: transactionType,
     quantity:         qty,
-    product:          kite.PRODUCT_MIS,
+    product,
     order_type:       kite.ORDER_TYPE_MARKET,
     validity:         kite.VALIDITY_DAY,
     tag:              orderTag.substring(0, 20),
