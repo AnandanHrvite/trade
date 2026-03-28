@@ -37,10 +37,17 @@ router.get("/stream", (req, res) => {
 // Returns logs since a given index. Client polls every 2s.
 // GET /logs/data?from=0 → returns all logs from index 0 onwards
 router.get("/data", (req, res) => {
-  const from  = parseInt(req.query.from || "0", 10);
-  const total = logStore.length;
-  const slice = from < total ? logStore.slice(from) : [];
-  res.json({ total, from, logs: slice });
+  const total  = logStore.length;
+  const limit  = Math.min(parseInt(req.query.limit || "100", 10), 500);
+
+  // "from" can mean two things:
+  //   - live poll: from=N → fetch logs[N..N+limit] (new entries since last poll)
+  //   - load-older: from=N where N is the start of the oldest chunk already loaded
+  const from   = parseInt(req.query.from || "0", 10);
+  const slice  = from < total ? logStore.slice(from, from + limit) : [];
+  const hasMore = (from + limit) < total;
+
+  res.json({ total, from, limit, logs: slice, hasMore });
 });
 
 // ── Export as plain text ──────────────────────────────────────────────────────
@@ -200,6 +207,11 @@ ${buildSidebar('logs', liveActive)}
   </div>
 </div>
 
+<div id="olderBanner" style="display:none;text-align:center;padding:7px 16px;background:#040c18;border-bottom:1px solid #0e1e36;flex-shrink:0;">
+  <button class="btn btn-export" id="olderBtn" onclick="loadOlder()" style="font-size:0.66rem;">⬆ Load older logs</button>
+  <span id="olderHint" style="font-size:0.62rem;color:#2a4060;margin-left:8px;"></span>
+</div>
+
 <div class="log-wrap" id="logWrap">
   <div class="empty-state" id="emptyState">
     <div class="icon">⏳</div>
@@ -214,59 +226,70 @@ ${buildSidebar('logs', liveActive)}
   var totalVisible = 0;
   var totalAll     = 0;
 
+  // Pagination
+  var PAGE         = 100;   // rows per page
+  var liveFrom     = 0;     // cursor: newest log index received
+  var oldestFrom   = 0;     // cursor: oldest chunk start (for load-older)
+  var firstPoll    = true;
+  var loadingOlder = false;
+
   var wrap      = document.getElementById("logWrap");
   var emptyEl   = document.getElementById("emptyState");
   var countEl   = document.getElementById("count");
   var scrollBtn = document.getElementById("scrollBtn");
 
-  // ── Connection — SSE primary, polling fallback ──────────────────────────────
-  var nextFrom = 0;
-  var sseWorking = false;
+  // ── Initial load: fetch latest PAGE rows, then poll for new ones every 2s ───
+  // Server sends only 100 rows at a time. Older rows loaded on demand via
+  // "Load older logs" button. This keeps initial DOM render near-instant.
+  function init() {
+    var total = 0;
+    // Step 1: find total count first
+    fetch("/logs/data?from=0&limit=1", { cache: "no-store" })
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(d) {
+        if (!d) { startPoll(0); return; }
+        total = d.total || 0;
+        // Start from newest PAGE rows
+        var startFrom = Math.max(0, total - PAGE);
+        oldestFrom = startFrom; // oldest chunk we've loaded
+        liveFrom   = total;     // live poll starts from here
 
-  // SSE (primary — zero latency, works when cert is trusted)
-  function connectSSE() {
-    var es = new EventSource("/logs/stream");
-    var timeout = setTimeout(function() {
-      if (!sseWorking) { es.close(); startPolling(); }
-    }, 5000); // if no message in 5s, fall back to polling
-
-    es.onmessage = function(e) {
-      clearTimeout(timeout);
-      sseWorking = true;
-      try {
-        var data = JSON.parse(e.data);
-        if (data.type === "history") {
-          if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-          data.logs.forEach(addRow);
-          nextFrom = data.logs.length;
-        } else if (data.type === "log") {
-          if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-          addRow(data.log);
-          nextFrom++;
+        if (total === 0) {
+          if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+          startPoll(0);
+          return;
         }
-      } catch(_) {}
-    };
-
-    es.onerror = function() {
-      clearTimeout(timeout);
-      es.close();
-      if (!sseWorking) { startPolling(); }
-      else { setTimeout(connectSSE, 3000); } // reconnect if SSE drops after working
-    };
+        // Fetch the latest PAGE rows
+        return fetch("/logs/data?from=" + startFrom + "&limit=" + PAGE, { cache: "no-store" })
+          .then(function(r) { return r.json(); })
+          .then(function(d2) {
+            if (emptyEl) { emptyEl.remove(); emptyEl = null; }
+            d2.logs.forEach(function(e) { addRow(e, false); }); // append to bottom
+            liveFrom = d2.total;
+            // Show "load older" if there are older logs
+            updateOlderBanner(startFrom);
+            startPoll(liveFrom);
+            if (autoScroll) wrap.scrollTop = wrap.scrollHeight;
+          });
+      })
+      .catch(function() {
+        if (emptyEl) emptyEl.innerHTML = '<div class="icon">⚠️</div>Cannot reach server — retrying...';
+        setTimeout(init, 4000);
+      });
   }
 
-  // Polling fallback (used when SSE fails e.g. self-signed cert issue)
-  function startPolling() {
-    if (emptyEl) emptyEl.innerHTML = '<div class="icon">📋</div>No logs yet — start Paper Trade or Live Trade.';
+  // ── Live poll: only fetches NEW rows since liveFrom ─────────────────────────
+  function startPoll(from) {
+    liveFrom = from;
     function poll() {
-      fetch("/logs/data?from=" + nextFrom, { cache: "no-store" })
-        .then(function(r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      fetch("/logs/data?from=" + liveFrom + "&limit=" + PAGE, { cache: "no-store" })
+        .then(function(r) { return r.ok ? r.json() : null; })
         .then(function(d) {
-          if (d.logs && d.logs.length > 0) {
+          if (d && d.logs && d.logs.length > 0) {
             if (emptyEl) { emptyEl.remove(); emptyEl = null; }
-            d.logs.forEach(addRow);
+            d.logs.forEach(function(e) { addRow(e, true); }); // true = live (auto-scroll)
+            liveFrom = d.total;
           }
-          if (typeof d.total === "number") nextFrom = d.total;
           setTimeout(poll, 2000);
         })
         .catch(function() { setTimeout(poll, 5000); });
@@ -274,30 +297,79 @@ ${buildSidebar('logs', liveActive)}
     poll();
   }
 
-  connectSSE();
+  // ── Load older: prepend previous PAGE rows above current view ───────────────
+  function loadOlder() {
+    if (loadingOlder || oldestFrom === 0) return;
+    loadingOlder = true;
+    var btn = document.getElementById("olderBtn");
+    if (btn) { btn.textContent = "⏳ Loading..."; btn.disabled = true; }
 
-  // ── Add a single log row ────────────────────────────────────────────────────
-  function addRow(entry) {
-    totalAll++;
+    var fetchFrom = Math.max(0, oldestFrom - PAGE);
+    fetch("/logs/data?from=" + fetchFrom + "&limit=" + (oldestFrom - fetchFrom), { cache: "no-store" })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var scrollH = wrap.scrollHeight;
+        var scrollT = wrap.scrollTop;
+        // Prepend rows (insert before first existing row)
+        var frag = document.createDocumentFragment();
+        d.logs.forEach(function(e) {
+          var row = makeRow(e);
+          frag.appendChild(row);
+        });
+        var firstRow = wrap.querySelector(".log-row");
+        if (firstRow) wrap.insertBefore(frag, firstRow);
+        else wrap.appendChild(frag);
+        totalAll += d.logs.length;
+        updateCount();
+        // Keep scroll position stable (don't jump to top)
+        wrap.scrollTop = scrollT + (wrap.scrollHeight - scrollH);
+        oldestFrom = fetchFrom;
+        updateOlderBanner(fetchFrom);
+        loadingOlder = false;
+      })
+      .catch(function() { loadingOlder = false; });
+  }
 
+  function updateOlderBanner(fromIdx) {
+    var banner = document.getElementById("olderBanner");
+    var hint   = document.getElementById("olderHint");
+    var btn    = document.getElementById("olderBtn");
+    if (!banner) return;
+    if (fromIdx > 0) {
+      banner.style.display = "block";
+      if (hint) hint.textContent = fromIdx + " older entries not shown";
+      if (btn) { btn.textContent = "⬆ Load older logs"; btn.disabled = false; }
+    } else {
+      banner.style.display = "none";
+    }
+  }
+
+  init();
+
+  // ── Build a row DOM element (shared by addRow and loadOlder prepend) ─────────
+  function makeRow(entry) {
     var row = document.createElement("div");
-    row.className         = "log-row";
-    row.dataset.level     = entry.level;
-    row.dataset.msg       = (entry.msg || "").toLowerCase();
-
+    row.className     = "log-row";
+    row.dataset.level = entry.level;
+    row.dataset.msg   = (entry.msg || "").toLowerCase();
     var visible = matchFilter(entry.level) && matchSearch(row.dataset.msg);
     if (!visible) row.classList.add("hidden");
     else          totalVisible++;
-
     row.innerHTML =
       '<span class="log-time">' + escHtml(entry.time) + '</span>' +
       '<span class="log-lvl lvl-' + entry.level + '">' + entry.level + '</span>' +
       '<span class="log-msg">'  + escHtml(entry.msg  || "") + '</span>';
+    return row;
+  }
 
+  // ── Append a single row (used by live poll) ───────────────────────────────
+  function addRow(entry, isLive) {
+    totalAll++;
+    var row = makeRow(entry);
     wrap.appendChild(row);
     updateCount();
-
-    if (autoScroll && visible) wrap.scrollTop = wrap.scrollHeight;
+    var visible = !row.classList.contains("hidden");
+    if (isLive && autoScroll && visible) wrap.scrollTop = wrap.scrollHeight;
   }
 
   // ── Filter helpers ──────────────────────────────────────────────────────────
