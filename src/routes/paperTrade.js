@@ -22,7 +22,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
-const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -2939,6 +2939,7 @@ router.get("/history", (req, res) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  ${faviconLink()}
   <title>ௐ Palani Andawar Thunai ॐ — History</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <style>
