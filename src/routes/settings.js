@@ -26,7 +26,7 @@ const ENV_PATH = path.join(process.cwd(), ".env");
 
 // ── Keys that are SENSITIVE and should never be shown/editable in the UI ─────
 const HIDDEN_KEYS = [
-  "SECRET_KEY", "ZERODHA_API_SECRET", "API_SECRET",
+  "SECRET_KEY", "ZERODHA_API_SECRET",
   "ACCESS_TOKEN", "ZERODHA_ACCESS_TOKEN",
   "TELEGRAM_BOT_TOKEN",
 ];
@@ -134,6 +134,14 @@ const SETTINGS_SCHEMA = [
     icon: "📱",
     fields: [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
+    ],
+  },
+  {
+    section: "Security",
+    icon: "🔒",
+    fields: [
+      { key: "API_SECRET", label: "API Secret", type: "password", effect: EFFECT.INSTANT, desc: "Protects action routes (start/stop/exit). Leave blank to disable" },
+      { key: "LOGIN_SECRET", label: "Login Password", type: "password", effect: EFFECT.INSTANT, desc: "Page-level password gate. Leave blank for open access" },
     ],
   },
 ];
@@ -359,6 +367,20 @@ router.get("/", (req, res) => {
             ${descHtml}
           </div>
           <input type="date" data-key="${f.key}" value="${val}" onchange="markDirty(this)"/>
+        </div>`;
+    }
+
+    if (f.type === "password") {
+      return `
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">${f.label}${effBadge}</div>
+            ${descHtml}
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="password" data-key="${f.key}" value="${val}" onchange="markDirty(this)" oninput="markDirty(this)" style="flex:1;" placeholder="(empty = disabled)"/>
+            <button type="button" onclick="togglePwdVis(this)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--muted);font-size:0.7rem;" title="Show/hide">👁</button>
+          </div>
         </div>`;
     }
 
@@ -746,6 +768,13 @@ ${modalJS()}
   updateVixSectionVisibility();
 })();
 
+function togglePwdVis(btn) {
+  var inp = btn.parentElement.querySelector('input');
+  if (!inp) return;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🔒'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
+}
+
 function markDirty(el) {
   var key = el.getAttribute('data-key');
   if (!key) return;
@@ -838,6 +867,9 @@ function saveSettings() {
       });
       window._dirtyKeys.clear();
       updateSaveBar();
+
+      // Clear cached API secret if security settings changed
+      if (updates.API_SECRET !== undefined) sessionStorage.removeItem('__api_secret');
 
       // Build message based on what was saved
       var msg = data.updatedCount + ' setting' + (data.updatedCount > 1 ? 's' : '') + ' applied';
