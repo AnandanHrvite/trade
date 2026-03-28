@@ -2039,9 +2039,12 @@ router.get("/status", (req, res) => {
     ${tradeState.running
       ? `<span class="sb-nav-item disabled"><span class="sb-nav-icon">📋</span> Paper</span>`
       : `<a href="/paperTrade/status" class="sb-nav-item"><span class="sb-nav-icon">📋</span> Paper</a>`}
+    <a href="/paperTrade/history" class="sb-nav-item"><span class="sb-nav-icon">📊</span> History</a>
+    <a href="/tracker/status" class="sb-nav-item"><span class="sb-nav-icon">🎯</span> Tracker</a>
     <a href="/trade/status" class="sb-nav-item active"><span class="sb-nav-icon">●</span> Live ${tradeState.running ? `<span class="sb-nav-badge live">LIVE</span>` : ``}</a>
     <div class="sb-divider"></div>
     <a href="/logs" class="sb-nav-item"><span class="sb-nav-icon">📜</span> Logs</a>
+    <a href="/settings" class="sb-nav-item"><span class="sb-nav-icon">⚙</span> Settings</a>
   </div>
   <div class="sb-bottom">
     <div class="sb-status-row">

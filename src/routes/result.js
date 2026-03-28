@@ -190,6 +190,8 @@ function shell(title, body) {
     <a href="/result/all">All Results</a>
     ${ptLink}
     <a href="/trade/status">🔴 Live</a>
+    <a href="/logs">📜 Logs</a>
+    <a href="/settings">⚙ Settings</a>
     ${liveBanner}
   </div>
 </nav>
