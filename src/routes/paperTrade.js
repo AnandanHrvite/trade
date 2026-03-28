@@ -372,7 +372,8 @@ async function _optionPollTick(symbol) {
       const spotGap = Math.max(Math.abs(entrySpot - prevMid), 20);
       optStopPrice  = parseFloat((entryLtp - spotGap).toFixed(2));
     } else if (entryLtp) {
-      optStopPrice = parseFloat((entryLtp * 0.80).toFixed(2));
+      const optStopPct = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+      optStopPrice = parseFloat((entryLtp * (1 - optStopPct)).toFixed(2));
     }
     if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
       const dropPct = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
@@ -1139,8 +1140,8 @@ function onTick(tick) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
       const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
-        _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
-        (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
+        _vixIntraVal > vixFilter.VIX_MAX_ENTRY ||
+        (_vixIntraVal > vixFilter.VIX_STRONG_ONLY && signalStrength !== "STRONG")
       );
       if (_vixIntraBlocked) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
@@ -1828,9 +1829,10 @@ router.get("/status/data", (req, res) => {
     // optStopPrice: same 50%-mid logic as the live stop — optionSL = entryLtp - |entrySpot - prevMid|
     const _optSp     = pos ? pos.spotAtEntry  : null;
     const _optPm     = pos ? pos.entryPrevMid : null;
+    const _optStopPct1 = parseFloat(process.env.OPT_STOP_PCT || "0.15");
     const optStopPrice = (optEntryLtp && _optSp && _optPm)
       ? parseFloat((optEntryLtp - Math.max(Math.abs(_optSp - _optPm), 20)).toFixed(2))
-      : optEntryLtp ? parseFloat((optEntryLtp * 0.80).toFixed(2)) : null;
+      : optEntryLtp ? parseFloat((optEntryLtp * (1 - _optStopPct1)).toFixed(2)) : null;
     const liveClose    = ptState.currentBar?.close || null;
     const pointsMoved  = pos && liveClose
       ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2)) : 0;
@@ -1972,12 +1974,13 @@ router.get("/status", (req, res) => {
   // optStopPrice for HTML: same 50%-mid logic
   const _h_sp   = pos ? pos.spotAtEntry  : null;
   const _h_pm   = pos ? pos.entryPrevMid : null;
+  const _hOptStopPct = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   const optStopPrice = (optEntryLtp && _h_sp && _h_pm)
     ? parseFloat((optEntryLtp - Math.max(Math.abs(_h_sp - _h_pm), 20)).toFixed(2))
-    : optEntryLtp ? parseFloat((optEntryLtp * 0.80).toFixed(2)) : null;
+    : optEntryLtp ? parseFloat((optEntryLtp * (1 - _hOptStopPct)).toFixed(2)) : null;
   const optStopPct   = (_h_sp && _h_pm)
     ? Math.abs(_h_sp - _h_pm).toFixed(1) + 'pt (50% mid)'
-    : '20% fallback';
+    : Math.round(_hOptStopPct * 100) + '% fallback';
 
   const posHtml = pos ? `
     <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">

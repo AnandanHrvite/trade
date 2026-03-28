@@ -1120,8 +1120,8 @@ function onSpotTick(tick) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
       const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
-        _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
-        (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
+        _vixIntraVal > vixFilter.VIX_MAX_ENTRY ||
+        (_vixIntraVal > vixFilter.VIX_STRONG_ONLY && signalStrength !== "STRONG")
       );
       if (_vixIntraBlocked) {
         if (!tradeState._vixBlockLoggedCandle || tradeState._vixBlockLoggedCandle !== _currentBarTime) {
@@ -1659,7 +1659,7 @@ router.get("/status/data", (req, res) => {
       ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
     const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
       ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-    const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.20');
+    const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
     const optStopPrice   = optEntryLtp
       ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
     const liveClose    = tradeState.currentBar?.close || null;
@@ -1784,7 +1784,7 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  const OPT_STOP_PCT_VAL2 = parseFloat(process.env.OPT_STOP_PCT || '0.20');
+  const OPT_STOP_PCT_VAL2 = parseFloat(process.env.OPT_STOP_PCT || '0.15');
   const optStopPrice   = optEntryLtp
     ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL2)).toFixed(2)) : null;
   const optStopPct     = Math.round(OPT_STOP_PCT_VAL2 * 100);
