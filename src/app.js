@@ -45,6 +45,9 @@ const OPEN_PATHS = [
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
   "/api/cache-info",        // read-only candle cache stats
+  "/settings",              // settings page (read-only view)
+  "/settings/data",         // AJAX poll for current values
+  // NOTE: /settings/save requires API_SECRET (write operation)
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
@@ -69,6 +72,7 @@ app.use("/paperTrade", require("./routes/paperTrade"));
 app.use("/trade",      require("./routes/trade"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
+app.use("/settings",   require("./routes/settings"));   // ← settings UI
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
