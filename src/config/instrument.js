@@ -205,12 +205,14 @@ function calcATMStrike(spot, side) {
   const base = Math.round(spot / 50) * 50;
   if (!side) return base;
   if (side === "CE") {
-    // CE: offset -50=1 ITM (below spot), 0=ATM, +50=1 OTM (above spot)
-    return base + getStrikeOffsetCE();
+    const offset = getStrikeOffsetCE();
+    if (offset !== 0) console.log(`[instrument] CE strike offset: ${offset} (base ${base} → ${base + offset})`);
+    return base + offset;
   }
   if (side === "PE") {
-    // PE: offset +50=1 ITM (above spot), 0=ATM, -50=1 OTM (below spot)
-    return base + getStrikeOffsetPE();
+    const offset = getStrikeOffsetPE();
+    if (offset !== 0) console.log(`[instrument] PE strike offset: ${offset} (base ${base} → ${base + offset})`);
+    return base + offset;
   }
   return base;
 }
