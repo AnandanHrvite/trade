@@ -1748,6 +1748,12 @@ router.get("/status", (req, res) => {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
 
+  // VIX details for top-bar display
+  const _vix          = getCachedVix();
+  const _vixEnabled   = vixFilter.VIX_ENABLED;
+  const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
+  const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
+
   const inr      = (n) => typeof n === "number" ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
   const pnlColor = (n) => n >= 0 ? "#10b981" : "#ef4444";
 
@@ -2101,6 +2107,7 @@ router.get("/status", (req, res) => {
     </div>
     <div class="top-bar-right">
       ${tradeState.running ? `<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>ACTIVE</span>` : `<span class="top-bar-badge">● STOPPED</span>`}
+      ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
     </div>
   </div>
   <div class="broker-badges">
