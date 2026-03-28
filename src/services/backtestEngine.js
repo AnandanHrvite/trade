@@ -2,7 +2,8 @@ require("dotenv").config();
 const fyers = require("../config/fyers");
 const { toDateString } = require("../utils/time");
 
-const { buildVixLookup, checkBacktestVix, VIX_ENABLED, VIX_MAX_ENTRY, VIX_STRONG_ONLY, VIX_SYMBOL } = require("./vixFilter");
+const vixFilter = require("./vixFilter");
+const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
 
 const { getLotQty, INSTRUMENT } = require("../config/instrument");
 
@@ -184,7 +185,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
   console.log(`   Exit  : 50% rule + trail SL + SAR SL + opposite signal + EOD/day`);
   console.log(`   Brok  : ₹${BROKERAGE} per trade`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
-  console.log(`   VIX filter : ${VIX_ENABLED ? `ON (max=${VIX_MAX_ENTRY}, strong-only=${VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
+  console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
   console.log("══════════════════════════════════════════════");
 
   // ── Optimisation: cache the SL from the previous candle's getSignal ──────────
@@ -610,7 +611,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     console.log(`   Final Cap: ₹${(capital + totalPnlFinal).toLocaleString("en-IN", { maximumFractionDigits: 0 })} (started ₹${capital.toLocaleString("en-IN")})`);
   }
   console.log("──────────────────────────────────────────────");
-  if (VIX_ENABLED && vixCandles && vixCandles.length > 0) {
+  if (vixFilter.VIX_ENABLED && vixCandles && vixCandles.length > 0) {
     console.log(`  VIX blocked: ${_vixBlockCount} entries (signals matched but VIX too high)`);
   }
   console.log("── Signal Strength Breakdown ──────────────────────");
@@ -661,10 +662,10 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       marginalTrades:  marginalTrades.length,
       marginalWinRate: marginalTrades.length ? `${((marginalWins.length/marginalTrades.length)*100).toFixed(1)}%` : "N/A",
       marginalPnl:     parseFloat(marginalPnl.toFixed(2)),
-      vixEnabled:      VIX_ENABLED,
+      vixEnabled:      vixFilter.VIX_ENABLED,
       vixBlocked:      _vixBlockCount,
-      vixMaxEntry:     VIX_MAX_ENTRY,
-      vixStrongOnly:   VIX_STRONG_ONLY,
+      vixMaxEntry:     vixFilter.VIX_MAX_ENTRY,
+      vixStrongOnly:   vixFilter.VIX_STRONG_ONLY,
     },
     trades,
   };

@@ -23,7 +23,8 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache, VIX_ENABLED } = require("../services/vixFilter");
+const vixFilter = require("../services/vixFilter");
+const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -1136,7 +1137,7 @@ function onTick(tick) {
     if ((signal === "BUY_CE" || signal === "BUY_PE") && isStrongSignal) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
-      const _vixIntraBlocked = VIX_ENABLED && _vixIntraVal != null && (
+      const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
         _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
         (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
       );

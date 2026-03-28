@@ -20,10 +20,10 @@
 
 const fyers = require("../config/fyers");
 
-// ── Config (cached at module load) ───────────────────────────────────────────
-const VIX_ENABLED      = process.env.VIX_FILTER_ENABLED !== "false";  // true by default
-const VIX_MAX_ENTRY    = parseFloat(process.env.VIX_MAX_ENTRY    || "20");
-const VIX_STRONG_ONLY  = parseFloat(process.env.VIX_STRONG_ONLY || "16");
+// ── Config (read dynamically so settings toggle takes effect immediately) ────
+function getVixEnabled()    { return process.env.VIX_FILTER_ENABLED !== "false"; }
+function getVixMaxEntry()   { return parseFloat(process.env.VIX_MAX_ENTRY    || "20"); }
+function getVixStrongOnly() { return parseFloat(process.env.VIX_STRONG_ONLY || "16"); }
 
 const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 
@@ -38,7 +38,7 @@ const VIX_CACHE_TTL = 60_000; // 60 seconds
  * Returns null if fetch fails (filter becomes permissive on failure).
  */
 async function fetchLiveVix() {
-  if (!VIX_ENABLED) return null;
+  if (!getVixEnabled()) return null;
 
   const now = Date.now();
   if (_cachedVix !== null && (now - _cachedVixTs) < VIX_CACHE_TTL) {
@@ -70,7 +70,7 @@ async function fetchLiveVix() {
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
 async function checkLiveVix(signalStrength) {
-  if (!VIX_ENABLED) return { allowed: true, vix: null, reason: "VIX filter disabled" };
+  if (!getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   const vix = await fetchLiveVix();
 
@@ -79,19 +79,22 @@ async function checkLiveVix(signalStrength) {
     return { allowed: true, vix: null, reason: "VIX unavailable — allowing entry (fail-open)" };
   }
 
-  if (vix > VIX_MAX_ENTRY) {
+  const maxEntry   = getVixMaxEntry();
+  const strongOnly = getVixStrongOnly();
+
+  if (vix > maxEntry) {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${VIX_MAX_ENTRY} — high volatility regime, all entries blocked`,
+      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} — high volatility regime, all entries blocked`,
     };
   }
 
-  if (vix > VIX_STRONG_ONLY && signalStrength !== "STRONG") {
+  if (vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${VIX_STRONG_ONLY} — elevated volatility, only STRONG signals allowed (got ${signalStrength})`,
+      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} — elevated volatility, only STRONG signals allowed (got ${signalStrength})`,
     };
   }
 
@@ -146,25 +149,28 @@ function buildVixLookup(vixCandles) {
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
 function checkBacktestVix(vix, signalStrength) {
-  if (!VIX_ENABLED) return { allowed: true, vix: null, reason: "VIX filter disabled" };
+  if (!getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
     return { allowed: true, vix: null, reason: "VIX data unavailable for this date — allowing entry (fail-open)" };
   }
 
-  if (vix > VIX_MAX_ENTRY) {
+  const maxEntry   = getVixMaxEntry();
+  const strongOnly = getVixStrongOnly();
+
+  if (vix > maxEntry) {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${VIX_MAX_ENTRY} — high volatility regime, entry blocked`,
+      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} — high volatility regime, entry blocked`,
     };
   }
 
-  if (vix > VIX_STRONG_ONLY && signalStrength !== "STRONG") {
+  if (vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${VIX_STRONG_ONLY} — elevated volatility, only STRONG signals (got ${signalStrength})`,
+      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} — elevated volatility, only STRONG signals (got ${signalStrength})`,
     };
   }
 
@@ -187,9 +193,9 @@ function getCachedVix() {
 }
 
 module.exports = {
-  VIX_ENABLED,
-  VIX_MAX_ENTRY,
-  VIX_STRONG_ONLY,
+  get VIX_ENABLED()    { return getVixEnabled(); },
+  get VIX_MAX_ENTRY()  { return getVixMaxEntry(); },
+  get VIX_STRONG_ONLY(){ return getVixStrongOnly(); },
   VIX_SYMBOL,
   fetchLiveVix,
   checkLiveVix,

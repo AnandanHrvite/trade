@@ -5,7 +5,8 @@ const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
-const { VIX_ENABLED, VIX_SYMBOL } = require("../services/vixFilter");
+const vixFilter = require("../services/vixFilter");
+const { VIX_SYMBOL } = vixFilter;
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -72,7 +73,7 @@ ${buildSidebar('backtest', true)}
     // Fetch NIFTY candles and VIX daily candles in parallel
     const [candles, vixCandles] = await Promise.all([
       fetchCandles(symbol, resolution, from, to),
-      VIX_ENABLED
+      vixFilter.VIX_ENABLED
         ? fetchCandles(VIX_SYMBOL, "D", from, to).catch(err => {
             console.warn(`[Backtest] VIX candle fetch failed: ${err.message} — VIX filter will be bypassed`);
             return [];
@@ -87,7 +88,7 @@ ${buildSidebar('backtest', true)}
         from, to, resolution));
     }
 
-    if (VIX_ENABLED) {
+    if (vixFilter.VIX_ENABLED) {
       console.log(`   VIX candles loaded: ${vixCandles.length} days`);
     }
 

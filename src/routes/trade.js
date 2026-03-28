@@ -26,7 +26,8 @@ const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = require("../config/instrument");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache, VIX_ENABLED } = require("../services/vixFilter");
+const vixFilter = require("../services/vixFilter");
+const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -1117,7 +1118,7 @@ function onSpotTick(tick) {
     if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
-      const _vixIntraBlocked = VIX_ENABLED && _vixIntraVal != null && (
+      const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
         _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
         (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
       );
@@ -1130,7 +1131,7 @@ function onSpotTick(tick) {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       tradeState._entryPending = true;
       const _ltIntraTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
-      log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntra.vix != null ? _vixIntra.vix.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
+      log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
 
       const INSTR = INSTRUMENT;
 
