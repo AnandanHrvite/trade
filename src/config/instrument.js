@@ -22,10 +22,11 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require
 function getInstrument()   { return process.env.INSTRUMENT || "NIFTY_OPTIONS"; }
 function getStrikeOffset() { return parseInt(process.env.STRIKE_OFFSET || "0", 10); }
 
-const LOT_SIZE = {
-  NIFTY_OPTIONS: 65,
-  NIFTY_FUTURES: 65,
-};
+const LOT_SIZE_DEFAULT = 65;
+function getLotSize() {
+  const size = parseInt(process.env.NIFTY_LOT_SIZE || String(LOT_SIZE_DEFAULT), 10);
+  return { NIFTY_OPTIONS: size, NIFTY_FUTURES: size };
+}
 
 // ── Month code map for Fyers weekly option symbol format ─────────────────────
 // Fyers uses: {YY}{M}{DD} where M is a single character:
@@ -258,7 +259,7 @@ function getSymbolSync(side = "CE") {
 
 function getLotQty() {
   const multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  return LOT_SIZE[getInstrument()] * multiplier;
+  return getLotSize()[getInstrument()] * multiplier;
 }
 
 function getProductType() {
@@ -629,7 +630,7 @@ async function isSymbolValidViaQuotes(symbol) {
 module.exports = {
   get INSTRUMENT()    { return getInstrument(); },
   get STRIKE_OFFSET() { return getStrikeOffset(); },
-  LOT_SIZE,
+  get LOT_SIZE() { return getLotSize(); },
   getSymbol,        // async — use for actual orders
   getSymbolSync,    // sync  — use for display only
   getLotQty,
