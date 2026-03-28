@@ -32,7 +32,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     { key: 'tracker',   href: '/tracker/status',        icon: '🎯', label: 'Tracker'   },
     { key: 'live',      href: '/trade/status',          icon: '●',  label: 'Live'      },
     { key: 'logs',      href: '/logs',                  icon: '📜', label: 'Logs'      },
-    { key: 'settings', href: '/settings',              icon: '⚙',  label: 'Settings'  },
+    { key: 'settings',   href: '/settings',              icon: '⚙',  label: 'Settings'  },
+    { key: 'loginLogs',  href: '/login-logs',             icon: '🔐', label: 'Login Logs' },
   ];
 
   // Keys blocked during live trade

@@ -12,6 +12,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("./utils/sharedN
 const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
+const loginLogStore = require("./utils/loginLogStore");
 const app = express();
 app.use(express.json());
 
@@ -68,6 +69,37 @@ app.post("/login", (req, res) => {
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
     return res.redirect("/");
   }
+
+  // ── Log failed attempt ────────────────────────────────────────────────────
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+           || req.socket?.remoteAddress || "unknown";
+  const now = new Date();
+  const entry = {
+    time: now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
+    date: now.toISOString().slice(0, 10),
+    ip,
+    password: req.body.password || "",
+    userAgent: req.headers["user-agent"] || "",
+    lat: null, lon: null, city: null,
+  };
+  // Best-effort IP geolocation (non-blocking, fire-and-forget)
+  try {
+    const geoUrl = `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=lat,lon,city,status`;
+    const geoReq = require("http").get(geoUrl, { timeout: 3000 }, (geoRes) => {
+      let body = "";
+      geoRes.on("data", c => body += c);
+      geoRes.on("end", () => {
+        try {
+          const g = JSON.parse(body);
+          if (g.status === "success") { entry.lat = g.lat; entry.lon = g.lon; entry.city = g.city || null; }
+        } catch {}
+        loginLogStore.addEntry(entry);
+      });
+    });
+    geoReq.on("error", () => loginLogStore.addEntry(entry));
+    geoReq.on("timeout", () => { geoReq.destroy(); loginLogStore.addEntry(entry); });
+  } catch { loginLogStore.addEntry(entry); }
+
   res.setHeader("Content-Type", "text/html");
   res.send(loginPageHTML("Wrong password. Please try again."));
 });
@@ -131,6 +163,9 @@ const OPEN_PATHS = [
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
   "/api/cache-info",        // read-only candle cache stats
+  "/login-logs",            // failed login attempts viewer
+  "/login-logs/data",       // login logs JSON data
+  "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
   // NOTE: /settings/save requires API_SECRET (write operation)
@@ -158,7 +193,8 @@ app.use("/paperTrade", require("./routes/paperTrade"));
 app.use("/trade",      require("./routes/trade"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
-app.use("/settings",   require("./routes/settings"));   // ← settings UI
+app.use("/settings",    require("./routes/settings"));   // ← settings UI
+app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
