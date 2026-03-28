@@ -1,8 +1,11 @@
 require("dotenv").config();
 const fyers = require("../config/fyers");
 const { toDateString } = require("../utils/time");
-const { getLotQty } = require("../config/instrument");
+
 const { buildVixLookup, checkBacktestVix, VIX_ENABLED, VIX_MAX_ENTRY, VIX_STRONG_ONLY, VIX_SYMBOL } = require("./vixFilter");
+
+const { getLotQty, INSTRUMENT } = require("../config/instrument");
+
 
 function maxDaysForResolution(resolution) {
   if (["D", "W", "M"].includes(resolution)) return 365 * 10;
@@ -143,9 +146,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
   //
   // To disable simulation and revert to raw index points (old behaviour):
   //   set BACKTEST_OPTION_SIM=false in .env
-  const OPTION_SIM   = process.env.BACKTEST_OPTION_SIM !== "false"; // true by default
-  const DELTA        = parseFloat(process.env.BACKTEST_DELTA        || "0.55");
-  const THETA_PER_DAY = parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
+  const isFutures    = INSTRUMENT === "NIFTY_FUTURES";
+  // Futures: no delta/theta — 1:1 point-to-rupee. Force OPTION_SIM off for futures.
+  const OPTION_SIM   = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false"); // true by default for options
+  const DELTA        = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA        || "0.55");
+  const THETA_PER_DAY = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
   const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
 
   // Trail gap — tiered dynamic (mirrors paper/live exactly):
@@ -370,7 +375,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
 
         let pnlRupees;
         let pnlMode;
-        if (OPTION_SIM) {
+        if (isFutures) {
+          // Futures: direct point × lot size − brokerage (no delta/theta)
+          pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - BROKERAGE).toFixed(2));
+          pnlMode   = `futures (${spotPnlPts}pt × ${LOT_SIZE}qty − ₹${BROKERAGE}brok)`;
+        } else if (OPTION_SIM) {
           // Option premium change ≈ spotPnlPts × delta
           const premiumMovePts = spotPnlPts * DELTA;
           // Theta decay: proportional to candles held
@@ -520,7 +529,10 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     const lastCandle = candles[candles.length - 1];
     const spotPnlPts = parseFloat(((lastCandle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
     let pnlRupees, pnlMode;
-    if (OPTION_SIM) {
+    if (isFutures) {
+      pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - BROKERAGE).toFixed(2));
+      pnlMode   = `futures`;
+    } else if (OPTION_SIM) {
       const premiumMovePts = spotPnlPts * DELTA;
       const candlesHeld    = position.candlesHeld || 1;
       const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));

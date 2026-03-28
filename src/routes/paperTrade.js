@@ -554,9 +554,14 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   };
 
   // Set option symbol and start REST polling (no socket changes)
+  // Skip option polling for futures — no option premium to track
   ptState.optionSymbol = symbol;
-  log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
-  startOptionPolling(symbol);
+  if (INSTRUMENT !== "NIFTY_FUTURES") {
+    log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
+    startOptionPolling(symbol);
+  } else {
+    log(`📊 [PAPER] Futures mode — skipping option LTP polling`);
+  }
 
   const slText = stopLoss ? ` | SL: ₹${stopLoss}` : "";
   log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | TrailActivate: +${_dynTrailActivatePaper}pt | Opt: capturing… | Reason: ${reason}`);
@@ -797,7 +802,8 @@ async function onCandleClose(candle) {
     if (tighten) {
       pos.stopLoss = stopLoss;
       const _optSARp = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🔄 [PAPER] SAR tightened: ₹${oldSL} → ₹${stopLoss} (${pos.side==="CE"?"↑CE":"↓PE"})${_optSARp}`);
+      const _sarLabel = INSTRUMENT === "NIFTY_FUTURES" ? (pos.side==="CE"?"↑LONG":"↓SHORT") : (pos.side==="CE"?"↑CE":"↓PE");
+      log(`🔄 [PAPER] SAR tightened: ₹${oldSL} → ₹${stopLoss} (${_sarLabel})${_optSARp}`);
     } else {
       log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} needs ${pos.side==="CE"?"higher":"lower"}`);
     }
@@ -1227,7 +1233,8 @@ function onTick(tick) {
           const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
-          log(`📈 [PAPER] Trail CE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          const _trailCELabel = INSTRUMENT === "NIFTY_FUTURES" ? "LONG" : "CE";
+          log(`📈 [PAPER] Trail ${_trailCELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestCE) {
@@ -1256,7 +1263,8 @@ function onTick(tick) {
           const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
-          log(`📉 [PAPER] Trail PE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          const _trailPELabel = INSTRUMENT === "NIFTY_FUTURES" ? "SHORT" : "PE";
+          log(`📉 [PAPER] Trail ${_trailPELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestPE) {
