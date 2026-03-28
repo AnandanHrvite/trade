@@ -56,7 +56,8 @@ const SETTINGS_SCHEMA = [
       { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures (Long/Short)" },
       { key: "NIFTY_LOT_SIZE", label: "Lot Size (Qty)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Qty per lot — changes with SEBI circular (currently 65)" },
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade" },
-      { key: "STRIKE_OFFSET", label: "Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "0=ATM, 50=1 OTM, -50=1 ITM" },
+      { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "CE: -50=1 ITM, 0=ATM, +50=1 OTM" },
+      { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "PE: +50=1 ITM, 0=ATM, -50=1 OTM" },
     ],
   },
   {
@@ -162,7 +163,7 @@ function parseEnvFile() {
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
   "LIVE_TRADE_ENABLED", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
-  "INSTRUMENT", "STRIKE_OFFSET", "LOT_MULTIPLIER",
+  "INSTRUMENT", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",

@@ -8,7 +8,7 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require
  *
  * STRIKE:  Fetched live from Fyers quotes API (NSE:NIFTY50-INDEX LTP)
  *          Rounded to nearest 50 → ATM strike
- *          STRIKE_OFFSET in .env lets you go OTM/ITM (default 0 = ATM)
+ *          STRIKE_OFFSET_CE / STRIKE_OFFSET_PE in .env lets you go OTM/ITM per side (default 0 = ATM)
  *
  * EXPIRY:  Auto-calculated from today's date
  *          Options → nearest weekly Thursday expiry
@@ -20,7 +20,8 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require
 
 // Read dynamically so settings toggle takes effect immediately (no restart)
 function getInstrument()   { return process.env.INSTRUMENT || "NIFTY_OPTIONS"; }
-function getStrikeOffset() { return parseInt(process.env.STRIKE_OFFSET || "0", 10); }
+function getStrikeOffsetCE() { return parseInt(process.env.STRIKE_OFFSET_CE || process.env.STRIKE_OFFSET || "0", 10); }
+function getStrikeOffsetPE() { return parseInt(process.env.STRIKE_OFFSET_PE || process.env.STRIKE_OFFSET || "0", 10); }
 
 const LOT_SIZE_DEFAULT = 65;
 function getLotSize() {
@@ -201,19 +202,21 @@ async function getLiveSpot() {
  * Pass side="CE" or "PE". Default (no side) just returns pure ATM.
  */
 function calcATMStrike(spot, side) {
-  const atm = Math.round(spot / 50) * 50 + getStrikeOffset();
-  if (!side) return atm;
+  const base = Math.round(spot / 50) * 50;
+  if (!side) return base;
   if (side === "CE") {
+    const atm = base + getStrikeOffsetCE();
     // CE ITM = strike strictly BELOW spot. Always 1 strike below ATM.
     // e.g. spot=25300.70 → atm=25300 → ITM=25250
     return atm - 50;
   }
   if (side === "PE") {
+    const atm = base + getStrikeOffsetPE();
     // PE ITM = strike strictly ABOVE spot. Always 1 strike above ATM.
     // e.g. spot=25300.70 → atm=25300 → ITM=25350
     return atm + 50;
   }
-  return atm;
+  return base;
 }
 
 // ── Symbol builder ────────────────────────────────────────────────────────────
@@ -252,7 +255,7 @@ function getSymbolSync(side = "CE") {
     return `NSE:NIFTY${getFuturesExpiry()}FUT`;
   }
   const spot   = _cachedSpot || parseFloat(process.env.NIFTY_SPOT_FALLBACK || "24000");
-  const strike = calcATMStrike(spot);
+  const strike = calcATMStrike(spot, side);
   const expiry = getNearestThursdayExpiry();
   return `NSE:NIFTY${expiry}${strike}${side}`;
 }
@@ -629,7 +632,8 @@ async function isSymbolValidViaQuotes(symbol) {
 
 module.exports = {
   get INSTRUMENT()    { return getInstrument(); },
-  get STRIKE_OFFSET() { return getStrikeOffset(); },
+  get STRIKE_OFFSET_CE() { return getStrikeOffsetCE(); },
+  get STRIKE_OFFSET_PE() { return getStrikeOffsetPE(); },
   get LOT_SIZE() { return getLotSize(); },
   getSymbol,        // async — use for actual orders
   getSymbolSync,    // sync  — use for display only
