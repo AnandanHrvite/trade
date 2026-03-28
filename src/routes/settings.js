@@ -256,7 +256,7 @@ router.get("/data", (req, res) => {
 });
 
 // ── POST /settings/save — Save updated values ──────────────────────────────
-router.post("/save", express.json(), (req, res) => {
+router.post("/save", (req, res) => {
   const { updates } = req.body;
   if (!updates || typeof updates !== "object") {
     return res.status(400).json({ success: false, error: "Missing updates object" });
@@ -845,13 +845,11 @@ function saveSettings() {
     body: JSON.stringify({ updates: updates }),
   })
   .then(function(res) {
-    if (!res) { btn.disabled = false; btn.textContent = 'Save Changes'; return null; }
+    if (!res) return null;
     return res.json();
   })
   .then(function(data) {
     if (!data) return;
-    btn.disabled = false;
-    btn.textContent = 'Save Changes';
     if (data.success) {
       // Update originals
       Object.keys(updates).forEach(function(key) {
@@ -888,9 +886,12 @@ function saveSettings() {
     }
   })
   .catch(function(err) {
+    var msg = err.name === 'AbortError' ? 'Request timed out — check server' : err.message;
+    showToast('Save failed: ' + msg, 'error');
+  })
+  .finally(function() {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
-    showToast('Save failed: ' + err.message, 'error');
   });
 }
 
