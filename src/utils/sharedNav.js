@@ -463,50 +463,6 @@ function showPrompt(opts) {
   });
 }
 
-// ── API_SECRET session helper ───────────────────────────────────────────────
-function getApiSecret() { return sessionStorage.getItem('__api_secret') || ''; }
-function setApiSecret(val) { sessionStorage.setItem('__api_secret', val); }
-
-async function askApiSecret() {
-  var stored = getApiSecret();
-  if (stored) return stored;
-  var val = await showPrompt({
-    icon: '🔐',
-    title: 'API Secret Required',
-    message: 'This action requires your API_SECRET.\\nIt will be remembered for this browser session.',
-    placeholder: 'Enter API_SECRET from .env',
-    inputType: 'password'
-  });
-  if (val === null) return null;
-  if (val) setApiSecret(val);
-  return val || '';
-}
-
-async function secretFetch(url, opts) {
-  opts = opts || {};
-  var secret = await askApiSecret();
-  if (secret === null) return null;
-  opts.headers = opts.headers || {};
-  if (secret) opts.headers['x-api-secret'] = secret;
-  var controller = new AbortController();
-  var tid = setTimeout(function(){ controller.abort(); }, 15000);
-  opts.signal = controller.signal;
-  var res;
-  try { res = await fetch(url, opts); } finally { clearTimeout(tid); }
-  if (res.status === 403) {
-    sessionStorage.removeItem('__api_secret');
-    await showAlert({ icon: '🚫', title: 'Wrong API Secret', message: 'The API secret was incorrect. Please try again.', btnClass: 'modal-btn-danger' });
-    secret = await askApiSecret();
-    if (secret === null) return null;
-    opts.headers['x-api-secret'] = secret;
-    var c2 = new AbortController();
-    var t2 = setTimeout(function(){ c2.abort(); }, 15000);
-    opts.signal = c2.signal;
-    try { res = await fetch(url, opts); } finally { clearTimeout(t2); }
-  }
-  return res;
-}
-
 // ── Idle timeout — auto-logout after 15 min of no activity ──────────────────
 (function(){
   if (!window.__LOGIN_GATE_ACTIVE) return;
@@ -559,6 +515,50 @@ async function secretFetch(url, opts) {
 })();
 
 } // end guard: typeof _showModal === 'undefined'
+
+// ── API_SECRET session helper (outside guard — must always be defined) ─────
+function getApiSecret() { return sessionStorage.getItem('__api_secret') || ''; }
+function setApiSecret(val) { sessionStorage.setItem('__api_secret', val); }
+
+async function askApiSecret() {
+  var stored = getApiSecret();
+  if (stored) return stored;
+  var val = await showPrompt({
+    icon: '🔐',
+    title: 'API Secret Required',
+    message: 'This action requires your API_SECRET.\\nIt will be remembered for this browser session.',
+    placeholder: 'Enter API_SECRET from .env',
+    inputType: 'password'
+  });
+  if (val === null) return null;
+  if (val) setApiSecret(val);
+  return val || '';
+}
+
+async function secretFetch(url, opts) {
+  opts = opts || {};
+  var secret = await askApiSecret();
+  if (secret === null) return null;
+  opts.headers = opts.headers || {};
+  if (secret) opts.headers['x-api-secret'] = secret;
+  var controller = new AbortController();
+  var tid = setTimeout(function(){ controller.abort(); }, 15000);
+  opts.signal = controller.signal;
+  var res;
+  try { res = await fetch(url, opts); } finally { clearTimeout(tid); }
+  if (res.status === 403) {
+    sessionStorage.removeItem('__api_secret');
+    await showAlert({ icon: '🚫', title: 'Wrong API Secret', message: 'The API secret was incorrect. Please try again.', btnClass: 'modal-btn-danger' });
+    secret = await askApiSecret();
+    if (secret === null) return null;
+    opts.headers['x-api-secret'] = secret;
+    var c2 = new AbortController();
+    var t2 = setTimeout(function(){ c2.abort(); }, 15000);
+    opts.signal = c2.signal;
+    try { res = await fetch(url, opts); } finally { clearTimeout(t2); }
+  }
+  return res;
+}
 `;
 }
 
