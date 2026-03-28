@@ -26,6 +26,7 @@ const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = require("../config/instrument");
 const { isTradingAllowed } = require("../utils/nseHolidays");
+const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache, VIX_ENABLED } = require("../services/vixFilter");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -740,7 +741,7 @@ async function onCandleClose(candle) {
   if (tradeState.candles.length > 200) tradeState.candles.shift();
 
   const strategy = getActiveStrategy();
-  const { signal, reason, stopLoss } = strategy.getSignal(tradeState.candles);
+  const { signal, reason, stopLoss, signalStrength: _ccStrength } = strategy.getSignal(tradeState.candles);
 
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
@@ -750,7 +751,10 @@ async function onCandleClose(candle) {
   // Cached result used at entry if spot hasn't moved > 25 pts.
   if (!tradeState.position) prefetchOptionSymbols(candle.close).catch(() => {});
 
-  log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | ${reason}`);
+  // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
+  fetchLiveVix().catch(() => {});
+  const _vixDisplay = getCachedVix();
+  log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${_vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   // Telegram: candle close signal update (only when flat — no position open)
   // Tells you exactly why a trade was/wasn't taken every 15 min candle
@@ -862,6 +866,12 @@ async function onCandleClose(candle) {
     // Daily loss kill switch — hard block, no bypass
     if (tradeState._dailyLossHit) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
+      return;
+    }
+    // ── VIX filter: block entry in high-volatility regimes ──────────────────
+    const _vixCheck = await checkLiveVix(_ccStrength || "MARGINAL");
+    if (!_vixCheck.allowed) {
+      log(`🌡️ [LIVE] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
       return;
     }
     const side = signal === "BUY_CE" ? "CE" : "PE";
@@ -1105,10 +1115,22 @@ function onSpotTick(tick) {
     }
 
     if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
+      // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
+      const _vixIntraVal = getCachedVix();
+      const _vixIntraBlocked = VIX_ENABLED && _vixIntraVal != null && (
+        _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
+        (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
+      );
+      if (_vixIntraBlocked) {
+        if (!tradeState._vixBlockLoggedCandle || tradeState._vixBlockLoggedCandle !== _currentBarTime) {
+          tradeState._vixBlockLoggedCandle = _currentBarTime;
+          log(`🌡️ [LIVE] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+        }
+      } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       tradeState._entryPending = true;
       const _ltIntraTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
-      log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | [${TRADE_RES}m bar] ${reason}`);
+      log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntra.vix != null ? _vixIntra.vix.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
 
       const INSTR = INSTRUMENT;
 
@@ -1236,6 +1258,7 @@ function onSpotTick(tick) {
         tradeState._entryPending = false;
         clearTimeout(_ltIntraTimer);
       });
+      } // end VIX else
     }
     } // end entry guards
   }

@@ -23,6 +23,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
+const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache, VIX_ENABLED } = require("../services/vixFilter");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -749,10 +750,14 @@ async function onCandleClose(candle) {
   // ── Pre-fetch option symbols in background so entry is instant on next tick ──
   if (!ptState.position) prefetchOptionSymbols(candle.close).catch(() => {});
 
+  // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
+  fetchLiveVix().catch(() => {});
+  const _vixDisplay = getCachedVix();
+
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
-  log(`   Signal: ${signal} [${signalStrength||"n/a"}] | ${reason}`);
+  log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${_vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   // Telegram: candle close signal update (only when flat — no position open)
   if (!ptState.position && signal !== null) {
@@ -907,6 +912,12 @@ async function onCandleClose(candle) {
       log(`⚡ [PAPER] STRONG signal at candle close (intra-tick missed it) — entering @ ₹${candle.close} | ${reason}`);
     } else {
       log(`📋 [PAPER] MARGINAL signal — candle-close entry @ ₹${candle.close} | ${reason}`);
+    }
+    // ── VIX filter: block entry in high-volatility regimes ──────────────────
+    const _vixCheck = await checkLiveVix(candleCloseStrength);
+    if (!_vixCheck.allowed) {
+      log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
+      return;
     }
     // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
     if (ptState._dailyLossHit) {
@@ -1123,11 +1134,23 @@ function onTick(tick) {
     }
 
     if ((signal === "BUY_CE" || signal === "BUY_PE") && isStrongSignal) {
+      // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
+      const _vixIntraVal = getCachedVix();
+      const _vixIntraBlocked = VIX_ENABLED && _vixIntraVal != null && (
+        _vixIntraVal > parseFloat(process.env.VIX_MAX_ENTRY || "20") ||
+        (_vixIntraVal > parseFloat(process.env.VIX_STRONG_ONLY || "16") && signalStrength !== "STRONG")
+      );
+      if (_vixIntraBlocked) {
+        if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
+          ptState._vixBlockLoggedCandle = currentBarTime;
+          log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+        }
+      } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
-      log(`⚡ [PAPER] Intra-candle STRONG entry @ ₹${ltp} | [${TRADE_RES}m bar] ${reason}`);
+      log(`⚡ [PAPER] Intra-candle STRONG entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
       const INSTR = INSTRUMENT; // top-level constant — no inline require needed
 
       let symbolPromise;
@@ -1168,6 +1191,7 @@ function onTick(tick) {
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
       });
+      } // end VIX else
     }
     } // end SL-hit candle guard
     } // end market hours check
