@@ -18,8 +18,9 @@ const { isNonTradingDay, getPreviousTradingDay, formatDateToYYYYMMDD } = require
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const INSTRUMENT = process.env.INSTRUMENT || "NIFTY_OPTIONS"; // NIFTY_OPTIONS | NIFTY_FUTURES
-const STRIKE_OFFSET = parseInt(process.env.STRIKE_OFFSET || "0", 10); // 0=ATM, 50=1 OTM, -50=1 ITM
+// Read dynamically so settings toggle takes effect immediately (no restart)
+function getInstrument()   { return process.env.INSTRUMENT || "NIFTY_OPTIONS"; }
+function getStrikeOffset() { return parseInt(process.env.STRIKE_OFFSET || "0", 10); }
 
 const LOT_SIZE = {
   NIFTY_OPTIONS: 65,
@@ -199,7 +200,7 @@ async function getLiveSpot() {
  * Pass side="CE" or "PE". Default (no side) just returns pure ATM.
  */
 function calcATMStrike(spot, side) {
-  const atm = Math.round(spot / 50) * 50 + STRIKE_OFFSET;
+  const atm = Math.round(spot / 50) * 50 + getStrikeOffset();
   if (!side) return atm;
   if (side === "CE") {
     // CE ITM = strike strictly BELOW spot. Always 1 strike below ATM.
@@ -224,7 +225,7 @@ function calcATMStrike(spot, side) {
  * @returns {Promise<string>}  e.g. "NSE:NIFTY25JUN1924600CE"
  */
 async function getSymbol(side = "CE") {
-  if (INSTRUMENT === "NIFTY_FUTURES") {
+  if (getInstrument() === "NIFTY_FUTURES") {
     const expiry = getFuturesExpiry();
     const symbol = `NSE:NIFTY${expiry}FUT`;
     console.log(`📌 Futures symbol: ${symbol}`);
@@ -246,7 +247,7 @@ async function getSymbol(side = "CE") {
  * Used only for display purposes (dashboard, status). Always use async getSymbol() for actual orders.
  */
 function getSymbolSync(side = "CE") {
-  if (INSTRUMENT === "NIFTY_FUTURES") {
+  if (getInstrument() === "NIFTY_FUTURES") {
     return `NSE:NIFTY${getFuturesExpiry()}FUT`;
   }
   const spot   = _cachedSpot || parseFloat(process.env.NIFTY_SPOT_FALLBACK || "24000");
@@ -257,7 +258,7 @@ function getSymbolSync(side = "CE") {
 
 function getLotQty() {
   const multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
-  return LOT_SIZE[INSTRUMENT] * multiplier;
+  return LOT_SIZE[getInstrument()] * multiplier;
 }
 
 function getProductType() {
@@ -626,8 +627,8 @@ async function isSymbolValidViaQuotes(symbol) {
 }
 
 module.exports = {
-  INSTRUMENT,
-  STRIKE_OFFSET,
+  get INSTRUMENT()    { return getInstrument(); },
+  get STRIKE_OFFSET() { return getStrikeOffset(); },
   LOT_SIZE,
   getSymbol,        // async — use for actual orders
   getSymbolSync,    // sync  — use for display only

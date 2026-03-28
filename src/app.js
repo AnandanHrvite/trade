@@ -5,7 +5,7 @@ const express  = require("express");
 const https    = require("https");
 const fs       = require("fs");
 const { ACTIVE, getActiveStrategy } = require("./strategies");
-const { INSTRUMENT } = require("./config/instrument");
+const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
 const { clearFyersToken } = require("./config/fyers");
 const { buildSidebar, sidebarCSS } = require("./utils/sharedNav");
@@ -782,7 +782,7 @@ try {
 https.createServer(sslOptions, app).listen(PORT, HOST, () => {
   console.log(`\n🚀 Trading App running at https://${EC2_IP}:${PORT} (AWS — HTTPS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
-  console.log(`   Instrument       : ${INSTRUMENT}`);
+  console.log(`   Instrument       : ${instrumentConfig.INSTRUMENT}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);

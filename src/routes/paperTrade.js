@@ -18,7 +18,8 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
-const { getSymbol, getLotQty, INSTRUMENT, validateAndGetOptionSymbol } = require("../config/instrument");
+const instrumentConfig = require("../config/instrument");
+const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML } = require("../utils/sharedNav");
@@ -277,7 +278,7 @@ const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
 async function prefetchOptionSymbols(spot) {
-  if (INSTRUMENT === 'NIFTY_FUTURES') return;
+  if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return;
   try {
     const [ce, pe] = await Promise.all([
       validateAndGetOptionSymbol(spot, 'CE'),
@@ -557,7 +558,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures — no option premium to track
   ptState.optionSymbol = symbol;
-  if (INSTRUMENT !== "NIFTY_FUTURES") {
+  if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
     log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
     startOptionPolling(symbol);
   } else {
@@ -591,7 +592,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp } = ptState.position;
 
-  const INSTR = INSTRUMENT; // top-level constant
+  const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // ── PnL Calculation ─────────────────────────────────────────────────────────
@@ -803,7 +804,7 @@ async function onCandleClose(candle) {
     if (tighten) {
       pos.stopLoss = stopLoss;
       const _optSARp = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      const _sarLabel = INSTRUMENT === "NIFTY_FUTURES" ? (pos.side==="CE"?"↑LONG":"↓SHORT") : (pos.side==="CE"?"↑CE":"↓PE");
+      const _sarLabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? (pos.side==="CE"?"↑LONG":"↓SHORT") : (pos.side==="CE"?"↑CE":"↓PE");
       log(`🔄 [PAPER] SAR tightened: ₹${oldSL} → ₹${stopLoss} (${_sarLabel})${_optSARp}`);
     } else {
       log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} needs ${pos.side==="CE"?"higher":"lower"}`);
@@ -940,7 +941,7 @@ async function onCandleClose(candle) {
       return;
     }
     const side = signal === "BUY_CE" ? "CE" : "PE";
-    const INSTR = INSTRUMENT; // top-level constant
+    const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
     // Set _entryPending BEFORE the async call so that ticks arriving while symbol lookup
     // is in-flight do not fire a second entry.
@@ -1152,7 +1153,7 @@ function onTick(tick) {
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
       log(`⚡ [PAPER] Intra-candle STRONG entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
-      const INSTR = INSTRUMENT; // top-level constant — no inline require needed
+      const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
 
       let symbolPromise;
       if (INSTR === "NIFTY_FUTURES") {
@@ -1234,7 +1235,7 @@ function onTick(tick) {
           const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
-          const _trailCELabel = INSTRUMENT === "NIFTY_FUTURES" ? "LONG" : "CE";
+          const _trailCELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "LONG" : "CE";
           log(`📈 [PAPER] Trail ${_trailCELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
@@ -1264,7 +1265,7 @@ function onTick(tick) {
           const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
           const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
-          const _trailPELabel = INSTRUMENT === "NIFTY_FUTURES" ? "SHORT" : "PE";
+          const _trailPELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "SHORT" : "PE";
           log(`📉 [PAPER] Trail ${_trailPELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
@@ -1318,7 +1319,7 @@ function saveSession() {
   const session = {
     date:        new Date().toISOString().split("T")[0],
     strategy:    ACTIVE,
-    instrument:  INSTRUMENT,
+    instrument:  instrumentConfig.INSTRUMENT,
     startTime:   ptState.sessionStart,
     endTime:     istNow(),
     trades:      ptState.sessionTrades,
@@ -1521,7 +1522,7 @@ router.get("/start", async (req, res) => {
   log(`🟡 [PAPER] Paper trading started`);
   log(`   Resolution : ${getTradeResolution()}-min candles (TRADE_RESOLUTION in .env)`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
-  log(`   Instrument : ${INSTRUMENT}`);
+  log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   log(`   Filters     : EMA slope>=6pt | RSI CE>55 PE<45 | ADX>=25 | SAR gap>=55pt | body>=10pt`);
   log(`   Trail       : DYNAMIC TIERED — T1 0-${process.env.TRAIL_TIER1_UPTO||40}pt=gap${process.env.TRAIL_TIER1_GAP||60}pt | T2 ${process.env.TRAIL_TIER1_UPTO||40}-${process.env.TRAIL_TIER2_UPTO||70}pt=gap${process.env.TRAIL_TIER2_GAP||40}pt | T3 ${process.env.TRAIL_TIER2_UPTO||70}pt+=gap${process.env.TRAIL_TIER3_GAP||30}pt | activates after +${process.env.TRAIL_ACTIVATE_PTS||15}pt | prevMid-clip | 50%-rule=candle-close-only`);
@@ -1563,7 +1564,7 @@ router.get("/start", async (req, res) => {
     `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
     ``,
     `Strategy  : ${ACTIVE}`,
-    `Instrument: ${INSTRUMENT}`,
+    `Instrument: ${instrumentConfig.INSTRUMENT}`,
     `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
     `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
     `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
@@ -1651,7 +1652,7 @@ router.get("/start", async (req, res) => {
     success:     true,
     message:     "Paper trading started! No real orders will be placed.",
     strategy:    { key: ACTIVE, name: strategy.NAME },
-    instrument:  INSTRUMENT,
+    instrument:  instrumentConfig.INSTRUMENT,
     lotQty:      getLotQty(),
     capital:     data.capital,
     monitorAt:   "GET /paperTrade/status",

@@ -24,7 +24,8 @@ const socketManager     = require("../utils/socketManager");
 const fyers             = require("../config/fyers");
 const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
-const { getSymbol, getLotQty, getProductType, INSTRUMENT, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = require("../config/instrument");
+const instrumentConfig = require("../config/instrument");
+const { getSymbol, getLotQty, getProductType, calcATMStrike, getNearestThursdayExpiry, validateAndGetOptionSymbol, getLiveSpot } = instrumentConfig;
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -111,7 +112,7 @@ function saveLiveSession() {
     data.sessions.push({
       date:       tradeState.sessionStart || new Date().toISOString(),
       strategy:   ACTIVE,
-      instrument: INSTRUMENT,
+      instrument: instrumentConfig.INSTRUMENT,
       pnl:        tradeState.sessionPnl,
       trades:     tradeState.sessionTrades,
     });
@@ -216,7 +217,7 @@ function generateDailyReport(trades, sessionPnl) {
       const reportDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
       const reportPath = path.join(reportDir, `live_report_${reportDate}.json`);
       const report = {
-        date: reportDate, strategy: ACTIVE, instrument: INSTRUMENT,
+        date: reportDate, strategy: ACTIVE, instrument: instrumentConfig.INSTRUMENT,
         totalTrades: trades.length, wins: wins.length, losses: losses.length,
         winRate: `${winRate}%`, sessionPnl, avgWin: parseFloat(avgWin), avgLoss: parseFloat(avgLoss),
         bestPnl: bestTrade.pnl, worstPnl: worstTrade.pnl,
@@ -358,7 +359,7 @@ async function fetchOptionLtp(symbol) {
 // Runs async immediately after candle close so that when a BUY signal fires
 // on the next tick, the symbol is already resolved — no REST delay at entry.
 async function prefetchOptionSymbols(spot) {
-  if (INSTRUMENT === 'NIFTY_FUTURES') return; // not needed for futures
+  if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return; // not needed for futures
   try {
     const [ce, pe] = await Promise.all([
       validateAndGetOptionSymbol(spot, 'CE'),
@@ -491,7 +492,7 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
   try {
     const result = await zerodha.placeMarketOrder(
       fyersSymbol, side, qty, `${ACTIVE}_LIVE`.substring(0, 20),
-      { isFutures: INSTRUMENT === "NIFTY_FUTURES" }
+      { isFutures: instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" }
     );
     if (result.success) {
       log(`✅ [LIVE] Zerodha order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
@@ -581,7 +582,7 @@ async function squareOff(exitPrice, reason) {
   const { symbol, qty, side, entryPrice, optionEntryLtp, entryTime,
           stopLoss, optionExpiry, optionStrike, optionType, spotAtEntry,
           optionCurrentLtp: posOptLtp } = tradeState.position;
-  const INSTR = INSTRUMENT; // top-level constant
+  const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // Exit order direction:
@@ -876,7 +877,7 @@ async function onCandleClose(candle) {
       return;
     }
     const side = signal === "BUY_CE" ? "CE" : "PE";
-    const INSTR = INSTRUMENT; // top-level constant
+    const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
     tradeState._entryPending = true;
     const _ltEntryTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
@@ -1133,7 +1134,7 @@ function onSpotTick(tick) {
       const _ltIntraTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
       log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
 
-      const INSTR = INSTRUMENT;
+      const INSTR = instrumentConfig.INSTRUMENT;
 
       let symbolPromise;
       if (INSTR === "NIFTY_FUTURES") {
@@ -1445,7 +1446,7 @@ router.get("/start", async (req, res) => {
 
   log(`🟢 [LIVE] Live trading started`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
-  log(`   Instrument : ${INSTRUMENT}`);
+  log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Lot Qty    : ${getLotQty()}`);
 
   // ── Feature 2: Pre-Market Checklist ─────────────────────────────────────────
@@ -1524,7 +1525,7 @@ router.get("/start", async (req, res) => {
     `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
     ``,
     `Strategy  : ${ACTIVE}`,
-    `Instrument: ${INSTRUMENT}`,
+    `Instrument: ${instrumentConfig.INSTRUMENT}`,
     `Lot Qty   : ${getLotQty()}`,
     `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
     `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
@@ -1567,7 +1568,7 @@ router.get("/start", async (req, res) => {
     message:     `Live trading started — ${ACTIVE}`,
     dataSource:  "Fyers (WebSocket + REST)",
     orderBroker: "Zerodha Kite Connect",
-    instrument:  INSTRUMENT,
+    instrument:  instrumentConfig.INSTRUMENT,
     strategy:    { name: strategy.NAME },
     lotQty:      getLotQty(),
     monitorAt:   "GET /trade/status",
@@ -1631,7 +1632,7 @@ router.get("/status/data", (req, res) => {
     const zerodhaOk = zerodha.isAuthenticated();
 
     let unrealisedPnl = 0;
-    const INSTR = INSTRUMENT;
+    const INSTR = instrumentConfig.INSTRUMENT;
     const isFutures = INSTR === "NIFTY_FUTURES";
 
     if (tradeState.position && tradeState.currentBar) {
@@ -1752,7 +1753,7 @@ router.get("/status", (req, res) => {
 
   const pos = tradeState.position;
 
-  const INSTR = INSTRUMENT; // top-level constant
+  const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // Unrealised PnL

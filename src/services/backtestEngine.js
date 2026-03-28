@@ -5,7 +5,8 @@ const { toDateString } = require("../utils/time");
 const vixFilter = require("./vixFilter");
 const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
 
-const { getLotQty, INSTRUMENT } = require("../config/instrument");
+const instrumentConfig = require("../config/instrument");
+const { getLotQty } = instrumentConfig;
 
 
 function maxDaysForResolution(resolution) {
@@ -147,7 +148,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
   //
   // To disable simulation and revert to raw index points (old behaviour):
   //   set BACKTEST_OPTION_SIM=false in .env
-  const isFutures    = INSTRUMENT === "NIFTY_FUTURES";
+  const isFutures    = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   // Futures: no delta/theta — 1:1 point-to-rupee. Force OPTION_SIM off for futures.
   const OPTION_SIM   = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false"); // true by default for options
   const DELTA        = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA        || "0.55");

@@ -272,9 +272,10 @@ router.post("/save", express.json(), (req, res) => {
 
   const result = updateEnvFile(cleaned);
   if (result.success) {
-    console.log(`[settings] Updated ${result.updatedCount} values:`, Object.keys(cleaned).join(", "));
+    console.log(`[settings] Updated ${result.updatedCount} values:`, Object.keys(cleaned).join(", "),
+      result.fileSaved ? `(persisted to ${ENV_PATH})` : `(IN-MEMORY ONLY — .env write failed: ${result.fileError}, path: ${ENV_PATH})`);
   }
-  res.json(result);
+  res.json({ ...result, envPath: ENV_PATH });
 });
 
 // ── POST /settings/restart — Restart the server process ─────────────────────
@@ -832,8 +833,8 @@ function saveSettings() {
       // Build message based on what was saved
       var msg = data.updatedCount + ' setting' + (data.updatedCount > 1 ? 's' : '') + ' applied';
       if (!data.fileSaved) {
-        msg += ' (in-memory only — .env file write failed, will reset on restart)';
-        showToast(msg, 'info');
+        msg += ' ⚠️ NOT SAVED TO DISK — .env write failed: ' + (data.fileError || 'unknown') + '. Changes will be lost on restart!';
+        showToast(msg, 'error');
       } else if (data.needsRestart && data.needsRestart.length > 0) {
         msg += '. Stop & restart session for: ' + data.needsRestart.join(', ');
         showToast(msg, 'info');
