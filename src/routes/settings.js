@@ -324,240 +324,185 @@ router.get("/", (req, res) => {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Settings</title>
+  <title>Settings — Palani Andawar Trading Bot</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
   <style>
+    :root {
+      --bg:       #080c14;
+      --surface:  #0d1320;
+      --surface2: #111827;
+      --border:   #1a2236;
+      --border2:  #243048;
+      --text:     #c8d8f0;
+      --text2:    #e0eaf8;
+      --muted:    #4a6080;
+      --dim:      #3a5070;
+      --accent:   #3b82f6;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --yellow:   #f59e0b;
+      --purple:   #8b5cf6;
+    }
+    *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
+
     ${sidebarCSS()}
 
-    /* ── Page ─────────────────────────────────────────────── */
-    .page { padding: 24px 28px 60px; max-width: 860px; }
+    /* ── Top bar ─────────────────────────────────────────── */
     .top-bar {
-      background: #040c18;
-      border-bottom: 0.5px solid #0e1e36;
-      padding: 18px 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .top-bar-title { font-size: 1.1rem; font-weight: 700; color: #e0eaf8; }
-    .top-bar-meta  { font-size: 0.65rem; color: #2a4060; margin-top: 3px; }
+    .top-bar-title { font-size: 1.15rem; font-weight: 700; color: var(--text2); letter-spacing: -0.3px; }
+    .top-bar-meta  { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
 
-    /* ── Save bar ────────────────────────────────────────── */
+    /* ── Page ─────────────────────────────────────────────── */
+    .page { padding: 28px 28px 60px; max-width: 880px; }
+
+    /* ── Sticky save bar ─────────────────────────────────── */
     .save-bar {
-      position: sticky;
-      top: 0;
-      z-index: 90;
-      background: #0a1628;
-      border-bottom: 1px solid #0e1e36;
+      position: sticky; top: 0; z-index: 90;
+      background: rgba(13,19,32,0.95); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
       padding: 12px 28px;
-      display: none;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
+      display: none; align-items: center; justify-content: space-between; gap: 16px;
     }
     .save-bar.visible { display: flex; }
-    .save-bar .change-count {
-      font-size: 0.75rem;
-      color: #f59e0b;
-      font-weight: 600;
-    }
+    .save-bar .change-count { font-size: 0.78rem; color: var(--yellow); font-weight: 700; }
+    .save-bar .change-count::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--yellow); margin-right:8px; vertical-align:middle; }
     .save-bar .btn-group { display: flex; gap: 10px; }
 
     /* ── Section ─────────────────────────────────────────── */
-    .settings-section { margin-bottom: 28px; }
+    .settings-section { margin-bottom: 24px; }
     .section-title {
-      font-size: 0.65rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1.8px;
-      color: #3b6a9e;
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.5px; color: var(--muted);
       margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      display: flex; align-items: center; gap: 10px;
     }
-    .section-title::after {
-      content: '';
-      flex: 1;
-      height: 0.5px;
-      background: #0e1e36;
-    }
+    .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
     .section-card {
-      background: #07111f;
-      border: 0.5px solid #0e1e36;
-      border-radius: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
       overflow: hidden;
     }
 
     /* ── Setting row ─────────────────────────────────────── */
     .setting-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      border-bottom: 0.5px solid #0e1e36;
-      gap: 16px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      gap: 20px;
+      transition: background 0.1s;
     }
     .setting-row:last-child { border-bottom: none; }
-    .setting-row:hover { background: rgba(59,130,246,0.03); }
+    .setting-row:hover { background: rgba(59,130,246,0.04); }
     .setting-info { flex: 1; min-width: 0; }
-    .setting-label {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #c8d8f0;
-    }
-    .field-desc {
-      font-size: 0.62rem;
-      color: #2a4060;
-      margin-top: 3px;
-    }
+    .setting-label { font-size: 0.84rem; font-weight: 600; color: var(--text2); }
+    .field-desc { font-size: 0.68rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 
     /* ── Inputs ──────────────────────────────────────────── */
     input[type="text"], input[type="number"], input[type="date"], select {
-      background: #0a1225;
-      border: 1px solid #0e1e36;
-      color: #c8d8f0;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      font-family: 'JetBrains Mono', 'IBM Plex Mono', monospace;
-      min-width: 140px;
-      max-width: 220px;
-      transition: border-color 0.15s;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-family: 'JetBrains Mono', monospace;
+      min-width: 150px;
+      max-width: 230px;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    input:focus, select:focus {
-      outline: none;
-      border-color: #3b82f6;
+    input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+    input.dirty, select.dirty { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(245,158,11,0.15); }
+    select { cursor: pointer; -webkit-appearance: none; appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%234a6080'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
     }
-    input.dirty, select.dirty {
-      border-color: #f59e0b;
-      box-shadow: 0 0 0 1px rgba(245,158,11,0.2);
-    }
+    input::placeholder { color: var(--dim); }
 
     /* ── Toggle switch ───────────────────────────────────── */
-    .toggle-switch {
-      position: relative;
-      display: inline-block;
-      width: 48px;
-      height: 26px;
-      flex-shrink: 0;
-    }
+    .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; flex-shrink: 0; }
     .toggle-switch input { opacity: 0; width: 0; height: 0; }
     .toggle-slider {
-      position: absolute;
-      cursor: pointer;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: #1a2236;
-      border-radius: 26px;
-      transition: 0.25s;
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background: #1e2940; border: 1px solid var(--border); border-radius: 28px; transition: 0.3s;
     }
     .toggle-slider::before {
-      content: "";
-      position: absolute;
-      height: 20px;
-      width: 20px;
-      left: 3px;
-      bottom: 3px;
-      background: #4a6080;
-      border-radius: 50%;
-      transition: 0.25s;
+      content: ""; position: absolute; height: 20px; width: 20px; left: 3px; bottom: 3px;
+      background: #4a6080; border-radius: 50%; transition: 0.3s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
     }
-    .toggle-switch input:checked + .toggle-slider {
-      background: #065f46;
-    }
-    .toggle-switch input:checked + .toggle-slider::before {
-      transform: translateX(22px);
-      background: #10b981;
-    }
+    .toggle-switch input:checked + .toggle-slider { background: #064e3b; border-color: #065f46; }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(22px); background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
 
     /* ── Buttons ─────────────────────────────────────────── */
     .btn-save {
-      background: #3b82f6;
-      color: #fff;
-      border: none;
-      padding: 8px 24px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 0.8rem;
-      cursor: pointer;
-      font-family: inherit;
-      transition: opacity 0.15s;
+      background: var(--accent); color: #fff; border: none;
+      padding: 9px 28px; border-radius: 8px; font-weight: 700; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit; transition: all 0.15s; letter-spacing: 0.2px;
     }
-    .btn-save:hover { opacity: 0.9; }
-    .btn-save:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-save:hover { filter: brightness(1.1); }
+    .btn-save:disabled { opacity: 0.35; cursor: not-allowed; filter: none; }
     .btn-discard {
-      background: transparent;
-      color: #4a6080;
-      border: 1px solid #1a2236;
-      padding: 8px 18px;
-      border-radius: 6px;
-      font-weight: 600;
-      font-size: 0.8rem;
-      cursor: pointer;
-      font-family: inherit;
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      padding: 9px 20px; border-radius: 8px; font-weight: 600; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
     }
-    .btn-discard:hover { border-color: #ef4444; color: #ef4444; }
+    .btn-discard:hover { border-color: var(--red); color: var(--red); }
 
-    /* ── Custom key-value section ────────────────────────── */
-    .custom-row {
-      display: flex;
-      gap: 10px;
-      align-items: flex-end;
-      flex-wrap: wrap;
-      margin-top: 10px;
-    }
-    .custom-row .field-group { display: flex; flex-direction: column; gap: 4px; }
-    .custom-row label {
-      font-size: 0.6rem;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: #2a4060;
-      font-weight: 700;
-    }
-    .custom-row input { min-width: 180px; }
+    /* ── Custom key-value ────────────────────────────────── */
+    .custom-kv { padding: 20px; }
+    .custom-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .custom-row + .custom-row { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .custom-row .field-group { display: flex; flex-direction: column; gap: 5px; }
+    .custom-row label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); font-weight: 700; }
+    .custom-row input[type="text"] { min-width: 200px; }
     .btn-add {
-      background: transparent;
-      color: #10b981;
-      border: 1px solid #065f46;
-      padding: 8px 16px;
-      border-radius: 6px;
-      font-weight: 700;
-      font-size: 0.75rem;
-      cursor: pointer;
-      font-family: inherit;
-      white-space: nowrap;
+      background: rgba(16,185,129,0.08); color: var(--green); border: 1px solid #065f46;
+      padding: 9px 18px; border-radius: 8px; font-weight: 700; font-size: 0.78rem;
+      cursor: pointer; font-family: inherit; white-space: nowrap; transition: all 0.15s;
     }
-    .btn-add:hover { background: rgba(16,185,129,0.08); }
+    .btn-add:hover { background: rgba(16,185,129,0.15); border-color: var(--green); }
 
-    /* ── Toast notification ──────────────────────────────── */
+    /* ── Toast ───────────────────────────────────────────── */
     .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 12px 20px;
-      border-radius: 8px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      z-index: 999;
-      opacity: 0;
-      transform: translateY(10px);
-      transition: all 0.3s;
-      pointer-events: none;
+      position: fixed; bottom: 28px; right: 28px;
+      padding: 14px 22px; border-radius: 10px; font-size: 0.82rem; font-weight: 600;
+      z-index: 999; opacity: 0; transform: translateY(12px);
+      transition: all 0.3s; pointer-events: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     }
     .toast.show { opacity: 1; transform: translateY(0); pointer-events: auto; }
-    .toast.success { background: #065f46; color: #10b981; border: 1px solid #10b981; }
-    .toast.error   { background: #7f1d1d; color: #f87171; border: 1px solid #ef4444; }
-    .toast.info    { background: #1e3a5f; color: #60a5fa; border: 1px solid #3b82f6; }
+    .toast.success { background: #052e16; color: var(--green); border: 1px solid #065f46; }
+    .toast.error   { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+    .toast.info    { background: #0a1e3d; color: #60a5fa; border: 1px solid #1d3b6e; }
 
-    /* ── Restart note ────────────────────────────────────── */
-    .restart-note {
-      font-size: 0.65rem;
-      color: #f59e0b;
-      background: rgba(245,158,11,0.08);
-      border: 1px solid rgba(245,158,11,0.2);
-      border-radius: 6px;
-      padding: 10px 14px;
-      margin-bottom: 20px;
-      line-height: 1.6;
+    /* ── Info banner ─────────────────────────────────────── */
+    .info-banner {
+      display: flex; align-items: center; gap: 12px;
+      font-size: 0.72rem; color: #fcd34d; line-height: 1.6;
+      background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15);
+      border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;
+    }
+    .info-banner .banner-icon { font-size: 1.2rem; flex-shrink: 0; }
+    .info-banner strong { color: #fbbf24; }
+
+    /* ── Mobile ──────────────────────────────────────────── */
+    @media (max-width:640px) {
+      .page { padding: 16px 14px 40px; }
+      .top-bar { padding: 14px 14px 14px 50px; }
+      .setting-row { padding: 12px 14px; flex-wrap: wrap; }
+      input[type="text"], input[type="number"], input[type="date"], select { min-width: 120px; max-width: 100%; width: 100%; }
+      .custom-row { flex-direction: column; align-items: stretch; }
+      .custom-row input[type="text"] { min-width: 100%; }
+      .save-bar { padding: 10px 14px; }
     }
   </style>
 </head>
@@ -569,13 +514,13 @@ router.get("/", (req, res) => {
     <div class="top-bar">
       <div>
         <div class="top-bar-title">Settings</div>
-        <div class="top-bar-meta">Configure trading parameters without restarting the server</div>
+        <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
     </div>
 
-    <!-- Sticky save bar -->
+    <!-- Sticky save bar (appears when you change something) -->
     <div class="save-bar" id="saveBar">
-      <span class="change-count" id="changeCount">0 changes</span>
+      <span class="change-count" id="changeCount">0 unsaved changes</span>
       <div class="btn-group">
         <button class="btn-discard" onclick="discardChanges()">Discard</button>
         <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
@@ -583,9 +528,9 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
-      <div class="restart-note">
-        Most settings take effect immediately. Settings marked <strong>"Requires restart"</strong> need a server restart.
-        Toggle switches apply instantly on save.
+      <div class="info-banner">
+        <span class="banner-icon">💡</span>
+        <div>Most settings take effect <strong>immediately</strong> after saving. Settings marked <strong>"Requires restart"</strong> need a server restart to apply.</div>
       </div>
 
       ${sectionsHtml}
@@ -593,28 +538,30 @@ router.get("/", (req, res) => {
       <!-- Custom Key-Value -->
       <div class="settings-section">
         <div class="section-title">➕ Add Custom .env Variable</div>
-        <div class="section-card" style="padding:18px;">
-          <div class="custom-row" id="customRow1">
-            <div class="field-group">
-              <label>Key</label>
-              <input type="text" id="customKey1" placeholder="e.g. MY_SETTING" style="text-transform:uppercase;"/>
+        <div class="section-card">
+          <div class="custom-kv">
+            <div class="custom-row" id="customRow1">
+              <div class="field-group">
+                <label>Key</label>
+                <input type="text" id="customKey1" placeholder="MY_SETTING" style="text-transform:uppercase;"/>
+              </div>
+              <div class="field-group">
+                <label>Value</label>
+                <input type="text" id="customVal1" placeholder="100"/>
+              </div>
+              <button class="btn-add" onclick="addCustomVar(1)">+ Add to .env</button>
             </div>
-            <div class="field-group">
-              <label>Value</label>
-              <input type="text" id="customVal1" placeholder="e.g. 100"/>
+            <div class="custom-row" id="customRow2">
+              <div class="field-group">
+                <label>Key</label>
+                <input type="text" id="customKey2" placeholder="ANOTHER_KEY" style="text-transform:uppercase;"/>
+              </div>
+              <div class="field-group">
+                <label>Value</label>
+                <input type="text" id="customVal2" placeholder="hello"/>
+              </div>
+              <button class="btn-add" onclick="addCustomVar(2)">+ Add to .env</button>
             </div>
-            <button class="btn-add" onclick="addCustomVar(1)">+ Add</button>
-          </div>
-          <div class="custom-row" id="customRow2" style="margin-top:14px;">
-            <div class="field-group">
-              <label>Key</label>
-              <input type="text" id="customKey2" placeholder="e.g. ANOTHER_KEY" style="text-transform:uppercase;"/>
-            </div>
-            <div class="field-group">
-              <label>Value</label>
-              <input type="text" id="customVal2" placeholder="e.g. hello"/>
-            </div>
-            <button class="btn-add" onclick="addCustomVar(2)">+ Add</button>
           </div>
         </div>
       </div>
