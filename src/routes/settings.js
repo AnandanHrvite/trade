@@ -19,7 +19,10 @@ const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS } = require("../utils/sharedNav");
 
-const ENV_PATH = path.resolve(__dirname, "../../.env");
+// Use process.cwd() for the .env path — this is where Node was started,
+// which is always the project root (where .env lives).
+// __dirname resolves to the compiled/deployed path which may differ on EC2.
+const ENV_PATH = path.join(process.cwd(), ".env");
 
 // ── Keys that are SENSITIVE and should never be shown/editable in the UI ─────
 const HIDDEN_KEYS = [
@@ -29,98 +32,106 @@ const HIDDEN_KEYS = [
 ];
 
 // ── Settings schema: defines the UI layout ──────────────────────────────────
+// ── Effect types for the info tooltip ────────────────────────────────────────
+const EFFECT = {
+  INSTANT: { label: "Instant", color: "#10b981", icon: "⚡", tip: "Takes effect immediately after saving" },
+  SESSION: { label: "Session restart", color: "#f59e0b", icon: "🔄", tip: "Stop & start your Paper/Live session to apply" },
+  SERVER:  { label: "Server restart", color: "#ef4444", icon: "🖥️", tip: "Requires full server restart (node/nodemon)" },
+  BACKTEST:{ label: "Next backtest", color: "#3b82f6", icon: "🔍", tip: "Applied on next backtest run" },
+};
+
 const SETTINGS_SCHEMA = [
   {
     section: "Trading Controls",
     icon: "⚡",
     fields: [
-      { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", desc: "Enable/disable live order placement via Zerodha" },
-      { key: "VIX_FILTER_ENABLED", label: "VIX Filter", type: "toggle", desc: "Block entries when India VIX is too high" },
+      { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable/disable live order placement via Zerodha" },
+      { key: "VIX_FILTER_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when India VIX is too high" },
     ],
   },
   {
     section: "Instrument",
     icon: "📈",
     fields: [
-      { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], desc: "Options (CE/PE) or Futures (Long/Short)" },
-      { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, desc: "Number of lots per trade (1 lot = 75 qty)" },
-      { key: "STRIKE_OFFSET", label: "Strike Offset", type: "number", min: -200, max: 200, step: 50, desc: "0=ATM, 50=1 OTM, -50=1 ITM" },
+      { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures (Long/Short)" },
+      { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade (1 lot = 75 qty)" },
+      { key: "STRIKE_OFFSET", label: "Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "0=ATM, 50=1 OTM, -50=1 ITM" },
     ],
   },
   {
     section: "Risk Controls",
     icon: "🛡️",
     fields: [
-      { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, desc: "Kill-switch: stop trading after this much loss" },
-      { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, desc: "Maximum entries per day" },
-      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, desc: "Fallback stop-loss as % of option premium" },
+      { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss" },
+      { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum entries per day" },
+      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Fallback stop-loss as % of option premium" },
     ],
   },
   {
     section: "VIX Filter",
     icon: "🌡️",
     fields: [
-      { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, desc: "Block ALL entries above this VIX level" },
-      { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, desc: "Only STRONG signals allowed above this VIX" },
+      { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block ALL entries above this VIX level" },
+      { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Only STRONG signals allowed above this VIX" },
     ],
   },
   {
     section: "Trailing Stop Loss",
     icon: "📐",
     fields: [
-      { key: "TRAIL_ACTIVATE_PTS", label: "Activate (pts)", type: "number", min: 5, max: 50, step: 5, desc: "Min points before trail starts" },
-      { key: "TRAIL_TIER1_UPTO", label: "Tier 1 Upto (pts)", type: "number", min: 10, max: 100, step: 5 },
-      { key: "TRAIL_TIER1_GAP", label: "Tier 1 Gap (pts)", type: "number", min: 5, max: 100, step: 5 },
-      { key: "TRAIL_TIER2_UPTO", label: "Tier 2 Upto (pts)", type: "number", min: 20, max: 200, step: 5 },
-      { key: "TRAIL_TIER2_GAP", label: "Tier 2 Gap (pts)", type: "number", min: 5, max: 100, step: 5 },
-      { key: "TRAIL_TIER3_GAP", label: "Tier 3 Gap (pts)", type: "number", min: 5, max: 100, step: 5 },
+      { key: "TRAIL_ACTIVATE_PTS", label: "Activate (pts)", type: "number", min: 5, max: 50, step: 5, effect: EFFECT.SESSION, desc: "Min points before trail starts" },
+      { key: "TRAIL_TIER1_UPTO", label: "Tier 1 Upto (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Gain range 0 to this value" },
+      { key: "TRAIL_TIER1_GAP", label: "Tier 1 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap during Tier 1" },
+      { key: "TRAIL_TIER2_UPTO", label: "Tier 2 Upto (pts)", type: "number", min: 20, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Gain range Tier1 to this value" },
+      { key: "TRAIL_TIER2_GAP", label: "Tier 2 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap during Tier 2" },
+      { key: "TRAIL_TIER3_GAP", label: "Tier 3 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap above Tier 2" },
     ],
   },
   {
     section: "Timeframe",
     icon: "⏱️",
     fields: [
-      { key: "TRADE_RESOLUTION", label: "Candle Resolution", type: "select", options: ["1", "5", "15", "60"], desc: "Minutes per candle" },
-      { key: "TRADE_START_TIME", label: "Start Time", type: "text", desc: "HH:MM IST (e.g. 09:15)" },
-      { key: "TRADE_STOP_TIME", label: "Stop Time", type: "text", desc: "HH:MM IST (e.g. 15:30)" },
+      { key: "TRADE_RESOLUTION", label: "Candle Resolution", type: "select", options: ["1", "5", "15", "60"], effect: EFFECT.SESSION, desc: "Minutes per candle" },
+      { key: "TRADE_START_TIME", label: "Start Time", type: "text", effect: EFFECT.SESSION, desc: "HH:MM IST (e.g. 09:15)" },
+      { key: "TRADE_STOP_TIME", label: "Stop Time", type: "text", effect: EFFECT.SESSION, desc: "HH:MM IST (e.g. 15:30)" },
     ],
   },
   {
     section: "Backtest",
     icon: "🔍",
     fields: [
-      { key: "BACKTEST_FROM", label: "From Date", type: "date" },
-      { key: "BACKTEST_TO", label: "To Date", type: "date" },
-      { key: "BACKTEST_CAPITAL", label: "Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000 },
-      { key: "BACKTEST_OPTION_SIM", label: "Option Simulation", type: "toggle", desc: "Simulate option P&L with delta/theta" },
-      { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05 },
-      { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1 },
+      { key: "BACKTEST_FROM", label: "From Date", type: "date", effect: EFFECT.BACKTEST },
+      { key: "BACKTEST_TO", label: "To Date", type: "date", effect: EFFECT.BACKTEST },
+      { key: "BACKTEST_CAPITAL", label: "Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
+      { key: "BACKTEST_OPTION_SIM", label: "Option Simulation", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta" },
+      { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation" },
+      { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees" },
     ],
   },
   {
     section: "Paper Trade",
     icon: "📋",
     fields: [
-      { key: "PAPER_TRADE_CAPITAL", label: "Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000 },
+      { key: "PAPER_TRADE_CAPITAL", label: "Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for paper trades" },
     ],
   },
   {
     section: "Server & API",
     icon: "🖥️",
     fields: [
-      { key: "PORT", label: "Port", type: "number", min: 1000, max: 65535, step: 1, desc: "Requires restart" },
-      { key: "EC2_IP", label: "EC2 IP", type: "text", desc: "Requires restart" },
-      { key: "APP_ID", label: "Fyers App ID", type: "text" },
-      { key: "REDIRECT_URL", label: "Fyers Redirect URL", type: "text" },
-      { key: "ZERODHA_API_KEY", label: "Zerodha API Key", type: "text" },
-      { key: "ZERODHA_REDIRECT_URL", label: "Zerodha Redirect URL", type: "text" },
+      { key: "PORT", label: "Port", type: "number", min: 1000, max: 65535, step: 1, effect: EFFECT.SERVER, desc: "Server listening port" },
+      { key: "EC2_IP", label: "EC2 IP", type: "text", effect: EFFECT.SERVER, desc: "Server IP for SSL certificates" },
+      { key: "APP_ID", label: "Fyers App ID", type: "text", effect: EFFECT.SERVER },
+      { key: "REDIRECT_URL", label: "Fyers Redirect URL", type: "text", effect: EFFECT.SERVER },
+      { key: "ZERODHA_API_KEY", label: "Zerodha API Key", type: "text", effect: EFFECT.SERVER },
+      { key: "ZERODHA_REDIRECT_URL", label: "Zerodha Redirect URL", type: "text", effect: EFFECT.SERVER },
     ],
   },
   {
     section: "Telegram",
     icon: "📱",
     fields: [
-      { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", desc: "Leave blank to disable notifications" },
+      { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
     ],
   },
 ];
@@ -146,8 +157,35 @@ function parseEnvFile() {
   }
 }
 
+// ── Classify which settings take effect immediately vs need restart ──────────
+// These are read from process.env at runtime (not cached at module load)
+const IMMEDIATE_KEYS = new Set([
+  "LIVE_TRADE_ENABLED", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
+  "INSTRUMENT", "STRIKE_OFFSET", "LOT_MULTIPLIER",
+  "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
+  "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
+  "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
+  "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
+]);
+
+// These are cached as const at module load — need session stop+start
+const SESSION_RESTART_KEYS = new Set([
+  "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT",
+  "TRAIL_ACTIVATE_PTS", "TRAIL_TIER1_UPTO", "TRAIL_TIER1_GAP",
+  "TRAIL_TIER2_UPTO", "TRAIL_TIER2_GAP", "TRAIL_TIER3_GAP",
+  "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
+]);
+
 // ── Write values back to .env file (preserves comments and structure) ───────
 function updateEnvFile(updates) {
+  // Step 1: Always update process.env in-memory first (this never fails)
+  Object.entries(updates).forEach(([k, v]) => {
+    process.env[k] = v;
+  });
+
+  // Step 2: Try to persist to .env file on disk
+  let fileSaved = false;
+  let fileError = null;
   try {
     let content = fs.readFileSync(ENV_PATH, "utf-8");
     const lines = content.split("\n");
@@ -178,17 +216,23 @@ function updateEnvFile(updates) {
     }
 
     fs.writeFileSync(ENV_PATH, newLines.join("\n"), "utf-8");
-
-    // Update process.env in-memory (immediate effect, no restart)
-    Object.entries(updates).forEach(([k, v]) => {
-      process.env[k] = v;
-    });
-
-    return { success: true, updatedCount: Object.keys(updates).length };
+    fileSaved = true;
   } catch (err) {
-    console.error("[settings] Failed to write .env:", err.message);
-    return { success: false, error: err.message };
+    fileError = err.message;
+    console.error("[settings] .env file write failed:", err.message);
+    console.log("[settings] Values ARE applied in-memory for this session (process.env updated).");
   }
+
+  // Classify what needs restart
+  const needsRestart = Object.keys(updates).filter(k => SESSION_RESTART_KEYS.has(k));
+
+  return {
+    success: true,
+    updatedCount: Object.keys(updates).length,
+    fileSaved,
+    fileError,
+    needsRestart: needsRestart.length > 0 ? needsRestart : null,
+  };
 }
 
 // ── GET /settings/data — JSON of current values ─────────────────────────────
@@ -233,6 +277,20 @@ router.post("/save", express.json(), (req, res) => {
   res.json(result);
 });
 
+// ── POST /settings/restart — Restart the server process ─────────────────────
+router.post("/restart", (req, res) => {
+  console.log("[settings] 🔄 Server restart requested from Settings UI");
+  res.json({ success: true, message: "Restarting server..." });
+
+  // Give time for response to be sent, then exit.
+  // If running under nodemon, it auto-restarts. If running under systemd/pm2, they restart too.
+  // If running bare `node`, process just exits (user will need to start manually).
+  setTimeout(() => {
+    console.log("[settings] 🔄 Exiting process for restart...");
+    process.exit(0);
+  }, 500);
+});
+
 
 // ── GET /settings — Settings page UI ────────────────────────────────────────
 router.get("/", (req, res) => {
@@ -242,14 +300,17 @@ router.get("/", (req, res) => {
   // Build field HTML for each section
   function renderField(f) {
     const val = envData[f.key] ?? process.env[f.key] ?? "";
-    const descHtml = f.desc ? `<div class="field-desc">${f.desc}</div>` : "";
+    const eff = f.effect || EFFECT.INSTANT;
+    const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" title="${eff.tip}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span>`;
+    const descText = f.desc || "";
+    const descHtml = descText ? `<div class="field-desc">${descText}</div>` : "";
 
     if (f.type === "toggle") {
       const checked = val === "true" || val === "1" ? "checked" : "";
       return `
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">${f.label}</div>
+            <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <label class="toggle-switch">
@@ -266,7 +327,7 @@ router.get("/", (req, res) => {
       return `
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">${f.label}</div>
+            <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <select data-key="${f.key}" onchange="markDirty(this)">${opts}</select>
@@ -277,7 +338,7 @@ router.get("/", (req, res) => {
       return `
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">${f.label}</div>
+            <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <input type="number" data-key="${f.key}" value="${val}"
@@ -291,7 +352,7 @@ router.get("/", (req, res) => {
       return `
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">${f.label}</div>
+            <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <input type="date" data-key="${f.key}" value="${val}" onchange="markDirty(this)"/>
@@ -494,6 +555,58 @@ router.get("/", (req, res) => {
     .info-banner .banner-icon { font-size: 1.2rem; flex-shrink: 0; }
     .info-banner strong { color: #fbbf24; }
 
+    /* ── Effect badge with (i) tooltip ───────────────────── */
+    .effect-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--ec, #4a6080);
+      background: color-mix(in srgb, var(--ec, #4a6080) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--ec, #4a6080) 25%, transparent);
+      padding: 2px 8px; border-radius: 4px; margin-left: 10px;
+      vertical-align: middle; cursor: help; position: relative;
+      white-space: nowrap;
+    }
+    .effect-icon { font-size: 0.65rem; }
+    .info-i {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: color-mix(in srgb, var(--ec, #4a6080) 15%, transparent);
+      font-size: 0.5rem; font-weight: 800; font-style: italic;
+      margin-left: 2px;
+    }
+    .effect-badge:hover::after {
+      content: attr(title); position: absolute; bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(-50%); white-space: nowrap;
+      background: #1a2236; color: var(--text); border: 1px solid var(--border2);
+      padding: 6px 12px; border-radius: 6px; font-size: 0.7rem; font-weight: 500;
+      letter-spacing: 0; text-transform: none; z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4); pointer-events: none;
+    }
+    .effect-badge:hover::before {
+      content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent; border-top-color: #1a2236; z-index: 101;
+    }
+
+    /* ── Restart button ──────────────────────────────────── */
+    .restart-section {
+      margin-top: 8px; padding: 20px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; display: flex; align-items: center;
+      justify-content: space-between; gap: 20px;
+    }
+    .restart-info { flex: 1; }
+    .restart-title { font-size: 0.84rem; font-weight: 700; color: var(--text2); margin-bottom: 4px; }
+    .restart-desc { font-size: 0.68rem; color: var(--muted); line-height: 1.5; }
+    .btn-restart {
+      background: rgba(239,68,68,0.08); color: var(--red); border: 1px solid #7f1d1d;
+      padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit; white-space: nowrap; transition: all 0.15s;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-restart:hover { background: rgba(239,68,68,0.15); border-color: var(--red); }
+    .btn-restart:disabled { opacity: 0.4; cursor: not-allowed; }
+
     /* ── Mobile ──────────────────────────────────────────── */
     @media (max-width:640px) {
       .page { padding: 16px 14px 40px; }
@@ -530,7 +643,13 @@ router.get("/", (req, res) => {
     <div class="page">
       <div class="info-banner">
         <span class="banner-icon">💡</span>
-        <div>Most settings take effect <strong>immediately</strong> after saving. Settings marked <strong>"Requires restart"</strong> need a server restart to apply.</div>
+        <div>
+          Each setting shows when it takes effect — hover the badge for details.<br/>
+          <span style="color:#10b981;">⚡ Instant</span> — active immediately &nbsp;
+          <span style="color:#f59e0b;">🔄 Session restart</span> — stop & start session &nbsp;
+          <span style="color:#3b82f6;">🔍 Next backtest</span> — on next run &nbsp;
+          <span style="color:#ef4444;">🖥️ Server restart</span> — use button below
+        </div>
       </div>
 
       ${sectionsHtml}
@@ -563,6 +682,23 @@ router.get("/", (req, res) => {
               <button class="btn-add" onclick="addCustomVar(2)">+ Add to .env</button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- Restart Server -->
+      <div class="settings-section">
+        <div class="section-title">🔄 Server Control</div>
+        <div class="restart-section">
+          <div class="restart-info">
+            <div class="restart-title">Restart Server</div>
+            <div class="restart-desc">
+              Restarts the Node.js process to apply all pending changes (Port, API keys, cached values).
+              Active trading sessions will be stopped. The page will reload automatically.
+            </div>
+          </div>
+          <button class="btn-restart" id="restartBtn" onclick="restartServer()">
+            <span>🔄</span> Restart Server
+          </button>
         </div>
       </div>
     </div>
@@ -676,7 +812,19 @@ function saveSettings() {
       });
       window._dirtyKeys.clear();
       updateSaveBar();
-      showToast('Settings saved (' + data.updatedCount + ' values updated)', 'success');
+
+      // Build message based on what was saved
+      var msg = data.updatedCount + ' setting' + (data.updatedCount > 1 ? 's' : '') + ' applied';
+      if (!data.fileSaved) {
+        msg += ' (in-memory only — .env file write failed, will reset on restart)';
+        showToast(msg, 'info');
+      } else if (data.needsRestart && data.needsRestart.length > 0) {
+        msg += '. Stop & restart session for: ' + data.needsRestart.join(', ');
+        showToast(msg, 'info');
+      } else {
+        msg += ' — active now';
+        showToast(msg, 'success');
+      }
     } else {
       showToast('Save failed: ' + (data.error || 'unknown error'), 'error');
     }
@@ -717,6 +865,41 @@ function addCustomVar(n) {
   });
 }
 
+function restartServer() {
+  var btn = document.getElementById('restartBtn');
+  if (!confirm('This will restart the server and stop any active trading sessions.\\n\\nAre you sure?')) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Restarting...';
+  showToast('Restarting server — page will reload in 5 seconds...', 'info');
+
+  fetch('/settings/restart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }).catch(function() {}); // will fail when server dies — that's expected
+
+  // Poll until server is back, then reload
+  var attempts = 0;
+  var poller = setInterval(function() {
+    attempts++;
+    if (attempts > 30) { // 30 seconds max
+      clearInterval(poller);
+      btn.disabled = false;
+      btn.innerHTML = '<span>🔄</span> Restart Server';
+      showToast('Server did not come back — check manually', 'error');
+      return;
+    }
+    fetch('/settings/data', { method: 'GET' })
+      .then(function(r) {
+        if (r.ok) {
+          clearInterval(poller);
+          showToast('Server restarted successfully!', 'success');
+          setTimeout(function() { window.location.reload(); }, 500);
+        }
+      })
+      .catch(function() {}); // still down, keep polling
+  }, 1000);
+}
+
 function showToast(msg, type) {
   var el = document.getElementById('toast');
   el.textContent = msg;
@@ -724,7 +907,7 @@ function showToast(msg, type) {
   clearTimeout(window._toastTimer);
   window._toastTimer = setTimeout(function() {
     el.classList.remove('show');
-  }, 3000);
+  }, 4000);
 }
 </script>
 </body>
