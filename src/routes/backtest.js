@@ -171,7 +171,8 @@ ${buildSidebar('backtest', true)}
     .run-bar{display:flex;align-items:flex-end;gap:10px;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap;}
     .run-bar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;display:block;margin-bottom:3px;}
     .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
-    .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+    .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
+.run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
     .run-btn:hover{background:#2563eb;}
 
     .tbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
@@ -229,6 +230,31 @@ ${buildSidebar('backtest', liveActive)}
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
+  <!-- Quick date presets -->
+  <div style="display:flex;gap:6px;margin:-8px 0 12px;flex-wrap:wrap;">
+    <button class="preset-btn" onclick="setPreset('thisMonth')">This month</button>
+    <button class="preset-btn" onclick="setPreset('lastMonth')">Last month</button>
+    <button class="preset-btn" onclick="setPreset('last3')">Last 3 months</button>
+    <button class="preset-btn" onclick="setPreset('thisYear')">This year</button>
+    <button class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
+    <button class="preset-btn" onclick="setPreset('last2y')">Last 2 years</button>
+  </div>
+  <script>
+  function setPreset(p){
+    var d=new Date(),y=d.getFullYear(),m=d.getMonth(),dd=d.getDate();
+    function fmt(dt){return dt.toISOString().split('T')[0];}
+    var today=fmt(d), presets={
+      thisMonth: [fmt(new Date(y,m,1)), today],
+      lastMonth: [fmt(new Date(y,m-1,1)), fmt(new Date(y,m,0))],
+      last3: [fmt(new Date(y,m-3,1)), today],
+      thisYear: [fmt(new Date(y,0,1)), today],
+      lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
+      last2y: [fmt(new Date(y-2,0,1)), today]
+    };
+    document.getElementById('f').value=presets[p][0];
+    document.getElementById('t').value=presets[p][1];
+  }
+  </script>
 
   <!-- Summary -->
   <div class="stat-grid">

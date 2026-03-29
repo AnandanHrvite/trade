@@ -790,30 +790,7 @@ async function onCandleClose(candle) {
     }
   }
 
-  // ── Exit Rule 1: 50% candle rule (same as backtest & paperTrade) ────────────
-  // Skip on entry candle itself — only fire from next candle onwards
-  if (tradeState.position) {
-    const isEntryCandle = tradeState.position.entryBarTime !== null &&
-                          candle.time === tradeState.position.entryBarTime;
-    if (!isEntryCandle) {
-      // Always use the FIXED entryPrevMid — the mid of the candle closed just before entry.
-      const prevMid = tradeState.position.entryPrevMid;
-      if (prevMid !== null) {
-        if (tradeState.position.side === "CE" && candle.low < prevMid) {
-          const _opt50ce = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
-          log(`🛑 [LIVE] 50% rule CE — candle low ₹${candle.low} < prev mid ₹${prevMid}${_opt50ce}`);
-          await squareOff(prevMid, `50% rule — low ₹${candle.low} < prev mid ₹${prevMid}`);
-          return;
-        }
-        if (tradeState.position.side === "PE" && candle.high > prevMid) {
-          const _opt50pe = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
-          log(`🛑 [LIVE] 50% rule PE — candle high ₹${candle.high} > prev mid ₹${prevMid}${_opt50pe}`);
-          await squareOff(prevMid, `50% rule — high ₹${candle.high} > prev mid ₹${prevMid}`);
-          return;
-        }
-      }
-    }
-  }
+  // 50% candle-close exit REMOVED — replaced by breakeven stop at +25pt
 
   // ── Exit Rule 2: candle-close SL breach ────────────────────────────────────
   if (tradeState.position && tradeState.position.stopLoss != null) {
@@ -964,9 +941,11 @@ async function onCandleClose(candle) {
       }
 
       const optDetails = parseOptionDetails(symbol);
-      // Use candles[length-1] = the last fully closed candle at this moment (correct prev candle)
-      const entryPrevMid = tradeState.candles.length >= 1
-        ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
+      // Relaxed from 50% mid to 35%/65% — matches backtest and paper trade.
+      // CE: 35% from low. PE: 65% from low. Gives ~40% more room.
+      const _ccLastCandle = tradeState.candles.length >= 1 ? tradeState.candles[tradeState.candles.length - 1] : null;
+      const entryPrevMid = _ccLastCandle
+        ? parseFloat((_ccLastCandle.low + (_ccLastCandle.high - _ccLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
         : null;
 
       // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
@@ -1239,8 +1218,10 @@ function onSpotTick(tick) {
         }
 
         const optDetails   = parseOptionDetails(symbol);
-        const entryPrevMid = tradeState.candles.length >= 1
-          ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
+        // Relaxed from 50% mid to 35%/65% — matches backtest and paper trade.
+        const _intraLastCandle = tradeState.candles.length >= 1 ? tradeState.candles[tradeState.candles.length - 1] : null;
+        const entryPrevMid = _intraLastCandle
+          ? parseFloat((_intraLastCandle.low + (_intraLastCandle.high - _intraLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
           : null;
 
         // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
@@ -1306,33 +1287,30 @@ function onSpotTick(tick) {
     } // end entry guards
   }
 
-  // ── EXIT: Intra-tick 50% rule ─────────────────────────────────────────────
-  // Fires on every tick AFTER the entry candle closes.
-  // Skips entry candle itself (same as candle-close version).
-  // CE: exit if spot ticks BELOW prevMid | PE: exit if spot ticks ABOVE prevMid
-  if (tradeState.position) {
-    const pos50 = tradeState.position;
-    const isEntryCandle50 = pos50.entryBarTime !== null &&
-                            tradeState.currentBar &&
-                            tradeState.currentBar.time === pos50.entryBarTime;
-    if (!isEntryCandle50 && pos50.entryPrevMid !== null) {
-      if (pos50.side === "CE" && ltp < pos50.entryPrevMid) {
-        const _opt50ti = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
-        log(`🛑 [LIVE] 50% rule CE (intra-tick) — spot ₹${ltp} < prev mid ₹${pos50.entryPrevMid}${_opt50ti}`);
-        squareOff(pos50.entryPrevMid, `50% rule (tick) — spot ₹${ltp} < prev mid ₹${pos50.entryPrevMid}`).catch(console.error);
-        return;
+  // Intra-tick 50% rule REMOVED — replaced by breakeven stop at +25pt.
+  // The breakeven stop (added above) provides better protection without killing valid trades.
+
+  // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
+  // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
+  // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
+  if (tradeState.position && tradeState.position.stopLoss !== null) {
+    const _bePos = tradeState.position;
+    const _bePts = parseFloat(process.env.BREAKEVEN_PTS || "25");
+    if (_bePos.side === "CE") {
+      const _beMove = (_bePos.bestPrice || ltp) - _bePos.spotAtEntry;
+      if (_beMove >= _bePts && _bePos.stopLoss < _bePos.spotAtEntry) {
+        log(`✅ [LIVE] BREAKEVEN CE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
+        _bePos.stopLoss = _bePos.spotAtEntry;
       }
-      if (pos50.side === "PE" && ltp > pos50.entryPrevMid) {
-        const _opt50ti = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
-        log(`🛑 [LIVE] 50% rule PE (intra-tick) — spot ₹${ltp} > prev mid ₹${pos50.entryPrevMid}${_opt50ti}`);
-        squareOff(pos50.entryPrevMid, `50% rule (tick) — spot ₹${ltp} > prev mid ₹${pos50.entryPrevMid}`).catch(console.error);
-        return;
+    } else {
+      const _beMove = _bePos.spotAtEntry - (_bePos.bestPrice || ltp);
+      if (_beMove >= _bePts && _bePos.stopLoss > _bePos.spotAtEntry) {
+        log(`✅ [LIVE] BREAKEVEN PE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
+        _bePos.stopLoss = _bePos.spotAtEntry;
       }
     }
   }
 
-  // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
-  // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
   // PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
   if (tradeState.position && tradeState.position.stopLoss !== null) {
     const pos = tradeState.position;

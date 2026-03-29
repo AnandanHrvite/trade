@@ -497,12 +497,13 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   }
   const optDetails = parseOptionDetails(symbol);
 
-  // Capture the prev-candle mid at entry time — tick 50% rule uses this FIXED value forever.
-  // At intra-candle entry time, ptState.candles already has the just-closed candle at [length-1].
-  // That is the correct "previous candle" relative to the live bar we entered on.
+  // Capture the prev-candle reference at entry time — tick exit rule uses this FIXED value forever.
+  // Relaxed from 50% mid to 35%/65% — gives ~40% more room before exit fires.
+  // CE: 35% from low (exit level lower → more room above). PE: 65% from low (exit level higher → more room below).
   // IMPORTANT: this value must NEVER be updated after entry — it is the fixed reference.
-  const entryPrevMid = ptState.candles.length >= 1
-    ? parseFloat(((ptState.candles[ptState.candles.length - 1].high + ptState.candles[ptState.candles.length - 1].low) / 2).toFixed(2))
+  const _lastCandle = ptState.candles.length >= 1 ? ptState.candles[ptState.candles.length - 1] : null;
+  const entryPrevMid = _lastCandle
+    ? parseFloat((_lastCandle.low + (_lastCandle.high - _lastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
     : null;
 
   // ── 50% rule ENTRY GATE ───────────────────────────────────────────────────
@@ -816,36 +817,8 @@ async function onCandleClose(candle) {
   // ── Exit Rule 1: 50% candle rule (same as backtest) ─────────────────────
   // Backtest checks this on candle[i+1] after entry at candle[i].
   // So skip this check on the entry candle itself — only apply from next candle onwards.
-  if (ptState.position) {
-    // isEntryCandle: only possible for INTRA-TICK entries (entryBarTime is set).
-    // Candle-close entries always have entryBarTime=null so isEntryCandle=false — they
-    // get 50% checked from the very first candle after entry.
-    const isEntryCandle = ptState.position.entryBarTime !== null &&
-                          candle.time === ptState.position.entryBarTime;
-    if (isEntryCandle) {
-      log(`   50% skip: entry candle (intra-tick entry on this bar) — checking from next candle`);
-    }
-    if (!isEntryCandle) {
-      // Always use the FIXED entryPrevMid — the mid of the candle that closed just before
-      // our entry. This never changes regardless of how many candles have since closed.
-      const prevMid = ptState.position.entryPrevMid;
-      log(`   50% check: side=${ptState.position.side} 50%mid=₹${prevMid||"none"} L=₹${candle.low} H=₹${candle.high}`);
-      if (prevMid !== null) {
-        if (ptState.position.side === "CE" && candle.low < prevMid) {
-          const _opt50ce = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          log(`🛑 [PAPER] 50% rule CE — candle low ₹${candle.low} < entry prev mid ₹${prevMid}${_opt50ce}`);
-          simulateSell(prevMid, `50% rule — low ₹${candle.low} < prev mid ₹${prevMid}`, prevMid);
-          return;
-        }
-        if (ptState.position.side === "PE" && candle.high > prevMid) {
-          const _opt50pe = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          log(`🛑 [PAPER] 50% rule PE — candle high ₹${candle.high} > entry prev mid ₹${prevMid}${_opt50pe}`);
-          simulateSell(prevMid, `50% rule — high ₹${candle.high} > prev mid ₹${prevMid}`, prevMid);
-          return;
-        }
-      }
-    }
-  }
+  // 50% candle-close exit REMOVED — replaced by breakeven stop at +25pt
+  // The breakeven stop provides better protection without killing valid trades on noise.
 
   // ── Exit Rule 2: SAR / trail SL breach at candle close ───────────────────
   if (ptState.position && ptState.position.stopLoss !== null) {
@@ -1214,6 +1187,26 @@ function onTick(tick) {
   // ADDITIONALLY: intra-candle points trail — from the very FIRST favourable tick,
   // trail SL 10 pts behind the best price seen (no minimum trigger distance).
   // This tightens the stop immediately as price moves in our direction.
+  // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
+  // Once trade moves +25pt in favor, SL moves to entry price = zero risk.
+  if (ptState.position && ptState.position.stopLoss !== null) {
+    const _bePos = ptState.position;
+    const _bePts = parseFloat(process.env.BREAKEVEN_PTS || "25");
+    if (_bePos.side === "CE") {
+      const _beMove = (_bePos.bestPrice || ltp) - _bePos.spotAtEntry;
+      if (_beMove >= _bePts && _bePos.stopLoss < _bePos.spotAtEntry) {
+        log(`✅ [PAPER] BREAKEVEN CE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
+        _bePos.stopLoss = _bePos.spotAtEntry;
+      }
+    } else {
+      const _beMove = _bePos.spotAtEntry - (_bePos.bestPrice || ltp);
+      if (_beMove >= _bePts && _bePos.stopLoss > _bePos.spotAtEntry) {
+        log(`✅ [PAPER] BREAKEVEN PE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
+        _bePos.stopLoss = _bePos.spotAtEntry;
+      }
+    }
+  }
+
   // PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
   if (ptState.position && ptState.position.stopLoss !== null) {
     const pos = ptState.position;
@@ -1292,22 +1285,24 @@ function onTick(tick) {
       const gaveBack  = parseFloat((ltp - pos.bestPrice).toFixed(1));
       const peakGain  = parseFloat((pos.spotAtEntry - pos.bestPrice).toFixed(1));
       const optStr    = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
+      const _slTypePE = Math.abs(updatedSL - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(updatedSL - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
+      log(`🛑 [PAPER] ${_slTypePE} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
       // Only block re-entry if initial SL was hit before trail activated (pure loss).
       const wasTrailingPE = pos.bestPrice && (pos.spotAtEntry - pos.bestPrice) >= TRAIL_ACTIVATE;
       if (!wasTrailingPE) ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(updatedSL, `SL hit @ ₹${updatedSL}`, ltp);
+      simulateSell(updatedSL, `${_slTypePE} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
     if (pos.side === "CE" && ltp <= updatedSL) {
       const gaveBack = parseFloat((pos.bestPrice - ltp).toFixed(1));
       const peakGain = parseFloat((pos.bestPrice - pos.spotAtEntry).toFixed(1));
       const optStr   = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🛑 [PAPER] SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
+      const _slTypeCE = Math.abs(updatedSL - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(updatedSL - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
+      log(`🛑 [PAPER] ${_slTypeCE} SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
       // Only block re-entry if initial SL was hit before trail activated (pure loss).
       const wasTrailingCE = pos.bestPrice && (pos.bestPrice - pos.spotAtEntry) >= TRAIL_ACTIVATE;
       if (!wasTrailingCE) ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(updatedSL, `SL hit @ ₹${updatedSL}`, ltp);
+      simulateSell(updatedSL, `${_slTypeCE} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
   }
