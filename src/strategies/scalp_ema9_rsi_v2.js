@@ -29,12 +29,12 @@ function isInTradingWindow(unixSec) {
 function getSignal(candles, opts) {
   var silent = (opts && opts.silent === true);
 
-  var SCALP_RSI_CE_MIN  = parseFloat(cfg("SCALP_RSI_CE_MIN", "55"));
-  var SCALP_RSI_PE_MAX  = parseFloat(cfg("SCALP_RSI_PE_MAX", "45"));
+  var SCALP_RSI_CE_MIN  = parseFloat(cfg("SCALP_RSI_CE_MIN", "52"));
+  var SCALP_RSI_PE_MAX  = parseFloat(cfg("SCALP_RSI_PE_MAX", "48"));
   var SCALP_MIN_BODY    = parseFloat(cfg("SCALP_MIN_BODY", "5"));
   var SCALP_MIN_SLOPE   = parseFloat(cfg("SCALP_MIN_SLOPE", "1.5"));
-  var SCALP_MIN_SAR_GAP = parseFloat(cfg("SCALP_MIN_SAR_GAP", "5"));
-  var SCALP_MAX_SAR_GAP = parseFloat(cfg("SCALP_MAX_SAR_GAP", "15"));
+  var SCALP_MIN_SAR_GAP = parseFloat(cfg("SCALP_MIN_SAR_GAP", "3"));
+  var SCALP_MAX_SAR_GAP = parseFloat(cfg("SCALP_MAX_SAR_GAP", "30"));
 
   // ATR for target calculation
   var ATR_TGT_MULT      = parseFloat(cfg("SCALP_ATR_TGT_MULT", "2.0"));
