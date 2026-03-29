@@ -490,18 +490,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     }
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Gate checks: SL re-entry block + 50%-rule pause. Daily/consec kills removed
-    // from backtest to preserve full data for strategy analysis.
-    _fiftyPctPauseUntilTs;
-    const isSLBlocked     = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
+    // Gate checks: SL re-entry block only. 50% rule and its pause removed (replaced by breakeven stop).
+    const isSLBlocked = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
 
     if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
       if (isSLBlocked) {
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
-      if (is50PctPaused) {
-        console.log(`  ⏸ [50%-rule pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_fiftyPctPauseUntilTs)}`);
         _cachedPrevSL = signalSL ?? null;
         continue;
       }
