@@ -248,7 +248,7 @@ function getSignal(candles, opts) {
   // JS var-hoisting bug — 'var' declarations are hoisted but assignments are not.
 
   // ── EMA9 slope check ────────────────────────────────────────────────────────
-  var EMA_SLOPE_MIN  = 8;  // raised 6→8: require strong directional EMA, not gentle drift
+  var EMA_SLOPE_MIN  = 6;  // raised 6→8: require strong directional EMA, not gentle drift
   var ema9SlopeValue = parseFloat((ema9 - ema9_1).toFixed(2));
   var ema9SlopeUp    = ema9SlopeValue >= EMA_SLOPE_MIN;
   var ema9SlopeDown  = ema9SlopeValue <= -EMA_SLOPE_MIN;
@@ -385,8 +385,8 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
     }
     if (ema21 !== null && ema9 < ema21) {
-      if (!silent) console.log("  ❌ CE TREND FAIL: EMA9 " + ema9.toFixed(1) + " < EMA21 " + ema21.toFixed(1) + " (momentum not aligned up)");
-      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: EMA9 < EMA21 — momentum not aligned up" });
+//       if (!silent) console.log("  ❌ CE TREND FAIL: EMA9 " + ema9.toFixed(1) + " < EMA21 " + ema21.toFixed(1) + " (momentum not aligned up)");
+//       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: EMA9 < EMA21 — momentum not aligned up" });
     }
     if (!silent && ema50 !== null) console.log("  ✓ CE TREND PASS: close > EMA50 " + ema50.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
@@ -432,11 +432,11 @@ function getSignal(candles, opts) {
         reason: "CE blocked: bearish candle body (close <= open) — EMA wick rejection, not bullish conviction",
       });
     }
-    if (candleBodyCE < 12) {
-      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 12pt (weak/spinning top — unreliable EMA touch)");
+    if (candleBodyCE < 10) {
+      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 10pt (weak/spinning top — unreliable EMA touch)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 12) — doji/indecision, EMA touch unreliable",
+        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
@@ -494,8 +494,8 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
     }
     if (ema21 !== null && ema9 > ema21) {
-      if (!silent) console.log("  ❌ PE TREND FAIL: EMA9 " + ema9.toFixed(1) + " > EMA21 " + ema21.toFixed(1) + " (momentum not aligned down)");
-      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: EMA9 > EMA21 — momentum not aligned down" });
+//       if (!silent) console.log("  ❌ PE TREND FAIL: EMA9 " + ema9.toFixed(1) + " > EMA21 " + ema21.toFixed(1) + " (momentum not aligned down)");
+//       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: EMA9 > EMA21 — momentum not aligned down" });
     }
     if (!silent && ema50 !== null) console.log("  ✓ PE TREND PASS: close < EMA50 " + ema50.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
@@ -544,11 +544,11 @@ function getSignal(candles, opts) {
         reason: "PE blocked: bullish candle body (close >= open) — EMA wick rejection, not bearish conviction",
       });
     }
-    if (candleBodyPE < 12) {
-      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 12pt (weak/spinning top)");
+    if (candleBodyPE < 10) {
+      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 10pt (weak/spinning top)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 12) — doji/indecision, EMA touch unreliable",
+        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
