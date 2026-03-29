@@ -36,7 +36,7 @@ function getSignal(candles, opts) {
   var SCALP_MIN_SLOPE    = parseFloat(cfg("SCALP_MIN_SLOPE", "1"));
   var SCALP_MAX_SL       = parseFloat(cfg("SCALP_MAX_SAR_GAP", "15"));
   var SCALP_MIN_SL       = parseFloat(cfg("SCALP_MIN_SAR_GAP", "3"));
-  var ATR_TGT_MULT       = parseFloat(cfg("SCALP_ATR_TGT_MULT", "1.3"));
+  var ATR_TGT_MULT       = parseFloat(cfg("SCALP_ATR_TGT_MULT", "10.0"));
   var SAR_FLIP_LOOKBACK  = parseInt(cfg("SCALP_SAR_FLIP_CANDLES", "3"), 10);
 
   if (candles.length < 35) {
@@ -125,7 +125,7 @@ function getSignal(candles, opts) {
     if (rsi <= SCALP_RSI_CE_MIN) return Object.assign({}, base, { signal: "NONE", reason: "CE: RSI " + rsi.toFixed(1) + " <= " + SCALP_RSI_CE_MIN });
 
     var slPts = Math.min(sarGapCE, SCALP_MAX_SL);
-    var tgtPts = Math.max(Math.round(atr * ATR_TGT_MULT), Math.round(slPts * 1.2));
+    var tgtPts = Math.round(atr * ATR_TGT_MULT);
     var ceSL = parseFloat((signalCandle.close - slPts).toFixed(2));
     var ceTgt = parseFloat((signalCandle.close + tgtPts).toFixed(2));
 
@@ -141,7 +141,7 @@ function getSignal(candles, opts) {
     if (rsi >= SCALP_RSI_PE_MAX) return Object.assign({}, base, { signal: "NONE", reason: "PE: RSI " + rsi.toFixed(1) + " >= " + SCALP_RSI_PE_MAX });
 
     var slPts = Math.min(sarGapPE, SCALP_MAX_SL);
-    var tgtPts = Math.max(Math.round(atr * ATR_TGT_MULT), Math.round(slPts * 1.2));
+    var tgtPts = Math.round(atr * ATR_TGT_MULT);
     var peSL = parseFloat((signalCandle.close + slPts).toFixed(2));
     var peTgt = parseFloat((signalCandle.close - tgtPts).toFixed(2));
 
