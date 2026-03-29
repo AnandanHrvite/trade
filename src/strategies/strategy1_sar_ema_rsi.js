@@ -168,14 +168,14 @@ function getSignal(candles, opts) {
   var ema9    = ema9arr[ema9arr.length - 1];
   var ema9_1  = ema9arr[ema9arr.length - 2];
 
-  // ── EMA50 trend filter (NEW) ─────────────────────────────────────────────
+  // ── EMA30 trend filter (NEW) ─────────────────────────────────────────────
   // Only trade in the direction of the medium-term trend.
-  // EMA50 on 15-min = ~12.5 hours ≈ 2 trading days of data.
-  // CE: close must be ABOVE EMA50 (uptrend) → buying pullbacks in uptrend
-  // PE: close must be BELOW EMA50 (downtrend) → selling rallies in downtrend
+  // EMA30 on 15-min = ~12.5 hours ≈ 2 trading days of data.
+  // CE: close must be ABOVE EMA30 (uptrend) → buying pullbacks in uptrend
+  // PE: close must be BELOW EMA30 (downtrend) → selling rallies in downtrend
   // This single filter eliminates counter-trend trades which are the biggest losers.
-  var ema50arr = EMA.calculate({ period: 50, values: closes });
-  var ema50    = ema50arr.length > 0 ? ema50arr[ema50arr.length - 1] : null;
+  var ema30arr = EMA.calculate({ period: 30, values: closes });
+  var ema30    = ema30arr.length > 0 ? ema30arr[ema30arr.length - 1] : null;
 
   // ── EMA21 trend alignment (NEW) ──────────────────────────────────────────
   // Additional confirmation: EMA9 must be on the right side of EMA21.
@@ -219,8 +219,8 @@ function getSignal(candles, opts) {
   // RSI thresholds (v56)
   // CE: RSI > 55 — tightened from 53: RSI 53-54 zone was ~50% WR, weak momentum
   // PE: RSI < 45 — tightened from 49: RSI 45-49 zone was weak bearish, too many 50%-rule losses
-  var RSI_CE_MIN = 55;  // raised 53→55 (v56): RSI 53-54 = weak momentum, ~50% WR on those entries
-  var RSI_PE_MAX = 45;  // tightened 49→45 (v56): RSI 45-49 = weak bearish momentum, too many 50%-rule losses
+  var RSI_CE_MIN = 52;  // raised 53→55 (v56): RSI 53-54 = weak momentum, ~50% WR on those entries
+  var RSI_PE_MAX = 48;  // tightened 49→45 (v56): RSI 45-49 = weak bearish momentum, too many 50%-rule losses
 
   // ── Signal strength thresholds (v54, corrected v60) ──────────────────────
   // STRONG  → intra-candle entry (enter at EMA touch, best price, don't wait for close)
@@ -359,7 +359,7 @@ function getSignal(candles, opts) {
     ema9Falling:    ema9 < ema9_1,
     ema9Rising:     ema9 > ema9_1,
     ema21:          ema21 !== null ? parseFloat(ema21.toFixed(2)) : null,
-    ema50:          ema50 !== null ? parseFloat(ema50.toFixed(2)) : null,
+    ema30:          ema30 !== null ? parseFloat(ema30.toFixed(2)) : null,
     rsi:            parseFloat(rsi.toFixed(1)),
     sar:            currSAR.sar,
     sarTrend:       currSAR.trend === 1 ? "BULLISH" : "BEARISH",
@@ -378,17 +378,17 @@ function getSignal(candles, opts) {
   // ── BUY CE ──────────────────────────────────────────────────────────────────
   if (emaTouchCE && sarOkForCE) {
     // ── TREND FILTER (first gate — most impactful) ────────────────────────
-    // CE only when price is above EMA50 (uptrend) AND EMA9 > EMA21 (momentum aligned up).
+    // CE only when price is above EMA30 (uptrend) AND EMA9 > EMA21 (momentum aligned up).
     // This single filter eliminates counter-trend CE entries — the biggest losers.
-    if (ema50 !== null && signalCandle.close < ema50) {
-      if (!silent) console.log("  ❌ CE TREND FAIL: close " + signalCandle.close + " < EMA50 " + ema50.toFixed(1) + " (below medium-term trend)");
-      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
+    if (ema30 !== null && signalCandle.close < ema30) {
+      if (!silent) console.log("  ❌ CE TREND FAIL: close " + signalCandle.close + " < EMA30 " + ema30.toFixed(1) + " (below medium-term trend)");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
     }
     if (ema21 !== null && ema9 < ema21) {
 //       if (!silent) console.log("  ❌ CE TREND FAIL: EMA9 " + ema9.toFixed(1) + " < EMA21 " + ema21.toFixed(1) + " (momentum not aligned up)");
 //       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: EMA9 < EMA21 — momentum not aligned up" });
     }
-    if (!silent && ema50 !== null) console.log("  ✓ CE TREND PASS: close > EMA50 " + ema50.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+    if (!silent && ema30 !== null) console.log("  ✓ CE TREND PASS: close > EMA30 " + ema30.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
     // Sanity check: SAR SL must be BELOW current price for CE
     if (sarSL >= signalCandle.close) {
@@ -402,14 +402,14 @@ function getSignal(candles, opts) {
     // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
     // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
     var sarDistCE = parseFloat((signalCandle.close - sarSL).toFixed(2));
-    if (sarDistCE < 55) {
-      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 55pt minimum (SL within candle noise)");
+    if (sarDistCE < 45) {
+      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 45pt minimum (SL within candle noise)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < 55 min for 15-min) — insufficient buffer",
+        reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < 45 min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >= 55pt");
+    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >=45pt");
     // Maximum SAR distance: 100 pts — cap risk per trade for better R:R
     // A 150+ pt SL on 15-min options is too wide — need 3 wins to recover 1 loss.
     // Capping at 100pt ensures worst-case loss is bounded and R:R stays healthy.
@@ -488,16 +488,16 @@ function getSignal(candles, opts) {
   // ── BUY PE ──────────────────────────────────────────────────────────────────
   if (emaTouchPE && sarOkForPE) {
     // ── TREND FILTER (first gate — most impactful) ────────────────────────
-    // PE only when price is below EMA50 (downtrend) AND EMA9 < EMA21 (momentum aligned down).
-    if (ema50 !== null && signalCandle.close > ema50) {
-      if (!silent) console.log("  ❌ PE TREND FAIL: close " + signalCandle.close + " > EMA50 " + ema50.toFixed(1) + " (above medium-term trend)");
-      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
+    // PE only when price is below EMA30 (downtrend) AND EMA9 < EMA21 (momentum aligned down).
+    if (ema30 !== null && signalCandle.close > ema30) {
+      if (!silent) console.log("  ❌ PE TREND FAIL: close " + signalCandle.close + " > EMA30 " + ema30.toFixed(1) + " (above medium-term trend)");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
     }
     if (ema21 !== null && ema9 > ema21) {
 //       if (!silent) console.log("  ❌ PE TREND FAIL: EMA9 " + ema9.toFixed(1) + " > EMA21 " + ema21.toFixed(1) + " (momentum not aligned down)");
 //       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: EMA9 > EMA21 — momentum not aligned down" });
     }
-    if (!silent && ema50 !== null) console.log("  ✓ PE TREND PASS: close < EMA50 " + ema50.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+    if (!silent && ema30 !== null) console.log("  ✓ PE TREND PASS: close < EMA30 " + ema30.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
     // Sanity check: SAR SL must be ABOVE current price for PE
     if (sarSL <= signalCandle.close) {
@@ -515,14 +515,14 @@ function getSignal(candles, opts) {
     // since ema9 - close is typically only a few points. Logic3's own gates (SAR 50pt below,
     // RSI < 42, EMA9 slope >= 6pt) are strong enough — skip the 55pt min for that path.
     var sarDistPE = parseFloat((sarSL - signalCandle.close).toFixed(2));
-    if (!sarBullOverridePE && sarDistPE < 55) {
-      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 55pt minimum");
+    if (!sarBullOverridePE && sarDistPE < 45) {
+      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 45pt minimum");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < 55 min for 15-min) — insufficient buffer",
+        reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < 45 min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — 55pt check skipped)" : " >= 55pt"));
+    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — 55pt check skipped)" : " >=45pt"));
     // Maximum SAR distance: 100 pts — cap risk per trade (same as CE)
     var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistPE > MAX_SAR_DIST_PE) {
