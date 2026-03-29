@@ -34,7 +34,7 @@ function getSignal(candles, opts) {
   var SCALP_MIN_BODY    = parseFloat(cfg("SCALP_MIN_BODY", "5"));
   var SCALP_MIN_SLOPE   = parseFloat(cfg("SCALP_MIN_SLOPE", "1.5"));
   var SCALP_MIN_SAR_GAP = parseFloat(cfg("SCALP_MIN_SAR_GAP", "3"));
-  var SCALP_MAX_SAR_GAP = parseFloat(cfg("SCALP_MAX_SAR_GAP", "30"));
+  var SCALP_MAX_SAR_GAP = parseFloat(cfg("SCALP_MAX_SAR_GAP", "15"));
 
   // ATR for target calculation
   var ATR_TGT_MULT      = parseFloat(cfg("SCALP_ATR_TGT_MULT", "2.0"));
@@ -111,9 +111,9 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "CE: below EMA20" });
     }
     // SAR gap check (SL = distance to SAR, must be 5-15pt for scalp)
-    if (sarGapCE < SCALP_MIN_SAR_GAP || sarGapCE > SCALP_MAX_SAR_GAP) {
-      if (!silent) console.log("  ❌ SCALP CE: SAR gap " + sarGapCE + "pt outside " + SCALP_MIN_SAR_GAP + "-" + SCALP_MAX_SAR_GAP);
-      return Object.assign({}, base, { signal: "NONE", reason: "CE: SAR gap " + sarGapCE + "pt outside range" });
+    if (sarGapCE < SCALP_MIN_SAR_GAP ) {
+      if (!silent) console.log("  ❌ SCALP CE: SAR gap " + sarGapCE + "pt < " + SCALP_MIN_SAR_GAP + " (too close)");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE: SAR too close" });
     }
     // RSI
     if (rsi <= SCALP_RSI_CE_MIN) {
@@ -121,8 +121,10 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "CE: RSI=" + rsi.toFixed(1) + " too low" });
     }
 
-    var ceSL = parseFloat(sar.toFixed(2));  // SL at SAR
-    var slPts = sarGapCE;
+    var rawSarGap = sarGapCE;
+    var cappedGap = Math.min(rawSarGap, SCALP_MAX_SAR_GAP);
+    var ceSL = parseFloat((signalCandle.close - cappedGap).toFixed(2));  // SL capped
+    var slPts = cappedGap;
     var tgtPts = Math.max(Math.round(atr * ATR_TGT_MULT), Math.round(slPts * 1.5));
     var ceTgt = parseFloat((signalCandle.close + tgtPts).toFixed(2));
     if (!silent) console.log("  🟢 SCALP BUY_CE — SL=" + ceSL + "(" + slPts + "pt) TGT=" + ceTgt + "(" + tgtPts + "pt)");
@@ -139,17 +141,19 @@ function getSignal(candles, opts) {
       if (!silent) console.log("  ❌ SCALP PE: above EMA20");
       return Object.assign({}, base, { signal: "NONE", reason: "PE: above EMA20" });
     }
-    if (sarGapPE < SCALP_MIN_SAR_GAP || sarGapPE > SCALP_MAX_SAR_GAP) {
-      if (!silent) console.log("  ❌ SCALP PE: SAR gap " + sarGapPE + "pt outside " + SCALP_MIN_SAR_GAP + "-" + SCALP_MAX_SAR_GAP);
-      return Object.assign({}, base, { signal: "NONE", reason: "PE: SAR gap " + sarGapPE + "pt outside range" });
+    if (sarGapPE < SCALP_MIN_SAR_GAP ) {
+      if (!silent) console.log("  ❌ SCALP PE: SAR gap " + sarGapPE + "pt < " + SCALP_MIN_SAR_GAP + " (too close)");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE: SAR too close" });
     }
     if (rsi >= SCALP_RSI_PE_MAX) {
       if (!silent) console.log("  ❌ SCALP PE: RSI=" + rsi.toFixed(1) + " >= " + SCALP_RSI_PE_MAX);
       return Object.assign({}, base, { signal: "NONE", reason: "PE: RSI=" + rsi.toFixed(1) + " too high" });
     }
 
-    var peSL = parseFloat(sar.toFixed(2));  // SL at SAR
-    var slPts = sarGapPE;
+    var rawSarGap = sarGapPE;
+    var cappedGap = Math.min(rawSarGap, SCALP_MAX_SAR_GAP);
+    var peSL = parseFloat((signalCandle.close + cappedGap).toFixed(2));  // SL capped
+    var slPts = cappedGap;
     var tgtPts = Math.max(Math.round(atr * ATR_TGT_MULT), Math.round(slPts * 1.5));
     var peTgt = parseFloat((signalCandle.close - tgtPts).toFixed(2));
     if (!silent) console.log("  🔴 SCALP BUY_PE — SL=" + peSL + "(" + slPts + "pt) TGT=" + peTgt + "(" + tgtPts + "pt)");
