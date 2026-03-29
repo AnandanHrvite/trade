@@ -37,7 +37,7 @@ function getSignal(candles, opts) {
   var SCALP_MAX_SL       = parseFloat(cfg("SCALP_MAX_SAR_GAP", "15"));
   var SCALP_MIN_SL       = parseFloat(cfg("SCALP_MIN_SAR_GAP", "3"));
   var ATR_TGT_MULT       = parseFloat(cfg("SCALP_ATR_TGT_MULT", "2.0"));
-  var SAR_FLIP_LOOKBACK  = parseInt(cfg("SCALP_SAR_FLIP_CANDLES", "3"), 10);
+  var SAR_FLIP_LOOKBACK  = parseInt(cfg("SCALP_SAR_FLIP_CANDLES", "2"), 10);
 
   if (candles.length < 35) {
     return { signal: "NONE", reason: "Warming up (" + candles.length + "/35)", stopLoss: null, target: null, prevCandleHigh: null, prevCandleLow: null };
@@ -120,6 +120,7 @@ function getSignal(candles, opts) {
   // ── BUY CE: SAR flipped bullish + EMA9 cross up ─────────────────────────────
   if (sarFlippedBullish && crossedAbove && isBullishBody) {
     if (ema9Slope < SCALP_MIN_SLOPE) return Object.assign({}, base, { signal: "NONE", reason: "CE: slope " + ema9Slope + " < " + SCALP_MIN_SLOPE });
+    if (signalCandle.close <= ema20) return Object.assign({}, base, { signal: "NONE", reason: "CE: below EMA20 — counter-trend flip" });
     if (sarGapCE < SCALP_MIN_SL) return Object.assign({}, base, { signal: "NONE", reason: "CE: SAR gap " + sarGapCE + "pt too close" });
     if (rsi <= SCALP_RSI_CE_MIN) return Object.assign({}, base, { signal: "NONE", reason: "CE: RSI " + rsi.toFixed(1) + " <= " + SCALP_RSI_CE_MIN });
 
@@ -135,6 +136,7 @@ function getSignal(candles, opts) {
   // ── BUY PE: SAR flipped bearish + EMA9 cross down ───────────────────────────
   if (sarFlippedBearish && crossedBelow && isBearishBody) {
     if (ema9Slope > -SCALP_MIN_SLOPE) return Object.assign({}, base, { signal: "NONE", reason: "PE: slope " + ema9Slope + " > -" + SCALP_MIN_SLOPE });
+    if (signalCandle.close >= ema20) return Object.assign({}, base, { signal: "NONE", reason: "PE: above EMA20 — counter-trend flip" });
     if (sarGapPE < SCALP_MIN_SL) return Object.assign({}, base, { signal: "NONE", reason: "PE: SAR gap " + sarGapPE + "pt too close" });
     if (rsi >= SCALP_RSI_PE_MAX) return Object.assign({}, base, { signal: "NONE", reason: "PE: RSI " + rsi.toFixed(1) + " >= " + SCALP_RSI_PE_MAX });
 
