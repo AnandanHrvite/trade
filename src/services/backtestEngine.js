@@ -155,17 +155,17 @@ function runBacktest(candles, strategy, capital, vixCandles) {
   const THETA_PER_DAY = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
   const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
 
-  // Trail gap — tiered dynamic (mirrors paper/live exactly):
-  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 60pt — wide, early move)
-  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 40pt — tightening)
-  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 30pt — locking profit)
-  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 15pt).
-  const TRAIL_T1_UPTO      = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
-  const TRAIL_T2_UPTO      = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
-  const TRAIL_T1_GAP       = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
-  const TRAIL_T2_GAP       = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
-  const TRAIL_T3_GAP       = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
-  const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+  // Trail gap — tiered dynamic (tightened for better profit capture):
+  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 40pt — was 60, now locks earlier)
+  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 25pt — was 40, aggressive lock)
+  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 15pt — was 30, maximum capture)
+  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 12pt).
+  const TRAIL_T1_UPTO      = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
+  const TRAIL_T2_UPTO      = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
+  const TRAIL_T1_GAP       = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
+  const TRAIL_T2_GAP       = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
+  const TRAIL_T3_GAP       = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
+  const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 
   function getDynamicTrailGap(moveInFavour) {
     if (moveInFavour < TRAIL_T1_UPTO) return TRAIL_T1_GAP;
@@ -358,9 +358,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // Rule 1: 50% candle rule
-      // Skip on the entry candle itself — mirrors paper/live which skips the entry bar.
-      // prevMid = mid of the candle closed just BEFORE entry (fixed at entry time).
+      // Rule 1: Candle mid rule (relaxed from 50% to configurable ratio)
+      // Original 50% was too aggressive — exited on normal 15-min noise.
+      // CE exits at 35% from low (was 50% = mid). PE exits at 65% from low (was 50% = mid).
+      // This gives ~40% more room before the rule fires.
+      // prevMid = computed at entry time from the candle closed before entry (fixed reference).
       const isEntryCandle = candle.time === position.entryTime;
       if (!isEntryCandle) {
         const prevMid = position.entryPrevMid;
@@ -548,11 +550,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       }
 
       const side = signal === "BUY_CE" ? "CE" : "PE";
-      // entryPrevMid: mid of the candle closed just BEFORE the entry candle.
-      // Using prevCandle (candles[i-1]) gives a meaningful buffer for the 50% rule.
-      // The entry candle's mid is too close to entry price (only half the candle range)
-      // — any normal 15-min pullback crosses it, causing immediate 50% exits.
-      const entryPrevMid = parseFloat(((prevCandle.high + prevCandle.low) / 2).toFixed(2));
+      // entryPrevMid: computed from prevCandle with relaxed ratio for more breathing room.
+      // CE: use 35% from low (was 50%) → exit level is lower, more room before exit fires
+      // PE: use 65% from low (was 50%) → exit level is higher, more room before exit fires
+      // This gives ~40% more room vs the old fixed 50% mid.
+      const _prevRange = prevCandle.high - prevCandle.low;
+      const _prevRatio = side === "CE" ? 0.35 : 0.65;
+      const entryPrevMid = parseFloat((prevCandle.low + _prevRange * _prevRatio).toFixed(2));
       const strength = signalStrength || "MARGINAL";
 
       // ── VIX filter: block entry in high-volatility regimes ──────────────────
