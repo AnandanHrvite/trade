@@ -386,12 +386,12 @@ function onCandleClose(bar) {
     if (state.currentBar) window.push(state.currentBar);
     if (window.length >= 15) {
       const result = scalpStrategy.getSignal(window, { silent: true });
-      if (state.position.side === "CE" && result.rsi < 50) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} < 50)`, bar.close);
+      if (state.position.side === "CE" && result.rsi < 45) {
+        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} < 45)`, bar.close);
         return;
       }
-      if (state.position.side === "PE" && result.rsi > 50) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} > 50)`, bar.close);
+      if (state.position.side === "PE" && result.rsi > 55) {
+        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} > 55)`, bar.close);
         return;
       }
     }
@@ -665,6 +665,21 @@ router.get("/status/data", (req, res) => {
     losses:        state.sessionTrades.filter(t => t.pnl <= 0).length,
     log:           state.log.slice(-50),
     dailyLossHit:  state._dailyLossHit,
+    sessionTrades: state.sessionTrades.map(t => ({
+      side:           t.side,
+      symbol:         t.symbol,
+      entryTime:      t.entryTime,
+      exitTime:       t.exitTime,
+      entryPrice:     t.entryPrice,
+      exitPrice:      t.exitPrice,
+      spotAtEntry:    t.spotAtEntry,
+      spotAtExit:     t.spotAtExit,
+      optionEntryLtp: t.optionEntryLtp,
+      optionExitLtp:  t.optionExitLtp,
+      pnl:            t.pnl,
+      exitReason:     t.exitReason,
+    })),
+    optionLtp:     state.optionLtp,
   });
 });
 
@@ -672,12 +687,115 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
-  const scalpActive = sharedSocketState.getScalpMode();
+  const pos         = state.position;
+
+  // Unrealised PnL
+  let unrealisedPnl = 0;
+  if (pos && state.lastTickPrice) {
+    const optEntry = pos.optionEntryLtp;
+    const optCurr  = state.optionLtp || pos.optionCurrentLtp;
+    if (optEntry && optCurr && optEntry > 0) {
+      unrealisedPnl = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty())).toFixed(2));
+    } else {
+      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty())).toFixed(2));
+    }
+  }
+
+  const inr = (n) => typeof n === "number"
+    ? n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "\u2014";
+  const pnlColor = (n) => n >= 0 ? "#10b981" : "#ef4444";
+
+  const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
+  const losses = state.sessionTrades.filter(t => t.pnl <= 0).length;
+
+  // Trades table rows (server-rendered initial state)
+  const tradesRows = state.sessionTrades.map((t, i) => {
+    const pc = t.pnl >= 0 ? "#10b981" : "#ef4444";
+    const symShort = t.symbol ? t.symbol.split(":").pop() : "\u2014";
+    return `<tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;color:${t.side === "CE" ? "#10b981" : "#ef4444"};font-weight:700;">${t.side}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#c8d8f0;font-family:'IBM Plex Mono',monospace;">${symShort}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#8899aa;">${t.entryTime || "\u2014"}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#8899aa;">${t.exitTime || "\u2014"}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8d8f0;">${inr(t.spotAtEntry)}${t.optionEntryLtp ? '<br><span style="font-size:0.65rem;color:#60a5fa;">Opt: \u20b9' + t.optionEntryLtp.toFixed(2) + '</span>' : ''}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#c8d8f0;">${inr(t.spotAtExit)}${t.optionExitLtp ? '<br><span style="font-size:0.65rem;color:#60a5fa;">Opt: \u20b9' + t.optionExitLtp.toFixed(2) + '</span>' : ''}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${pc};">${t.pnl >= 0 ? "+" : ""}\u20b9${inr(t.pnl)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.7rem;color:#8899aa;">${t.exitReason || "\u2014"}</td>
+    </tr>`;
+  }).join("");
+
+  // Position card HTML
+  const posHtml = pos ? `
+    <div id="pos-card" style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;margin-bottom:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;animation:pulse 1.5s infinite;"></span>
+          <span style="font-size:0.8rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1px;">Open Position</span>
+          <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime}</span>
+        </div>
+        <button onclick="spHandleExit(this)"
+           style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
+           onmouseover="this.style.background='#991b1b'" onmouseout="this.style.background='#7f1d1d'">
+          Exit Trade Now
+        </button>
+      </div>
+
+      <!-- Side + Entry details grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;text-align:center;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Side</div>
+          <div style="font-size:2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side}</div>
+          <div style="font-size:0.65rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${pos.side === "CE" ? "CALL" : "PUT"}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Entry (Spot)</div>
+          <div style="font-size:1.1rem;font-weight:700;color:#c8d8f0;font-family:'IBM Plex Mono',monospace;">\u20b9${inr(pos.entryPrice)}</div>
+        </div>
+        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss</div>
+          <div id="ajax-pos-sl" style="font-size:1.1rem;font-weight:700;color:#f59e0b;font-family:'IBM Plex Mono',monospace;">\u20b9${inr(pos.stopLoss)}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target</div>
+          <div style="font-size:1.1rem;font-weight:700;color:#10b981;font-family:'IBM Plex Mono',monospace;">\u20b9${inr(pos.target)}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Best Price</div>
+          <div id="ajax-pos-best" style="font-size:1.1rem;font-weight:700;color:#8b5cf6;font-family:'IBM Plex Mono',monospace;">${pos.bestPrice ? "\u20b9" + inr(pos.bestPrice) : "\u2014"}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
+          <div id="ajax-pos-candles" style="font-size:1.1rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span></div>
+        </div>
+        <div style="background:#0a0f24;border:1px solid #1e3a5f;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option LTP</div>
+          <div id="ajax-pos-opt-ltp" style="font-size:1.1rem;font-weight:700;color:#60a5fa;font-family:'IBM Plex Mono',monospace;">${state.optionLtp ? "\u20b9" + state.optionLtp.toFixed(2) : "\u2014"}</div>
+        </div>
+        <div style="background:${unrealisedPnl >= 0 ? "#071a0f" : "#1a0707"};border:1px solid ${unrealisedPnl >= 0 ? "#065f46" : "#7f1d1d"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Unrealised P&L</div>
+          <div id="ajax-pos-pnl" style="font-size:1.1rem;font-weight:700;color:${pnlColor(unrealisedPnl)};font-family:'IBM Plex Mono',monospace;">${unrealisedPnl >= 0 ? "+" : ""}\u20b9${inr(unrealisedPnl)}</div>
+        </div>
+      </div>
+      ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;margin-top:12px;">Entry: ${pos.reason}</div>` : ""}
+    </div>` : `
+    <div id="pos-card" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;margin-bottom:18px;">
+      <div style="font-size:1.2rem;margin-bottom:6px;color:#4a6080;">FLAT</div>
+      <div style="font-size:0.82rem;color:#4a6080;">Waiting for entry signal</div>
+    </div>`;
+
+  // Logs JSON for initial render
+  const logsJSON = JSON.stringify(state.log.slice(-100))
+    .replace(/<\/script>/gi, "<\\/script>")
+    .replace(/`/g, "\\u0060")
+    .replace(/\$/g, "\\u0024");
 
   res.setHeader("Content-Type", "text/html");
-  res.send(`<!DOCTYPE html><html lang="en"><head>
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Scalp Paper — ${scalpStrategy.NAME}</title>
+<title>Scalp Paper \u2014 ${scalpStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
@@ -687,67 +805,262 @@ ${modalCSS()}
 body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#c0d0e8;min-height:100vh;display:flex;flex-direction:column;}
 .main-content{flex:1;padding:28px 32px;margin-left:220px;}
 @media(max-width:900px){.main-content{margin-left:0;padding:16px;}}
-h1{font-size:1.2rem;font-weight:700;color:#e0eaf8;margin-bottom:4px;}
-.subtitle{font-size:0.7rem;color:#5a7090;margin-bottom:16px;}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px;}
-.stat{background:#0d1320;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;}
-.stat-label{font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px;}
-.stat-value{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-.log-box{background:#0a0e18;border:1px solid #1a2236;border-radius:10px;padding:12px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#6a8aaa;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;}
-.pos-box{background:#0d1320;border:1px solid #1a2236;border-radius:10px;padding:14px;margin-bottom:14px;}
-.action-btn{padding:8px 18px;border-radius:8px;border:none;font-weight:700;font-size:0.8rem;cursor:pointer;margin-right:8px;}
-.start-btn{background:#1e40af;color:#fff;}.start-btn:hover{background:#2563eb;}
-.stop-btn{background:#7f1d1d;color:#fff;}.stop-btn:hover{background:#991b1b;}
-.exit-btn{background:#78350f;color:#fff;}.exit-btn:hover{background:#92400e;}
-</style></head><body>
+
+/* Top bar */
+.top-bar{display:flex;align-items:center;gap:14px;margin-bottom:20px;flex-wrap:wrap;}
+.top-bar h1{font-size:1.15rem;font-weight:700;color:#e0eaf8;margin:0;}
+.top-bar .badge{font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:0.8px;}
+.badge-running{background:#064e3b;color:#10b981;border:1px solid #10b981;}
+.badge-stopped{background:#1c1017;color:#ef4444;border:1px solid #ef4444;}
+.top-bar .res-tag{font-size:0.68rem;color:#4a6080;background:#0d1320;border:1px solid #1a2236;padding:3px 10px;border-radius:5px;font-family:'IBM Plex Mono',monospace;}
+
+/* Stats grid */
+.sc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px;}
+.sc-card{background:#0d1320;border:1px solid #1a2236;border-radius:10px;padding:14px 16px;}
+.sc-label{font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:5px;}
+.sc-val{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;}
+
+/* Trades table */
+.trades-section{margin-bottom:18px;}
+.trades-section h3{font-size:0.82rem;font-weight:700;color:#e0eaf8;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.trades-wrap{background:#0d1320;border:1px solid #1a2236;border-radius:10px;overflow:hidden;}
+.trades-table{width:100%;border-collapse:collapse;font-size:0.78rem;}
+.trades-table th{padding:10px 10px;text-align:left;font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.8px;border-bottom:2px solid #1a2236;background:#0a0e18;}
+.trades-table td{vertical-align:top;}
+.trades-empty{padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;}
+
+/* Log viewer */
+.log-section{margin-bottom:18px;}
+.log-section h3{font-size:0.82rem;font-weight:700;color:#e0eaf8;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
+.log-box{background:#0a0e18;border:1px solid #1a2236;border-radius:10px;padding:14px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#6a8aaa;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;line-height:1.7;}
+
+/* Action buttons */
+.actions{display:flex;gap:10px;flex-wrap:wrap;}
+.act-btn{padding:9px 20px;border-radius:8px;border:none;font-weight:700;font-size:0.8rem;cursor:pointer;font-family:inherit;transition:all 0.15s;display:inline-flex;align-items:center;gap:6px;}
+.act-start{background:#1e40af;color:#fff;border:1px solid #3b82f6;}.act-start:hover{background:#2563eb;}
+.act-stop{background:#7f1d1d;color:#fca5a5;border:1px solid #ef4444;}.act-stop:hover{background:#991b1b;}
+.act-exit{background:#78350f;color:#fbbf24;border:1px solid #f59e0b;}.act-exit:hover{background:#92400e;}
+
+/* Pulse animation */
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+</style>
+</head>
+<body>
 <div class="app-shell">
 ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="main-content">
-<h1>\u26a1 Scalp Paper Trade</h1>
-<div class="subtitle">${scalpStrategy.NAME} | ${SCALP_RES}-min candles | SL: ${_SCALP_SL_PTS}pt | TGT: ${_SCALP_TARGET_PTS}pt | Trail: ${_SCALP_TRAIL_GAP}pt</div>
 
-<div style="margin-bottom:14px;">
-${state.running
-  ? `<button class="action-btn stop-btn" onclick="location='/scalp-paper/stop'">■ Stop</button>
-     <button class="action-btn exit-btn" onclick="location='/scalp-paper/exit'">🚪 Exit Trade</button>`
-  : `<button class="action-btn start-btn" onclick="location='/scalp-paper/start'">▶ Start Scalp Paper</button>`}
+<!-- Top bar -->
+<div class="top-bar">
+  <h1>Scalp Paper Trade</h1>
+  <span class="res-tag">${SCALP_RES}-min candles</span>
+  <span class="res-tag">SL ${_SCALP_SL_PTS}pt / TGT ${_SCALP_TARGET_PTS}pt / Trail ${_SCALP_TRAIL_GAP}pt</span>
+  <span id="ajax-status-badge" class="badge ${state.running ? "badge-running" : "badge-stopped"}">${state.running ? "Running" : "Stopped"}</span>
 </div>
 
-<div id="stats" class="stats"></div>
-<div id="position" class="pos-box" style="display:none;"></div>
-<div id="logBox" class="log-box"></div>
-</div></div>
+<!-- Action buttons -->
+<div class="actions" style="margin-bottom:18px;">
+${state.running
+  ? `<button class="act-btn act-stop" onclick="location='/scalp-paper/stop'">Stop Session</button>
+     <button class="act-btn act-exit" onclick="spHandleExit(this)">Exit Trade</button>`
+  : `<button class="act-btn act-start" onclick="location='/scalp-paper/start'">Start Scalp Paper</button>`}
+</div>
+
+<!-- Stats grid (6 cards) -->
+<div class="sc-grid">
+  <div class="sc-card">
+    <div class="sc-label">Session P&L</div>
+    <div class="sc-val" id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">\u20b9${inr(state.sessionPnl)}</div>
+  </div>
+  <div class="sc-card">
+    <div class="sc-label">Unrealised P&L</div>
+    <div class="sc-val" id="ajax-unrealised" style="color:${pnlColor(unrealisedPnl)};">${unrealisedPnl >= 0 ? "+" : ""}\u20b9${inr(unrealisedPnl)}</div>
+  </div>
+  <div class="sc-card">
+    <div class="sc-label">Trades (W / L)</div>
+    <div class="sc-val" id="ajax-trades-wl">${state.sessionTrades.length} <span style="font-size:0.72rem;color:#4a6080;">(${wins}W / ${losses}L)</span></div>
+  </div>
+  <div class="sc-card">
+    <div class="sc-label">Ticks / Candles</div>
+    <div class="sc-val" id="ajax-ticks-candles">${state.tickCount} <span style="font-size:0.72rem;color:#4a6080;">/ ${state.candles.length}c</span></div>
+  </div>
+  <div class="sc-card">
+    <div class="sc-label">Daily Loss Limit</div>
+    <div class="sc-val" id="ajax-daily-loss" style="color:${state._dailyLossHit ? "#ef4444" : "#10b981"};">${state._dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:#4a6080;">/ -\u20b9${inr(_SCALP_MAX_LOSS)}</span></div>
+  </div>
+  <div class="sc-card">
+    <div class="sc-label">Max Trades</div>
+    <div class="sc-val" id="ajax-max-trades" style="color:${state.sessionTrades.length >= _SCALP_MAX_TRADES ? "#ef4444" : "#c8d8f0"};">${state.sessionTrades.length} <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_MAX_TRADES}</span></div>
+  </div>
+</div>
+
+<!-- Position card -->
+${posHtml}
+
+<!-- Session trades table -->
+<div class="trades-section">
+  <h3>Session Trades</h3>
+  <div class="trades-wrap">
+    <table class="trades-table">
+      <thead>
+        <tr>
+          <th>Side</th><th>Strike / Expiry</th><th>Entry Time</th><th>Exit Time</th>
+          <th>Entry Price</th><th>Exit Price</th><th>P&L</th><th>Exit Reason</th>
+        </tr>
+      </thead>
+      <tbody id="ajax-trades-body">
+        ${tradesRows || '<tr><td colspan="8" class="trades-empty">No trades yet</td></tr>'}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Log viewer -->
+<div class="log-section">
+  <h3>Activity Log <span style="font-size:0.6rem;color:#4a6080;font-weight:400;">newest at bottom</span></h3>
+  <div class="log-box" id="logBox"></div>
+</div>
+
+</div><!-- /main-content -->
+</div><!-- /app-shell -->
+
 <script>
 ${modalJS()}
-function poll(){
-  fetch('/scalp-paper/status/data').then(r=>r.json()).then(d=>{
-    const pnlColor = d.totalPnl >= 0 ? '#10b981' : '#ef4444';
-    document.getElementById('stats').innerHTML =
-      '<div class="stat"><div class="stat-label">Status</div><div class="stat-value">'+(d.running?'🟢 RUNNING':'🔴 STOPPED')+'</div></div>'+
-      '<div class="stat"><div class="stat-label">NIFTY Spot</div><div class="stat-value">₹'+(d.lastTickPrice||'-')+'</div></div>'+
-      '<div class="stat"><div class="stat-label">Candles</div><div class="stat-value">'+d.candleCount+'</div></div>'+
-      '<div class="stat"><div class="stat-label">Trades</div><div class="stat-value">'+d.trades+' ('+d.wins+'W/'+d.losses+'L)</div></div>'+
-      '<div class="stat"><div class="stat-label">Session PnL</div><div class="stat-value" style="color:'+pnlColor+'">₹'+d.totalPnl+'</div></div>'+
-      '<div class="stat"><div class="stat-label">Ticks</div><div class="stat-value">'+d.tickCount+'</div></div>';
 
-    const posEl = document.getElementById('position');
-    if(d.position){
-      const sideColor = d.position.side==='CE'?'#10b981':'#ef4444';
-      posEl.style.display='block';
-      posEl.innerHTML='<b style="color:'+sideColor+'">'+d.position.side+'</b> @ ₹'+d.position.entryPrice+
-        ' | SL: ₹'+d.position.stopLoss+' | TGT: ₹'+d.position.target+
-        ' | Best: ₹'+(d.position.bestPrice||'-')+' | Candles: '+d.position.candlesHeld+
-        ' | Unrealised: <b style="color:'+(d.unrealised>=0?'#10b981':'#ef4444')+'">₹'+d.unrealised+'</b>';
-    } else { posEl.style.display='none'; }
+// ── Initial log render ───────────────────────────────────────────────────
+(function(){
+  var logs = ${logsJSON};
+  var box = document.getElementById('logBox');
+  box.textContent = logs.join('\\n');
+  box.scrollTop = box.scrollHeight;
+})();
 
-    const logEl = document.getElementById('logBox');
-    logEl.textContent = (d.log||[]).join('\\n');
-    logEl.scrollTop = logEl.scrollHeight;
-  }).catch(()=>{});
+// ── Manual exit handler ──────────────────────────────────────────────────
+function spHandleExit(btn) {
+  if (!confirm('Exit current position now?')) return;
+  btn.disabled = true;
+  btn.textContent = 'Exiting...';
+  fetch('/scalp-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
 }
-poll(); setInterval(poll, 2000);
+
+// ── INR formatter ────────────────────────────────────────────────────────
+function inr(n) {
+  if (typeof n !== 'number' || isNaN(n)) return '\\u2014';
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── AJAX polling every 2s ────────────────────────────────────────────────
+function poll() {
+  fetch('/scalp-paper/status/data')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      // Status badge
+      var badge = document.getElementById('ajax-status-badge');
+      if (badge) {
+        badge.textContent = d.running ? 'Running' : 'Stopped';
+        badge.className = 'badge ' + (d.running ? 'badge-running' : 'badge-stopped');
+      }
+
+      // Stats cards
+      var spEl = document.getElementById('ajax-session-pnl');
+      if (spEl) {
+        spEl.style.color = d.sessionPnl >= 0 ? '#10b981' : '#ef4444';
+        spEl.textContent = '\\u20b9' + inr(d.sessionPnl);
+      }
+
+      var urEl = document.getElementById('ajax-unrealised');
+      if (urEl) {
+        urEl.style.color = d.unrealised >= 0 ? '#10b981' : '#ef4444';
+        urEl.textContent = (d.unrealised >= 0 ? '+' : '') + '\\u20b9' + inr(d.unrealised);
+      }
+
+      var twl = document.getElementById('ajax-trades-wl');
+      if (twl) twl.innerHTML = d.trades + ' <span style="font-size:0.72rem;color:#4a6080;">(' + d.wins + 'W / ' + d.losses + 'L)</span>';
+
+      var tc = document.getElementById('ajax-ticks-candles');
+      if (tc) tc.innerHTML = d.tickCount + ' <span style="font-size:0.72rem;color:#4a6080;">/ ' + d.candleCount + 'c</span>';
+
+      var dl = document.getElementById('ajax-daily-loss');
+      if (dl) {
+        dl.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
+        dl.innerHTML = (d.dailyLossHit ? 'HIT' : 'OK') + ' <span style="font-size:0.65rem;color:#4a6080;">/ -\\u20b9' + inr(${_SCALP_MAX_LOSS}) + '</span>';
+      }
+
+      var mt = document.getElementById('ajax-max-trades');
+      if (mt) {
+        mt.style.color = d.trades >= ${_SCALP_MAX_TRADES} ? '#ef4444' : '#c8d8f0';
+        mt.innerHTML = d.trades + ' <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_MAX_TRADES}</span>';
+      }
+
+      // Position card
+      var posCard = document.getElementById('pos-card');
+      if (posCard) {
+        if (d.position) {
+          var p = d.position;
+          var sideColor = p.side === 'CE' ? '#10b981' : '#ef4444';
+
+          var slEl = document.getElementById('ajax-pos-sl');
+          if (slEl) slEl.textContent = '\\u20b9' + inr(p.stopLoss);
+
+          var bestEl = document.getElementById('ajax-pos-best');
+          if (bestEl) bestEl.textContent = p.bestPrice ? '\\u20b9' + inr(p.bestPrice) : '\\u2014';
+
+          var candEl = document.getElementById('ajax-pos-candles');
+          if (candEl) candEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span>';
+
+          var optEl = document.getElementById('ajax-pos-opt-ltp');
+          if (optEl) optEl.textContent = d.optionLtp ? '\\u20b9' + d.optionLtp.toFixed(2) : (p.optionCurrentLtp ? '\\u20b9' + p.optionCurrentLtp.toFixed(2) : '\\u2014');
+
+          var ppnl = document.getElementById('ajax-pos-pnl');
+          if (ppnl) {
+            ppnl.style.color = d.unrealised >= 0 ? '#10b981' : '#ef4444';
+            ppnl.textContent = (d.unrealised >= 0 ? '+' : '') + '\\u20b9' + inr(d.unrealised);
+          }
+        }
+      }
+
+      // Trades table
+      var tbody = document.getElementById('ajax-trades-body');
+      if (tbody && d.sessionTrades) {
+        if (d.sessionTrades.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="trades-empty">No trades yet</td></tr>';
+        } else {
+          var rows = '';
+          for (var i = 0; i < d.sessionTrades.length; i++) {
+            var t = d.sessionTrades[i];
+            var pc = t.pnl >= 0 ? '#10b981' : '#ef4444';
+            var sym = t.symbol ? t.symbol.split(':').pop() : '\\u2014';
+            rows += '<tr>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;color:' + (t.side === 'CE' ? '#10b981' : '#ef4444') + ';font-weight:700;">' + t.side + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#c8d8f0;font-family:\\'IBM Plex Mono\\',monospace;">' + sym + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#8899aa;">' + (t.entryTime || '\\u2014') + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.72rem;color:#8899aa;">' + (t.exitTime || '\\u2014') + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:\\'IBM Plex Mono\\',monospace;font-size:0.78rem;color:#c8d8f0;">\\u20b9' + inr(t.spotAtEntry) + (t.optionEntryLtp ? '<br><span style="font-size:0.65rem;color:#60a5fa;">Opt: \\u20b9' + t.optionEntryLtp.toFixed(2) + '</span>' : '') + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:\\'IBM Plex Mono\\',monospace;font-size:0.78rem;color:#c8d8f0;">\\u20b9' + inr(t.spotAtExit) + (t.optionExitLtp ? '<br><span style="font-size:0.65rem;color:#60a5fa;">Opt: \\u20b9' + t.optionExitLtp.toFixed(2) + '</span>' : '') + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-family:\\'IBM Plex Mono\\',monospace;font-weight:700;color:' + pc + ';">' + (t.pnl >= 0 ? '+' : '') + '\\u20b9' + inr(t.pnl) + '</td>' +
+              '<td style="padding:8px 10px;border-bottom:1px solid #1a2236;font-size:0.7rem;color:#8899aa;">' + (t.exitReason || '\\u2014') + '</td>' +
+              '</tr>';
+          }
+          tbody.innerHTML = rows;
+        }
+      }
+
+      // Log viewer
+      var logEl = document.getElementById('logBox');
+      if (logEl && d.log) {
+        var atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+        logEl.textContent = d.log.join('\\n');
+        if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+      }
+    })
+    .catch(function() {});
+}
+
+poll();
+setInterval(poll, 2000);
 </script>
-</body></html>`);
+</body>
+</html>`);
 });
 
 module.exports = router;
