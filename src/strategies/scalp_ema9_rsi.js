@@ -98,8 +98,9 @@ function getSignal(candles, opts) {
   var rsiArr = RSI.calculate({ period: 14, values: closes });
   var rsi    = rsiArr[rsiArr.length - 1];
   var rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
-  var rsiRising  = rsi > rsiPrev;
-  var rsiFalling = rsi < rsiPrev;
+  // RSI must move meaningfully (>= 1pt) — not just 0.01 noise
+  var rsiRising  = rsi > rsiPrev + 1;
+  var rsiFalling = rsi < rsiPrev - 1;
 
   // EMA9 slope
   var ema9Slope = parseFloat((ema9 - ema9_1).toFixed(2));
@@ -121,15 +122,15 @@ function getSignal(candles, opts) {
   var closedBelowEMA = signalCandle.close < ema9;
 
   // Cross: price must have been on the other side (high touched from below for CE, low from above for PE)
+  // This is the PRIMARY entry — price actually crosses through EMA9 and closes on the other side.
   var crossedAbove = signalCandle.low <= ema9 && signalCandle.close > ema9;   // came from below, closed above
   var crossedBelow = signalCandle.high >= ema9 && signalCandle.close < ema9;  // came from above, closed below
 
-  // Also allow continuation entries: already above EMA9 and EMA9 is rising
-  var continuationCE = closedAboveEMA && ema9Slope >= 3;
-  var continuationPE = closedBelowEMA && ema9Slope <= -3;
-
-  var emaCE = crossedAbove || continuationCE;
-  var emaPE = crossedBelow || continuationPE;
+  // NOTE: Continuation entries (already above/below EMA9) REMOVED.
+  // They generated 10-15 entries/day on every candle in a trend direction = massive overtrading.
+  // Scalp should only enter on the actual EMA9 cross — the decisive moment.
+  var emaCE = crossedAbove;
+  var emaPE = crossedBelow;
 
   // ── Candle body check ──────────────────────────────────────────────────────
   var candleBody = Math.abs(signalCandle.close - signalCandle.open);
@@ -163,8 +164,14 @@ function getSignal(candles, opts) {
     target:         null,
   };
 
+  // ── EMA slope gate — require minimum slope for entry direction ──────────────
+  // Flat EMA9 crosses are noise on 3-min — need the EMA to actually be moving our way.
+  var SCALP_MIN_SLOPE = parseFloat(cfg("SCALP_MIN_SLOPE", "2"));
+  var emaSlopeOkCE = ema9Slope >= SCALP_MIN_SLOPE;   // EMA9 rising for CE
+  var emaSlopeOkPE = ema9Slope <= -SCALP_MIN_SLOPE;  // EMA9 falling for PE
+
   // ── BUY CE ──────────────────────────────────────────────────────────────────
-  if (emaCE && isBullishBody) {
+  if (emaCE && isBullishBody && emaSlopeOkCE) {
     // ADX gate
     if (SCALP_ADX_ENABLED && !isTrending) {
       if (!silent) console.log("  ❌ SCALP CE: ADX=" + (adxVal||0).toFixed(1) + " < " + SCALP_ADX_MIN + " (ranging)");
@@ -197,7 +204,7 @@ function getSignal(candles, opts) {
   }
 
   // ── BUY PE ──────────────────────────────────────────────────────────────────
-  if (emaPE && isBearishBody) {
+  if (emaPE && isBearishBody && emaSlopeOkPE) {
     if (SCALP_ADX_ENABLED && !isTrending) {
       if (!silent) console.log("  ❌ SCALP PE: ADX=" + (adxVal||0).toFixed(1) + " < " + SCALP_ADX_MIN + " (ranging)");
       return Object.assign({}, base, {
@@ -231,6 +238,10 @@ function getSignal(candles, opts) {
   var noReason = [];
   if (!emaCE && !emaPE) {
     noReason.push("No EMA9 cross (close=" + signalCandle.close + " EMA9=" + ema9.toFixed(2) + ")");
+  } else if (emaCE && !emaSlopeOkCE) {
+    noReason.push("CE cross but EMA slope=" + ema9Slope + " < " + SCALP_MIN_SLOPE + " (flat EMA)");
+  } else if (emaPE && !emaSlopeOkPE) {
+    noReason.push("PE cross but EMA slope=" + ema9Slope + " > -" + SCALP_MIN_SLOPE + " (flat EMA)");
   } else if (emaCE && !isBullishBody) {
     noReason.push("CE EMA cross but body not bullish (body=" + candleBody.toFixed(1) + "pt)");
   } else if (emaPE && !isBearishBody) {
