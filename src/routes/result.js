@@ -52,7 +52,7 @@ function shell(title, body) {
       background: var(--surface);
       position: sticky; top: 0; z-index: 10;
     }
-    nav .brand { font-size: 1rem; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+    nav .brand { font-size: 1rem; font-weight: 700; color: #fff; letter-spacing: -0.3px; white-space: nowrap; }
     nav .brand span { color: var(--accent); }
     nav .nav-links { display: flex; gap: 8px; }
     nav .nav-links a {
@@ -182,7 +182,7 @@ function shell(title, body) {
 </head>
 <body>
 <nav>
-  <div class="brand">🪔 ௐ Palani Andawar Thunai ॐ — <span>Trading BOT</span></div>
+  <div class="brand">ௐ Palani Andawar Thunai ॐ — <span>Trading BOT</span></div>
   <div class="nav-links">
     <a href="/">Dashboard</a>
     ${btLink}

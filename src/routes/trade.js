@@ -2000,8 +2000,7 @@ router.get("/status", (req, res) => {
     .app-shell{display:flex;min-height:100vh;}
     .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;}
     .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
-    .sb-brand-icon{font-size:20px;margin-bottom:6px;}
-    .sb-brand-name{font-size:0.72rem;font-weight:700;color:#3b82f6;letter-spacing:0.3px;line-height:1.4;}
+    .sb-brand-name{font-size:0.72rem;font-weight:700;color:#3b82f6;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:#1a3050;letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
     .sb-nav{padding:10px 0;flex:1;}
     .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#2a4060;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
@@ -2078,7 +2077,6 @@ router.get("/status", (req, res) => {
 <!-- ── SIDEBAR ── -->
 <nav class="sidebar">
   <div class="sb-brand">
-    <div class="sb-brand-icon">🪔</div>
     <div class="sb-brand-name">ௐ Palani Andawar Thunai ॐ</div>
     <div class="sb-brand-sub">LIVE BOT</div>
   </div>
