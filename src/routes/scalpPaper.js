@@ -17,7 +17,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const scalpStrategy = require("../strategies/scalp_ema9_rsi");
+const scalpStrategy = require("../strategies/scalp_ema9_rsi_v2");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -179,7 +179,7 @@ function stopOptionPolling() {
 
 // ── Simulated Buy/Sell ──────────────────────────────────────────────────────
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry) {
+function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slPts, tgtPts) {
   if (state.position) return;
 
   state.position = {
@@ -198,6 +198,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
     optionEntryLtp:   null,
     optionCurrentLtp: null,
+    slPts:            slPts || _SCALP_SL_PTS,
+    tgtPts:           tgtPts || _SCALP_TARGET_PTS,
+    breakevenMoved:   false,
   };
 
   state.optionSymbol = symbol;
@@ -332,28 +335,42 @@ function onTick(tick) {
       return;
     }
 
-    // Trailing SL
+    // Trailing SL — V2: breakeven after 1x risk, then lock 40%
     if (pos.side === "CE") {
       if (!pos.bestPrice || price > pos.bestPrice) pos.bestPrice = price;
       const move = pos.bestPrice - pos.entryPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice - _SCALP_TRAIL_GAP;
+      const riskPts = pos.slPts || _SCALP_SL_PTS;
+
+      if (!pos.breakevenMoved && move >= riskPts) {
+        pos.stopLoss = pos.entryPrice + 1;
+        pos.breakevenMoved = true;
+        log(`📐 [SCALP-PAPER] CE breakeven — SL moved to ${pos.stopLoss}`);
+      }
+      if (pos.breakevenMoved && move > riskPts) {
+        const trailSL = pos.entryPrice + (move * 0.4);
         if (trailSL > pos.stopLoss) pos.stopLoss = trailSL;
-        if (price <= pos.stopLoss) {
-          simulateSell(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`, price);
-          return;
-        }
+      }
+      if (pos.breakevenMoved && price <= pos.stopLoss) {
+        simulateSell(pos.stopLoss, `Trail SL (locked ${(pos.stopLoss - pos.entryPrice).toFixed(1)}pt)`, price);
+        return;
       }
     } else {
       if (!pos.bestPrice || price < pos.bestPrice) pos.bestPrice = price;
       const move = pos.entryPrice - pos.bestPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice + _SCALP_TRAIL_GAP;
+      const riskPts = pos.slPts || _SCALP_SL_PTS;
+
+      if (!pos.breakevenMoved && move >= riskPts) {
+        pos.stopLoss = pos.entryPrice - 1;
+        pos.breakevenMoved = true;
+        log(`📐 [SCALP-PAPER] PE breakeven — SL moved to ${pos.stopLoss}`);
+      }
+      if (pos.breakevenMoved && move > riskPts) {
+        const trailSL = pos.entryPrice - (move * 0.4);
         if (trailSL < pos.stopLoss) pos.stopLoss = trailSL;
-        if (price >= pos.stopLoss) {
-          simulateSell(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`, price);
-          return;
-        }
+      }
+      if (pos.breakevenMoved && price >= pos.stopLoss) {
+        simulateSell(pos.stopLoss, `Trail SL (locked ${(pos.entryPrice - pos.stopLoss).toFixed(1)}pt)`, price);
+        return;
       }
     }
 
@@ -375,23 +392,19 @@ function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    // Time stop
-    if (state.position.candlesHeld >= _SCALP_TIME_STOP) {
-      simulateSell(bar.close, `Time stop (${_SCALP_TIME_STOP} candles / ${_SCALP_TIME_STOP * SCALP_RES}min)`, bar.close);
-      return;
-    }
+    // Time stop — REMOVED in V2 (breakeven trail handles protection)
 
-    // RSI reversal check
+    // RSI reversal — V2: only on extreme levels (35/65)
     const window = [...state.candles];
     if (state.currentBar) window.push(state.currentBar);
-    if (window.length >= 15) {
+    if (window.length >= 25) {
       const result = scalpStrategy.getSignal(window, { silent: true });
-      if (state.position.side === "CE" && result.rsi < 45) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} < 45)`, bar.close);
+      if (state.position.side === "CE" && result.rsi < 35) {
+        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi.toFixed(1)} < 35)`, bar.close);
         return;
       }
-      if (state.position.side === "PE" && result.rsi > 55) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} > 55)`, bar.close);
+      if (state.position.side === "PE" && result.rsi > 65) {
+        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi.toFixed(1)} > 65)`, bar.close);
         return;
       }
     }
@@ -416,7 +429,7 @@ function onCandleClose(bar) {
   }
 
   const window = [...state.candles];
-  if (window.length < 15) return;
+  if (window.length < 25) return;
 
   const result = scalpStrategy.getSignal(window, { silent: false });
   if (result.signal === "NONE") return;
@@ -436,7 +449,7 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
     const qty = getLotQty();
-    simulateBuy(optionInfo.symbol, side, qty, spot, result.reason, result.stopLoss, result.target, spot);
+    simulateBuy(optionInfo.symbol, side, qty, spot, result.reason, result.stopLoss, result.target, spot, result.slPts, result.tgtPts);
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
   }

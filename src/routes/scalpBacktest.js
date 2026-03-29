@@ -77,13 +77,13 @@ function runScalpBacktest(candles, capital, vixCandles) {
   console.log(`   TimeStop: ${SCALP_TIME_STOP} candles | MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
   console.log("══════════════════════════════════════════════");
 
-  const window = candles.slice(0, 15);
+  const window = candles.slice(0, 25);
   let _slPauseUntilTs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
 
-  for (let i = 15; i < candles.length; i++) {
+  for (let i = 25; i < candles.length; i++) {
     const candle = candles[i];
     const candleDate = getISTDateStr(candle.time);
     const candleMin  = getISTHHMM(candle.time);
@@ -97,7 +97,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
     _prevDate = candleDate;
 
     window.push(candle);
-    if (window.length > 100) window.shift();
+    if (window.length > 120) window.shift();
 
     const isEOD = candleMin >= 920; // 3:20 PM
 
@@ -128,51 +128,64 @@ function runScalpBacktest(candles, capital, vixCandles) {
         }
       }
 
-      // 3. Trailing SL
+      // 3. Trailing SL — V2: breakeven after 1x risk, then lock 40% of profit
       if (!exitReason) {
+        const riskPts = position.slPts || SCALP_SL_PTS;
+
         if (position.side === "CE") {
           if (candle.high > (position.bestPrice || position.entryPrice)) {
             position.bestPrice = candle.high;
           }
           const moveInFavour = (position.bestPrice || position.entryPrice) - position.entryPrice;
-          if (moveInFavour >= SCALP_TRAIL_AFTER) {
-            const trailSL = position.bestPrice - SCALP_TRAIL_GAP;
+
+          // Step 1: Move to breakeven after 1x risk move
+          if (!position.breakevenMoved && moveInFavour >= riskPts) {
+            position.stopLoss = position.entryPrice + 1;
+            position.breakevenMoved = true;
+          }
+          // Step 2: Lock in 40% of profit beyond breakeven
+          if (position.breakevenMoved && moveInFavour > riskPts) {
+            const trailSL = position.entryPrice + (moveInFavour * 0.4);
             if (trailSL > position.stopLoss) position.stopLoss = trailSL;
-            if (candle.low <= position.stopLoss) {
-              exitPrice  = position.stopLoss;
-              exitReason = `Trail SL (gap=${SCALP_TRAIL_GAP}pt)`;
-            }
+          }
+          // Check if trail SL hit
+          if (position.breakevenMoved && candle.low <= position.stopLoss) {
+            exitPrice  = position.stopLoss;
+            exitReason = `Trail SL (locked ${(position.stopLoss - position.entryPrice).toFixed(1)}pt)`;
           }
         } else {
           if (candle.low < (position.bestPrice || position.entryPrice)) {
             position.bestPrice = candle.low;
           }
           const moveInFavour = position.entryPrice - (position.bestPrice || position.entryPrice);
-          if (moveInFavour >= SCALP_TRAIL_AFTER) {
-            const trailSL = position.bestPrice + SCALP_TRAIL_GAP;
+
+          if (!position.breakevenMoved && moveInFavour >= riskPts) {
+            position.stopLoss = position.entryPrice - 1;
+            position.breakevenMoved = true;
+          }
+          if (position.breakevenMoved && moveInFavour > riskPts) {
+            const trailSL = position.entryPrice - (moveInFavour * 0.4);
             if (trailSL < position.stopLoss) position.stopLoss = trailSL;
-            if (candle.high >= position.stopLoss) {
-              exitPrice  = position.stopLoss;
-              exitReason = `Trail SL (gap=${SCALP_TRAIL_GAP}pt)`;
-            }
+          }
+          if (position.breakevenMoved && candle.high >= position.stopLoss) {
+            exitPrice  = position.stopLoss;
+            exitReason = `Trail SL (locked ${(position.entryPrice - position.stopLoss).toFixed(1)}pt)`;
           }
         }
       }
 
-      // 4. RSI reversal exit — only on clear reversal (not minor wobbles at 50)
+      // 4. RSI reversal exit — only on extreme reversal (V2: 35/65 instead of 45/55)
       if (!exitReason) {
         const { rsi } = scalpStrategy.getSignal(window, { silent: true });
-        if (position.side === "CE" && rsi < 45) {
-          exitReason = `RSI reversal (RSI=${rsi} < 45)`;
-        } else if (position.side === "PE" && rsi > 55) {
-          exitReason = `RSI reversal (RSI=${rsi} > 55)`;
+        if (position.side === "CE" && rsi < 35) {
+          exitReason = `RSI reversal (RSI=${rsi.toFixed(1)} < 35)`;
+        } else if (position.side === "PE" && rsi > 65) {
+          exitReason = `RSI reversal (RSI=${rsi.toFixed(1)} > 65)`;
         }
       }
 
-      // 5. Time stop (4 candles = 12 min)
-      if (!exitReason && position.candlesHeld >= SCALP_TIME_STOP) {
-        exitReason = `Time stop (${SCALP_TIME_STOP} candles / ${SCALP_TIME_STOP * 3}min)`;
-      }
+      // 5. Time stop — REMOVED in V2 (trail SL handles exits)
+      // Breakeven trail protects capital; no need to force-exit winning trades
 
       // 6. EOD
       if (!exitReason && isEOD) {
@@ -236,13 +249,16 @@ function runScalpBacktest(candles, capital, vixCandles) {
 
     position = {
       side,
-      entryPrice:     candle.close,
-      entryTs:        candle.time,
-      stopLoss:       result.stopLoss,
+      entryPrice:      candle.close,
+      entryTs:         candle.time,
+      stopLoss:        result.stopLoss,
       initialStopLoss: result.stopLoss,
-      target:         result.target,
-      candlesHeld:    0,
-      bestPrice:      null,
+      target:          result.target,
+      candlesHeld:     0,
+      bestPrice:       null,
+      slPts:           result.slPts  || SCALP_SL_PTS,
+      tgtPts:          result.tgtPts || SCALP_TARGET_PTS,
+      breakevenMoved:  false,
     };
   }
 
