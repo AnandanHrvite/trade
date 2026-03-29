@@ -13,7 +13,7 @@
 const express = require("express");
 const router  = express.Router();
 const { fetchCandles } = require("../services/backtestEngine");
-const scalpStrategy    = require("../strategies/scalp_ema9_rsi");
+const scalpStrategy    = require("../strategies/scalp_ema9_rsi_v2");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
