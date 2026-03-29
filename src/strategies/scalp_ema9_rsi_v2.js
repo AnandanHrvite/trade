@@ -63,7 +63,7 @@ function getSignal(candles, opts) {
   var ATR_SL_MULT        = parseFloat(cfg("SCALP_ATR_SL_MULT", "1.5"));
   var ATR_TGT_MULT       = parseFloat(cfg("SCALP_ATR_TGT_MULT", "2.5"));
   var ATR_MIN_SL         = parseFloat(cfg("SCALP_ATR_MIN_SL", "8"));   // floor: don't go below 8pt SL
-  var ATR_MAX_SL         = parseFloat(cfg("SCALP_ATR_MAX_SL", "25"));  // cap: don't risk more than 25pt
+  var ATR_MAX_SL         = parseFloat(cfg("SCALP_ATR_MAX_SL", "18"));  // cap: don't risk more than 25pt
 
   // Fallback to fixed SL/Target if ATR disabled
   var USE_ATR_SL         = cfg("SCALP_USE_ATR_SL", "true") === "true";

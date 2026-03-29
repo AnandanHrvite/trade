@@ -149,6 +149,13 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Enable ADX trend filter for scalp", default: "true" },
       { key: "SCALP_ADX_MIN", label: "ADX Minimum", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.SESSION, desc: "ADX threshold (if enabled)", default: "20" },
       { key: "SCALP_MIN_SLOPE", label: "EMA Slope Min", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Min EMA9 slope for entry (filters flat crosses)", default: "2" },
+      { key: "SCALP_USE_ATR_SL", label: "ATR-based SL", type: "toggle", effect: EFFECT.SESSION, desc: "Use ATR for dynamic SL/Target", default: "true" },
+      { key: "SCALP_ATR_SL_MULT", label: "ATR SL Multiplier", type: "number", min: 1.0, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "SL = ATR x this", default: "1.5" },
+      { key: "SCALP_ATR_TGT_MULT", label: "ATR Target Mult", type: "number", min: 1.5, max: 4.0, step: 0.1, effect: EFFECT.SESSION, desc: "Target = ATR x this", default: "2.5" },
+      { key: "SCALP_ATR_MIN_SL", label: "ATR Min SL", type: "number", min: 5, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum SL floor", default: "8" },
+      { key: "SCALP_ATR_MAX_SL", label: "ATR Max SL", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Maximum SL cap", default: "18" },
+      { key: "SCALP_RSI_CE_MIN_V2", label: "RSI CE Min (V2)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "V2 RSI threshold for CE (overrides V1 if set)", default: "50" },
+      { key: "SCALP_RSI_PE_MAX_V2", label: "RSI PE Max (V2)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "V2 RSI threshold for PE (overrides V1 if set)", default: "50" },
     ],
   },
   {
@@ -213,6 +220,9 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
   "SCALP_RSI_CE_MIN", "SCALP_RSI_PE_MAX", "SCALP_MIN_BODY",
   "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
+  "SCALP_USE_ATR_SL", "SCALP_ATR_SL_MULT", "SCALP_ATR_TGT_MULT",
+  "SCALP_ATR_MIN_SL", "SCALP_ATR_MAX_SL",
+  "SCALP_RSI_CE_MIN_V2", "SCALP_RSI_PE_MAX_V2",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────

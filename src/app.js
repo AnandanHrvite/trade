@@ -635,8 +635,8 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div id="scalp-status-body" style="padding:14px 18px 16px;">
       <div class="ts-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
-        <div class="ts-cell"><div class="ts-label">Strategy</div><div class="ts-val flat" style="font-size:0.78rem;">EMA9 + RSI</div><div class="ts-sub">${process.env.SCALP_RESOLUTION || '3'}-min candles</div></div>
-        <div class="ts-cell"><div class="ts-label">Config</div><div class="ts-val flat" style="font-size:0.78rem;">SL: ${process.env.SCALP_SL_PTS || '12'}pt / TGT: ${process.env.SCALP_TARGET_PTS || '18'}pt</div><div class="ts-sub">Trail: ${process.env.SCALP_TRAIL_GAP || '8'}pt after ${process.env.SCALP_TRAIL_AFTER || '10'}pt</div></div>
+        <div class="ts-cell"><div class="ts-label">Strategy</div><div class="ts-val flat" style="font-size:0.78rem;">EMA9 + RSI V2</div><div class="ts-sub">${process.env.SCALP_RESOLUTION || '3'}-min candles</div></div>
+        <div class="ts-cell"><div class="ts-label">Config</div><div class="ts-val flat" style="font-size:0.78rem;">${process.env.SCALP_USE_ATR_SL === 'true' ? `ATR×${process.env.SCALP_ATR_SL_MULT || '1.5'} SL / ATR×${process.env.SCALP_ATR_TGT_MULT || '2.5'} TGT` : `SL: ${process.env.SCALP_SL_PTS || '12'}pt / TGT: ${process.env.SCALP_TARGET_PTS || '18'}pt`}</div><div class="ts-sub">Trail: ${process.env.SCALP_TRAIL_GAP || '8'}pt after ${process.env.SCALP_TRAIL_AFTER || '10'}pt</div></div>
         <div class="ts-cell"><div class="ts-label">Orders via</div><div class="ts-val flat" style="font-size:0.78rem;">Fyers</div><div class="ts-sub">Independent from Zerodha</div></div>
         <div class="ts-cell"><div class="ts-label">Max Trades</div><div class="ts-val flat" style="font-size:0.78rem;">${process.env.SCALP_MAX_DAILY_TRADES || '30'}/day</div><div class="ts-sub">Loss limit: ₹${process.env.SCALP_MAX_DAILY_LOSS || '2000'}</div></div>
       </div>
