@@ -355,42 +355,28 @@ function onTick(tick) {
       return;
     }
 
-    // Trail — V2: breakeven after 1x risk, then lock 40%
+    // Trail
     if (pos.side === "CE") {
       if (!pos.bestPrice || price > pos.bestPrice) pos.bestPrice = price;
       const move = pos.bestPrice - pos.entryPrice;
-      const riskPts = pos.slPts || _SCALP_SL_PTS;
-
-      if (!pos.breakevenMoved && move >= riskPts) {
-        pos.stopLoss = pos.entryPrice + 1;
-        pos.breakevenMoved = true;
-        log(`📐 [SCALP-LIVE] CE breakeven — SL moved to ${pos.stopLoss}`);
-      }
-      if (pos.breakevenMoved && move > riskPts) {
-        const trailSL = pos.entryPrice + (move * 0.4);
+      if (move >= _SCALP_TRAIL_AFTER) {
+        const trailSL = pos.bestPrice - _SCALP_TRAIL_GAP;
         if (trailSL > pos.stopLoss) pos.stopLoss = trailSL;
-      }
-      if (pos.breakevenMoved && price <= pos.stopLoss) {
-        squareOff(pos.stopLoss, `Trail SL (locked ${(pos.stopLoss - pos.entryPrice).toFixed(1)}pt)`);
-        return;
+        if (price <= pos.stopLoss) {
+          squareOff(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`);
+          return;
+        }
       }
     } else {
       if (!pos.bestPrice || price < pos.bestPrice) pos.bestPrice = price;
       const move = pos.entryPrice - pos.bestPrice;
-      const riskPts = pos.slPts || _SCALP_SL_PTS;
-
-      if (!pos.breakevenMoved && move >= riskPts) {
-        pos.stopLoss = pos.entryPrice - 1;
-        pos.breakevenMoved = true;
-        log(`📐 [SCALP-LIVE] PE breakeven — SL moved to ${pos.stopLoss}`);
-      }
-      if (pos.breakevenMoved && move > riskPts) {
-        const trailSL = pos.entryPrice - (move * 0.4);
+      if (move >= _SCALP_TRAIL_AFTER) {
+        const trailSL = pos.bestPrice + _SCALP_TRAIL_GAP;
         if (trailSL < pos.stopLoss) pos.stopLoss = trailSL;
-      }
-      if (pos.breakevenMoved && price >= pos.stopLoss) {
-        squareOff(pos.stopLoss, `Trail SL (locked ${(pos.entryPrice - pos.stopLoss).toFixed(1)}pt)`);
-        return;
+        if (price >= pos.stopLoss) {
+          squareOff(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`);
+          return;
+        }
       }
     }
 
@@ -410,19 +396,22 @@ function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    // Time stop — REMOVED in V2 (breakeven trail handles protection)
+    if (state.position.candlesHeld >= _SCALP_TIME_STOP) {
+      squareOff(bar.close, `Time stop (${_SCALP_TIME_STOP} candles)`);
+      return;
+    }
 
-    // RSI reversal — V2: only on extreme levels (35/65)
+    // RSI reversal
     const window = [...state.candles];
     if (state.currentBar) window.push(state.currentBar);
-    if (window.length >= 25) {
+    if (window.length >= 15) {
       const result = scalpStrategy.getSignal(window, { silent: true });
-      if (state.position.side === "CE" && result.rsi < 35) {
-        squareOff(bar.close, `RSI reversal (RSI=${result.rsi.toFixed(1)} < 35)`);
+      if (state.position.side === "CE" && result.rsi < 45) {
+        squareOff(bar.close, `RSI reversal (RSI=${result.rsi} < 45)`);
         return;
       }
-      if (state.position.side === "PE" && result.rsi > 65) {
-        squareOff(bar.close, `RSI reversal (RSI=${result.rsi.toFixed(1)} > 65)`);
+      if (state.position.side === "PE" && result.rsi > 55) {
+        squareOff(bar.close, `RSI reversal (RSI=${result.rsi} > 55)`);
         return;
       }
     }
@@ -446,7 +435,7 @@ function onCandleClose(bar) {
   }
 
   const window = [...state.candles];
-  if (window.length < 25) return;
+  if (window.length < 15) return;
 
   const result = scalpStrategy.getSignal(window, { silent: false });
   if (result.signal === "NONE") return;
@@ -499,9 +488,6 @@ async function resolveAndEnter(side, spot, result) {
       candlesHeld:      0,
       optionEntryLtp:   null,
       optionCurrentLtp: null,
-      slPts:            result.slPts  || _SCALP_SL_PTS,
-      tgtPts:           result.tgtPts || _SCALP_TARGET_PTS,
-      breakevenMoved:   false,
     };
 
     state.optionSymbol = symbol;
