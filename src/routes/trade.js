@@ -885,6 +885,22 @@ async function onCandleClose(candle) {
     const side = signal === "BUY_CE" ? "CE" : "PE";
     const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
 
+    // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
+    // If entry spot is already on the wrong side of prev candle mid,
+    // the 50% exit rule would fire immediately — no room to hold. Block entry.
+    const _entryPrevMidGate = tradeState.candles.length >= 1
+      ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
+      : null;
+    if (_entryPrevMidGate !== null) {
+      const _gateViolates = (side === "PE" && candle.close > _entryPrevMidGate) ||
+                            (side === "CE" && candle.close < _entryPrevMidGate);
+      if (_gateViolates) {
+        log(`🚫 [LIVE] Entry BLOCKED — 50% gate: spot ₹${candle.close} ${side === "PE" ? ">" : "<"} prev mid ₹${_entryPrevMidGate}. No directional room. Skipping trade.`);
+        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+        return;
+      }
+    }
+
     tradeState._entryPending = true;
     const _ltEntryTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
 
@@ -1136,6 +1152,24 @@ function onSpotTick(tick) {
         }
       } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
+
+      // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
+      // If entry ltp is already on the wrong side of prev candle mid,
+      // the 50% exit rule would fire immediately — no room to hold. Block entry.
+      const _intraPrevMidGate = tradeState.candles.length >= 1
+        ? parseFloat(((tradeState.candles[tradeState.candles.length - 1].high + tradeState.candles[tradeState.candles.length - 1].low) / 2).toFixed(2))
+        : null;
+      const _intraGateViolates = _intraPrevMidGate !== null && (
+        (side === "PE" && ltp > _intraPrevMidGate) ||
+        (side === "CE" && ltp < _intraPrevMidGate)
+      );
+      if (_intraGateViolates) {
+        if (!tradeState._gateBlockLoggedCandle || tradeState._gateBlockLoggedCandle !== _currentBarTime) {
+          tradeState._gateBlockLoggedCandle = _currentBarTime;
+          log(`🚫 [LIVE] Intra-tick entry BLOCKED — 50% gate: spot ₹${ltp} ${side === "PE" ? ">" : "<"} prev mid ₹${_intraPrevMidGate}. No directional room.`);
+        }
+        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+      } else {
       tradeState._entryPending = true;
       const _ltIntraTimer = setTimeout(() => { if (tradeState._entryPending) tradeState._entryPending = false; }, 4000);
       log(`⚡ [LIVE] Intra-candle ${TRADE_RES >= 15 ? "STRONG" : ""} entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
@@ -1266,6 +1300,7 @@ function onSpotTick(tick) {
         tradeState._entryPending = false;
         clearTimeout(_ltIntraTimer);
       });
+      } // end 50% gate else
       } // end VIX else
     }
     } // end entry guards

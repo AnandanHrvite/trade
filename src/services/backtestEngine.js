@@ -219,6 +219,17 @@ function runBacktest(candles, strategy, capital, vixCandles) {
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
   let _fiftyPctPauseUntilTs = 0;
 
+  // ── Risk controls (mirrors paper trade exactly) ─────────────────────────────
+  const MAX_DAILY_LOSS      = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+  const MAX_DAILY_TRADES    = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
+  let _dailyPnl             = 0;       // running PnL for current day (reset each day)
+  let _dailyTradeCount      = 0;       // trades taken today (reset each day)
+  let _dailyLossHit         = false;   // latched true when daily loss >= MAX_DAILY_LOSS
+  let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
+  let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
+  let _slHitCandleTime      = null;    // block re-entry on same candle where SL was hit
+  console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
+
   for (let i = 30; i < candles.length; i++) {
     const candle     = candles[i];
     const prevCandle = candles[i - 1];
@@ -236,6 +247,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       const prevCandleDate = getISTDateStr(candles[i - 1].time);
       if (candleDate !== prevCandleDate) {
         _fiftyPctPauseUntilTs = 0;
+        // Reset daily risk controls for new day
+        _dailyPnl           = 0;
+        _dailyTradeCount    = 0;
+        _dailyLossHit       = false;
+        _consecutiveLosses  = 0;
+        _consecPauseUntilTs = 0;
+        _slHitCandleTime    = null;
         // Count trades for previous day for the daily log
         const dayTrades = trades.filter(t => getISTDateStr(t.exitTs) === prevCandleDate);
         if (dayTrades.length > 0) {
@@ -304,9 +322,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
           const trailSL          = parseFloat((position.bestPrice - dynamicGap).toFixed(2));
-          const effectiveTrailSL = position.entryPrevMid !== null ? Math.min(trailSL, position.entryPrevMid) : trailSL;
+          // 50% floor: trail SL cannot sit below entryPrevMid until trail naturally rises above it (mirrors paper/live)
+          const fiftyPctFloor    = position.entryPrevMid;
+          const clipped          = fiftyPctFloor !== null && trailSL < fiftyPctFloor;
+          const effectiveTrailSL = clipped ? fiftyPctFloor : trailSL;
           if (effectiveTrailSL > position.stopLoss) {
-            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} (floor=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
+            const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
+            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} → effective=${effectiveTrailSL}${clipStr}`);
             position.stopLoss = effectiveTrailSL;
           }
         }
@@ -318,9 +340,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
           const trailSL          = parseFloat((position.bestPrice + dynamicGap).toFixed(2));
-          const effectiveTrailSL = position.entryPrevMid !== null ? Math.max(trailSL, position.entryPrevMid) : trailSL;
+          // 50% ceiling: trail SL cannot sit above entryPrevMid until trail naturally falls below it (mirrors paper/live)
+          const fiftyPctCeiling  = position.entryPrevMid;
+          const clipped          = fiftyPctCeiling !== null && trailSL > fiftyPctCeiling;
+          const effectiveTrailSL = clipped ? fiftyPctCeiling : trailSL;
           if (effectiveTrailSL < position.stopLoss) {
-            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} (ceil=${position.entryPrevMid}) → effective=${effectiveTrailSL}`);
+            const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
+            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} → effective=${effectiveTrailSL}${clipStr}`);
             position.stopLoss = effectiveTrailSL;
           }
         }
@@ -347,13 +373,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         }
       }
 
-      // Rule 2+3: SL or trail SL
+      // Rule 2+3: SL or trail SL (uses candle low/high as intra-candle proxy — mirrors paper/live tick-by-tick SL check)
       if (!exitReason && position.stopLoss !== null && position.stopLoss !== undefined) {
-        if (position.side === "CE" && candle.close < position.stopLoss) {
-          exitReason = `SL hit — close ${candle.close} < SL ${position.stopLoss}`;
+        if (position.side === "CE" && candle.low <= position.stopLoss) {
+          exitReason = `SL hit — low ${candle.low} <= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
-        } else if (position.side === "PE" && candle.close > position.stopLoss) {
-          exitReason = `SL hit — close ${candle.close} > SL ${position.stopLoss}`;
+        } else if (position.side === "PE" && candle.high >= position.stopLoss) {
+          exitReason = `SL hit — high ${candle.high} >= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
         }
       }
@@ -433,26 +459,94 @@ function runBacktest(candles, strategy, capital, vixCandles) {
           console.log(`  ⏸ 50%-rule pause set: no entry until ${toIST(_fiftyPctPauseUntilTs)}`);
         }
 
+        // ── Risk controls (mirrors paper trade) ─────────────────────────────
+        _dailyPnl += pnlRupees;
+        _dailyTradeCount++;
+
+        // Daily loss kill switch
+        if (!_dailyLossHit && _dailyPnl <= -Math.abs(MAX_DAILY_LOSS)) {
+          _dailyLossHit = true;
+          console.log(`  🛑 DAILY LOSS LIMIT HIT — day loss ₹${Math.abs(_dailyPnl).toFixed(0)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
+        }
+
+        // Consecutive loss tracking
+        if (pnlRupees < 0) {
+          _consecutiveLosses++;
+          if (_consecutiveLosses >= 3) {
+            if (candleResolutionMins >= 15) {
+              // 15-min: 3 losses = done for the day
+              _dailyLossHit = true;
+              console.log(`  🛑 3 consecutive losses on ${candleResolutionMins}-min — NO MORE ENTRIES TODAY`);
+            } else {
+              // 5-min: pause 4 candles then resume
+              const pauseSecs2 = 4 * candleResolutionMins * 60;
+              _consecPauseUntilTs = candle.time + pauseSecs2;
+              _consecutiveLosses = 0;
+              console.log(`  ⚠️ 3 consecutive losses — paused until ${toIST(_consecPauseUntilTs)}`);
+            }
+          }
+        } else {
+          _consecutiveLosses = 0;
+          _consecPauseUntilTs = 0; // profitable trade clears any remaining pause
+        }
+
+        // SL re-entry block: only when initial SL hit (not trailing SL exit)
+        const isSLExit = exitReason.toLowerCase().includes("sl hit");
+        if (isSLExit) {
+          // Only block if trail had NOT activated (pure losing trade)
+          const wasTrailing = position.bestPrice && (
+            position.side === "CE"
+              ? (position.bestPrice - position.entryPrice) >= (position.trailActivatePts || TRAIL_ACTIVATE_PTS)
+              : (position.entryPrice - position.bestPrice) >= (position.trailActivatePts || TRAIL_ACTIVATE_PTS)
+          );
+          if (!wasTrailing) {
+            _slHitCandleTime = candle.time;
+          }
+        }
+
         // ── Notify strategy: optional exit callbacks
         const exitedSide = position.side;
         position = null;
         if (typeof strategy.onTradeClosed === "function") strategy.onTradeClosed();
-        const isSL = exitReason.toLowerCase().includes("sl hit");
-        if (isSL && typeof strategy.onStopLossHit === "function") strategy.onStopLossHit(exitedSide);
+        if (isSLExit && typeof strategy.onStopLossHit === "function") strategy.onStopLossHit(exitedSide);
       }
     }
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Don't enter on EOD candle — position would be immediately squared off.
-    // SL from prevWindow (closed candles only) — matches paper/live fix.
-    // entryPrevMid = mid of candle[i-1] (closed just before entry) — fixed for 50% rule.
-    // Check 50%-rule pause before entry
-    const is50PctPaused = candle.time < _fiftyPctPauseUntilTs;
-    if (is50PctPaused && (signal === "BUY_CE" || signal === "BUY_PE")) {
-      console.log(`  ⏸ [50%-rule pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_fiftyPctPauseUntilTs)}`);
-    }
+    // Risk controls matching paper trade: daily loss, max trades, consecutive loss,
+    // SL re-entry block, 50%-rule pause, 50% entry gate.
+    const is50PctPaused   = candle.time < _fiftyPctPauseUntilTs;
+    const isConsecPaused  = candle.time < _consecPauseUntilTs;
+    const isSLBlocked     = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
 
-    if (!position && !isEODcandle && !is50PctPaused && (signal === "BUY_CE" || signal === "BUY_PE")) {
+    if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
+      // ── Risk control gates (mirrors paper trade) ────────────────────────────
+      if (_dailyLossHit) {
+        // silently skip — daily kill switch active
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+      if (_dailyTradeCount >= MAX_DAILY_TRADES) {
+        // silently skip — max trades reached
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+      if (isSLBlocked) {
+        // silently skip — SL just hit on this candle
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+      if (is50PctPaused) {
+        console.log(`  ⏸ [50%-rule pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_fiftyPctPauseUntilTs)}`);
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+      if (isConsecPaused) {
+        console.log(`  ⏸ [consec-loss pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_consecPauseUntilTs)}`);
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
+
       const side = signal === "BUY_CE" ? "CE" : "PE";
       const entryPrevMid = parseFloat(((prevCandle.high + prevCandle.low) / 2).toFixed(2));
       const strength = signalStrength || "MARGINAL";
@@ -467,18 +561,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         } else if (_vixBlockCount === 6) {
           console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
         }
-        // Cache current SL for next iteration's prevSignalSL
         _cachedPrevSL = signalSL ?? null;
         continue;
       }
 
       // ── Entry price: STRONG vs MARGINAL ──────────────────────────────────────
-      // STRONG  → strategy confirmed intra-candle EMA9 touch: simulate entry AT EMA9.
-      //           CE: EMA9 is the first touch point going up → entry below close = better fill.
-      //           PE: EMA9 is the first touch point going down → entry above close = better fill.
-      //           Uses Math.min/max as safety net (EMA9 should already be better, but guards edge cases).
-      // MARGINAL → candle-close confirmed entry. Price needed to fully close in the right
-      //           direction first, so candle.close is the correct and intended entry price.
       let entryPrice = candle.close;
       if (strength === "STRONG" && indicators.ema9 != null) {
         if (side === "CE") {
@@ -488,13 +575,18 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         }
       }
 
-      // NOTE: 50% entry gate is intentionally NOT applied here.
-      // In paper/live trade, the gate blocks intra-candle entries where price hasn't
-      // yet cleared prevMid — correct, because there's no room to hold.
-      // In backtest, entry is at candle CLOSE — price has already closed in the signal
-      // direction, confirming the move. Blocking close-confirmed entries based on prevMid
-      // position artificially inflates the trade sample's difficulty and produces
-      // misleading low win rates that don't reflect real candle-close entries.
+      // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
+      // If entry price is already on the wrong side of prev candle mid,
+      // the 50% exit rule would fire on the very first candle — no room to hold.
+      const _entrySpot = entryPrice;
+      const violates50 = (side === "PE" && _entrySpot > entryPrevMid) ||
+                         (side === "CE" && _entrySpot < entryPrevMid);
+      if (violates50) {
+        console.log(`  🚫 Entry BLOCKED — 50% gate: spot ₹${_entrySpot} ${side === "PE" ? ">" : "<"} prev mid ₹${entryPrevMid}. No directional room.`);
+        _slHitCandleTime = candle.time; // block further entries on this candle
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
 
       // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
       const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
@@ -512,7 +604,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         entryPrevMid,
         signalStrength:  strength,
         indicators,
-        candlesHeld:     0,  // for theta decay calculation
+        candlesHeld:     0,
       };
       const priceNote = strength === "STRONG"
         ? `(EMA9=${indicators.ema9} < close=${candle.close} → entered at EMA9 touch)`
