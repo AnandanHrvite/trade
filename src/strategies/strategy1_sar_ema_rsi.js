@@ -94,9 +94,10 @@ function calcSAR(candles, step, max) {
 function isInTradingWindow(unixSec) {
   var d        = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  // 9:30 AM – 3:00 PM (no dead zone on 15-min)
+  // 9:30 AM – 2:00 PM (no entries after 2 PM — last hour is too risky,
+  // trades get force-closed at 3:20 PM EOD with no time for trail to work)
   if (totalMin < 570)  return { ok: false, reason: "Before 9:30 AM — waiting for indicators to stabilise on 15-min" };
-  if (totalMin >= 900) return { ok: false, reason: "After 3:00 PM — no new entries" };
+  if (totalMin >= 840) return { ok: false, reason: "After 2:00 PM — no new entries (EOD risk)" };
   return { ok: true, reason: null };
 }
 

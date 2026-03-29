@@ -372,11 +372,17 @@ function runBacktest(candles, strategy, capital, vixCandles) {
 
       // Rule 1: SL or trail SL (uses candle low/high as intra-candle proxy)
       if (position.stopLoss !== null && position.stopLoss !== undefined) {
+        // Determine SL type for clear labeling
+        const _isBreakevenSL = Math.abs(position.stopLoss - position.entryPrice) < 1;
+        const _isTrailSL     = !_isBreakevenSL && position.initialStopLoss != null &&
+                               Math.abs(position.stopLoss - position.initialStopLoss) > 1;
+        const _slLabel = _isBreakevenSL ? "Breakeven SL" : _isTrailSL ? "Trail SL" : "Initial SL";
+
         if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitReason = `SL hit — low ${candle.low} <= SL ${position.stopLoss}`;
+          exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitReason = `SL hit — high ${candle.high} >= SL ${position.stopLoss}`;
+          exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
         }
       }
