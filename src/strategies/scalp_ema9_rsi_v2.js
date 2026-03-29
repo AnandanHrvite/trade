@@ -34,8 +34,8 @@ function getSignal(candles, opts) {
   var SCALP_RSI_PE_MAX = parseFloat(cfg("SCALP_RSI_PE_MAX", "50"));
   var SCALP_MIN_BODY   = parseFloat(cfg("SCALP_MIN_BODY", "3"));
   var SCALP_MIN_SLOPE  = parseFloat(cfg("SCALP_MIN_SLOPE", "1"));
-  var SCALP_MAX_SL     = parseFloat(cfg("SCALP_MAX_SAR_GAP", "15"));
-  var SCALP_MIN_SL     = parseFloat(cfg("SCALP_MIN_SAR_GAP", "3"));
+  var SCALP_MAX_SL     = parseFloat(cfg("SCALP_ATR_MAX_SL", "10"));
+  var SCALP_MIN_SL     = parseFloat(cfg("SCALP_ATR_MIN_SL", "3"));
 
   if (candles.length < 30) {
     return { signal: "NONE", reason: "Warming up", stopLoss: null, target: null, prevCandleHigh: null, prevCandleLow: null };
