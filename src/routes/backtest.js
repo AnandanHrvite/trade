@@ -241,12 +241,12 @@ ${buildSidebar('backtest', liveActive)}
   </div>
   <script>
   function setPreset(p){
-    var d=new Date(),y=d.getFullYear(),m=d.getMonth(),dd=d.getDate();
-    function fmt(dt){return dt.toISOString().split('T')[0];}
+    var d=new Date(),y=d.getFullYear(),m=d.getMonth();
+    function fmt(dt){var yy=dt.getFullYear(),mm=String(dt.getMonth()+1).padStart(2,'0'),dd=String(dt.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;}
     var today=fmt(d), presets={
       thisMonth: [fmt(new Date(y,m,1)), today],
       lastMonth: [fmt(new Date(y,m-1,1)), fmt(new Date(y,m,0))],
-      last3: [fmt(new Date(y,m-3,1)), today],
+      last3: [fmt(new Date(y,m-2,1)), today],
       thisYear: [fmt(new Date(y,0,1)), today],
       lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
       last2y: [fmt(new Date(y-2,0,1)), today]
