@@ -1046,7 +1046,10 @@ function showToast(msg, type) {
   <div style="max-width:700px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">.env Configuration</span>
-      <button onclick="document.getElementById('envModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="envCopyBtn" onclick="copyEnvTable()" style="padding:4px 10px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">COPY</button>
+        <button onclick="document.getElementById('envModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      </div>
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
       <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
@@ -1054,9 +1057,11 @@ function showToast(msg, type) {
   </div>
 </div>
 <script>
+var _envData={};
 function showEnvModal(){
   document.getElementById('envModal').style.display='block';
   fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
+    _envData=data;
     var keys=Object.keys(data).sort();
     var html='<table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-family:IBM Plex Mono,monospace;">';
     html+='<tr style="border-bottom:1px solid #1a2640;"><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Key</th><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Value</th></tr>';
@@ -1071,6 +1076,21 @@ function showEnvModal(){
     html+='</table>';
     html+='<div style="margin-top:12px;color:#4a6080;font-size:0.7rem;">'+keys.length+' keys &middot; Sensitive values hidden</div>';
     document.getElementById('envTableWrap').innerHTML=html;
+  });
+}
+function copyEnvTable(){
+  var keys=Object.keys(_envData).sort();
+  var lines=['KEY                              VALUE','─'.repeat(50)];
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i];var v=_envData[k];
+    var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
+    var display=isSecret?'********':v;
+    lines.push(k.padEnd(33)+display);
+  }
+  navigator.clipboard.writeText(lines.join('\n')).then(function(){
+    var btn=document.getElementById('envCopyBtn');
+    btn.textContent='COPIED!';btn.style.color='#fff';btn.style.background='#10b981';
+    setTimeout(function(){btn.textContent='COPY';btn.style.color='#10b981';btn.style.background='rgba(16,185,129,0.12)';},1500);
   });
 }
 </script>
