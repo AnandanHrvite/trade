@@ -548,10 +548,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       }
 
       const side = signal === "BUY_CE" ? "CE" : "PE";
-      // entryPrevMid: mid of the last fully closed candle at entry time.
-      // In paper trade (candle-close path), candles[length-1] = the entry candle itself
-      // (it was just pushed in onCandleClose). Match that here: use candle (= candles[i]).
-      const entryPrevMid = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
+      // entryPrevMid: mid of the candle closed just BEFORE the entry candle.
+      // Using prevCandle (candles[i-1]) gives a meaningful buffer for the 50% rule.
+      // The entry candle's mid is too close to entry price (only half the candle range)
+      // — any normal 15-min pullback crosses it, causing immediate 50% exits.
+      const entryPrevMid = parseFloat(((prevCandle.high + prevCandle.low) / 2).toFixed(2));
       const strength = signalStrength || "MARGINAL";
 
       // ── VIX filter: block entry in high-volatility regimes ──────────────────
