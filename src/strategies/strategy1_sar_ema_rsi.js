@@ -247,19 +247,35 @@ function getSignal(candles, opts) {
   // NOTE: ADX_MIN_TREND is declared BEFORE the ADX calculation (above) to avoid
   // JS var-hoisting bug — 'var' declarations are hoisted but assignments are not.
 
-  // ── EMA9 slope check (NEW for 15-min) ────────────────────────────────────────
-  // On 15-min, price drifts through a flat EMA9 frequently producing false touches.
-  // Require a minimum 3pts movement per candle before accepting the EMA9 as trending.
-  // CE requires EMA9 rising  >=3pts (ema9 - ema9_1 >= 3)
-  // PE requires EMA9 falling >=3pts (ema9_1 - ema9 >= 3)
-  var EMA_SLOPE_MIN  = 6;  // raised 3→6 (v56): 3pt slope on 15-min = barely moving EMA, too many false entries
-  var ema9SlopeValue = parseFloat((ema9 - ema9_1).toFixed(2)); // positive = rising, negative = falling
-  var ema9SlopeUp    = ema9SlopeValue >= EMA_SLOPE_MIN;   // valid for CE entry
-  var ema9SlopeDown  = ema9SlopeValue <= -EMA_SLOPE_MIN;  // valid for PE entry
+  // ── EMA9 slope check ────────────────────────────────────────────────────────
+  var EMA_SLOPE_MIN  = 8;  // raised 6→8: require strong directional EMA, not gentle drift
+  var ema9SlopeValue = parseFloat((ema9 - ema9_1).toFixed(2));
+  var ema9SlopeUp    = ema9SlopeValue >= EMA_SLOPE_MIN;
+  var ema9SlopeDown  = ema9SlopeValue <= -EMA_SLOPE_MIN;
 
-  // ── EMA9 intra-candle touch (the TRIGGER for both logics) ───────────────────
-  var emaTouchCE = signalCandle.high >= ema9;   // candle reached up into/through EMA9
-  var emaTouchPE = signalCandle.low  <= ema9;   // candle reached down into/through EMA9
+  // ── 2-candle directional confirmation (NEW — high probability filter) ──────
+  // Require the 2 candles BEFORE the signal candle to both be in signal direction.
+  // CE: both prev candles must be green (close > open) → established upward momentum
+  // PE: both prev candles must be red (close < open) → established downward momentum
+  // This eliminates entries on isolated EMA touches during choppy sideways action.
+  var prevCandle1 = candles[candles.length - 2];
+  var prevCandle2 = candles[candles.length - 3];
+  var prev2BullOk = prevCandle1 && prevCandle2 &&
+                    prevCandle1.close > prevCandle1.open && prevCandle2.close > prevCandle2.open;
+  var prev2BearOk = prevCandle1 && prevCandle2 &&
+                    prevCandle1.close < prevCandle1.open && prevCandle2.close < prevCandle2.open;
+
+  // ── RSI direction check (NEW) ──────────────────────────────────────────────
+  // RSI must be MOVING in the signal direction, not just above/below threshold.
+  // CE: RSI must be rising (current > previous) → momentum building
+  // PE: RSI must be falling (current < previous) → momentum building
+  var rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
+  var rsiRising  = rsi > rsiPrev;
+  var rsiFalling = rsi < rsiPrev;
+
+  // ── EMA9 intra-candle touch ───────────────────────────────────────────────
+  var emaTouchCE = signalCandle.high >= ema9;
+  var emaTouchPE = signalCandle.low  <= ema9;
 
   // Tiebreaker: if candle straddles EMA9 (both true), use close direction
   // Close above EMA9 → favour CE touch; close below → favour PE touch
@@ -397,7 +413,7 @@ function getSignal(candles, opts) {
     // Maximum SAR distance: 100 pts — cap risk per trade for better R:R
     // A 150+ pt SL on 15-min options is too wide — need 3 wins to recover 1 loss.
     // Capping at 100pt ensures worst-case loss is bounded and R:R stays healthy.
-    var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "100");
+    var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistCE > MAX_SAR_DIST) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt > " + MAX_SAR_DIST + "pt max (SL too wide — poor R:R)");
       return Object.assign({}, base, {
@@ -416,14 +432,26 @@ function getSignal(candles, opts) {
         reason: "CE blocked: bearish candle body (close <= open) — EMA wick rejection, not bullish conviction",
       });
     }
-    if (candleBodyCE < 10) {
-      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 10pt (doji/spinning top — unreliable EMA touch)");
+    if (candleBodyCE < 15) {
+      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 15pt (weak/spinning top — unreliable EMA touch)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
+        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 15) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
+    // 2-candle directional confirmation: previous 2 candles must both be green (bullish)
+    if (!prev2BullOk) {
+      if (!silent) console.log("  ❌ CE gate FAIL: previous 2 candles not both bullish — no established momentum");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: prev 2 candles not both green — no momentum confirmation" });
+    }
+    if (!silent) console.log("  ✓ CE gate PASS: prev 2 candles both bullish — momentum confirmed");
+    // RSI direction: RSI must be rising (building momentum, not fading)
+    if (!rsiRising) {
+      if (!silent) console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " not rising (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: RSI not rising (" + rsi.toFixed(1) + " <= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
+    }
+    if (!silent) console.log("  ✓ CE gate PASS: RSI rising " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ CE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging — no established trend)");
@@ -496,7 +524,7 @@ function getSignal(candles, opts) {
     }
     if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — 55pt check skipped)" : " >= 55pt"));
     // Maximum SAR distance: 100 pts — cap risk per trade (same as CE)
-    var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "100");
+    var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistPE > MAX_SAR_DIST_PE) {
       if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt > " + MAX_SAR_DIST_PE + "pt max (SL too wide — poor R:R)");
       return Object.assign({}, base, {
@@ -516,14 +544,26 @@ function getSignal(candles, opts) {
         reason: "PE blocked: bullish candle body (close >= open) — EMA wick rejection, not bearish conviction",
       });
     }
-    if (candleBodyPE < 10) {
-      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 10pt (doji/spinning top)");
+    if (candleBodyPE < 15) {
+      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 15pt (weak/spinning top)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
+        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 15) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
+    // 2-candle directional confirmation: previous 2 candles must both be red (bearish)
+    if (!prev2BearOk) {
+      if (!silent) console.log("  ❌ PE gate FAIL: previous 2 candles not both bearish — no established momentum");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: prev 2 candles not both red — no momentum confirmation" });
+    }
+    if (!silent) console.log("  ✓ PE gate PASS: prev 2 candles both bearish — momentum confirmed");
+    // RSI direction: RSI must be falling (building bearish momentum)
+    if (!rsiFalling) {
+      if (!silent) console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " not falling (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: RSI not falling (" + rsi.toFixed(1) + " >= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
+    }
+    if (!silent) console.log("  ✓ PE gate PASS: RSI falling " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ PE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging)");

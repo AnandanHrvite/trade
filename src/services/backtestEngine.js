@@ -322,14 +322,9 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
           const trailSL          = parseFloat((position.bestPrice - dynamicGap).toFixed(2));
-          // 50% floor: trail SL cannot sit below entryPrevMid until trail naturally rises above it (mirrors paper/live)
-          const fiftyPctFloor    = position.entryPrevMid;
-          const clipped          = fiftyPctFloor !== null && trailSL < fiftyPctFloor;
-          const effectiveTrailSL = clipped ? fiftyPctFloor : trailSL;
-          if (effectiveTrailSL > position.stopLoss) {
-            const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
-            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} → effective=${effectiveTrailSL}${clipStr}`);
-            position.stopLoss = effectiveTrailSL;
+          if (trailSL > position.stopLoss) {
+            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
+            position.stopLoss = trailSL;
           }
         }
       } else {
@@ -340,14 +335,9 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
           const trailSL          = parseFloat((position.bestPrice + dynamicGap).toFixed(2));
-          // 50% ceiling: trail SL cannot sit above entryPrevMid until trail naturally falls below it (mirrors paper/live)
-          const fiftyPctCeiling  = position.entryPrevMid;
-          const clipped          = fiftyPctCeiling !== null && trailSL > fiftyPctCeiling;
-          const effectiveTrailSL = clipped ? fiftyPctCeiling : trailSL;
-          if (effectiveTrailSL < position.stopLoss) {
-            const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
-            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL} → effective=${effectiveTrailSL}${clipStr}`);
-            position.stopLoss = effectiveTrailSL;
+          if (trailSL < position.stopLoss) {
+            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
+            position.stopLoss = trailSL;
           }
         }
       }
@@ -358,25 +348,30 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // Rule 1: Candle mid rule (relaxed from 50% to configurable ratio)
-      // Original 50% was too aggressive — exited on normal 15-min noise.
-      // CE exits at 35% from low (was 50% = mid). PE exits at 65% from low (was 50% = mid).
-      // This gives ~40% more room before the rule fires.
-      // prevMid = computed at entry time from the candle closed before entry (fixed reference).
-      const isEntryCandle = candle.time === position.entryTime;
-      if (!isEntryCandle) {
-        const prevMid = position.entryPrevMid;
-        if (position.side === "CE" && candle.low < prevMid) {
-          exitReason = `50% rule — low ${candle.low} < prev mid ${prevMid}`;
-          exitPrice  = prevMid;
-        } else if (position.side === "PE" && candle.high > prevMid) {
-          exitReason = `50% rule — high ${candle.high} > prev mid ${prevMid}`;
-          exitPrice  = prevMid;
+      // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
+      // Once trade moves 25pt in favor, SL moves to entry price (zero risk).
+      // This is MUCH better than the 50% rule because:
+      // - 50% rule killed trades on normal noise (exits at fixed reference)
+      // - Breakeven stop only fires after the trade proves itself (+25pt move)
+      // - Trades that go +25pt then reverse = breakeven (not a loss)
+      // - Trades that never reach +25pt = hit initial SL (max 80pt loss)
+      const BREAKEVEN_THRESHOLD = parseFloat(process.env.BREAKEVEN_PTS || "25");
+      if (position.side === "CE") {
+        const ceMove = (position.bestPrice || candle.close) - position.entryPrice;
+        if (ceMove >= BREAKEVEN_THRESHOLD && position.stopLoss < position.entryPrice) {
+          console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+          position.stopLoss = position.entryPrice;
+        }
+      } else {
+        const peMove = position.entryPrice - (position.bestPrice || candle.close);
+        if (peMove >= BREAKEVEN_THRESHOLD && position.stopLoss > position.entryPrice) {
+          console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+          position.stopLoss = position.entryPrice;
         }
       }
 
-      // Rule 2+3: SL or trail SL (uses candle low/high as intra-candle proxy — mirrors paper/live tick-by-tick SL check)
-      if (!exitReason && position.stopLoss !== null && position.stopLoss !== undefined) {
+      // Rule 1: SL or trail SL (uses candle low/high as intra-candle proxy)
+      if (position.stopLoss !== null && position.stopLoss !== undefined) {
         if (position.side === "CE" && candle.low <= position.stopLoss) {
           exitReason = `SL hit — low ${candle.low} <= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
@@ -386,13 +381,13 @@ function runBacktest(candles, strategy, capital, vixCandles) {
         }
       }
 
-      // Rule 4: Opposite signal
+      // Rule 2: Opposite signal
       if (!exitReason && signal === (position.side === "CE" ? "BUY_PE" : "BUY_CE")) {
         exitReason = "Opposite signal exit";
         exitPrice  = candle.close;
       }
 
-      // Rule 5: EOD square-off — PER DAY at 3:20 PM (FIXED)
+      // Rule 3: EOD square-off — PER DAY at 3:20 PM
       if (!exitReason && isEODcandle) {
         exitReason = `EOD square-off ${candleMin >= 920 ? "3:20 PM" : "(last candle of day)"}`;
         exitPrice  = candle.close;
@@ -497,7 +492,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     // ── ENTRY ─────────────────────────────────────────────────────────────────
     // Gate checks: SL re-entry block + 50%-rule pause. Daily/consec kills removed
     // from backtest to preserve full data for strategy analysis.
-    const is50PctPaused   = candle.time < _fiftyPctPauseUntilTs;
+    _fiftyPctPauseUntilTs;
     const isSLBlocked     = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
 
     if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
