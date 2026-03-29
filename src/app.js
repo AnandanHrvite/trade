@@ -279,6 +279,7 @@ app.get("/", (req, res) => {
   const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
   const scalpMode   = sharedSocketState.getScalpMode();
   const scalpEnabled = process.env.SCALP_ENABLED === "true";
+  const scalpModeOn  = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
   // ── Token expiry warning ─────────────────────────────────────────────────
@@ -468,8 +469,8 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="top-bar-right">
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
-      ${scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
-      ${!liveActive && !scalpMode ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
+      ${!liveActive && (!scalpModeOn || !scalpMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -619,7 +620,7 @@ ${buildSidebar('dashboard', liveActive)}
   </div><!-- end trade-row -->
 
   <!-- ④ SCALP MODE -->
-  <div class="card" id="scalp-status-card">
+  ${scalpModeOn ? `<div class="card" id="scalp-status-card">
     <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">⚡</span>
@@ -641,7 +642,7 @@ ${buildSidebar('dashboard', liveActive)}
         <div class="ts-cell"><div class="ts-label">Max Trades</div><div class="ts-val flat" style="font-size:0.78rem;">${process.env.SCALP_MAX_DAILY_TRADES || '30'}/day</div><div class="ts-sub">Loss limit: ₹${process.env.SCALP_MAX_DAILY_LOSS || '2000'}</div></div>
       </div>
     </div>
-  </div>
+  </div>` : ''}
 
 </div>
 
@@ -727,14 +728,14 @@ async function pollDashboardStatus(){
     renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
   }
   // Scalp status
-  try {
+  ${scalpModeOn ? `try {
     var sr = await fetch('/scalp/status/data',{cache:'no-store'});
     var sp = await fetch('/scalp-paper/status/data',{cache:'no-store'});
     var scalpBadge = document.getElementById('scalp-run-badge');
     if(sr.ok){ var sd=await sr.json(); if(sd.running && scalpBadge) scalpBadge.style.display='inline'; }
     else if(sp.ok){ var spd=await sp.json(); if(spd.running && scalpBadge){ scalpBadge.style.display='inline'; scalpBadge.textContent='PAPER'; scalpBadge.style.background='#0d3018'; scalpBadge.style.color='#4ade80'; scalpBadge.style.borderColor='#166534'; scalpBadge.style.animation='none'; } }
     if(scalpBadge && scalpBadge.style.display==='none') scalpBadge.style.display='none';
-  } catch(e){}
+  } catch(e){}` : ''}
 }
 pollDashboardStatus();
 

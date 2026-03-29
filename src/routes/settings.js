@@ -365,6 +365,18 @@ router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
   const envData    = parseEnvFile();
 
+  // ── Determine which fields should be frozen (disabled but values kept) ──
+  const vixEnabled  = (envData["VIX_FILTER_ENABLED"] ?? process.env.VIX_FILTER_ENABLED ?? "true") === "true";
+  const scalpModeOn = (envData["SCALP_MODE_ENABLED"] ?? process.env.SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+
+  function isFieldFrozen(key) {
+    // VIX params frozen when VIX filter is off
+    if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
+    // Scalp section frozen when scalp mode is off (but not the master toggle itself)
+    if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && !scalpModeOn) return true;
+    return false;
+  }
+
   // Build field HTML for each section
   function renderField(f) {
     const val = envData[f.key] ?? process.env[f.key] ?? f.default ?? "";
@@ -372,17 +384,22 @@ router.get("/", (req, res) => {
     const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" title="${eff.tip}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span>`;
     const descText = f.desc || "";
     const descHtml = descText ? `<div class="field-desc">${descText}</div>` : "";
+    const frozen = isFieldFrozen(f.key);
+    const dis = frozen ? "disabled" : "";
+    const frozenGroup = f.key.startsWith("SCALP_") ? "scalp" : (f.key.startsWith("VIX_") ? "vix" : "");
+    const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";
+    const rowClass = frozen ? "setting-row frozen" : "setting-row";
 
     if (f.type === "toggle") {
       const checked = val === "true" || val === "1" ? "checked" : "";
       return `
-        <div class="setting-row">
+        <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <label class="toggle-switch">
-            <input type="checkbox" data-key="${f.key}" ${checked} onchange="markDirty(this)"/>
+            <input type="checkbox" data-key="${f.key}" ${checked} ${dis} onchange="markDirty(this)"/>
             <span class="toggle-slider"></span>
           </label>
         </div>`;
@@ -393,18 +410,18 @@ router.get("/", (req, res) => {
         `<option value="${o}" ${o === val ? "selected" : ""}>${o}</option>`
       ).join("");
       return `
-        <div class="setting-row">
+        <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
-          <select data-key="${f.key}" onchange="markDirty(this)">${opts}</select>
+          <select data-key="${f.key}" ${dis} onchange="markDirty(this)">${opts}</select>
         </div>`;
     }
 
     if (f.type === "number") {
       return `
-        <div class="setting-row">
+        <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
@@ -412,30 +429,30 @@ router.get("/", (req, res) => {
           <input type="number" data-key="${f.key}" value="${val}"
             ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""}
             ${f.step != null ? `step="${f.step}"` : ""}
-            onchange="markDirty(this)" oninput="markDirty(this)"/>
+            ${dis} onchange="markDirty(this)" oninput="markDirty(this)"/>
         </div>`;
     }
 
     if (f.type === "date") {
       return `
-        <div class="setting-row">
+        <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
-          <input type="date" data-key="${f.key}" value="${val}" onchange="markDirty(this)"/>
+          <input type="date" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)"/>
         </div>`;
     }
 
     if (f.type === "password") {
       return `
-        <div class="setting-row">
+        <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
-            <input type="password" data-key="${f.key}" value="${val}" onchange="markDirty(this)" oninput="markDirty(this)" style="flex:1;" placeholder="(empty = disabled)"/>
+            <input type="password" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)" oninput="markDirty(this)" style="flex:1;" placeholder="(empty = disabled)"/>
             <button type="button" onclick="togglePwdVis(this)" style="background:none;border:1px solid var(--border);border-radius:6px;padding:5px 8px;cursor:pointer;color:var(--muted);font-size:0.7rem;" title="Show/hide">👁</button>
           </div>
         </div>`;
@@ -443,12 +460,12 @@ router.get("/", (req, res) => {
 
     // text
     return `
-      <div class="setting-row">
+      <div class="${rowClass}" ${frozenAttr}>
         <div class="setting-info">
           <div class="setting-label">${f.label}</div>
           ${descHtml}
         </div>
-        <input type="text" data-key="${f.key}" value="${val}" onchange="markDirty(this)"/>
+        <input type="text" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)"/>
       </div>`;
   }
 
@@ -588,6 +605,12 @@ router.get("/", (req, res) => {
     }
     .toggle-switch input:checked + .toggle-slider { background: #064e3b; border-color: #065f46; }
     .toggle-switch input:checked + .toggle-slider::before { transform: translateX(22px); background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+
+    /* ── Frozen (disabled) rows ──────────────────────────── */
+    .setting-row.frozen { opacity: 0.4; pointer-events: none; }
+    .setting-row.frozen input,
+    .setting-row.frozen select { cursor: not-allowed; }
+    .setting-row.frozen .toggle-slider { cursor: not-allowed; }
 
     /* ── Buttons ─────────────────────────────────────────── */
     .btn-save {
@@ -832,6 +855,19 @@ function togglePwdVis(btn) {
   else { inp.type = 'password'; btn.textContent = '👁'; }
 }
 
+function toggleFreezeGroup(group, freeze) {
+  document.querySelectorAll('[data-freeze-group="' + group + '"]').forEach(function(row) {
+    if (freeze) {
+      row.classList.add('frozen');
+    } else {
+      row.classList.remove('frozen');
+    }
+    row.querySelectorAll('input, select').forEach(function(inp) {
+      inp.disabled = freeze;
+    });
+  });
+}
+
 function markDirty(el) {
   var key = el.getAttribute('data-key');
   if (!key) return;
@@ -844,6 +880,9 @@ function markDirty(el) {
     window._dirtyKeys.delete(key);
     if (el.type !== 'checkbox') el.classList.remove('dirty');
   }
+  // Freeze/unfreeze dependent fields when parent toggle changes
+  if (key === 'VIX_FILTER_ENABLED') toggleFreezeGroup('vix', !el.checked);
+  if (key === 'SCALP_MODE_ENABLED') toggleFreezeGroup('scalp', !el.checked);
   updateSaveBar();
 }
 
@@ -871,6 +910,11 @@ function discardChanges() {
   });
   window._dirtyKeys.clear();
   updateSaveBar();
+  // Restore freeze state from original toggle values
+  var vixOrig = window._originals['VIX_FILTER_ENABLED'];
+  var scalpOrig = window._originals['SCALP_MODE_ENABLED'];
+  toggleFreezeGroup('vix', vixOrig !== true && vixOrig !== 'true');
+  toggleFreezeGroup('scalp', scalpOrig !== true && scalpOrig !== 'true');
   showToast('Changes discarded', 'info');
 }
 
