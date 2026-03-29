@@ -308,6 +308,23 @@ router.post("/save", (req, res) => {
     return res.status(400).json({ success: false, error: "No valid updates" });
   }
 
+  // ── Auto-fill missing defaults: when saving any key from a section,
+  // also write all missing keys from that section with their defaults.
+  // This ensures .env gets the full config on first save even if user
+  // only changed one field (the rest show defaults but aren't in .env yet).
+  const envOnDisk = parseEnvFile();
+  for (const section of SETTINGS_SCHEMA) {
+    const sectionKeys = section.fields.map(f => f.key);
+    const anySaved = sectionKeys.some(k => k in cleaned);
+    if (anySaved) {
+      for (const f of section.fields) {
+        if (!(f.key in cleaned) && !(f.key in envOnDisk) && f.default !== undefined) {
+          cleaned[f.key] = f.default;
+        }
+      }
+    }
+  }
+
   const result = updateEnvFile(cleaned);
   if (result.success) {
     console.log(`[settings] Updated ${result.updatedCount} values:`, Object.keys(cleaned).join(", "),
