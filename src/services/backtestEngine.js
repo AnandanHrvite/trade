@@ -548,7 +548,10 @@ function runBacktest(candles, strategy, capital, vixCandles) {
       }
 
       const side = signal === "BUY_CE" ? "CE" : "PE";
-      const entryPrevMid = parseFloat(((prevCandle.high + prevCandle.low) / 2).toFixed(2));
+      // entryPrevMid: mid of the last fully closed candle at entry time.
+      // In paper trade (candle-close path), candles[length-1] = the entry candle itself
+      // (it was just pushed in onCandleClose). Match that here: use candle (= candles[i]).
+      const entryPrevMid = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
       const strength = signalStrength || "MARGINAL";
 
       // ── VIX filter: block entry in high-volatility regimes ──────────────────
