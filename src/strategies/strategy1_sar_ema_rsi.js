@@ -260,10 +260,10 @@ function getSignal(candles, opts) {
   // This eliminates entries on isolated EMA touches during choppy sideways action.
   var prevCandle1 = candles[candles.length - 2];
   var prevCandle2 = candles[candles.length - 3];
-  var prev2BullOk = prevCandle1 && prevCandle2 &&
-                    prevCandle1.close > prevCandle1.open && prevCandle2.close > prevCandle2.open;
-  var prev2BearOk = prevCandle1 && prevCandle2 &&
-                    prevCandle1.close < prevCandle1.open && prevCandle2.close < prevCandle2.open;
+  var prev2BullOk = prevCandle1 &&
+                    prevCandle1.close > prevCandle1.open;
+  var prev2BearOk = prevCandle1 &&
+                    prevCandle1.close < prevCandle1.open;
 
   // ── RSI direction check (NEW) ──────────────────────────────────────────────
   // RSI must be MOVING in the signal direction, not just above/below threshold.
@@ -432,11 +432,11 @@ function getSignal(candles, opts) {
         reason: "CE blocked: bearish candle body (close <= open) — EMA wick rejection, not bullish conviction",
       });
     }
-    if (candleBodyCE < 15) {
-      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 15pt (weak/spinning top — unreliable EMA touch)");
+    if (candleBodyCE < 12) {
+      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 12pt (weak/spinning top — unreliable EMA touch)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 15) — doji/indecision, EMA touch unreliable",
+        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 12) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
@@ -446,12 +446,12 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: prev 2 candles not both green — no momentum confirmation" });
     }
     if (!silent) console.log("  ✓ CE gate PASS: prev 2 candles both bullish — momentum confirmed");
-    // RSI direction: RSI must be rising (building momentum, not fading)
-    if (!rsiRising) {
-      if (!silent) console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " not rising (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
-      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: RSI not rising (" + rsi.toFixed(1) + " <= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
-    }
-    if (!silent) console.log("  ✓ CE gate PASS: RSI rising " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
+//     // RSI direction: RSI must be rising (building momentum, not fading)
+//     if (!rsiRising) {
+//       if (!silent) console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " not rising (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
+//       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: RSI not rising (" + rsi.toFixed(1) + " <= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
+//     }
+//     if (!silent) console.log("  ✓ CE gate PASS: RSI rising " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ CE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging — no established trend)");
@@ -544,11 +544,11 @@ function getSignal(candles, opts) {
         reason: "PE blocked: bullish candle body (close >= open) — EMA wick rejection, not bearish conviction",
       });
     }
-    if (candleBodyPE < 15) {
-      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 15pt (weak/spinning top)");
+    if (candleBodyPE < 12) {
+      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 12pt (weak/spinning top)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 15) — doji/indecision, EMA touch unreliable",
+        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 12) — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
@@ -558,12 +558,12 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: prev 2 candles not both red — no momentum confirmation" });
     }
     if (!silent) console.log("  ✓ PE gate PASS: prev 2 candles both bearish — momentum confirmed");
-    // RSI direction: RSI must be falling (building bearish momentum)
-    if (!rsiFalling) {
-      if (!silent) console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " not falling (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
-      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: RSI not falling (" + rsi.toFixed(1) + " >= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
-    }
-    if (!silent) console.log("  ✓ PE gate PASS: RSI falling " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
+//     // RSI direction: RSI must be falling (building bearish momentum)
+//     if (!rsiFalling) {
+//       if (!silent) console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " not falling (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
+//       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: RSI not falling (" + rsi.toFixed(1) + " >= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
+//     }
+//     if (!silent) console.log("  ✓ PE gate PASS: RSI falling " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ PE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging)");
