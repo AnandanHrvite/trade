@@ -699,6 +699,7 @@ router.get("/", (req, res) => {
         <div class="top-bar-title">Settings</div>
         <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
+      <button onclick="showEnvModal()" style="margin-left:auto;padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
     </div>
 
     <!-- Sticky save bar (appears when you change something) -->
@@ -1040,8 +1041,61 @@ function showToast(msg, type) {
   }, 4000);
 }
 </script>
+<!-- .env viewer modal -->
+<div id="envModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:700px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">.env Configuration</span>
+      <button onclick="document.getElementById('envModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
+      <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
+    </div>
+  </div>
+</div>
+<script>
+function showEnvModal(){
+  document.getElementById('envModal').style.display='block';
+  fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
+    var keys=Object.keys(data).sort();
+    var html='<table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-family:IBM Plex Mono,monospace;">';
+    html+='<tr style="border-bottom:1px solid #1a2640;"><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Key</th><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Value</th></tr>';
+    for(var i=0;i<keys.length;i++){
+      var k=keys[i];var v=data[k];
+      var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
+      var display=isSecret?'••••••••':v;
+      var bg=i%2===0?'transparent':'rgba(255,255,255,0.02)';
+      var valColor=v==='true'?'#10b981':v==='false'?'#ef4444':'#a3b8d0';
+      html+='<tr style="border-bottom:1px solid #0e1428;background:'+bg+'"><td style="padding:6px 10px;color:#8aa1bd;white-space:nowrap;">'+k+'</td><td style="padding:6px 10px;color:'+valColor+';word-break:break-all;">'+display+'</td></tr>';
+    }
+    html+='</table>';
+    html+='<div style="margin-top:12px;color:#4a6080;font-size:0.7rem;">'+keys.length+' keys &middot; Sensitive values hidden</div>';
+    document.getElementById('envTableWrap').innerHTML=html;
+  });
+}
+</script>
 </body>
 </html>`);
+});
+
+// ── GET /settings/env — return all .env values as JSON ─────────────────────
+router.get("/env", (req, res) => {
+  const envData = {};
+  try {
+    const envContent = fs.readFileSync(ENV_PATH, "utf-8");
+    envContent.split("\n").forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const eqIdx = trimmed.indexOf("=");
+      if (eqIdx < 0) return;
+      const key = trimmed.substring(0, eqIdx).trim();
+      const val = trimmed.substring(eqIdx + 1).trim();
+      envData[key] = val;
+    });
+  } catch (e) {
+    return res.json({ error: "Could not read .env" });
+  }
+  res.json(envData);
 });
 
 module.exports = router;
