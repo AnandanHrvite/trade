@@ -863,10 +863,11 @@ async function refreshHolidays(){
   res.send(html);
   } catch (err) {
     console.error("Dashboard error:", err);
+    const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     res.status(500).send(`<pre style="color:red;padding:32px;font-family:monospace;">
-Dashboard Error: ${err.message}
+Dashboard Error: ${esc(err.message)}
 
-${err.stack}
+${esc(err.stack)}
 
 Check your .env file — common causes:
 • ACTIVE_STRATEGY not matching available strategies (should be STRATEGY_1)
@@ -912,11 +913,13 @@ process.on("uncaughtException", (err) => {
 // Re-schedules itself for the same time the next day so it runs perpetually.
 
 function scheduleEODTokenClear() {
-  const now    = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const clearAt = new Date(now);
-  clearAt.setHours(15, 31, 0, 0); // 3:31 PM IST
-
-  let msUntil = clearAt - now;
+  // IST = UTC+5:30. Target: 3:31 PM IST = 10:01 AM UTC
+  const now     = new Date();
+  const utcH    = now.getUTCHours();
+  const utcM    = now.getUTCMinutes();
+  const utcNow  = utcH * 60 + utcM;
+  const target  = 10 * 60 + 1;  // 10:01 UTC = 15:31 IST
+  let msUntil   = (target - utcNow) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
   if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // if already past, schedule for tomorrow
 
   console.log(`🕒 EOD token clear scheduled in ${Math.round(msUntil / 60000)} min (at 3:31 PM IST)`);

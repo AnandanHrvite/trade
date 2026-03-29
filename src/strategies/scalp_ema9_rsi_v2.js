@@ -33,7 +33,7 @@ const NAME        = "SCALP_EMA9_RSI_V2";
 const DESCRIPTION = "3-min | EMA9 cross + EMA20 trend + ATR SL + volume | improved R:R scalp";
 
 // ── Configurable via .env (with defaults) ────────────────────────────────────
-function cfg(key, fallback) { return process.env[key] || fallback; }
+function cfg(key, fallback) { return process.env[key] !== undefined ? process.env[key] : fallback; }
 
 // ── Trading window ───────────────────────────────────────────────────────────
 function isInTradingWindow(unixSec) {

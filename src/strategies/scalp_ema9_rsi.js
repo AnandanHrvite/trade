@@ -27,7 +27,7 @@ const NAME        = "SCALP_EMA9_RSI";
 const DESCRIPTION = "3-min | EMA9 OHLC4 cross + close confirm + RSI 55/45 + body>=5pt | scalp target/SL/trail/time-stop";
 
 // ── Configurable via .env (with defaults) ────────────────────────────────────
-function cfg(key, fallback) { return process.env[key] || fallback; }
+function cfg(key, fallback) { return process.env[key] !== undefined ? process.env[key] : fallback; }
 
 // ── Trading window — tuned for 3-min scalp ───────────────────────────────────
 // Skip first 2 candles (9:15–9:21): opening volatility is noise on 3-min
@@ -117,10 +117,6 @@ function getSignal(candles, opts) {
   }
 
   // ── EMA9 cross detection ───────────────────────────────────────────────────
-  // Double confirmation: candle must CLOSE above/below EMA9
-  var closedAboveEMA = signalCandle.close > ema9;
-  var closedBelowEMA = signalCandle.close < ema9;
-
   // Cross: price must have been on the other side (high touched from below for CE, low from above for PE)
   // This is the PRIMARY entry — price actually crosses through EMA9 and closes on the other side.
   var crossedAbove = signalCandle.low <= ema9 && signalCandle.close > ema9;   // came from below, closed above

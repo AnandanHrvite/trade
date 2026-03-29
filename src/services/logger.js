@@ -10,7 +10,7 @@
 
 const EventEmitter = require("events");
 
-// No MAX_LOGS limit - store all logs until manually cleared
+const MAX_LOGS  = 5000; // rolling buffer — prevents unbounded memory growth on long sessions
 const logStore  = [];
 const logEvents = new EventEmitter();
 logEvents.setMaxListeners(100); // allow many simultaneous SSE browser tabs
@@ -52,7 +52,7 @@ function capture(level, args) {
   };
 
   logStore.push(entry);
-  // No automatic rolling - logs accumulate until manually cleared
+  if (logStore.length > MAX_LOGS) logStore.splice(0, logStore.length - MAX_LOGS);
 
   logEvents.emit("log", entry);
   return entry;

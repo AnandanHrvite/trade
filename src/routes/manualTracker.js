@@ -151,16 +151,17 @@ async function trackerTick() {
 
 function startTracking() {
   stopTracking(); tracker.pollBusy = false; tracker.status = "tracking";
+  tracker._active = true;
   function next() {
-    if (!tracker.pollTimer) return;
+    if (!tracker._active) return;
     tracker.pollTimer = setTimeout(async () => { await trackerTick(); next(); }, 1000);
   }
-  tracker.pollTimer = true;
-  trackerTick().then(next);
+  trackerTick().then(next).catch(next);
   tlog("📡 Tracking started — polling NIFTY every 1s");
 }
 function stopTracking() {
-  if (tracker.pollTimer && tracker.pollTimer !== true) clearTimeout(tracker.pollTimer);
+  tracker._active = false;
+  if (tracker.pollTimer) clearTimeout(tracker.pollTimer);
   tracker.pollTimer = null; tracker.pollBusy = false;
 }
 

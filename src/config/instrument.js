@@ -52,9 +52,8 @@ function getLastTuesdayOfMonth() {
   const lastDay = new Date(year, month + 1, 0);
   const lastDayOfWeek = lastDay.getDay();
   
-  // Find last Tuesday
-  let daysBack = (lastDayOfWeek - 2 + 7) % 7;
-  if (lastDayOfWeek < 2) daysBack += 7;
+  // Find last Tuesday (daysBack=0 when last day IS Tuesday — correct)
+  const daysBack = (lastDayOfWeek - 2 + 7) % 7;
   
   const lastTuesday = new Date(lastDay);
   lastTuesday.setDate(lastDay.getDate() - daysBack);
