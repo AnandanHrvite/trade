@@ -1,6 +1,156 @@
 # CHANGELOG — Palani Andawar Trading App
 
 ---
+
+## v-scalp — Scalp Mode + Performance (2026-03-29)
+
+### Summary
+
+Added a complete **parallel scalping system** (3-min candles, Fyers orders) that runs independently alongside the existing 15-min Live Trade (Zerodha). Includes scalp backtest, paper trade, and live trade — all controllable from the Settings UI. Also applied hot-path performance optimizations to `paperTrade.js`.
+
+---
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `src/strategies/scalp_ema9_rsi.js` | Scalp strategy — EMA9 OHLC4 cross + close confirmation + RSI momentum |
+| `src/services/fyersBroker.js` | Fyers order placement (place_order, get_positions, cancel, exit) |
+| `src/routes/scalp.js` | Scalp live trade — real Fyers orders on 3-min candles |
+| `src/routes/scalpPaper.js` | Scalp paper trade — simulated on live data |
+| `src/routes/scalpBacktest.js` | Scalp backtest — historical 3-min candle testing |
+
+### Scalp Strategy: EMA9 + RSI (3-min)
+
+**Entry (CE):**
+1. Price crosses above EMA9 (OHLC4) AND candle closes above EMA9 (double confirmation)
+2. RSI(14) > 55 AND rising (current > previous)
+3. Candle body is green and >= 5 pts
+
+**Entry (PE):** Mirror — close below EMA9, RSI < 45 and falling, red body >= 5pt
+
+**Exit (priority order):**
+1. Target hit (configurable, default 18pt)
+2. Stop loss hit (configurable, default 12pt)
+3. Trailing SL (8pt gap after 10pt profit)
+4. RSI reversal (RSI crosses 50 against position)
+5. Time stop (4 candles = 12 min — avoids dead trades)
+6. EOD square-off at 3:20 PM
+
+**What was deliberately excluded from scalp:**
+- No SAR — too laggy on 3-min, creates late entries
+- No 50% candle rule — swing concept, not applicable to scalping
+- ADX optional (disabled by default) — needs many candles to warm up
+
+---
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `src/utils/socketManager.js` | Added `addCallback()`, `removeCallback()`, `isRunning()` — ticks fan out to all registered modes |
+| `src/utils/sharedSocketState.js` | Added scalp mode tracking (`setScalpActive`, `clearScalp`, `canStart`) + mutual exclusion rules |
+| `src/utils/sharedNav.js` | Added Scalp BT / Scalp Paper / Scalp Live to sidebar + LIVE/ON badges for scalp modes |
+| `src/routes/trade.js` | `socketManager.stop()` now checks `isScalpActive()` before killing socket (2 locations) |
+| `src/routes/paperTrade.js` | Same socket-stop safety (3 locations) + performance optimizations (see below) |
+| `src/routes/settings.js` | Added "Scalp Mode" section (15 configurable fields) + keys in IMMEDIATE/SESSION sets |
+| `src/app.js` | Registered 3 scalp routes + OPEN_PATHS + dashboard scalp card + top-bar scalp badge |
+| `.env` | Added 15 `SCALP_*` environment variables (all defaults safe, `SCALP_ENABLED=false`) |
+| `README.md` | Full rewrite with architecture, all modes, config reference |
+
+---
+
+### How Parallel Modes Work
+
+```
+Live Trade (Zerodha, 15-min)    ──┐
+                                  ├── Same Fyers WebSocket (singleton)
+Scalp Live (Fyers, 3-min)      ──┘    socketManager fans ticks to both
+
+Each mode has:
+- Own state object (tradeState vs scalpState)
+- Own candle builder (15-min vs 3-min buckets)
+- Own strategy (SAR+EMA+RSI vs EMA cross+RSI)
+- Own broker (Zerodha vs Fyers)
+- Own risk controls (separate MAX_DAILY_LOSS, MAX_TRADES)
+- Own session persistence (live_trades.json vs scalp_live_trades.json)
+```
+
+**Socket lifecycle:**
+- Primary mode (Live/Paper) owns socket start/stop
+- Scalp piggybacks via `addCallback()` — receives same ticks
+- When primary stops, socket stays alive if scalp is still running
+- When scalp stops, it only kills socket if no primary mode is active
+
+---
+
+### Performance Optimizations — `paperTrade.js`
+
+| Location | Issue | Fix | Impact |
+|----------|-------|-----|--------|
+| `onTick` L1035 | `istNow()` calls `toLocaleString()` (ICU) on every tick (150/min) | `Date.now()` — raw ms, formatted only on display | ~150 ICU calls/min eliminated |
+| `getMinBucket` L185 | `new Date()` + `setMinutes()` on every tick | Pure integer math: `Math.floor(ms / resMs) * resMs` | ~150 Date allocations/min eliminated |
+| `onCandleClose` L877 | EOD check: `new Date(toLocaleString())` — double Date + ICU | `getISTMinutes()` — integer arithmetic only | 1 ICU call per candle eliminated |
+| `_optionPollTick` L377 | `parseFloat(process.env.OPT_STOP_PCT)` on every option poll (1/sec) | Cached as `_OPT_STOP_PCT` at module load (3 sites fixed) | ~60 env reads/min eliminated |
+| `/status/data` L1914 | `[...ptState.log].reverse()` copies 2000 entries every 2s | Slice last 100 then reverse | ~1900 fewer elements per poll |
+| `/status/data` L1898 | `trades.map()` rebuilds objects on every 2s poll | Cached with count check — only rebuilds on new trade | map() eliminated on ~99% of polls |
+
+**Net on t2.micro:** ~450 fewer allocations/min in tick handler, eliminated repeated env reads and array copies in poll endpoints.
+
+---
+
+### Bug Fix — `_fiftyPctPauseUntil` not reset on session start
+
+**File:** `src/routes/paperTrade.js`
+
+**Before:** The 50%-rule entry pause from a previous session was not explicitly cleared when starting a new session. If the server wasn't restarted between sessions, the pause could theoretically carry over (harmless in practice since timestamps expire, but incorrect).
+
+**After:** `ptState._fiftyPctPauseUntil = null` added to session reset block.
+
+---
+
+### Scalp .env Variables (all added)
+
+```env
+SCALP_ENABLED=false           # Master switch — must be true for live orders
+SCALP_RESOLUTION=3            # Candle size (1/2/3/5 min)
+SCALP_SL_PTS=12               # Stop loss distance from entry (pts)
+SCALP_TARGET_PTS=18           # Target distance from entry (pts)
+SCALP_TRAIL_GAP=8             # Trail gap behind best price (pts)
+SCALP_TRAIL_AFTER=10          # Activate trail after N pts profit
+SCALP_TIME_STOP_CANDLES=4     # Exit if no target within N candles
+SCALP_MAX_DAILY_TRADES=30     # Daily entry cap
+SCALP_MAX_DAILY_LOSS=2000     # Kill-switch (INR)
+SCALP_SL_PAUSE_CANDLES=2      # Pause entries after SL hit
+SCALP_RSI_CE_MIN=55           # Min RSI for CE entry
+SCALP_RSI_PE_MAX=45           # Max RSI for PE entry
+SCALP_MIN_BODY=5              # Min candle body (pts)
+SCALP_ADX_ENABLED=false       # Optional ADX trend filter
+SCALP_ADX_MIN=20              # ADX threshold (if enabled)
+```
+
+---
+
+### Dashboard Changes
+
+- New "Scalp Mode" card showing strategy config, broker, limits + links to Paper/Live/Backtest
+- Top-bar shows "SCALP LIVE" badge when scalp live is active
+- Sidebar shows LIVE badge on Scalp Live, ON badge on Scalp Paper when running
+- Dashboard polls `/scalp/status/data` and `/scalp-paper/status/data` every 4s
+
+---
+
+### Zero Changes to Core Logic
+
+These files were **not modified** (logic untouched):
+- `src/strategies/strategy1_sar_ema_rsi.js` — main strategy
+- `src/services/zerodhaBroker.js` — Zerodha orders
+- `src/services/backtestEngine.js` — backtest engine
+- `src/config/fyers.js` — Fyers auth
+- `src/config/instrument.js` — strike/expiry calc
+
+---
+
 ## v-final-2 — Trading Start Time Adjustment (2026-03-27)
 
 ### Summary

@@ -198,6 +198,12 @@ const OPEN_PATHS = [
   "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
+  // Scalp mode (read-only status/data)
+  "/scalp/status",
+  "/scalp/status/data",
+  "/scalp-paper/status",
+  "/scalp-paper/status/data",
+  "/scalp-backtest",
   // NOTE: /settings/save requires API_SECRET (write operation)
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
@@ -225,6 +231,10 @@ app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
+// ── Scalp mode routes (independent from main trade) ─────────────────────────
+app.use("/scalp",          require("./routes/scalp"));          // ← scalp live (Fyers orders)
+app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
+app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
@@ -267,6 +277,8 @@ app.get("/", (req, res) => {
   const liveEnabled = process.env.LIVE_TRADE_ENABLED === "true";
   const liveReady   = liveEnabled && fyersOk && zerodhaOk;
   const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
+  const scalpMode   = sharedSocketState.getScalpMode();
+  const scalpEnabled = process.env.SCALP_ENABLED === "true";
   const activeStrategyName = getActiveStrategy().NAME;
 
   // ── Token expiry warning ─────────────────────────────────────────────────
@@ -455,7 +467,9 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
-      ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : '<span class="top-bar-badge">● IDLE</span>'}
+      ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
+      ${scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
+      ${!liveActive && !scalpMode ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -604,7 +618,30 @@ ${buildSidebar('dashboard', liveActive)}
 
   </div><!-- end trade-row -->
 
-
+  <!-- ④ SCALP MODE -->
+  <div class="card" id="scalp-status-card">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">⚡</span>
+        <span class="card-hdr-title">Scalp Mode</span>
+        <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${scalpEnabled ? '#0d3018' : '#1a1a2e'};color:${scalpEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${scalpEnabled ? '#166534' : '#252550'};">${scalpEnabled ? 'ENABLED' : 'DISABLED'}</span>
+        <span id="scalp-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <a href="/scalp-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Paper →</a>
+        <a href="/scalp/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Live →</a>
+        <a href="/scalp-backtest" style="font-size:0.72rem;color:#60a5fa;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #1a3a6a;background:#080e1a;white-space:nowrap;">Backtest →</a>
+      </div>
+    </div>
+    <div id="scalp-status-body" style="padding:14px 18px 16px;">
+      <div class="ts-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
+        <div class="ts-cell"><div class="ts-label">Strategy</div><div class="ts-val flat" style="font-size:0.78rem;">EMA9 + RSI</div><div class="ts-sub">${process.env.SCALP_RESOLUTION || '3'}-min candles</div></div>
+        <div class="ts-cell"><div class="ts-label">Config</div><div class="ts-val flat" style="font-size:0.78rem;">SL: ${process.env.SCALP_SL_PTS || '12'}pt / TGT: ${process.env.SCALP_TARGET_PTS || '18'}pt</div><div class="ts-sub">Trail: ${process.env.SCALP_TRAIL_GAP || '8'}pt after ${process.env.SCALP_TRAIL_AFTER || '10'}pt</div></div>
+        <div class="ts-cell"><div class="ts-label">Orders via</div><div class="ts-val flat" style="font-size:0.78rem;">Fyers</div><div class="ts-sub">Independent from Zerodha</div></div>
+        <div class="ts-cell"><div class="ts-label">Max Trades</div><div class="ts-val flat" style="font-size:0.78rem;">${process.env.SCALP_MAX_DAILY_TRADES || '30'}/day</div><div class="ts-sub">Loss limit: ₹${process.env.SCALP_MAX_DAILY_LOSS || '2000'}</div></div>
+      </div>
+    </div>
+  </div>
 
 </div>
 
@@ -689,6 +726,15 @@ async function pollDashboardStatus(){
   } catch(e){
     renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
   }
+  // Scalp status
+  try {
+    var sr = await fetch('/scalp/status/data',{cache:'no-store'});
+    var sp = await fetch('/scalp-paper/status/data',{cache:'no-store'});
+    var scalpBadge = document.getElementById('scalp-run-badge');
+    if(sr.ok){ var sd=await sr.json(); if(sd.running && scalpBadge) scalpBadge.style.display='inline'; }
+    else if(sp.ok){ var spd=await sp.json(); if(spd.running && scalpBadge){ scalpBadge.style.display='inline'; scalpBadge.textContent='PAPER'; scalpBadge.style.background='#0d3018'; scalpBadge.style.color='#4ade80'; scalpBadge.style.borderColor='#166534'; scalpBadge.style.animation='none'; } }
+    if(scalpBadge && scalpBadge.style.display==='none') scalpBadge.style.display='none';
+  } catch(e){}
 }
 pollDashboardStatus();
 

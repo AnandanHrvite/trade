@@ -130,6 +130,27 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "Scalp Mode",
+    icon: "⚡",
+    fields: [
+      { key: "SCALP_ENABLED", label: "Scalp Live", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable/disable scalp live order placement via Fyers" },
+      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["1", "2", "3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution in minutes" },
+      { key: "SCALP_SL_PTS", label: "Stop Loss (pts)", type: "number", min: 3, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fixed SL distance from entry" },
+      { key: "SCALP_TARGET_PTS", label: "Target (pts)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fixed target distance from entry" },
+      { key: "SCALP_TRAIL_GAP", label: "Trail Gap (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Trailing SL gap behind best price" },
+      { key: "SCALP_TRAIL_AFTER", label: "Trail After (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Activate trail after this many pts profit" },
+      { key: "SCALP_TIME_STOP_CANDLES", label: "Time Stop (candles)", type: "number", min: 2, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Exit if no target hit within N candles" },
+      { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Maximum scalp entries per day" },
+      { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch — stops all entries" },
+      { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause entries after SL hit" },
+      { key: "SCALP_RSI_CE_MIN", label: "RSI CE Min", type: "number", min: 50, max: 70, step: 1, effect: EFFECT.SESSION, desc: "Minimum RSI for CE entry" },
+      { key: "SCALP_RSI_PE_MAX", label: "RSI PE Max", type: "number", min: 30, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum RSI for PE entry" },
+      { key: "SCALP_MIN_BODY", label: "Min Body (pts)", type: "number", min: 2, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size" },
+      { key: "SCALP_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Enable ADX trend filter for scalp" },
+      { key: "SCALP_ADX_MIN", label: "ADX Minimum", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.SESSION, desc: "ADX threshold (if enabled)" },
+    ],
+  },
+  {
     section: "Telegram",
     icon: "📱",
     fields: [
@@ -176,6 +197,7 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
+  "SCALP_ENABLED",
 ]);
 
 // These are cached as const at module load — need session stop+start
@@ -184,6 +206,12 @@ const SESSION_RESTART_KEYS = new Set([
   "TRAIL_ACTIVATE_PTS", "TRAIL_TIER1_UPTO", "TRAIL_TIER1_GAP",
   "TRAIL_TIER2_UPTO", "TRAIL_TIER2_GAP", "TRAIL_TIER3_GAP",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
+  // Scalp settings — need session restart
+  "SCALP_RESOLUTION", "SCALP_SL_PTS", "SCALP_TARGET_PTS",
+  "SCALP_TRAIL_GAP", "SCALP_TRAIL_AFTER", "SCALP_TIME_STOP_CANDLES",
+  "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
+  "SCALP_RSI_CE_MIN", "SCALP_RSI_PE_MAX", "SCALP_MIN_BODY",
+  "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────

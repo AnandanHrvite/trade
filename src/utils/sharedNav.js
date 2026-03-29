@@ -11,6 +11,10 @@
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
+  // Import scalp state inline to avoid circular dependency issues
+  let _scalpMode = null;
+  try { _scalpMode = require('./sharedSocketState').getScalpMode(); } catch (_) {}
+
   const {
     showStopBtn  = false,
     showStartBtn = false,
@@ -31,6 +35,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     { key: 'history',   href: '/paperTrade/history',    icon: '📊', label: 'History'   },
     { key: 'tracker',   href: '/tracker/status',        icon: '🎯', label: 'Tracker'   },
     { key: 'live',      href: '/trade/status',          icon: '●',  label: 'Live'      },
+    // ── Scalp mode ──
+    { key: 'scalpBacktest', href: '/scalp-backtest',    icon: '⚡', label: 'Scalp BT'  },
+    { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Scalp Paper'},
+    { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Scalp Live' },
+    // ──
     { key: 'logs',      href: '/logs',                  icon: '📜', label: 'Logs'      },
     { key: 'settings',   href: '/settings',              icon: '⚙',  label: 'Settings'  },
     { key: 'loginLogs',  href: '/login-logs',             icon: '🔐', label: 'Login Logs' },
@@ -58,9 +67,18 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    // Scalp badges — show LIVE or ON when scalp modes are running
+    const scalpLiveBadge = p.key === 'scalpLive' && _scalpMode === 'SCALP_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const scalpPaperBadge = p.key === 'scalpPaper' && _scalpMode === 'SCALP_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}
+      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}
     </a>`;
   }).join('');
 

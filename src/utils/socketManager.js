@@ -31,6 +31,10 @@ class SocketManager {
     this._retryTimer = null;
     this._watchdog   = null;
     this._lastTickAt = null;
+    // ── Multi-callback fan-out for parallel modes (main + scalp) ──────────
+    // Map of callbackId → { onTick, onLog }
+    // When secondary modes (scalp) register, ticks are dispatched to ALL callbacks.
+    this._callbacks  = new Map();
   }
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -45,9 +49,34 @@ class SocketManager {
     this._startWatchdog();
   }
 
+  /**
+   * Register an additional tick callback (for parallel modes like scalp).
+   * Returns a callbackId to use for unregistering.
+   * Socket must already be started by the primary mode.
+   */
+  addCallback(callbackId, onTick, onLog) {
+    this._callbacks.set(callbackId, { onTick, onLog });
+  }
+
+  /**
+   * Remove a previously registered callback.
+   */
+  removeCallback(callbackId) {
+    this._callbacks.delete(callbackId);
+  }
+
+  /**
+   * Check if socket is currently running (for secondary modes to know if they
+   * can piggyback without starting their own socket).
+   */
+  isRunning() {
+    return !this._stopped;
+  }
+
   stop() {
     this._stopped    = true;
     this._onSpotTick = null;  // clear callback FIRST — prevents residual ticks reaching onTick()
+    this._callbacks.clear();  // clear all secondary callbacks too
     this._clearRetry();
     this._clearWatchdog();
     this._detachListeners();
@@ -123,7 +152,15 @@ class SocketManager {
       if (this._stopped) return;
       this._lastTickAt = Date.now();
       const ticks = Array.isArray(msg) ? msg : [msg];
-      ticks.forEach(t => { if (t && t.ltp && this._onSpotTick) this._onSpotTick(t); });
+      ticks.forEach(t => {
+        if (!t || !t.ltp) return;
+        // Primary callback
+        if (this._onSpotTick) this._onSpotTick(t);
+        // Fan-out to all secondary callbacks (scalp, etc.)
+        for (const [, cb] of this._callbacks) {
+          try { if (cb.onTick) cb.onTick(t); } catch (_) {}
+        }
+      });
     });
 
     skt.on('error', (err) => {

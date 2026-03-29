@@ -857,7 +857,12 @@ async function onCandleClose(candle) {
       saveLiveSession();
       sharedSocketState.clear();
       stopOptionPolling();
-      socketManager.stop(); // uses top-level import: require("../utils/socketManager")
+      // Only stop socket if no scalp mode is piggybacking
+      if (!sharedSocketState.isScalpActive()) {
+        socketManager.stop();
+      } else {
+        log("📡 [LIVE] Socket kept alive — scalp mode still active");
+      }
     }
     return;
   }
@@ -1586,7 +1591,12 @@ router.get("/stop", async (req, res) => {
 
   saveLiveSession();
   stopOptionPolling();
-  socketManager.stop();
+  // Only stop socket if no scalp mode is piggybacking
+  if (!sharedSocketState.isScalpActive()) {
+    socketManager.stop();
+  } else {
+    log("📡 [LIVE] Socket kept alive — scalp mode still active");
+  }
   tradeState.optionLtp    = null;
   tradeState.optionSymbol = null;
   tradeState.running      = false;

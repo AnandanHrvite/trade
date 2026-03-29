@@ -42,6 +42,7 @@ const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
 const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── EOD stop time — cached at module load ─────────────────────────────────────
 // parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
@@ -182,9 +183,10 @@ function log(msg) {
 function getTradeResolution() { return TRADE_RES; } // kept for legacy callers; prefer TRADE_RES directly
 
 function getMinBucket(unixMs) {
-  const d = new Date(unixMs);
-  d.setMinutes(Math.floor(d.getMinutes() / TRADE_RES) * TRADE_RES, 0, 0);
-  return d.getTime();
+  // Pure integer math — avoids Date object allocation on every tick (150+/min).
+  // Floor to nearest TRADE_RES-minute boundary in IST.
+  const resMs = TRADE_RES * 60_000;
+  return Math.floor(unixMs / resMs) * resMs;
 }
 
 // Keep legacy alias used in onTick
@@ -372,8 +374,7 @@ async function _optionPollTick(symbol) {
       const spotGap = Math.max(Math.abs(entrySpot - prevMid), 20);
       optStopPrice  = parseFloat((entryLtp - spotGap).toFixed(2));
     } else if (entryLtp) {
-      const optStopPct = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-      optStopPrice = parseFloat((entryLtp * (1 - optStopPct)).toFixed(2));
+      optStopPrice = parseFloat((entryLtp * (1 - _OPT_STOP_PCT)).toFixed(2));
     }
     if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
       const dropPct = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
@@ -873,10 +874,10 @@ async function onCandleClose(candle) {
   }
 
   // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
-  // Use module-level cached _STOP_MINS (parsed once at startup) — no env read per candle.
-  const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  // Use fast integer IST calc (no Date/ICU allocation) + module-level cached _STOP_MINS.
+  const _eodMinNow  = getISTMinutes();
   const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
-  if (ist.getHours() * 60 + ist.getMinutes() >= _STOP_MINS) {
+  if (_eodMinNow >= _STOP_MINS) {
     if (ptState.position) {
       log("⏰ [PAPER] EOD " + _stopLabel + " — auto square off");
       simulateSell(candle.close, "EOD square-off " + _stopLabel, candle.close);
@@ -892,8 +893,11 @@ async function onCandleClose(candle) {
       log("⏰ [PAPER] Market closed (" + _stopLabel + " IST) — auto-stopping paper trade engine.");
       ptState.running = false;
       saveSession();
-      socketManager.stop();       // already imported at top — ../utils/socketManager
-      sharedSocketState.clear();  // already imported at top — ../utils/sharedSocketState
+      // Only stop socket if no scalp mode is piggybacking
+      if (!sharedSocketState.isScalpActive()) {
+        socketManager.stop();
+      }
+      sharedSocketState.clear();
       stopOptionPolling();
     }
     return;
@@ -1029,7 +1033,7 @@ function onTick(tick) {
 
   // ── Everything below: NIFTY index tick ───────────────────────────────────
   ptState.tickCount++;
-  ptState.lastTickTime  = istNow();
+  ptState.lastTickTime  = Date.now(); // raw ms — formatted only on status poll (istNow() is expensive on every tick)
   ptState.lastTickPrice = tick.ltp;
 
   const now    = Date.now();
@@ -1507,6 +1511,7 @@ router.get("/start", async (req, res) => {
   ptState.optionSymbol   = null;
   ptState._consecutiveLosses   = 0;
   ptState._pauseUntilTime      = null;
+  ptState._fiftyPctPauseUntil  = null;  // clear 50%-rule pause from previous session
   ptState._dailyLossHit        = false; // reset daily kill switch on new session
   ptState._cachedCE            = null; // clear pre-fetch cache on session start
   ptState._cachedPE            = null;
@@ -1517,6 +1522,7 @@ router.get("/start", async (req, res) => {
   ptState._missedLoggedCandle  = null;
   ptState._sessionWins         = 0;
   ptState._sessionLosses       = 0;
+  _tradesMapCache = []; _tradesMapCount = 0; // clear cached trades for poll
   stopOptionPolling();
 
   log(`\n════════════════════════════════════════════════════════════════════`);
@@ -1638,7 +1644,9 @@ router.get("/start", async (req, res) => {
     }
     ptState.running = false;
     stopOptionPolling();
-    socketManager.stop();
+    if (!sharedSocketState.isScalpActive()) {
+      socketManager.stop();
+    }
     sharedSocketState.clear();
     saveSession();
   });
@@ -1675,7 +1683,9 @@ router.get("/stop", async (req, res) => {
   }
 
   stopOptionPolling();
-  socketManager.stop();
+  if (!sharedSocketState.isScalpActive()) {
+    socketManager.stop();
+  }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clear();
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
@@ -1793,6 +1803,23 @@ function buildSessionTradeRows(trades, inr) {
   }).join("");
 }
 
+// ── Cached trades mapping for /status/data poll (avoids .map() on every 2s poll) ──
+let _tradesMapCache = [];
+let _tradesMapCount = 0;
+function _getCachedTradesForPoll() {
+  if (ptState.sessionTrades.length === _tradesMapCount) return _tradesMapCache;
+  _tradesMapCount = ptState.sessionTrades.length;
+  _tradesMapCache = ptState.sessionTrades.map(t => ({
+    side: t.side || "", strike: t.optionStrike || "", expiry: t.optionExpiry || "",
+    entry: t.entryTime || "", exit: t.exitTime || "",
+    eSpot: t.spotAtEntry || t.entryPrice || 0, eOpt: t.optionEntryLtp || null,
+    eSl: t.stopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
+    xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
+    reason: t.exitReason || "",
+  }));
+  return _tradesMapCache;
+}
+
 /**
  * GET /paperTrade/status/data
  * JSON-only endpoint for AJAX polling — returns all dynamic state without HTML.
@@ -1800,7 +1827,6 @@ function buildSessionTradeRows(trades, inr) {
  */
 router.get("/status/data", (req, res) => {
   try {
-    const strategy = getActiveStrategy();
     const data     = loadPaperData();
 
     // Unrealised PnL (mirrors /status logic)
@@ -1829,10 +1855,9 @@ router.get("/status/data", (req, res) => {
     // optStopPrice: same 50%-mid logic as the live stop — optionSL = entryLtp - |entrySpot - prevMid|
     const _optSp     = pos ? pos.spotAtEntry  : null;
     const _optPm     = pos ? pos.entryPrevMid : null;
-    const _optStopPct1 = parseFloat(process.env.OPT_STOP_PCT || "0.15");
     const optStopPrice = (optEntryLtp && _optSp && _optPm)
       ? parseFloat((optEntryLtp - Math.max(Math.abs(_optSp - _optPm), 20)).toFixed(2))
-      : optEntryLtp ? parseFloat((optEntryLtp * (1 - _optStopPct1)).toFixed(2)) : null;
+      : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
     const liveClose    = ptState.currentBar?.close || null;
     const pointsMoved  = pos && liveClose
       ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2)) : 0;
@@ -1887,24 +1912,13 @@ router.get("/status/data", (req, res) => {
         low:   ptState.currentBar.low,
         close: ptState.currentBar.close,
       } : null,
-      // Trades (full list for client-side filter/sort)
-      trades: ptState.sessionTrades.map(t => ({
-        side:    t.side           || "",
-        strike:  t.optionStrike   || "",
-        expiry:  t.optionExpiry   || "",
-        entry:   t.entryTime      || "",
-        exit:    t.exitTime       || "",
-        eSpot:   t.spotAtEntry    || t.entryPrice || 0,
-        eOpt:    t.optionEntryLtp || null,
-        eSl:     t.stopLoss       || null,
-        xSpot:   t.spotAtExit     || t.exitPrice  || 0,
-        xOpt:    t.optionExitLtp  || null,
-        pnl:     typeof t.pnl === "number" ? t.pnl : null,
-        reason:  t.exitReason     || "",
-      })),
-      // Activity log — all entries newest-first (up to 2000 — matches ptState.log buffer)
-      logTotal: ptState.log.length,   // full count — used by AJAX to detect new entries
-      logs: [...ptState.log].reverse(),
+      // Trades (mapped for client-side display — cached to avoid rebuild when trade count hasn't changed)
+      trades: _getCachedTradesForPoll(),
+      // Activity log — last 100 entries newest-first (avoids copying/reversing full 2000-entry buffer on every 2s poll)
+      logTotal: ptState.log.length,
+      logs: ptState.log.length <= 100
+        ? [...ptState.log].reverse()
+        : ptState.log.slice(-100).reverse(),
     });
   } catch (err) {
     console.error("[paperTrade/status/data] Error:", err.message);
@@ -1980,13 +1994,12 @@ router.get("/status", (req, res) => {
   // optStopPrice for HTML: same 50%-mid logic
   const _h_sp   = pos ? pos.spotAtEntry  : null;
   const _h_pm   = pos ? pos.entryPrevMid : null;
-  const _hOptStopPct = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   const optStopPrice = (optEntryLtp && _h_sp && _h_pm)
     ? parseFloat((optEntryLtp - Math.max(Math.abs(_h_sp - _h_pm), 20)).toFixed(2))
-    : optEntryLtp ? parseFloat((optEntryLtp * (1 - _hOptStopPct)).toFixed(2)) : null;
+    : optEntryLtp ? parseFloat((optEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2)) : null;
   const optStopPct   = (_h_sp && _h_pm)
     ? Math.abs(_h_sp - _h_pm).toFixed(1) + 'pt (50% mid)'
-    : Math.round(_hOptStopPct * 100) + '% fallback';
+    : Math.round(_OPT_STOP_PCT * 100) + '% fallback';
 
   const posHtml = pos ? `
     <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
