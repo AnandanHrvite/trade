@@ -1040,6 +1040,43 @@ function showToast(msg, type) {
     el.classList.remove('show');
   }, 4000);
 }
+
+// ── .env viewer ─────────────────────────────────────────────────────────
+var _envData={};
+function showEnvModal(){
+  document.getElementById('envModal').style.display='block';
+  fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
+    _envData=data;
+    var keys=Object.keys(data).sort();
+    var html='<table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-family:IBM Plex Mono,monospace;">';
+    html+='<tr style="border-bottom:1px solid #1a2640;"><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Key</th><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Value</th></tr>';
+    for(var i=0;i<keys.length;i++){
+      var k=keys[i];var v=data[k];
+      var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
+      var display=isSecret?'********':v;
+      var bg=i%2===0?'transparent':'rgba(255,255,255,0.02)';
+      var valColor=v==='true'?'#10b981':v==='false'?'#ef4444':'#a3b8d0';
+      html+='<tr style="border-bottom:1px solid #0e1428;background:'+bg+'"><td style="padding:6px 10px;color:#8aa1bd;white-space:nowrap;">'+k+'</td><td style="padding:6px 10px;color:'+valColor+';word-break:break-all;">'+display+'</td></tr>';
+    }
+    html+='</table>';
+    html+='<div style="margin-top:12px;color:#4a6080;font-size:0.7rem;">'+keys.length+' keys | Sensitive values hidden</div>';
+    document.getElementById('envTableWrap').innerHTML=html;
+  });
+}
+function copyEnvTable(){
+  var keys=Object.keys(_envData).sort();
+  var txt='';
+  for(var i=0;i<keys.length;i++){
+    var k=keys[i];var v=_envData[k];
+    var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
+    txt+=k+'='+( isSecret?'********':v)+'\\n';
+  }
+  navigator.clipboard.writeText(txt).then(function(){
+    var btn=document.getElementById('envCopyBtn');
+    btn.textContent='COPIED!';btn.style.color='#fff';btn.style.background='#10b981';
+    setTimeout(function(){btn.textContent='COPY';btn.style.color='#10b981';btn.style.background='rgba(16,185,129,0.12)';},1500);
+  });
+}
 </script>
 <!-- .env viewer modal -->
 <div id="envModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
@@ -1056,44 +1093,6 @@ function showToast(msg, type) {
     </div>
   </div>
 </div>
-<script>
-var _envData={};
-function showEnvModal(){
-  document.getElementById('envModal').style.display='block';
-  fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
-    _envData=data;
-    var keys=Object.keys(data).sort();
-    var html='<table style="width:100%;border-collapse:collapse;font-size:0.78rem;font-family:IBM Plex Mono,monospace;">';
-    html+='<tr style="border-bottom:1px solid #1a2640;"><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Key</th><th style="text-align:left;padding:8px 10px;color:#60a5fa;font-weight:700;">Value</th></tr>';
-    for(var i=0;i<keys.length;i++){
-      var k=keys[i];var v=data[k];
-      var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
-      var display=isSecret?'••••••••':v;
-      var bg=i%2===0?'transparent':'rgba(255,255,255,0.02)';
-      var valColor=v==='true'?'#10b981':v==='false'?'#ef4444':'#a3b8d0';
-      html+='<tr style="border-bottom:1px solid #0e1428;background:'+bg+'"><td style="padding:6px 10px;color:#8aa1bd;white-space:nowrap;">'+k+'</td><td style="padding:6px 10px;color:'+valColor+';word-break:break-all;">'+display+'</td></tr>';
-    }
-    html+='</table>';
-    html+='<div style="margin-top:12px;color:#4a6080;font-size:0.7rem;">'+keys.length+' keys &middot; Sensitive values hidden</div>';
-    document.getElementById('envTableWrap').innerHTML=html;
-  });
-}
-function copyEnvTable(){
-  var keys=Object.keys(_envData).sort();
-  var lines=['KEY                              VALUE','─'.repeat(50)];
-  for(var i=0;i<keys.length;i++){
-    var k=keys[i];var v=_envData[k];
-    var isSecret=k.indexOf('SECRET')>=0||k.indexOf('TOKEN')>=0||k.indexOf('ACCESS')>=0;
-    var display=isSecret?'********':v;
-    lines.push(k.padEnd(33)+display);
-  }
-  navigator.clipboard.writeText(lines.join('\n')).then(function(){
-    var btn=document.getElementById('envCopyBtn');
-    btn.textContent='COPIED!';btn.style.color='#fff';btn.style.background='#10b981';
-    setTimeout(function(){btn.textContent='COPY';btn.style.color='#10b981';btn.style.background='rgba(16,185,129,0.12)';},1500);
-  });
-}
-</script>
 </body>
 </html>`);
 });
