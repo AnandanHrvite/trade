@@ -296,7 +296,7 @@ function errorPage(title, message) {
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;align-items:center;justify-content:center;}
 .box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px;max-width:480px;text-align:center;}
 h2{color:#ef4444;margin-bottom:12px;font-size:1.1rem;}p{font-size:0.85rem;color:#8899aa;line-height:1.6;}</style>
-</head><body><div class="box"><h2>${title}</h2><p>${message}</p><br><a href="/scalp-backtest" style="color:#3b82f6;">← Back</a></div></body></html>`;
+</head><body><div class="box"><h2>${title}</h2><p>${message}</p><br><a href="/" style="color:#3b82f6;">← Back</a></div></body></html>`;
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────────

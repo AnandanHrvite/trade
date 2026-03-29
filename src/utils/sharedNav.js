@@ -28,6 +28,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     statusLabel  = isRunning ? 'RUNNING' : 'STOPPED',
   } = opts;
 
+  const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+
   const pages = [
     { key: 'dashboard', href: '/',                     icon: '⌂',  label: 'Dashboard' },
     { key: 'backtest',  href: '/backtest',              icon: '🔍', label: 'Backtest'  },
@@ -35,10 +37,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     { key: 'history',   href: '/paperTrade/history',    icon: '📊', label: 'History'   },
     { key: 'tracker',   href: '/tracker/status',        icon: '🎯', label: 'Tracker'   },
     { key: 'live',      href: '/trade/status',          icon: '●',  label: 'Live'      },
-    // ── Scalp mode ──
-    { key: 'scalpBacktest', href: '/scalp-backtest',    icon: '⚡', label: 'Scalp BT'  },
-    { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Scalp Paper'},
-    { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Scalp Live' },
+    // ── Scalp mode (hidden when SCALP_MODE_ENABLED=false) ──
+    ...(scalpModeOn ? [
+      { key: 'scalpBacktest', href: '/scalp-backtest',    icon: '⚡', label: 'Scalp BT'  },
+      { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Scalp Paper'},
+      { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Scalp Live' },
+    ] : []),
     // ──
     { key: 'logs',      href: '/logs',                  icon: '📜', label: 'Logs'      },
     { key: 'settings',   href: '/settings',              icon: '⚙',  label: 'Settings'  },

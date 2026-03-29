@@ -47,6 +47,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable/disable live order placement via Zerodha" },
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries when India VIX is too high" },
+      { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide all scalp menus (BT, Paper, Live)", default: "true" },
     ],
   },
   {
@@ -205,7 +206,7 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
-  "SCALP_ENABLED",
+  "SCALP_ENABLED", "SCALP_MODE_ENABLED",
 ]);
 
 // These are cached as const at module load — need session stop+start
