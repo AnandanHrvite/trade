@@ -339,9 +339,9 @@ router.get("/", async (req, res) => {
 <title>Scalp Backtest — ${scalpStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
 ${sidebarCSS()}
 ${modalCSS()}
-<style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#c0d0e8;min-height:100vh;display:flex;flex-direction:column;}
 .main-content{flex:1;padding:28px 32px;margin-left:220px;}
@@ -382,7 +382,9 @@ ${buildSidebar('scalpBacktest', liveActive)}
 </table>
 </div>
 </div></div>
+<script>
 ${modalJS()}
+</script>
 </body></html>`);
 
   } catch (err) {
