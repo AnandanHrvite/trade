@@ -108,6 +108,20 @@ function runScalpBacktest(candles, capital, vixCandles) {
       let exitReason = null;
       let exitPrice  = candle.close;
 
+      // 0. BREAKEVEN STOP — once +8pt in favor, SL moves to entry (zero risk)
+      const SCALP_BREAKEVEN = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
+      if (position.side === "CE") {
+        const beMove = (position.bestPrice || candle.close) - position.entryPrice;
+        if (beMove >= SCALP_BREAKEVEN && position.stopLoss < position.entryPrice) {
+          position.stopLoss = position.entryPrice;
+        }
+      } else {
+        const beMove = position.entryPrice - (position.bestPrice || candle.close);
+        if (beMove >= SCALP_BREAKEVEN && position.stopLoss > position.entryPrice) {
+          position.stopLoss = position.entryPrice;
+        }
+      }
+
       // 1. Target hit (intra-candle simulation)
       if (position.side === "CE" && candle.high >= position.target) {
         exitPrice  = position.target;
@@ -117,14 +131,17 @@ function runScalpBacktest(candles, capital, vixCandles) {
         exitReason = `Target hit (${SCALP_TARGET_PTS}pt)`;
       }
 
-      // 2. Stop loss hit (intra-candle)
+      // 2. Stop loss hit (intra-candle) — with labels
       if (!exitReason) {
+        const _isBE = Math.abs(position.stopLoss - position.entryPrice) < 0.5;
+        const _isTrail = !_isBE && position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
+        const _slLabel = _isBE ? "Breakeven SL" : _isTrail ? "Trail SL" : "Initial SL";
         if (position.side === "CE" && candle.low <= position.stopLoss) {
           exitPrice  = position.stopLoss;
-          exitReason = `SL hit (${SCALP_SL_PTS}pt)`;
+          exitReason = `${_slLabel} hit (${SCALP_SL_PTS}pt)`;
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
           exitPrice  = position.stopLoss;
-          exitReason = `SL hit (${SCALP_SL_PTS}pt)`;
+          exitReason = `${_slLabel} hit (${SCALP_SL_PTS}pt)`;
         }
       }
 

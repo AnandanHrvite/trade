@@ -346,12 +346,30 @@ function onTick(tick) {
       squareOff(pos.target, `Target hit (${_SCALP_TARGET_PTS}pt)`);
       return;
     }
+    // Breakeven stop — +8pt → SL to entry
+    const _scalpBE = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
+    if (pos.side === "CE") {
+      const _beM = (pos.bestPrice || price) - pos.entryPrice;
+      if (_beM >= _scalpBE && pos.stopLoss < pos.entryPrice) {
+        log(`✅ [SCALP-LIVE] BREAKEVEN CE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
+        pos.stopLoss = pos.entryPrice;
+      }
+    } else {
+      const _beM = pos.entryPrice - (pos.bestPrice || price);
+      if (_beM >= _scalpBE && pos.stopLoss > pos.entryPrice) {
+        log(`✅ [SCALP-LIVE] BREAKEVEN PE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
+        pos.stopLoss = pos.entryPrice;
+      }
+    }
+
     if (pos.side === "CE" && price <= pos.stopLoss) {
-      squareOff(pos.stopLoss, `SL hit (${_SCALP_SL_PTS}pt)`);
+      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : "SL";
+      squareOff(pos.stopLoss, `${_slT} hit`);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
-      squareOff(pos.stopLoss, `SL hit (${_SCALP_SL_PTS}pt)`);
+      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : "SL";
+      squareOff(pos.stopLoss, `${_slT} hit`);
       return;
     }
 
@@ -426,7 +444,7 @@ function onCandleClose(bar) {
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
 
   // VIX
-  if (vixFilter.VIX_ENABLED) {
+  if (process.env.SCALP_VIX_ENABLED === "true") {
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
@@ -619,7 +637,7 @@ router.get("/start", async (req, res) => {
 
   await preloadHistory();
 
-  if (vixFilter.VIX_ENABLED) {
+  if (process.env.SCALP_VIX_ENABLED === "true") {
     resetVixCache();
     fetchLiveVix().catch(() => {});
   }
@@ -721,7 +739,7 @@ router.get("/status", (req, res) => {
   const fyersOk    = !!process.env.ACCESS_TOKEN;
 
   const _vix         = getCachedVix();
-  const _vixEnabled  = vixFilter.VIX_ENABLED;
+  const _vixEnabled  = process.env.SCALP_VIX_ENABLED === "true";
   const _vixMaxEntry = parseFloat(process.env.VIX_MAX_ENTRY || "20");
 
   const pos = state.position;

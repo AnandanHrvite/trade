@@ -322,13 +322,31 @@ function onTick(tick) {
       return;
     }
 
+    // Breakeven stop — once +8pt in favor, SL moves to entry
+    const _scalpBE = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
+    if (pos.side === "CE") {
+      const _beM = (pos.bestPrice || price) - pos.entryPrice;
+      if (_beM >= _scalpBE && pos.stopLoss < pos.entryPrice) {
+        log(`✅ [SCALP-PAPER] BREAKEVEN CE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
+        pos.stopLoss = pos.entryPrice;
+      }
+    } else {
+      const _beM = pos.entryPrice - (pos.bestPrice || price);
+      if (_beM >= _scalpBE && pos.stopLoss > pos.entryPrice) {
+        log(`✅ [SCALP-PAPER] BREAKEVEN PE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
+        pos.stopLoss = pos.entryPrice;
+      }
+    }
+
     // Stop loss hit
     if (pos.side === "CE" && price <= pos.stopLoss) {
-      simulateSell(pos.stopLoss, `SL hit (${_SCALP_SL_PTS}pt)`, price);
+      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : (pos.initialStopLoss && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5 ? "Trail" : "Initial");
+      simulateSell(pos.stopLoss, `${_slT} SL hit`, price);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
-      simulateSell(pos.stopLoss, `SL hit (${_SCALP_SL_PTS}pt)`, price);
+      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : (pos.initialStopLoss && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5 ? "Trail" : "Initial");
+      simulateSell(pos.stopLoss, `${_slT} SL hit`, price);
       return;
     }
 
@@ -405,7 +423,7 @@ function onCandleClose(bar) {
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
 
   // VIX check
-  if (vixFilter.VIX_ENABLED) {
+  if (process.env.SCALP_VIX_ENABLED === "true") {
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
@@ -545,7 +563,7 @@ router.get("/start", async (req, res) => {
   await preloadHistory();
 
   // Start VIX polling
-  if (vixFilter.VIX_ENABLED) {
+  if (process.env.SCALP_VIX_ENABLED === "true") {
     resetVixCache();
     fetchLiveVix().catch(() => {});
   }

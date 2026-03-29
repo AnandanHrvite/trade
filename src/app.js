@@ -230,6 +230,7 @@ app.use("/trade",      require("./routes/trade"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
+app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
 // ── Scalp mode routes (independent from main trade) ─────────────────────────
 app.use("/scalp",          require("./routes/scalp"));          // ← scalp live (Fyers orders)
