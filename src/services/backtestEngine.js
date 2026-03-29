@@ -461,35 +461,15 @@ function runBacktest(candles, strategy, capital, vixCandles) {
           console.log(`  ⏸ 50%-rule pause set: no entry until ${toIST(_fiftyPctPauseUntilTs)}`);
         }
 
-        // ── Risk controls (mirrors paper trade) ─────────────────────────────
+        // ── Risk controls ─────────────────────────────────────────────────────
         _dailyPnl += pnlRupees;
         _dailyTradeCount++;
 
-        // Daily loss kill switch
-        if (!_dailyLossHit && _dailyPnl <= -Math.abs(MAX_DAILY_LOSS)) {
-          _dailyLossHit = true;
-          console.log(`  🛑 DAILY LOSS LIMIT HIT — day loss ₹${Math.abs(_dailyPnl).toFixed(0)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
-        }
-
-        // Consecutive loss tracking
+        // Track consecutive losses (for stats only — no kill in backtest to preserve data)
         if (pnlRupees < 0) {
           _consecutiveLosses++;
-          if (_consecutiveLosses >= 3) {
-            if (candleResolutionMins >= 15) {
-              // 15-min: 3 losses = done for the day
-              _dailyLossHit = true;
-              console.log(`  🛑 3 consecutive losses on ${candleResolutionMins}-min — NO MORE ENTRIES TODAY`);
-            } else {
-              // 5-min: pause 4 candles then resume
-              const pauseSecs2 = 4 * candleResolutionMins * 60;
-              _consecPauseUntilTs = candle.time + pauseSecs2;
-              _consecutiveLosses = 0;
-              console.log(`  ⚠️ 3 consecutive losses — paused until ${toIST(_consecPauseUntilTs)}`);
-            }
-          }
         } else {
           _consecutiveLosses = 0;
-          _consecPauseUntilTs = 0; // profitable trade clears any remaining pause
         }
 
         // SL re-entry block: only when initial SL hit (not trailing SL exit)
@@ -515,36 +495,18 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     }
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Risk controls matching paper trade: daily loss, max trades, consecutive loss,
-    // SL re-entry block, 50%-rule pause, 50% entry gate.
+    // Gate checks: SL re-entry block + 50%-rule pause. Daily/consec kills removed
+    // from backtest to preserve full data for strategy analysis.
     const is50PctPaused   = candle.time < _fiftyPctPauseUntilTs;
-    const isConsecPaused  = candle.time < _consecPauseUntilTs;
     const isSLBlocked     = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
 
     if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
-      // ── Risk control gates (mirrors paper trade) ────────────────────────────
-      if (_dailyLossHit) {
-        // silently skip — daily kill switch active
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
-      if (_dailyTradeCount >= MAX_DAILY_TRADES) {
-        // silently skip — max trades reached
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
       if (isSLBlocked) {
-        // silently skip — SL just hit on this candle
         _cachedPrevSL = signalSL ?? null;
         continue;
       }
       if (is50PctPaused) {
         console.log(`  ⏸ [50%-rule pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_fiftyPctPauseUntilTs)}`);
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
-      if (isConsecPaused) {
-        console.log(`  ⏸ [consec-loss pause] skipping ${signal} at ${toIST(candle.time)} — pause until ${toIST(_consecPauseUntilTs)}`);
         _cachedPrevSL = signalSL ?? null;
         continue;
       }

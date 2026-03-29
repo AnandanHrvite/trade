@@ -168,6 +168,22 @@ function getSignal(candles, opts) {
   var ema9    = ema9arr[ema9arr.length - 1];
   var ema9_1  = ema9arr[ema9arr.length - 2];
 
+  // ── EMA50 trend filter (NEW) ─────────────────────────────────────────────
+  // Only trade in the direction of the medium-term trend.
+  // EMA50 on 15-min = ~12.5 hours ≈ 2 trading days of data.
+  // CE: close must be ABOVE EMA50 (uptrend) → buying pullbacks in uptrend
+  // PE: close must be BELOW EMA50 (downtrend) → selling rallies in downtrend
+  // This single filter eliminates counter-trend trades which are the biggest losers.
+  var ema50arr = EMA.calculate({ period: 50, values: closes });
+  var ema50    = ema50arr.length > 0 ? ema50arr[ema50arr.length - 1] : null;
+
+  // ── EMA21 trend alignment (NEW) ──────────────────────────────────────────
+  // Additional confirmation: EMA9 must be on the right side of EMA21.
+  // CE: EMA9 > EMA21 (short-term leading medium-term = momentum aligned up)
+  // PE: EMA9 < EMA21 (short-term lagging medium-term = momentum aligned down)
+  var ema21arr = EMA.calculate({ period: 21, values: ohlc4 });
+  var ema21    = ema21arr.length > 0 ? ema21arr[ema21arr.length - 1] : null;
+
   var rsiArr = RSI.calculate({ period: 14, values: closes });
   var rsi    = rsiArr[rsiArr.length - 1];
 
@@ -326,6 +342,8 @@ function getSignal(candles, opts) {
     ema9SlopeDown:  ema9SlopeDown,
     ema9Falling:    ema9 < ema9_1,
     ema9Rising:     ema9 > ema9_1,
+    ema21:          ema21 !== null ? parseFloat(ema21.toFixed(2)) : null,
+    ema50:          ema50 !== null ? parseFloat(ema50.toFixed(2)) : null,
     rsi:            parseFloat(rsi.toFixed(1)),
     sar:            currSAR.sar,
     sarTrend:       currSAR.trend === 1 ? "BULLISH" : "BEARISH",
@@ -343,8 +361,20 @@ function getSignal(candles, opts) {
 
   // ── BUY CE ──────────────────────────────────────────────────────────────────
   if (emaTouchCE && sarOkForCE) {
-    // Sanity check: SAR SL must be BELOW current price for CE (dot below = bullish support)
-    // If SL > close, the SAR dot is above price — trade would be in loss from the start
+    // ── TREND FILTER (first gate — most impactful) ────────────────────────
+    // CE only when price is above EMA50 (uptrend) AND EMA9 > EMA21 (momentum aligned up).
+    // This single filter eliminates counter-trend CE entries — the biggest losers.
+    if (ema50 !== null && signalCandle.close < ema50) {
+      if (!silent) console.log("  ❌ CE TREND FAIL: close " + signalCandle.close + " < EMA50 " + ema50.toFixed(1) + " (below medium-term trend)");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
+    }
+    if (ema21 !== null && ema9 < ema21) {
+      if (!silent) console.log("  ❌ CE TREND FAIL: EMA9 " + ema9.toFixed(1) + " < EMA21 " + ema21.toFixed(1) + " (momentum not aligned up)");
+      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: EMA9 < EMA21 — momentum not aligned up" });
+    }
+    if (!silent && ema50 !== null) console.log("  ✓ CE TREND PASS: close > EMA50 " + ema50.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+
+    // Sanity check: SAR SL must be BELOW current price for CE
     if (sarSL >= signalCandle.close) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR SL " + sarSL + " >= close " + signalCandle.close + " (SL would be above entry — invalid position)");
       return Object.assign({}, base, {
@@ -429,8 +459,19 @@ function getSignal(candles, opts) {
 
   // ── BUY PE ──────────────────────────────────────────────────────────────────
   if (emaTouchPE && sarOkForPE) {
-    // Sanity check: SAR SL must be ABOVE current price for PE (dot above = bearish pressure)
-    // If SL < close, the SAR dot is below price — trade would be in loss from the start
+    // ── TREND FILTER (first gate — most impactful) ────────────────────────
+    // PE only when price is below EMA50 (downtrend) AND EMA9 < EMA21 (momentum aligned down).
+    if (ema50 !== null && signalCandle.close > ema50) {
+      if (!silent) console.log("  ❌ PE TREND FAIL: close " + signalCandle.close + " > EMA50 " + ema50.toFixed(1) + " (above medium-term trend)");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA50 ₹" + ema50.toFixed(1) + " — counter-trend" });
+    }
+    if (ema21 !== null && ema9 > ema21) {
+      if (!silent) console.log("  ❌ PE TREND FAIL: EMA9 " + ema9.toFixed(1) + " > EMA21 " + ema21.toFixed(1) + " (momentum not aligned down)");
+      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: EMA9 > EMA21 — momentum not aligned down" });
+    }
+    if (!silent && ema50 !== null) console.log("  ✓ PE TREND PASS: close < EMA50 " + ema50.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+
+    // Sanity check: SAR SL must be ABOVE current price for PE
     if (sarSL <= signalCandle.close) {
       if (!silent) console.log("  ❌ PE gate FAIL: SAR SL " + sarSL + " <= close " + signalCandle.close + " (SL would be below entry — invalid position)");
       return Object.assign({}, base, {
