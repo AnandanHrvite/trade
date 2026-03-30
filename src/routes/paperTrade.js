@@ -1746,6 +1746,13 @@ router.post("/manualEntry", async (req, res) => {
     sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
   }
 
+  // Validate SL is on correct side (CE: SL must be below entry, PE: SL must be above entry)
+  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
+    // SAR is on wrong side — manual entry against trend, use fixed SL
+    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+    log(`⚠️ [PAPER] Manual ${side}: SAR on wrong side — using ${MAX_SL}pt fixed SL @ ₹${sarSL}`);
+  }
+
   // Cap SL at MAX_SAR_DISTANCE from entry
   const sarGap = Math.abs(spot - sarSL);
   if (sarGap > MAX_SL) {

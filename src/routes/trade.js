@@ -1672,6 +1672,13 @@ router.post("/manualEntry", async (req, res) => {
   }
   const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
   if (!stopLoss) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+
+  // Validate SL is on correct side (CE: below entry, PE: above entry)
+  if ((side === "CE" && stopLoss >= spot) || (side === "PE" && stopLoss <= spot)) {
+    stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+    log(`⚠️ [LIVE] Manual ${side}: SAR on wrong side — using ${MAX_SL}pt fixed SL @ ₹${stopLoss}`);
+  }
+
   const gap = Math.abs(spot - stopLoss);
   if (gap > MAX_SL) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
 
