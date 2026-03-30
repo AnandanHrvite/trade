@@ -416,13 +416,13 @@ function getSignal(candles, opts) {
     // Capping at 100pt ensures worst-case loss is bounded and R:R stays healthy.
     var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
     if (sarDistCE > MAX_SAR_DIST) {
-      // SAR too far — cap SL at MAX_SAR_DIST from entry instead of blocking
-      sarSL = parseFloat((signalCandle.close - MAX_SAR_DIST).toFixed(2));
-      base.stopLoss = sarSL;
-      if (!silent) console.log("  ⚠ CE: SAR gap " + sarDistCE + "pt > " + MAX_SAR_DIST + "pt — SL CAPPED at " + sarSL + " (" + MAX_SAR_DIST + "pt from entry)");
-    } else {
-      if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt <= " + MAX_SAR_DIST + "pt max");
+      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt > " + MAX_SAR_DIST + "pt max — use Manual CE if needed");
+      return Object.assign({}, base, {
+        signal: "NONE",
+        reason: "CE blocked: SAR too far (gap=" + sarDistCE + " pts > " + MAX_SAR_DIST + " max) — use Manual CE button",
+      });
     }
+    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt <= " + MAX_SAR_DIST + "pt max");
     // Candle body filter: require a BULLISH body (close > open) AND body >= 10pt.
     // A bearish close (close <= open) = price recovered downward after wicking up to EMA — no bullish conviction.
     var candleBodyCE = Math.abs(signalCandle.close - signalCandle.open);
@@ -527,13 +527,13 @@ function getSignal(candles, opts) {
     // Maximum SAR distance: 100 pts — cap risk per trade (same as CE)
     var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
     if (sarDistPE > MAX_SAR_DIST_PE) {
-      // SAR too far — cap SL at MAX_SAR_DIST from entry instead of blocking
-      sarSL = parseFloat((signalCandle.close + MAX_SAR_DIST_PE).toFixed(2));
-      base.stopLoss = sarSL;
-      if (!silent) console.log("  ⚠ PE: SAR gap " + sarDistPE + "pt > " + MAX_SAR_DIST_PE + "pt — SL CAPPED at " + sarSL + " (" + MAX_SAR_DIST_PE + "pt from entry)");
-    } else {
-      if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt <= " + MAX_SAR_DIST_PE + "pt max");
+      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt > " + MAX_SAR_DIST_PE + "pt max — use Manual PE if needed");
+      return Object.assign({}, base, {
+        signal: "NONE",
+        reason: "PE blocked: SAR too far (gap=" + sarDistPE + " pts > " + MAX_SAR_DIST_PE + " max) — use Manual PE button",
+      });
     }
+    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt <= " + MAX_SAR_DIST_PE + "pt max");
     // Candle body filter: require a BEARISH body (close < open) AND body >= 10pt.
     // A bullish close (close >= open) = price recovered after wicking EMA — no bearish conviction.
     // Such candles also fail the 50% entry gate, so this gives an earlier clear rejection.
