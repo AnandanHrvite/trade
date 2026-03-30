@@ -1733,8 +1733,8 @@ router.post("/manualEntry", async (req, res) => {
   const candles = ptState.candles || [];
   let sarSL = null;
   if (candles.length > 0) {
-    const strategy = require("../strategies");
-    const result = strategy.getSignal(candles, { silent: true });
+    const { getActiveStrategy } = require("../strategies");
+    const result = getActiveStrategy().getSignal(candles, { silent: true });
     if (result && result.stopLoss) {
       sarSL = result.stopLoss;
     }

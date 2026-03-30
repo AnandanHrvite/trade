@@ -1666,8 +1666,8 @@ router.post("/manualEntry", async (req, res) => {
   const candles = tradeState.candles || [];
   let stopLoss = null;
   if (candles.length > 0) {
-    const strategy = require("../strategies");
-    const result = strategy.getSignal(candles, { silent: true });
+    const { getActiveStrategy } = require("../strategies");
+    const result = getActiveStrategy().getSignal(candles, { silent: true });
     if (result && result.stopLoss) stopLoss = result.stopLoss;
   }
   const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
