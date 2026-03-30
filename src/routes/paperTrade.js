@@ -1709,6 +1709,67 @@ router.get("/exit", (req, res) => {
 });
 
 /**
+ * POST /paperTrade/manualEntry
+ * Manually enter a CE or PE trade at current spot price.
+ * SL = current SAR value (capped at MAX_SAR_DISTANCE). Trail/breakeven apply normally.
+ */
+router.post("/manualEntry", async (req, res) => {
+  if (!ptState.running) {
+    return res.status(400).json({ success: false, error: "Paper trading is not running." });
+  }
+  if (ptState.position) {
+    return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
+  }
+  const { side } = req.body || {};
+  if (side !== "CE" && side !== "PE") {
+    return res.status(400).json({ success: false, error: "Side must be CE or PE." });
+  }
+  const spot = ptState.lastTickPrice || (ptState.currentBar ? ptState.currentBar.close : null);
+  if (!spot) {
+    return res.status(400).json({ success: false, error: "No market data yet." });
+  }
+
+  // Get strategy signal to extract SAR value for SL
+  const candles = ptState.candles || [];
+  let sarSL = null;
+  if (candles.length > 0) {
+    const strategy = require("../strategies");
+    const result = strategy.getSignal(candles, { silent: true });
+    if (result && result.stopLoss) {
+      sarSL = result.stopLoss;
+    }
+  }
+
+  // Fallback SL if SAR not available
+  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+  if (!sarSL) {
+    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+  }
+
+  // Cap SL at MAX_SAR_DISTANCE from entry
+  const sarGap = Math.abs(spot - sarSL);
+  if (sarGap > MAX_SL) {
+    sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+  }
+
+  // Get option symbol
+  try {
+    const { validateAndGetOptionSymbol } = require("../config/instrument");
+    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const symbol = optResult.symbol;
+    const qty = parseInt(process.env.NIFTY_LOT_SIZE || "65") * parseInt(process.env.LOT_MULTIPLIER || "1");
+
+    log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);
+
+    return res.json({ success: true, spot: spot, side: side, sl: sarSL, symbol: symbol });
+  } catch (e) {
+    log(`❌ [PAPER] Manual entry failed: ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /paperTrade/status
  * Live view — current position, session PnL, capital, recent log
  */
@@ -2107,7 +2168,11 @@ router.get("/status", (req, res) => {
     </div>` : `
     <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
       <div style="font-size:1.5rem;margin-bottom:8px;">📭</div>
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;">FLAT — Waiting for entry signal</div>
+      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT — Waiting for entry signal</div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
+        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
+      </div>
     </div>`;
 
   // Build all log entries as JSON for client-side filtering
@@ -3221,6 +3286,26 @@ function showToast(msg, color) {
   t.style.cssText = 'position:fixed;bottom:32px;left:50%;transform:translateX(-50%);background:#0d1320;border:1px solid '+color+';color:'+color+';padding:12px 24px;border-radius:10px;font-size:0.85rem;font-weight:700;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);letter-spacing:0.5px;';
   document.body.appendChild(t);
   setTimeout(() => t.remove(), color === '#ef4444' ? 7000 : 4000);
+}
+async function manualEntry(side) {
+  if (!confirm('Manual ' + side + ' entry at current spot?')) return;
+  try {
+    const res = await secretFetch('/paperTrade/manualEntry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side: side })
+    });
+    if (!res) return;
+    const data = await res.json();
+    if (data.success) {
+      showToast('✅ Manual ' + side + ' entered @ ₹' + data.spot, '#10b981');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showToast('❌ ' + (data.error || 'Entry failed'), '#ef4444');
+    }
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+  }
 }
 `);
 });

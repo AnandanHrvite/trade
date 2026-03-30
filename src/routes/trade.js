@@ -1646,6 +1646,82 @@ router.get("/exit", async (req, res) => {
 });
 
 /**
+ * POST /trade/manualEntry
+ * Manually enter a CE or PE trade at current spot. Places REAL order via Zerodha.
+ * SL = current SAR (capped). Trail/breakeven apply normally after entry.
+ */
+router.post("/manualEntry", async (req, res) => {
+  if (!tradeState.running) return res.status(400).json({ success: false, error: "Live trading is not running." });
+  if (tradeState.position) return res.status(400).json({ success: false, error: "Already in a position." });
+  const liveEnabled = process.env.LIVE_TRADE_ENABLED === "true";
+  if (!liveEnabled) return res.status(400).json({ success: false, error: "LIVE_TRADE_ENABLED is false." });
+
+  const { side } = req.body || {};
+  if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
+
+  const spot = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : null);
+  if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
+
+  // Get SAR for SL from strategy
+  const candles = tradeState.candles || [];
+  let stopLoss = null;
+  if (candles.length > 0) {
+    const strategy = require("../strategies");
+    const result = strategy.getSignal(candles, { silent: true });
+    if (result && result.stopLoss) stopLoss = result.stopLoss;
+  }
+  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+  if (!stopLoss) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+  const gap = Math.abs(spot - stopLoss);
+  if (gap > MAX_SL) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
+
+  try {
+    const { validateAndGetOptionSymbol, getLotQty } = require("../config/instrument");
+    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const symbol = optResult.symbol;
+    const qty = getLotQty();
+    const orderSide = side === "CE" ? 1 : -1; // Zerodha: 1=BUY, -1=SELL for options we always BUY
+
+    log(`🖐️ [LIVE] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${stopLoss} | Symbol: ${symbol}`);
+
+    const result = await placeMarketOrder(symbol, 1, qty); // always BUY options
+    if (!result || result.error) {
+      log(`❌ [LIVE] Manual entry order FAILED: ${result ? result.error : "no result"}`);
+      return res.status(500).json({ success: false, error: result ? result.error : "Order failed" });
+    }
+
+    const optDetails = parseOptionDetails(symbol);
+    tradeState.position = {
+      side, symbol, qty,
+      entryPrice: spot, spotAtEntry: spot,
+      entryTime: istNow(),
+      reason: `Manual ${side} entry by user`,
+      stopLoss, initialStopLoss: stopLoss,
+      trailActivatePts: _TRAIL_ACTIVATE_PTS,
+      bestPrice: null,
+      orderId: result.orderId || null,
+      entryBarTime: tradeState.currentBar ? tradeState.currentBar.time : null,
+      entryPrevMid: null,
+      optionExpiry: optDetails?.expiry || null,
+      optionStrike: optDetails?.strike || null,
+      optionType: optDetails?.optionType || side,
+      optionEntryLtp: null, optionCurrentLtp: null, optionEntryLtpTime: null,
+    };
+    tradeState.optionSymbol = symbol;
+    tradeState._entryPending = false;
+    if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+      startOptionPolling(symbol);
+    }
+
+    log(`📝 [LIVE] MANUAL BUY ${qty} × ${symbol} @ SPOT ₹${spot} | SL: ₹${stopLoss} | OrderID: ${result.orderId || "?"}`);
+    return res.json({ success: true, spot, side, sl: stopLoss, symbol, orderId: result.orderId });
+  } catch (e) {
+    log(`❌ [LIVE] Manual entry failed: ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+/**
  * GET /trade/status/data
  * JSON-only AJAX endpoint — returns all dynamic live trade state.
  * Called every 2 s by client-side setInterval when trading is active.
@@ -1972,7 +2048,11 @@ router.get("/status", (req, res) => {
     </div>` : `
     <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
       <div style="font-size:1.5rem;margin-bottom:8px;">📭</div>
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;">FLAT — Waiting for entry signal</div>
+      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT — Waiting for entry signal</div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
+        <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
+      </div>
     </div>`;
 
   // Build all log entries as JSON for client-side filtering (mirrors paperTrade)
@@ -2566,6 +2646,26 @@ async function ltHandleStop(btn) {
   } catch(e) {
     ltShowToast('❌ ' + e.message, '#ef4444');
     if (btn) { btn.textContent = '■ Stop'; btn.disabled = false; }
+  }
+}
+async function manualEntry(side) {
+  if (!confirm('⚠️ LIVE TRADE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
+  try {
+    var res = await secretFetch('/trade/manualEntry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side: side })
+    });
+    if (!res) return;
+    var data = await res.json();
+    if (data.success) {
+      ltShowToast('✅ LIVE Manual ' + side + ' @ ₹' + data.spot + ' | OrderID: ' + (data.orderId || '?'), '#10b981');
+      setTimeout(function(){ location.reload(); }, 1500);
+    } else {
+      ltShowToast('❌ ' + (data.error || 'Entry failed'), '#ef4444');
+    }
+  } catch(e) {
+    ltShowToast('❌ ' + e.message, '#ef4444');
   }
 }
 </script>
