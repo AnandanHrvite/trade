@@ -365,29 +365,9 @@ async function _optionPollTick(symbol) {
       log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
     }
 
-    // ── Option LTP stop — tied to prev-candle 50% mid ───────────────────
-    const entryLtp  = ptState.position.optionEntryLtp;
-    const entrySpot = ptState.position.spotAtEntry;
-    const prevMid   = ptState.position.entryPrevMid;
-    let optStopPrice = null;
-    if (entryLtp && entrySpot && prevMid) {
-      const spotGap = Math.max(Math.abs(entrySpot - prevMid), 20);
-      optStopPrice  = parseFloat((entryLtp - spotGap).toFixed(2));
-    } else if (entryLtp) {
-      optStopPrice = parseFloat((entryLtp * (1 - _OPT_STOP_PCT)).toFixed(2));
-    }
-    if (entryLtp && optStopPrice !== null && ltp < optStopPrice) {
-      const dropPct = (((entryLtp - ltp) / entryLtp) * 100).toFixed(1);
-      const dropAmt = (entryLtp - ltp).toFixed(2);
-      const pnlEst  = ((ltp - entryLtp) * (ptState.position.qty || getLotQty())).toFixed(0);
-      log(`🔻 [PAPER] Option LTP stop hit [50% mid] — entry ₹${entryLtp} → now ₹${ltp} (−${dropPct}%, −₹${dropAmt}/lot, est. PnL ₹${pnlEst})`);
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(
-        ptState.currentBar ? ptState.currentBar.close : ptState.lastTickPrice,
-        `Option LTP stop [50% mid] — premium dropped ₹${dropAmt} (₹${entryLtp} → ₹${ltp})`,
-        ptState.lastTickPrice
-      );
-    }
+    // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
+    // Previously: if option premium dropped below 50% mid threshold, force exit.
+    // Now: breakeven at +25pt moves SL to entry, trail handles everything else.
   } finally {
     _optionPollBusy = false;
   }
@@ -1088,11 +1068,11 @@ function onTick(tick) {
     // ── Single getSignal call using push/pop (no array copy, no second computation) ──
     // Push the live bar temporarily so strategy sees it, then immediately pop.
     // This avoids the expensive [...candles, bar] spread AND the duplicate getSignal call.
-    // SAR stopLoss comes from _cachedClosedCandleSL — stable value set at candle close, never recomputed per-tick.
+    // SAR stopLoss: use strategy's LIVE value (includes SAR flips), fallback to cached closed-candle SL.
     ptState.candles.push(bar);
-    const { signal, reason, signalStrength } = strategy.getSignal(ptState.candles, { silent: true });
+    const { signal, reason, signalStrength, stopLoss: strategySL } = strategy.getSignal(ptState.candles, { silent: true });
     ptState.candles.pop();
-    const stopLoss = _cachedClosedCandleSL;
+    const stopLoss = strategySL || _cachedClosedCandleSL;
     // ── Strength gate: intra-candle entry ONLY for STRONG signals ─────────────
     // STRONG  = steep EMA slope + committed RSI → enter now at the EMA touch
     // MARGINAL = borderline slope/RSI → wait for candle close to confirm
@@ -1221,16 +1201,13 @@ function onTick(tick) {
       if (moveInFavour >= TRAIL_ACTIVATE) {
         const dynamicGap = getDynamicTrailGap(moveInFavour);
         const trailSL    = parseFloat((pos.bestPrice - dynamicGap).toFixed(2));
-        // 50% floor: trail SL cannot sit below entryPrevMid until trail naturally rises above it.
-        const fiftyPctFloor    = pos.entryPrevMid;
-        const clipped          = fiftyPctFloor !== null && trailSL < fiftyPctFloor;
-        const effectiveTrailSL = clipped ? fiftyPctFloor : trailSL;
+        // 50% floor REMOVED — breakeven stop handles protection
+        const effectiveTrailSL = trailSL;
         if (effectiveTrailSL > pos.stopLoss) {
           const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          const clipStr = clipped ? ` [50%floor=₹${fiftyPctFloor}]` : "";
           const _trailCELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "LONG" : "CE";
-          log(`📈 [PAPER] Trail ${_trailCELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          log(`📈 [PAPER] Trail ${_trailCELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestCE) {
@@ -1251,16 +1228,13 @@ function onTick(tick) {
       if (moveInFavour >= TRAIL_ACTIVATE) {
         const dynamicGap = getDynamicTrailGap(moveInFavour);
         const trailSL    = parseFloat((pos.bestPrice + dynamicGap).toFixed(2));
-        // 50% ceiling: trail SL cannot sit above entryPrevMid until trail naturally falls below it.
-        const fiftyPctCeiling  = pos.entryPrevMid;
-        const clipped          = fiftyPctCeiling !== null && trailSL > fiftyPctCeiling;
-        const effectiveTrailSL = clipped ? fiftyPctCeiling : trailSL;
+        // 50% ceiling REMOVED — breakeven stop handles protection
+        const effectiveTrailSL = trailSL;
         if (effectiveTrailSL < pos.stopLoss) {
           const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
           const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          const clipStr = clipped ? ` [50%ceil=₹${fiftyPctCeiling}]` : "";
           const _trailPELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "SHORT" : "PE";
-          log(`📉 [PAPER] Trail ${_trailPELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}${clipStr}`);
+          log(`📉 [PAPER] Trail ${_trailPELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}`);
           pos.stopLoss = effectiveTrailSL;
         }
       } else if (pos.bestPrice !== prevBestPE) {
