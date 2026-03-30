@@ -46,6 +46,7 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Set to today's expiry date (e.g. preponed expiry)" },
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Trading)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Strategy 1 entries when VIX is high (independent from scalp)" },
       { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block ALL entries above this VIX" },
       { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Only STRONG signals above this VIX" },

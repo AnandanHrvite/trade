@@ -436,6 +436,17 @@ async function validateAndGetOptionSymbol(spot, side) {
   const strike = calcATMStrike(spot, side);
   console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}`);
 
+  // ── Manual expiry override — skip all auto-detection ──────────────────────
+  const manualExpiry = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  if (manualExpiry && manualExpiry.length >= 8) {
+    const parts = manualExpiry.split("-");
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    const code = dateToExpiryCode(d);
+    const symbol = `NSE:NIFTY${code}${strike}${side}`;
+    console.log(`[instrument] ✅ MANUAL EXPIRY: ${manualExpiry} → ${code} → ${symbol}`);
+    return { symbol, expiry: code, strike, side };
+  }
+
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
   console.log(`[instrument] Step 1: Calling Option Chain API...`);
   const chainExpiry = await getNearestExpiryFromOptionChain();
@@ -642,4 +653,3 @@ module.exports = {
   getProductType,
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
 };
-
