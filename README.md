@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot — Fyers (data + scalp orders) + Zerodha (live orders).
+NIFTY options algorithmic trading bot — Fyers (data + scalp orders) + Zerodha (live orders). Comment added //
 
 ## Architecture
 
