@@ -438,12 +438,22 @@ async function validateAndGetOptionSymbol(spot, side) {
 
   // ── Manual expiry override — skip all auto-detection ──────────────────────
   const manualExpiry = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const expiryType = (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
     const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
-    const code = dateToExpiryCode(d);
+    let code;
+    if (expiryType === "monthly") {
+      // Monthly format: YY + 3-letter month → e.g. "26MAR"
+      const monthNames = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+      const yy = String(d.getFullYear()).slice(2);
+      code = yy + monthNames[d.getMonth()];
+    } else {
+      // Weekly format: YY + month_code + DD → e.g. "26330"
+      code = dateToExpiryCode(d);
+    }
     const symbol = `NSE:NIFTY${code}${strike}${side}`;
-    console.log(`[instrument] ✅ MANUAL EXPIRY: ${manualExpiry} → ${code} → ${symbol}`);
+    console.log(`[instrument] ✅ MANUAL EXPIRY (${expiryType}): ${manualExpiry} → ${code} → ${symbol}`);
     return { symbol, expiry: code, strike, side };
   }
 
