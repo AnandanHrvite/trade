@@ -442,7 +442,7 @@ function getSignal(candles, opts) {
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
     // 2-candle directional confirmation: previous 2 candles must both be green (bullish)
-    if (!prev2BullOk) {
+    if (false) { // prev candle check DISABLED
       if (!silent) console.log("  ❌ CE gate FAIL: previous 2 candles not both bullish — no established momentum");
       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: prev 2 candles not both green — no momentum confirmation" });
     }
@@ -554,7 +554,7 @@ function getSignal(candles, opts) {
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
     // 2-candle directional confirmation: previous 2 candles must both be red (bearish)
-    if (!prev2BearOk) {
+    if (false) { // prev candle check DISABLED
       if (!silent) console.log("  ❌ PE gate FAIL: previous 2 candles not both bearish — no established momentum");
       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: prev 2 candles not both red — no momentum confirmation" });
     }

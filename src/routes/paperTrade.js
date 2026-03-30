@@ -34,12 +34,12 @@ let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — up
 // ── Trail tier config — cached at module load (never changes at runtime) ─────
 // getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
 // Pre-reading these once eliminates 750+ env reads/min when in position.
-const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
 const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
 const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
-const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
 const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
-const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
@@ -506,34 +506,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ? parseFloat((_lastCandle.low + (_lastCandle.high - _lastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
     : null;
 
-  // ── 50% rule ENTRY GATE ───────────────────────────────────────────────────
-  // If the entry spot is already on the wrong side of the prev candle mid,
-  // the 50% exit rule would fire on the very first tick — meaning there is
-  // literally no room to hold this trade. BLOCK the entry entirely.
-  //
-  // PE trade: we need room to fall → entry spot must be BELOW prev mid.
-  //           If entry > mid, any tick will immediately trigger the 50% exit.
-  // CE trade: we need room to rise → entry spot must be ABOVE prev mid.
-  //           If entry < mid, any tick will immediately trigger the 50% exit.
-  //
-  // Exception: if entryPrevMid is null (no candle history), allow through.
+  // 50% entry gate REMOVED — replaced by breakeven stop at +25pt
   const _entrySpot = spotAtEntry || price;
-  if (entryPrevMid !== null) {
-    const violates = (side === "PE" && _entrySpot > entryPrevMid) ||
-                     (side === "CE" && _entrySpot < entryPrevMid);
-    if (violates) {
-      log(`🚫 [PAPER] Entry BLOCKED — 50% gate: spot ₹${_entrySpot} ${side === "PE" ? ">" : "<"} prev mid ₹${entryPrevMid}. No directional room. Skipping trade.`);
-      // Block further intra-candle retries for this candle — every new low/high tick
-      // would otherwise re-fire this check since _entryPending resets to false after return.
-      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      return; // ← abort entry, position never opened
-    }
-  }
 
-  // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
-  // Without cap: wide SAR gaps (eg 546pt) give unreasonable activation thresholds.
+  // Trail activation from env
   const _initialSARgapPaper = stopLoss ? Math.abs((spotAtEntry || price) - stopLoss) : 0;
-  const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
+  const _dynTrailActivatePaper = _TRAIL_ACTIVATE_PTS;
 
   ptState.position = {
     side,
@@ -571,7 +549,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   const slText = stopLoss ? ` | SL: ₹${stopLoss}` : "";
   log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | TrailActivate: +${_dynTrailActivatePaper}pt | Opt: capturing… | Reason: ${reason}`);
   if (entryPrevMid !== null) {
-    log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
+    // log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
   }
 
   // ── Telegram notification ─────────────────────────────────────────────────
@@ -692,7 +670,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // Pause for 2 candles (30 min on 15-min, 10 min on 5-min) before next entry.
   // This prevents the bot from re-entering the same choppy conditions repeatedly.
   // Only 50%-rule exits trigger this — SL hits and opposite-signal exits do NOT.
-  if (reason && reason.toLowerCase().includes('50% rule')) {
+  if (false) { // 50% pause DISABLED
     const pauseCandles  = 2;
     const pauseMs       = pauseCandles * getTradeResolution() * 60 * 1000;
     ptState._fiftyPctPauseUntil = Date.now() + pauseMs;
@@ -909,7 +887,7 @@ async function onCandleClose(candle) {
       log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
       return;
     }
-    if (ptState._fiftyPctPauseUntil && Date.now() < ptState._fiftyPctPauseUntil) {
+    if (false) { // 50% pause DISABLED — replaced by breakeven
       const resumeTime = new Date(ptState._fiftyPctPauseUntil).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [PAPER] 50%-rule pause active — candle-close entry blocked until ~${resumeTime}`);
       return;
@@ -1079,7 +1057,7 @@ function onTick(tick) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
-    } else if (ptState._fiftyPctPauseUntil && Date.now() < ptState._fiftyPctPauseUntil) {
+    } else if (false) { // 50% pause DISABLED — replaced by breakeven
       // 50%-rule pause active — silently skip to avoid log spam
     } else if (ptState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       // Daily max trades cap reached — protect brokerage and capital

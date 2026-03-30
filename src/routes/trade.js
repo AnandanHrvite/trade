@@ -38,12 +38,12 @@ let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — up
 // ── Trail tier config — cached at module load (never changes at runtime) ─────
 // getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
 // Pre-reading these once eliminates 750+ env reads/min when in position.
-const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "40");
+const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
 const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
 const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
-const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "40");
+const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
 const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
-const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 
@@ -715,7 +715,7 @@ async function squareOff(exitPrice, reason) {
   // ── 50%-rule exit pause (mirrors paperTrade) ──────────────────────────────
   // If exit was caused by 50% rule, pause re-entry for 2 candles to avoid
   // re-entering same choppy conditions immediately.
-  if (reason && reason.toLowerCase().includes('50% rule')) {
+  if (false) { // 50% pause DISABLED
     const pauseCandles = 2;
     const pauseMs      = pauseCandles * TRADE_RES * 60 * 1000;
     tradeState._fiftyPctPauseUntil = Date.now() + pauseMs;
@@ -952,7 +952,7 @@ async function onCandleClose(candle) {
       // Without cap: a 546pt SAR gap gives 137pt activation — trail never fires in practice.
       // Cap at 40pt ensures trail always activates within a reasonable profit move.
       const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
-      const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
+      const _dynTrailActivate = _TRAIL_ACTIVATE_PTS;
 
       tradeState.position = {
         side,
@@ -1086,7 +1086,7 @@ function onSpotTick(tick) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
     } else if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
-    } else if (tradeState._fiftyPctPauseUntil && Date.now() < tradeState._fiftyPctPauseUntil) {
+    } else if (false) { // 50% pause DISABLED
       // 50%-rule pause active — silently skip to avoid log spam
     } else if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       // Daily max trades cap reached
@@ -1226,7 +1226,7 @@ function onSpotTick(tick) {
 
         // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
         const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
-        const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
+        const _dynTrailActivateIntra = _TRAIL_ACTIVATE_PTS;
 
         tradeState.position = {
           side,
