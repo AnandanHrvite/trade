@@ -470,7 +470,7 @@ function parseOptionDetails(symbol) {
       };
     }
 
-    // Format B: YY + 3-letter month + 2-digit day (legacy)
+    // Format B: YY + 3-letter month + 2-digit day (weekly with month name)
     const mB = symbol.match(/NSE:NIFTY(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)$/);
     if (mB) {
       const expiryRaw = mB[1];
@@ -482,6 +482,20 @@ function parseOptionDetails(symbol) {
         expiryRaw,
         strike:     parseInt(mB[2], 10),
         optionType: mB[3],
+      };
+    }
+
+    // Format C: YY + 3-letter month (MONTHLY — no day)
+    // e.g. NSE:NIFTY26MAR22600PE → expiry=26MAR, strike=22600
+    const mC = symbol.match(/NSE:NIFTY(\d{2})([A-Z]{3})(\d+)(CE|PE)$/);
+    if (mC) {
+      const yy  = mC[1];
+      const mon = mC[2];
+      return {
+        expiry:     `22 ${mon} 20${yy}`,
+        expiryRaw:  `${yy}${mon}`,
+        strike:     parseInt(mC[3], 10),
+        optionType: mC[4],
       };
     }
   } catch (_) {}
