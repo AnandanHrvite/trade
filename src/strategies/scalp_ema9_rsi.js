@@ -33,8 +33,9 @@ function cfg(key, fallback) { return process.env[key] !== undefined ? process.en
 // Skip first 2 candles (9:15–9:21): opening volatility is noise on 3-min
 // No entries after 3:00 PM
 function isInTradingWindow(unixSec) {
-  var d        = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  var totalMin = d.getHours() * 60 + d.getMinutes();
+  // Fast IST conversion: UTC + 5:30 = +19800 seconds (avoids locale-dependent Date parsing)
+  var istSec   = unixSec + 19800;
+  var totalMin = Math.floor(istSec / 60) % 1440;
   if (totalMin < 561)  return { ok: false, reason: "Before 9:21 AM — skipping opening noise (first 2 candles)" };
   if (totalMin >= 900) return { ok: false, reason: "After 3:00 PM — no new scalp entries" };
   return { ok: true, reason: null };
