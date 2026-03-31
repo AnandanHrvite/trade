@@ -203,6 +203,7 @@ async function getLiveSpot() {
 function calcATMStrike(spot, side) {
   const base = Math.round(spot / 50) * 50;
   if (!side) return base;
+  if (side !== "CE" && side !== "PE") throw new Error(`[instrument] calcATMStrike: invalid side "${side}" — must be "CE" or "PE"`);
   if (side === "CE") {
     const offset = getStrikeOffsetCE();
     if (offset !== 0) console.log(`[instrument] CE strike offset: ${offset} (base ${base} → ${base + offset})`);
@@ -294,8 +295,10 @@ function expiryCodeToDate(code) {
   
   const year = 2000 + parseInt(yy);
   const monthIndex = MONTH_CODE.indexOf(mCode);
+  if (monthIndex === -1) throw new Error(`[instrument] Invalid month code '${mCode}' in expiry: ${code}`);
   const day = parseInt(dd);
-  
+  if (isNaN(day) || day < 1 || day > 31) throw new Error(`[instrument] Invalid day '${dd}' in expiry: ${code}`);
+
   return new Date(year, monthIndex, day);
 }
 
@@ -441,6 +444,10 @@ async function validateAndGetOptionSymbol(spot, side) {
   const expiryType = (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
+    if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p)))) {
+      console.error(`[instrument] ❌ OPTION_EXPIRY_OVERRIDE format invalid: "${manualExpiry}" — expected YYYY-MM-DD`);
+      // Fall through to auto-detection
+    } else {
     const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
     let code;
     if (expiryType === "monthly") {
@@ -455,6 +462,7 @@ async function validateAndGetOptionSymbol(spot, side) {
     const symbol = `NSE:NIFTY${code}${strike}${side}`;
     console.log(`[instrument] ✅ MANUAL EXPIRY (${expiryType}): ${manualExpiry} → ${code} → ${symbol}`);
     return { symbol, expiry: code, strike, side };
+    }
   }
 
   // ── Step 1: Option Chain REST API (most reliable — returns only live expiries) ──
