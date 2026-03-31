@@ -541,20 +541,10 @@ function runBacktest(candles, strategy, capital, vixCandles) {
 
       // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
       // If entry price is already on the wrong side of prev candle mid,
-      // the 50% exit rule would fire on the very first candle — no room to hold.
-      const _entrySpot = entryPrice;
-      const violates50 = (side === "PE" && _entrySpot > entryPrevMid) ||
-                         (side === "CE" && _entrySpot < entryPrevMid);
-      if (violates50) {
-        console.log(`  🚫 Entry BLOCKED — 50% gate: spot ₹${_entrySpot} ${side === "PE" ? ">" : "<"} prev mid ₹${entryPrevMid}. No directional room.`);
-        _slHitCandleTime = candle.time; // block further entries on this candle
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
+      // 50% entry gate REMOVED — breakeven stop handles protection
 
-      // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS.
-      const _initialSARgapBT   = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
-      const _dynTrailActivateBT = Math.min(40, Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25)));
+      // Trail activation from env directly (no dynamic cap)
+      const _dynTrailActivateBT = TRAIL_ACTIVATE_PTS;
 
       position = {
         side,
