@@ -21,6 +21,7 @@ const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
+const { isExpiryDate } = require("../utils/nseHolidays");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -32,11 +33,18 @@ const fmtPnl   = (n, s) => {
 };
 
 // ── Build daily OHLC lookup from intraday candles ────────────────────────────
+// Memoized IST date for buildDailyOHLC — used before backtest engine runs
+const _dailyOHLCDateCache = new Map();
 function buildDailyOHLC(candles) {
+  _dailyOHLCDateCache.clear();
   const days = {};
   for (let i = 0; i < candles.length; i++) {
     const c = candles[i];
-    const dateStr = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    let dateStr = _dailyOHLCDateCache.get(c.time);
+    if (dateStr === undefined) {
+      dateStr = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      _dailyOHLCDateCache.set(c.time, dateStr);
+    }
     if (!days[dateStr]) {
       days[dateStr] = { high: c.high, low: c.low, close: c.close, open: c.open };
     } else {
@@ -49,7 +57,7 @@ function buildDailyOHLC(candles) {
 }
 
 // ── Scalp Backtest Engine ─────────────────────────────────────────────────────
-function runScalpBacktest(candles, capital, vixCandles) {
+function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const trades   = [];
   let position   = null;
   const BROKERAGE = 80;
@@ -75,12 +83,28 @@ function runScalpBacktest(candles, capital, vixCandles) {
   const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "300");   // start trailing at ₹300
   const SCALP_TRAIL_STEP   = parseFloat(process.env.SCALP_TRAIL_STEP || "200");   // step: 300,500,700,900...
 
+  // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
+  const _istDateCache = new Map();
   function getISTDateStr(unixSec) {
-    return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    let v = _istDateCache.get(unixSec);
+    if (v === undefined) {
+      v = new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      if (_istDateCache.size > 2000) _istDateCache.clear();
+      _istDateCache.set(unixSec, v);
+    }
+    return v;
   }
+  const _istHHMMCache = new Map();
   function getISTHHMM(unixSec) {
-    const d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    return d.getHours() * 60 + d.getMinutes();
+    let v = _istHHMMCache.get(unixSec);
+    if (v === undefined) {
+      // Fast IST: UTC+5:30 = +19800 seconds
+      const istSec = unixSec + 19800;
+      v = Math.floor(istSec / 60) % 1440;
+      if (_istHHMMCache.size > 2000) _istHHMMCache.clear();
+      _istHHMMCache.set(unixSec, v);
+    }
+    return v;
   }
   function toIST(unixSec) {
     return new Date(unixSec * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
@@ -258,6 +282,8 @@ function runScalpBacktest(candles, capital, vixCandles) {
 
     // ── ENTRY LOGIC ─────────────────────────────────────────────────────────
     if (isEOD) continue;
+    // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
+    if (expiryDates && !expiryDates.has(candleDate)) continue;
     if (_dailyTradeCount >= SCALP_MAX_TRADES) continue;
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
@@ -302,7 +328,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
   // Summary
   const totalPnl  = trades.reduce((s, t) => s + t.pnl, 0);
   const wins       = trades.filter(t => t.pnl > 0);
-  const losses     = trades.filter(t => t.pnl <= 0);
+  const losses     = trades.filter(t => t.pnl < 0);
   const winRate    = trades.length > 0 ? ((wins.length / trades.length) * 100).toFixed(1) : "0.0";
   const avgWin     = wins.length > 0 ? (wins.reduce((s, t) => s + t.pnl, 0) / wins.length).toFixed(2) : 0;
   const avgLoss    = losses.length > 0 ? (losses.reduce((s, t) => s + t.pnl, 0) / losses.length).toFixed(2) : 0;
@@ -312,8 +338,8 @@ function runScalpBacktest(candles, capital, vixCandles) {
     ? "1:" + Math.abs(parseFloat(avgWin) / parseFloat(avgLoss)).toFixed(2)
     : "\u2014";
   const maxDrawdown = (() => {
-    let peak = 0, dd = 0, maxDD = 0;
-    trades.forEach(t => { peak = Math.max(peak, peak + t.pnl); dd = peak - (peak + t.pnl); maxDD = Math.max(maxDD, dd); });
+    let equity = 0, peak = 0, maxDD = 0;
+    trades.forEach(t => { equity += t.pnl; peak = Math.max(peak, equity); maxDD = Math.max(maxDD, peak - equity); });
     return maxDD;
   })();
 
@@ -410,7 +436,19 @@ ${modalJS()}
       return res.status(400).send(errorPage("Not Enough Data", "Too few candles. Try a wider date range."));
     }
 
-    const result = runScalpBacktest(candles, capital, vixCandles);
+    // Pre-compute expiry dates if expiry-only mode is enabled
+    let expiryDates = null;
+    if ((process.env.SCALP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const uniqueDates = [...new Set(candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+      const expirySet = new Set();
+      for (const d of uniqueDates) {
+        if (await isExpiryDate(d)) expirySet.add(d);
+      }
+      expiryDates = expirySet;
+      console.log(`   📅 Scalp expiry-only mode: ${expirySet.size} expiry days out of ${uniqueDates.length} trading days`);
+    }
+
+    const result = runScalpBacktest(candles, capital, vixCandles, expiryDates);
     saveResult("SCALP_BACKTEST", { ...result, params: { from, to, resolution, symbol, capital } });
 
     const s = result.summary;
@@ -549,14 +587,34 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${scalpStrategy.NAME}</strong></span>
   </div>
   <!-- Quick date presets -->
-  <div style="display:flex;gap:6px;margin:-8px 0 12px;flex-wrap:wrap;">
+  <div style="display:flex;gap:6px;margin:-8px 0 6px;flex-wrap:wrap;align-items:center;">
     <button class="preset-btn" onclick="setPreset('thisWeek')">This week</button>
     <button class="preset-btn" onclick="setPreset('lastWeek')">Last week</button>
     <button class="preset-btn" onclick="setPreset('thisMonth')">This month</button>
     <button class="preset-btn" onclick="setPreset('lastMonth')">Last month</button>
     <button class="preset-btn" onclick="setPreset('last3')">Last 3 months</button>
+    <button class="preset-btn" onclick="setPreset('last6')">Last 6 months</button>
     <button class="preset-btn" onclick="setPreset('thisYear')">This year</button>
     <button class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
+    <button class="preset-btn" onclick="setPreset('last3y')">Last 3 yr</button>
+    <button class="preset-btn" onclick="setPreset('last4y')">Last 4 yr</button>
+    <button class="preset-btn" onclick="setPreset('last5y')">Last 5 yr</button>
+    <button class="preset-btn" onclick="setPreset('last6y')">Last 6 yr</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap;align-items:center;">
+    <span style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
+    <button class="preset-btn" onclick="setPreset('jan')">Jan</button>
+    <button class="preset-btn" onclick="setPreset('feb')">Feb</button>
+    <button class="preset-btn" onclick="setPreset('mar')">Mar</button>
+    <button class="preset-btn" onclick="setPreset('apr')">Apr</button>
+    <button class="preset-btn" onclick="setPreset('may')">May</button>
+    <button class="preset-btn" onclick="setPreset('jun')">Jun</button>
+    <button class="preset-btn" onclick="setPreset('jul')">Jul</button>
+    <button class="preset-btn" onclick="setPreset('aug')">Aug</button>
+    <button class="preset-btn" onclick="setPreset('sep')">Sep</button>
+    <button class="preset-btn" onclick="setPreset('oct')">Oct</button>
+    <button class="preset-btn" onclick="setPreset('nov')">Nov</button>
+    <button class="preset-btn" onclick="setPreset('dec')">Dec</button>
   </div>
   <script>
   function setPreset(p){
@@ -564,17 +622,23 @@ ${buildSidebar('scalpBacktest', liveActive)}
     function fmt(dt){var yy=dt.getFullYear(),mm=String(dt.getMonth()+1).padStart(2,'0'),dd=String(dt.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;}
     var today=fmt(d);
     var monday=new Date(d); monday.setDate(d.getDate()-(day===0?6:day-1));
-    var lastMonEnd=new Date(y,m,0), lastMonStart=new Date(lastMonEnd.getFullYear(),lastMonEnd.getMonth(),1);
     var lastWeekMon=new Date(monday); lastWeekMon.setDate(lastWeekMon.getDate()-7);
     var lastWeekFri=new Date(lastWeekMon); lastWeekFri.setDate(lastWeekFri.getDate()+4);
+    var monthMap={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    if(monthMap.hasOwnProperty(p)){var mi=monthMap[p];var endD=fmt(new Date(y,mi+1,0));document.getElementById('f').value=fmt(new Date(y,mi,1));document.getElementById('t').value=mi<m?endD:(mi===m?today:endD);return;}
     var presets={
       thisWeek: [fmt(monday), today],
       lastWeek: [fmt(lastWeekMon), fmt(lastWeekFri)],
       thisMonth: [fmt(new Date(y,m,1)), today],
-      lastMonth: [fmt(lastMonStart), fmt(lastMonEnd)],
+      lastMonth: [fmt(new Date(y,m-1,1)), fmt(new Date(y,m,0))],
       last3: [fmt(new Date(y,m-2,1)), today],
+      last6: [fmt(new Date(y,m-5,1)), today],
       thisYear: [fmt(new Date(y,0,1)), today],
-      lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))]
+      lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
+      last3y: [fmt(new Date(y-3,0,1)), today],
+      last4y: [fmt(new Date(y-4,0,1)), today],
+      last5y: [fmt(new Date(y-5,0,1)), today],
+      last6y: [fmt(new Date(y-6,0,1)), today]
     };
     document.getElementById('f').value=presets[p][0];
     document.getElementById('t').value=presets[p][1];

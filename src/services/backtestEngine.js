@@ -69,8 +69,9 @@ const _istHHMMCache = new Map();
 function getISTHHMM(unixSec) {
   let v = _istHHMMCache.get(unixSec);
   if (v === undefined) {
-    const d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    v = d.getHours() * 60 + d.getMinutes();
+    // Fast IST: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
+    const istSec = unixSec + 19800;
+    v = Math.floor(istSec / 60) % 1440;
     if (_istHHMMCache.size > 2000) _istHHMMCache.clear();
     _istHHMMCache.set(unixSec, v);
   }
@@ -113,7 +114,7 @@ function getISTHHMM(unixSec) {
  *   - getDynamicTrailGap() added — same tier logic as paper/live
  *   - initialStopLoss + trailActivatePts stored on position (matches paper/live)
  */
-function runBacktest(candles, strategy, capital, vixCandles) {
+function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const trades    = [];
   let position    = null;
   const BROKERAGE = 80;    // ₹ per trade (applied to option P&L)
@@ -500,6 +501,11 @@ function runBacktest(candles, strategy, capital, vixCandles) {
     const isSLBlocked = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
 
     if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
+      // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
+      if (expiryDates && !expiryDates.has(candleDate)) {
+        _cachedPrevSL = signalSL ?? null;
+        continue;
+      }
       if (isSLBlocked) {
         _cachedPrevSL = signalSL ?? null;
         continue;
@@ -616,7 +622,7 @@ function runBacktest(candles, strategy, capital, vixCandles) {
 
   const totalPnl      = trades.reduce((sum, t) => sum + t.pnl, 0);
   const wins          = trades.filter((t) => t.pnl > 0);
-  const losses        = trades.filter((t) => t.pnl <= 0);
+  const losses        = trades.filter((t) => t.pnl < 0);
   const maxDrawdown   = trades.reduce((dd, t) => Math.min(dd, t.pnl), 0);
   const totalDrawdown = losses.reduce((sum, t) => sum + t.pnl, 0);
   const maxProfit     = trades.reduce((mp, t) => Math.max(mp, t.pnl), 0);

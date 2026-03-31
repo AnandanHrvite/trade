@@ -7,6 +7,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
+const { isExpiryDate } = require("../utils/nseHolidays");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -92,7 +93,19 @@ ${buildSidebar('backtest', true)}
       console.log(`   VIX candles loaded: ${vixCandles.length} days`);
     }
 
-    const result = runBacktest(candles, strategy, capital, vixCandles);
+    // Pre-compute expiry dates if expiry-only mode is enabled
+    let expiryDates = null;
+    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+      const uniqueDates = [...new Set(candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+      const expirySet = new Set();
+      for (const d of uniqueDates) {
+        if (await isExpiryDate(d)) expirySet.add(d);
+      }
+      expiryDates = expirySet;
+      console.log(`   📅 Expiry-only mode: ${expirySet.size} expiry days out of ${uniqueDates.length} trading days`);
+    }
+
+    const result = runBacktest(candles, strategy, capital, vixCandles, expiryDates);
     saveResult(ACTIVE, { ...result, params: { from, to, resolution, symbol, capital } });
 
     const s = result.summary;
@@ -231,25 +244,51 @@ ${buildSidebar('backtest', liveActive)}
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
   <!-- Quick date presets -->
-  <div style="display:flex;gap:6px;margin:-8px 0 12px;flex-wrap:wrap;">
+  <div style="display:flex;gap:6px;margin:-8px 0 6px;flex-wrap:wrap;align-items:center;">
     <button class="preset-btn" onclick="setPreset('thisMonth')">This month</button>
     <button class="preset-btn" onclick="setPreset('lastMonth')">Last month</button>
     <button class="preset-btn" onclick="setPreset('last3')">Last 3 months</button>
+    <button class="preset-btn" onclick="setPreset('last6')">Last 6 months</button>
     <button class="preset-btn" onclick="setPreset('thisYear')">This year</button>
     <button class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
-    <button class="preset-btn" onclick="setPreset('last2y')">Last 2 years</button>
+    <button class="preset-btn" onclick="setPreset('last3y')">Last 3 yr</button>
+    <button class="preset-btn" onclick="setPreset('last4y')">Last 4 yr</button>
+    <button class="preset-btn" onclick="setPreset('last5y')">Last 5 yr</button>
+    <button class="preset-btn" onclick="setPreset('last6y')">Last 6 yr</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap;align-items:center;">
+    <span style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
+    <button class="preset-btn" onclick="setPreset('jan')">Jan</button>
+    <button class="preset-btn" onclick="setPreset('feb')">Feb</button>
+    <button class="preset-btn" onclick="setPreset('mar')">Mar</button>
+    <button class="preset-btn" onclick="setPreset('apr')">Apr</button>
+    <button class="preset-btn" onclick="setPreset('may')">May</button>
+    <button class="preset-btn" onclick="setPreset('jun')">Jun</button>
+    <button class="preset-btn" onclick="setPreset('jul')">Jul</button>
+    <button class="preset-btn" onclick="setPreset('aug')">Aug</button>
+    <button class="preset-btn" onclick="setPreset('sep')">Sep</button>
+    <button class="preset-btn" onclick="setPreset('oct')">Oct</button>
+    <button class="preset-btn" onclick="setPreset('nov')">Nov</button>
+    <button class="preset-btn" onclick="setPreset('dec')">Dec</button>
   </div>
   <script>
   function setPreset(p){
     var d=new Date(),y=d.getFullYear(),m=d.getMonth();
     function fmt(dt){var yy=dt.getFullYear(),mm=String(dt.getMonth()+1).padStart(2,'0'),dd=String(dt.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;}
-    var today=fmt(d), presets={
+    var today=fmt(d);
+    var monthMap={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    if(monthMap.hasOwnProperty(p)){var mi=monthMap[p];var endD=mi<=m?fmt(new Date(y,mi+1,0)):fmt(new Date(y,mi+1,0));document.getElementById('f').value=fmt(new Date(y,mi,1));document.getElementById('t').value=mi<m?endD:(mi===m?today:endD);return;}
+    var presets={
       thisMonth: [fmt(new Date(y,m,1)), today],
       lastMonth: [fmt(new Date(y,m-1,1)), fmt(new Date(y,m,0))],
       last3: [fmt(new Date(y,m-2,1)), today],
+      last6: [fmt(new Date(y,m-5,1)), today],
       thisYear: [fmt(new Date(y,0,1)), today],
       lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
-      last2y: [fmt(new Date(y-2,0,1)), today]
+      last3y: [fmt(new Date(y-3,0,1)), today],
+      last4y: [fmt(new Date(y-4,0,1)), today],
+      last5y: [fmt(new Date(y-5,0,1)), today],
+      last6y: [fmt(new Date(y-6,0,1)), today]
     };
     document.getElementById('f').value=presets[p][0];
     document.getElementById('t').value=presets[p][1];
