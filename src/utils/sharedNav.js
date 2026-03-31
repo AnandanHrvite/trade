@@ -30,35 +30,53 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
-  const pages = [
-    { key: 'dashboard', href: '/',                     icon: '⌂',  label: 'Dashboard' },
-    { key: 'backtest',  href: '/backtest',              icon: '🔍', label: 'Backtest'  },
-    { key: 'paper',     href: '/paperTrade/status',     icon: '📋', label: 'Paper'     },
-    { key: 'history',   href: '/paperTrade/history',    icon: '📊', label: 'History'   },
-    { key: 'tracker',   href: '/tracker/status',        icon: '🎯', label: 'Tracker'   },
-    { key: 'live',      href: '/trade/status',          icon: '●',  label: 'Live'      },
-    // ── Scalp mode (hidden when SCALP_MODE_ENABLED=false) ──
-    ...(scalpModeOn ? [
-      { key: 'scalpBacktest', href: '/scalp-backtest',    icon: '⚡', label: 'Scalp BT'  },
-      { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Scalp Paper'},
-      { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Scalp Live' },
-    ] : []),
-    // ──
-    { key: 'logs',      href: '/logs',                  icon: '📜', label: 'Logs'      },
-    { key: 'settings',   href: '/settings',              icon: '⚙',  label: 'Settings'  },
-    { key: 'docs',       href: '/docs',                  icon: '📄', label: 'Docs'      },
-    { key: 'loginLogs',  href: '/login-logs',             icon: '🔐', label: 'Login Logs' },
+  // ── Grouped navigation sections ──
+  const sections = [
+    {
+      header: null, // no header for top section
+      items: [
+        { key: 'dashboard', href: '/',  icon: '⌂',  label: 'Dashboard' },
+      ]
+    },
+    {
+      header: 'TRADING',
+      items: [
+        { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
+        { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
+        { key: 'history',   href: '/paperTrade/history', icon: '📊', label: 'History'   },
+        { key: 'tracker',   href: '/tracker/status',     icon: '🎯', label: 'Tracker'   },
+        { key: 'live',      href: '/trade/status',       icon: '●',  label: 'Live'      },
+      ]
+    },
+    ...(scalpModeOn ? [{
+      header: 'SCALPING',
+      items: [
+        { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
+        { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
+        { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
+      ]
+    }] : []),
+    {
+      header: 'SYSTEM',
+      items: [
+        { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
+        { key: 'settings',  href: '/settings',   icon: '⚙',  label: 'Settings'   },
+        { key: 'docs',      href: '/docs',       icon: '📄', label: 'Docs'       },
+        { key: 'loginLogs', href: '/login-logs', icon: '🔐', label: 'Login Logs' },
+      ]
+    },
   ];
 
-  // Keys blocked during live trade
-  const blocked = liveActive ? ['backtest', 'paper'] : [];
+  // Block all backtest & paper (both trading + scalping) when ANY live mode is active
+  const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE';
+  const blocked = anyLiveActive ? ['backtest', 'paper', 'scalpBacktest', 'scalpPaper'] : [];
 
-  const navItems = pages.map(p => {
+  function renderItem(p) {
     const isActive   = p.key === activePage;
     const isDisabled = blocked.includes(p.key);
 
     if (isDisabled) {
-      return `<span class="sb-nav-item disabled" title="Disabled — Live trade is running">
+      return `<span class="sb-nav-item disabled" title="Disabled — Live trading is active">
         <span class="sb-nav-icon">${p.icon}</span> ${p.label}
         <span class="sb-nav-badge" style="margin-left:auto;font-size:0.5rem;">🔒</span>
       </span>`;
@@ -72,7 +90,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    // Scalp badges — show LIVE or ON when scalp modes are running
     const scalpLiveBadge = p.key === 'scalpLive' && _scalpMode === 'SCALP_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
@@ -85,6 +102,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
       ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}
     </a>`;
+  }
+
+  const navItems = sections.map(section => {
+    const header = section.header
+      ? `<div class="sb-section-header">${section.header}</div>`
+      : '';
+    const items = section.items.map(renderItem).join('');
+    return `<div class="sb-section">${header}${items}</div>`;
   }).join('');
 
   const bottomBtns = [
@@ -162,7 +187,10 @@ function sidebarCSS() {
     .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
     .sb-brand-name{font-size:0.72rem;font-weight:700;color:#3b82f6;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
     .sb-brand-sub{font-size:0.6rem;color:#1a3050;letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
-    .sb-nav{padding:10px 0;flex:1;}
+    .sb-nav{padding:6px 0;flex:1;}
+    .sb-section{padding-bottom:4px;}
+    .sb-section + .sb-section{border-top:1px solid #0e1e36;padding-top:4px;}
+    .sb-section-header{font-size:0.52rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#1e3a5a;padding:8px 16px 2px;user-select:none;}
     .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#2a4060;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}

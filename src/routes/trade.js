@@ -19,7 +19,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const { modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 
 const socketManager     = require("../utils/socketManager");
 const fyers             = require("../config/fyers");
@@ -2055,116 +2055,24 @@ router.get("/status", (req, res) => {
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
-    /* ── SIDEBAR LAYOUT ── */
-    .app-shell{display:flex;min-height:100vh;}
-    .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;}
-    .sb-brand{padding:20px 16px 16px;border-bottom:1px solid #0e1e36;}
-    .sb-brand-name{font-size:0.72rem;font-weight:700;color:#3b82f6;letter-spacing:0.3px;line-height:1.4;white-space:nowrap;}
-    .sb-brand-sub{font-size:0.6rem;color:#1a3050;letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
-    .sb-nav{padding:10px 0;flex:1;}
-    .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#2a4060;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
-    .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
-    .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}
-    .sb-nav-item.disabled{color:#1a2a3a;cursor:not-allowed;opacity:0.4;}
-    .sb-nav-icon{font-size:13px;width:16px;flex-shrink:0;}
-    .sb-nav-badge{margin-left:auto;font-size:0.55rem;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(59,130,246,0.15);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.3);white-space:nowrap;}
-    .sb-nav-badge.live{background:rgba(239,68,68,0.15);color:#ef4444;border-color:rgba(239,68,68,0.3);animation:pulse 1.2s infinite;}
-    .sb-divider{height:0.5px;background:#0e1e36;margin:6px 16px;}
-    .sb-bottom{padding:14px 16px;border-top:1px solid #0e1e36;}
-    .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:#1a3050;margin-bottom:10px;}
-    .sb-status-dot{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:pulse 1.3s infinite;}
-    .sb-status-dot.stopped{background:#2a4060;animation:none;}
-    .sb-action-btn{width:100%;padding:7px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;font-weight:700;cursor:pointer;text-align:center;border:1px solid;transition:all 0.12s;background:transparent;margin-bottom:6px;}
-    .sb-stop-btn{border-color:#1a3a6a;color:#60a5fa;}
-    .sb-stop-btn:hover{background:rgba(59,130,246,0.08);border-color:#3b82f6;}
-    .sb-start-btn{border-color:#065f46;color:#10b981;}
-    .sb-start-btn:hover{background:rgba(16,185,129,0.06);border-color:#10b981;}
-    .sb-exit-btn{border-color:#7f1d1d;color:#f87171;font-size:0.63rem;}
-    .sb-exit-btn:hover{background:rgba(239,68,68,0.06);}
-
-    /* ── MAIN CONTENT AREA ── */
-    .main-content{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
-    .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
-    .top-bar-title{font-size:0.88rem;font-weight:700;color:#e0eaf8;}
-    .top-bar-meta{font-size:0.65rem;color:#2a4060;margin-top:1px;}
-    .top-bar-right{display:flex;align-items:center;gap:8px;}
-    .top-bar-badge{display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:#60a5fa;}
-    .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
-    .broker-badges{display:flex;gap:6px;padding:8px 24px;background:#040c18;border-bottom:1px solid #0e1e36;}
-    .broker-badge{font-size:0.65rem;font-weight:600;padding:3px 10px;border-radius:5px;}
-    .broker-badge.ok{background:#060e20;border:0.5px solid #0e2850;color:#60a5fa;}
-    .broker-badge.err{background:#160608;border:0.5px solid #3a1020;color:#f87171;}
-
-    /* ── PAGE BODY ── */
-    .page{padding:24px;padding-bottom:60px;}
-    .page-header{margin-bottom:20px;}
-    .page-status-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-    .page-status-dot{width:7px;height:7px;border-radius:50%;background:#2a4060;}
-    .page-status-dot.running{background:#3b82f6;animation:pulse 1.5s infinite;}
-    .page-status-text{font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#2a4060;}
-    .page-status-text.running{color:#60a5fa;}
-    .page-title{font-size:1.4rem;font-weight:700;color:#e0eaf8;letter-spacing:-0.5px;}
-    .page-subtitle{font-size:0.72rem;color:#2a4060;margin-top:4px;}
-    .page-subtitle a{color:#3b82f6;text-decoration:none;}
-
-    /* ── STAT CARDS ── */
-    .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin-bottom:20px;}
-    .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:9px;padding:14px 16px;position:relative;overflow:hidden;}
-    .sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1.5px;background:var(--accent,#1e3080);}
-    .sc-label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#1e3050;margin-bottom:6px;}
-    .sc-val{font-size:1.1rem;font-weight:700;color:#e0eaf8;}
-    .sc-sub{font-size:0.62rem;color:#1e3050;margin-top:3px;}
-
-    /* ── SECTION TITLES ── */
-    .section-title{font-size:0.6rem;font-weight:700;text-transform:uppercase;letter-spacing:1.8px;color:#1e3050;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
-    .section-title::after{content:'';flex:1;height:0.5px;background:#0e1e36;}
+    ${sidebarCSS()}
 
     /* ── EXPIRY BANNER ── */
     .expiry-banner{background:#2d1000;border:1px solid #c05621;border-radius:9px;padding:10px 16px;margin-bottom:16px;font-size:0.78rem;color:#f6ad55;}
-
-    /* ── MOBILE ── */
-    @media(max-width:768px){
-      .sidebar{transform:translateX(-100%);transition:transform 0.2s;}
-      .main-content{margin-left:0;}
-      .stat-grid{grid-template-columns:1fr 1fr;}
-    }
     ${modalCSS()}
   </style>
 </head>
 <body>
 <div class="app-shell">
 <!-- ── SIDEBAR ── -->
-<nav class="sidebar">
-  <div class="sb-brand">
-    <div class="sb-brand-name">ௐ Palani Andawar Thunai ॐ</div>
-    <div class="sb-brand-sub">LIVE BOT</div>
-  </div>
-  <div class="sb-nav">
-    <a href="/" class="sb-nav-item"><span class="sb-nav-icon">⌂</span> Dashboard</a>
-    ${tradeState.running
-      ? `<span class="sb-nav-item disabled"><span class="sb-nav-icon">🔍</span> Backtest</span>`
-      : `<a href="/backtest" class="sb-nav-item"><span class="sb-nav-icon">🔍</span> Backtest</a>`}
-    ${tradeState.running
-      ? `<span class="sb-nav-item disabled"><span class="sb-nav-icon">📋</span> Paper</span>`
-      : `<a href="/paperTrade/status" class="sb-nav-item"><span class="sb-nav-icon">📋</span> Paper</a>`}
-    <a href="/paperTrade/history" class="sb-nav-item"><span class="sb-nav-icon">📊</span> History</a>
-    <a href="/tracker/status" class="sb-nav-item"><span class="sb-nav-icon">🎯</span> Tracker</a>
-    <a href="/trade/status" class="sb-nav-item active"><span class="sb-nav-icon">●</span> Live ${tradeState.running ? `<span class="sb-nav-badge live">LIVE</span>` : ``}</a>
-    <div class="sb-divider"></div>
-    <a href="/logs" class="sb-nav-item"><span class="sb-nav-icon">📜</span> Logs</a>
-    <a href="/settings" class="sb-nav-item"><span class="sb-nav-icon">⚙</span> Settings</a>
-  </div>
-  <div class="sb-bottom">
-    <div class="sb-status-row">
-      <span class="sb-status-dot ${tradeState.running ? '' : 'stopped'}"></span>
-      ${tradeState.running ? 'RUNNING' : 'STOPPED'}
-    </div>
-    ${pos ? `<button onclick="ltHandleExit(this)" class="sb-action-btn sb-exit-btn">🚪 Exit Trade</button>` : ''}
-    ${tradeState.running
-      ? `<button onclick="ltHandleStop(this)" class="sb-action-btn sb-stop-btn">■ Stop Trading</button>`
-      : `<button onclick="ltHandleStart(this)" class="sb-action-btn sb-start-btn">▶ Start Trading</button>`}
-  </div>
-</nav>
+${buildSidebar('live', tradeState.running, tradeState.running, {
+  showExitBtn: !!pos,
+  exitBtnJs: 'ltHandleExit(this)',
+  showStopBtn: tradeState.running,
+  stopBtnJs: 'ltHandleStop(this)',
+  showStartBtn: !tradeState.running,
+  startBtnJs: 'ltHandleStart(this)',
+})}
 
 <!-- ── MAIN CONTENT ── -->
 <div class="main-content">
