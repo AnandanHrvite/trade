@@ -130,7 +130,7 @@ const SETTINGS_SCHEMA = [
     section: "Security",
     icon: "🔒",
     fields: [
-      { key: "API_SECRET", label: "API Secret", type: "password", effect: EFFECT.INSTANT, desc: "Protects action routes (start/stop/exit). Leave blank to disable" },
+      { key: "API_SECRET", label: "App Secret", type: "password", effect: EFFECT.INSTANT, desc: "Protects action routes (start/stop/exit) & settings page. Leave blank to disable" },
       { key: "LOGIN_SECRET", label: "Login Password", type: "password", effect: EFFECT.INSTANT, desc: "Page-level password gate. Leave blank for open access" },
     ],
   },
@@ -320,6 +320,42 @@ router.post("/restart", (req, res) => {
 
 // ── GET /settings — Settings page UI ────────────────────────────────────────
 router.get("/", (req, res) => {
+  // App Secret gate — if API_SECRET is set, require it to access settings
+  const appSecret = process.env.API_SECRET;
+  if (appSecret && req.query.secret !== appSecret) {
+    const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+    return res.send(`<!DOCTYPE html><html><head><title>Settings - Auth</title>
+      <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+      <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;display:flex;min-height:100vh;}
+      ${sidebarCSS()}
+      .auth-box{margin:auto;padding:40px;background:#07111f;border:1px solid #0e1e36;border-radius:12px;text-align:center;max-width:400px;width:90%;}
+      .auth-box h2{font-size:1rem;color:#60a5fa;margin-bottom:8px;}
+      .auth-box p{font-size:0.72rem;color:#4a6080;margin-bottom:20px;}
+      .auth-box input{width:100%;padding:10px 14px;background:#0a1528;border:1px solid #1e3a5a;border-radius:8px;color:#c8d8f0;font-family:inherit;font-size:0.85rem;text-align:center;margin-bottom:12px;}
+      .auth-box input:focus{outline:none;border-color:#3b82f6;}
+      .auth-box button{padding:10px 30px;background:#1e40af;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;font-size:0.82rem;}
+      .auth-box button:hover{background:#2563eb;}
+      .auth-err{color:#ef4444;font-size:0.72rem;margin-top:8px;display:none;}
+      </style></head><body>
+      <div class="app-shell">
+      ${buildSidebar('settings', liveActive)}
+      <div class="main-content" style="display:flex;align-items:center;justify-content:center;">
+      <div class="auth-box">
+        <h2>\uD83D\uDD12 App Secret Required</h2>
+        <p>Enter your app secret to access settings</p>
+        <form onsubmit="go(event)">
+          <input type="password" id="secretInput" placeholder="Enter app secret..." autofocus/>
+          <button type="submit">Unlock Settings</button>
+        </form>
+        <div class="auth-err" id="authErr">Invalid secret. Try again.</div>
+      </div>
+      </div></div>
+      <script>
+      function go(e){e.preventDefault();var s=document.getElementById('secretInput').value;if(!s)return;window.location='/settings?secret='+encodeURIComponent(s);}
+      ${req.query.secret ? "document.getElementById('authErr').style.display='block';" : ""}
+      </script></body></html>`);
+  }
+
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
   const envData    = parseEnvFile();
 
@@ -765,37 +801,6 @@ router.get("/", (req, res) => {
 
       ${sectionsHtml}
 
-      <!-- Custom Key-Value -->
-      <div class="settings-section">
-        <div class="section-title">➕ Add Custom .env Variable</div>
-        <div class="section-card">
-          <div class="custom-kv">
-            <div class="custom-row" id="customRow1">
-              <div class="field-group">
-                <label>Key</label>
-                <input type="text" id="customKey1" placeholder="MY_SETTING" style="text-transform:uppercase;"/>
-              </div>
-              <div class="field-group">
-                <label>Value</label>
-                <input type="text" id="customVal1" placeholder="100"/>
-              </div>
-              <button class="btn-add" onclick="addCustomVar(1)">+ Add to .env</button>
-            </div>
-            <div class="custom-row" id="customRow2">
-              <div class="field-group">
-                <label>Key</label>
-                <input type="text" id="customKey2" placeholder="ANOTHER_KEY" style="text-transform:uppercase;"/>
-              </div>
-              <div class="field-group">
-                <label>Value</label>
-                <input type="text" id="customVal2" placeholder="hello"/>
-              </div>
-              <button class="btn-add" onclick="addCustomVar(2)">+ Add to .env</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Restart Server -->
       <div class="settings-section">
         <div class="section-title">🔄 Server Control</div>
@@ -995,39 +1000,6 @@ function saveSettings() {
   .finally(function() {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
-  });
-}
-
-function addCustomVar(n) {
-  var keyEl = document.getElementById('customKey' + n);
-  var valEl = document.getElementById('customVal' + n);
-  var key = keyEl.value.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
-  var val = valEl.value.trim();
-
-  if (!key) { showToast('Enter a valid key name', 'error'); keyEl.focus(); return; }
-  if (!val) { showToast('Enter a value', 'error'); valEl.focus(); return; }
-
-  secretFetch('/settings/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ updates: { [key]: val } }),
-  })
-  .then(function(res) {
-    if (!res) return null;
-    return res.json();
-  })
-  .then(function(data) {
-    if (!data) return;
-    if (data.success) {
-      showToast(key + '=' + val + ' added to .env', 'success');
-      keyEl.value = '';
-      valEl.value = '';
-    } else {
-      showToast('Failed: ' + (data.error || 'unknown'), 'error');
-    }
-  })
-  .catch(function(err) {
-    showToast('Failed: ' + err.message, 'error');
   });
 }
 
