@@ -14,7 +14,7 @@
  *   3. EOD / daily loss / max trades (handled by routes)
  */
 
-const { BollingerBands, RSI, PSAR } = require("technicalindicators");
+const { BollingerBands, RSI, PSAR, EMA } = require("technicalindicators");
 
 const NAME        = "SCALP_BB_CPR_V3";
 const DESCRIPTION = "BB(SD1) + CPR + RSI + PSAR trail";
@@ -39,7 +39,7 @@ function calcCPR(prevHigh, prevLow, prevClose) {
 }
 
 function isNarrowCPR(cpr) {
-  const narrowPct = parseFloat(cfg("SCALP_CPR_NARROW_PCT", "15"));
+  const narrowPct = parseFloat(cfg("SCALP_CPR_NARROW_PCT", "33"));
   if (cpr.prevRange === 0) return false;
   const widthPct = (cpr.width / cpr.prevRange) * 100;
   return widthPct < narrowPct;
@@ -148,43 +148,54 @@ function getSignal(candles, opts) {
   var sar = sarArr[sarArr.length - 1];
   base.sar = parseFloat(sar.toFixed(2));
 
+  // EMA trend filter
+  var EMA_PERIOD = parseInt(cfg("SCALP_EMA_PERIOD", "20"), 10);
+  var emaArr = EMA.calculate({ period: EMA_PERIOD, values: closes });
+  var ema = emaArr.length > 0 ? emaArr[emaArr.length - 1] : null;
+
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+
+  // ── Candle body helpers ──
+  var isBullishCandle = sc.close > sc.open;
+  var isBearishCandle = sc.close < sc.open;
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
-  // CE (Long): close between BB middle & upper + price above upper CPR + RSI > 70 + SAR below
+  // CE (Long): BB zone + above CPR + RSI > threshold + SAR below + EMA trend + bullish candle
   var bbLongZone  = sc.close > bb.middle && sc.close < bb.upper;
   var aboveCPR    = sc.close > cpr.tc;
   var sarBelow    = sar < sc.close;
   var rsiCE       = rsi > RSI_CE;
+  var emaBullish  = ema ? sc.close > ema : true;
 
-  if (bbLongZone && aboveCPR && sarBelow && rsiCE) {
+  if (bbLongZone && aboveCPR && sarBelow && rsiCE && emaBullish && isBullishCandle) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sc.close - sl).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] CE: BB zone + above CPR(" + cpr.tc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl);
+    if (!silent) console.log("[SCALP " + _ist + "] CE: BB zone + above CPR(" + cpr.tc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl + " + EMA" + EMA_PERIOD);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
-      target: null,  // no fixed target — PSAR trail only
+      target: null,
       slPts: slPts,
       reason: "CE: BB(" + bb.middle.toFixed(0) + "-" + bb.upper.toFixed(0) + ") + CPR(" + cpr.tc + ") + RSI=" + rsi.toFixed(0) + " + SAR=" + sl,
     });
   }
 
-  // PE (Short): close between BB lower & middle + price below lower CPR + RSI < 30 + SAR above
+  // PE (Short): BB zone + below CPR + RSI < threshold + SAR above + EMA trend + bearish candle
   var bbShortZone = sc.close < bb.middle && sc.close > bb.lower;
   var belowCPR    = sc.close < cpr.bc;
   var sarAbove    = sar > sc.close;
   var rsiPE       = rsi < RSI_PE;
+  var emaBearish  = ema ? sc.close < ema : true;
 
-  if (bbShortZone && belowCPR && sarAbove && rsiPE) {
+  if (bbShortZone && belowCPR && sarAbove && rsiPE && emaBearish && isBearishCandle) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sl - sc.close).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] PE: BB zone + below CPR(" + cpr.bc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl);
+    if (!silent) console.log("[SCALP " + _ist + "] PE: BB zone + below CPR(" + cpr.bc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl + " + EMA" + EMA_PERIOD);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
-      target: null,  // no fixed target — PSAR trail only
+      target: null,
       slPts: slPts,
       reason: "PE: BB(" + bb.lower.toFixed(0) + "-" + bb.middle.toFixed(0) + ") + CPR(" + cpr.bc + ") + RSI=" + rsi.toFixed(0) + " + SAR=" + sl,
     });
