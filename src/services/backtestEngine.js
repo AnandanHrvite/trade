@@ -294,9 +294,6 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
     // _cachedPrevSL was set at the end of the previous iteration = getSignal(candles[0..i-1]).
     const prevSignalSL = _cachedPrevSL;
 
-    // Count candles held (used for theta decay in PnL calculation)
-    if (position) position.candlesHeld = (position.candlesHeld || 0) + 1;
-
     // ── UPDATE TRAILING SAR SL (tighten only) ────────────────────────────────
     if (position && signalSL !== null && signalSL !== undefined) {
       const oldSL   = position.stopLoss;
@@ -343,6 +340,10 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
         }
       }
     }
+
+    // Count candles held (used for theta decay in PnL calculation)
+    // Placed after trail updates but before exit check — entry candle starts at 0
+    if (position) position.candlesHeld = (position.candlesHeld || 0) + 1;
 
     // ── EXIT CHECK ────────────────────────────────────────────────────────────
     if (position) {
