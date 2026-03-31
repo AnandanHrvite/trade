@@ -45,8 +45,8 @@ function isNarrowCPR(cpr) {
 function isInTradingWindow(unixSec) {
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  if (totalMin < 561)  return { ok: false, reason: "Before 9:21 AM" };
-  if (totalMin >= 840) return { ok: false, reason: "After 2:00 PM" };
+  if (totalMin < 585)  return { ok: false, reason: "Before 9:45 AM" };
+  if (totalMin >= 870) return { ok: false, reason: "After 2:30 PM" };
   return { ok: true, reason: null };
 }
 

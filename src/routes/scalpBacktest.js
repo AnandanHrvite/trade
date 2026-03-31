@@ -74,7 +74,8 @@ function runScalpBacktest(candles, capital, vixCandles) {
   // PNL-based trailing profit (₹ amounts)
   const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "300");   // start trailing at ₹300
   const SCALP_TRAIL_STEP   = parseFloat(process.env.SCALP_TRAIL_STEP || "200");   // step: 300,500,700,900...
-  const SCALP_MAX_SL_PTS   = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");   // max 25pt spot SL from entry
+  const SCALP_MAX_SL_ON    = (process.env.SCALP_MAX_SL_ENABLED || "true").toLowerCase() === "true";
+  const SCALP_MAX_SL_PTS   = SCALP_MAX_SL_ON ? parseFloat(process.env.SCALP_MAX_SL_PTS || "25") : 0;
 
   function getISTDateStr(unixSec) {
     return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

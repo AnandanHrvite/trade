@@ -43,7 +43,8 @@ const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "200
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
-const _SCALP_MAX_SL_PTS    = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
+const _SCALP_MAX_SL_ON     = (process.env.SCALP_MAX_SL_ENABLED || "true").toLowerCase() === "true";
+const _SCALP_MAX_SL_PTS    = _SCALP_MAX_SL_ON ? parseFloat(process.env.SCALP_MAX_SL_PTS || "25") : 0;
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
