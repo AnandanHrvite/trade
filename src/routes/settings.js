@@ -75,15 +75,16 @@ const SETTINGS_SCHEMA = [
       // ── Bollinger Bands ──
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
-      // ── CPR ──
-      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 1, max: 33, step: 1, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Max possible is 33%. Lower = stricter. Recommended: 15%", default: "15" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI must be above this for CE entry (70=strict, 55=relaxed)", default: "55" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI must be below this for PE entry (30=strict, 45=relaxed)", default: "45" },
-      // ── Parabolic SAR (SL & trailing) ──
-      { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step (default 0.02)", default: "0.02" },
-      { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration (default 0.2)", default: "0.2" },
+      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry", default: "55" },
+      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry", default: "45" },
+      // ── Parabolic SAR (initial SL + trailing) ──
+      { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
+      { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
+      // ── Trail profit (₹ PNL levels) ──
+      { key: "SCALP_TRAIL_START", label: "Trail Start (₹)", type: "number", min: 100, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Lock profit at this level (300,500,700...)", default: "300" },
+      { key: "SCALP_TRAIL_STEP", label: "Trail Step (₹)", type: "number", min: 100, max: 500, step: 50, effect: EFFECT.SESSION, desc: "Step between trail levels", default: "200" },
       // ── Risk management ──
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
@@ -175,14 +176,12 @@ const SESSION_RESTART_KEYS = new Set([
   "TRAIL_TIER2_UPTO", "TRAIL_TIER2_GAP", "TRAIL_TIER3_GAP",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   // Scalp settings — need session restart
-  "SCALP_RESOLUTION", "SCALP_SL_PTS", "SCALP_TARGET_PTS",
-  "SCALP_TRAIL_GAP", "SCALP_TRAIL_AFTER", "SCALP_TIME_STOP_CANDLES",
+  "SCALP_RESOLUTION",
+  "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
+  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_PE_THRESHOLD",
+  "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
+  "SCALP_TRAIL_START", "SCALP_TRAIL_STEP",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
-  "SCALP_RSI_CE_MIN", "SCALP_RSI_PE_MAX", "SCALP_MIN_BODY",
-  "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
-  "SCALP_USE_ATR_SL", "SCALP_ATR_SL_MULT", "SCALP_ATR_TGT_MULT",
-  "SCALP_ATR_MIN_SL", "SCALP_ATR_MAX_SL",
-  "SCALP_RSI_CE_MIN_V2", "SCALP_RSI_PE_MAX_V2",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────

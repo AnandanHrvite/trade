@@ -37,10 +37,8 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_MAX_SL        = parseFloat(process.env.SCALP_MAX_SL || "300");
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
-const _SCALP_BE_TRIGGER    = parseFloat(process.env.SCALP_BE_TRIGGER || "0");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -199,7 +197,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     bestPrice:        null,
     candlesHeld:      0,
     peakPnl:          0,
-    beTriggered:      false,
+
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
     optionEntryLtp:   null,
     optionCurrentLtp: null,
@@ -332,50 +330,26 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // Breakeven SL: once PNL crosses trigger, move SL to entry
-    if (_SCALP_BE_TRIGGER > 0 && !pos.beTriggered && pos.peakPnl >= _SCALP_BE_TRIGGER) {
-      pos.beTriggered = true;
-      pos.stopLoss = pos.entryPrice;
-      log(`🔒 [SCALP-PAPER] Breakeven SL activated at ₹${pos.entryPrice}`);
-    }
-
-    // 1. MAX SL (₹300) — absolute hard stop, checked FIRST
-    if (_SCALP_MAX_SL > 0 && curPnl <= -_SCALP_MAX_SL) {
-      simulateSell(price, `Max SL ₹${_SCALP_MAX_SL}`, price);
-      return;
-    }
-
-    // 2. TRAILING PROFIT — levels: 300, 500, 700, 900...
-    if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
-      const highestLevel = _SCALP_TRAIL_START + (levelsAbove * _SCALP_TRAIL_STEP);
-      const trailFloor = Math.max(0, highestLevel - _SCALP_TRAIL_STEP);
-      if (curPnl <= trailFloor) {
-        simulateSell(price, `Trail profit ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
-        return;
-      }
-    }
-
-    // 3. PSAR SL hit (tick-level) — capped at max SL
+    // 1. PSAR SL hit (trailing — tightens each candle)
     if (pos.side === "CE" && price <= pos.stopLoss) {
-      const slPnl = _tickPnl(pos.stopLoss);
-      if (_SCALP_MAX_SL <= 0 || slPnl >= -_SCALP_MAX_SL) {
-        const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-        simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
-      } else {
-        simulateSell(price, `Max SL ₹${_SCALP_MAX_SL}`, price);
-      }
+      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit", price);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
-      const slPnl = _tickPnl(pos.stopLoss);
-      if (_SCALP_MAX_SL <= 0 || slPnl >= -_SCALP_MAX_SL) {
-        const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-        simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
-      } else {
-        simulateSell(price, `Max SL ₹${_SCALP_MAX_SL}`, price);
-      }
+      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit", price);
       return;
+    }
+
+    // 2. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
+    if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
+      const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
+      const trailFloor = _SCALP_TRAIL_START + (levelsAbove * _SCALP_TRAIL_STEP);
+      if (curPnl <= trailFloor) {
+        simulateSell(price, `Trail lock ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
+        return;
+      }
     }
 
     // EOD check
@@ -405,20 +379,12 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update PSAR trailing SL (tighten only, never below breakeven)
+    // Update PSAR trailing SL (tighten only)
     if (window.length >= 15) {
       const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
       if (newSL !== state.position.stopLoss) {
-        if (state.position.beTriggered) {
-          const isBetter = state.position.side === "CE" ? newSL > state.position.entryPrice : newSL < state.position.entryPrice;
-          if (isBetter) {
-            log(`📐 [SCALP-PAPER] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
-            state.position.stopLoss = newSL;
-          }
-        } else {
-          log(`📐 [SCALP-PAPER] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
-          state.position.stopLoss = newSL;
-        }
+        log(`📐 [SCALP-PAPER] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+        state.position.stopLoss = newSL;
       }
     }
 
@@ -430,7 +396,6 @@ function onCandleClose(bar) {
   if (state._dailyLossHit) return;
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
-  if (!_prevDayOHLC) return;
 
   // VIX check
   if (process.env.SCALP_VIX_ENABLED === "true") {
@@ -528,7 +493,7 @@ async function preloadHistory() {
         log(`📊 [SCALP-PAPER] CPR: TC=${cpr.tc} BC=${cpr.bc} Width=${cpr.width} ${narrow ? "✅ NARROW (trending)" : "❌ WIDE (skip entries)"}`);
       }
     } else {
-      log(`⚠️ [SCALP-PAPER] Not enough daily candles for CPR — entries blocked until data available`);
+      log(`⚠️ [SCALP-PAPER] Not enough daily candles for prev day data`);
     }
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] CPR data fetch failed: ${err.message}`);
@@ -928,7 +893,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="top-bar">
   <h1>Scalp Paper Trade</h1>
   <span class="res-tag">${SCALP_RES}-min candles</span>
-  <span class="res-tag">MaxSL \u20b9${_SCALP_MAX_SL} / Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP}</span>
+  <span class="res-tag">SL: PSAR / Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP}</span>
   <span id="ajax-status-badge" class="badge ${state.running ? "badge-running" : "badge-stopped"}">${state.running ? "Running" : "Stopped"}</span>
 </div>
 
