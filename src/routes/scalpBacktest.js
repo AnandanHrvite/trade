@@ -174,31 +174,21 @@ function runScalpBacktest(candles, capital, vixCandles) {
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. 1:1 RR SL  2. PSAR SL  3. Trail profit  4. PSAR flip  5. PSAR trail  6. EOD
+      // EXIT: 1. PSAR SL  2. Trail profit  3. PSAR flip  4. PSAR trail  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. 1:1 RR SL — if price moves against by slPts (same as PSAR distance at entry), exit
-      if (position.slPts > 0) {
-        const worstSpot = position.side === "CE" ? candle.low : candle.high;
-        const movePts = (worstSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-        if (movePts <= -position.slPts) {
-          exitPrice  = parseFloat((position.entryPrice + (-position.slPts) * (position.side === "CE" ? 1 : -1)).toFixed(2));
-          exitReason = `1:1 SL (${position.slPts.toFixed(1)}pt)`;
-        }
-      }
-
-      // 2. PSAR SL hit (trailing — tightens each candle)
-      if (!exitReason && position.side === "CE" && candle.low <= position.stopLoss) {
+      // 1. PSAR SL hit (trailing — tightens each candle)
+      if (position.side === "CE" && candle.low <= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         exitReason = _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit";
-      } else if (!exitReason && position.side === "PE" && candle.high >= position.stopLoss) {
+      } else if (position.side === "PE" && candle.high >= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         exitReason = _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit";
       }
 
-      // 3. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
+      // 2. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
       if (!exitReason && SCALP_TRAIL_START > 0 && position.peakPnl >= SCALP_TRAIL_START) {
         const levelsAbove = Math.floor((position.peakPnl - SCALP_TRAIL_START) / SCALP_TRAIL_STEP);
         const trailFloor = SCALP_TRAIL_START + (levelsAbove * SCALP_TRAIL_STEP);
@@ -210,12 +200,12 @@ function runScalpBacktest(candles, capital, vixCandles) {
         }
       }
 
-      // 4. PSAR flip — exit on reversal signal
+      // 3. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
       }
 
-      // 5. Update PSAR trailing SL (tighten only)
+      // 4. Update PSAR trailing SL (tighten only)
       if (!exitReason) {
         const newSL = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
         if (newSL !== position.stopLoss) {
@@ -223,7 +213,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
         }
       }
 
-      // 6. EOD
+      // 5. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -302,7 +292,6 @@ function runScalpBacktest(candles, capital, vixCandles) {
       entryTs:        candle.time,
       stopLoss:       result.stopLoss,
       initialStopLoss: result.stopLoss,
-      slPts:          Math.min(result.slPts || Math.abs(candle.close - result.stopLoss), 15),
       target:         null,
       candlesHeld:    0,
       peakPnl:        0,
