@@ -69,12 +69,13 @@ function runScalpBacktest(candles, capital, vixCandles) {
   // Scalp config
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-  const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+  const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "5", 10);
 
   // PNL-based trailing profit & SL (₹ amounts)
   const SCALP_MAX_SL       = parseFloat(process.env.SCALP_MAX_SL || "300");        // max loss ₹300 per trade
   const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "300");   // start trailing at ₹300
   const SCALP_TRAIL_STEP   = parseFloat(process.env.SCALP_TRAIL_STEP || "200");   // step: 300,500,700,900...
+  const SCALP_BE_TRIGGER   = parseFloat(process.env.SCALP_BE_TRIGGER || "150");   // move SL to breakeven at ₹150
 
   function getISTDateStr(unixSec) {
     return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -174,6 +175,12 @@ function runScalpBacktest(candles, capital, vixCandles) {
         position.peakPnl = bestPnl;
       }
 
+      // ── Breakeven SL: once PNL crosses trigger, move SL to entry price ──
+      if (SCALP_BE_TRIGGER > 0 && !position.beTriggered && position.peakPnl >= SCALP_BE_TRIGGER) {
+        position.beTriggered = true;
+        position.stopLoss = position.entryPrice;
+      }
+
       // ──────────────────────────────────────────────────────────────────────
       // EXIT PRIORITY: Max SL first (₹300 hard cap), then trailing profit,
       //                then PSAR, then EOD
@@ -206,10 +213,11 @@ function runScalpBacktest(candles, capital, vixCandles) {
         }
       }
 
-      // 3. PSAR SL hit (only if loss is within ₹ cap)
+      // 3. SL hit (breakeven / PSAR trail / PSAR initial — capped at max SL)
       if (!exitReason) {
-        const _isTrail = position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _slLabel = _isTrail ? "PSAR Trail SL" : "PSAR SL";
+        const _slLabel = position.beTriggered ? "Breakeven SL"
+          : (position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5) ? "PSAR Trail SL"
+          : "PSAR SL";
         if (position.side === "CE" && candle.low <= position.stopLoss) {
           const slPnl = _runPnl(position.stopLoss);
           if (SCALP_MAX_SL <= 0 || slPnl >= -SCALP_MAX_SL) {
@@ -236,11 +244,17 @@ function runScalpBacktest(candles, capital, vixCandles) {
         exitReason = "PSAR flip";
       }
 
-      // 5. Update PSAR trailing SL (tighten only)
+      // 5. Update PSAR trailing SL (tighten only, never below breakeven)
       if (!exitReason) {
         const newSL = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
         if (newSL !== position.stopLoss) {
-          position.stopLoss = newSL;
+          // If breakeven is active, never let SL go worse than entry
+          if (position.beTriggered) {
+            const isBetter = position.side === "CE" ? newSL > position.entryPrice : newSL < position.entryPrice;
+            if (isBetter) position.stopLoss = newSL;
+          } else {
+            position.stopLoss = newSL;
+          }
         }
       }
 
@@ -327,6 +341,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
       target:         null,
       candlesHeld:    0,
       peakPnl:        0,
+      beTriggered:    false,
     };
   }
 

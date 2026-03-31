@@ -44,6 +44,7 @@ const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2",
 const _SCALP_MAX_SL        = parseFloat(process.env.SCALP_MAX_SL || "300");
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
+const _SCALP_BE_TRIGGER    = parseFloat(process.env.SCALP_BE_TRIGGER || "150");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
@@ -355,6 +356,13 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
+    // Breakeven SL: once PNL crosses trigger, move SL to entry
+    if (_SCALP_BE_TRIGGER > 0 && !pos.beTriggered && pos.peakPnl >= _SCALP_BE_TRIGGER) {
+      pos.beTriggered = true;
+      pos.stopLoss = pos.entryPrice;
+      log(`🔒 [SCALP-LIVE] Breakeven SL activated at ₹${pos.entryPrice}`);
+    }
+
     // 1. MAX SL (₹300) — absolute hard stop, checked FIRST
     if (_SCALP_MAX_SL > 0 && curPnl <= -_SCALP_MAX_SL) {
       squareOff(price, `Max SL ₹${_SCALP_MAX_SL}`);
@@ -419,12 +427,20 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update PSAR trailing SL (tighten only)
+    // Update PSAR trailing SL (tighten only, never below breakeven)
     if (window.length >= 15) {
       const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
       if (newSL !== state.position.stopLoss) {
-        log(`📐 [SCALP-LIVE] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
-        state.position.stopLoss = newSL;
+        if (state.position.beTriggered) {
+          const isBetter = state.position.side === "CE" ? newSL > state.position.entryPrice : newSL < state.position.entryPrice;
+          if (isBetter) {
+            log(`📐 [SCALP-LIVE] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+            state.position.stopLoss = newSL;
+          }
+        } else {
+          log(`📐 [SCALP-LIVE] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+          state.position.stopLoss = newSL;
+        }
       }
     }
 
@@ -505,6 +521,7 @@ async function resolveAndEnter(side, spot, result) {
       bestPrice:        null,
       candlesHeld:      0,
       peakPnl:          0,
+      beTriggered:      false,
       optionEntryLtp:   null,
       optionCurrentLtp: null,
     };
