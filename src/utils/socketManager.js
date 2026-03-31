@@ -209,8 +209,9 @@ class SocketManager {
   }
 
   _isMarketHours() {
-    const ist   = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-    const total = ist.getHours() * 60 + ist.getMinutes();
+    // Fast IST: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
+    const istSec = Math.floor(Date.now() / 1000) + 19800;
+    const total  = Math.floor(istSec / 60) % 1440;
     return total >= 555 && total < 920;
   }
 }

@@ -30,13 +30,30 @@ const _orig = {
   error: console.error.bind(console),
 };
 
+// Fast IST formatter: avoids expensive toLocaleString/ICU on every console.log call
+// UTC+5:30 = +19800 seconds = +19800000 milliseconds
+function _fastIST(nowMs) {
+  const ist   = new Date(nowMs + 19800000); // shift UTC date by IST offset
+  const h     = ist.getUTCHours();
+  const m     = ist.getUTCMinutes();
+  const s     = ist.getUTCSeconds();
+  const dd    = ist.getUTCDate();
+  const mm    = ist.getUTCMonth() + 1;
+  const yyyy  = ist.getUTCFullYear();
+  return {
+    time: (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s,
+    date: (dd < 10 ? "0" : "") + dd + "/" + (mm < 10 ? "0" : "") + mm + "/" + yyyy,
+  };
+}
+
 function capture(level, args) {
-  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const nowMs = Date.now();
+  const ist   = _fastIST(nowMs);
 
   const entry = {
-    id:    Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-    time:  nowIST.toLocaleTimeString("en-IN",  { hour12: false }),
-    date:  nowIST.toLocaleDateString("en-IN"),
+    id:    nowMs + "_" + Math.random().toString(36).slice(2, 6),
+    time:  ist.time,
+    date:  ist.date,
     level,
     msg: args
       .map(a => {
@@ -52,7 +69,8 @@ function capture(level, args) {
   };
 
   logStore.push(entry);
-  if (logStore.length > MAX_LOGS) logStore.splice(0, logStore.length - MAX_LOGS);
+  // Trim in batches of 500 to amortize the O(n) splice cost (instead of every single overflow)
+  if (logStore.length > MAX_LOGS + 500) logStore.splice(0, logStore.length - MAX_LOGS);
 
   logEvents.emit("log", entry);
   return entry;

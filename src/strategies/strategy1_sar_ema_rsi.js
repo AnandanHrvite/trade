@@ -79,7 +79,7 @@ function calcSAR(candles, step, max) {
       }
     }
     sar = newSar;
-    result.push({ sar: parseFloat(sar.toFixed(2)), trend: trend });
+    result.push({ sar: Math.round(sar * 100) / 100, trend: trend });
   }
   return result;
 }
@@ -92,8 +92,9 @@ function calcSAR(candles, step, max) {
 // End  : 3:00 PM (unchanged)
 // Dead zone REMOVED — on 15-min, 12:00–12:30 is only 2 candles. Not worth skipping.
 function isInTradingWindow(unixSec) {
-  var d        = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  var totalMin = d.getHours() * 60 + d.getMinutes();
+  // Fast IST conversion: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
+  var istSec   = unixSec + 19800;
+  var totalMin = Math.floor(istSec / 60) % 1440;
   // 9:30 AM – 2:00 PM (no entries after 2 PM — last hour is too risky,
   // trades get force-closed at 3:20 PM EOD with no time for trail to work)
   if (totalMin < 570)  return { ok: false, reason: "Before 9:30 AM — waiting for indicators to stabilise on 15-min" };
@@ -250,7 +251,7 @@ function getSignal(candles, opts) {
 
   // ── EMA9 slope check ────────────────────────────────────────────────────────
   var EMA_SLOPE_MIN  = 6;  // raised 6→8: require strong directional EMA, not gentle drift
-  var ema9SlopeValue = parseFloat((ema9 - ema9_1).toFixed(2));
+  var ema9SlopeValue = Math.round((ema9 - ema9_1) * 100) / 100;
   var ema9SlopeUp    = ema9SlopeValue >= EMA_SLOPE_MIN;
   var ema9SlopeDown  = ema9SlopeValue <= -EMA_SLOPE_MIN;
 
@@ -324,8 +325,8 @@ function getSignal(candles, opts) {
   // SL: normally the SAR dot value. For the bull-override PE case, use EMA9
   // (SAR is too far below price to be a useful stop — EMA9 is the resistance level)
   var sarSL = sarBullOverridePE
-    ? parseFloat(ema9.toFixed(2))
-    : parseFloat(currSAR.sar.toFixed(2));
+    ? Math.round(ema9 * 100) / 100
+    : Math.round(currSAR.sar * 100) / 100;
 
   // Label for logging
   var sarLabelCE = sarJustFlippedBull ? "SAR_FLIP_BULL" : "SAR_BULL";
@@ -352,16 +353,16 @@ function getSignal(candles, opts) {
   );
 
   var base = {
-    ema9:           parseFloat(ema9.toFixed(2)),
-    ema9Prev:       parseFloat(ema9_1.toFixed(2)),
+    ema9:           Math.round(ema9 * 100) / 100,
+    ema9Prev:       Math.round(ema9_1 * 100) / 100,
     ema9Slope:      ema9SlopeValue,
     ema9SlopeUp:    ema9SlopeUp,
     ema9SlopeDown:  ema9SlopeDown,
     ema9Falling:    ema9 < ema9_1,
     ema9Rising:     ema9 > ema9_1,
-    ema21:          ema21 !== null ? parseFloat(ema21.toFixed(2)) : null,
-    ema30:          ema30 !== null ? parseFloat(ema30.toFixed(2)) : null,
-    rsi:            parseFloat(rsi.toFixed(1)),
+    ema21:          ema21 !== null ? Math.round(ema21 * 100) / 100 : null,
+    ema30:          ema30 !== null ? Math.round(ema30 * 100) / 100 : null,
+    rsi:            Math.round(rsi * 10) / 10,
     sar:            currSAR.sar,
     sarTrend:       currSAR.trend === 1 ? "BULLISH" : "BEARISH",
     sarTrendInt:    currSAR.trend,
@@ -372,7 +373,7 @@ function getSignal(candles, opts) {
     prevCandleHigh: signalCandle.high,
     prevCandleLow:  signalCandle.low,
     stopLoss:       sarSL,
-    adx:            adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null,
+    adx:            adxVal !== null ? Math.round(adxVal * 10) / 10 : null,
     adxTrending:    isTrending,
   };
 
@@ -402,7 +403,7 @@ function getSignal(candles, opts) {
     if (!silent) console.log("  ✓ CE gate PASS: SAR SL " + sarSL + " < close " + signalCandle.close + " (gap=" + (signalCandle.close - sarSL).toFixed(1) + "pt)");
     // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
     // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
-    var sarDistCE = parseFloat((signalCandle.close - sarSL).toFixed(2));
+    var sarDistCE = Math.round((signalCandle.close - sarSL) * 100) / 100;
     if (sarDistCE < 45) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 45pt minimum (SL within candle noise)");
       return Object.assign({}, base, {
@@ -515,7 +516,7 @@ function getSignal(candles, opts) {
     // (Logic3 requires close < ema9). Applying the 55pt gate here would block ALL Logic3 entries
     // since ema9 - close is typically only a few points. Logic3's own gates (SAR 50pt below,
     // RSI < 42, EMA9 slope >= 6pt) are strong enough — skip the 55pt min for that path.
-    var sarDistPE = parseFloat((sarSL - signalCandle.close).toFixed(2));
+    var sarDistPE = Math.round((sarSL - signalCandle.close) * 100) / 100;
     if (!sarBullOverridePE && sarDistPE < 45) {
       if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 45pt minimum");
       return Object.assign({}, base, {
