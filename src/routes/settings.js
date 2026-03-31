@@ -74,7 +74,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min only)", default: "3" },
       // ── Bollinger Bands ──
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
-      { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
+      { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "2" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
       { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry", default: "55" },

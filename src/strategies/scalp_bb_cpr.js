@@ -56,7 +56,7 @@ function getSignal(candles, opts) {
   var silent = opts.silent === true;
 
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
-  var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
+  var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "2"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
   var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "55"));
   var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "45"));
