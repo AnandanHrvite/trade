@@ -40,7 +40,7 @@ const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2",
 const _SCALP_MAX_SL        = parseFloat(process.env.SCALP_MAX_SL || "300");
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
-const _SCALP_BE_TRIGGER    = parseFloat(process.env.SCALP_BE_TRIGGER || "150");
+const _SCALP_BE_TRIGGER    = parseFloat(process.env.SCALP_BE_TRIGGER || "0");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }

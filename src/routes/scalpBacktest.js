@@ -69,13 +69,13 @@ function runScalpBacktest(candles, capital, vixCandles) {
   // Scalp config
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-  const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "5", 10);
+  const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 
   // PNL-based trailing profit & SL (₹ amounts)
   const SCALP_MAX_SL       = parseFloat(process.env.SCALP_MAX_SL || "300");        // max loss ₹300 per trade
   const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "300");   // start trailing at ₹300
   const SCALP_TRAIL_STEP   = parseFloat(process.env.SCALP_TRAIL_STEP || "200");   // step: 300,500,700,900...
-  const SCALP_BE_TRIGGER   = parseFloat(process.env.SCALP_BE_TRIGGER || "150");   // move SL to breakeven at ₹150
+  const SCALP_BE_TRIGGER   = parseFloat(process.env.SCALP_BE_TRIGGER || "0");     // breakeven SL (0=disabled)
 
   function getISTDateStr(unixSec) {
     return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

@@ -70,8 +70,8 @@ function getSignal(candles, opts) {
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
   var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "60"));
-  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "40"));
+  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "55"));
+  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "45"));
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
 
