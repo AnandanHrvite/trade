@@ -45,8 +45,8 @@ function isNarrowCPR(cpr) {
 function isInTradingWindow(unixSec) {
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  if (totalMin < 585)  return { ok: false, reason: "Before 9:45 AM" };
-  if (totalMin >= 870) return { ok: false, reason: "After 2:30 PM" };
+  if (totalMin < 561)  return { ok: false, reason: "Before 9:21 AM" };
+  if (totalMin >= 840) return { ok: false, reason: "After 2:00 PM" };
   return { ok: true, reason: null };
 }
 
@@ -56,7 +56,7 @@ function getSignal(candles, opts) {
   var silent = opts.silent === true;
 
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
-  var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "2"));
+  var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
   var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "55"));
   var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "45"));
