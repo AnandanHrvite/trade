@@ -29,6 +29,38 @@ router.get("/", (req, res) => {
   try { readme = fs.readFileSync(path.join(projectRoot, "README.md"), "utf-8"); } catch(e) { readme = "README.md not found"; }
   try { changelog = fs.readFileSync(path.join(projectRoot, "CHANGELOG.md"), "utf-8"); } catch(e) { changelog = "CHANGELOG.md not found"; }
 
+  // Read documents folder
+  const docsDir = path.join(projectRoot, "documents");
+  let docFiles = [];
+  try {
+    docFiles = fs.readdirSync(docsDir)
+      .filter(f => !f.startsWith("."))
+      .map(f => {
+        const stat = fs.statSync(path.join(docsDir, f));
+        const ext = path.extname(f).toLowerCase();
+        let icon = "📄";
+        if (ext === ".pdf") icon = "📕";
+        else if ([".xls", ".xlsx", ".csv"].includes(ext)) icon = "📊";
+        else if ([".doc", ".docx"].includes(ext)) icon = "📝";
+        else if ([".png", ".jpg", ".jpeg", ".gif", ".svg"].includes(ext)) icon = "🖼️";
+        else if ([".txt", ".md"].includes(ext)) icon = "📃";
+        const sizeKB = (stat.size / 1024).toFixed(1);
+        const modified = stat.mtime.toISOString().split("T")[0];
+        return { name: f, icon, sizeKB, modified };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch(e) { /* documents folder not found */ }
+
+  const docListHtml = docFiles.length > 0
+    ? docFiles.map(f =>
+        `<a href="/docs/file/${encodeURIComponent(f.name)}" class="guide-link" target="_blank">
+          <span class="guide-icon">${f.icon}</span>
+          <span style="flex:1">${f.name}</span>
+          <span style="color:#4a6080;font-size:0.72rem;white-space:nowrap">${f.sizeKB} KB &nbsp;·&nbsp; ${f.modified}</span>
+        </a>`
+      ).join("\n      ")
+    : '<p style="color:#4a6080;font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
+
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
 
   res.setHeader("Content-Type", "text/html");
@@ -92,7 +124,7 @@ ${buildSidebar("docs", liveActive)}
   <div class="tabs">
     <div class="tab active" onclick="showTab(this,'readme')">README</div>
     <div class="tab" onclick="showTab(this,'changelog')">CHANGELOG</div>
-    <div class="tab" onclick="showTab(this,'guides')">Strategy Guides</div>
+    <div class="tab" onclick="showTab(this,'guides')">Documents</div>
   </div>
 
   <div id="readme" class="content active">
@@ -105,16 +137,9 @@ ${buildSidebar("docs", liveActive)}
 
   <div id="guides" class="content">
     <div class="doc-card">
-      <h1>Strategy Documentation</h1>
-      <p>Download the PDF guides for detailed strategy logic with candlestick charts:</p>
-      <a href="/docs/pdf/Trading_Strategy1_Guide.pdf" class="guide-link" target="_blank">
-        <span class="guide-icon">📄</span> Trading Strategy1 Guide — Performance, Parameters, Scaling
-      </a>
-      <a href="/docs/pdf/Trading_Strategy1_LogicGuide.pdf" class="guide-link" target="_blank">
-        <span class="guide-icon">📊</span> Trading Strategy1 Logic Guide — Candlestick Charts, Entry/Exit, Trail SL
-      </a>
-      <br>
-      <p style="color:#4a6080;font-size:0.78rem;">Place PDF files in your project root directory to access them here.</p>
+      <h1>Documents</h1>
+      <p style="margin-bottom:14px;">Files from the <code>documents/</code> folder (${docFiles.length} file${docFiles.length !== 1 ? "s" : ""}):</p>
+      ${docListHtml}
     </div>
   </div>
 </div>
@@ -129,9 +154,21 @@ function showTab(el, id) {
 </body></html>`);
 });
 
+router.get("/file/:filename", (req, res) => {
+  const filename = path.basename(req.params.filename); // prevent path traversal
+  const filepath = path.join(process.cwd(), "documents", filename);
+  if (fs.existsSync(filepath)) {
+    res.sendFile(filepath);
+  } else {
+    res.status(404).send("File not found");
+  }
+});
+
+// Legacy PDF route (backward compatibility)
 router.get("/pdf/:filename", (req, res) => {
-  const filepath = path.join(process.cwd(), req.params.filename);
-  if (fs.existsSync(filepath) && req.params.filename.endsWith(".pdf")) {
+  const filename = path.basename(req.params.filename);
+  const filepath = path.join(process.cwd(), "documents", filename);
+  if (fs.existsSync(filepath) && filename.endsWith(".pdf")) {
     res.sendFile(filepath);
   } else {
     res.status(404).send("File not found");
