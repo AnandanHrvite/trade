@@ -302,7 +302,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
       entryTs:        candle.time,
       stopLoss:       result.stopLoss,
       initialStopLoss: result.stopLoss,
-      slPts:          result.slPts || Math.abs(candle.close - result.stopLoss),
+      slPts:          Math.min(result.slPts || Math.abs(candle.close - result.stopLoss), 15),
       target:         null,
       candlesHeld:    0,
       peakPnl:        0,
