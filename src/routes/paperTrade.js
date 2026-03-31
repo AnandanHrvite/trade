@@ -857,7 +857,7 @@ async function onCandleClose(candle) {
   // For 5-min resolution: fires only if intra-tick entry didn't already fire.
   // isMarketHours() guard: prevents entries on 5-min candles closing between TRADE_STOP_TIME-10
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
-  if (!ptState.position && !ptState._entryPending && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  if (!ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // ── Strength gate: candle-close entry fires for MARGINAL signals ──────────
     // STRONG signals are handled intra-candle (better entry price).
     // If a STRONG signal somehow wasn't caught intra-candle (e.g. first tick of candle
@@ -1487,8 +1487,17 @@ router.get("/start", async (req, res) => {
   ptState._missedLoggedCandle  = null;
   ptState._sessionWins         = 0;
   ptState._sessionLosses       = 0;
+  ptState._expiryDayBlocked    = false;
   _tradesMapCache = []; _tradesMapCount = 0; // clear cached trades for poll
   stopOptionPolling();
+
+  // Expiry day check
+  if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    const { isExpiryDay } = require("../utils/nseHolidays");
+    const isExpiry = await isExpiryDay();
+    if (!isExpiry) ptState._expiryDayBlocked = true;
+    log(`📅 [PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+  }
 
   log(`\n════════════════════════════════════════════════════════════════════`);
   log(`🟡 [PAPER] Paper trading started`);

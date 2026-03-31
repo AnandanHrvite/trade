@@ -839,7 +839,7 @@ async function onCandleClose(candle) {
   // ── Entry: candle-close fallback (if intra-candle tick entry didn't fire) ───
   // isMarketHours() guard prevents entries on 5-min candles closing between TRADE_STOP_TIME-10
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
-  if (!tradeState.position && !tradeState._entryPending && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  if (!tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Daily loss kill switch — hard block, no bypass
     if (tradeState._dailyLossHit) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
@@ -1420,7 +1420,16 @@ router.get("/start", async (req, res) => {
   _orderInFlight            = false;
   _squareOffInFlight        = false;
   tradeState._slHitCandleTime = null;
+  tradeState._expiryDayBlocked = false;
   stopOptionPolling();
+
+  // Expiry day check
+  if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    const { isExpiryDay } = require("../utils/nseHolidays");
+    const isExpiry = await isExpiryDay();
+    if (!isExpiry) tradeState._expiryDayBlocked = true;
+    log(`📅 [LIVE] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+  }
 
   log(`🟢 [LIVE] Live trading started`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);

@@ -381,6 +381,28 @@ async function refreshHolidayCache() {
   }
 }
 
+/**
+ * Check if today is NIFTY weekly expiry day (Thursday, or Wednesday if Thursday is holiday)
+ */
+async function isExpiryDay() {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const day = now.getDay(); // 0=Sun, 4=Thu
+
+  // Thursday = normal expiry
+  if (day === 4) return true;
+
+  // Wednesday = check if Thursday is a holiday (preponed expiry)
+  if (day === 3) {
+    const thu = new Date(now);
+    thu.setDate(thu.getDate() + 1);
+    const thuStr = formatDateToYYYYMMDD(thu);
+    const isHoliday = await isNSEHoliday(thuStr);
+    return isHoliday;
+  }
+
+  return false;
+}
+
 module.exports = {
   getNSEHolidays,
   isNSEHoliday,
@@ -392,6 +414,7 @@ module.exports = {
   formatDateToYYYYMMDD,
   isWithinTradingHours,
   isTradingAllowed,
+  isExpiryDay,
   refreshHolidayCache
 };
 

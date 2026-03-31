@@ -396,6 +396,7 @@ function onCandleClose(bar) {
   if (state._dailyLossHit) return;
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
+  if (state._expiryDayBlocked) return;
 
   // VIX check
   if (process.env.SCALP_VIX_ENABLED === "true") {
@@ -570,12 +571,22 @@ router.get("/start", async (req, res) => {
     return res.status(400).send(errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-paper/status", "\u2190 Back"));
   }
 
+  // Expiry day check
+  let _expiryBlocked = false;
+  if ((process.env.SCALP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+    const { isExpiryDay } = require("../utils/nseHolidays");
+    const isExpiry = await isExpiryDay();
+    if (!isExpiry) _expiryBlocked = true;
+    log(`📅 [SCALP-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+  }
+
   // Reset state
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+    _expiryDayBlocked: _expiryBlocked,
   };
 
   sharedSocketState.setScalpActive("SCALP_PAPER");
