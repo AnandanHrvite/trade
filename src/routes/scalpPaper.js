@@ -37,6 +37,9 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+const _SCALP_MIN_TARGET    = parseFloat(process.env.SCALP_MIN_TARGET || "500");
+const _SCALP_MAX_TARGET    = parseFloat(process.env.SCALP_MAX_TARGET || "1000");
+const _SCALP_MAX_SL        = parseFloat(process.env.SCALP_MAX_SL || "300");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -310,17 +313,45 @@ function onTick(tick) {
   // ── Tick-level exit checks (while in position) ─────────────────────────────
   if (state.position) {
     const pos = state.position;
+    const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const _brok = isFut ? 40 : 80;
 
-    // PSAR SL hit (tick-level)
-    if (pos.side === "CE" && price <= pos.stopLoss) {
-      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
+    // Running PNL helper (₹)
+    const _tickPnl = (spotPrice) => {
+      if (!isFut && pos.optionEntryLtp && state.optionLtp) {
+        return (state.optionLtp - pos.optionEntryLtp) * (pos.qty || getLotQty()) - _brok;
+      }
+      return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - _brok;
+    };
+
+    // Max target hit (₹) — force exit
+    if (_SCALP_MAX_TARGET > 0 && _tickPnl(price) >= _SCALP_MAX_TARGET) {
+      simulateSell(price, `Max target ₹${_SCALP_MAX_TARGET}`, price);
       return;
     }
-    if (pos.side === "PE" && price >= pos.stopLoss) {
-      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
+
+    // Max SL hit (₹) — hard stop
+    if (_SCALP_MAX_SL > 0 && _tickPnl(price) <= -_SCALP_MAX_SL) {
+      simulateSell(price, `Max SL ₹${_SCALP_MAX_SL}`, price);
       return;
+    }
+
+    // PSAR SL hit (tick-level) — only if within ₹ SL cap
+    if (pos.side === "CE" && price <= pos.stopLoss) {
+      const slPnl = _tickPnl(pos.stopLoss);
+      if (_SCALP_MAX_SL <= 0 || slPnl >= -_SCALP_MAX_SL) {
+        const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+        simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
+        return;
+      }
+    }
+    if (pos.side === "PE" && price >= pos.stopLoss) {
+      const slPnl = _tickPnl(pos.stopLoss);
+      if (_SCALP_MAX_SL <= 0 || slPnl >= -_SCALP_MAX_SL) {
+        const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+        simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
+        return;
+      }
     }
 
     // EOD check
@@ -344,10 +375,32 @@ function onCandleClose(bar) {
     const window = [...state.candles];
     if (state.currentBar) window.push(state.currentBar);
 
-    // PSAR flip → immediate exit
+    // Running PNL helper for candle-level checks
+    const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const _brok = isFut ? 40 : 80;
+    const _candlePnl = (spotPrice) => {
+      if (!isFut && state.position.optionEntryLtp && state.optionLtp) {
+        return (state.optionLtp - state.position.optionEntryLtp) * (state.position.qty || getLotQty()) - _brok;
+      }
+      return (spotPrice - state.position.entryPrice) * (state.position.side === "CE" ? 1 : -1) * (state.position.qty || getLotQty()) - _brok;
+    };
+
+    // Min target + PSAR flip → book profit
+    if (_SCALP_MIN_TARGET > 0 && _candlePnl(bar.close) >= _SCALP_MIN_TARGET) {
+      if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
+        simulateSell(bar.close, `Target ₹${Math.round(_candlePnl(bar.close))} + PSAR flip`, bar.close);
+        return;
+      }
+    }
+
+    // PSAR flip → exit only if in loss (let winners run to target)
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
-      simulateSell(bar.close, "PSAR flip", bar.close);
-      return;
+      const curPnl = _candlePnl(bar.close);
+      if (_SCALP_MIN_TARGET <= 0 || curPnl < 0) {
+        simulateSell(bar.close, "PSAR flip", bar.close);
+        return;
+      }
+      log(`📊 [SCALP-PAPER] PSAR flip but PnL ₹${Math.round(curPnl)} < target ₹${_SCALP_MIN_TARGET} — holding`);
     }
 
     // Update PSAR trailing SL (tighten only)

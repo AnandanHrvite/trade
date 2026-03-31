@@ -66,10 +66,15 @@ function runScalpBacktest(candles, capital, vixCandles) {
   const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
   const CANDLES_PER_DAY = Math.round(390 / SCALP_RES); // 6.5h trading day
 
-  // Scalp config (new BB+CPR strategy — no fixed SL/target/trail)
+  // Scalp config
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+
+  // PNL-based target & SL (₹ amounts, 0 = disabled)
+  const SCALP_MIN_TARGET = parseFloat(process.env.SCALP_MIN_TARGET || "500");   // book profit at ₹500+
+  const SCALP_MAX_TARGET = parseFloat(process.env.SCALP_MAX_TARGET || "1000");  // force exit at ₹1000
+  const SCALP_MAX_SL     = parseFloat(process.env.SCALP_MAX_SL || "300");       // max loss ₹300 per trade
 
   function getISTDateStr(unixSec) {
     return new Date(unixSec * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -103,6 +108,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
+  console.log(`   Target: ₹${SCALP_MIN_TARGET}-₹${SCALP_MAX_TARGET} | Max SL: ₹${SCALP_MAX_SL}`);
   console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
   console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
@@ -144,25 +150,79 @@ function runScalpBacktest(candles, capital, vixCandles) {
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // 1. PSAR flip → immediate exit
-      if (scalpStrategy.isPSARFlip(window, position.side)) {
-        exitReason = "PSAR flip";
+      // ── Helper: calculate running PNL at a given spot price ──
+      const _runPnl = (spotExit) => {
+        const pts = (spotExit - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+        if (OPTION_SIM) {
+          const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
+          return (pts * DELTA * LOT_SIZE) - thetaCost - BROKERAGE;
+        }
+        return pts - BROKERAGE / LOT_SIZE;
+      };
+
+      // 1. Max target hit (₹) — force exit at max profit cap
+      if (SCALP_MAX_TARGET > 0) {
+        const bestSpot = position.side === "CE" ? candle.high : candle.low;
+        const bestPnl  = _runPnl(bestSpot);
+        if (bestPnl >= SCALP_MAX_TARGET) {
+          // Estimate exit price that yields exactly max target
+          const _needed = SCALP_MAX_TARGET + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + BROKERAGE : BROKERAGE / LOT_SIZE);
+          const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
+          exitPrice  = parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
+          exitReason = "Max target ₹" + SCALP_MAX_TARGET;
+        }
       }
 
-      // 2. SL hit (intra-candle check against PSAR-based SL)
+      // 2. Min target + PSAR flip — book profit at min target if PSAR flips
+      if (!exitReason && SCALP_MIN_TARGET > 0) {
+        const curPnl = _runPnl(candle.close);
+        if (curPnl >= SCALP_MIN_TARGET && scalpStrategy.isPSARFlip(window, position.side)) {
+          exitReason = "Target ₹" + Math.round(curPnl) + " + PSAR flip";
+        }
+      }
+
+      // 3. Pure PSAR flip (only if below min target — let winners run to target)
+      if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
+        const curPnl = _runPnl(candle.close);
+        if (SCALP_MIN_TARGET <= 0 || curPnl < 0) {
+          exitReason = "PSAR flip";
+        }
+        // If 0 < curPnl < minTarget, hold — don't exit on PSAR flip yet
+      }
+
+      // 4. Max SL hit (₹ cap) — hard stop at max loss amount
+      if (!exitReason && SCALP_MAX_SL > 0) {
+        const worstSpot = position.side === "CE" ? candle.low : candle.high;
+        const worstPnl  = _runPnl(worstSpot);
+        if (worstPnl <= -SCALP_MAX_SL) {
+          // Estimate exit price that yields exactly -max SL
+          const _needed = -SCALP_MAX_SL + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + BROKERAGE : BROKERAGE / LOT_SIZE);
+          const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
+          exitPrice  = parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
+          exitReason = "Max SL ₹" + SCALP_MAX_SL;
+        }
+      }
+
+      // 5. PSAR-based SL hit (only if within ₹ cap)
       if (!exitReason) {
         const _isTrail = position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _slLabel = _isTrail ? "PSAR Trail SL" : "PSAR SL";
         if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitPrice  = position.stopLoss;
-          exitReason = `${_slLabel} hit`;
+          const slPnl = _runPnl(position.stopLoss);
+          if (SCALP_MAX_SL <= 0 || slPnl >= -SCALP_MAX_SL) {
+            exitPrice  = position.stopLoss;
+            exitReason = `${_slLabel} hit`;
+          }
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitPrice  = position.stopLoss;
-          exitReason = `${_slLabel} hit`;
+          const slPnl = _runPnl(position.stopLoss);
+          if (SCALP_MAX_SL <= 0 || slPnl >= -SCALP_MAX_SL) {
+            exitPrice  = position.stopLoss;
+            exitReason = `${_slLabel} hit`;
+          }
         }
       }
 
-      // 3. Update PSAR trailing SL (tighten only)
+      // 6. Update PSAR trailing SL (tighten only)
       if (!exitReason) {
         const newSL = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
         if (newSL !== position.stopLoss) {
@@ -170,7 +230,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
         }
       }
 
-      // 4. EOD
+      // 7. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
