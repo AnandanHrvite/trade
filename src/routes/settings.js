@@ -46,7 +46,7 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
-      { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Thursday)", default: "false" },
+      { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry", default: "weekly" },
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Trading)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Strategy 1 entries when VIX is high (independent from scalp)" },
@@ -71,7 +71,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
-      { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Thursday)", default: "false" },
+      { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (independent from trading)", default: "false" },
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min only)", default: "3" },
       // ── Bollinger Bands ──
@@ -163,17 +163,19 @@ function parseEnvFile() {
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
   "LIVE_TRADE_ENABLED", "TRADE_EXPIRY_DAY_ONLY", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
-  "INSTRUMENT", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
+  "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
+  "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
+  "API_SECRET", "LOGIN_SECRET",
 ]);
 
 // These are cached as const at module load — need session stop+start
 const SESSION_RESTART_KEYS = new Set([
-  "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT",
+  "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT", "MAX_SAR_DISTANCE", "BREAKEVEN_PTS",
   "TRAIL_ACTIVATE_PTS", "TRAIL_TIER1_UPTO", "TRAIL_TIER1_GAP",
   "TRAIL_TIER2_UPTO", "TRAIL_TIER2_GAP", "TRAIL_TIER3_GAP",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
@@ -1177,7 +1179,7 @@ async function showExpiryModal() {
 <div id="holidayModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
   <div style="max-width:520px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
-      <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">📅 NSE Trading Holidays 2026</span>
+      <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">📅 NSE Trading Holidays ${new Date().getFullYear()}</span>
       <button onclick="document.getElementById('holidayModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
     </div>
     <div class="holiday-modal-body" style="padding:0 16px 16px;">

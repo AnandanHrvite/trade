@@ -13,9 +13,11 @@
 const https = require('https');
 
 // Cache for NSE holidays (refreshed daily)
+// holidays: array for iteration, holidaySet: Set for O(1) lookups
 let holidayCache = {
   year: null,
   holidays: [],
+  holidaySet: new Set(),
   lastFetch: null
 };
 
@@ -175,7 +177,7 @@ async function getNSEHolidays() {
       const holidays = await fetchNSEHolidays();
       const yearHolidays = holidays.filter(h => h.startsWith(String(currentYear)));
       if (yearHolidays.length > 0) {
-        holidayCache = { year: currentYear, holidays: yearHolidays, lastFetch: Date.now() };
+        holidayCache = { year: currentYear, holidays: yearHolidays, holidaySet: new Set(yearHolidays), lastFetch: Date.now() };
         console.log(`[nseHolidays] Fetched ${yearHolidays.length} holidays for ${currentYear}`);
         return yearHolidays;
       }
@@ -184,7 +186,7 @@ async function getNSEHolidays() {
     }
     const fallback = currentYear === 2026 ? FALLBACK_HOLIDAYS_2026 : [];
     console.log(`[nseHolidays] Using fallback holidays for ${currentYear} (${fallback.length} days)`);
-    holidayCache = { year: currentYear, holidays: fallback, lastFetch: Date.now() };
+    holidayCache = { year: currentYear, holidays: fallback, holidaySet: new Set(fallback), lastFetch: Date.now() };
     return fallback;
   })();
 
@@ -201,9 +203,9 @@ async function getNSEHolidays() {
  * @returns {Promise<boolean>}
  */
 async function isNSEHoliday(date) {
-  const holidays = await getNSEHolidays();
+  await getNSEHolidays(); // ensure cache is populated
   const dateStr = formatDateToYYYYMMDD(date);
-  return holidays.includes(dateStr);
+  return holidayCache.holidaySet.has(dateStr);
 }
 
 /**
@@ -232,18 +234,19 @@ async function isNonTradingDay(date) {
  * @returns {Promise<Date>} Next valid trading day
  */
 async function getNextTradingDay(startDate) {
-  const holidays = await getNSEHolidays();
+  await getNSEHolidays(); // ensure cache is populated
+  const hSet = holidayCache.holidaySet;
   let date = new Date(startDate);
-  
+
   // Move to next day
   date.setDate(date.getDate() + 1);
-  
+
   // Keep moving forward until we find a trading day
   let attempts = 0;
   while (attempts < 30) { // Max 30 days ahead
     if (!isWeekend(date)) {
       const dateStr = formatDateToYYYYMMDD(date);
-      if (!holidays.includes(dateStr)) {
+      if (!hSet.has(dateStr)) {
         return date;
       }
     }
@@ -262,18 +265,19 @@ async function getNextTradingDay(startDate) {
  * @returns {Promise<Date>} Previous valid trading day
  */
 async function getPreviousTradingDay(startDate) {
-  const holidays = await getNSEHolidays();
+  await getNSEHolidays(); // ensure cache is populated
+  const hSet = holidayCache.holidaySet;
   let date = new Date(startDate);
-  
+
   // Move to previous day
   date.setDate(date.getDate() - 1);
-  
+
   // Keep moving backward until we find a trading day
   let attempts = 0;
   while (attempts < 30) { // Max 30 days back
     if (!isWeekend(date)) {
       const dateStr = formatDateToYYYYMMDD(date);
-      if (!holidays.includes(dateStr)) {
+      if (!hSet.has(dateStr)) {
         return date;
       }
     }
@@ -303,6 +307,7 @@ function clearCache() {
   holidayCache = {
     year: null,
     holidays: [],
+    holidaySet: new Set(),
     lastFetch: null
   };
   console.log('[nseHolidays] Cache cleared');
@@ -313,8 +318,9 @@ function clearCache() {
  * @returns {boolean}
  */
 function isWithinTradingHours() {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const hour = now.getHours();
+  // Fast IST: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
+  const istSec = Math.floor(Date.now() / 1000) + 19800;
+  const hour   = Math.floor(istSec / 3600) % 24;
   return hour >= 7 && hour < 16; // 7 AM to 3:59 PM
 }
 
@@ -323,16 +329,23 @@ function isWithinTradingHours() {
  * @returns {Promise<{allowed: boolean, reason: string}>}
  */
 async function isTradingAllowed() {
-  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  
-  // Check if it's a weekend
-  if (isWeekend(now)) {
+  // Fast IST: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
+  const nowMs  = Date.now();
+  const istSec = Math.floor(nowMs / 1000) + 19800;
+  const istDay = Math.floor(istSec / 86400);
+  // JS epoch day 0 = Thursday. (istDay + 4) % 7: 0=Sun, 6=Sat
+  const dayOfWeek = (istDay + 4) % 7;
+
+  // Check if it's a weekend (0=Sun, 6=Sat)
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
     return {
       allowed: false,
       reason: 'Trading not allowed on weekends (Saturday/Sunday)'
     };
   }
-  
+
+  // For holiday check, build an IST Date object (only needed here, not hot path)
+  const now = new Date(nowMs + 19800000);
   // Check if it's a holiday
   const isHoliday = await isNSEHoliday(now);
   if (isHoliday) {
@@ -341,16 +354,17 @@ async function isTradingAllowed() {
       reason: 'Trading not allowed on NSE holidays'
     };
   }
-  
+
   // Check trading hours
   if (!isWithinTradingHours()) {
-    const hour = now.getHours();
+    const hour = Math.floor(istSec / 3600) % 24;
+    const min  = Math.floor(istSec / 60) % 60;
     return {
       allowed: false,
-      reason: `Trading allowed only between 7 AM - 4 PM IST (current time: ${hour}:${String(now.getMinutes()).padStart(2, '0')})`
+      reason: `Trading allowed only between 7 AM - 4 PM IST (current time: ${hour}:${String(min).padStart(2, '0')})`
     };
   }
-  
+
   return {
     allowed: true,
     reason: 'Trading allowed'
@@ -382,22 +396,42 @@ async function refreshHolidayCache() {
 }
 
 /**
- * Check if today is NIFTY weekly expiry day (Thursday, or Wednesday if Thursday is holiday)
+ * Check if today is NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)
  */
 async function isExpiryDay() {
   const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const day = now.getDay(); // 0=Sun, 4=Thu
+  const day = now.getDay(); // 0=Sun, 2=Tue
 
-  // Thursday = normal expiry
-  if (day === 4) return true;
+  // Tuesday = normal expiry
+  if (day === 2) return true;
 
-  // Wednesday = check if Thursday is a holiday (preponed expiry)
-  if (day === 3) {
-    const thu = new Date(now);
-    thu.setDate(thu.getDate() + 1);
-    const thuStr = formatDateToYYYYMMDD(thu);
-    const isHoliday = await isNSEHoliday(thuStr);
-    return isHoliday;
+  // Monday = check if Tuesday is a holiday (preponed expiry)
+  if (day === 1) {
+    const tue = new Date(now);
+    tue.setDate(tue.getDate() + 1);
+    return await isNSEHoliday(tue);
+  }
+
+  return false;
+}
+
+/**
+ * Check if a given date string (YYYY-MM-DD) is an expiry day.
+ * Used by backtest to filter candles to expiry-only days.
+ * Tuesday = normal expiry. If Tuesday is an NSE holiday, Monday = preponed expiry.
+ */
+async function isExpiryDate(dateStr) {
+  const d = new Date(dateStr + "T12:00:00+05:30"); // parse in IST
+  const day = d.getDay(); // 0=Sun, 2=Tue
+
+  // Tuesday = normal expiry
+  if (day === 2) return true;
+
+  // Monday = check if next day (Tuesday) is a holiday → preponed expiry
+  if (day === 1) {
+    const tue = new Date(d);
+    tue.setDate(tue.getDate() + 1);
+    return await isNSEHoliday(tue);
   }
 
   return false;
@@ -415,6 +449,7 @@ module.exports = {
   isWithinTradingHours,
   isTradingAllowed,
   isExpiryDay,
+  isExpiryDate,
   refreshHolidayCache
 };
 
