@@ -26,23 +26,23 @@ let _fetchInflight = null;
 // Hardcoded fallback holidays for 2026 (in case API fails)
 // Source: NSE Holiday Calendar 2026
 const FALLBACK_HOLIDAYS_2026 = [
+  '2026-01-15', // Municipal Corporation Election – Maharashtra
   '2026-01-26', // Republic Day
-  '2026-03-14', // Holi
-  '2026-03-25', // Holi (Second day)
-  '2026-03-31', // Eid-ul-Fitr (Tuesday - expiry preponed to Monday 30th)
-  '2026-04-02', // Mahavir Jayanti
-  '2026-04-10', // Good Friday
-  '2026-04-21', // Ram Navami
+  '2026-03-03', // Holi
+  '2026-03-26', // Shri Ram Navami
+  '2026-03-31', // Shri Mahavir Jayanti
+  '2026-04-03', // Good Friday
+  '2026-04-14', // Dr. Baba Saheb Ambedkar Jayanti
   '2026-05-01', // Maharashtra Day
-  '2026-05-26', // Buddha Purnima
-  '2026-08-15', // Independence Day
-  '2026-08-27', // Ganesh Chaturthi
-  '2026-10-02', // Gandhi Jayanti
+  '2026-05-28', // Bakri Id
+  '2026-06-26', // Muharram
+  '2026-09-14', // Ganesh Chaturthi
+  '2026-10-02', // Mahatma Gandhi Jayanti
   '2026-10-20', // Dussehra
-  '2026-11-04', // Diwali - Laxmi Pujan
-  '2026-11-05', // Diwali - Balipratipada
-  '2026-11-19', // Gurunanak Jayanti
+  '2026-11-10', // Diwali – Balipratipada
+  '2026-11-24', // Prakash Gurpurb Sri Guru Nanak Dev
   '2026-12-25', // Christmas
+  // Note: Nov 08 is Diwali Laxmi Pujan — Muhurat Trading session conducted (not a full holiday)
 ];
 
 /**

@@ -1114,12 +1114,13 @@ function copyEnvTable(){
 
 // ── NSE Holiday List Modal ──────────────────────────────────────────────────
 var _holidayNames = {
-  '01-26': 'Republic Day', '03-14': 'Holi', '03-25': 'Holi (Second Day)',
-  '03-31': 'Eid-ul-Fitr', '04-02': 'Mahavir Jayanti', '04-10': 'Good Friday',
-  '04-21': 'Ram Navami', '05-01': 'Maharashtra Day', '05-26': 'Buddha Purnima',
-  '08-15': 'Independence Day', '08-27': 'Ganesh Chaturthi', '10-02': 'Gandhi Jayanti',
-  '10-20': 'Dussehra', '11-04': 'Diwali - Laxmi Pujan', '11-05': 'Diwali - Balipratipada',
-  '11-19': 'Gurunanak Jayanti', '12-25': 'Christmas'
+  '01-15': 'Municipal Corp. Election – Maharashtra', '01-26': 'Republic Day',
+  '03-03': 'Holi', '03-26': 'Shri Ram Navami', '03-31': 'Shri Mahavir Jayanti',
+  '04-03': 'Good Friday', '04-14': 'Dr. Ambedkar Jayanti',
+  '05-01': 'Maharashtra Day', '05-28': 'Bakri Id', '06-26': 'Muharram',
+  '09-14': 'Ganesh Chaturthi', '10-02': 'Mahatma Gandhi Jayanti',
+  '10-20': 'Dussehra', '11-10': 'Diwali – Balipratipada',
+  '11-24': 'Prakash Gurpurb Sri Guru Nanak Dev', '12-25': 'Christmas'
 };
 
 async function showHolidayModal() {
