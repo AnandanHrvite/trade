@@ -521,6 +521,7 @@ ${modalJS()}
     .run-bar input,.run-bar select{background:#fff;border:1px solid #1e3a8a;color:#0f172a;padding:5px 8px;border-radius:5px;font-size:0.75rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;color-scheme:light;}
     .run-btn{background:#1a3a8a;color:#90c0ff;border:1px solid #2a5ac0;padding:6px 14px;border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
     .run-btn:hover{background:#2563eb;}
+    .preset-btn{font-size:0.65rem;padding:3px 10px;border-radius:4px;background:rgba(59,130,246,0.08);color:#60a5fa;border:0.5px solid rgba(59,130,246,0.2);cursor:pointer;font-family:"IBM Plex Mono",monospace;transition:all 0.15s;}.preset-btn:hover{background:rgba(59,130,246,0.18);}
 
     .tbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
     .tbar input,.tbar select{background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:5px 9px;border-radius:6px;font-size:0.76rem;font-family:inherit;}
@@ -578,6 +579,38 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/scalp-backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${scalpStrategy.NAME}</strong></span>
   </div>
+  <!-- Quick date presets -->
+  <div style="display:flex;gap:6px;margin:-8px 0 12px;flex-wrap:wrap;">
+    <button class="preset-btn" onclick="setPreset('thisWeek')">This week</button>
+    <button class="preset-btn" onclick="setPreset('lastWeek')">Last week</button>
+    <button class="preset-btn" onclick="setPreset('thisMonth')">This month</button>
+    <button class="preset-btn" onclick="setPreset('lastMonth')">Last month</button>
+    <button class="preset-btn" onclick="setPreset('last3')">Last 3 months</button>
+    <button class="preset-btn" onclick="setPreset('thisYear')">This year</button>
+    <button class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
+  </div>
+  <script>
+  function setPreset(p){
+    var d=new Date(),y=d.getFullYear(),m=d.getMonth(),day=d.getDay();
+    function fmt(dt){var yy=dt.getFullYear(),mm=String(dt.getMonth()+1).padStart(2,'0'),dd=String(dt.getDate()).padStart(2,'0');return yy+'-'+mm+'-'+dd;}
+    var today=fmt(d);
+    var monday=new Date(d); monday.setDate(d.getDate()-(day===0?6:day-1));
+    var lastMonEnd=new Date(y,m,0), lastMonStart=new Date(lastMonEnd.getFullYear(),lastMonEnd.getMonth(),1);
+    var lastWeekMon=new Date(monday); lastWeekMon.setDate(lastWeekMon.getDate()-7);
+    var lastWeekFri=new Date(lastWeekMon); lastWeekFri.setDate(lastWeekFri.getDate()+4);
+    var presets={
+      thisWeek: [fmt(monday), today],
+      lastWeek: [fmt(lastWeekMon), fmt(lastWeekFri)],
+      thisMonth: [fmt(new Date(y,m,1)), today],
+      lastMonth: [fmt(lastMonStart), fmt(lastMonEnd)],
+      last3: [fmt(new Date(y,m-2,1)), today],
+      thisYear: [fmt(new Date(y,0,1)), today],
+      lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))]
+    };
+    document.getElementById('f').value=presets[p][0];
+    document.getElementById('t').value=presets[p][1];
+  }
+  </script>
 
   <!-- Summary -->
   <div class="stat-grid">

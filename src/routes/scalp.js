@@ -913,7 +913,7 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL ${_SCALP_SL_PTS}pt \u00b7 TGT ${_SCALP_TARGET_PTS}pt \u00b7 Trail ${_SCALP_TRAIL_AFTER}pt+${_SCALP_TRAIL_GAP}gap \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 MaxSL \u20b9${_SCALP_MAX_SL} \u00b7 Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

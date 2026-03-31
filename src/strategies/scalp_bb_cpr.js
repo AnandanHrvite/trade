@@ -155,20 +155,27 @@ function getSignal(candles, opts) {
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 
-  // ── Candle body helpers ──
+  // ── Candle body & momentum helpers ──
   var isBullishCandle = sc.close > sc.open;
   var isBearishCandle = sc.close < sc.open;
+  var prevCandle = candles[candles.length - 2];
+  var prevBullish = prevCandle && prevCandle.close > prevCandle.open;
+  var prevBearish = prevCandle && prevCandle.close < prevCandle.open;
+
+  // Min distance from CPR (avoid entries barely above/below CPR)
+  var CPR_MIN_DIST = parseFloat(cfg("SCALP_CPR_MIN_DIST", "5"));
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
-  // CE (Long): BB zone + above CPR + RSI > threshold + SAR below + EMA trend + bullish candle
+  // CE (Long): BB zone + above CPR + RSI + SAR + EMA + bullish momentum (2 candles)
   var bbLongZone  = sc.close > bb.middle && sc.close < bb.upper;
-  var aboveCPR    = sc.close > cpr.tc;
+  var aboveCPR    = sc.close > cpr.tc + CPR_MIN_DIST;
   var sarBelow    = sar < sc.close;
   var rsiCE       = rsi > RSI_CE;
   var emaBullish  = ema ? sc.close > ema : true;
+  var bullishMom  = isBullishCandle && (prevBullish || (prevCandle && sc.close > prevCandle.high));
 
-  if (bbLongZone && aboveCPR && sarBelow && rsiCE && emaBullish && isBullishCandle) {
+  if (bbLongZone && aboveCPR && sarBelow && rsiCE && emaBullish && bullishMom) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sc.close - sl).toFixed(2));
     if (!silent) console.log("[SCALP " + _ist + "] CE: BB zone + above CPR(" + cpr.tc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl + " + EMA" + EMA_PERIOD);
@@ -181,14 +188,15 @@ function getSignal(candles, opts) {
     });
   }
 
-  // PE (Short): BB zone + below CPR + RSI < threshold + SAR above + EMA trend + bearish candle
+  // PE (Short): BB zone + below CPR + RSI + SAR + EMA + bearish momentum (2 candles)
   var bbShortZone = sc.close < bb.middle && sc.close > bb.lower;
-  var belowCPR    = sc.close < cpr.bc;
+  var belowCPR    = sc.close < cpr.bc - CPR_MIN_DIST;
   var sarAbove    = sar > sc.close;
   var rsiPE       = rsi < RSI_PE;
   var emaBearish  = ema ? sc.close < ema : true;
+  var bearishMom  = isBearishCandle && (prevBearish || (prevCandle && sc.close < prevCandle.low));
 
-  if (bbShortZone && belowCPR && sarAbove && rsiPE && emaBearish && isBearishCandle) {
+  if (bbShortZone && belowCPR && sarAbove && rsiPE && emaBearish && bearishMom) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sl - sc.close).toFixed(2));
     if (!silent) console.log("[SCALP " + _ist + "] PE: BB zone + below CPR(" + cpr.bc + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl + " + EMA" + EMA_PERIOD);

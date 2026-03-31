@@ -907,7 +907,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="top-bar">
   <h1>Scalp Paper Trade</h1>
   <span class="res-tag">${SCALP_RES}-min candles</span>
-  <span class="res-tag">SL ${_SCALP_SL_PTS}pt / TGT ${_SCALP_TARGET_PTS}pt / Trail ${_SCALP_TRAIL_GAP}pt</span>
+  <span class="res-tag">MaxSL \u20b9${_SCALP_MAX_SL} / Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP}</span>
   <span id="ajax-status-badge" class="badge ${state.running ? "badge-running" : "badge-stopped"}">${state.running ? "Running" : "Stopped"}</span>
 </div>
 
