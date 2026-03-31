@@ -76,11 +76,11 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── CPR ──
-      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 0.5, max: 15.0, step: 0.5, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Only trade on narrow CPR days.", default: "5" },
+      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 1, max: 33, step: 1, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Max possible is 33%. Lower = stricter. Recommended: 15%", default: "15" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 60, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI must be above this for CE entry", default: "70" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE (<)", type: "number", min: 20, max: 40, step: 1, effect: EFFECT.SESSION, desc: "RSI must be below this for PE entry", default: "30" },
+      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI must be above this for CE entry (70=strict, 55=relaxed)", default: "55" },
+      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI must be below this for PE entry (30=strict, 45=relaxed)", default: "45" },
       // ── Parabolic SAR (SL & trailing) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step (default 0.02)", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration (default 0.2)", default: "0.2" },
