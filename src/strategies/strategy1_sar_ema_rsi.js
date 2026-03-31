@@ -386,10 +386,6 @@ function getSignal(candles, opts) {
       if (!silent) console.log("  ❌ CE TREND FAIL: close " + signalCandle.close + " < EMA30 " + ema30.toFixed(1) + " (below medium-term trend)");
       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
     }
-    if (ema21 !== null && ema9 < ema21) {
-//       if (!silent) console.log("  ❌ CE TREND FAIL: EMA9 " + ema9.toFixed(1) + " < EMA21 " + ema21.toFixed(1) + " (momentum not aligned up)");
-//       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: EMA9 < EMA21 — momentum not aligned up" });
-    }
     if (!silent && ema30 !== null) console.log("  ✓ CE TREND PASS: close > EMA30 " + ema30.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
     // Sanity check: SAR SL must be BELOW current price for CE
@@ -442,18 +438,6 @@ function getSignal(candles, opts) {
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
-    // 2-candle directional confirmation: previous 2 candles must both be green (bullish)
-    if (false) { // prev candle check DISABLED
-      if (!silent) console.log("  ❌ CE gate FAIL: previous 2 candles not both bullish — no established momentum");
-      return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: prev 2 candles not both green — no momentum confirmation" });
-    }
-    if (!silent) console.log("  ✓ CE gate PASS: prev 2 candles both bullish — momentum confirmed");
-//     // RSI direction: RSI must be rising (building momentum, not fading)
-//     if (!rsiRising) {
-//       if (!silent) console.log("  ❌ CE gate FAIL: RSI=" + rsi.toFixed(1) + " not rising (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
-//       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: RSI not rising (" + rsi.toFixed(1) + " <= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
-//     }
-//     if (!silent) console.log("  ✓ CE gate PASS: RSI rising " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ CE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging — no established trend)");
@@ -494,10 +478,6 @@ function getSignal(candles, opts) {
     if (ema30 !== null && signalCandle.close > ema30) {
       if (!silent) console.log("  ❌ PE TREND FAIL: close " + signalCandle.close + " > EMA30 " + ema30.toFixed(1) + " (above medium-term trend)");
       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
-    }
-    if (ema21 !== null && ema9 > ema21) {
-//       if (!silent) console.log("  ❌ PE TREND FAIL: EMA9 " + ema9.toFixed(1) + " > EMA21 " + ema21.toFixed(1) + " (momentum not aligned down)");
-//       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: EMA9 > EMA21 — momentum not aligned down" });
     }
     if (!silent && ema30 !== null) console.log("  ✓ PE TREND PASS: close < EMA30 " + ema30.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
 
@@ -554,18 +534,7 @@ function getSignal(candles, opts) {
       });
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");
-    // 2-candle directional confirmation: previous 2 candles must both be red (bearish)
-    if (false) { // prev candle check DISABLED
-      if (!silent) console.log("  ❌ PE gate FAIL: previous 2 candles not both bearish — no established momentum");
-      return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: prev 2 candles not both red — no momentum confirmation" });
-    }
-    if (!silent) console.log("  ✓ PE gate PASS: prev 2 candles both bearish — momentum confirmed");
-//     // RSI direction: RSI must be falling (building bearish momentum)
-//     if (!rsiFalling) {
-//       if (!silent) console.log("  ❌ PE gate FAIL: RSI=" + rsi.toFixed(1) + " not falling (prev=" + rsiPrev.toFixed(1) + ") — momentum fading");
-//       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: RSI not falling (" + rsi.toFixed(1) + " >= prev " + rsiPrev.toFixed(1) + ") — fading momentum" });
 //     }
-//     if (!silent) console.log("  ✓ PE gate PASS: RSI falling " + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1));
     // ADX gate: block entry when market is ranging (ADX < 25 = no established trend)
     if (!isTrending) {
       if (!silent) console.log("  ❌ PE gate FAIL: ADX=" + adxDisplay.toFixed(1) + " < " + ADX_MIN_TREND + " (market ranging)");
