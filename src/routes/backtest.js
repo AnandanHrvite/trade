@@ -258,18 +258,7 @@ ${buildSidebar('backtest', liveActive)}
   </div>
   <div style="display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap;align-items:center;">
     <span style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
-    <button class="preset-btn" onclick="setPreset('jan')">Jan</button>
-    <button class="preset-btn" onclick="setPreset('feb')">Feb</button>
-    <button class="preset-btn" onclick="setPreset('mar')">Mar</button>
-    <button class="preset-btn" onclick="setPreset('apr')">Apr</button>
-    <button class="preset-btn" onclick="setPreset('may')">May</button>
-    <button class="preset-btn" onclick="setPreset('jun')">Jun</button>
-    <button class="preset-btn" onclick="setPreset('jul')">Jul</button>
-    <button class="preset-btn" onclick="setPreset('aug')">Aug</button>
-    <button class="preset-btn" onclick="setPreset('sep')">Sep</button>
-    <button class="preset-btn" onclick="setPreset('oct')">Oct</button>
-    <button class="preset-btn" onclick="setPreset('nov')">Nov</button>
-    <button class="preset-btn" onclick="setPreset('dec')">Dec</button>
+    ${(() => { const mths=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']; const labels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const curMonth=new Date().getMonth(); return mths.map((k,i) => i<=curMonth ? `<button class="preset-btn" onclick="setPreset('${k}')">${labels[i]}</button>` : `<button class="preset-btn" disabled style="opacity:0.3;cursor:not-allowed">${labels[i]}</button>`).join('\n    '); })()}
   </div>
   <script>
   function setPreset(p){
