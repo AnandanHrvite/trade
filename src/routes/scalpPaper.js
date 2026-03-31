@@ -17,7 +17,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const scalpStrategy = require("../strategies/scalp_ema9_rsi_v2");
+const scalpStrategy = require("../strategies/scalp_bb_cpr");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -33,15 +33,14 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_PAPER";
 
 // ── Module-level config (read once at module load) ────────────────────────────
-const SCALP_RES          = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
-const _SCALP_SL_PTS      = parseFloat(process.env.SCALP_SL_PTS || "12");
-const _SCALP_TARGET_PTS  = parseFloat(process.env.SCALP_TARGET_PTS || "18");
-const _SCALP_TRAIL_GAP   = parseFloat(process.env.SCALP_TRAIL_GAP || "8");
-const _SCALP_TRAIL_AFTER = parseFloat(process.env.SCALP_TRAIL_AFTER || "10");
-const _SCALP_TIME_STOP   = parseInt(process.env.SCALP_TIME_STOP_CANDLES || "4", 10);
-const _SCALP_MAX_TRADES  = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-const _SCALP_MAX_LOSS    = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
+const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
+const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
+const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+
+// ── Previous day OHLC for CPR (fetched on session start) ────────────────────
+let _prevDayOHLC     = null;  // { high, low, close }
+let _prevPrevDayOHLC = null;  // for Inside Value CPR check
 
 const _STOP_MINS = (() => {
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -205,7 +204,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     startOptionPolling(symbol);
   }
 
-  log(`📝 [SCALP-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | TGT: ₹${target} | ${reason}`);
+  log(`📝 [SCALP-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | PSAR trail | ${reason}`);
 
   notifyEntry({
     mode: "SCALP-PAPER",
@@ -312,67 +311,16 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
 
-    // Target hit
-    if (pos.side === "CE" && price >= pos.target) {
-      simulateSell(pos.target, `Target hit (${_SCALP_TARGET_PTS}pt)`, price);
-      return;
-    }
-    if (pos.side === "PE" && price <= pos.target) {
-      simulateSell(pos.target, `Target hit (${_SCALP_TARGET_PTS}pt)`, price);
-      return;
-    }
-
-    // Breakeven stop — once +8pt in favor, SL moves to entry
-    const _scalpBE = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
-    if (pos.side === "CE") {
-      const _beM = (pos.bestPrice || price) - pos.entryPrice;
-      if (_beM >= _scalpBE && pos.stopLoss < pos.entryPrice) {
-        log(`✅ [SCALP-PAPER] BREAKEVEN CE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
-        pos.stopLoss = pos.entryPrice;
-      }
-    } else {
-      const _beM = pos.entryPrice - (pos.bestPrice || price);
-      if (_beM >= _scalpBE && pos.stopLoss > pos.entryPrice) {
-        log(`✅ [SCALP-PAPER] BREAKEVEN PE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
-        pos.stopLoss = pos.entryPrice;
-      }
-    }
-
-    // Stop loss hit
+    // PSAR SL hit (tick-level)
     if (pos.side === "CE" && price <= pos.stopLoss) {
-      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : (pos.initialStopLoss && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5 ? "Trail" : "Initial");
-      simulateSell(pos.stopLoss, `${_slT} SL hit`, price);
+      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
-      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : (pos.initialStopLoss && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5 ? "Trail" : "Initial");
-      simulateSell(pos.stopLoss, `${_slT} SL hit`, price);
+      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      simulateSell(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`, price);
       return;
-    }
-
-    // Trailing SL
-    if (pos.side === "CE") {
-      if (!pos.bestPrice || price > pos.bestPrice) pos.bestPrice = price;
-      const move = pos.bestPrice - pos.entryPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice - _SCALP_TRAIL_GAP;
-        if (trailSL > pos.stopLoss) pos.stopLoss = trailSL;
-        if (price <= pos.stopLoss) {
-          simulateSell(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`, price);
-          return;
-        }
-      }
-    } else {
-      if (!pos.bestPrice || price < pos.bestPrice) pos.bestPrice = price;
-      const move = pos.entryPrice - pos.bestPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice + _SCALP_TRAIL_GAP;
-        if (trailSL < pos.stopLoss) pos.stopLoss = trailSL;
-        if (price >= pos.stopLoss) {
-          simulateSell(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`, price);
-          return;
-        }
-      }
     }
 
     // EOD check
@@ -389,30 +337,28 @@ function onTick(tick) {
 function onCandleClose(bar) {
   if (!state.running) return;
 
-  // Count candles held
+  // Count candles held + PSAR-based exit checks
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    // Time stop
-    if (state.position.candlesHeld >= _SCALP_TIME_STOP) {
-      simulateSell(bar.close, `Time stop (${_SCALP_TIME_STOP} candles / ${_SCALP_TIME_STOP * SCALP_RES}min)`, bar.close);
+    const window = [...state.candles];
+    if (state.currentBar) window.push(state.currentBar);
+
+    // PSAR flip → immediate exit
+    if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
+      simulateSell(bar.close, "PSAR flip", bar.close);
       return;
     }
 
-    // RSI reversal check
-    const window = [...state.candles];
-    if (state.currentBar) window.push(state.currentBar);
+    // Update PSAR trailing SL (tighten only)
     if (window.length >= 15) {
-      const result = scalpStrategy.getSignal(window, { silent: true });
-      if (state.position.side === "CE" && result.rsi < 45) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} < 45)`, bar.close);
-        return;
-      }
-      if (state.position.side === "PE" && result.rsi > 55) {
-        simulateSell(bar.close, `RSI reversal (RSI=${result.rsi} > 55)`, bar.close);
-        return;
+      const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
+      if (newSL !== state.position.stopLoss) {
+        log(`📐 [SCALP-PAPER] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+        state.position.stopLoss = newSL;
       }
     }
+
     return; // In position — don't look for new entry
   }
 
@@ -421,6 +367,7 @@ function onCandleClose(bar) {
   if (state._dailyLossHit) return;
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
+  if (!_prevDayOHLC) return;
 
   // VIX check
   if (process.env.SCALP_VIX_ENABLED === "true") {
@@ -434,9 +381,13 @@ function onCandleClose(bar) {
   }
 
   const window = [...state.candles];
-  if (window.length < 15) return;
+  if (window.length < 30) return;
 
-  const result = scalpStrategy.getSignal(window, { silent: false });
+  const result = scalpStrategy.getSignal(window, {
+    silent: false,
+    prevDayOHLC: _prevDayOHLC,
+    prevPrevDayOHLC: _prevPrevDayOHLC,
+  });
   if (result.signal === "NONE") return;
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -476,6 +427,44 @@ async function preloadHistory() {
     }
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Pre-load failed: ${err.message} — will build from ticks`);
+  }
+
+  // Fetch previous day(s) OHLC for CPR calculation
+  try {
+    const { fetchCandles } = require("../services/backtestEngine");
+    // Fetch last 5 days of daily candles to get prev & prev-prev day
+    const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const fiveDaysAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const dailyCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, "D", fiveDaysAgo, todayDate);
+    if (dailyCandles && dailyCandles.length >= 2) {
+      // Last complete day (not today)
+      const sorted = dailyCandles.sort((a, b) => a.time - b.time);
+      // Filter out today's candle
+      const pastDays = sorted.filter(c => {
+        const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        return d < todayDate;
+      });
+      if (pastDays.length >= 1) {
+        const prev = pastDays[pastDays.length - 1];
+        _prevDayOHLC = { high: prev.high, low: prev.low, close: prev.close };
+        log(`📊 [SCALP-PAPER] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
+      }
+      if (pastDays.length >= 2) {
+        const pp = pastDays[pastDays.length - 2];
+        _prevPrevDayOHLC = { high: pp.high, low: pp.low, close: pp.close };
+      }
+
+      // Log CPR info
+      if (_prevDayOHLC) {
+        const cpr = scalpStrategy.calcCPR(_prevDayOHLC.high, _prevDayOHLC.low, _prevDayOHLC.close);
+        const narrow = scalpStrategy.isNarrowCPR(cpr);
+        log(`📊 [SCALP-PAPER] CPR: TC=${cpr.tc} BC=${cpr.bc} Width=${cpr.width} ${narrow ? "✅ NARROW (trending)" : "❌ WIDE (skip entries)"}`);
+      }
+    } else {
+      log(`⚠️ [SCALP-PAPER] Not enough daily candles for CPR — entries blocked until data available`);
+    }
+  } catch (err) {
+    log(`⚠️ [SCALP-PAPER] CPR data fetch failed: ${err.message}`);
   }
 }
 

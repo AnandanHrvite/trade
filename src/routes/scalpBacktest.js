@@ -1,7 +1,7 @@
 /**
  * SCALP BACKTEST — /scalp-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the scalp strategy (EMA9 cross + RSI) on 3-min candles.
+ * Backtests the scalp strategy (BB + CPR + RSI + PSAR trail) on 3/5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -13,7 +13,7 @@
 const express = require("express");
 const router  = express.Router();
 const { fetchCandles } = require("../services/backtestEngine");
-const scalpStrategy    = require("../strategies/scalp_ema9_rsi_v2");
+const scalpStrategy    = require("../strategies/scalp_bb_cpr");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -31,6 +31,23 @@ const fmtPnl   = (n, s) => {
   return pts(n);
 };
 
+// ── Build daily OHLC lookup from intraday candles ────────────────────────────
+function buildDailyOHLC(candles) {
+  const days = {};
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const dateStr = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (!days[dateStr]) {
+      days[dateStr] = { high: c.high, low: c.low, close: c.close, open: c.open };
+    } else {
+      if (c.high > days[dateStr].high) days[dateStr].high = c.high;
+      if (c.low  < days[dateStr].low)  days[dateStr].low  = c.low;
+      days[dateStr].close = c.close;  // last candle's close = day close
+    }
+  }
+  return days;
+}
+
 // ── Scalp Backtest Engine ─────────────────────────────────────────────────────
 function runScalpBacktest(candles, capital, vixCandles) {
   const trades   = [];
@@ -46,16 +63,12 @@ function runScalpBacktest(candles, capital, vixCandles) {
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  const CANDLES_PER_DAY = 130; // 3-min candles in 6.5h trading day
+  const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
+  const CANDLES_PER_DAY = Math.round(390 / SCALP_RES); // 6.5h trading day
 
-  // Scalp config
-  const SCALP_SL_PTS      = parseFloat(process.env.SCALP_SL_PTS || "12");
-  const SCALP_TARGET_PTS  = parseFloat(process.env.SCALP_TARGET_PTS || "18");
-  const SCALP_TRAIL_GAP   = parseFloat(process.env.SCALP_TRAIL_GAP || "8");
-  const SCALP_TRAIL_AFTER = parseFloat(process.env.SCALP_TRAIL_AFTER || "10");
-  const SCALP_TIME_STOP   = parseInt(process.env.SCALP_TIME_STOP_CANDLES || "4", 10);
-  const SCALP_MAX_TRADES  = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-  const SCALP_MAX_LOSS    = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
+  // Scalp config (new BB+CPR strategy — no fixed SL/target/trail)
+  const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
+  const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 
   function getISTDateStr(unixSec) {
@@ -71,19 +84,24 @@ function runScalpBacktest(candles, capital, vixCandles) {
 
   if (typeof scalpStrategy.reset === "function") scalpStrategy.reset();
 
+  // Build daily OHLC for CPR calculation
+  const dailyOHLC = buildDailyOHLC(candles);
+  const sortedDates = Object.keys(dailyOHLC).sort();
+
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | SL: ${SCALP_SL_PTS}pt | TGT: ${SCALP_TARGET_PTS}pt | Trail: ${SCALP_TRAIL_GAP}pt after ${SCALP_TRAIL_AFTER}pt`);
-  console.log(`   TimeStop: ${SCALP_TIME_STOP} candles | MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
+  console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
+  console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
+  console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
-  const window = candles.slice(0, 15);
+  const window = candles.slice(0, 30);
   let _slPauseUntilTs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
 
-  for (let i = 15; i < candles.length; i++) {
+  for (let i = 30; i < candles.length; i++) {
     const candle = candles[i];
     const candleDate = getISTDateStr(candle.time);
     const candleMin  = getISTHHMM(candle.time);
@@ -101,6 +119,11 @@ function runScalpBacktest(candles, capital, vixCandles) {
 
     const isEOD = candleMin >= 920; // 3:20 PM
 
+    // Get prev day OHLC for CPR
+    const dateIdx = sortedDates.indexOf(candleDate);
+    const prevDayOHLC     = dateIdx > 0 ? dailyOHLC[sortedDates[dateIdx - 1]] : null;
+    const prevPrevDayOHLC = dateIdx > 1 ? dailyOHLC[sortedDates[dateIdx - 2]] : null;
+
     // ── EXIT LOGIC ──────────────────────────────────────────────────────────
     if (position) {
       position.candlesHeld = (position.candlesHeld || 0) + 1;
@@ -108,90 +131,33 @@ function runScalpBacktest(candles, capital, vixCandles) {
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // 0. BREAKEVEN STOP — once +8pt in favor, SL moves to entry (zero risk)
-      const SCALP_BREAKEVEN = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
-      if (position.side === "CE") {
-        const beMove = (position.bestPrice || candle.close) - position.entryPrice;
-        if (beMove >= SCALP_BREAKEVEN && position.stopLoss < position.entryPrice) {
-          position.stopLoss = position.entryPrice;
-        }
-      } else {
-        const beMove = position.entryPrice - (position.bestPrice || candle.close);
-        if (beMove >= SCALP_BREAKEVEN && position.stopLoss > position.entryPrice) {
-          position.stopLoss = position.entryPrice;
-        }
+      // 1. PSAR flip → immediate exit
+      if (scalpStrategy.isPSARFlip(window, position.side)) {
+        exitReason = "PSAR flip";
       }
 
-      // 1. Target hit (intra-candle simulation)
-      if (position.side === "CE" && candle.high >= position.target) {
-        exitPrice  = position.target;
-        exitReason = `Target hit (${SCALP_TARGET_PTS}pt)`;
-      } else if (position.side === "PE" && candle.low <= position.target) {
-        exitPrice  = position.target;
-        exitReason = `Target hit (${SCALP_TARGET_PTS}pt)`;
-      }
-
-      // 2. Stop loss hit (intra-candle) — with labels
+      // 2. SL hit (intra-candle check against PSAR-based SL)
       if (!exitReason) {
-        const _isBE = Math.abs(position.stopLoss - position.entryPrice) < 0.5;
-        const _isTrail = !_isBE && position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _slLabel = _isBE ? "Breakeven SL" : _isTrail ? "Trail SL" : "Initial SL";
+        const _isTrail = position.initialStopLoss != null && Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
+        const _slLabel = _isTrail ? "PSAR Trail SL" : "PSAR SL";
         if (position.side === "CE" && candle.low <= position.stopLoss) {
           exitPrice  = position.stopLoss;
-          exitReason = `${_slLabel} hit (${SCALP_SL_PTS}pt)`;
+          exitReason = `${_slLabel} hit`;
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
           exitPrice  = position.stopLoss;
-          exitReason = `${_slLabel} hit (${SCALP_SL_PTS}pt)`;
+          exitReason = `${_slLabel} hit`;
         }
       }
 
-      // 3. Trailing SL
+      // 3. Update PSAR trailing SL (tighten only)
       if (!exitReason) {
-        if (position.side === "CE") {
-          if (candle.high > (position.bestPrice || position.entryPrice)) {
-            position.bestPrice = candle.high;
-          }
-          const moveInFavour = (position.bestPrice || position.entryPrice) - position.entryPrice;
-          if (moveInFavour >= SCALP_TRAIL_AFTER) {
-            const trailSL = position.bestPrice - SCALP_TRAIL_GAP;
-            if (trailSL > position.stopLoss) position.stopLoss = trailSL;
-            if (candle.low <= position.stopLoss) {
-              exitPrice  = position.stopLoss;
-              exitReason = `Trail SL (gap=${SCALP_TRAIL_GAP}pt)`;
-            }
-          }
-        } else {
-          if (candle.low < (position.bestPrice || position.entryPrice)) {
-            position.bestPrice = candle.low;
-          }
-          const moveInFavour = position.entryPrice - (position.bestPrice || position.entryPrice);
-          if (moveInFavour >= SCALP_TRAIL_AFTER) {
-            const trailSL = position.bestPrice + SCALP_TRAIL_GAP;
-            if (trailSL < position.stopLoss) position.stopLoss = trailSL;
-            if (candle.high >= position.stopLoss) {
-              exitPrice  = position.stopLoss;
-              exitReason = `Trail SL (gap=${SCALP_TRAIL_GAP}pt)`;
-            }
-          }
+        const newSL = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
+        if (newSL !== position.stopLoss) {
+          position.stopLoss = newSL;
         }
       }
 
-      // 4. RSI reversal exit — only on clear reversal (not minor wobbles at 50)
-      if (!exitReason) {
-        const { rsi } = scalpStrategy.getSignal(window, { silent: true });
-        if (position.side === "CE" && rsi < 45) {
-          exitReason = `RSI reversal (RSI=${rsi} < 45)`;
-        } else if (position.side === "PE" && rsi > 55) {
-          exitReason = `RSI reversal (RSI=${rsi} > 55)`;
-        }
-      }
-
-      // 5. Time stop (4 candles = 12 min)
-      if (!exitReason && position.candlesHeld >= SCALP_TIME_STOP) {
-        exitReason = `Time stop (${SCALP_TIME_STOP} candles / ${SCALP_TIME_STOP * 3}min)`;
-      }
-
-      // 6. EOD
+      // 4. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -216,7 +182,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
           exitTs:       candle.time,
           stopLoss:     position.stopLoss,
           initialStopLoss: position.initialStopLoss,
-          target:       position.target,
+          target:       null,
           pnl,
           spotPnlPts:   parseFloat(spotPnlPts.toFixed(2)),
           candlesHeld:  position.candlesHeld,
@@ -227,7 +193,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
         _dailyPnl += pnl;
         _dailyTradeCount++;
         if (exitReason.includes("SL hit")) {
-          _slPauseUntilTs = candle.time + (SCALP_PAUSE_CANDLES * 180);
+          _slPauseUntilTs = candle.time + (SCALP_PAUSE_CANDLES * SCALP_RES * 60);
         }
         position = null;
       }
@@ -239,6 +205,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
     if (_dailyTradeCount >= SCALP_MAX_TRADES) continue;
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
+    if (!prevDayOHLC) continue;
 
     // VIX check
     if (vixFilter.VIX_ENABLED) {
@@ -246,7 +213,11 @@ function runScalpBacktest(candles, capital, vixCandles) {
       if (vixCheck && vixCheck.blocked) continue;
     }
 
-    const result = scalpStrategy.getSignal(window, { silent: true });
+    const result = scalpStrategy.getSignal(window, {
+      silent: true,
+      prevDayOHLC: prevDayOHLC,
+      prevPrevDayOHLC: prevPrevDayOHLC,
+    });
     if (result.signal === "NONE") continue;
 
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -257,7 +228,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
       entryTs:        candle.time,
       stopLoss:       result.stopLoss,
       initialStopLoss: result.stopLoss,
-      target:         result.target,
+      target:         null,  // no fixed target — PSAR trail only
       candlesHeld:    0,
       bestPrice:      null,
     };

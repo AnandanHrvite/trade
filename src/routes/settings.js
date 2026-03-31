@@ -65,33 +65,29 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "SCALPING STRATEGY (3-min) — Fyers",
+    section: "SCALPING STRATEGY (BB+CPR) — Fyers",
     icon: "⚡",
     fields: [
       { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (independent from trading)", default: "false" },
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["1", "2", "3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution", default: "3" },
-      { key: "SCALP_BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "SL moves to entry after +N pts move", default: "8" },
-      { key: "SCALP_USE_ATR_SL", label: "ATR-based SL", type: "toggle", effect: EFFECT.SESSION, desc: "Use ATR for dynamic SL/Target", default: "true" },
-      { key: "SCALP_ATR_SL_MULT", label: "ATR SL Mult", type: "number", min: 0.8, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "SL = ATR x this", default: "1.2" },
-      { key: "SCALP_ATR_TGT_MULT", label: "ATR Target Mult", type: "number", min: 1.0, max: 4.0, step: 0.1, effect: EFFECT.SESSION, desc: "Target = ATR x this", default: "2.0" },
-      { key: "SCALP_ATR_MIN_SL", label: "ATR Min SL (pts)", type: "number", min: 3, max: 15, step: 1, effect: EFFECT.SESSION, desc: "SL floor", default: "8" },
-      { key: "SCALP_ATR_MAX_SL", label: "ATR Max SL (pts)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.SESSION, desc: "SL cap", default: "15" },
-      { key: "SCALP_SL_PTS", label: "Fixed SL (pts)", type: "number", min: 3, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fixed SL if ATR disabled", default: "12" },
-      { key: "SCALP_TARGET_PTS", label: "Fixed Target (pts)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Fixed target if ATR disabled", default: "18" },
-      { key: "SCALP_TRAIL_GAP", label: "Trail Gap (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Trail gap behind best price", default: "8" },
-      { key: "SCALP_TRAIL_AFTER", label: "Trail After (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Activate trail after +N pts", default: "10" },
-      { key: "SCALP_RSI_CE_MIN", label: "RSI CE Min", type: "number", min: 50, max: 70, step: 1, effect: EFFECT.SESSION, desc: "Min RSI for CE", default: "55" },
-      { key: "SCALP_RSI_PE_MAX", label: "RSI PE Max", type: "number", min: 30, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Max RSI for PE", default: "45" },
-      { key: "SCALP_MIN_BODY", label: "Min Body (pts)", type: "number", min: 2, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Min candle body size", default: "5" },
-      { key: "SCALP_MIN_SLOPE", label: "EMA Slope Min", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Min EMA9 slope", default: "2" },
-      { key: "SCALP_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Enable ADX trend filter", default: "false" },
-      { key: "SCALP_ADX_MIN", label: "ADX Min", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.SESSION, desc: "ADX threshold", default: "20" },
+      // ── Bollinger Bands ──
+      { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
+      { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
+      // ── CPR ──
+      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 0.1, max: 2.0, step: 0.1, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Only trade on narrow CPR days.", default: "0.5" },
+      // ── RSI ──
+      { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
+      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 60, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI must be above this for CE entry", default: "70" },
+      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE (<)", type: "number", min: 20, max: 40, step: 1, effect: EFFECT.SESSION, desc: "RSI must be below this for PE entry", default: "30" },
+      // ── Parabolic SAR (SL & trailing) ──
+      { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step (default 0.02)", default: "0.02" },
+      { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration (default 0.2)", default: "0.2" },
+      // ── Risk management ──
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
       { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
-      { key: "SCALP_TIME_STOP_CANDLES", label: "Time Stop (candles)", type: "number", min: 2, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Exit if no target in N candles", default: "5" },
     ],
   },
   {

@@ -20,7 +20,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const scalpStrategy    = require("../strategies/scalp_ema9_rsi_v2");
+const scalpStrategy    = require("../strategies/scalp_bb_cpr");
 const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
@@ -37,15 +37,14 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_LIVE";
 
 // ── Module-level config ─────────────────────────────────────────────────────
-const SCALP_RES          = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
-const _SCALP_SL_PTS      = parseFloat(process.env.SCALP_SL_PTS || "12");
-const _SCALP_TARGET_PTS  = parseFloat(process.env.SCALP_TARGET_PTS || "18");
-const _SCALP_TRAIL_GAP   = parseFloat(process.env.SCALP_TRAIL_GAP || "8");
-const _SCALP_TRAIL_AFTER = parseFloat(process.env.SCALP_TRAIL_AFTER || "10");
-const _SCALP_TIME_STOP   = parseInt(process.env.SCALP_TIME_STOP_CANDLES || "4", 10);
-const _SCALP_MAX_TRADES  = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-const _SCALP_MAX_LOSS    = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
+const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
+const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
+const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+
+// ── Previous day OHLC for CPR (fetched on session start) ────────────────────
+let _prevDayOHLC     = null;
+let _prevPrevDayOHLC = null;
 
 const _STOP_MINS = (() => {
   const raw = process.env.TRADE_STOP_TIME || "15:30";
@@ -338,64 +337,16 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
 
-    if (pos.side === "CE" && price >= pos.target) {
-      squareOff(pos.target, `Target hit (${_SCALP_TARGET_PTS}pt)`);
-      return;
-    }
-    if (pos.side === "PE" && price <= pos.target) {
-      squareOff(pos.target, `Target hit (${_SCALP_TARGET_PTS}pt)`);
-      return;
-    }
-    // Breakeven stop — +8pt → SL to entry
-    const _scalpBE = parseFloat(process.env.SCALP_BREAKEVEN_PTS || "8");
-    if (pos.side === "CE") {
-      const _beM = (pos.bestPrice || price) - pos.entryPrice;
-      if (_beM >= _scalpBE && pos.stopLoss < pos.entryPrice) {
-        log(`✅ [SCALP-LIVE] BREAKEVEN CE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
-        pos.stopLoss = pos.entryPrice;
-      }
-    } else {
-      const _beM = pos.entryPrice - (pos.bestPrice || price);
-      if (_beM >= _scalpBE && pos.stopLoss > pos.entryPrice) {
-        log(`✅ [SCALP-LIVE] BREAKEVEN PE: +${_beM.toFixed(0)}pt → SL=entry ₹${pos.entryPrice}`);
-        pos.stopLoss = pos.entryPrice;
-      }
-    }
-
+    // PSAR SL hit (tick-level)
     if (pos.side === "CE" && price <= pos.stopLoss) {
-      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : "SL";
-      squareOff(pos.stopLoss, `${_slT} hit`);
+      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      squareOff(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
-      const _slT = Math.abs(pos.stopLoss - pos.entryPrice) < 0.5 ? "Breakeven" : "SL";
-      squareOff(pos.stopLoss, `${_slT} hit`);
+      const _isTrail = pos.initialStopLoss != null && Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
+      squareOff(pos.stopLoss, `${_isTrail ? "PSAR Trail" : "PSAR"} SL hit`);
       return;
-    }
-
-    // Trail
-    if (pos.side === "CE") {
-      if (!pos.bestPrice || price > pos.bestPrice) pos.bestPrice = price;
-      const move = pos.bestPrice - pos.entryPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice - _SCALP_TRAIL_GAP;
-        if (trailSL > pos.stopLoss) pos.stopLoss = trailSL;
-        if (price <= pos.stopLoss) {
-          squareOff(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`);
-          return;
-        }
-      }
-    } else {
-      if (!pos.bestPrice || price < pos.bestPrice) pos.bestPrice = price;
-      const move = pos.entryPrice - pos.bestPrice;
-      if (move >= _SCALP_TRAIL_AFTER) {
-        const trailSL = pos.bestPrice + _SCALP_TRAIL_GAP;
-        if (trailSL < pos.stopLoss) pos.stopLoss = trailSL;
-        if (price >= pos.stopLoss) {
-          squareOff(pos.stopLoss, `Trail SL (gap=${_SCALP_TRAIL_GAP}pt)`);
-          return;
-        }
-      }
     }
 
     // EOD
@@ -414,25 +365,24 @@ function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    if (state.position.candlesHeld >= _SCALP_TIME_STOP) {
-      squareOff(bar.close, `Time stop (${_SCALP_TIME_STOP} candles)`);
+    const window = [...state.candles];
+    if (state.currentBar) window.push(state.currentBar);
+
+    // PSAR flip → immediate exit
+    if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
+      squareOff(bar.close, "PSAR flip");
       return;
     }
 
-    // RSI reversal
-    const window = [...state.candles];
-    if (state.currentBar) window.push(state.currentBar);
+    // Update PSAR trailing SL (tighten only)
     if (window.length >= 15) {
-      const result = scalpStrategy.getSignal(window, { silent: true });
-      if (state.position.side === "CE" && result.rsi < 45) {
-        squareOff(bar.close, `RSI reversal (RSI=${result.rsi} < 45)`);
-        return;
-      }
-      if (state.position.side === "PE" && result.rsi > 55) {
-        squareOff(bar.close, `RSI reversal (RSI=${result.rsi} > 55)`);
-        return;
+      const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
+      if (newSL !== state.position.stopLoss) {
+        log(`📐 [SCALP-LIVE] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+        state.position.stopLoss = newSL;
       }
     }
+
     return;
   }
 
@@ -442,6 +392,7 @@ function onCandleClose(bar) {
   if (state._entryPending) return;
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
   if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
+  if (!_prevDayOHLC) return;
 
   // VIX
   if (process.env.SCALP_VIX_ENABLED === "true") {
@@ -453,9 +404,13 @@ function onCandleClose(bar) {
   }
 
   const window = [...state.candles];
-  if (window.length < 15) return;
+  if (window.length < 30) return;
 
-  const result = scalpStrategy.getSignal(window, { silent: false });
+  const result = scalpStrategy.getSignal(window, {
+    silent: false,
+    prevDayOHLC: _prevDayOHLC,
+    prevPrevDayOHLC: _prevPrevDayOHLC,
+  });
   if (result.signal === "NONE") return;
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -513,7 +468,7 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${result.stopLoss} | TGT: ₹${result.target}`);
+    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${result.stopLoss} | PSAR trail`);
 
     notifyEntry({
       mode: "SCALP-LIVE",
@@ -543,6 +498,40 @@ async function preloadHistory() {
     }
   } catch (err) {
     log(`⚠️ [SCALP-LIVE] Pre-load failed: ${err.message}`);
+  }
+
+  // Fetch previous day(s) OHLC for CPR calculation
+  try {
+    const { fetchCandles } = require("../services/backtestEngine");
+    const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const fiveDaysAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const dailyCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, "D", fiveDaysAgo, todayDate);
+    if (dailyCandles && dailyCandles.length >= 2) {
+      const sorted = dailyCandles.sort((a, b) => a.time - b.time);
+      const pastDays = sorted.filter(c => {
+        const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        return d < todayDate;
+      });
+      if (pastDays.length >= 1) {
+        const prev = pastDays[pastDays.length - 1];
+        _prevDayOHLC = { high: prev.high, low: prev.low, close: prev.close };
+        log(`📊 [SCALP-LIVE] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
+      }
+      if (pastDays.length >= 2) {
+        const pp = pastDays[pastDays.length - 2];
+        _prevPrevDayOHLC = { high: pp.high, low: pp.low, close: pp.close };
+      }
+
+      if (_prevDayOHLC) {
+        const cpr = scalpStrategy.calcCPR(_prevDayOHLC.high, _prevDayOHLC.low, _prevDayOHLC.close);
+        const narrow = scalpStrategy.isNarrowCPR(cpr);
+        log(`📊 [SCALP-LIVE] CPR: TC=${cpr.tc} BC=${cpr.bc} Width=${cpr.width} ${narrow ? "✅ NARROW (trending)" : "❌ WIDE (skip entries)"}`);
+      }
+    } else {
+      log(`⚠️ [SCALP-LIVE] Not enough daily candles for CPR — entries blocked`);
+    }
+  } catch (err) {
+    log(`⚠️ [SCALP-LIVE] CPR data fetch failed: ${err.message}`);
   }
 }
 
