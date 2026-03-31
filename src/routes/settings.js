@@ -397,13 +397,19 @@ router.get("/", (req, res) => {
     }
 
     if (f.type === "date") {
+      const eyeBtn = f.key === "OPTION_EXPIRY_OVERRIDE"
+        ? `<button type="button" onclick="showHolidayModal()" class="holiday-eye-btn" title="View NSE Holiday List">👁</button>`
+        : "";
       return `
         <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
-          <input type="date" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)"/>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <input type="date" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)" style="flex:1;"/>
+            ${eyeBtn}
+          </div>
         </div>`;
     }
 
@@ -574,6 +580,32 @@ router.get("/", (req, res) => {
     .setting-row.frozen input,
     .setting-row.frozen select { cursor: not-allowed; }
     .setting-row.frozen .toggle-slider { cursor: not-allowed; }
+
+    /* ── Holiday eye button ────────────────────────────────── */
+    .holiday-eye-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      padding: 5px 8px; cursor: pointer; color: var(--muted); font-size: 0.75rem;
+      transition: all 0.15s; flex-shrink: 0;
+    }
+    .holiday-eye-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Holiday modal table ─────────────────────────────── */
+    .holiday-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    .holiday-table th {
+      text-align: left; padding: 8px 10px; font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .holiday-table td {
+      padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text);
+    }
+    .holiday-table tr:last-child td { border-bottom: none; }
+    .holiday-table tr:hover td { background: rgba(59,130,246,0.06); }
+    .holiday-table .past-holiday { opacity: 0.4; }
+    .holiday-table .today-holiday { color: var(--green); font-weight: 600; }
+    .holiday-modal-body {
+      max-height: 420px; overflow-y: auto; margin-top: 10px;
+      scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+    }
 
     /* ── Buttons ─────────────────────────────────────────── */
     .btn-save {
@@ -1079,7 +1111,63 @@ function copyEnvTable(){
     setTimeout(function(){btn.textContent='COPY';btn.style.color='#10b981';btn.style.background='rgba(16,185,129,0.12)';},1500);
   });
 }
+
+// ── NSE Holiday List Modal ──────────────────────────────────────────────────
+var _holidayNames = {
+  '01-26': 'Republic Day', '03-14': 'Holi', '03-25': 'Holi (Second Day)',
+  '03-31': 'Eid-ul-Fitr', '04-02': 'Mahavir Jayanti', '04-10': 'Good Friday',
+  '04-21': 'Ram Navami', '05-01': 'Maharashtra Day', '05-26': 'Buddha Purnima',
+  '08-15': 'Independence Day', '08-27': 'Ganesh Chaturthi', '10-02': 'Gandhi Jayanti',
+  '10-20': 'Dussehra', '11-04': 'Diwali - Laxmi Pujan', '11-05': 'Diwali - Balipratipada',
+  '11-19': 'Gurunanak Jayanti', '12-25': 'Christmas'
+};
+
+async function showHolidayModal() {
+  var modal = document.getElementById('holidayModal');
+  var body = document.getElementById('holidayTableBody');
+  if (!modal || !body) return;
+  body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">Loading holidays...</td></tr>';
+  modal.style.display = 'block';
+  try {
+    var res = await fetch('/api/holidays', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (!data.success || !data.holidays || !data.holidays.length) {
+      body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No holidays found</td></tr>';
+      return;
+    }
+    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var rows = '';
+    data.holidays.sort().forEach(function(d, i) {
+      var mmdd = d.slice(5);
+      var name = _holidayNames[mmdd] || '—';
+      var dt = new Date(d + 'T00:00:00');
+      var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
+      var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      var cls = d < todayStr ? 'past-holiday' : (d === todayStr ? 'today-holiday' : '');
+      rows += '<tr class="' + cls + '"><td>' + (i+1) + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
+    });
+    body.innerHTML = rows;
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
+  }
+}
 </script>
+<!-- Holiday list modal -->
+<div id="holidayModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:520px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#60a5fa;">📅 NSE Trading Holidays 2026</span>
+      <button onclick="document.getElementById('holidayModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div class="holiday-modal-body" style="padding:0 16px 16px;">
+      <table class="holiday-table">
+        <thead><tr><th>#</th><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
+        <tbody id="holidayTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
 <!-- .env viewer modal -->
 <div id="envModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
   <div style="max-width:700px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
