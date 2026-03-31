@@ -480,13 +480,17 @@ async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    // Fetch from 3 days ago to ensure 30+ candles even before market open
+    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const candles = await fetchCandlesCached(
-      NIFTY_INDEX_SYMBOL, String(SCALP_RES), today, today,
+      NIFTY_INDEX_SYMBOL, String(SCALP_RES), threeDaysAgo, today,
       `scalp_paper_${SCALP_RES}m`
     );
     if (candles && candles.length > 0) {
       state.candles = candles.slice(-99);
-      log(`📦 [SCALP-PAPER] Pre-loaded ${state.candles.length} × ${SCALP_RES}-min candles`);
+      log(`📦 [SCALP-PAPER] Pre-loaded ${state.candles.length} × ${SCALP_RES}-min candles (strategy ready!)`);
+    } else {
+      log(`⚠️ [SCALP-PAPER] No historical candles found — will build from live ticks`);
     }
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Pre-load failed: ${err.message} — will build from ticks`);
