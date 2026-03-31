@@ -670,6 +670,42 @@ router.get("/exit", (req, res) => {
   res.redirect("/scalp-paper/status");
 });
 
+// ── Manual entry ────────────────────────────────────────────────────────────
+router.post("/manualEntry", async (req, res) => {
+  if (!state.running) return res.status(400).json({ success: false, error: "Scalp paper is not running." });
+  if (state.position) return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
+  const { side } = req.body || {};
+  if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
+  const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
+  if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
+
+  // Get PSAR for SL
+  const candles = state.candles || [];
+  let sarSL = null;
+  if (candles.length >= 15) {
+    const result = scalpStrategy.getSignal(candles, { silent: true });
+    if (result && result.stopLoss) sarSL = result.stopLoss;
+  }
+  // Fallback SL if PSAR not available
+  if (!sarSL) sarSL = side === "CE" ? spot - 25 : spot + 25;
+  // Validate SL direction
+  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
+    sarSL = side === "CE" ? spot - 25 : spot + 25;
+  }
+
+  try {
+    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const symbol = optResult.symbol;
+    const qty = getLotQty();
+    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sarSL}`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sarSL, null, spot);
+    return res.json({ success: true, spot, side, sl: sarSL, symbol });
+  } catch (e) {
+    log(`❌ [SCALP-PAPER] Manual entry failed: ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Status data (AJAX poll) ─────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
@@ -901,7 +937,9 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="actions" style="margin-bottom:18px;">
 ${state.running
   ? `<button class="act-btn act-stop" onclick="location='/scalp-paper/stop'">Stop Session</button>
-     <button class="act-btn act-exit" onclick="spHandleExit(this)">Exit Trade</button>`
+     <button class="act-btn act-exit" onclick="spHandleExit(this)">Exit Trade</button>
+     ${!state.position ? `<button onclick="spManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25b2 Manual CE</button>
+     <button onclick="spManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25bc Manual PE</button>` : ''}`
   : `<button class="act-btn act-start" onclick="location='/scalp-paper/start'">Start Scalp Paper</button>`}
 </div>
 
@@ -980,6 +1018,26 @@ function spHandleExit(btn) {
   btn.disabled = true;
   btn.textContent = 'Exiting...';
   fetch('/scalp-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+}
+
+async function spManualEntry(side) {
+  if (!confirm('Manual ' + side + ' entry at current spot?')) return;
+  try {
+    var res = await fetch('/scalp-paper/manualEntry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side: side })
+    });
+    var data = await res.json();
+    if (data.success) {
+      location.reload();
+    } else {
+      alert('Entry failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+    location.reload();
+  }
 }
 
 // ── INR formatter ────────────────────────────────────────────────────────
@@ -1100,6 +1158,268 @@ setInterval(poll, 2000);
 </script>
 </body>
 </html>`);
+});
+
+// ── Scalp Paper History ─────────────────────────────────────────────────────
+
+function getScalpCapitalFromEnv() {
+  const v = parseFloat(process.env.SCALP_PAPER_CAPITAL);
+  return isNaN(v) ? 100000 : v;
+}
+
+router.get("/history", (req, res) => {
+  const data = loadScalpData();
+  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+
+  const allTrades = data.sessions.flatMap(s =>
+    (s.trades || []).map(t => ({ ...t, date: s.date }))
+  );
+  const totalWins   = allTrades.filter(t => t.pnl > 0).length;
+  const totalLosses = allTrades.filter(t => t.pnl <= 0).length;
+  const inr = (n) => typeof n === "number"
+    ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : "—";
+  const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
+  const startCap = getScalpCapitalFromEnv();
+
+  const sessionCards = data.sessions.length === 0
+    ? `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
+        <div style="font-size:3rem;margin-bottom:16px;">📭</div>
+        <div style="font-size:1rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">No sessions yet</div>
+        <div style="font-size:0.82rem;color:#4a6080;">Start scalp paper trading to record your first session.</div>
+       </div>`
+    : data.sessions.slice().reverse().map((s, idx) => {
+        const sIdx = data.sessions.length - idx;
+        const trades = s.trades || [];
+        const sessionWins   = trades.filter(t => t.pnl > 0).length;
+        const sessionLosses = trades.filter(t => t.pnl <= 0).length;
+        const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
+
+        const tradeRows = trades.map(t => {
+          const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
+          const entrySpot   = inr(t.spotAtEntry || t.entryPrice);
+          const exitSpot    = inr(t.spotAtExit  || t.exitPrice);
+          const entryOpt    = t.optionEntryLtp ? inr(t.optionEntryLtp) : "—";
+          const exitOpt     = t.optionExitLtp  ? inr(t.optionExitLtp)  : "—";
+          const pnlStr      = `<span style="font-weight:800;color:${pnlColor(t.pnl)};">${t.pnl >= 0 ? "+" : ""}${inr(t.pnl)}</span>`;
+          const reason      = (t.exitReason || "—").substring(0, 50);
+          return `<tr>
+            <td><span class="badge ${badgeCls}">${t.side}</span></td>
+            <td style="color:#c8d8f0;">${t.entryTime || "—"}</td>
+            <td style="color:#c8d8f0;">${t.exitTime || "—"}</td>
+            <td style="color:#c8d8f0;">${entrySpot}</td>
+            <td style="color:#c8d8f0;">${exitSpot}</td>
+            <td><span style="font-size:0.65rem;color:#60a5fa;">${entryOpt}</span></td>
+            <td><span style="font-size:0.65rem;color:#60a5fa;">${exitOpt}</span></td>
+            <td>${pnlStr}</td>
+            <td style="font-size:0.7rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${reason}</td>
+          </tr>`;
+        }).join("");
+
+        return `
+        <div class="session-card">
+          <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
+            <div>
+              <div class="session-meta">Session ${sIdx} &middot; ${s.date} &middot; ${s.strategy || "—"}</div>
+              <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
+                <span>${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
+                <span style="color:#10b981;">${sessionWins}W</span>
+                <span style="color:#ef4444;">${sessionLosses}L</span>
+                <span>WR ${winRate}</span>
+              </div>
+            </div>
+            <div>
+              <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
+              <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
+            </div>
+          </div>
+          <div class="session-body">
+          ${trades.length > 0 ? `
+          <div style="overflow-x:auto;">
+            <div class="tbl-wrap"><table class="tbl">
+              <thead><tr>
+                <th>Side</th><th>Entry Time</th><th>Exit Time</th>
+                <th>Entry (NIFTY)</th><th>Exit (NIFTY)</th><th>Option Entry</th><th>Option Exit</th><th>PnL</th><th>Reason</th>
+              </tr></thead>
+              <tbody>${tradeRows}</tbody>
+            </table></div>
+          </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
+          </div>
+        </div>`;
+      }).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <title>Scalp Paper — History</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
+    ${sidebarCSS()}
+    ${modalCSS()}
+    .session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:18px;}
+    .session-head{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;cursor:pointer;transition:background 0.15s;}
+    .session-head:hover{background:#060e1c;}
+    .session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;margin-bottom:4px;}
+    .session-pnl{font-size:1.5rem;font-weight:800;font-family:'IBM Plex Mono',monospace;text-align:right;}
+    .session-wl{font-size:0.7rem;color:#4a6080;text-align:right;margin-top:2px;}
+    .session-body{display:none;}
+    .session-card.open .session-body{display:block;}
+    .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.75rem;}
+    .tbl th{padding:8px 14px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;}
+    .tbl td{padding:8px 14px;border-top:0.5px solid #0e1e36;color:#4a6080;vertical-align:middle;}
+    .tbl tr:hover td{background:rgba(59,130,246,0.03);}
+    .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.65rem;font-weight:700;}
+    .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
+    .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
+    .export-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
+    .export-btn:hover{border-color:#3b82f6;color:#60a5fa;}
+    .reset-btn{background:#1a0508;border:0.5px solid #3b0a0a;color:#ef4444;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
+    .reset-btn:hover{background:#2a0810;border-color:#ef4444;}
+    @media(max-width:768px){
+      .sidebar{transform:translateX(-100%);}
+      .main-content{margin-left:0;}
+      .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+      .tbl{min-width:700px;}
+      .tbl td,.tbl th{padding:6px 8px;font-size:0.68rem;}
+      .top-bar{padding:7px 10px 7px 48px;}
+      .top-bar-meta{display:none;}
+      .stat-grid{grid-template-columns:1fr 1fr;}
+      .top-bar-right{gap:4px;}
+      .export-btn,.reset-btn{padding:4px 8px;font-size:0.62rem;}
+    }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+${buildSidebar('scalpHistory', liveActive)}
+<div class="main-content">
+  <div class="top-bar">
+    <div>
+      <div class="top-bar-title">⚡ Scalp Paper Trade History</div>
+      <div class="top-bar-meta">${data.sessions.length} sessions · ${allTrades.length} total trades</div>
+    </div>
+    <div class="top-bar-right">
+      <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
+      <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
+      <a href="/scalp-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
+    </div>
+  </div>
+
+  <div class="page">
+
+    <!-- Summary stat cards -->
+    <div class="stat-grid" style="margin-bottom:22px;">
+      <div class="sc">
+        <div class="sc-label">Starting Capital</div>
+        <div class="sc-val">${inr(startCap)}</div>
+      </div>
+      <div class="sc">
+        <div class="sc-label">Current Capital</div>
+        <div class="sc-val" style="color:${pnlColor(data.capital - startCap)};">${inr(data.capital)}</div>
+        <div class="sc-sub">${(data.capital - startCap) >= 0 ? '▲' : '▼'} ${inr(Math.abs(data.capital - startCap))} vs start</div>
+      </div>
+      <div class="sc">
+        <div class="sc-label">All-Time PnL</div>
+        <div class="sc-val" style="color:${pnlColor(data.totalPnl)};">${data.totalPnl >= 0 ? '+' : ''}${inr(data.totalPnl)}</div>
+      </div>
+      <div class="sc">
+        <div class="sc-label">Overall Win Rate</div>
+        <div class="sc-val">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) + '%' : '—'}</div>
+        <div class="sc-sub">${totalWins}W · ${totalLosses}L · ${allTrades.length} trades</div>
+      </div>
+      <div class="sc">
+        <div class="sc-label">Sessions</div>
+        <div class="sc-val">${data.sessions.length}</div>
+        <div class="sc-sub">across all time</div>
+      </div>
+    </div>
+
+    <!-- Session cards -->
+    <div class="section-title">Sessions — newest first</div>
+    ${sessionCards}
+
+  </div>
+</div>
+</div>
+
+<script>
+${modalJS()}
+var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
+
+function exportAllCSV() {
+  if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
+  var header = ['Session Date','Side','Symbol','Qty','Entry Time','Exit Time','Entry NIFTY','Exit NIFTY','Option Entry','Option Exit','PnL','PnL Mode','Exit Reason'];
+  var rows = ALL_TRADES_JSON.map(function(t) {
+    return [
+      t.date||'', t.side||'', t.symbol||'', t.qty||'',
+      t.entryTime||'', t.exitTime||'',
+      t.spotAtEntry||t.entryPrice||'', t.spotAtExit||t.exitPrice||'',
+      t.optionEntryLtp||'', t.optionExitLtp||'',
+      t.pnl!=null?t.pnl:'', t.pnlMode||'', t.exitReason||''
+    ];
+  });
+  var csv = [header].concat(rows).map(function(r) {
+    return r.map(function(v){ return '"' + String(v||'').replace(/"/g,'""')+'"'; }).join(',');
+  }).join('\\n');
+  var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
+  var a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
+  a.download = 'scalp_paper_history_' + d + '.csv';
+  a.click();
+}
+
+function confirmReset() {
+  showAlert({
+    icon: '🗑️',
+    title: 'Reset All Scalp Paper History?',
+    message: 'This will permanently delete all sessions, trades, and reset capital to ₹${startCap.toLocaleString("en-IN")}. This cannot be undone.',
+    btnText: 'Yes, Reset Everything',
+    btnClass: 'modal-btn-danger',
+    onConfirm: function() {
+      fetch('/scalp-paper/reset')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.success) { window.location.reload(); }
+          else { showAlert({icon:'⚠️',title:'Error',message:d.error||'Reset failed',btnClass:'modal-btn-primary'}); }
+        })
+        .catch(function() { showAlert({icon:'⚠️',title:'Error',message:'Network error',btnClass:'modal-btn-primary'}); });
+    }
+  });
+}
+</script>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html");
+  return res.send(html);
+});
+
+/**
+ * GET /scalp-paper/reset
+ * Wipe all scalp paper trade history and reset capital
+ */
+router.get("/reset", (req, res) => {
+  if (state.running) {
+    return res.status(400).json({
+      success: false,
+      error: "Stop scalp paper trading first before resetting.",
+    });
+  }
+
+  const freshCapital = getScalpCapitalFromEnv();
+  saveScalpData({ capital: freshCapital, totalPnl: 0, sessions: [] });
+
+  log(`🔄 Scalp paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
+
+  return res.json({
+    success: true,
+    message: `Scalp paper trade history cleared. Capital reset to ₹${freshCapital.toLocaleString("en-IN")}`,
+  });
 });
 
 module.exports = router;

@@ -3023,6 +3023,19 @@ router.get("/history", (req, res) => {
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
     .export-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 12px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.12s;}
     .export-btn:hover{border-color:#3b82f6;color:#60a5fa;}
+    @media print {
+      .sidebar, .hamburger, .sidebar-overlay, .top-bar, .export-btn, .reset-btn { display: none !important; }
+      .main-content { margin-left: 0 !important; }
+      body { background: #fff !important; color: #000 !important; }
+      .stat-grid { grid-template-columns: repeat(3, 1fr) !important; }
+      .sc { background: #f5f5f5 !important; border: 1px solid #ddd !important; color: #000 !important; }
+      .sc-label { color: #666 !important; }
+      .sc-val { color: #000 !important; }
+      .session-card { background: #fff !important; border: 1px solid #ccc !important; break-inside: avoid; }
+      .tbl td, .tbl th { color: #000 !important; border-color: #ddd !important; }
+      .badge-ce, .badge-pe { color: #fff !important; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
     @media(max-width:768px){
       .sidebar{transform:translateX(-100%);}
       .main-content{margin-left:0;}
@@ -3048,6 +3061,8 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
     </div>
     <div class="top-bar-right">
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
+      <button class="export-btn" onclick="exportPDF()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.2);">📄 Export PDF</button>
+      <button class="export-btn reset-btn" onclick="resetHistory()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);">🗑️ Reset All</button>
       <a href="/paperTrade/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
   </div>
@@ -3119,6 +3134,19 @@ function exportAllCSV() {
   a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
   a.download = 'paper_history_' + d + '.csv';
   a.click();
+}
+
+function exportPDF() {
+  window.print();
+}
+
+function resetHistory() {
+  if (!confirm('⚠️ This will DELETE all paper trade history and reset capital. Are you sure?')) return;
+  if (!confirm('This action CANNOT be undone. Proceed?')) return;
+  fetch('/paperTrade/reset').then(function(r){ return r.json(); }).then(function(d){
+    if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
+    else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
+  }).catch(function(){ showToast('❌ Reset request failed', '#ef4444'); });
 }
 </script>
 </body>

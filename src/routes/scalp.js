@@ -721,6 +721,32 @@ router.get("/exit", (req, res) => {
   res.redirect("/scalp/status");
 });
 
+// ── Manual entry ────────────────────────────────────────────────────────────
+router.post("/manualEntry", async (req, res) => {
+  if (!state.running) return res.status(400).json({ success: false, error: "Scalp live is not running." });
+  if (state.position) return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
+  const { side } = req.body || {};
+  if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
+  const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
+  if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
+
+  // Get PSAR for SL
+  const candles = state.candles || [];
+  let sarSL = null;
+  if (candles.length >= 15) {
+    const result = scalpStrategy.getSignal(candles, { silent: true });
+    if (result && result.stopLoss) sarSL = result.stopLoss;
+  }
+  if (!sarSL) sarSL = side === "CE" ? spot - 25 : spot + 25;
+  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
+    sarSL = side === "CE" ? spot - 25 : spot + 25;
+  }
+
+  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sarSL}`);
+  await resolveAndEnter(side, spot, { stopLoss: sarSL, target: null, reason: `Manual ${side} entry` });
+  return res.json({ success: true, spot, side, sl: sarSL });
+});
+
 // ── Status data ─────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
@@ -929,7 +955,9 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
     ${state.running
       ? `<button class="action-btn stop-btn" onclick="scalpConfirm('Stop scalp live trading?','Stopping will square off any open position.','#7f1d1d',function(){location='/scalp/stop'});">\u25a0 Stop Trading</button>
-         <button class="action-btn exit-btn" onclick="scalpConfirm('Exit current position?','This will immediately exit via Fyers market order.','#78350f',function(){location='/scalp/exit';});">\uD83D\uDEAA Exit Position</button>`
+         <button class="action-btn exit-btn" onclick="scalpConfirm('Exit current position?','This will immediately exit via Fyers market order.','#78350f',function(){location='/scalp/exit';});">\uD83D\uDEAA Exit Position</button>
+         ${!state.position ? `<button onclick="scalpManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25b2 Manual CE</button>
+         <button onclick="scalpManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25bc Manual PE</button>` : ''}`
       : `<button class="action-btn start-btn" onclick="scalpConfirm('\u26a0\ufe0f Start SCALP LIVE Trading?','This will place REAL orders on Fyers with REAL money. Ensure you have sufficient margin.','#1e40af',function(){location='/scalp/start';});">\u25b6 Start Scalp Live</button>
          <span class="real-warn">\u26a0 REAL ORDERS \u2014 Live Money</span>`}
   </div>
@@ -1110,6 +1138,28 @@ function scalpConfirm(title, msg, color, onYes) {
   overlay.querySelector('#sc-cancel').onclick = function() { overlay.remove(); };
   overlay.querySelector('#sc-confirm').onclick = function() { overlay.remove(); onYes(); };
   overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+}
+
+/* ── Manual Entry ── */
+async function scalpManualEntry(side) {
+  if (!confirm('⚠️ Manual ' + side + ' LIVE entry at current spot? REAL ORDER will be placed.')) return;
+  try {
+    var res = await fetch('/scalp/manualEntry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side: side })
+    });
+    var data = await res.json();
+    if (data.success) {
+      scalpToast('Manual ' + side + ' entry placed @ ₹' + data.spot, '#10b981');
+      setTimeout(function(){ location.reload(); }, 1000);
+    } else {
+      alert('Entry failed: ' + (data.error || 'Unknown error'));
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+    location.reload();
+  }
 }
 
 /* ── Toast ── */

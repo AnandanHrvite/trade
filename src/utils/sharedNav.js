@@ -53,6 +53,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
         { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
+        { key: 'scalpHistory',  href: '/scalp-paper/history', icon: '📊', label: 'History'   },
         { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
       ]
     }] : []),
