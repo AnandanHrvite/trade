@@ -192,6 +192,7 @@ const OPEN_PATHS = [
   "/auth/zerodha/status",
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
+  "/api/expiry-dates",      // read-only expiry calendar
   "/api/cache-info",        // read-only candle cache stats
   "/login-logs",            // failed login attempts viewer
   "/login-logs/data",       // login logs JSON data
@@ -253,6 +254,54 @@ app.get("/api/holidays", async (req, res) => {
   try {
     const holidays = await getNSEHolidays();
     res.json({ success: true, holidays, count: holidays.length });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ── NIFTY Option Expiry Dates ─────────────────────────────────────────────────
+app.get("/api/expiry-dates", async (req, res) => {
+  try {
+    const holidays = await getNSEHolidays();
+    const year = new Date().getFullYear();
+    const results = [];
+
+    // Generate all Tuesdays (weekly) and last Tuesdays (monthly) for the year
+    for (let m = 0; m < 12; m++) {
+      // Last Tuesday of month (monthly expiry)
+      const lastDay = new Date(year, m + 1, 0);
+      const daysBack = (lastDay.getDay() - 2 + 7) % 7;
+      const lastTue = new Date(year, m + 1, -daysBack);
+
+      // All Tuesdays in this month (weekly expiry)
+      let d = new Date(year, m, 1);
+      const dow = d.getDay();
+      const firstTue = dow <= 2 ? 2 - dow : 9 - dow;
+      d.setDate(firstTue + 1);
+
+      while (d.getMonth() === m) {
+        const iso = d.toISOString().split("T")[0];
+        const isMonthly = d.getDate() === lastTue.getDate();
+        let actual = iso;
+        let preponed = false;
+        // Check if expiry falls on holiday → prepone to previous trading day
+        if (holidays.includes(iso)) {
+          let prev = new Date(d);
+          for (let i = 0; i < 7; i++) {
+            prev.setDate(prev.getDate() - 1);
+            const pIso = prev.toISOString().split("T")[0];
+            if (prev.getDay() !== 0 && prev.getDay() !== 6 && !holidays.includes(pIso)) {
+              actual = pIso;
+              preponed = true;
+              break;
+            }
+          }
+        }
+        results.push({ date: iso, actual, preponed, monthly: isMonthly });
+        d.setDate(d.getDate() + 7);
+      }
+    }
+    res.json({ success: true, expiries: results, year });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

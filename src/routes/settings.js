@@ -372,13 +372,19 @@ router.get("/", (req, res) => {
       const opts = f.options.map(o =>
         `<option value="${o}" ${o === val ? "selected" : ""}>${o}</option>`
       ).join("");
+      const expiryEyeBtn = f.key === "OPTION_EXPIRY_TYPE"
+        ? `<button type="button" onclick="showExpiryModal()" class="holiday-eye-btn" title="View NIFTY Expiry Calendar">👁</button>`
+        : "";
       return `
         <div class="${rowClass}" ${frozenAttr}>
           <div class="setting-info">
             <div class="setting-label">${f.label}${effBadge}</div>
             ${descHtml}
           </div>
-          <select data-key="${f.key}" ${dis} onchange="markDirty(this)">${opts}</select>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <select data-key="${f.key}" ${dis} onchange="markDirty(this)" style="flex:1;">${opts}</select>
+            ${expiryEyeBtn}
+          </div>
         </div>`;
     }
 
@@ -602,6 +608,11 @@ router.get("/", (req, res) => {
     .holiday-table tr:hover td { background: rgba(59,130,246,0.06); }
     .holiday-table .past-holiday { opacity: 0.4; }
     .holiday-table .today-holiday { color: var(--green); font-weight: 600; }
+    .holiday-table .preponed { color: #f59e0b; }
+    .holiday-table .monthly-row td { background: rgba(59,130,246,0.08); }
+    .expiry-legend { display:flex; gap:16px; padding:10px 0 4px; font-size:0.68rem; color:var(--muted); flex-wrap:wrap; }
+    .expiry-legend span { display:flex; align-items:center; gap:4px; }
+    .expiry-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
     .holiday-modal-body {
       max-height: 420px; overflow-y: auto; margin-top: 10px;
       scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
@@ -1153,6 +1164,45 @@ async function showHolidayModal() {
     body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
   }
 }
+
+// ── NIFTY Expiry Calendar Modal ─────────────────────────────────────────────
+async function showExpiryModal() {
+  var modal = document.getElementById('expiryModal');
+  var body = document.getElementById('expiryTableBody');
+  if (!modal || !body) return;
+  body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">Loading expiry dates...</td></tr>';
+  modal.style.display = 'block';
+  try {
+    var res = await fetch('/api/expiry-dates', {cache:'no-store'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (!data.success || !data.expiries || !data.expiries.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">No expiry dates found</td></tr>';
+      return;
+    }
+    document.getElementById('expiryYearTitle').textContent = 'NIFTY Options Expiry Calendar ' + data.year;
+    var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
+    var rows = '';
+    data.expiries.forEach(function(e, i) {
+      var dt = new Date(e.date + 'T00:00:00');
+      var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
+      var type = e.monthly ? '<span style="color:#3b82f6;font-weight:600;">Monthly</span>' : 'Weekly';
+      var actual = display;
+      if (e.preponed) {
+        var aDt = new Date(e.actual + 'T00:00:00');
+        actual = aDt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+      }
+      var cls = e.date < todayStr ? 'past-holiday' : (e.date === todayStr ? 'today-holiday' : '');
+      if (e.monthly) cls += ' monthly-row';
+      var preponedNote = e.preponed ? '<span class="preponed" title="Preponed due to holiday"> ⚠ ' + actual + '</span>' : '';
+      rows += '<tr class="' + cls + '"><td>' + (i+1) + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + type + '</td><td>' + (e.preponed ? preponedNote : '—') + '</td></tr>';
+    });
+    body.innerHTML = rows;
+  } catch(e) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">Failed to load expiry dates</td></tr>';
+  }
+}
 </script>
 <!-- Holiday list modal -->
 <div id="holidayModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
@@ -1165,6 +1215,28 @@ async function showHolidayModal() {
       <table class="holiday-table">
         <thead><tr><th>#</th><th>Date</th><th>Day</th><th>Holiday</th></tr></thead>
         <tbody id="holidayTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<!-- Expiry calendar modal -->
+<div id="expiryModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:600px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span id="expiryYearTitle" style="font-weight:700;font-size:0.95rem;color:#60a5fa;">📊 NIFTY Options Expiry Calendar</span>
+      <button onclick="document.getElementById('expiryModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div style="padding:8px 16px 0;">
+      <div class="expiry-legend">
+        <span><span class="expiry-dot" style="background:#3b82f6;"></span> Monthly expiry</span>
+        <span><span class="expiry-dot" style="background:#f59e0b;"></span> Preponed (holiday)</span>
+        <span style="opacity:0.4;"><span class="expiry-dot" style="background:#4a6080;"></span> Past</span>
+      </div>
+    </div>
+    <div class="holiday-modal-body" style="padding:0 16px 16px;">
+      <table class="holiday-table">
+        <thead><tr><th>#</th><th>Expiry Date</th><th>Day</th><th>Type</th><th>Preponed To</th></tr></thead>
+        <tbody id="expiryTableBody"></tbody>
       </table>
     </div>
   </div>
