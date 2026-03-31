@@ -39,6 +39,7 @@ const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "200
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
+const _SCALP_MAX_SL_PTS    = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -330,7 +331,16 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. PSAR SL hit (trailing — tightens each candle)
+    // 1. Max spot SL (25pt cap from entry)
+    if (_SCALP_MAX_SL_PTS > 0) {
+      const movePts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+      if (movePts <= -_SCALP_MAX_SL_PTS) {
+        simulateSell(price, `Max SL ${_SCALP_MAX_SL_PTS}pt`, price);
+        return;
+      }
+    }
+
+    // 2. PSAR SL hit (trailing — tightens each candle)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit", price);
@@ -342,7 +352,7 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
+    // 3. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
       const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
       const trailFloor = _SCALP_TRAIL_START + (levelsAbove * _SCALP_TRAIL_STEP);
