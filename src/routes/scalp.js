@@ -1024,7 +1024,7 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
           </div>
           <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
             <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
-            <div id="ax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.72rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span></div>
+            <div id="ax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.72rem;color:#4a6080;">candles</span></div>
           </div>
           <div style="background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? '#071a0f' : '#1a0707') : '#0d1320'};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? '#10b981' : '#ef4444') : '#1a2236'};border-radius:8px;padding:12px 14px;">
             <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option LTP (Now)</div>
@@ -1256,7 +1256,7 @@ function poll() {
       if (bpEl) bpEl.textContent = p.bestPrice ? INR(p.bestPrice) : '\u2014';
 
       var chEl = document.getElementById('ax-pos-candles');
-      if (chEl) chEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.72rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span>';
+      if (chEl) chEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.72rem;color:#4a6080;">candles</span>';
 
       var onEl = document.getElementById('ax-pos-opt-now');
       if (onEl) {

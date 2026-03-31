@@ -805,7 +805,7 @@ router.get("/status", (req, res) => {
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
-          <div id="ajax-pos-candles" style="font-size:1.1rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span></div>
+          <div id="ajax-pos-candles" style="font-size:1.1rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.65rem;color:#4a6080;">candles</span></div>
         </div>
         <div style="background:#0a0f24;border:1px solid #1e3a5f;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option LTP</div>
@@ -1045,7 +1045,7 @@ function poll() {
           if (bestEl) bestEl.textContent = p.bestPrice ? '\\u20b9' + inr(p.bestPrice) : '\\u2014';
 
           var candEl = document.getElementById('ajax-pos-candles');
-          if (candEl) candEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.65rem;color:#4a6080;">/ ${_SCALP_TIME_STOP}</span>';
+          if (candEl) candEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.65rem;color:#4a6080;">candles</span>';
 
           var optEl = document.getElementById('ajax-pos-opt-ltp');
           if (optEl) optEl.textContent = d.optionLtp ? '\\u20b9' + d.optionLtp.toFixed(2) : (p.optionCurrentLtp ? '\\u20b9' + p.optionCurrentLtp.toFixed(2) : '\\u2014');
