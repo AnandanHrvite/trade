@@ -1329,7 +1329,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
     }
 
     const wins    = trades.filter(t => t.pnl > 0);
-    const losses  = trades.filter(t => t.pnl <= 0);
+    const losses  = trades.filter(t => t.pnl < 0);
     const winRate = ((wins.length / trades.length) * 100).toFixed(1);
     const avgWin  = wins.length   ? (wins.reduce((s, t) => s + t.pnl, 0)   / wins.length).toFixed(0)   : 0;
     const avgLoss = losses.length ? (losses.reduce((s, t) => s + t.pnl, 0) / losses.length).toFixed(0) : 0;
@@ -2930,7 +2930,7 @@ router.get("/history", (req, res) => {
     (s.trades || []).map(t => ({ ...t, date: s.date }))
   );
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
-  const totalLosses = allTrades.filter(t => t.pnl <= 0).length;
+  const totalLosses = allTrades.filter(t => t.pnl < 0).length;
   const inr = (n) => typeof n === "number"
     ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "—";
@@ -2946,9 +2946,9 @@ router.get("/history", (req, res) => {
         const sIdx = data.sessions.length - idx;
         const trades = s.trades || [];
         const sessionWins = trades.filter(t => t.pnl > 0).length;
-        const sessionLosses = trades.filter(t => t.pnl <= 0).length;
+        const sessionLosses = trades.filter(t => t.pnl < 0).length;
         const avgWin  = sessionWins   ? (trades.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0)/sessionWins).toFixed(0)   : null;
-        const avgLoss = sessionLosses ? (trades.filter(t=>t.pnl<=0).reduce((a,t)=>a+t.pnl,0)/sessionLosses).toFixed(0) : null;
+        const avgLoss = sessionLosses ? (trades.filter(t=>t.pnl<0).reduce((a,t)=>a+t.pnl,0)/sessionLosses).toFixed(0) : null;
 
         const tradeRows = trades.map(t => {
           const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";

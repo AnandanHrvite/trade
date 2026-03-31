@@ -133,7 +133,7 @@ function generateDailyReport(trades, sessionPnl) {
     if (!trades || trades.length === 0) return;
 
     const wins    = trades.filter(t => t.pnl > 0);
-    const losses  = trades.filter(t => t.pnl <= 0);
+    const losses  = trades.filter(t => t.pnl < 0);
     const winRate = ((wins.length / trades.length) * 100).toFixed(1);
     const avgWin  = wins.length   ? (wins.reduce((s, t) => s + t.pnl, 0) / wins.length).toFixed(0)   : 0;
     const avgLoss = losses.length ? (losses.reduce((s, t) => s + t.pnl, 0) / losses.length).toFixed(0) : 0;
@@ -1757,7 +1757,7 @@ router.get("/status/data", (req, res) => {
       sessionStart:      tradeState.sessionStart,
       tradeCount:        tradeState.sessionTrades.length,
       wins:              tradeState.sessionTrades.filter(t => t.pnl > 0).length,
-      losses:            tradeState.sessionTrades.filter(t => t.pnl <= 0).length,
+      losses:            tradeState.sessionTrades.filter(t => t.pnl < 0).length,
       fyersOk,
       zerodhaOk,
       // Position block

@@ -748,7 +748,7 @@ router.get("/status/data", (req, res) => {
     totalPnl:      parseFloat((state.sessionPnl + unrealised).toFixed(2)),
     trades:        state.sessionTrades.length,
     wins:          state.sessionTrades.filter(t => t.pnl > 0).length,
-    losses:        state.sessionTrades.filter(t => t.pnl <= 0).length,
+    losses:        state.sessionTrades.filter(t => t.pnl < 0).length,
     log:           state.log.slice(-50),
     dailyLossHit:  state._dailyLossHit,
     sessionTrades: state.sessionTrades.map(t => ({
@@ -793,7 +793,7 @@ router.get("/status", (req, res) => {
   const pnlColor = (n) => n >= 0 ? "#10b981" : "#ef4444";
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
-  const losses = state.sessionTrades.filter(t => t.pnl <= 0).length;
+  const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
 
   // Trades table rows (server-rendered initial state)
   const tradesRows = state.sessionTrades.map((t, i) => {
@@ -1186,7 +1186,7 @@ router.get("/history", (req, res) => {
     (s.trades || []).map(t => ({ ...t, date: s.date }))
   );
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
-  const totalLosses = allTrades.filter(t => t.pnl <= 0).length;
+  const totalLosses = allTrades.filter(t => t.pnl < 0).length;
   const inr = (n) => typeof n === "number"
     ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : "—";
@@ -1203,7 +1203,7 @@ router.get("/history", (req, res) => {
         const sIdx = data.sessions.length - idx;
         const trades = s.trades || [];
         const sessionWins   = trades.filter(t => t.pnl > 0).length;
-        const sessionLosses = trades.filter(t => t.pnl <= 0).length;
+        const sessionLosses = trades.filter(t => t.pnl < 0).length;
         const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
 
         const tradeRows = trades.map(t => {

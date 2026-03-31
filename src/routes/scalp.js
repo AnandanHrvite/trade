@@ -784,7 +784,7 @@ router.get("/status/data", (req, res) => {
     totalPnl:      parseFloat((state.sessionPnl + unrealised).toFixed(2)),
     trades:        state.sessionTrades.length,
     wins:          state.sessionTrades.filter(t => t.pnl > 0).length,
-    losses:        state.sessionTrades.filter(t => t.pnl <= 0).length,
+    losses:        state.sessionTrades.filter(t => t.pnl < 0).length,
     log:           state.log.slice(-50),
     dailyLossHit:  state._dailyLossHit,
   });
@@ -821,7 +821,7 @@ router.get("/status", (req, res) => {
   const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
-  const losses = state.sessionTrades.filter(t => t.pnl <= 0).length;
+  const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp   || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
