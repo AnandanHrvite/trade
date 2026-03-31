@@ -306,7 +306,6 @@ function runScalpBacktest(candles, capital, vixCandles) {
     if (_dailyTradeCount >= SCALP_MAX_TRADES) continue;
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
-    if (!prevDayOHLC) continue;
 
     // VIX check
     if (vixFilter.VIX_ENABLED) {
