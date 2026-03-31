@@ -71,12 +71,12 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (independent from trading)", default: "false" },
-      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["1", "2", "3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution", default: "3" },
+      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min only)", default: "3" },
       // ── Bollinger Bands ──
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── CPR ──
-      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 0.1, max: 2.0, step: 0.1, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Only trade on narrow CPR days.", default: "0.5" },
+      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 0.5, max: 15.0, step: 0.5, effect: EFFECT.SESSION, desc: "Narrow CPR threshold (% of prev day range). Only trade on narrow CPR days.", default: "5" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
       { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE (>)", type: "number", min: 60, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI must be above this for CE entry", default: "70" },

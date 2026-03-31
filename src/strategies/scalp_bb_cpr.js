@@ -39,7 +39,7 @@ function calcCPR(prevHigh, prevLow, prevClose) {
 }
 
 function isNarrowCPR(cpr) {
-  const narrowPct = parseFloat(cfg("SCALP_CPR_NARROW_PCT", "0.5"));
+  const narrowPct = parseFloat(cfg("SCALP_CPR_NARROW_PCT", "5"));
   if (cpr.prevRange === 0) return false;
   const widthPct = (cpr.width / cpr.prevRange) * 100;
   return widthPct < narrowPct;

@@ -88,11 +88,23 @@ function runScalpBacktest(candles, capital, vixCandles) {
   const dailyOHLC = buildDailyOHLC(candles);
   const sortedDates = Object.keys(dailyOHLC).sort();
 
+  // Debug: show CPR for each day
+  const narrowPct = parseFloat(process.env.SCALP_CPR_NARROW_PCT || "0.5");
+  let narrowDays = 0, wideDays = 0;
+  for (let d = 1; d < sortedDates.length; d++) {
+    const prev = dailyOHLC[sortedDates[d - 1]];
+    const cpr = scalpStrategy.calcCPR(prev.high, prev.low, prev.close);
+    const isNarrow = scalpStrategy.isNarrowCPR(cpr);
+    if (isNarrow) narrowDays++; else wideDays++;
+    console.log(`  CPR ${sortedDates[d]}: TC=${cpr.tc} BC=${cpr.bc} W=${cpr.width} Range=${cpr.prevRange} %=${((cpr.width/cpr.prevRange)*100).toFixed(2)} ${isNarrow ? "✅NARROW" : "❌WIDE"}`);
+  }
+
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Days with data: ${sortedDates.length}`);
+  console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
+  console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
 
   const window = candles.slice(0, 30);
@@ -100,6 +112,7 @@ function runScalpBacktest(candles, capital, vixCandles) {
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
+  let _loggedReason = null;
 
   for (let i = 30; i < candles.length; i++) {
     const candle = candles[i];
@@ -218,7 +231,16 @@ function runScalpBacktest(candles, capital, vixCandles) {
       prevDayOHLC: prevDayOHLC,
       prevPrevDayOHLC: prevPrevDayOHLC,
     });
-    if (result.signal === "NONE") continue;
+    if (result.signal === "NONE") {
+      // Log first rejection per day for debugging
+      if (!position && _dailyTradeCount === 0 && candleMin >= 561 && candleMin < 840) {
+        if (!_loggedReason || _loggedReason !== candleDate) {
+          console.log(`  [${candleDate} ${toIST(candle.time).split(' ')[1] || ''}] Skip: ${result.reason} | RSI=${result.rsi} BB=${result.bbMiddle}-${result.bbUpper} SAR=${result.sar}`);
+          _loggedReason = candleDate;
+        }
+      }
+      continue;
+    }
 
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
 
@@ -475,7 +497,6 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
     <div><label>Candle</label>
       <select id="r">
-        <option value="1" ${resolution==="1"?"selected":""}>1-min</option>
         <option value="3" ${resolution==="3"?"selected":""}>3-min</option>
         <option value="5" ${resolution==="5"?"selected":""}>5-min</option>
       </select>
