@@ -287,7 +287,7 @@ async function squareOff(exitPrice, reason) {
   state.optionSymbol = null;
   state.optionLtp    = null;
 
-  if (reason.includes("SL hit")) {
+  if (reason.includes("SL")) {
     state._slPauseUntil = Date.now() + (_SCALP_PAUSE_CANDLES * SCALP_RES * 60 * 1000);
     log(`⏸️ [SCALP-LIVE] SL pause — ${_SCALP_PAUSE_CANDLES} candles`);
   }

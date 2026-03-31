@@ -261,7 +261,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionLtp    = null;
 
   // SL pause
-  if (reason.includes("SL hit")) {
+  if (reason.includes("SL")) {
     state._slPauseUntil = Date.now() + (_SCALP_PAUSE_CANDLES * SCALP_RES * 60 * 1000);
     log(`⏸️ [SCALP-PAPER] SL pause — no entries for ${_SCALP_PAUSE_CANDLES} candles`);
   }
