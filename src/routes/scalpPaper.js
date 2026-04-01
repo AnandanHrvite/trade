@@ -890,10 +890,10 @@ router.get("/status", (req, res) => {
   const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
 
   // Unrealised PnL (minus brokerage to match exit P&L)
+  const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const brok2  = isFut2 ? 40 : 80;
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
-    const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const brok2  = isFut2 ? 40 : 80;
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     if (optEntry && optCurr && optEntry > 0) {
