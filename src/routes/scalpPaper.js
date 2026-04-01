@@ -162,7 +162,7 @@ function startOptionPolling(symbol) {
         }
       }
       scheduleNext();
-    }, 3000); // 3s for scalp paper (less aggressive than live)
+    }, 1000); // 1s for scalp paper (match live)
   }
   fetchOptionLtp(symbol).then(ltp => {
     if (ltp && state.position) {

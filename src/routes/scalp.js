@@ -156,7 +156,9 @@ async function fetchOptionLtp(symbol) {
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
       if (ltp && ltp > 0) return parseFloat(ltp);
     }
-  } catch (_) {}
+  } catch (err) {
+    log(`⚠️ [SCALP-LIVE] fetchOptionLtp error for ${symbol}: ${err.message}`);
+  }
   return null;
 }
 
