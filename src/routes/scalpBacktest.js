@@ -545,6 +545,13 @@ ${modalJS()}
     .tbar-label{color:#4a6080;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;}
     .tbar-count{color:#4a6080;font-size:0.7rem;}
 
+    .dw-toggle{background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;transition:all 0.15s;}.dw-toggle:hover{border-color:#3b82f6;background:#0a1e3d;}.dw-toggle.active{background:#0a1e3d;border-color:#3b82f6;}
+    .dw-table{width:100%;border-collapse:collapse;}
+    .dw-table thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
+    .dw-table tbody tr{border-top:0.5px solid #080e1a;}
+    .dw-table tbody tr:hover{background:#060c1a;}
+    .dw-table tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;}
+    .dw-table tfoot td{padding:8px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;font-weight:700;border-top:1px solid #1a2236;background:#04060e;}
     .tw{border:0.5px solid #0e1428;border-radius:8px;overflow:hidden;margin-bottom:10px;}
     table{width:100%;border-collapse:collapse;}
     thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;cursor:pointer;user-select:none;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
@@ -654,9 +661,28 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val">${s.winRate||"\u2014"}%</div><div class="sc-sub">${s.wins} wins of ${s.totalTrades}</div></div>
   </div>
 
+  <!-- Day-wise P&L -->
+  <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
+    <div class="tw">
+      <table class="dw-table">
+        <thead><tr>
+          <th>Date</th>
+          <th>Trades</th>
+          <th>Wins</th>
+          <th>Losses</th>
+          <th>Day P&L</th>
+          <th>Cumulative P&L</th>
+        </tr></thead>
+        <tbody id="dwBody"></tbody>
+        <tfoot id="dwFoot"></tfoot>
+      </table>
+    </div>
+  </div>
+
   <!-- Filter bar -->
   <div class="tbar">
     <span class="tbar-label">Trade Log</span>
+    <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">\ud83d\udc41 Day P&L</button>
     <input id="fSearch" placeholder="Search reason\u2026" oninput="doFilter()" style="width:150px;"/>
     <select id="fSide" onchange="doFilter()">
       <option value="">All Sides</option>
@@ -865,6 +891,60 @@ function doReset(){
   filtered=TRADES.slice();
   doSort2();
 }
+
+// Day-wise P&L
+var dwVisible = false;
+function toggleDayWise(){
+  dwVisible = !dwVisible;
+  document.getElementById('dayWiseWrap').style.display = dwVisible ? 'block' : 'none';
+  document.getElementById('dwToggle').classList.toggle('active', dwVisible);
+  if(dwVisible) renderDayWise();
+}
+
+function renderDayWise(){
+  var dayMap = {};
+  // Use filtered trades so it respects side/result filters
+  filtered.forEach(function(t){
+    var d = t.entry.split(',')[0].trim(); // e.g. "16/3/2026"
+    if(!dayMap[d]) dayMap[d] = { date: d, ts: t.entryTs, trades: 0, wins: 0, losses: 0, pnl: 0 };
+    dayMap[d].trades++;
+    if(t.pnl > 0) dayMap[d].wins++;
+    else if(t.pnl < 0) dayMap[d].losses++;
+    dayMap[d].pnl += (t.pnl || 0);
+  });
+  var days = Object.values(dayMap);
+  days.sort(function(a,b){ return a.ts - b.ts; });
+
+  var cum = 0, html = '';
+  for(var i=0;i<days.length;i++){
+    var d = days[i];
+    cum += d.pnl;
+    var dc = d.pnl >= 0 ? '#10b981' : '#ef4444';
+    var cc = cum >= 0 ? '#10b981' : '#ef4444';
+    html += '<tr>'
+      +'<td style="color:#c8d8f0;font-weight:600;">'+d.date+'</td>'
+      +'<td>'+d.trades+'</td>'
+      +'<td style="color:#10b981;">'+d.wins+'</td>'
+      +'<td style="color:#ef4444;">'+d.losses+'</td>'
+      +'<td style="color:'+dc+';font-weight:700;">'+fpts(parseFloat(d.pnl.toFixed(2)), null)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;">'+fpts(parseFloat(cum.toFixed(2)), null)+'</td>'
+      +'</tr>';
+  }
+  document.getElementById('dwBody').innerHTML = html;
+
+  var totalPnl = cum;
+  var tc = totalPnl >= 0 ? '#10b981' : '#ef4444';
+  document.getElementById('dwFoot').innerHTML =
+    '<tr><td style="color:#c8d8f0;">Total ('+days.length+' days)</td>'
+    +'<td>'+filtered.length+'</td>'
+    +'<td style="color:#10b981;">'+filtered.filter(function(t){return t.pnl>0}).length+'</td>'
+    +'<td style="color:#ef4444;">'+filtered.filter(function(t){return t.pnl<0}).length+'</td>'
+    +'<td colspan="2" style="color:'+tc+';font-weight:700;">Final: '+fpts(parseFloat(totalPnl.toFixed(2)), null)+'</td></tr>';
+}
+
+// Re-render day-wise when filters change
+var _origDoSort2 = doSort2;
+doSort2 = function(){ _origDoSort2(); if(dwVisible) renderDayWise(); };
 
 // Init
 doFilter();
