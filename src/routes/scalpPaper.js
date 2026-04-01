@@ -2,7 +2,7 @@
  * SCALP PAPER TRADE — /scalp-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
- * Runs on 3-min candles with the scalp EMA9+RSI strategy.
+ * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
  * Can run IN PARALLEL with /trade (live) or /paperTrade (paper).
  *
  * Routes:

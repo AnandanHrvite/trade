@@ -2,7 +2,7 @@
  * SCALP LIVE TRADE — /scalp
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
- * Runs on 3-min candles with the scalp EMA9+RSI strategy.
+ * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
  * Can run IN PARALLEL with /trade (live Zerodha) or /paperTrade.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
