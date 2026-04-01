@@ -212,10 +212,10 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit";
       }
 
-      // 2. TRAILING PROFIT — lock one step below peak level: peak 1200→lock 1100
+      // 2. TRAILING PROFIT — lock at highest reached level: peak 339 w/ start=200,step=100 → lock 300
       if (!exitReason && SCALP_TRAIL_START > 0 && position.peakPnl >= SCALP_TRAIL_START) {
         const levelsAbove = Math.floor((position.peakPnl - SCALP_TRAIL_START) / SCALP_TRAIL_STEP);
-        const trailFloor = SCALP_TRAIL_START + (levelsAbove - 1) * SCALP_TRAIL_STEP;
+        const trailFloor = SCALP_TRAIL_START + levelsAbove * SCALP_TRAIL_STEP;
 
         const curPnl = _runPnl(candle.close);
         if (curPnl <= trailFloor) {
