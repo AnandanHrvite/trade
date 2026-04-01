@@ -156,11 +156,11 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const THETA_PER_DAY = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
   const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
 
-  // Trail gap — tiered dynamic (tightened for better profit capture):
-  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 40pt — was 60, now locks earlier)
-  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 25pt — was 40, aggressive lock)
-  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 15pt — was 30, maximum capture)
-  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 12pt).
+  // Trail gap — tiered dynamic (aligned with Settings page defaults):
+  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 40pt — wide early, room to breathe)
+  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 25pt — tightening)
+  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 15pt — locking in large profit)
+  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 12pt), capped at 40pt.
   const TRAIL_T1_UPTO      = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
   const TRAIL_T2_UPTO      = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
   const TRAIL_T1_GAP       = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
@@ -555,8 +555,9 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
       // If entry price is already on the wrong side of prev candle mid,
       // 50% entry gate REMOVED — breakeven stop handles protection
 
-      // Trail activation from env directly (no dynamic cap)
-      const _dynTrailActivateBT = TRAIL_ACTIVATE_PTS;
+      // Trail activation from env directly — dynamic: 25% of SAR gap, floored at env, capped at 40pts
+      const _initialSARgapBT = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
+      const _dynTrailActivateBT = Math.min(40, Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25)));
 
       position = {
         side,

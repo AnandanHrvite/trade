@@ -35,10 +35,10 @@ let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — up
 // getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
 // Pre-reading these once eliminates 750+ env reads/min when in position.
 const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
-const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
+const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
 const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
+const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
 const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
@@ -162,6 +162,10 @@ let ptState = {
   _lastCheckedBarHigh: null,
   _lastCheckedBarLow:  null,
   _missedLoggedCandle: null,  // throttle for signal-missed log (once per candle)
+  _maxTradesLoggedCandle: null, // throttle for max-trades log (once per candle)
+  _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
+  _entryPending:      false, // prevents double-entry on rapid ticks
+  _expiryDayBlocked:  false, // blocks entries on non-expiry days
   // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
   _sessionWins:   0,
   _sessionLosses: 0,
@@ -507,9 +511,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // 50% entry gate REMOVED — replaced by breakeven stop at +25pt
   const _entrySpot = spotAtEntry || price;
 
-  // Trail activation from env
+  // Trail activation from env — dynamic: 25% of SAR gap, floored at env, capped at 40pts
   const _initialSARgapPaper = stopLoss ? Math.abs((spotAtEntry || price) - stopLoss) : 0;
-  const _dynTrailActivatePaper = _TRAIL_ACTIVATE_PTS;
+  const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
 
   ptState.position = {
     side,
@@ -1090,7 +1094,7 @@ function onTick(tick) {
       }
     }
 
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && isStrongSignal) {
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
       const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
@@ -1107,7 +1111,7 @@ function onTick(tick) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
-      log(`⚡ [PAPER] Intra-candle STRONG entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
+      log(`⚡ [PAPER] Intra-candle ${TRADE_RES >= 15 ? "STRONG " : ""}entry @ ₹${ltp} | VIX: ${_vixIntraVal != null ? _vixIntraVal.toFixed(1) : "n/a"} | [${TRADE_RES}m bar] ${reason}`);
       const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
 
       let symbolPromise;

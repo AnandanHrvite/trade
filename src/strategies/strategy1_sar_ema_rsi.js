@@ -42,7 +42,7 @@
 const { EMA, RSI, ADX } = require("technicalindicators");
 
 const NAME        = "SAR_EMA9_RSI";
-const DESCRIPTION = "15-min | SAR+EMA9 slope(>=6pt)+RSI 55/45 | ADX>=25 | body>=10pt+directional | STRONG(slope6+RSI40/58) intra | MARGINAL close | Logic3: RSI<42 | 9:45AM-3PM";
+const DESCRIPTION = "15-min | SAR+EMA9 slope+RSI | ADX trend | body>=10pt+directional | STRONG intra | MARGINAL close | Logic3: RSI<42 | All thresholds via Settings";
 
 // ── Parabolic SAR (step=0.02, max=0.2) ───────────────────────────────────────
 // trend=1  → uptrend,   SAR dots BELOW price
@@ -205,7 +205,7 @@ function getSignal(candles, opts) {
   // Result fields: { adx, pdi, mdi } — we only use adx (trend strength)
   // ADX_MIN_TREND declared HERE (before use) — var hoisting would make it undefined
   // if declared later in the function, causing isTrending to always be false.
-  var ADX_MIN_TREND = 25;  // raised 20→25 (v56): ADX 20-24 = early/weak trend, whipsaw prone
+  var ADX_MIN_TREND = parseFloat(process.env.ADX_MIN_TREND || "25");  // raised 20→25 (v56): ADX 20-24 = early/weak trend, whipsaw prone
   var highs  = candles.map(function(c) { return c.high; });
   var lows   = candles.map(function(c) { return c.low; });
   var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: closes });
@@ -233,8 +233,8 @@ function getSignal(candles, opts) {
   // RSI thresholds (v56)
   // CE: RSI > 55 — tightened from 53: RSI 53-54 zone was ~50% WR, weak momentum
   // PE: RSI < 45 — tightened from 49: RSI 45-49 zone was weak bearish, too many 50%-rule losses
-  var RSI_CE_MIN = 52;  // raised 53→55 (v56): RSI 53-54 = weak momentum, ~50% WR on those entries
-  var RSI_PE_MAX = 48;  // tightened 49→45 (v56): RSI 45-49 = weak bearish momentum, too many 50%-rule losses
+  var RSI_CE_MIN = parseFloat(process.env.RSI_CE_MIN || "52");  // bullish momentum threshold
+  var RSI_PE_MAX = parseFloat(process.env.RSI_PE_MAX || "48");  // bearish momentum threshold
 
   // ── Signal strength thresholds (v54, corrected v60) ──────────────────────
   // STRONG  → intra-candle entry (enter at EMA touch, best price, don't wait for close)
@@ -247,10 +247,10 @@ function getSignal(candles, opts) {
   //
   // NOTE: STRONG_SLOPE must be > EMA_SLOPE_MIN (6) to actually discriminate.
   // Old values were 5 (weaker than EMA_SLOPE_MIN=6) — effectively dead code.
-  var STRONG_SLOPE_PE = -9;   // PE: slope must be <= -9 to be STRONG (was -5, weaker than EMA_SLOPE_MIN)
-  var STRONG_RSI_PE   = 40;   // PE: RSI must be < 40 to be STRONG
-  var STRONG_SLOPE_CE = 9;    // CE: slope must be >= +9 to be STRONG (was +5, weaker than EMA_SLOPE_MIN)
-  var STRONG_RSI_CE   = 58;   // CE: RSI must be > 58 to be STRONG
+  var STRONG_SLOPE_PE = -parseFloat(process.env.STRONG_SLOPE || "9");   // PE: slope must be <= -N to be STRONG
+  var STRONG_RSI_PE   = parseFloat(process.env.STRONG_RSI_PE || "40");  // PE: RSI must be < N to be STRONG
+  var STRONG_SLOPE_CE = parseFloat(process.env.STRONG_SLOPE || "9");    // CE: slope must be >= +N to be STRONG
+  var STRONG_RSI_CE   = parseFloat(process.env.STRONG_RSI_CE || "58");  // CE: RSI must be > N to be STRONG
 
   // ── ADX trend filter (v55) ─────────────────────────────────────────────────
   // ADX measures trend STRENGTH only (not direction — SAR handles direction).
@@ -262,30 +262,13 @@ function getSignal(candles, opts) {
   // JS var-hoisting bug — 'var' declarations are hoisted but assignments are not.
 
   // ── EMA9 slope check ────────────────────────────────────────────────────────
-  var EMA_SLOPE_MIN  = 6;  // raised 6→8: require strong directional EMA, not gentle drift
+  var EMA_SLOPE_MIN  = parseFloat(process.env.EMA_SLOPE_MIN || "6");  // minimum EMA9 slope for directional conviction (pts vs previous candle)
   var ema9SlopeValue = Math.round((ema9 - ema9_1) * 100) / 100;
   var ema9SlopeUp    = ema9SlopeValue >= EMA_SLOPE_MIN;
   var ema9SlopeDown  = ema9SlopeValue <= -EMA_SLOPE_MIN;
 
-  // ── 2-candle directional confirmation (NEW — high probability filter) ──────
-  // Require the 2 candles BEFORE the signal candle to both be in signal direction.
-  // CE: both prev candles must be green (close > open) → established upward momentum
-  // PE: both prev candles must be red (close < open) → established downward momentum
-  // This eliminates entries on isolated EMA touches during choppy sideways action.
-  var prevCandle1 = candles[candles.length - 2];
-  var prevCandle2 = candles[candles.length - 3];
-  var prev2BullOk = prevCandle1 &&
-                    prevCandle1.close > prevCandle1.open;
-  var prev2BearOk = prevCandle1 &&
-                    prevCandle1.close < prevCandle1.open;
-
-  // ── RSI direction check (NEW) ──────────────────────────────────────────────
-  // RSI must be MOVING in the signal direction, not just above/below threshold.
-  // CE: RSI must be rising (current > previous) → momentum building
-  // PE: RSI must be falling (current < previous) → momentum building
+  // ── RSI direction check ──────────────────────────────────────────────
   var rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
-  var rsiRising  = rsi > rsiPrev;
-  var rsiFalling = rsi < rsiPrev;
 
   // ── EMA9 intra-candle touch ───────────────────────────────────────────────
   var emaTouchCE = signalCandle.high >= ema9;
@@ -325,8 +308,8 @@ function getSignal(candles, opts) {
     currSAR.trend === 1                          &&  // SAR still bullish (hasn't flipped yet)
     ema9SlopeDown                                &&  // EMA9 falling >=3pts confirmed
     signalCandle.close < ema9                    &&  // close is below EMA9
-    rsi < 42                                     &&  // bearish momentum (v56: tightened to stay below PE_MAX=45)
-    (signalCandle.close - currSAR.sar) > 50         // SAR 50+ pts below price (loosened from 100)
+    rsi < parseFloat(process.env.LOGIC3_RSI_MAX || "42") &&  // bearish momentum
+    (signalCandle.close - currSAR.sar) > parseFloat(process.env.LOGIC3_SAR_GAP || "50")  // SAR lagging behind price
   );
 
   // Combined SAR condition — either already positioned OR just flipped OR strong override
@@ -409,21 +392,17 @@ function getSignal(candles, opts) {
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: SAR SL " + sarSL + " < close " + signalCandle.close + " (gap=" + (signalCandle.close - sarSL).toFixed(1) + "pt)");
-    // Minimum SAR distance: 55 pts for 15-min (v56 raised from 45)
-    // A 15-min Nifty candle routinely moves 50–80 pts. 45pt was still inside normal wick noise.
+    var MIN_SAR_DIST = parseFloat(process.env.MIN_SAR_DISTANCE || "45");
     var sarDistCE = Math.round((signalCandle.close - sarSL) * 100) / 100;
-    if (sarDistCE < 45) {
-      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < 45pt minimum (SL within candle noise)");
+    if (sarDistCE < MIN_SAR_DIST) {
+      if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < " + MIN_SAR_DIST + "pt minimum (SL within candle noise)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < 45 min for 15-min) — insufficient buffer",
+        reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < " + MIN_SAR_DIST + " min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >=45pt");
-    // Maximum SAR distance: 100 pts — cap risk per trade for better R:R
-    // A 150+ pt SL on 15-min options is too wide — need 3 wins to recover 1 loss.
-    // Capping at 100pt ensures worst-case loss is bounded and R:R stays healthy.
-    var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >=" + MIN_SAR_DIST + "pt");
+    var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistCE > MAX_SAR_DIST) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt > " + MAX_SAR_DIST + "pt max — use Manual CE if needed");
       return Object.assign({}, base, {
@@ -442,11 +421,12 @@ function getSignal(candles, opts) {
         reason: "CE blocked: bearish candle body (close <= open) — EMA wick rejection, not bullish conviction",
       });
     }
-    if (candleBodyCE < 10) {
-      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < 10pt (weak/spinning top — unreliable EMA touch)");
+    var MIN_BODY = parseFloat(process.env.MIN_CANDLE_BODY || "10");
+    if (candleBodyCE < MIN_BODY) {
+      if (!silent) console.log("  ❌ CE gate FAIL: candle body " + candleBodyCE.toFixed(1) + "pt < " + MIN_BODY + "pt (weak/spinning top — unreliable EMA touch)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
+        reason: "CE blocked: candle body too small (" + candleBodyCE.toFixed(1) + "pts < " + MIN_BODY + ") — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ CE gate PASS: candle body " + candleBodyCE.toFixed(1) + "pt bullish (close=" + signalCandle.close + " > open=" + signalCandle.open + ")");
@@ -508,17 +488,17 @@ function getSignal(candles, opts) {
     // (Logic3 requires close < ema9). Applying the 55pt gate here would block ALL Logic3 entries
     // since ema9 - close is typically only a few points. Logic3's own gates (SAR 50pt below,
     // RSI < 42, EMA9 slope >= 6pt) are strong enough — skip the 55pt min for that path.
+    var MIN_SAR_DIST_PE = parseFloat(process.env.MIN_SAR_DISTANCE || "45");
     var sarDistPE = Math.round((sarSL - signalCandle.close) * 100) / 100;
-    if (!sarBullOverridePE && sarDistPE < 45) {
-      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < 45pt minimum");
+    if (!sarBullOverridePE && sarDistPE < MIN_SAR_DIST_PE) {
+      if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt < " + MIN_SAR_DIST_PE + "pt minimum");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < 45 min for 15-min) — insufficient buffer",
+        reason: "PE blocked: SAR too close (gap=" + sarDistPE + " pts < " + MIN_SAR_DIST_PE + " min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — 55pt check skipped)" : " >=45pt"));
-    // Maximum SAR distance: 100 pts — cap risk per trade (same as CE)
-    var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+    if (!silent) console.log("  ✓ PE gate PASS: SAR gap " + sarDistPE + "pt" + (sarBullOverridePE ? " (Logic3 EMA-SL — min check skipped)" : " >=" + MIN_SAR_DIST_PE + "pt"));
+    var MAX_SAR_DIST_PE = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistPE > MAX_SAR_DIST_PE) {
       if (!silent) console.log("  ❌ PE gate FAIL: SAR gap " + sarDistPE + "pt > " + MAX_SAR_DIST_PE + "pt max — use Manual PE if needed");
       return Object.assign({}, base, {
@@ -538,11 +518,12 @@ function getSignal(candles, opts) {
         reason: "PE blocked: bullish candle body (close >= open) — EMA wick rejection, not bearish conviction",
       });
     }
-    if (candleBodyPE < 10) {
-      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < 10pt (weak/spinning top)");
+    var MIN_BODY_PE = parseFloat(process.env.MIN_CANDLE_BODY || "10");
+    if (candleBodyPE < MIN_BODY_PE) {
+      if (!silent) console.log("  ❌ PE gate FAIL: candle body " + candleBodyPE.toFixed(1) + "pt < " + MIN_BODY_PE + "pt (weak/spinning top)");
       return Object.assign({}, base, {
         signal: "NONE",
-        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < 10) — doji/indecision, EMA touch unreliable",
+        reason: "PE blocked: candle body too small (" + candleBodyPE.toFixed(1) + "pts < " + MIN_BODY_PE + ") — doji/indecision, EMA touch unreliable",
       });
     }
     if (!silent) console.log("  ✓ PE gate PASS: candle body " + candleBodyPE.toFixed(1) + "pt bearish (close=" + signalCandle.close + " < open=" + signalCandle.open + ")");

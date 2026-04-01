@@ -58,6 +58,17 @@ const SETTINGS_SCHEMA = [
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum entries per day" },
       { key: "MAX_SAR_DISTANCE", label: "Max SL Distance (pts)", type: "number", min: 40, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Reject entries with SL > this (caps risk per trade)", default: "80" },
       { key: "BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "SL moves to entry after +N pts move", default: "25" },
+      { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "Bullish momentum: RSI must be above this for CE entry", default: "52" },
+      { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "Bearish momentum: RSI must be below this for PE entry", default: "48" },
+      { key: "ADX_MIN_TREND", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.INSTANT, desc: "Minimum ADX to confirm trend (below = ranging, block entry)", default: "25" },
+      { key: "EMA_SLOPE_MIN", label: "EMA9 Slope Min (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Min EMA9 slope for entry (pts vs prev candle)", default: "6" },
+      { key: "STRONG_SLOPE", label: "STRONG Slope (pts)", type: "number", min: 6, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "EMA9 slope >= this for STRONG signal (intra-candle entry)", default: "9" },
+      { key: "STRONG_RSI_CE", label: "STRONG RSI CE (>)", type: "number", min: 50, max: 70, step: 1, effect: EFFECT.INSTANT, desc: "RSI must be above this for STRONG CE signal", default: "58" },
+      { key: "STRONG_RSI_PE", label: "STRONG RSI PE (<)", type: "number", min: 30, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "RSI must be below this for STRONG PE signal", default: "40" },
+      { key: "MIN_SAR_DISTANCE", label: "Min SL Distance (pts)", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Reject entries with SL closer than this (too tight = noise)", default: "45" },
+      { key: "MIN_CANDLE_BODY", label: "Min Candle Body (pts)", type: "number", min: 3, max: 25, step: 1, effect: EFFECT.INSTANT, desc: "Min candle body size for valid entry (filters dojis)", default: "10" },
+      { key: "LOGIC3_RSI_MAX", label: "Logic3 RSI Max (<)", type: "number", min: 35, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "PE override when SAR still bull: RSI must be below this", default: "42" },
+      { key: "LOGIC3_SAR_GAP", label: "Logic3 SAR Gap (pts)", type: "number", min: 20, max: 150, step: 5, effect: EFFECT.INSTANT, desc: "PE override: SAR must be this many pts below price (lagging)", default: "50" },
       { key: "TRAIL_ACTIVATE_PTS", label: "Trail Activate (pts)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Min profit before trail starts", default: "12" },
       { key: "TRAIL_TIER1_UPTO", label: "T1 Upto (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "0 to N pts profit → T1 gap", default: "30" },
       { key: "TRAIL_TIER1_GAP", label: "T1 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap during T1 (widest)", default: "40" },
@@ -92,6 +103,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_TRAIL_START", label: "Trail Start (₹)", type: "number", min: 100, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Lock profit at this level (300,500,700...)", default: "300" },
       { key: "SCALP_TRAIL_STEP", label: "Trail Step (₹)", type: "number", min: 100, max: 500, step: 50, effect: EFFECT.SESSION, desc: "Step between trail levels", default: "200" },
       // ── Risk management ──
+      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Reject scalp entries with SL > this many pts", default: "50" },
+      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.SESSION, desc: "CPR range % threshold for narrow CPR filter", default: "33" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
       { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
@@ -101,6 +114,9 @@ const SETTINGS_SCHEMA = [
     section: "COMMON — Instrument & Backtest",
     icon: "📈",
     fields: [
+      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Trading candle timeframe (5-min or 15-min)", default: "15" },
+      { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time — execution gate start (HH:MM IST)", default: "09:15" },
+      { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop time — EOD square off + engine shutdown (HH:MM IST)", default: "15:30" },
       { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures" },
       { key: "NIFTY_LOT_SIZE", label: "Lot Size (Qty)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Qty per lot (currently 65)" },
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade" },
@@ -197,6 +213,11 @@ const IMMEDIATE_KEYS = new Set([
   "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET",
+  // Strategy thresholds — read from process.env inside getSignal() on every candle
+  "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_SLOPE_MIN",
+  "STRONG_SLOPE", "STRONG_RSI_CE", "STRONG_RSI_PE",
+  "MIN_SAR_DISTANCE", "MIN_CANDLE_BODY",
+  "LOGIC3_RSI_MAX", "LOGIC3_SAR_GAP",
 ]);
 
 // These are cached as const at module load — need session stop+start
@@ -214,6 +235,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
   "SCALP_TRAIL_START", "SCALP_TRAIL_STEP",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
+  "SCALP_MAX_SL_PTS", "SCALP_CPR_NARROW_PCT",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────

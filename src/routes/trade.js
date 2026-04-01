@@ -39,10 +39,10 @@ let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — up
 // getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
 // Pre-reading these once eliminates 750+ env reads/min when in position.
 const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "70");
-const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "60");
+const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
+const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
 const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "30");
+const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
 const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
@@ -929,11 +929,11 @@ async function onCandleClose(candle) {
         ? parseFloat((_ccLastCandle.low + (_ccLastCandle.high - _ccLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
         : null;
 
-      // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
+      // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
       // Without cap: a 546pt SAR gap gives 137pt activation — trail never fires in practice.
       // Cap at 40pt ensures trail always activates within a reasonable profit move.
       const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
-      const _dynTrailActivate = _TRAIL_ACTIVATE_PTS;
+      const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
 
       tradeState.position = {
         side,
@@ -1189,9 +1189,9 @@ function onSpotTick(tick) {
           ? parseFloat((_intraLastCandle.low + (_intraLastCandle.high - _intraLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
           : null;
 
-        // Dynamic trail activation: 25% of initial SAR gap, floored at 15pts, capped at 40pts.
+        // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
         const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
-        const _dynTrailActivateIntra = _TRAIL_ACTIVATE_PTS;
+        const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
 
         tradeState.position = {
           side,
@@ -1639,7 +1639,7 @@ router.post("/manualEntry", async (req, res) => {
     const result = getActiveStrategy().getSignal(candles, { silent: true });
     if (result && result.stopLoss) stopLoss = result.stopLoss;
   }
-  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
   if (!stopLoss) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
 
   // Validate SL is on correct side (CE: below entry, PE: above entry)

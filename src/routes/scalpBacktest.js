@@ -552,6 +552,7 @@ ${modalJS()}
     .dw-table tbody tr:hover{background:#060c1a;}
     .dw-table tbody td{padding:6px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;}
     .dw-table tfoot td{padding:8px 10px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;font-weight:700;border-top:1px solid #1a2236;background:#04060e;}
+
     .tw{border:0.5px solid #0e1428;border-radius:8px;overflow:hidden;margin-bottom:10px;}
     table{width:100%;border-collapse:collapse;}
     thead th{background:#04060e;padding:7px 10px;text-align:left;font-size:0.58rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;cursor:pointer;user-select:none;white-space:nowrap;font-family:"IBM Plex Mono",monospace;}
@@ -682,7 +683,7 @@ ${buildSidebar('scalpBacktest', liveActive)}
   <!-- Filter bar -->
   <div class="tbar">
     <span class="tbar-label">Trade Log</span>
-    <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">\ud83d\udc41 Day P&L</button>
+    <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
     <input id="fSearch" placeholder="Search reason\u2026" oninput="doFilter()" style="width:150px;"/>
     <select id="fSide" onchange="doFilter()">
       <option value="">All Sides</option>
@@ -903,9 +904,8 @@ function toggleDayWise(){
 
 function renderDayWise(){
   var dayMap = {};
-  // Use filtered trades so it respects side/result filters
   filtered.forEach(function(t){
-    var d = t.entry.split(',')[0].trim(); // e.g. "16/3/2026"
+    var d = t.entry.split(',')[0].trim();
     if(!dayMap[d]) dayMap[d] = { date: d, ts: t.entryTs, trades: 0, wins: 0, losses: 0, pnl: 0 };
     dayMap[d].trades++;
     if(t.pnl > 0) dayMap[d].wins++;
