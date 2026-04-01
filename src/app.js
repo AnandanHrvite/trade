@@ -694,6 +694,16 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
   </div>` : ''}
 
+  <!-- ⑤ QUICK ACTION BUTTONS -->
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
+    <button id="btn-both-paper" onclick="startBothPaper(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #166534;background:linear-gradient(135deg,#0a1f10,#0d3018);color:#4ade80;border-radius:8px;cursor:pointer;transition:all 0.2s;">
+      ▶ START BOTH PAPER TEST
+    </button>
+    <button id="btn-both-live" onclick="startBothLive(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #7f1d1d;background:linear-gradient(135deg,#1a0505,#2d0a0a);color:#ef4444;border-radius:8px;cursor:pointer;transition:all 0.2s;">
+      ▶ START BOTH LIVE TRADE
+    </button>
+  </div>
+
 </div>
 
 <script>
@@ -788,6 +798,44 @@ async function pollDashboardStatus(){
   } catch(e){}` : ''}
 }
 pollDashboardStatus();
+
+// ── Quick Action: Start Both Paper / Both Live ──────────────────────────────
+async function startBothPaper(btn){
+  btn.disabled=true; btn.textContent='⏳ Starting Paper + Scalp Paper...';
+  try {
+    var r1 = await secretFetch('/paperTrade/start');
+    var d1 = r1.ok ? await r1.json().catch(function(){return {};}) : {};
+    var r2 = await secretFetch('/scalp-paper/start');
+    var d2 = r2.ok ? await r2.json().catch(function(){return {};}) : {};
+    var msgs = [];
+    if(r1.ok) msgs.push('Paper: '+(d1.message||'Started'));
+    else msgs.push('Paper: '+(d1.error||'Failed'));
+    if(r2.ok) msgs.push('Scalp Paper: '+(d2.message||'Started'));
+    else msgs.push('Scalp Paper: '+(d2.error||'Failed'));
+    alert(msgs.join('\\n'));
+  } catch(e){ alert('Error: '+e.message); }
+  btn.disabled=false; btn.textContent='▶ START BOTH PAPER TEST';
+  pollDashboardStatus();
+}
+
+async function startBothLive(btn){
+  if(!confirm('Start BOTH Live Trade + Scalp Live? Real orders will be placed.')) return;
+  btn.disabled=true; btn.textContent='⏳ Starting Live + Scalp Live...';
+  try {
+    var r1 = await secretFetch('/trade/start');
+    var d1 = r1.ok ? await r1.json().catch(function(){return {};}) : {};
+    var r2 = await secretFetch('/scalp/start');
+    var d2 = r2.ok ? await r2.json().catch(function(){return {};}) : {};
+    var msgs = [];
+    if(r1.ok) msgs.push('Live: '+(d1.message||'Started'));
+    else msgs.push('Live: '+(d1.error||'Failed'));
+    if(r2.ok) msgs.push('Scalp Live: '+(d2.message||'Started'));
+    else msgs.push('Scalp Live: '+(d2.error||'Failed'));
+    alert(msgs.join('\\n'));
+  } catch(e){ alert('Error: '+e.message); }
+  btn.disabled=false; btn.textContent='▶ START BOTH LIVE TRADE';
+  pollDashboardStatus();
+}
 
 // ── Candle cache info ─────────────────────────────────────────────────────────
 async function loadCacheInfo(){
