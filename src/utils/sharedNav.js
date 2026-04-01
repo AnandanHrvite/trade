@@ -593,9 +593,8 @@ async function askApiSecret() {
 
 async function secretFetch(url, opts) {
   opts = opts || {};
-  var secret = await askApiSecret();
-  if (secret === null) return null;
   opts.headers = opts.headers || {};
+  var secret = getApiSecret();
   if (secret) opts.headers['x-api-secret'] = secret;
   var controller = new AbortController();
   var tid = setTimeout(function(){ controller.abort(); }, 15000);
@@ -604,7 +603,8 @@ async function secretFetch(url, opts) {
   try { res = await fetch(url, opts); } finally { clearTimeout(tid); }
   if (res.status === 403) {
     sessionStorage.removeItem('__api_secret');
-    await showAlert({ icon: '🚫', title: 'Wrong API Secret', message: 'The API secret was incorrect. Please try again.', btnClass: 'modal-btn-danger' });
+    var isRetry = !!secret;
+    if (isRetry) await showAlert({ icon: '🚫', title: 'Wrong API Secret', message: 'The API secret was incorrect. Please try again.', btnClass: 'modal-btn-danger' });
     secret = await askApiSecret();
     if (secret === null) return null;
     opts.headers['x-api-secret'] = secret;
