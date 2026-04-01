@@ -434,11 +434,15 @@ function onCandleClose(bar) {
   }
 
   // ── Entry evaluation ──────────────────────────────────────────────────────
-  if (!isMarketHours()) return;
-  if (state._dailyLossHit) return;
-  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
-  if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
-  if (state._expiryDayBlocked) return;
+  if (!isMarketHours()) { log(`⏭️ [SCALP-PAPER] SKIP: outside market hours`); return; }
+  if (state._dailyLossHit) { log(`⏭️ [SCALP-PAPER] SKIP: daily loss limit hit`); return; }
+  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-PAPER] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
+  if (state._slPauseUntil && Date.now() < state._slPauseUntil) {
+    const secsLeft = Math.ceil((state._slPauseUntil - Date.now()) / 1000);
+    log(`⏭️ [SCALP-PAPER] SKIP: SL cooldown (${secsLeft}s left)`);
+    return;
+  }
+  if (state._expiryDayBlocked) { log(`⏭️ [SCALP-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
   // VIX check
   if (process.env.SCALP_VIX_ENABLED === "true") {
@@ -446,20 +450,25 @@ function onCandleClose(bar) {
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
       if (vix.value > vixMax) {
+        log(`⏭️ [SCALP-PAPER] SKIP: VIX ${vix.value.toFixed(1)} > max ${vixMax}`);
         return;
       }
     }
   }
 
   const window = [...state.candles];
-  if (window.length < 30) return;
+  if (window.length < 30) { log(`⏭️ [SCALP-PAPER] SKIP: warming up (${window.length}/30 candles)`); return; }
 
   const result = scalpStrategy.getSignal(window, {
     silent: true,
     prevDayOHLC: _prevDayOHLC,
     prevPrevDayOHLC: _prevPrevDayOHLC,
   });
-  if (result.signal === "NONE") return;
+  if (result.signal === "NONE") {
+    const lastBar = window[window.length - 1];
+    log(`⏭️ [SCALP-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    return;
+  }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
   const spot = bar.close;

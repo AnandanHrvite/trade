@@ -172,6 +172,7 @@ function startOptionPolling(symbol) {
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
+          state.position.optionEntryLtpTime = istNow();
           log(`📌 [SCALP-LIVE] Option entry LTP: ₹${ltp}`);
         }
       }
@@ -182,7 +183,10 @@ function startOptionPolling(symbol) {
     if (ltp && state.position) {
       state.optionLtp = ltp;
       state.position.optionCurrentLtp = ltp;
-      if (!state.position.optionEntryLtp) state.position.optionEntryLtp = ltp;
+      if (!state.position.optionEntryLtp) {
+        state.position.optionEntryLtp = ltp;
+        state.position.optionEntryLtpTime = istNow();
+      }
     }
     scheduleNext();
   });
@@ -276,6 +280,11 @@ async function squareOff(exitPrice, reason) {
     spotAtExit: exitPrice,
     optionEntryLtp: optionEntryLtp || null,
     optionExitLtp: exitOptionLtp || null,
+    optionStrike: state.position ? state.position.optionStrike : null,
+    optionExpiry: state.position ? state.position.optionExpiry : null,
+    optionType: state.position ? state.position.optionType : side,
+    orderId: state.position ? state.position.orderId : null,
+    stopLoss: state.position ? state.position.initialStopLoss : null,
     entryTime, exitTime: istNow(),
     pnl: netPnl, pnlMode, exitReason: reason,
   });
@@ -423,31 +432,39 @@ function onCandleClose(bar) {
   }
 
   // Entry
-  if (!isMarketHours()) return;
-  if (state._dailyLossHit) return;
-  if (state._entryPending) return;
-  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) return;
-  if (state._slPauseUntil && Date.now() < state._slPauseUntil) return;
-  if (state._expiryDayBlocked) return;
+  if (!isMarketHours()) { log(`⏭️ [SCALP-LIVE] SKIP: outside market hours`); return; }
+  if (state._dailyLossHit) { log(`⏭️ [SCALP-LIVE] SKIP: daily loss limit hit`); return; }
+  if (state._entryPending) { log(`⏭️ [SCALP-LIVE] SKIP: entry pending`); return; }
+  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-LIVE] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
+  if (state._slPauseUntil && Date.now() < state._slPauseUntil) {
+    const secsLeft = Math.ceil((state._slPauseUntil - Date.now()) / 1000);
+    log(`⏭️ [SCALP-LIVE] SKIP: SL cooldown (${secsLeft}s left)`);
+    return;
+  }
+  if (state._expiryDayBlocked) { log(`⏭️ [SCALP-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
 
   // VIX
   if (process.env.SCALP_VIX_ENABLED === "true") {
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
-      if (vix.value > vixMax) return;
+      if (vix.value > vixMax) { log(`⏭️ [SCALP-LIVE] SKIP: VIX ${vix.value.toFixed(1)} > max ${vixMax}`); return; }
     }
   }
 
   const window = [...state.candles];
-  if (window.length < 30) return;
+  if (window.length < 30) { log(`⏭️ [SCALP-LIVE] SKIP: warming up (${window.length}/30 candles)`); return; }
 
   const result = scalpStrategy.getSignal(window, {
     silent: false,
     prevDayOHLC: _prevDayOHLC,
     prevPrevDayOHLC: _prevPrevDayOHLC,
   });
-  if (result.signal === "NONE") return;
+  if (result.signal === "NONE") {
+    const lastBar = window[window.length - 1];
+    log(`⏭️ [SCALP-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    return;
+  }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
   const spot = bar.close;
@@ -496,9 +513,14 @@ async function resolveAndEnter(side, spot, result) {
       bestPrice:        null,
       candlesHeld:      0,
       peakPnl:          0,
+      optionStrike:     optionInfo.strike || null,
+      optionExpiry:     optionInfo.expiry || null,
+      optionType:       side,
+      orderId:          orderResult.orderId || null,
 
       optionEntryLtp:   null,
       optionCurrentLtp: null,
+      optionEntryLtpTime: null,
     };
 
     state.optionSymbol = symbol;
@@ -772,38 +794,105 @@ router.post("/manualEntry", async (req, res) => {
 // ── Status data ─────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
+  try {
   const pos = state.position;
-  const unrealised = pos
-    ? parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty())).toFixed(2))
-    : 0;
+  const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+
+  let unrealised = 0;
+  if (pos && state.lastTickPrice) {
+    if (isFutures) {
+      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+    } else {
+      const cur = state.optionLtp || pos.optionCurrentLtp;
+      if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
+        unrealised = parseFloat(((cur - pos.optionEntryLtp) * pos.qty).toFixed(2));
+      } else {
+        unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+      }
+    }
+  }
+
+  const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
+  const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
+  const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2)) : null;
+  const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
+  const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
+  const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+  const optStopPrice = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
 
   res.json({
     running:       state.running,
+    isFutures,
     tickCount:     state.tickCount,
     lastTickPrice: state.lastTickPrice,
     lastTickTime:  state.lastTickTime ? new Date(state.lastTickTime).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : null,
     candleCount:   state.candles.length,
     currentBar:    state.currentBar,
-    position:      pos ? {
-      side: pos.side, symbol: pos.symbol, entryPrice: pos.entryPrice,
-      stopLoss: pos.stopLoss, target: pos.target, bestPrice: pos.bestPrice,
-      candlesHeld: pos.candlesHeld,
-      optionEntryLtp: pos.optionEntryLtp, optionCurrentLtp: pos.optionCurrentLtp,
-    } : null,
     sessionPnl:    state.sessionPnl,
     unrealised,
     totalPnl:      parseFloat((state.sessionPnl + unrealised).toFixed(2)),
-    trades:        state.sessionTrades.length,
+    tradeCount:    state.sessionTrades.length,
     wins:          state.sessionTrades.filter(t => t.pnl > 0).length,
     losses:        state.sessionTrades.filter(t => t.pnl < 0).length,
-    log:           state.log.slice(-50),
     dailyLossHit:  state._dailyLossHit,
+    sessionStart:  state.sessionStart,
+    position: pos ? {
+      side:              pos.side,
+      symbol:            pos.symbol,
+      qty:               pos.qty,
+      entryPrice:        pos.entryPrice,
+      entryTime:         pos.entryTime,
+      stopLoss:          pos.stopLoss,
+      target:            pos.target,
+      bestPrice:         pos.bestPrice || null,
+      candlesHeld:       pos.candlesHeld,
+      optionStrike:      pos.optionStrike || null,
+      optionExpiry:      pos.optionExpiry || null,
+      optionType:        pos.optionType || pos.side,
+      orderId:           pos.orderId || null,
+      optionEntryLtp:    optEntryLtp,
+      optionCurrentLtp:  optCurrentLtp,
+      optionEntryLtpTime: pos.optionEntryLtpTime || null,
+      optPremiumPnl,
+      optPremiumMove,
+      optPremiumPct,
+      optStopPrice,
+      optStopPct:        Math.round(OPT_STOP_PCT_VAL * 100),
+      liveClose:         state.lastTickPrice || null,
+      trailActivatePts:  pos.trailActivatePts || null,
+      reason:            pos.reason || null,
+    } : null,
+    trades: [...state.sessionTrades].reverse().map(t => ({
+      side:    t.side           || "",
+      symbol:  t.symbol         || "",
+      strike:  t.optionStrike   || "",
+      expiry:  t.optionExpiry   || "",
+      entry:   t.entryTime      || "",
+      exit:    t.exitTime       || "",
+      eSpot:   t.spotAtEntry    || t.entryPrice || 0,
+      eOpt:    t.optionEntryLtp || null,
+      eSl:     t.stopLoss       || t.initialStopLoss || null,
+      xSpot:   t.spotAtExit     || t.exitPrice  || 0,
+      xOpt:    t.optionExitLtp  || null,
+      pnl:     typeof t.pnl === "number" ? t.pnl : null,
+      pnlMode: t.pnlMode        || "",
+      order:   t.orderId        || "",
+      reason:  t.exitReason     || "",
+    })),
+    logTotal: state.log.length,
+    logs:    [...state.log].reverse(),
   });
+  } catch (err) {
+    console.error("[scalp/status/data] Error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // ── Status page ─────────────────────────────────────────────────────────────
 
+
 router.get("/status", (req, res) => {
+  try {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
   const fyersOk    = !!process.env.ACCESS_TOKEN;
 
@@ -830,6 +919,7 @@ router.get("/status", (req, res) => {
   }
 
   const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
+  const pnlColor = (n) => n >= 0 ? "#10b981" : "#ef4444";
 
   const wins   = state.sessionTrades.filter(t => t.pnl > 0).length;
   const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
@@ -842,25 +932,210 @@ router.get("/status", (req, res) => {
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2))
     : null;
+  const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
+    ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
+    : null;
+  const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+  const optStopPrice   = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
+  const optStopPct     = Math.round(OPT_STOP_PCT_VAL * 100);
 
+  const liveClose  = state.lastTickPrice || null;
+  const pointsMoved = pos && liveClose
+    ? parseFloat(((liveClose - pos.entryPrice) * (pos.side === "CE" ? 1 : -1)).toFixed(2))
+    : 0;
+  const trailActive = pos && pos.bestPrice !== null && pos.bestPrice !== undefined;
+  const trailProfit = pos && pos.bestPrice
+    ? parseFloat((pos.side === "CE" ? pos.bestPrice - pos.entryPrice : pos.entryPrice - pos.bestPrice).toFixed(2))
+    : 0;
+
+  // ATM/ITM badge
+  const atmStrike   = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
+  const strikeLabel = pos && pos.optionStrike
+    ? (pos.optionStrike === atmStrike ? "ATM" : pos.optionStrike < atmStrike ? (pos.side === "CE" ? "ITM" : "OTM") : (pos.side === "PE" ? "ITM" : "OTM"))
+    : "\u2014";
+  const strikeBadgeColor = strikeLabel === "ATM" ? "#3b82f6" : strikeLabel === "ITM" ? "#10b981" : "#ef4444";
+
+  // Position HTML
+  const posHtml = pos ? `
+    <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>
+          <span style="font-size:0.8rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;">\u26a1 LIVE Position</span>
+          <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime}</span>
+        </div>
+        <button onclick="scHandleExit(this)"
+           style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
+           onmouseover="this.style.background='#991b1b'" onmouseout="this.style.background='#7f1d1d'">
+          \uD83D\uDEAA Exit Position (Fyers)
+        </button>
+      </div>
+
+      <!-- Position Identity -->
+      <div style="background:#071a12;border:1px solid #134e35;border-radius:10px;padding:14px 18px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${isFutures ? (pos.side === "CE" ? "LONG" : "SHORT") : pos.side}</span>
+            <div>
+              <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${isFutures ? (pos.side === "CE" ? "FUTURES \u00b7 Bullish" : "FUTURES \u00b7 Bearish") : (pos.side === "CE" ? "CALL \u00b7 Bullish" : "PUT \u00b7 Bearish")}</div>
+              ${!isFutures ? `<span style="font-size:0.65rem;font-weight:700;background:${strikeBadgeColor}22;color:${strikeBadgeColor};border:1px solid ${strikeBadgeColor}44;padding:2px 7px;border-radius:4px;">${strikeLabel}</span>` : ""}
+            </div>
+          </div>
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          ${isFutures ? `
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Direction</div>
+            <div style="font-size:1.4rem;font-weight:800;color:#fff;">${pos.side === "CE" ? "\uD83D\uDCC8 BUY" : "\uD83D\uDCC9 SELL"}</div>
+          </div>` : `
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.optionStrike ? pos.optionStrike.toLocaleString("en-IN") : "\u2014"}</div>
+          </div>
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.optionExpiry || "\u2014"}</div>
+          </div>`}
+          <div style="width:1px;height:44px;background:#134e35;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${Math.round(pos.qty / 75)} lot)</span></div>
+          </div>
+          <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
+          <div style="flex:1;min-width:200px;">
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Full Symbol</div>
+            <div style="font-size:0.82rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
+          </div>
+          ${pos.orderId ? `
+          <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Fyers Order ID</div>
+            <div style="font-size:0.82rem;font-weight:600;color:#a78bfa;font-family:monospace;">${pos.orderId}</div>
+          </div>` : ""}
+        </div>
+      </div>
+
+      <!-- Option Premium Section -->
+      <div style="background:#0a0f24;border:2px solid #ef4444;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
+        <div style="font-size:0.68rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">\u26a1 ${isFutures ? "LIVE Futures PnL (Spot Price)" : `LIVE Option Premium (${pos.optionType || pos.side} Price)`}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
+
+          <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">
+            <div style="font-size:0.63rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Entry Price</div>
+            <div id="ax-opt-entry-ltp" style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">
+              ${optEntryLtp ? "\u20b9" + optEntryLtp.toFixed(2) : "<span style='font-size:1rem;color:#f59e0b;'>Fetching...</span>"}
+            </div>
+            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">
+              ${optEntryLtp
+                ? `captured at ${pos.optionEntryLtpTime || pos.entryTime}`
+                : `\u23f3 first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
+            </div>
+          </div>
+
+          <div style="text-align:center;font-size:1.8rem;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};">\u2192</div>
+
+          <div style="text-align:center;padding:12px;background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#071a0f" : "#1a0707") : "#0d1320"};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};border-radius:10px;">
+            <div style="font-size:0.63rem;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#4a6080"};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Current LTP</div>
+            <div id="ax-opt-current-ltp" style="font-size:2rem;font-weight:800;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
+              ${optCurrentLtp ? "\u20b9" + optCurrentLtp.toFixed(2) : "\u23f3"}
+            </div>
+            <div id="ax-opt-move" style="font-size:0.72rem;font-weight:700;margin-top:6px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? "#10b981" : "#ef4444") : "#f59e0b"};">
+              ${optPremiumMove !== null ? (optPremiumMove >= 0 ? "\u25b2 +" : "\u25bc ") + "\u20b9" + Math.abs(optPremiumMove).toFixed(2) + " pts" : optCurrentLtp ? "\u23f3 Awaiting entry price..." : "\u23f3 Polling REST feed..."}
+            </div>
+            <div id="ax-opt-pct" style="font-size:1.1rem;font-weight:800;margin-top:4px;color:${optPremiumPct !== null ? (optPremiumPct >= 0 ? "#10b981" : "#ef4444") : "#4a6080"};font-family:monospace;">
+              ${optPremiumPct !== null ? (optPremiumPct >= 0 ? "+" : "") + optPremiumPct.toFixed(2) + "%" : "\u2014"}
+            </div>
+          </div>
+
+          <div style="text-align:center;padding:12px;background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
+            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Unrealised P&L</div>
+            <div id="ax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
+              ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "\u20b9" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "\u2014"}
+            </div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 -\u20b9${isFutures ? "40" : "80"} brok</div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Secondary grid -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
+          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">candle close</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY LTP</div>
+          <div id="ax-nifty-ltp" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(liveClose)}</div>
+          <div id="ax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
+        </div>
+        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (PSAR)</div>
+          <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
+          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
+        </div>
+        <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct}% stop)</div>
+          <div id="ax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "\u20b9" + optStopPrice.toFixed(2) : "\u2014"}</div>
+          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry \u20b9" + optEntryLtp.toFixed(2) + " \u00d7 " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${inr(pos.target)}</div>
+        </div>
+        <div id="ax-trail-card" style="background:#071a12;border:1px solid ${trailActive && trailProfit >= 15 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail Status</div>
+          <div id="ax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailActive && trailProfit >= 15 ? "#8b5cf6" : "#f59e0b"};">${trailActive && trailProfit >= 15 ? "\uD83D\uDD12 ACTIVE" : "\u23f3 Waiting"}</div>
+          <div id="ax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "\u2014"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
+          <div id="ax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.72rem;color:#4a6080;">candles</span></div>
+        </div>
+      </div>
+
+      ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">\uD83D\uDCDD ${pos.reason}</div>` : ""}
+    </div>` : `
+    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
+      <div style="font-size:1.5rem;margin-bottom:8px;">\uD83D\uDCED</div>
+      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
+      ${state.running ? `<div style="display:flex;gap:10px;justify-content:center;">
+        <button onclick="scManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25b2 Manual CE</button>
+        <button onclick="scManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
+      </div>` : ''}
+    </div>`;
+
+  // Build trades JSON
   const tradesJson = JSON.stringify([...state.sessionTrades].reverse().map(t => ({
     side:       t.side || "",
     symbol:     t.symbol || "",
+    strike:     t.optionStrike || "",
+    expiry:     t.optionExpiry || "",
+    optionType: t.optionType || t.side || "",
+    qty:        t.qty || 0,
     entry:      t.entryTime || "",
     exit:       t.exitTime || "",
-    entryPrice: t.spotAtEntry || t.entryPrice || 0,
-    exitPrice:  t.spotAtExit || t.exitPrice || 0,
-    optEntry:   t.optionEntryLtp || null,
-    optExit:    t.optionExitLtp || null,
+    eSpot:      t.spotAtEntry || t.entryPrice || 0,
+    eOpt:       t.optionEntryLtp || null,
+    eSl:        t.stopLoss || t.initialStopLoss || null,
+    xSpot:      t.spotAtExit || t.exitPrice || 0,
+    xOpt:       t.optionExitLtp || null,
     pnl:        typeof t.pnl === "number" ? t.pnl : null,
     pnlMode:    t.pnlMode || "",
+    order:      t.orderId || "",
     reason:     t.exitReason || "",
   })));
 
-  const logsJson = JSON.stringify(state.log.slice(-200));
+  // Build log JSON
+  const allLogs = [...state.log].reverse();
+  const logsJSON = JSON.stringify(allLogs)
+    .replace(/<\/script>/gi, "<\\/script>")
+    .replace(/`/g, "\\u0060")
+    .replace(/\$/g, "\\u0024");
 
-  res.setHeader("Content-Type", "text/html");
-  res.send(`<!DOCTYPE html><html lang="en"><head>
+  const html = `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Scalp Live \u2014 ${scalpStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
@@ -869,7 +1144,7 @@ router.get("/status", (req, res) => {
 ${sidebarCSS()}
 ${modalCSS()}
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#c0d0e8;min-height:100vh;display:flex;flex-direction:column;}
+body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;overflow-x:hidden;}
 .main-content{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
 @media(max-width:900px){.main-content{margin-left:0;}}
 
@@ -919,7 +1194,7 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#c0d0e8;min
 
 /* Trade table */
 .trade-table{width:100%;border-collapse:collapse;}
-.trade-table th{padding:9px 12px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#060c18;cursor:pointer;user-select:none;white-space:nowrap;}
+.trade-table th{padding:9px 12px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#0a0f1c;cursor:pointer;user-select:none;white-space:nowrap;}
 .trade-table td{padding:8px 12px;border-top:1px solid #0e1e36;font-size:0.78rem;font-family:'IBM Plex Mono',monospace;vertical-align:top;}
 
 /* Log viewer */
@@ -940,7 +1215,14 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#c0d0e8;min
 .confirm-btns button{padding:9px 22px;border-radius:8px;font-weight:700;font-size:0.82rem;cursor:pointer;border:none;font-family:inherit;}
 </style></head><body>
 <div class="app-shell">
-${buildSidebar('scalpLive', liveActive, state.running)}
+${buildSidebar('scalpLive', liveActive, state.running, {
+  showExitBtn: !!pos,
+  exitBtnJs: 'scHandleExit(this)',
+  showStopBtn: state.running,
+  stopBtnJs: 'scHandleStop(this)',
+  showStartBtn: !state.running,
+  startBtnJs: 'scHandleStart(this)',
+})}
 <div class="main-content">
 
 <!-- TOP BAR -->
@@ -973,19 +1255,12 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
     </div>
   </div>
 
-  <!-- ACTION BUTTONS -->
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap;">
-    ${state.running
-      ? `<button class="action-btn stop-btn" onclick="scalpConfirm('Stop scalp live trading?','Stopping will square off any open position.','#7f1d1d',function(){location='/scalp/stop'});">\u25a0 Stop Trading</button>
-         <button class="action-btn exit-btn" onclick="scalpConfirm('Exit current position?','This will immediately exit via Fyers market order.','#78350f',function(){location='/scalp/exit';});">\uD83D\uDEAA Exit Position</button>
-         ${!state.position ? `<button onclick="scalpManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25b2 Manual CE</button>
-         <button onclick="scalpManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:inherit;">\u25bc Manual PE</button>` : ''}`
-      : `<button class="action-btn start-btn" onclick="scalpConfirm('\u26a0\ufe0f Start SCALP LIVE Trading?','This will place REAL orders on Fyers with REAL money. Ensure you have sufficient margin.','#1e40af',function(){location='/scalp/start';});">\u25b6 Start Scalp Live</button>
-         <span class="real-warn">\u26a0 REAL ORDERS \u2014 Live Money</span>`}
-  </div>
-
   <!-- STAT GRID -->
   <div class="stat-grid">
+    <div class="sc" style="border-top:2px solid ${state.running ? "#ef4444" : "#4a6080"};">
+      <div class="sc-label">Status</div>
+      <div class="sc-val" style="font-size:1rem;color:${state.running ? "#ef4444" : "#4a6080"};">${state.running ? "\u26a1 RUNNING" : "\u25cf STOPPED"}</div>
+    </div>
     <div class="sc" style="border-top:2px solid ${state.sessionPnl >= 0 ? '#10b981' : '#ef4444'};">
       <div class="sc-label">Session PnL</div>
       <div class="sc-val" id="ax-session-pnl" style="color:${state.sessionPnl >= 0 ? '#10b981' : '#ef4444'};">${state.sessionPnl >= 0 ? '+' : ''}${inr(state.sessionPnl)}</div>
@@ -994,20 +1269,29 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
       <div class="sc-label">Unrealised PnL</div>
       <div class="sc-val" id="ax-unreal-pnl" style="color:${unrealisedPnl >= 0 ? '#3b82f6' : '#ef4444'};">${pos ? ((unrealisedPnl >= 0 ? '+' : '') + inr(unrealisedPnl)) : '\u2014'}</div>
     </div>
+    <div class="sc" style="border-top:1.5px solid #3b82f6;">
+      <div class="sc-label">WebSocket Ticks</div>
+      <div class="sc-val" id="ax-tick-count">${state.tickCount.toLocaleString()}</div>
+      <div style="font-size:0.7rem;color:#4a6080;margin-top:4px;">Last: <span id="ax-last-tick">${state.lastTickPrice ? inr(state.lastTickPrice) : '\u2014'}</span></div>
+    </div>
+    <div class="sc" style="border-top:1.5px solid #8b5cf6;">
+      <div class="sc-label">Candles Loaded</div>
+      <div class="sc-val" id="ax-candle-count">${state.candles.length}</div>
+      <div id="ax-candle-status" style="font-size:0.7rem;color:${state.candles.length >= 15 ? '#10b981' : '#f59e0b'};margin-top:4px;">${state.candles.length >= 15 ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming'}</div>
+    </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Trades (W/L)</div>
       <div class="sc-val"><span id="ax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_SCALP_MAX_TRADES}</span></div>
       <div id="ax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
     </div>
-    <div class="sc" style="border-top:1.5px solid #3b82f6;">
-      <div class="sc-label">Ticks / Candles</div>
-      <div class="sc-val" id="ax-tick-count">${state.tickCount.toLocaleString()}</div>
-      <div id="ax-candle-count" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${state.candles.length} candles ${state.candles.length >= 15 ? '\u2705' : '\u26a0\ufe0f warming'}</div>
-    </div>
-    <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};">
+    <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};" id="ax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
       <div class="sc-val" style="color:${state._dailyLossHit ? '#ef4444' : '#fff'};">${inr(-_SCALP_MAX_LOSS)}</div>
       <div id="ax-daily-loss" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? '\uD83D\uDED1 KILLED' : '\u2705 Active'}</div>
+    </div>
+    <div class="sc" style="border-top:1.5px solid #2a4060;">
+      <div class="sc-label">Session Start</div>
+      <div class="sc-val" style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart || '\u2014'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #f59e0b;">
       <div class="sc-label">NIFTY Spot LTP</div>
@@ -1020,172 +1304,117 @@ ${buildSidebar('scalpLive', liveActive, state.running)}
   <div style="margin-bottom:24px;">
     <div class="section-title">Current Position</div>
     <div id="ax-position-section">
-    ${pos ? `
-      <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;animation:fadeIn 0.3s ease;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>
-            <span style="font-size:0.8rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;">\u26a1 LIVE Position</span>
-            <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime}</span>
-          </div>
-        </div>
-        <!-- Position identity -->
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:10px;padding:14px 18px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span style="font-size:2.2rem;font-weight:900;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${isFutures ? (pos.side === "CE" ? "LONG" : "SHORT") : pos.side}</span>
-              <div>
-                <div style="font-size:0.72rem;color:${pos.side === "CE" ? "#10b981" : "#ef4444"};">${isFutures ? (pos.side === "CE" ? "FUTURES \u00b7 Bullish" : "FUTURES \u00b7 Bearish") : (pos.side === "CE" ? "CALL \u00b7 Bullish" : "PUT \u00b7 Bearish")}</div>
-              </div>
-            </div>
-            <div style="width:1px;height:44px;background:#134e35;"></div>
-            <div>
-              <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty</div>
-              <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty}</div>
-            </div>
-            <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
-            <div style="flex:1;min-width:180px;">
-              <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Symbol</div>
-              <div style="font-size:0.8rem;font-weight:600;color:#c8d8f0;font-family:monospace;word-break:break-all;">${pos.symbol}</div>
-            </div>
-          </div>
-        </div>
-        <!-- Price grid -->
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px;">
-          <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Entry</div>
-            <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${inr(pos.entryPrice)}</div>
-          </div>
-          <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option LTP (Entry)</div>
-            <div id="ax-pos-opt-entry" style="font-size:1.05rem;font-weight:700;color:#60a5fa;">${optEntryLtp ? inr(optEntryLtp) : '\u23f3 Fetching...'}</div>
-          </div>
-          <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss</div>
-            <div id="ax-pos-sl" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : '\u2014'}</div>
-          </div>
-          <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target</div>
-            <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${inr(pos.target)}</div>
-          </div>
-          <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Best Price</div>
-            <div id="ax-pos-best" style="font-size:1.05rem;font-weight:700;color:#8b5cf6;">${pos.bestPrice ? inr(pos.bestPrice) : '\u2014'}</div>
-          </div>
-          <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
-            <div id="ax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.72rem;color:#4a6080;">candles</span></div>
-          </div>
-          <div style="background:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? '#071a0f' : '#1a0707') : '#0d1320'};border:2px solid ${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? '#10b981' : '#ef4444') : '#1a2236'};border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option LTP (Now)</div>
-            <div id="ax-pos-opt-now" style="font-size:1.05rem;font-weight:700;color:${optCurrentLtp && optEntryLtp ? (optCurrentLtp >= optEntryLtp ? '#10b981' : '#ef4444') : '#fff'};">${optCurrentLtp ? inr(optCurrentLtp) : '\u23f3'}</div>
-            <div id="ax-pos-opt-move" style="font-size:0.68rem;font-weight:700;margin-top:3px;color:${optPremiumMove !== null ? (optPremiumMove >= 0 ? '#10b981' : '#ef4444') : '#4a6080'};">
-              ${optPremiumMove !== null ? (optPremiumMove >= 0 ? '\u25b2 +' : '\u25bc ') + '\u20b9' + Math.abs(optPremiumMove).toFixed(2) + ' pts' : '\u23f3'}
-            </div>
-          </div>
-          <div style="background:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? '#071a0f' : '#1a0707') : '#0d1320'};border:1px solid ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? '#065f46' : '#7f1d1d') : '#1a2236'};border-radius:8px;padding:12px 14px;">
-            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Unrealised P&L</div>
-            <div id="ax-pos-pnl" style="font-size:1.3rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? '#10b981' : '#ef4444') : '#fff'};font-family:monospace;">
-              ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? '+' : '') + inr(optPremiumPnl) : '\u2014'}
-            </div>
-          </div>
-        </div>
-      </div>
-    ` : '<div style="background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:18px 24px;color:#2a4060;font-size:0.82rem;">No open position. Waiting for signal...</div>'}
+      ${posHtml}
     </div>
   </div>
+
+  <!-- CURRENT BAR -->
+  ${state.currentBar ? `
+  <div style="margin-bottom:24px;">
+    <div class="section-title">Current ${SCALP_RES}-Min Bar (forming)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
+      ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ax-bar-${k}" style="font-size:1rem;">${inr(state.currentBar[k])}</div></div>`).join("")}
+    </div>
+  </div>` : `
+  <div style="margin-bottom:24px;">
+    <div class="section-title">Current ${SCALP_RES}-Min Bar (forming)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
+      ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ax-bar-${k}" style="font-size:1rem;">\u2014</div></div>`).join("")}
+    </div>
+  </div>`}
 
   <!-- SESSION TRADES TABLE -->
-  <div style="margin-bottom:24px;">
-    <div class="section-title" style="margin-bottom:0;">Session Trades</div>
-    <div style="margin-top:10px;">
+  <div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      <div class="section-title" style="margin-bottom:0;">Session Trades</div>
+      <select id="scSide" onchange="scFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
+        <option value="">All Sides</option><option value="CE">CE</option><option value="PE">PE</option>
+      </select>
+      <select id="scResult" onchange="scFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
+        <option value="">All</option><option value="win">Wins</option><option value="loss">Losses</option>
+      </select>
+      <select id="scPerPage" onchange="scFilter()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
+        <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
+      </select>
+      <span id="scCount" style="font-size:0.72rem;color:#4a6080;"></span>
+    </div>
     ${state.sessionTrades.length === 0
-      ? '<div style="background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:16px 24px;color:#2a4060;font-size:0.82rem;">No completed trades this session.</div>'
-      : `<div style="border:1px solid #0e1e36;border-radius:12px;overflow:hidden;overflow-x:auto;">
+      ? `<div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:16px 24px;color:#4a6080;font-size:0.82rem;">No completed trades this session.</div>`
+      : `<div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;margin-bottom:10px;">
           <table class="trade-table">
             <thead><tr>
-              <th>Side</th>
-              <th>Entry Time</th>
-              <th>Exit Time</th>
-              <th>Entry Price</th>
-              <th>Exit Price</th>
-              <th>Net P&amp;L \u20b9</th>
+              <th onclick="scSort('side')">Side \u25b2\u25bc</th>
+              <th>Strike / Expiry</th>
+              <th onclick="scSort('entry')">Entry Time \u25bc</th>
+              <th onclick="scSort('exit')">Exit Time \u25b2\u25bc</th>
+              <th>Entry (NIFTY / Option)</th>
+              <th>Exit (NIFTY / Option)</th>
+              <th onclick="scSort('pnl')">Net P&amp;L \u20b9 \u25b2\u25bc</th>
               <th>Exit Reason</th>
+              <th style="text-align:center;">View</th>
             </tr></thead>
-            <tbody id="scalp-trades-body"></tbody>
+            <tbody id="scBody"></tbody>
           </table>
         </div>
-        <div style="background:#060c18;border:1px solid #0e1e36;border-radius:8px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
-          <span style="font-size:0.75rem;color:#c8d8f0;font-weight:700;">Session P&L</span>
-          <span id="ax-session-pnl-bar" style="font-size:1.1rem;font-weight:800;color:${state.sessionPnl >= 0 ? '#10b981' : '#ef4444'};">${state.sessionPnl >= 0 ? '+' : ''}${inr(state.sessionPnl)}</span>
+        <div id="scPag" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;"></div>
+        <!-- Trade Detail Modal -->
+        <div id="scModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
+          <div style="background:#0d1320;border:1px solid #3a1a1a;border-radius:16px;padding:24px 28px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,0.9);position:relative;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <span id="scm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
+                <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\uD83D\uDD34 Scalp Live \u2014 Full Details</span>
+              </div>
+              <button onclick="document.getElementById('scModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">\u2715 Close</button>
+            </div>
+            <div id="scm-grid"></div>
+          </div>
         </div>`}
+    <div style="background:#0a0f1c;border:1px solid #1a2236;border-radius:8px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <span style="font-size:0.75rem;color:#c8d8f0;font-weight:700;">Session P&L</span>
+      <span id="ax-session-pnl-bar" style="font-size:1.1rem;font-weight:800;color:${state.sessionPnl >= 0 ? '#10b981' : '#ef4444'};">${state.sessionPnl >= 0 ? '+' : ''}${inr(state.sessionPnl)}</span>
     </div>
   </div>
 
-  <!-- LOG VIEWER -->
-  <div style="margin-bottom:24px;">
+  <!-- ACTIVITY LOG -->
+  <div style="margin-top:8px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <div class="section-title" style="margin-bottom:0;">Activity Log</div>
       <input id="logSearch" placeholder="Search log\u2026" oninput="logFilter()"
         style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 9px;border-radius:6px;font-size:0.73rem;font-family:inherit;width:180px;"/>
+      <select id="logType" onchange="logFilter()"
+        style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
+        <option value="">All entries</option>
+        <option value="\u2705">\u2705 Wins</option>
+        <option value="\u274c">\u274c Errors</option>
+        <option value="\uD83D\uDEA8">\uD83D\uDEA8 Alerts</option>
+        <option value="\uD83D\uDED1">\uD83D\uDED1 SL Hits</option>
+      </select>
+      <select id="logPP" onchange="logFilter()"
+        style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
+        <option value="50">50/page</option>
+        <option value="100">100/page</option>
+        <option value="9999">All</option>
+      </select>
       <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
+    <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
   </div>
 
-  <p style="font-size:0.72rem;color:#2a4060;margin-top:8px;">\uD83D\uDD04 Auto-refreshes every 2 seconds while trading is active</p>
+  <p style="font-size:0.72rem;color:#2a4060;margin-top:16px;">\uD83D\uDD04 Auto-refreshes every 2 seconds while trading is active</p>
 </div><!-- .page -->
 </div><!-- .main-content -->
 </div><!-- .app-shell -->
 
-<!-- Trade data -->
-<script id="scalp-trade-data" type="application/json">${tradesJson}</script>
-<script id="scalp-log-data" type="application/json">${logsJson}</script>
+<script id="sc-trade-data" type="application/json">${tradesJson}</script>
+<script id="sc-log-data" type="application/json">${logsJSON}</script>
 
 <script>
 ${modalJS()}
 
-/* ── Confirm dialog ── */
-function scalpConfirm(title, msg, color, onYes) {
-  var overlay = document.createElement('div');
-  overlay.className = 'confirm-overlay';
-  overlay.innerHTML = '<div class="confirm-box">'
-    + '<div class="confirm-title">' + title + '</div>'
-    + '<div class="confirm-msg">' + msg + '</div>'
-    + '<div class="confirm-btns">'
-    + '<button id="sc-cancel" style="background:#1a2236;color:#c8d8f0;">Cancel</button>'
-    + '<button id="sc-confirm" style="background:' + color + ';color:#fff;">Confirm</button>'
-    + '</div></div>';
-  document.body.appendChild(overlay);
-  overlay.querySelector('#sc-cancel').onclick = function() { overlay.remove(); };
-  overlay.querySelector('#sc-confirm').onclick = function() { overlay.remove(); onYes(); };
-  overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
-}
-
-/* ── Manual Entry ── */
-async function scalpManualEntry(side) {
-  if (!confirm('⚠️ Manual ' + side + ' LIVE entry at current spot? REAL ORDER will be placed.')) return;
-  try {
-    var res = await fetch('/scalp/manualEntry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ side: side })
-    });
-    var data = await res.json();
-    if (data.success) {
-      scalpToast('Manual ' + side + ' entry placed @ ₹' + data.spot, '#10b981');
-      setTimeout(function(){ location.reload(); }, 1000);
-    } else {
-      alert('Entry failed: ' + (data.error || 'Unknown error'));
-    }
-  } catch (e) {
-    alert('Error: ' + e.message);
-    location.reload();
-  }
-}
-
 /* ── Toast ── */
-function scalpToast(msg, color) {
+function scToast(msg, color) {
   var t = document.createElement('div');
   t.className = 'scalp-toast';
   t.textContent = msg;
@@ -1195,174 +1424,451 @@ function scalpToast(msg, color) {
   setTimeout(function(){ t.remove(); }, 3500);
 }
 
+/* ── Start / Stop / Exit handlers ── */
+async function scHandleExit(btn) {
+  if (btn) { btn.textContent = '\u23f3 Exiting...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/scalp/exit');
+    if (!res) { if (btn) { btn.textContent = '\uD83D\uDEAA Exit Position'; btn.disabled = false; } return; }
+    var data = await res.json();
+    if (!data.success) {
+      scToast('\u274c ' + (data.error || 'Exit failed'), '#ef4444');
+      if (btn) { btn.textContent = '\uD83D\uDEAA Exit Position'; btn.disabled = false; }
+      return;
+    }
+    scToast('\uD83D\uDEAA Position exited via Fyers!', '#f59e0b');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    scToast('\u274c ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '\uD83D\uDEAA Exit Position'; btn.disabled = false; }
+  }
+}
+async function scHandleStart(btn) {
+  if (btn) { btn.textContent = '\u23f3 Starting...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/scalp/start');
+    if (!res) { if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; } return; }
+    var data = await res.json();
+    if (!data.success) {
+      scToast('\u274c ' + (data.error || 'Failed to start'), '#ef4444');
+      if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; }
+      return;
+    }
+    scToast('\uD83D\uDD34 Scalp live trading started!', '#10b981');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    scToast('\u274c ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; }
+  }
+}
+async function scHandleStop(btn) {
+  if (btn) { btn.textContent = '\u23f3 Stopping...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/scalp/stop');
+    if (!res) { if (btn) { btn.textContent = '\u25a0 Stop'; btn.disabled = false; } return; }
+    var data = await res.json();
+    scToast('\u23f9 Scalp live trading stopped.', '#ef4444');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    scToast('\u274c ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '\u25a0 Stop'; btn.disabled = false; }
+  }
+}
+async function scManualEntry(side) {
+  if (!confirm('\u26a0\ufe0f SCALP LIVE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
+  try {
+    var res = await secretFetch('/scalp/manualEntry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ side: side })
+    });
+    if (!res) return;
+    var data = await res.json();
+    if (data.success) {
+      scToast('\u2705 Manual ' + side + ' entry @ \u20b9' + data.spot, '#10b981');
+      setTimeout(function(){ location.reload(); }, 1500);
+    } else {
+      scToast('\u274c ' + (data.error || 'Entry failed'), '#ef4444');
+    }
+  } catch(e) {
+    scToast('\u274c ' + e.message, '#ef4444');
+  }
+}
+
 /* ── Format helpers ── */
 var INR = function(n) { return typeof n === 'number' ? '\u20b9' + n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014'; };
 var PNL_COLOR = function(n) { return n >= 0 ? '#10b981' : '#ef4444'; };
 
-/* ── Trades table ── */
-var SCALP_TRADES = JSON.parse(document.getElementById('scalp-trade-data').textContent);
-function renderTrades() {
-  var el = document.getElementById('scalp-trades-body');
-  if (!el || SCALP_TRADES.length === 0) return;
-  el.innerHTML = SCALP_TRADES.map(function(t) {
-    var sc = t.side === 'CE' ? '#10b981' : '#ef4444';
-    var pc = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
-    var short = t.reason.length > 40 ? t.reason.slice(0, 40) + '\u2026' : t.reason;
-    return '<tr>'
-      + '<td style="color:' + sc + ';font-weight:800;">' + (t.side || '\u2014') + '</td>'
-      + '<td style="font-size:0.75rem;">' + (t.entry || '\u2014') + '</td>'
-      + '<td style="font-size:0.75rem;">' + (t.exit || '\u2014') + '</td>'
-      + '<td>' + INR(t.entryPrice) + (t.optEntry ? '<div style="font-size:0.65rem;color:#60a5fa;margin-top:2px;">Opt: ' + INR(t.optEntry) + '</div>' : '') + '</td>'
-      + '<td>' + INR(t.exitPrice) + (t.optExit ? '<div style="font-size:0.65rem;color:#60a5fa;margin-top:2px;">Opt: ' + INR(t.optExit) + '</div>' : '') + '</td>'
-      + '<td style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl != null ? (t.pnl >= 0 ? '+' : '') + INR(t.pnl) : '\u2014') + '</td>'
-      + '<td style="font-size:0.7rem;color:#4a6080;" title="' + t.reason + '">' + short + '</td>'
-      + '</tr>';
-  }).join('');
+/* ── Trades table (matching live trade page) ── */
+var SC_ALL = JSON.parse(document.getElementById('sc-trade-data').textContent);
+var scFiltered=[...SC_ALL],scSortCol='entry',scSortDir=-1,scPage=1,scPP=10;
+function scFilter(){
+  var side=document.getElementById('scSide').value;
+  var res=document.getElementById('scResult').value;
+  scPP=parseInt(document.getElementById('scPerPage').value);
+  scPage=1;
+  scFiltered=SC_ALL.filter(function(t){
+    if(side && t.side!==side) return false;
+    if(res==='win'  && (t.pnl==null||t.pnl<0))  return false;
+    if(res==='loss' && (t.pnl==null||t.pnl>=0)) return false;
+    return true;
+  });
+  scApplySort();
 }
-renderTrades();
+function scSort(col){scSortDir=scSortCol===col?scSortDir*-1:-1;scSortCol=col;scApplySort();}
+function scApplySort(){
+  scFiltered.sort(function(a,b){
+    var av=a[scSortCol],bv=b[scSortCol];
+    if(av==null)av=scSortDir===-1?-Infinity:Infinity;
+    if(bv==null)bv=scSortDir===-1?-Infinity:Infinity;
+    return typeof av==='string'?av.localeCompare(bv)*scSortDir:(av-bv)*scSortDir;
+  });
+  scRender();
+}
+function scRender(){
+  var el=document.getElementById('scBody');
+  var cnt=document.getElementById('scCount');
+  if(!el) return;
+  if(cnt) cnt.textContent=scFiltered.length+'/'+SC_ALL.length+' trades';
+  var start=(scPage-1)*scPP,slice=scFiltered.slice(start,start+scPP);
+  window._scSlice=slice;
+  el.innerHTML=slice.length===0
+    ?'<tr><td colspan="9" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+    :slice.map(function(t,i){
+      var sc=t.side==='CE'?'#10b981':'#ef4444';
+      var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
+      var short=t.reason.length>35?t.reason.slice(0,35)+'\u2026':t.reason;
+      var optDiff=(t.eOpt!=null&&t.xOpt!=null)?parseFloat((t.xOpt-t.eOpt).toFixed(2)):null;
+      var dc=optDiff==null?'#4a6080':optDiff>=0?'#10b981':'#ef4444';
+      return '<tr style="border-top:1px solid #1a2236;vertical-align:top;">'
+        +'<td style="padding:8px 12px;color:'+sc+';font-weight:800;">'+(t.side||'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:0.95rem;font-weight:800;color:#fff;">'+(t.strike||'\u2014')+'</div><div style="font-size:0.68rem;color:#f59e0b;margin-top:2px;">'+(t.expiry||'\u2014')+'</div></td>'
+        +'<td style="padding:8px 12px;font-size:0.75rem;">'+(t.entry||'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;font-size:0.75rem;">'+(t.exit||'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.eSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.eOpt!=null?INR(t.eOpt):'\u2014')+'</div>'+(t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+INR(t.eSl)+'</div>':'')+'</td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.xSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.xOpt!=null?INR(t.xOpt):'\u2014')+'</div>'+(optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts</div>':'')+'</td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div>'+(t.order?'<div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">'+t.order+'</div>':'')+'<div style="font-size:0.63rem;color:#4a6080;">after \u20b980 brok</div></td>'
+        +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+t.reason+'">'+(short||'\u2014')+'</td>'
+        +'<td style="padding:6px 8px;text-align:center;"><button data-idx="'+i+'" class="sc-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>'
+        +'</tr>';
+    }).join('');
+  Array.from(el.querySelectorAll('.sc-eye-btn')).forEach(function(btn){
+    btn.addEventListener('click',function(){ showSCModal(window._scSlice[parseInt(this.getAttribute('data-idx'))]); });
+    btn.addEventListener('mouseover',function(){ this.style.borderColor='#3b82f6';this.style.background='#0a1e3d'; });
+    btn.addEventListener('mouseout', function(){ this.style.borderColor='#1a2236';this.style.background='none'; });
+  });
+  var pagEl=document.getElementById('scPag');
+  if(!pagEl) return;
+  var total=Math.ceil(scFiltered.length/scPP);
+  if(total<=1){pagEl.innerHTML='';return;}
+  pagEl.innerHTML=
+    '<button onclick="scGo('+(scPage-1)+')" '+(scPage===1?'disabled':'')+' style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;">\u2190 Prev</button>'+
+    Array.from({length:total},function(_,i){return i+1;}).filter(function(p){return Math.abs(p-scPage)<=2;}).map(function(p){
+      return '<button onclick="scGo('+p+')" style="background:'+(p===scPage?'#0a1e3d':'#0d1320')+';border:1px solid '+(p===scPage?'#1d3b6e':'#1a2236')+';color:'+(p===scPage?'#3b82f6':'#c8d8f0')+';padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;">'+p+'</button>';}).join('')+
+    '<button onclick="scGo('+(scPage+1)+')" '+(scPage===total?'disabled':'')+' style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 10px;border-radius:6px;font-size:0.72rem;cursor:pointer;">Next \u2192</button>';
+}
+function scGo(p){scPage=Math.max(1,Math.min(Math.ceil(scFiltered.length/scPP),p));scRender();}
+if(SC_ALL.length>0) scFilter();
 
-/* ── Log viewer ── */
-var LOG_ALL = JSON.parse(document.getElementById('scalp-log-data').textContent);
-var logFiltered = LOG_ALL.slice();
-function logFilter() {
+/* ── Trade Detail Modal ── */
+function showSCModal(t){
+  var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
+  var sc=t.side==='CE'?'#10b981':'#ef4444';
+  var fmt=function(n){return n!=null&&n!==0?'\u20b9'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}):'\u2014';};
+  var optDiff=(t.eOpt!=null&&t.xOpt!=null)?parseFloat((t.xOpt-t.eOpt).toFixed(2)):null;
+  var dc=optDiff==null?'#c8d8f0':optDiff>=0?'#10b981':'#ef4444';
+  var pnlPts=(t.eSpot&&t.xSpot&&t.side)?parseFloat(((t.side==='PE'?t.eSpot-t.xSpot:t.xSpot-t.eSpot)).toFixed(2)):null;
+
+  var badge=document.getElementById('scm-badge');
+  badge.textContent=(t.side||'\u2014')+(t.strike?' \u00b7 '+t.strike:'')+(t.optionType?' '+t.optionType:'');
+  badge.style.background=t.side==='CE'?'rgba(16,185,129,0.15)':'rgba(239,68,68,0.15)';
+  badge.style.color=sc;
+  badge.style.border='1px solid '+(t.side==='CE'?'rgba(16,185,129,0.3)':'rgba(239,68,68,0.3)');
+
+  function cell(label,val,color,sub){
+    return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
+      +'<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">'+label+'</div>'
+      +'<div style="font-size:0.9rem;font-weight:700;color:'+(color||'#e0eaf8')+';font-family:monospace;line-height:1.3;">'+(val||'\u2014')+'</div>'
+      +(sub?'<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">'+sub+'</div>':'')
+      +'</div>';
+  }
+
+  var contractHtml='<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">\uD83D\uDCCB Option Contract</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    +cell('Symbol',t.symbol||'\u2014','#a0f0c0')
+    +cell('Strike',t.strike||'\u2014','#fff')
+    +cell('Expiry',t.expiry||'\u2014','#f59e0b')
+    +cell('Option Type',t.optionType||t.side||'\u2014',sc)
+    +cell('Qty / Lots',t.qty?t.qty+' qty':'\u2014','#c8d8f0')
+    +cell('Order ID',t.order||'\u2014','#a78bfa')
+    +'</div></div>';
+
+  var entryHtml='<div style="background:#060c18;border:1px solid #0d2040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">\uD83D\uDFE2 Entry</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    +cell('Entry Time',t.entry||'\u2014','#c8d8f0')
+    +cell('NIFTY Spot @ Entry',fmt(t.eSpot),'#fff','Index price at entry')
+    +cell('Option LTP @ Entry',fmt(t.eOpt),'#60a5fa','Option premium paid')
+    +cell('Initial Stop Loss',fmt(t.eSl),'#f59e0b','NIFTY spot SL level')
+    +cell('SL Distance',(t.eSl&&t.eSpot)?Math.abs(t.eSpot-t.eSl).toFixed(2)+' pts':'\u2014','#f59e0b','pts from entry to SL')
+    +cell('PnL Mode',t.pnlMode||'spot-diff','#8b8bf0')
+    +'</div></div>';
+
+  var exitHtml='<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">\uD83D\uDD34 Exit</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    +cell('Exit Time',t.exit||'\u2014','#c8d8f0')
+    +cell('NIFTY Spot @ Exit',fmt(t.xSpot),'#fff','Index price at exit')
+    +cell('Option LTP @ Exit',fmt(t.xOpt),'#60a5fa','Option premium at exit')
+    +cell('NIFTY Move (pts)',pnlPts!=null?(pnlPts>=0?'+':'')+pnlPts+' pts':'\u2014',pnlPts!=null?(pnlPts>=0?'#10b981':'#ef4444'):'#c8d8f0',t.side==='PE'?'Entry\u2212Exit (PE profits on fall)':'Exit\u2212Entry (CE profits on rise)')
+    +cell('Option \u0394 (pts)',optDiff!=null?(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts':'\u2014',dc,'Exit prem \u2212 Entry prem')
+    +cell('Net PnL',t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'\u2014',pc,'After \u20b980 brokerage')
+    +'</div></div>';
+
+  var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
+    +'<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">\uD83D\uDCCC Exit Reason</div>'
+    +'<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;">'+(t.reason||'\u2014')+'</div>'
+    +'</div>';
+
+  document.getElementById('scm-grid').innerHTML=contractHtml+entryHtml+exitHtml+reasonHtml;
+  var m=document.getElementById('scModal');
+  m.style.display='flex';
+}
+document.getElementById('scModal')&&document.getElementById('scModal').addEventListener('click',function(e){if(e.target===this)this.style.display='none';});
+
+/* ── Log viewer (with pagination) ── */
+var LOG_ALL = JSON.parse(document.getElementById('sc-log-data').textContent);
+var logFiltered = LOG_ALL.slice(), logPg = 1, logPP = 50;
+function logFilter(){
   var s = document.getElementById('logSearch').value.toLowerCase();
-  logFiltered = LOG_ALL.filter(function(l) {
-    return !s || l.toLowerCase().indexOf(s) >= 0;
+  var t = document.getElementById('logType').value;
+  logPP = parseInt(document.getElementById('logPP').value);
+  logPg = 1;
+  logFiltered = LOG_ALL.filter(function(l){
+    if(t && l.indexOf(t)<0) return false;
+    if(s && l.toLowerCase().indexOf(s)<0) return false;
+    return true;
   });
   logRender();
 }
-function logRender() {
-  var box = document.getElementById('logBox');
-  var cnt = document.getElementById('logCount');
-  if (cnt) cnt.textContent = logFiltered.length + ' of ' + LOG_ALL.length;
-  if (!box) return;
-  if (logFiltered.length === 0) {
-    box.innerHTML = '<div style="color:#2a4060;font-size:0.78rem;">No entries match.</div>';
-    return;
-  }
-  box.innerHTML = logFiltered.map(function(l) {
-    var c = l.indexOf('\u274c') >= 0 ? '#ef4444' : l.indexOf('\u2705') >= 0 ? '#10b981' : l.indexOf('\uD83D\uDEA8') >= 0 ? '#f59e0b' : l.indexOf('\u26a1') >= 0 || l.indexOf('\uD83D\uDCDD') >= 0 ? '#3b82f6' : '#4a6080';
-    return '<div class="log-entry" style="color:' + c + ';">' + l + '</div>';
+function logRender(){
+  var start=(logPg-1)*logPP, slice=logFiltered.slice(start,start+logPP);
+  document.getElementById('logCount').textContent = logFiltered.length+' of '+LOG_ALL.length;
+  var box=document.getElementById('logBox');
+  if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
+  box.innerHTML = slice.map(function(l){
+    var c = l.indexOf('\u274c')>=0?'#ef4444':l.indexOf('\u2705')>=0?'#10b981':l.indexOf('\uD83D\uDEA8')>=0||l.indexOf('\uD83D\uDED1')>=0?'#f59e0b':l.indexOf('\uD83C\uDFAF')>=0||l.indexOf('\u26a1')>=0?'#3b82f6':'#4a6080';
+    return '<div style="padding:5px 0;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
   }).join('');
-  box.scrollTop = box.scrollHeight;
+  var total=Math.ceil(logFiltered.length/logPP);
+  var pag=document.getElementById('logPag');
+  if(total<=1){ pag.innerHTML=''; return; }
+  var h='<button onclick="logGo('+(logPg-1)+')" '+(logPg===1?'disabled':'')+' style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:3px 9px;border-radius:5px;font-size:0.7rem;cursor:pointer;">\u2190 Prev</button>';
+  for(var p=Math.max(1,logPg-2);p<=Math.min(total,logPg+2);p++)
+    h+='<button onclick="logGo('+p+')" style="background:'+(p===logPg?'#0a1e3d':'#0d1320')+';border:1px solid '+(p===logPg?'#3b82f6':'#1a2236')+';color:'+(p===logPg?'#3b82f6':'#c8d8f0')+';padding:3px 9px;border-radius:5px;font-size:0.7rem;cursor:pointer;">'+p+'</button>';
+  h+='<button onclick="logGo('+(logPg+1)+')" '+(logPg===total?'disabled':'')+' style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:3px 9px;border-radius:5px;font-size:0.7rem;cursor:pointer;">Next \u2192</button>';
+  pag.innerHTML=h;
 }
-logRender();
+function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP),p)); logRender(); }
+logFilter();
 
 /* ── AJAX Polling ── */
-var _lastHasPos = ${pos ? 'true' : 'false'};
-var _lastTradeCount = ${state.sessionTrades.length};
+(function() {
+  var _interval   = null;
+  var _lastTradeCount  = ${state.sessionTrades.length};
+  var _lastRunning     = ${state.running};
+  var _lastLogCount    = ${state.log.length};
+  var _lastHasPosition = ${pos ? "true" : "false"};
 
-function poll() {
-  fetch('/scalp/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
+  function fetchAndUpdate() {
+    fetch('/scalp/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
 
-    // Reload on position state change or new trades
-    var nowHasPos = !!d.position;
-    if (nowHasPos !== _lastHasPos || d.trades !== _lastTradeCount) {
-      _lastHasPos = nowHasPos;
-      _lastTradeCount = d.trades;
-      window.location.reload();
-      return;
-    }
-
-    // Session PnL
-    var spEl = document.getElementById('ax-session-pnl');
-    if (spEl) {
-      spEl.textContent = (d.totalPnl >= 0 ? '+' : '') + INR(d.totalPnl);
-      spEl.style.color = PNL_COLOR(d.totalPnl);
-      var card = spEl.closest('.sc');
-      if (card) card.style.borderTopColor = PNL_COLOR(d.totalPnl);
-    }
-    var spBar = document.getElementById('ax-session-pnl-bar');
-    if (spBar) {
-      spBar.textContent = (d.totalPnl >= 0 ? '+' : '') + INR(d.totalPnl);
-      spBar.style.color = PNL_COLOR(d.totalPnl);
-    }
-
-    // Unrealised
-    var upEl = document.getElementById('ax-unreal-pnl');
-    if (upEl) {
-      if (d.position) {
-        upEl.textContent = (d.unrealised >= 0 ? '+' : '') + INR(d.unrealised);
-        upEl.style.color = PNL_COLOR(d.unrealised);
-      } else {
-        upEl.textContent = '\u2014';
-        upEl.style.color = '#4a6080';
+      // Position state change => reload
+      var nowHasPos = !!d.position;
+      if (nowHasPos !== _lastHasPosition) {
+        _lastHasPosition = nowHasPos;
+        window.location.reload();
+        return;
       }
-    }
 
-    // Trade count
-    var tcEl = document.getElementById('ax-trade-count');
-    if (tcEl) tcEl.textContent = d.trades;
-    var wlEl = document.getElementById('ax-wl');
-    if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
+      // Session PnL
+      var spEl = document.getElementById('ax-session-pnl');
+      if (spEl) {
+        spEl.textContent = (d.sessionPnl >= 0 ? '+' : '') + INR(d.sessionPnl);
+        spEl.style.color = PNL_COLOR(d.sessionPnl);
+        var card = spEl.closest('.sc');
+        if (card) card.style.borderTopColor = PNL_COLOR(d.sessionPnl);
+      }
+      var spBar = document.getElementById('ax-session-pnl-bar');
+      if (spBar) {
+        spBar.textContent = (d.sessionPnl >= 0 ? '+' : '') + INR(d.sessionPnl);
+        spBar.style.color = PNL_COLOR(d.sessionPnl);
+      }
 
-    // Ticks & candles
-    var tikEl = document.getElementById('ax-tick-count');
-    if (tikEl) tikEl.textContent = (d.tickCount || 0).toLocaleString();
-    var cnEl = document.getElementById('ax-candle-count');
-    if (cnEl) cnEl.textContent = d.candleCount + ' candles ' + (d.candleCount >= 15 ? '\u2705' : '\u26a0\ufe0f warming');
-
-    // Daily loss
-    var dlEl = document.getElementById('ax-daily-loss');
-    if (dlEl) {
-      dlEl.textContent = d.dailyLossHit ? '\uD83D\uDED1 KILLED' : '\u2705 Active';
-      dlEl.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
-    }
-
-    // LTP
-    var ltpEl = document.getElementById('ax-ltp');
-    if (ltpEl) ltpEl.textContent = d.lastTickPrice ? INR(d.lastTickPrice) : '\u2014';
-    var ltEl = document.getElementById('ax-last-tick-time');
-    if (ltEl) ltEl.textContent = d.lastTickTime || '';
-
-    // Position details (AJAX update in-place)
-    if (d.position) {
-      var p = d.position;
-      var oeEl = document.getElementById('ax-pos-opt-entry');
-      if (oeEl) oeEl.textContent = p.optionEntryLtp ? INR(p.optionEntryLtp) : '\u23f3 Fetching...';
-
-      var slEl = document.getElementById('ax-pos-sl');
-      if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
-
-      var bpEl = document.getElementById('ax-pos-best');
-      if (bpEl) bpEl.textContent = p.bestPrice ? INR(p.bestPrice) : '\u2014';
-
-      var chEl = document.getElementById('ax-pos-candles');
-      if (chEl) chEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.72rem;color:#4a6080;">candles</span>';
-
-      var onEl = document.getElementById('ax-pos-opt-now');
-      if (onEl) {
-        var cur = p.optionCurrentLtp;
-        onEl.textContent = cur ? INR(cur) : '\u23f3';
-        if (p.optionEntryLtp && cur) {
-          onEl.style.color = cur >= p.optionEntryLtp ? '#10b981' : '#ef4444';
+      // Unrealised
+      var upEl = document.getElementById('ax-unreal-pnl');
+      if (upEl) {
+        if (d.position) {
+          upEl.textContent = (d.unrealised >= 0 ? '+' : '') + INR(d.unrealised);
+          upEl.style.color = PNL_COLOR(d.unrealised);
+        } else {
+          upEl.textContent = '\u2014';
+          upEl.style.color = '#4a6080';
         }
       }
-      var omEl = document.getElementById('ax-pos-opt-move');
-      if (omEl && p.optionEntryLtp && p.optionCurrentLtp) {
-        var mv = parseFloat((p.optionCurrentLtp - p.optionEntryLtp).toFixed(2));
-        omEl.textContent = (mv >= 0 ? '\u25b2 +' : '\u25bc ') + '\u20b9' + Math.abs(mv).toFixed(2) + ' pts';
-        omEl.style.color = mv >= 0 ? '#10b981' : '#ef4444';
-      }
-      var ppEl = document.getElementById('ax-pos-pnl');
-      if (ppEl) {
-        ppEl.textContent = (d.unrealised >= 0 ? '+' : '') + INR(d.unrealised);
-        ppEl.style.color = PNL_COLOR(d.unrealised);
-      }
-    }
 
-    // Update log
-    if (d.log && d.log.length > 0) {
-      LOG_ALL = d.log;
-      logFilter();
-    }
+      // Trade count
+      var tcEl = document.getElementById('ax-trade-count');
+      if (tcEl) tcEl.textContent = d.tradeCount;
+      var wlEl = document.getElementById('ax-wl');
+      if (wlEl) wlEl.textContent = d.wins + 'W \u00b7 ' + d.losses + 'L';
 
-  }).catch(function() {});
-}
-poll();
-setInterval(poll, 2000);
+      // Ticks & candles
+      var tikEl = document.getElementById('ax-tick-count');
+      if (tikEl) tikEl.textContent = (d.tickCount || 0).toLocaleString();
+      var ltpEl = document.getElementById('ax-last-tick');
+      if (ltpEl) ltpEl.textContent = d.lastTickPrice ? INR(d.lastTickPrice) : '\u2014';
+      var cnEl = document.getElementById('ax-candle-count');
+      if (cnEl) cnEl.textContent = d.candleCount;
+      var csEl = document.getElementById('ax-candle-status');
+      if (csEl) {
+        csEl.textContent = d.candleCount >= 15 ? '\u2705 Strategy ready' : '\u26a0\ufe0f warming';
+        csEl.style.color = d.candleCount >= 15 ? '#10b981' : '#f59e0b';
+      }
+
+      // Daily loss
+      var dlCard = document.getElementById('ax-sc-dloss');
+      var dlStatus = document.getElementById('ax-daily-loss');
+      if (dlCard) dlCard.style.borderTopColor = d.dailyLossHit ? '#ef4444' : '#10b981';
+      if (dlStatus) {
+        dlStatus.textContent = d.dailyLossHit ? '\uD83D\uDED1 KILLED' : '\u2705 Active';
+        dlStatus.style.color = d.dailyLossHit ? '#ef4444' : '#10b981';
+      }
+
+      // LTP
+      var ltp2 = document.getElementById('ax-ltp');
+      if (ltp2) ltp2.textContent = d.lastTickPrice ? INR(d.lastTickPrice) : '\u2014';
+
+      // Position-specific updates
+      if (d.position) {
+        var p = d.position;
+        var entEl = document.getElementById('ax-opt-entry-ltp');
+        if (entEl) {
+          entEl.textContent = p.optionEntryLtp ? '\u20b9' + p.optionEntryLtp.toFixed(2) : 'Fetching...';
+          entEl.style.color = p.optionEntryLtp ? '#60a5fa' : '#f59e0b';
+        }
+        var curEl = document.getElementById('ax-opt-current-ltp');
+        if (curEl) {
+          curEl.textContent = p.optionCurrentLtp ? '\u20b9' + p.optionCurrentLtp.toFixed(2) : '\u23f3';
+          if (p.optionEntryLtp && p.optionCurrentLtp) {
+            curEl.style.color = p.optionCurrentLtp >= p.optionEntryLtp ? '#10b981' : '#ef4444';
+          }
+        }
+        var movEl = document.getElementById('ax-opt-move');
+        if (movEl && p.optPremiumMove !== null) {
+          movEl.textContent = (p.optPremiumMove >= 0 ? '\u25b2 +' : '\u25bc ') + '\u20b9' + Math.abs(p.optPremiumMove).toFixed(2) + ' pts';
+          movEl.style.color = p.optPremiumMove >= 0 ? '#10b981' : '#ef4444';
+        }
+        var pctEl = document.getElementById('ax-opt-pct');
+        if (pctEl) {
+          if (p.optPremiumPct !== null && p.optPremiumPct !== undefined) {
+            pctEl.textContent = (p.optPremiumPct >= 0 ? '+' : '') + p.optPremiumPct.toFixed(2) + '%';
+            pctEl.style.color = p.optPremiumPct >= 0 ? '#10b981' : '#ef4444';
+          }
+        }
+        var optSlEl = document.getElementById('ax-opt-sl');
+        if (optSlEl) optSlEl.textContent = p.optStopPrice ? '\u20b9' + p.optStopPrice.toFixed(2) : '\u2014';
+        var optPnlEl = document.getElementById('ax-opt-pnl');
+        if (optPnlEl && p.optPremiumPnl !== null) {
+          optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);
+          optPnlEl.style.color = PNL_COLOR(p.optPremiumPnl);
+        }
+        var ltpLiveEl = document.getElementById('ax-nifty-ltp');
+        var ltpNow = d.lastTickPrice || p.liveClose;
+        if (ltpLiveEl && ltpNow !== null) {
+          ltpLiveEl.textContent = INR(ltpNow);
+          var sub = document.getElementById('ax-nifty-move');
+          if (sub && p.entryPrice) {
+            var moved = parseFloat(((ltpNow - p.entryPrice) * (p.side === 'CE' ? 1 : -1)).toFixed(1));
+            sub.textContent = (moved >= 0 ? '\u25b2' : '\u25bc') + ' ' + Math.abs(moved).toFixed(1) + ' pts';
+            sub.style.color = moved >= 0 ? '#10b981' : '#ef4444';
+          }
+        }
+        var slEl = document.getElementById('ax-stop-loss');
+        if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
+
+        // Trail status
+        var trailCard = document.getElementById('ax-trail-card');
+        var trailStat = document.getElementById('ax-trail-status');
+        var trailBest = document.getElementById('ax-trail-best');
+        if (trailCard && trailStat && trailBest) {
+          var tActive = p.bestPrice !== null && p.bestPrice !== undefined;
+          var tProfit = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
+          var tProfDir = p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice;
+          var tOn = tActive && tProfDir >= 15;
+          trailCard.style.borderColor = tOn ? '#8b5cf6' : '#134e35';
+          trailStat.textContent = tOn ? '\uD83D\uDD12 ACTIVE' : '\u23F3 Waiting';
+          trailStat.style.color = tOn ? '#8b5cf6' : '#f59e0b';
+          var pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
+          trailBest.textContent = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
+        }
+
+        // Candles held
+        var cnHeld = document.getElementById('ax-pos-candles');
+        if (cnHeld) cnHeld.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.72rem;color:#4a6080;">candles</span>';
+      }
+
+      // Current bar
+      if (d.currentBar) {
+        ['open','high','low','close'].forEach(function(k) {
+          var el = document.getElementById('ax-bar-' + k);
+          if (el) el.textContent = INR(d.currentBar[k]);
+        });
+      }
+
+      // Trades table update
+      if (d.trades && d.tradeCount !== _lastTradeCount) {
+        _lastTradeCount = d.tradeCount;
+        SC_ALL.length = 0;
+        d.trades.forEach(function(t){ SC_ALL.push(t); });
+        scFiltered = SC_ALL.slice();
+        scFilter();
+      }
+
+      // Activity log update
+      if (d.logs && d.logTotal !== _lastLogCount) {
+        _lastLogCount = d.logTotal;
+        LOG_ALL.length = 0;
+        d.logs.forEach(function(l){ LOG_ALL.push(l); });
+        logFilter();
+      }
+
+      // Detect stop
+      if (_lastRunning && !d.running) {
+        _lastRunning = false;
+        clearInterval(_interval);
+        _interval = null;
+        setTimeout(function(){ window.location.reload(); }, 1500);
+      }
+    }).catch(function(e) {
+      console.warn('[AJAX refresh] fetch error:', e.message);
+    });
+  }
+
+  if (${state.running}) {
+    _interval = setInterval(fetchAndUpdate, 2000);
+  }
+})();
 </script>
-</body></html>`);
+</body></html>`;
+
+  res.setHeader("Content-Type", "text/html");
+  return res.send(html);
+  } catch (err) {
+    console.error("[scalp/status] Error:", err.message, err.stack);
+    return res.status(500).send(`<pre style="color:red;padding:32px;font-family:monospace;">Scalp Live Status Error: ${err.message}\n\n${err.stack}</pre>`);
+  }
 });
 
 module.exports = router;
