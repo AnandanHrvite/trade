@@ -1279,8 +1279,10 @@ ${state.sessionTrades.length > 0 ? `
     <select id="logType" onchange="logFilter()"
       style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.73rem;">
       <option value="">All entries</option>
+      <option value="BUY">Entries</option>
+      <option value="Exit:">Exits</option>
       <option value="\u2705">Wins</option>
-      <option value="\u274c">Errors</option>
+      <option value="\u274c">Losses</option>
       <option value="\ud83d\udea8">Alerts</option>
     </select>
     <select id="logPP" onchange="logFilter()"
@@ -1324,8 +1326,12 @@ function logRender(){
   var box=document.getElementById('logBox');
   if(slice.length===0){ box.innerHTML='<div style="color:#4a6080;font-size:0.78rem;">No entries match.</div>'; document.getElementById('logPag').innerHTML=''; return; }
   box.innerHTML = slice.map(function(l){
-    var c = l.indexOf('\\u274c')>=0||l.indexOf('\u274c')>=0?'#ef4444':l.indexOf('\\u2705')>=0||l.indexOf('\u2705')>=0?'#10b981':l.indexOf('\\ud83d\\udea8')>=0||l.indexOf('\ud83d\udea8')>=0?'#f59e0b':'#4a6080';
-    return '<div style="padding:5px 0;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;">'+l+'</div>';
+    var isBuy = l.indexOf('BUY')>=0;
+    var isExit = l.indexOf('Exit:')>=0;
+    var c = l.indexOf('\\u274c')>=0||l.indexOf('\u274c')>=0?'#ef4444':l.indexOf('\\u2705')>=0||l.indexOf('\u2705')>=0?'#10b981':l.indexOf('\\ud83d\\udea8')>=0||l.indexOf('\ud83d\udea8')>=0?'#f59e0b':isBuy?'#60a5fa':isExit?'#f472b6':'#4a6080';
+    var bg = isBuy?'rgba(96,165,250,0.06)':isExit?'rgba(244,114,182,0.06)':'transparent';
+    var lbl = isBuy?'<span style="background:#1e3a5f;color:#60a5fa;font-size:0.58rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:6px;">ENTRY</span>':isExit?'<span style="background:#4a1942;color:#f472b6;font-size:0.58rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:6px;">EXIT</span>':'';
+    return '<div style="padding:5px 6px;border-bottom:1px solid #1a2236;font-size:0.72rem;font-family:monospace;color:'+c+';line-height:1.4;background:'+bg+';">'+lbl+l+'</div>';
   }).join('');
   var total=Math.ceil(logFiltered.length/logPP);
   var pag=document.getElementById('logPag');
