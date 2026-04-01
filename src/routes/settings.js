@@ -47,6 +47,8 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
+      { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "09:30" },
+      { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry", default: "weekly" },
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Trading)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Strategy 1 entries when VIX is high (independent from scalp)" },
@@ -73,6 +75,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
       { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (independent from trading)", default: "false" },
+      { key: "SCALP_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new scalp entries (HH:MM IST)", default: "09:21" },
+      { key: "SCALP_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new scalp entries after this time (HH:MM IST)", default: "14:30" },
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min only)", default: "3" },
       // ── Bollinger Bands ──
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
@@ -135,6 +139,20 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "CHARGES & STT — Trading Costs",
+    icon: "💰",
+    fields: [
+      { key: "STT_OPT_SELL_PCT",       label: "Options STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on option sell side (% of premium turnover). Apr 2026: 0.15%", default: "0.15" },
+      { key: "STT_FUT_SELL_PCT",       label: "Futures STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on futures sell side (% of turnover). Apr 2026: 0.05%", default: "0.05" },
+      { key: "EXCHANGE_TXN_OPT_PCT",   label: "Exchange Txn Opt (%)",  type: "number", min: 0, max: 0.5,  step: 0.005, effect: EFFECT.INSTANT, desc: "NSE exchange txn charges for options (% of turnover)", default: "0.05" },
+      { key: "EXCHANGE_TXN_FUT_PCT",   label: "Exchange Txn Fut (%)",  type: "number", min: 0, max: 0.1,  step: 0.001, effect: EFFECT.INSTANT, desc: "NSE exchange txn charges for futures (% of turnover)", default: "0.002" },
+      { key: "SEBI_CHARGES_PER_CRORE", label: "SEBI Charges (₹/Cr)",  type: "number", min: 0, max: 100, step: 1,     effect: EFFECT.INSTANT, desc: "SEBI turnover fee in ₹ per crore", default: "10" },
+      { key: "GST_PCT",               label: "GST (%)",               type: "number", min: 0, max: 30,  step: 1,     effect: EFFECT.INSTANT, desc: "GST on brokerage + exchange charges", default: "18" },
+      { key: "STAMP_DUTY_PCT",        label: "Stamp Duty (%)",        type: "number", min: 0, max: 0.1, step: 0.001, effect: EFFECT.INSTANT, desc: "Stamp duty on buy-side turnover", default: "0.003" },
+      { key: "BROKER_FLAT_PER_ORDER",  label: "Broker Fee (₹/order)", type: "number", min: 0, max: 100, step: 5,     effect: EFFECT.INSTANT, desc: "Flat brokerage per executed order (×2 for buy+sell)", default: "20" },
+    ],
+  },
+  {
     section: "Security",
     icon: "🔒",
     fields: [
@@ -187,6 +205,8 @@ const SESSION_RESTART_KEYS = new Set([
   "TRAIL_ACTIVATE_PTS", "TRAIL_TIER1_UPTO", "TRAIL_TIER1_GAP",
   "TRAIL_TIER2_UPTO", "TRAIL_TIER2_GAP", "TRAIL_TIER3_GAP",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
+  "TRADE_ENTRY_START", "TRADE_ENTRY_END",
+  "SCALP_ENTRY_START", "SCALP_ENTRY_END",
   // Scalp settings — need session restart
   "SCALP_RESOLUTION",
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
@@ -462,6 +482,17 @@ router.get("/", (req, res) => {
         </div>`;
     }
 
+    if (f.type === "time") {
+      return `
+        <div class="${rowClass}" ${frozenAttr}>
+          <div class="setting-info">
+            <div class="setting-label">${f.label}${effBadge}</div>
+            ${descHtml}
+          </div>
+          <input type="time" data-key="${f.key}" value="${val}" ${dis} onchange="markDirty(this)" style="width:120px;"/>
+        </div>`;
+    }
+
     if (f.type === "password") {
       return `
         <div class="${rowClass}" ${frozenAttr}>
@@ -589,7 +620,7 @@ router.get("/", (req, res) => {
     .field-desc { font-size: 0.68rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
 
     /* ── Inputs ──────────────────────────────────────────── */
-    input[type="text"], input[type="number"], input[type="date"], select {
+    input[type="text"], input[type="number"], input[type="date"], input[type="time"], select {
       background: var(--bg);
       border: 1px solid var(--border);
       color: var(--text);
@@ -770,7 +801,7 @@ router.get("/", (req, res) => {
       .page { padding: 16px 14px 40px; }
       .top-bar { padding: 14px 14px 14px 50px; }
       .setting-row { padding: 12px 14px; flex-wrap: wrap; }
-      input[type="text"], input[type="number"], input[type="date"], select { min-width: 120px; max-width: 100%; width: 100%; }
+      input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { min-width: 120px; max-width: 100%; width: 100%; }
       .custom-row { flex-direction: column; align-items: stretch; }
       .custom-row input[type="text"] { min-width: 100%; }
       .save-bar { padding: 10px 14px; }

@@ -220,7 +220,7 @@ function summaryCards(s) {
     <div class="stat-card ${pnlCls === "pos" ? "green" : "red"}">
       <div class="stat-label">Total PnL</div>
       <div class="stat-value ${pnlCls}">${inr(s.totalPnl)}</div>
-      <div class="stat-sub">After brokerage</div>
+      <div class="stat-sub">After STT + charges</div>
     </div>
     <div class="stat-card yellow">
       <div class="stat-label">Win Rate</div>

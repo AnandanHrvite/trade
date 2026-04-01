@@ -593,9 +593,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode = `spot proxy (option LTP unavailable)`;
   }
 
-  // Brokerage: options ~₹80 flat | futures ~₹40 (lower STT)
-  const brokerage = isFutures ? 40 : 80;
-  const netPnl    = parseFloat((rawPnl - brokerage).toFixed(2));
+  // Charges: STT + exchange + GST + stamp duty + brokerage (configurable via Settings)
+  const { getCharges } = require("../utils/charges");
+  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
   const trade = {
     side,
@@ -1830,7 +1831,7 @@ function buildSessionTradeRows(trades, inr) {
     const pnlCell =
       "<div style=\"font-size:1rem;font-weight:800;color:" + pc + "\">" +
         (t.pnl >= 0 ? "+" : "") + inr(t.pnl) + "</div>" +
-      "<div style=\"font-size:0.65rem;color:#4a6080;margin-top:2px;\">after ₹80 brok</div>";
+      "<div style=\"font-size:0.65rem;color:#4a6080;margin-top:2px;\">after charges</div>";
 
     return "<tr style='border-top:1px solid #1a2236;vertical-align:top;'>" +
       "<td style='padding:10px 12px;'>" + sideBadge + "</td>" +
@@ -1871,25 +1872,30 @@ router.get("/status/data", (req, res) => {
   try {
     const data     = loadPaperData();
 
-    // Unrealised PnL (mirrors /status logic)
+    // Unrealised PnL (mirrors /status logic, minus charges)
+    const { getCharges: _getChgPtData } = require("../utils/charges");
+    const _isFutPt = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
     let unrealisedPnl = 0;
     let pnlSource     = "spot proxy";
     if (ptState.position && ptState.currentBar) {
       const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
       const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
       if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-        unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty).toFixed(2));
+        const _c = _getChgPtData({ isFutures: _isFutPt, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+        unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
         pnlSource     = "option premium";
       } else if (ptState.currentBar) {
-        unrealisedPnl = parseFloat(((ptState.currentBar.close - entryPrice) * (side === "CE" ? 1 : -1) * qty).toFixed(2));
+        const _c = _getChgPtData({ isFutures: _isFutPt, exitPremium: ptState.currentBar.close, entryPremium: entryPrice, qty });
+        unrealisedPnl = parseFloat(((ptState.currentBar.close - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       }
     }
 
     const pos           = ptState.position;
     const optEntryLtp   = pos ? (pos.optionEntryLtp || null)                       : null;
     const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
+    const _chgPtD = (optEntryLtp && optCurrentLtp) ? _getChgPtData({ isFutures: _isFutPt, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
     const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-      ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2)) : null;
+      ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtD).toFixed(2)) : null;
     const optPremiumMove = (optEntryLtp && optCurrentLtp)
       ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
     const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
@@ -1973,20 +1979,22 @@ router.get("/status", (req, res) => {
   const strategy = getActiveStrategy();
   const data     = loadPaperData();
 
-  // Unrealised PnL if position is open — use OPTION LTP if available, else spot proxy
+  // Unrealised PnL if position is open — use OPTION LTP if available, else spot proxy (minus charges)
+  const { getCharges: _getChgPtPg } = require("../utils/charges");
+  const _isFutPtPg = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   let unrealisedPnl = 0;
   let pnlSource = "spot proxy";
   if (ptState.position && ptState.currentBar) {
     const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
     const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
     if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-      // Real option premium PnL
-      unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty).toFixed(2));
+      const _c = _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+      unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
       pnlSource = `option premium`;
     } else {
-      // Fallback: spot movement
       const ltp = ptState.currentBar.close;
-      unrealisedPnl = parseFloat(((ltp - entryPrice) * (side === "CE" ? 1 : -1) * qty).toFixed(2));
+      const _c = _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: ltp, entryPremium: entryPrice, qty });
+      unrealisedPnl = parseFloat(((ltp - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       pnlSource = "spot proxy";
     }
   }
@@ -2024,8 +2032,9 @@ router.get("/status", (req, res) => {
   // Option premium P&L calculation for display
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
+  const _chgPtPg2 = (optEntryLtp && optCurrentLtp) ? _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2))
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtPg2).toFixed(2))
     : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2))
@@ -2136,7 +2145,7 @@ router.get("/status", (req, res) => {
             <div id="ajax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "₹" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · -₹80 brok</div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · after charges</div>
           </div>
 
         </div>
@@ -2495,7 +2504,7 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
             </td>
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—'}</div>
-              <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after \u20b980 brok</div>
+              <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after charges</div>
             </td>
             <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'—'}</td>
             <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="pt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">👁</button></td>
@@ -2574,7 +2583,7 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
       + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
       + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
       + cell('Option Δ (pts)', optDiff != null ? (optDiff >= 0 ? '▲ +' : '▼ ') + optDiff + ' pts' : '—', dc, 'Exit prem − Entry prem')
-      + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '—', pc, 'After ₹80 brokerage')
+      + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '—', pc, 'After STT + charges')
       + '</div></div>';
 
     // ── Section: Exit Reason ─────────────────────────────────────────────

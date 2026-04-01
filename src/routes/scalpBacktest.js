@@ -60,7 +60,7 @@ function buildDailyOHLC(candles) {
 function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const trades   = [];
   let position   = null;
-  const BROKERAGE = 80;
+  const { getCharges } = require("../utils/charges");
   const LOT_SIZE  = getLotQty();
 
   // VIX
@@ -174,18 +174,20 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       let exitPrice  = candle.close;
 
       // ── Helper: calculate running PNL at a given spot price ──
+      // Use flat charge estimate for running PnL (exact charges applied at exit)
+      const _estCharges = getCharges({ isFutures, exitPremium: null, entryPremium: null, qty: LOT_SIZE });
       const _runPnl = (spotExit) => {
         const pts = (spotExit - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         if (OPTION_SIM) {
           const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
-          return (pts * DELTA * LOT_SIZE) - thetaCost - BROKERAGE;
+          return (pts * DELTA * LOT_SIZE) - thetaCost - _estCharges;
         }
-        return pts - BROKERAGE / LOT_SIZE;
+        return pts - _estCharges / LOT_SIZE;
       };
 
       // ── Helper: estimate exit price for a target PNL ₹ amount ──
       const _exitPriceForPnl = (targetPnl) => {
-        const _needed = targetPnl + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + BROKERAGE : BROKERAGE / LOT_SIZE);
+        const _needed = targetPnl + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + _estCharges : _estCharges / LOT_SIZE);
         const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
         return parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
       };
@@ -247,9 +249,14 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         let pnl;
         if (OPTION_SIM) {
           const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
-          pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - BROKERAGE).toFixed(2));
+          const netPremPts = spotPnlPts * DELTA - thetaCost / LOT_SIZE;
+          const estEntry   = 200;
+          const estExit    = Math.max(1, estEntry + netPremPts);
+          const _chg = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+          pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
         } else {
-          pnl = parseFloat((spotPnlPts - BROKERAGE / LOT_SIZE).toFixed(2));
+          const _chg = getCharges({ isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          pnl = parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
         }
 
         trades.push({

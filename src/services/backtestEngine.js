@@ -117,7 +117,7 @@ function getISTHHMM(unixSec) {
 function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const trades    = [];
   let position    = null;
-  const BROKERAGE = 80;    // ₹ per trade (applied to option P&L)
+  const { getCharges } = require("../utils/charges");
   const LOT_SIZE  = getLotQty();
 
   // ── VIX filter for backtest ─────────────────────────────────────────────────
@@ -141,7 +141,7 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   //    This makes long holds cost more — matching real trading where theta kills
   //    a position that "wins" on spot direction but loses on time decay.
   //
-  // pnlRupees = (spotPnlPts × DELTA × LOT_SIZE) - (theta × candlesHeld / candlesPerDay) - BROKERAGE
+  // pnlRupees = (spotPnlPts × DELTA × LOT_SIZE) - (theta × candlesHeld / candlesPerDay) - charges
   //
   // This is the #1 reason backtest looks better than live — without this, a 100pt
   // NIFTY move shows 100pt profit, but your real option only gained ~55pt × ₹65 = ₹3575,
@@ -185,7 +185,7 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
   console.log(`   Exit  : 50% rule + trail SL + SAR SL + opposite signal + EOD/day`);
-  console.log(`   Brok  : ₹${BROKERAGE} per trade`);
+  console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
   console.log("══════════════════════════════════════════════");
@@ -409,9 +409,10 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
         let pnlRupees;
         let pnlMode;
         if (isFutures) {
-          // Futures: direct point × lot size − brokerage (no delta/theta)
-          pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - BROKERAGE).toFixed(2));
-          pnlMode   = `futures (${spotPnlPts}pt × ${LOT_SIZE}qty − ₹${BROKERAGE}brok)`;
+          // Futures: direct point × lot size − charges (no delta/theta)
+          const _chg = getCharges({ isFutures: true, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - _chg).toFixed(2));
+          pnlMode   = `futures (${spotPnlPts}pt × ${LOT_SIZE}qty − ₹${_chg.toFixed(0)} charges)`;
         } else if (OPTION_SIM) {
           // Option premium change ≈ spotPnlPts × delta
           const premiumMovePts = spotPnlPts * DELTA;
@@ -420,11 +421,15 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
           const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
           // Net option PnL per unit
           const netPremiumPts  = premiumMovePts - thetaDecay;
-          // Total rupees = net premium pts × lot size − brokerage
-          pnlRupees = parseFloat(((netPremiumPts * LOT_SIZE) - BROKERAGE).toFixed(2));
-          pnlMode   = `opt_sim (spot=${spotPnlPts}pt × δ${DELTA}=${premiumMovePts.toFixed(1)}pt − θ${thetaDecay}pt) × ${LOT_SIZE}lots − ₹${BROKERAGE}brok`;
+          // Estimate option premium for charges calc (rough: entry ~200, exit = entry + move)
+          const estEntryPrem = 200;
+          const estExitPrem  = Math.max(1, estEntryPrem + netPremiumPts);
+          const _chg = getCharges({ isFutures: false, exitPremium: estExitPrem, entryPremium: estEntryPrem, qty: LOT_SIZE });
+          // Total rupees = net premium pts × lot size − charges
+          pnlRupees = parseFloat(((netPremiumPts * LOT_SIZE) - _chg).toFixed(2));
+          pnlMode   = `opt_sim (spot=${spotPnlPts}pt × δ${DELTA}=${premiumMovePts.toFixed(1)}pt − θ${thetaDecay}pt) × ${LOT_SIZE}lots − ₹${_chg.toFixed(0)} charges`;
         } else {
-          // Legacy mode: raw index points (no delta/theta/lot/brokerage)
+          // Legacy mode: raw index points (no delta/theta/lot/charges)
           pnlRupees = spotPnlPts;
           pnlMode   = "raw_pts";
         }
@@ -585,13 +590,18 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
     const spotPnlPts = parseFloat(((lastCandle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
     let pnlRupees, pnlMode;
     if (isFutures) {
-      pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - BROKERAGE).toFixed(2));
+      const _chgEod = getCharges({ isFutures: true, exitPremium: lastCandle.close, entryPremium: position.entryPrice, qty: LOT_SIZE });
+      pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - _chgEod).toFixed(2));
       pnlMode   = `futures`;
     } else if (OPTION_SIM) {
       const premiumMovePts = spotPnlPts * DELTA;
       const candlesHeld    = position.candlesHeld || 1;
       const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
-      pnlRupees = parseFloat((((premiumMovePts - thetaDecay) * LOT_SIZE) - BROKERAGE).toFixed(2));
+      const netPremPts     = premiumMovePts - thetaDecay;
+      const estEntry       = 200;
+      const estExit        = Math.max(1, estEntry + netPremPts);
+      const _chgEod = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+      pnlRupees = parseFloat(((netPremPts * LOT_SIZE) - _chgEod).toFixed(2));
       pnlMode   = `opt_sim`;
     } else {
       pnlRupees = spotPnlPts;

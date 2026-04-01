@@ -617,10 +617,11 @@ async function squareOff(exitPrice, reason) {
     pnlMode = "spot proxy (option LTP unavailable)";
   }
 
-  const brokerage = isFutures ? 40 : 80;
-  const netPnl    = parseFloat((pnl - brokerage).toFixed(2));
+  const { getCharges } = require("../utils/charges");
+  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
-  log(`${emoji} [LIVE] Exit: ${reason} | Option LTP: ₹${exitOptionLtp || "?"} | Gross PnL: ₹${pnl} | Net: ₹${netPnl} (after ₹${brokerage} brok)`);
+  log(`${emoji} [LIVE] Exit: ${reason} | Option LTP: ₹${exitOptionLtp || "?"} | Gross PnL: ₹${pnl} | Net: ₹${netPnl} (after ₹${charges.toFixed(0)} charges)`);
 
   // ── Record trade in session log (mirrors paperTrade) ─────────────────────
   tradeState.sessionTrades.push({
@@ -1709,18 +1710,22 @@ router.get("/status/data", (req, res) => {
     let unrealisedPnl = 0;
     const INSTR = instrumentConfig.INSTRUMENT;
     const isFutures = INSTR === "NIFTY_FUTURES";
+    const { getCharges: _getChgStat } = require("../utils/charges");
 
     if (tradeState.position && tradeState.currentBar) {
       const ltp = tradeState.currentBar.close;
       const pos = tradeState.position;
       if (isFutures) {
-        unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+        const _c = _getChgStat({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+        unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
       } else {
         const cur = tradeState.optionLtp || pos.optionCurrentLtp;
         if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-          unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty).toFixed(2));
+          const _c = _getChgStat({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+          unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _c).toFixed(2));
         } else {
-          unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+          const _c = _getChgStat({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+          unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
         }
       }
     }
@@ -1837,27 +1842,31 @@ router.get("/status", (req, res) => {
   const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
-  // Unrealised PnL
+  // Unrealised PnL (minus charges)
+  const { getCharges: _getChgPg } = require("../utils/charges");
   let unrealisedPnl = 0;
   if (pos && tradeState.currentBar) {
     const ltp = tradeState.currentBar.close;
     if (isFutures) {
-      // Futures: PnL based on spot price movement
-      unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+      const _cp = _getChgPg({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+      unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
     } else {
       const cur = tradeState.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty).toFixed(2));
+        const _cp = _getChgPg({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _cp).toFixed(2));
       } else {
-        unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+        const _cp = _getChgPg({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+        unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
       }
     }
   }
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp   || null) : null;
   const optCurrentLtp = pos ? (tradeState.optionLtp || pos.optionCurrentLtp || null) : null;
+  const _chgOptTrd = (optEntryLtp && optCurrentLtp) ? _getChgPg({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2))
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOptTrd).toFixed(2))
     : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2))
@@ -1983,7 +1992,7 @@ router.get("/status", (req, res) => {
             <div id="ajax-lt-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "₹" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "—"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · -₹${isFutures ? "40" : "80"} brok</div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty · after charges</div>
           </div>
 
         </div>
@@ -2312,7 +2321,7 @@ ${buildSidebar('live', tradeState.running, tradeState.running, {
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ltFmt(t.pnl):'—'}</div>
               <div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">\${t.order||''}</div>
-              <div style="font-size:0.63rem;color:#4a6080;">after \u20b980 brok</div>
+              <div style="font-size:0.63rem;color:#4a6080;">after charges</div>
             </td>
             <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'—'}</td>
             <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="lt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">👁</button></td>
@@ -2390,7 +2399,7 @@ ${buildSidebar('live', tradeState.running, tradeState.running, {
         + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
         + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
         + cell('Option Δ (pts)', optDiff != null ? (optDiff >= 0 ? '▲ +' : '▼ ') + optDiff + ' pts' : '—', dc, 'Exit prem − Entry prem')
-        + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '—', pc, 'After ₹80 brokerage')
+        + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '—', pc, 'After STT + charges')
         + '</div></div>';
 
       const reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'

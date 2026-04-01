@@ -136,9 +136,15 @@ function getBucketStart(unixMs) {
   return d.getTime();
 }
 
+const _SCALP_START_MINS = (() => {
+  const raw = process.env.SCALP_ENTRY_START || "09:15";
+  const [h, m] = raw.split(":").map(Number);
+  return h * 60 + (isNaN(m) ? 0 : m);
+})();
+
 function isMarketHours() {
   const total = getISTMinutes();
-  return total >= 555 && total < _ENTRY_STOP_MINS;
+  return total >= _SCALP_START_MINS && total < _ENTRY_STOP_MINS;
 }
 
 function isStartAllowed() {
@@ -271,8 +277,9 @@ async function squareOff(exitPrice, reason) {
     pnlMode = "spot proxy";
   }
 
-  const brokerage = isFutures ? 40 : 80;
-  const netPnl    = parseFloat((pnl - brokerage).toFixed(2));
+  const { getCharges } = require("../utils/charges");
+  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
   log(`${emoji} [SCALP-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
 
@@ -375,14 +382,17 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const _brok = isFut ? 40 : 80;
+    const { getCharges: _getChgLive } = require("../utils/charges");
 
     // Running PNL helper (₹)
     const _tickPnl = (spotPrice) => {
+      const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-        return (state.optionLtp - pos.optionEntryLtp) * (pos.qty || getLotQty()) - _brok;
+        const _c = _getChgLive({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
+        return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - _brok;
+      const _c = _getChgLive({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+      return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
     };
 
     const curPnl = _tickPnl(price);
@@ -820,23 +830,28 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
+  const { getCharges: _getChgData } = require("../utils/charges");
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+      const _c = _getChgData({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        unrealised = parseFloat(((cur - pos.optionEntryLtp) * pos.qty).toFixed(2));
+        const _c = _getChgData({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        unrealised = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _c).toFixed(2));
       } else {
-        unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+        const _c = _getChgData({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
       }
     }
   }
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
-  const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2)) : null;
+  const _chgOpt = (optEntryLtp && optCurrentLtp) ? _getChgData({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOpt).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
   const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
@@ -927,17 +942,21 @@ router.get("/status", (req, res) => {
   const pos = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
-  // Unrealised PnL
+  // Unrealised PnL (minus charges)
+  const { getCharges: _getChgPage } = require("../utils/charges");
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+      const _cp = _getChgPage({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty).toFixed(2));
+        const _cp = _getChgPage({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _cp).toFixed(2));
       } else {
-        unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty).toFixed(2));
+        const _cp = _getChgPage({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
       }
     }
   }
@@ -1077,7 +1096,7 @@ router.get("/status", (req, res) => {
             <div id="ax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "\u20b9" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "\u2014"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 -\u20b9${isFutures ? "40" : "80"} brok</div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
           </div>
 
         </div>
@@ -1579,7 +1598,7 @@ function scRender(){
         +'<td style="padding:8px 12px;font-size:0.75rem;">'+(t.exit||'\u2014')+'</td>'
         +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.eSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.eOpt!=null?INR(t.eOpt):'\u2014')+'</div>'+(t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+INR(t.eSl)+'</div>':'')+'</td>'
         +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.xSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.xOpt!=null?INR(t.xOpt):'\u2014')+'</div>'+(optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts</div>':'')+'</td>'
-        +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div>'+(t.order?'<div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">'+t.order+'</div>':'')+'<div style="font-size:0.63rem;color:#4a6080;">after \u20b980 brok</div></td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div>'+(t.order?'<div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">'+t.order+'</div>':'')+'<div style="font-size:0.63rem;color:#4a6080;">after charges</div></td>'
         +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+t.reason+'">'+(short||'\u2014')+'</td>'
         +'<td style="padding:6px 8px;text-align:center;"><button data-idx="'+i+'" class="sc-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>'
         +'</tr>';
@@ -1655,7 +1674,7 @@ function showSCModal(t){
     +cell('Option LTP @ Exit',fmt(t.xOpt),'#60a5fa','Option premium at exit')
     +cell('NIFTY Move (pts)',pnlPts!=null?(pnlPts>=0?'+':'')+pnlPts+' pts':'\u2014',pnlPts!=null?(pnlPts>=0?'#10b981':'#ef4444'):'#c8d8f0',t.side==='PE'?'Entry\u2212Exit (PE profits on fall)':'Exit\u2212Entry (CE profits on rise)')
     +cell('Option \u0394 (pts)',optDiff!=null?(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts':'\u2014',dc,'Exit prem \u2212 Entry prem')
-    +cell('Net PnL',t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'\u2014',pc,'After \u20b980 brokerage')
+    +cell('Net PnL',t.pnl!=null?(t.pnl>=0?'+':'')+fmt(t.pnl):'\u2014',pc,'After STT + charges')
     +'</div></div>';
 
   var reasonHtml='<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'

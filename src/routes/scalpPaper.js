@@ -120,9 +120,15 @@ function getBucketStart(unixMs) {
   return d.getTime();
 }
 
+const _SCALP_START_MINS = (() => {
+  const raw = process.env.SCALP_ENTRY_START || "09:15";
+  const [h, m] = raw.split(":").map(Number);
+  return h * 60 + (isNaN(m) ? 0 : m);
+})();
+
 function isMarketHours() {
   const total = getISTMinutes();
-  return total >= 555 && total < _ENTRY_STOP_MINS; // 9:15 to stop-10min
+  return total >= _SCALP_START_MINS && total < _ENTRY_STOP_MINS;
 }
 
 function isStartAllowed() {
@@ -267,8 +273,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode = "spot proxy";
   }
 
-  const brokerage = isFutures ? 40 : 80;
-  const netPnl    = parseFloat((rawPnl - brokerage).toFixed(2));
+  const { getCharges } = require("../utils/charges");
+  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  const netPnl    = parseFloat((rawPnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
 
   log(`${emoji} [SCALP-PAPER] Exit: ${reason} | PnL: ₹${netPnl}`);
@@ -374,14 +381,17 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const _brok = isFut ? 40 : 80;
+    const { getCharges: _getChgTick } = require("../utils/charges");
 
     // Running PNL helper (₹)
     const _tickPnl = (spotPrice) => {
+      const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-        return (state.optionLtp - pos.optionEntryLtp) * (pos.qty || getLotQty()) - _brok;
+        const _c = _getChgTick({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
+        return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - _brok;
+      const _c = _getChgTick({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+      return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
     };
 
     const curPnl = _tickPnl(price);
@@ -795,24 +805,29 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const data = loadScalpData();
 
-  // Unrealised PnL — option premium if available, else spot proxy (minus brokerage)
+  // Unrealised PnL — option premium if available, else spot proxy (minus charges)
   const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-  const brok  = isFut ? 40 : 80;
+  const { getCharges: _getChg } = require("../utils/charges");
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
+    const _q = pos.qty || getLotQty();
     if (optEntry && optCurr && optEntry > 0) {
-      unrealised = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty()) - brok).toFixed(2));
+      const _c = _getChg({ isFutures: isFut, exitPremium: optCurr, entryPremium: optEntry, qty: _q });
+      unrealised = parseFloat(((optCurr - optEntry) * _q - _c).toFixed(2));
     } else {
-      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - brok).toFixed(2));
+      const _c = _getChg({ isFutures: isFut, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q });
+      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c).toFixed(2));
     }
   }
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
+  const _chgForPrem = (optEntryLtp && optCurrentLtp)
+    ? _getChg({ isFutures: isFut, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - brok).toFixed(2)) : null;
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgForPrem).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
@@ -906,17 +921,20 @@ router.get("/status", (req, res) => {
   const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
   const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
 
-  // Unrealised PnL (minus brokerage to match exit P&L)
+  // Unrealised PnL (minus charges to match exit P&L)
+  const { getCharges: _getChg2 } = require("../utils/charges");
   const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-  const brok2  = isFut2 ? 40 : 80;
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
+    const _q2 = pos.qty || getLotQty();
     if (optEntry && optCurr && optEntry > 0) {
-      unrealisedPnl = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty()) - brok2).toFixed(2));
+      const _c2 = _getChg2({ isFutures: isFut2, exitPremium: optCurr, entryPremium: optEntry, qty: _q2 });
+      unrealisedPnl = parseFloat(((optCurr - optEntry) * _q2 - _c2).toFixed(2));
     } else {
-      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - brok2).toFixed(2));
+      const _c2 = _getChg2({ isFutures: isFut2, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q2 });
+      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q2 - _c2).toFixed(2));
     }
   }
 
@@ -943,8 +961,10 @@ router.get("/status", (req, res) => {
   // Option premium calcs
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
+  const _chgForPrem2 = (optEntryLtp && optCurrentLtp)
+    ? _getChg2({ isFutures: isFut2, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - brok2).toFixed(2)) : null;
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgForPrem2).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
@@ -1034,7 +1054,7 @@ router.get("/status", (req, res) => {
             <div id="ajax-opt-pnl" style="font-size:1.8rem;font-weight:800;color:${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">
               ${optPremiumPnl !== null ? (optPremiumPnl >= 0 ? "+" : "") + "\u20b9" + optPremiumPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "\u2014"}
             </div>
-            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 -\u20b980 brok</div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty \u00b7 after charges</div>
           </div>
         </div>
       </div>
@@ -1477,7 +1497,7 @@ function spRender() {
         '<td style="padding:8px 12px;font-size:0.75rem;">' + (t.exit||'\\u2014') + '</td>' +
         '<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">' + spFmt(t.eSpot) + '</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">' + (t.eOpt!=null?spFmt(t.eOpt):'\\u2014') + '</div>' + (t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+spFmt(t.eSl)+'</div>':'') + '</td>' +
         '<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">' + spFmt(t.xSpot) + '</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">' + (t.xOpt!=null?spFmt(t.xOpt):'\\u2014') + '</div>' + (optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\\u25b2 +':'\\u25bc ')+optDiff+' pts</div>':'') + '</td>' +
-        '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div><div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after \\u20b980 brok</div></td>' +
+        '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div><div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after charges</div></td>' +
         '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + t.reason + '">' + (short||'\\u2014') + '</td>' +
         '<td style="padding:6px 8px;text-align:center;"><button data-idx="' + i + '" class="sp-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">View</button></td>' +
         '</tr>';
@@ -1555,7 +1575,7 @@ function showSPModal(t){
     + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
     + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
     + cell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc, 'Exit prem - Entry prem')
-    + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '\\u2014', pc, 'After \\u20b980 brokerage')
+    + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '\\u2014', pc, 'After STT + charges')
     + '</div></div>';
 
   var reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
