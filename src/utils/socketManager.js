@@ -40,6 +40,14 @@ class SocketManager {
   // ── Public API ──────────────────────────────────────────────────────────────
 
   start(spotSymbol, onSpotTick, onLog) {
+    // If socket is already running for the same symbol, just update callbacks —
+    // do NOT tear down the connection, as other modes may be piggybacking on it.
+    if (!this._stopped && this._symbol === spotSymbol) {
+      this._onSpotTick = onSpotTick;
+      this._onLog      = onLog;
+      if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol}`);
+      return;
+    }
     this._symbol     = spotSymbol;
     this._onSpotTick = onSpotTick;
     this._onLog      = onLog;
@@ -141,7 +149,7 @@ class SocketManager {
 
     skt.on('connect', () => {
       if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
-      this._retryCount = 0;
+      this._connectedAt = Date.now();
       this._lastTickAt = Date.now();
       this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
       skt.subscribe([this._symbol]);
@@ -169,6 +177,12 @@ class SocketManager {
 
     skt.on('close', () => {
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
+      // Only reset retryCount if connection was stable for at least 10 seconds.
+      // This prevents infinite 2s loops when the server immediately rejects.
+      const uptime = this._connectedAt ? Date.now() - this._connectedAt : 0;
+      if (uptime > 10_000) {
+        this._retryCount = 0;
+      }
       // NOTE: Do NOT set this._skt = null here — we need it for the reconnect.
       if (!this._stopped) this._scheduleReconnect();
     });
