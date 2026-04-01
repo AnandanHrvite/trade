@@ -140,7 +140,9 @@ async function fetchOptionLtp(symbol) {
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
       if (ltp && ltp > 0) return parseFloat(ltp);
     }
-  } catch (_) {}
+  } catch (err) {
+    log(`⚠️ [SCALP-PAPER] fetchOptionLtp error for ${symbol}: ${err.message}`);
+  }
   return null;
 }
 
@@ -340,12 +342,27 @@ function onTick(tick) {
   if (!state.currentBar || state.barStartTime !== bucketMs) {
     // Close previous bar
     if (state.currentBar) {
-      state.candles.push({ ...state.currentBar });
+      // If last candle has same time (preloaded overlap), replace instead of duplicate push
+      const lastC = state.candles.length ? state.candles[state.candles.length - 1] : null;
+      if (lastC && lastC.time === state.currentBar.time) {
+        state.candles[state.candles.length - 1] = { ...state.currentBar };
+      } else {
+        state.candles.push({ ...state.currentBar });
+      }
       if (state.candles.length > 200) state.candles.shift();
       onCandleClose(state.currentBar);
     }
-    // Start new bar
-    state.currentBar  = { time: Math.floor(bucketMs / 1000), open: price, high: price, low: price, close: price };
+    // Start new bar — if last preloaded candle covers same bucket, merge with it
+    const bucketTimeSec = Math.floor(bucketMs / 1000);
+    const lastPreloaded = state.candles.length ? state.candles[state.candles.length - 1] : null;
+    if (lastPreloaded && lastPreloaded.time === bucketTimeSec) {
+      state.currentBar = state.candles.pop();
+      state.currentBar.high  = Math.max(state.currentBar.high, price);
+      state.currentBar.low   = Math.min(state.currentBar.low, price);
+      state.currentBar.close = price;
+    } else {
+      state.currentBar = { time: bucketTimeSec, open: price, high: price, low: price, close: price };
+    }
     state.barStartTime = bucketMs;
   } else {
     state.currentBar.high  = Math.max(state.currentBar.high, price);
@@ -745,7 +762,7 @@ router.post("/manualEntry", async (req, res) => {
   // SL = previous candle low (CE) / high (PE), hard-capped at MAX_SL_PTS
   const candles = state.candles || [];
   const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "50");
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 1] : null;
+  const prevCandle = candles.length >= 1 ? candles[candles.length - 1] : null;
   let sl;
   if (side === "CE") {
     const prevLow = prevCandle ? prevCandle.low : spot - MAX_SL_PTS;
@@ -779,10 +796,10 @@ router.get("/status/data", (req, res) => {
   const data = loadScalpData();
 
   // Unrealised PnL — option premium if available, else spot proxy (minus brokerage)
+  const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  const brok  = isFut ? 40 : 80;
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
-    const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const brok  = isFut ? 40 : 80;
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     if (optEntry && optCurr && optEntry > 0) {
