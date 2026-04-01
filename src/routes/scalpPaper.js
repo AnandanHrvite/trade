@@ -372,7 +372,7 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. PSAR SL hit (trailing — tightens each candle)
+    // 1. SL hit (initial = prev candle low/high, then PSAR trail tightens)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit", price);
