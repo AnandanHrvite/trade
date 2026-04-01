@@ -341,11 +341,27 @@ function onTick(tick) {
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
     if (state.currentBar) {
-      state.candles.push({ ...state.currentBar });
+      // If last candle has same time (preloaded overlap), replace instead of duplicate push
+      const lastC = state.candles.length ? state.candles[state.candles.length - 1] : null;
+      if (lastC && lastC.time === state.currentBar.time) {
+        state.candles[state.candles.length - 1] = { ...state.currentBar };
+      } else {
+        state.candles.push({ ...state.currentBar });
+      }
       if (state.candles.length > 200) state.candles.shift();
       onCandleClose(state.currentBar);
     }
-    state.currentBar   = { time: Math.floor(bucketMs / 1000), open: price, high: price, low: price, close: price };
+    // Start new bar — if last preloaded candle covers same bucket, merge with it
+    const bucketTimeSec = Math.floor(bucketMs / 1000);
+    const lastPreloaded = state.candles.length ? state.candles[state.candles.length - 1] : null;
+    if (lastPreloaded && lastPreloaded.time === bucketTimeSec) {
+      state.currentBar = state.candles.pop();
+      state.currentBar.high  = Math.max(state.currentBar.high, price);
+      state.currentBar.low   = Math.min(state.currentBar.low, price);
+      state.currentBar.close = price;
+    } else {
+      state.currentBar = { time: bucketTimeSec, open: price, high: price, low: price, close: price };
+    }
     state.barStartTime = bucketMs;
   } else {
     state.currentBar.high  = Math.max(state.currentBar.high, price);
@@ -777,7 +793,7 @@ router.post("/manualEntry", async (req, res) => {
   // SL = previous candle low (CE) / high (PE), hard-capped at MAX_SL_PTS
   const candles = state.candles || [];
   const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "50");
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 1] : null;
+  const prevCandle = candles.length >= 1 ? candles[candles.length - 1] : null;
   let sl;
   if (side === "CE") {
     const prevLow = prevCandle ? prevCandle.low : spot - MAX_SL_PTS;
