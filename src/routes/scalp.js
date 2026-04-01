@@ -375,12 +375,12 @@ function onTick(tick) {
     // 1. PSAR SL hit (trailing — tightens each candle)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit");
+      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit");
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit");
+      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit");
       return;
     }
 
@@ -528,7 +528,7 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${result.stopLoss} | PSAR trail`);
+    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${result.stopLoss} | ${result.reason}`);
 
     notifyEntry({
       mode: "SCALP-LIVE",
@@ -774,21 +774,25 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // Get PSAR for SL
+  // SL = previous candle low (CE) / high (PE), hard-capped at MAX_SL_PTS
   const candles = state.candles || [];
-  let sarSL = null;
-  if (candles.length >= 15) {
-    const result = scalpStrategy.getSignal(candles, { silent: true });
-    if (result && result.stopLoss) sarSL = result.stopLoss;
+  const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "50");
+  const prevCandle = candles.length >= 2 ? candles[candles.length - 1] : null;
+  let sl;
+  if (side === "CE") {
+    const prevLow = prevCandle ? prevCandle.low : spot - MAX_SL_PTS;
+    sl = parseFloat(Math.max(prevLow, spot - MAX_SL_PTS).toFixed(2));
+  } else {
+    const prevHigh = prevCandle ? prevCandle.high : spot + MAX_SL_PTS;
+    sl = parseFloat(Math.min(prevHigh, spot + MAX_SL_PTS).toFixed(2));
   }
-  if (!sarSL) sarSL = side === "CE" ? spot - 25 : spot + 25;
-  if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
-    sarSL = side === "CE" ? spot - 25 : spot + 25;
+  if ((side === "CE" && sl >= spot) || (side === "PE" && sl <= spot)) {
+    sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
 
-  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sarSL}`);
-  await resolveAndEnter(side, spot, { stopLoss: sarSL, target: null, reason: `Manual ${side} entry` });
-  return res.json({ success: true, spot, side, sl: sarSL });
+  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (prevCandle)`);
+  await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
+  return res.json({ success: true, spot, side, sl });
 });
 
 // ── Status data ─────────────────────────────────────────────────────────────
@@ -1074,7 +1078,7 @@ router.get("/status", (req, res) => {
           <div id="ax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (PSAR)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
         </div>
@@ -1239,7 +1243,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR \u00b7 Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PrevCandle \u00b7 Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
