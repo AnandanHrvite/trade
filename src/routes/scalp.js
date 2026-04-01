@@ -845,6 +845,8 @@ router.get("/status/data", (req, res) => {
       stopLoss:          pos.stopLoss,
       target:            pos.target,
       bestPrice:         pos.bestPrice || null,
+      peakPnl:           pos.peakPnl || 0,
+      initialStopLoss:   pos.initialStopLoss,
       candlesHeld:       pos.candlesHeld,
       optionStrike:      pos.optionStrike || null,
       optionExpiry:      pos.optionExpiry || null,
@@ -1082,17 +1084,25 @@ router.get("/status", (req, res) => {
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry \u20b9" + optEntryLtp.toFixed(2) + " \u00d7 " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${inr(pos.target)}</div>
-        </div>
-        <div id="ax-trail-card" style="background:#071a12;border:1px solid ${trailActive && trailProfit >= 15 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail Status</div>
-          <div id="ax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailActive && trailProfit >= 15 ? "#8b5cf6" : "#f59e0b"};">${trailActive && trailProfit >= 15 ? "\uD83D\uDD12 ACTIVE" : "\u23f3 Waiting"}</div>
-          <div id="ax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "\u2014"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
+          <div id="ax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
-          <div id="ax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.72rem;color:#4a6080;">candles</span></div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
+          <div id="ax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
+          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
+          <div id="ax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:#4a6080;">pts</span></div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
+          <div id="ax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
+          <div id="ax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#fff;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:#4a6080;">candles</span></div>
         </div>
       </div>
 
@@ -1798,25 +1808,40 @@ logFilter();
         var slEl = document.getElementById('ax-stop-loss');
         if (slEl) slEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\u2014';
 
-        // Trail status
-        var trailCard = document.getElementById('ax-trail-card');
-        var trailStat = document.getElementById('ax-trail-status');
-        var trailBest = document.getElementById('ax-trail-best');
-        if (trailCard && trailStat && trailBest) {
-          var tActive = p.bestPrice !== null && p.bestPrice !== undefined;
-          var tProfit = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          var tProfDir = p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice;
-          var tOn = tActive && tProfDir >= 15;
-          trailCard.style.borderColor = tOn ? '#8b5cf6' : '#134e35';
-          trailStat.textContent = tOn ? '\uD83D\uDD12 ACTIVE' : '\u23F3 Waiting';
-          trailStat.style.color = tOn ? '#8b5cf6' : '#f59e0b';
-          var pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
-          trailBest.textContent = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
+        // Peak P&L
+        var peakEl = document.getElementById('ax-peak-pnl');
+        if (peakEl) {
+          var peak = p.peakPnl || 0;
+          peakEl.textContent = (peak >= 0 ? '+' : '') + INR(peak);
+          peakEl.style.color = peak >= 0 ? '#10b981' : '#ef4444';
+        }
+        // SL Trailed
+        var slTrailEl = document.getElementById('ax-sl-trail');
+        if (slTrailEl && p.stopLoss && p.initialStopLoss) {
+          slTrailEl.textContent = Math.abs(p.stopLoss - p.initialStopLoss).toFixed(2) + ' pts';
         }
 
+        // SL Distance
+        var slDistEl = document.getElementById('ax-sl-dist');
+        if (slDistEl && p.stopLoss && ltpNow) {
+          var dist = Math.abs(ltpNow - p.stopLoss);
+          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:#4a6080;">pts</span>';
+          slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
+        }
+        // R:R
+        var rrEl = document.getElementById('ax-rr');
+        if (rrEl && p.initialStopLoss) {
+          var risk = Math.abs(p.entryPrice - p.initialStopLoss);
+          var moved = (ltpNow - p.entryPrice) * (p.side === 'CE' ? 1 : -1);
+          if (risk > 0) {
+            var rr = (moved / risk).toFixed(1);
+            rrEl.textContent = rr + 'x';
+            rrEl.style.color = moved >= 0 ? '#10b981' : '#ef4444';
+          }
+        }
         // Candles held
         var cnHeld = document.getElementById('ax-pos-candles');
-        if (cnHeld) cnHeld.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.72rem;color:#4a6080;">candles</span>';
+        if (cnHeld) cnHeld.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:#4a6080;">candles</span>';
       }
 
       // Current bar

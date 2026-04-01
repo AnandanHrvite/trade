@@ -775,22 +775,24 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const data = loadScalpData();
 
-  // Unrealised PnL — option premium if available, else spot proxy
+  // Unrealised PnL — option premium if available, else spot proxy (minus brokerage)
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
+    const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const brok  = isFut ? 40 : 80;
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     if (optEntry && optCurr && optEntry > 0) {
-      unrealised = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty())).toFixed(2));
+      unrealised = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty()) - brok).toFixed(2));
     } else {
-      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty())).toFixed(2));
+      unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - brok).toFixed(2));
     }
   }
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2)) : null;
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - brok).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
@@ -823,6 +825,8 @@ router.get("/status/data", (req, res) => {
       stopLoss:          pos.stopLoss,
       target:            pos.target,
       bestPrice:         pos.bestPrice,
+      peakPnl:           pos.peakPnl || 0,
+      initialStopLoss:   pos.initialStopLoss,
       candlesHeld:       pos.candlesHeld,
       optionStrike:      pos.optionStrike,
       optionExpiry:      pos.optionExpiry,
@@ -882,15 +886,17 @@ router.get("/status", (req, res) => {
   const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
   const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
 
-  // Unrealised PnL
+  // Unrealised PnL (minus brokerage to match exit P&L)
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
+    const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+    const brok2  = isFut2 ? 40 : 80;
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     if (optEntry && optCurr && optEntry > 0) {
-      unrealisedPnl = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty())).toFixed(2));
+      unrealisedPnl = parseFloat(((optCurr - optEntry) * (pos.qty || getLotQty()) - brok2).toFixed(2));
     } else {
-      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty())).toFixed(2));
+      unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * (pos.qty || getLotQty()) - brok2).toFixed(2));
     }
   }
 
@@ -918,7 +924,7 @@ router.get("/status", (req, res) => {
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
-    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0)).toFixed(2)) : null;
+    ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - brok2).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
     ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
@@ -1029,16 +1035,25 @@ router.get("/status", (req, res) => {
           <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.target ? inr(pos.target) : "\u2014"}</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
+          <div id="ajax-peak-pnl" style="font-size:1.05rem;font-weight:700;color:${(pos.peakPnl || 0) >= 0 ? "#10b981" : "#ef4444"};">${(pos.peakPnl || 0) >= 0 ? "+" : ""}${inr(pos.peakPnl || 0)}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Best Price</div>
-          <div id="ajax-pos-best" style="font-size:1.05rem;font-weight:700;color:#8b5cf6;">${pos.bestPrice ? inr(pos.bestPrice) : "\u2014"}</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">SL Trailed</div>
+          <div id="ajax-sl-trail" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss && pos.initialStopLoss ? (pos.side === "CE" ? "+" : "+") + Math.abs(pos.stopLoss - pos.initialStopLoss).toFixed(2) + " pts" : "0 pts"}</div>
+          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">from ${pos.initialStopLoss ? inr(pos.initialStopLoss) : "\u2014"}</div>
         </div>
-        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Candles Held</div>
-          <div id="ajax-pos-candles" style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.65rem;color:#4a6080;">candles</span></div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">SL Distance</div>
+          <div id="ajax-sl-dist" style="font-size:0.9rem;font-weight:700;color:${(() => { const d = pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss) : 0; return d < 20 ? "#ef4444" : d < 40 ? "#f59e0b" : "#10b981"; })()};">${pos.stopLoss && liveClose ? Math.abs(liveClose - pos.stopLoss).toFixed(1) : "0"} <span style="font-size:0.6rem;color:#4a6080;">pts</span></div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">R:R</div>
+          <div id="ajax-rr" style="font-size:0.9rem;font-weight:700;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};">${(() => { const risk = pos.initialStopLoss ? Math.abs(pos.entryPrice - pos.initialStopLoss) : 0; return risk > 0 ? (pointsMoved / risk).toFixed(1) + "x" : "\u2014"; })()}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:8px 10px;">
+          <div style="font-size:0.55rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Candles Held</div>
+          <div id="ajax-pos-candles" style="font-size:0.9rem;font-weight:700;color:#c8d8f0;">${pos.candlesHeld || 0} <span style="font-size:0.6rem;color:#4a6080;">candles</span></div>
         </div>
       </div>
       ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">Entry: ${pos.reason}</div>` : ""}
@@ -1658,12 +1673,39 @@ if (document.getElementById('spModal')) {
         // SL
         var slPosEl = document.getElementById('ajax-stop-loss');
         if (slPosEl) slPosEl.textContent = p.stopLoss ? INR(p.stopLoss) : '\\u2014';
-        // Best price
-        var bestEl = document.getElementById('ajax-pos-best');
-        if (bestEl) bestEl.textContent = p.bestPrice ? INR(p.bestPrice) : '\\u2014';
+        // Peak P&L
+        var peakEl = document.getElementById('ajax-peak-pnl');
+        if (peakEl) {
+          var peak = p.peakPnl || 0;
+          peakEl.textContent = (peak >= 0 ? '+' : '') + INR(peak);
+          peakEl.style.color = peak >= 0 ? '#10b981' : '#ef4444';
+        }
+        // SL Trailed
+        var slTrailEl = document.getElementById('ajax-sl-trail');
+        if (slTrailEl && p.stopLoss && p.initialStopLoss) {
+          slTrailEl.textContent = Math.abs(p.stopLoss - p.initialStopLoss).toFixed(2) + ' pts';
+        }
+        // SL Distance
+        var slDistEl = document.getElementById('ajax-sl-dist');
+        if (slDistEl && p.stopLoss && ltpNow) {
+          var dist = Math.abs(ltpNow - p.stopLoss);
+          slDistEl.innerHTML = dist.toFixed(1) + ' <span style="font-size:0.6rem;color:#4a6080;">pts</span>';
+          slDistEl.style.color = dist < 20 ? '#ef4444' : dist < 40 ? '#f59e0b' : '#10b981';
+        }
+        // R:R
+        var rrEl = document.getElementById('ajax-rr');
+        if (rrEl && p.initialStopLoss) {
+          var risk = Math.abs(p.entryPrice - p.initialStopLoss);
+          var moved = (ltpNow - p.entryPrice) * (p.side === 'CE' ? 1 : -1);
+          if (risk > 0) {
+            var rr = (moved / risk).toFixed(1);
+            rrEl.textContent = rr + 'x';
+            rrEl.style.color = moved >= 0 ? '#10b981' : '#ef4444';
+          }
+        }
         // Candles held
         var candPosEl = document.getElementById('ajax-pos-candles');
-        if (candPosEl) candPosEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.65rem;color:#4a6080;">candles</span>';
+        if (candPosEl) candPosEl.innerHTML = (p.candlesHeld || 0) + ' <span style="font-size:0.6rem;color:#4a6080;">candles</span>';
       }
 
       // Trades — reload table if count changed
