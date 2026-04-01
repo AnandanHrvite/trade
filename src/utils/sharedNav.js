@@ -11,9 +11,14 @@
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
-  // Import scalp state inline to avoid circular dependency issues
+  // Import scalp/primary state inline to avoid circular dependency issues
   let _scalpMode = null;
-  try { _scalpMode = require('./sharedSocketState').getScalpMode(); } catch (_) {}
+  let _primaryMode = null;
+  try {
+    const sss = require('./sharedSocketState');
+    _scalpMode = sss.getScalpMode();
+    _primaryMode = sss.getMode();
+  } catch (_) {}
 
   const {
     showStopBtn  = false,
@@ -87,7 +92,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
-    const runningBadge = p.key === 'paper' && isRunning && activePage === 'paper'
+    const runningBadge = p.key === 'paper' && (_primaryMode === 'PAPER_TRADE' || isRunning)
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
