@@ -375,10 +375,10 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — lock at level: hit 300→lock 300, hit 500→lock 500...
+    // 2. TRAILING PROFIT — lock one step below peak level: peak 1200→lock 1100
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
       const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
-      const trailFloor = _SCALP_TRAIL_START + (levelsAbove * _SCALP_TRAIL_STEP);
+      const trailFloor = _SCALP_TRAIL_START + (levelsAbove - 1) * _SCALP_TRAIL_STEP;
       if (curPnl <= trailFloor) {
         squareOff(price, `Trail lock ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`);
         return;
