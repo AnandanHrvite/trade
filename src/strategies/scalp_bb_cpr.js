@@ -148,8 +148,25 @@ function getSignal(candles, opts) {
     });
   }
 
-  // No signal
-  base.reason = "No setup";
+  // No signal — build descriptive reason showing which side was close / blocked
+  var cePrice = sc.close >= bb.upper;
+  var ceRsi   = rsi > RSI_CE;
+  var pePrice = sc.close <= bb.lower;
+  var peRsi   = rsi < RSI_PE;
+
+  var parts = [];
+  if (cePrice && !ceRsi) {
+    parts.push("CE price OK but RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
+  } else if (!cePrice && ceRsi) {
+    parts.push("CE RSI OK but price below BB upper");
+  }
+  if (pePrice && !peRsi) {
+    parts.push("PE price OK but RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
+  } else if (!pePrice && peRsi) {
+    parts.push("PE RSI OK but price above BB lower");
+  }
+
+  base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
   return base;
 }
 
