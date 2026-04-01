@@ -91,14 +91,26 @@ function calcSAR(candles, step, max) {
 //        which is sufficient for 15-min candles to stabilize indicators.
 // End  : 3:00 PM (unchanged)
 // Dead zone REMOVED — on 15-min, 12:00–12:30 is only 2 candles. Not worth skipping.
+function _parseMins(envKey, fallback) {
+  var v = process.env[envKey] || fallback;
+  var parts = v.split(":");
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+function _fmtTime(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  var suffix = h >= 12 ? "PM" : "AM";
+  var h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+  return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
+}
+
 function isInTradingWindow(unixSec) {
   // Fast IST conversion: UTC+5:30 = +19800 seconds (avoids expensive toLocaleString/ICU)
   var istSec   = unixSec + 19800;
   var totalMin = Math.floor(istSec / 60) % 1440;
-  // 9:30 AM – 2:00 PM (no entries after 2 PM — last hour is too risky,
-  // trades get force-closed at 3:20 PM EOD with no time for trail to work)
-  if (totalMin < 570)  return { ok: false, reason: "Before 9:30 AM — waiting for indicators to stabilise on 15-min" };
-  if (totalMin >= 840) return { ok: false, reason: "After 2:00 PM — no new entries (EOD risk)" };
+  var startMin = _parseMins("TRADE_ENTRY_START", "09:30");
+  var endMin   = _parseMins("TRADE_ENTRY_END",   "14:00");
+  if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) + " — waiting for indicators to stabilise on 15-min" };
+  if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) + " — no new entries (EOD risk)" };
   return { ok: true, reason: null };
 }
 

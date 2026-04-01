@@ -20,11 +20,25 @@ function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key]
 
 var _pending = null;
 
+function _parseMins(envKey, fallback) {
+  var v = process.env[envKey] || fallback;
+  var parts = v.split(":");
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+function _fmtTime(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  var suffix = h >= 12 ? "PM" : "AM";
+  var h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+  return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
+}
+
 function isInTradingWindow(unixSec) {
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  if (totalMin < 561)  return { ok: false, reason: "Before 9:21 AM" };
-  if (totalMin >= 840) return { ok: false, reason: "After 2:00 PM" };
+  var startMin = _parseMins("SCALP_ENTRY_START", "09:21");
+  var endMin   = _parseMins("SCALP_ENTRY_END",   "14:30");
+  if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) };
+  if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) };
   return { ok: true, reason: null };
 }
 

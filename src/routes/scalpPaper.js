@@ -121,7 +121,7 @@ function getBucketStart(unixMs) {
 }
 
 const _SCALP_START_MINS = (() => {
-  const raw = process.env.SCALP_ENTRY_START || "09:15";
+  const raw = process.env.SCALP_ENTRY_START || "09:21";
   const [h, m] = raw.split(":").map(Number);
   return h * 60 + (isNaN(m) ? 0 : m);
 })();

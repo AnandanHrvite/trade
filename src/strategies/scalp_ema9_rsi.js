@@ -31,13 +31,26 @@ function cfg(key, fallback) { return process.env[key] !== undefined ? process.en
 
 // ── Trading window — tuned for 3-min scalp ───────────────────────────────────
 // Skip first 2 candles (9:15–9:21): opening volatility is noise on 3-min
-// No entries after 3:00 PM
+function _parseMins(envKey, fallback) {
+  var v = process.env[envKey] || fallback;
+  var parts = v.split(":");
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+}
+function _fmtTime(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  var suffix = h >= 12 ? "PM" : "AM";
+  var h12 = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+  return h12 + ":" + (m < 10 ? "0" : "") + m + " " + suffix;
+}
+
 function isInTradingWindow(unixSec) {
   // Fast IST conversion: UTC + 5:30 = +19800 seconds (avoids locale-dependent Date parsing)
   var istSec   = unixSec + 19800;
   var totalMin = Math.floor(istSec / 60) % 1440;
-  if (totalMin < 561)  return { ok: false, reason: "Before 9:21 AM — skipping opening noise (first 2 candles)" };
-  if (totalMin >= 900) return { ok: false, reason: "After 3:00 PM — no new scalp entries" };
+  var startMin = _parseMins("SCALP_ENTRY_START", "09:21");
+  var endMin   = _parseMins("SCALP_ENTRY_END",   "14:30");
+  if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) + " — skipping opening noise" };
+  if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) + " — no new scalp entries" };
   return { ok: true, reason: null };
 }
 

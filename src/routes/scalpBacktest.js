@@ -142,6 +142,8 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   let _dailyPnl = 0;
   let _prevDate = null;
   let _loggedReason = null;
+  const _btStartMin = (() => { const v = process.env.SCALP_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  const _btEndMin   = (() => { const v = process.env.SCALP_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
 
   for (let i = 30; i < candles.length; i++) {
     const candle = candles[i];
@@ -308,7 +310,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     });
     if (result.signal === "NONE") {
       // Log first rejection per day for debugging
-      if (!position && _dailyTradeCount === 0 && candleMin >= 561 && candleMin < 840) {
+      if (!position && _dailyTradeCount === 0 && candleMin >= _btStartMin && candleMin < _btEndMin) {
         if (!_loggedReason || _loggedReason !== candleDate) {
           console.log(`  [${candleDate} ${toIST(candle.time).split(' ')[1] || ''}] Skip: ${result.reason} | RSI=${result.rsi} BB=${result.bbMiddle}-${result.bbUpper} SAR=${result.sar}`);
           _loggedReason = candleDate;
