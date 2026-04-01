@@ -1768,6 +1768,17 @@ if (document.getElementById('spModal')) {
   if (${state.running}) {
     _interval = setInterval(fetchAndUpdate, 2000);
   }
+
+  // Immediately refresh when tab becomes visible (browser throttles intervals for background tabs)
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && ${state.running}) {
+      fetchAndUpdate();
+      if (!_interval) _interval = setInterval(fetchAndUpdate, 2000);
+    }
+  });
+  window.addEventListener('focus', function() {
+    if (${state.running}) fetchAndUpdate();
+  });
 })();
 </script>
 </body>
