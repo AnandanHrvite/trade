@@ -301,8 +301,17 @@ async function squareOff(exitPrice, reason) {
 
   notifyExit({
     mode: "SCALP-LIVE",
-    side, symbol, spotAtExit: exitPrice,
-    optionExitLtp: exitOptionLtp, pnl: netPnl, reason,
+    side, symbol,
+    spotAtEntry: spotAtEntry || entryPrice,
+    spotAtExit: exitPrice,
+    optionEntryLtp: optionEntryLtp || null,
+    optionExitLtp: exitOptionLtp || null,
+    pnl: netPnl,
+    sessionPnl: state.sessionPnl,
+    exitReason: reason,
+    entryTime,
+    exitTime: istNow(),
+    qty,
   });
 }
 
@@ -502,6 +511,7 @@ async function resolveAndEnter(side, spot, result) {
     notifyEntry({
       mode: "SCALP-LIVE",
       side, symbol, spotAtEntry: spot,
+      optionEntryLtp: null,
       stopLoss: result.stopLoss, qty, reason: result.reason,
     });
   } catch (err) {

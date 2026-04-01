@@ -213,6 +213,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   notifyEntry({
     mode: "SCALP-PAPER",
     side, symbol, spotAtEntry: price,
+    optionEntryLtp: null,
     stopLoss, qty, reason,
   });
 }
@@ -275,8 +276,17 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   notifyExit({
     mode: "SCALP-PAPER",
-    side, symbol, spotAtExit: exitPrice,
-    optionExitLtp: exitOptionLtp, pnl: netPnl, reason,
+    side, symbol,
+    spotAtEntry: spotAtEntry || entryPrice,
+    spotAtExit: spotAtExit || exitPrice,
+    optionEntryLtp: optionEntryLtp || null,
+    optionExitLtp: exitOptionLtp || null,
+    pnl: netPnl,
+    sessionPnl: state.sessionPnl,
+    exitReason: reason,
+    entryTime,
+    exitTime: istNow(),
+    qty,
   });
 }
 
