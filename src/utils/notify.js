@@ -89,6 +89,9 @@ function modeLabel(mode) {
  */
 function notifyEntry(p) {
   if (!isConfigured()) return;
+  const isScalp = p.mode && p.mode.startsWith("SCALP");
+  const toggle = isScalp ? process.env.TG_SCALP_ENTRY : process.env.TG_TRADE_ENTRY;
+  if (toggle === "false" || toggle === "0") return;
 
   const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
   const strikeStr = p.strike ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
@@ -119,6 +122,9 @@ function notifyEntry(p) {
  */
 function notifyExit(p) {
   if (!isConfigured()) return;
+  const isScalp = p.mode && p.mode.startsWith("SCALP");
+  const toggle = isScalp ? process.env.TG_SCALP_EXIT : process.env.TG_TRADE_EXIT;
+  if (toggle === "false" || toggle === "0") return;
 
   const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
   const pnlLine   = `PnL (net)      : ${inr(p.pnl)}  ${pnlArrow(p.pnl)}`;

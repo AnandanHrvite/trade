@@ -753,7 +753,7 @@ async function onCandleClose(candle) {
 
   // Telegram: candle close signal update (only when flat — no position open)
   // Tells you exactly why a trade was/wasn't taken every 15 min candle
-  if (!tradeState.position && signal !== null) {
+  if (!tradeState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
     const _shortReason = reason ? reason.slice(0, 120) : "—";

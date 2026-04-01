@@ -126,6 +126,12 @@ const SETTINGS_SCHEMA = [
     icon: "📱",
     fields: [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
+      { key: "TG_TRADE_ENTRY", label: "Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a 15-min strategy trade is entered", default: "true" },
+      { key: "TG_TRADE_EXIT", label: "Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a 15-min strategy trade is exited", default: "true" },
+      { key: "TG_TRADE_SIGNALS", label: "Trade Signals (Skip)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send candle-close signal updates when flat (why trade was/wasn't taken)", default: "true" },
+      { key: "TG_SCALP_ENTRY", label: "Scalp Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is entered", default: "true" },
+      { key: "TG_SCALP_EXIT", label: "Scalp Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is exited", default: "true" },
+      { key: "TG_SCALP_SIGNALS", label: "Scalp Signals (Skip)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send scalp candle-close signal updates when flat", default: "true" },
     ],
   },
   {
@@ -168,6 +174,8 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
+  "TG_TRADE_ENTRY", "TG_TRADE_EXIT", "TG_TRADE_SIGNALS",
+  "TG_SCALP_ENTRY", "TG_SCALP_EXIT", "TG_SCALP_SIGNALS",
   "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET",
