@@ -2,9 +2,9 @@
  * SCALP V4: Bollinger Bands + RSI + PSAR
  *
  * ENTRY:
- *   CE: close >= BB upper + RSI > 55 + PSAR below price
- *   PE: close <= BB lower + RSI < 45 + PSAR above price
- *   SL = PSAR value
+ *   CE: close >= BB upper + RSI > 55
+ *   PE: close <= BB lower + RSI < 45
+ *   SL = PSAR value (SAR used for SL only, NOT as entry gate)
  *
  * EXIT:
  *   1. Max SL ₹300 (hard cap)
@@ -112,31 +112,31 @@ function getSignal(candles, opts) {
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
-  // CE (Long): price at/above BB upper + RSI > 55 + PSAR below
-  if (sc.close >= bb.upper && rsi > RSI_CE && sar < sc.close) {
+  // CE (Long): price at/above BB upper + RSI > 55 (SAR used only for SL, not entry gate)
+  if (sc.close >= bb.upper && rsi > RSI_CE) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sc.close - sl).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl);
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(SAR)=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " + SAR=" + sl,
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(SAR)=" + sl,
     });
   }
 
-  // PE (Short): price at/below BB lower + RSI < 45 + PSAR above
-  if (sc.close <= bb.lower && rsi < RSI_PE && sar > sc.close) {
+  // PE (Short): price at/below BB lower + RSI < 45 (SAR used only for SL, not entry gate)
+  if (sc.close <= bb.lower && rsi < RSI_PE) {
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sl - sc.close).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " + SAR=" + sl);
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(SAR)=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " + SAR=" + sl,
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(SAR)=" + sl,
     });
   }
 
