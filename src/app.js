@@ -463,8 +463,8 @@ app.get("/", (req, res) => {
     @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
     /* ── iPhone 15 (393px) ── */
     @media (max-width:768px) {
-      #trade-row { flex-wrap:wrap; }
-      #trade-row .card { flex:none; width:100%; }
+      #trade-row, #scalp-row { flex-wrap:wrap; }
+      #trade-row .card, #scalp-row .card { flex:none; width:100%; }
     }
 
     /* ── TRADE STATUS PANELS ── */
@@ -483,7 +483,7 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
-    #trade-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
+    #trade-row, #scalp-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
     @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
     /* cfg-grid removed — config shown as strip in broker card */
@@ -497,9 +497,9 @@ app.get("/", (req, res) => {
       .ts-grid     { grid-template-columns:1fr 1fr; }
       /* 3-col action row stacks to 1 col on mobile */
       .action-3col { grid-template-columns:1fr !important; }
-      /* trade-row: stack Paper+Live vertically */
-      #trade-row { flex-wrap:wrap; }
-      #trade-row .card { width:100%; flex:none; }
+      /* trade-row + scalp-row: stack vertically */
+      #trade-row, #scalp-row { flex-wrap:wrap; }
+      #trade-row .card, #scalp-row .card { width:100%; flex:none; }
       /* top-bar: hide meta on mobile */
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
@@ -634,7 +634,11 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
   </div>
 
-  <!-- ③ PAPER + LIVE TRADE side by side -->
+  <!-- ③ SWING / POSITIONAL TRADING -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Swing / Positional Trading</span>
+    <div style="flex:1;height:1px;background:#0e1e36;"></div>
+  </div>
   <div id="trade-row">
 
   <div class="card" id="paper-status-card" style="flex:1;min-width:0;">
@@ -669,30 +673,48 @@ ${buildSidebar('dashboard', liveActive)}
 
   </div><!-- end trade-row -->
 
-  <!-- ④ SCALP MODE -->
-  ${scalpModeOn ? `<div class="card" id="scalp-status-card">
+  <!-- ④ SCALP TRADING -->
+  ${scalpModeOn ? `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:8px;">
+    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Scalp Trading</span>
+    <div style="flex:1;height:1px;background:#0e1e36;"></div>
+    <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${scalpEnabled ? '#0d3018' : '#1a1a2e'};color:${scalpEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${scalpEnabled ? '#166534' : '#252550'};">${scalpEnabled ? 'ENABLED' : 'DISABLED'}</span>
+    <a href="/scalp-backtest" style="font-size:0.68rem;color:#60a5fa;text-decoration:none;padding:3px 10px;border-radius:5px;border:1px solid #1a3a6a;background:#080e1a;white-space:nowrap;">Backtest →</a>
+  </div>
+  <div id="scalp-row">
+
+  <div class="card" id="scalp-paper-status-card" style="flex:1;min-width:0;">
     <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
       <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">⚡</span>
-        <span class="card-hdr-title">Scalp Mode</span>
-        <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${scalpEnabled ? '#0d3018' : '#1a1a2e'};color:${scalpEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${scalpEnabled ? '#166534' : '#252550'};">${scalpEnabled ? 'ENABLED' : 'DISABLED'}</span>
-        <span id="scalp-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
+        <span class="card-hdr-icon">📋</span>
+        <span class="card-hdr-title">Scalp Paper</span>
+        <span id="scalp-paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
+        <span id="scalp-paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
-      <div style="display:flex;gap:6px;">
-        <a href="/scalp-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Paper →</a>
-        <a href="/scalp/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Live →</a>
-        <a href="/scalp-backtest" style="font-size:0.72rem;color:#60a5fa;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #1a3a6a;background:#080e1a;white-space:nowrap;">Backtest →</a>
-      </div>
+      <a href="/scalp-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
     </div>
-    <div id="scalp-status-body" style="padding:14px 18px 16px;">
-      <div class="ts-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr));">
-        <div class="ts-cell"><div class="ts-label">Strategy</div><div class="ts-val flat" style="font-size:0.78rem;">BB + RSI + PSAR</div><div class="ts-sub">${process.env.SCALP_RESOLUTION || '3'}-min candles</div></div>
-        <div class="ts-cell"><div class="ts-label">Config</div><div class="ts-val flat" style="font-size:0.78rem;">SL: PSAR · Trail ₹${process.env.SCALP_TRAIL_START || '300'}/₹${process.env.SCALP_TRAIL_STEP || '200'}</div><div class="ts-sub">BB(20,1) · RSI(14) · PSAR(0.02/0.2)</div></div>
-        <div class="ts-cell"><div class="ts-label">Orders via</div><div class="ts-val flat" style="font-size:0.78rem;">Fyers</div><div class="ts-sub">Independent from Zerodha</div></div>
-        <div class="ts-cell"><div class="ts-label">Max Trades</div><div class="ts-val flat" style="font-size:0.78rem;">${process.env.SCALP_MAX_DAILY_TRADES || '30'}/day</div><div class="ts-sub">Loss limit: ₹${process.env.SCALP_MAX_DAILY_LOSS || '2000'}</div></div>
-      </div>
+    <div id="scalp-paper-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
-  </div>` : ''}
+  </div>
+
+  <div class="card" id="scalp-live-status-card" style="flex:1;min-width:0;">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">🔴</span>
+        <span class="card-hdr-title">Scalp Live</span>
+        <span id="scalp-live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
+        <span id="scalp-live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
+      </div>
+      <a href="/scalp/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
+    </div>
+    <div id="scalp-live-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
+    </div>
+  </div>
+
+  </div><!-- end scalp-row -->
+  ` : ''}
 
   <!-- ⑤ QUICK ACTION BUTTONS -->
   <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
@@ -772,6 +794,62 @@ function renderLiveStatus(d){
     +posHtml;
 }
 
+${scalpModeOn ? `
+function renderScalpPaperStatus(d){
+  var rb=document.getElementById('scalp-paper-run-badge'), sb=document.getElementById('scalp-paper-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  var capital=d.capital!=null?'\\u20b9'+parseFloat(d.capital).toFixed(0):'—';
+  document.getElementById('scalp-paper-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Unrealised PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">spot proxy</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Capital</div><div class="ts-val">'+capital+'</div><div class="ts-sub">Simulated</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Total PnL (all-time)</div><div class="ts-val '+fmtPnl(d.totalPnl).cls+'">'+fmtPnl(d.totalPnl).txt+'</div><div class="ts-sub">From saved data</div></div>'
+    +'</div>'
+    +posHtml;
+}
+
+function renderScalpLiveStatus(d){
+  var rb=document.getElementById('scalp-live-run-badge'), sb=document.getElementById('scalp-live-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:d.unrealisedPnl);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
+      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  document.getElementById('scalp-live-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">Ticks / Candles</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Limit: \\u20b9${process.env.SCALP_MAX_DAILY_LOSS || "2000"}</div></div>'
+    +'</div>'
+    +posHtml;
+}
+` : ''}
 async function pollDashboardStatus(){
   try {
     var pr = await fetch('/paperTrade/status/data',{cache:'no-store'});
@@ -787,15 +865,18 @@ async function pollDashboardStatus(){
   } catch(e){
     renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
   }
-  // Scalp status
+  // Scalp Paper status
   ${scalpModeOn ? `try {
-    var sr = await fetch('/scalp/status/data',{cache:'no-store'});
     var sp = await fetch('/scalp-paper/status/data',{cache:'no-store'});
-    var scalpBadge = document.getElementById('scalp-run-badge');
-    if(sr.ok){ var sd=await sr.json(); if(sd.running && scalpBadge) scalpBadge.style.display='inline'; }
-    else if(sp.ok){ var spd=await sp.json(); if(spd.running && scalpBadge){ scalpBadge.style.display='inline'; scalpBadge.textContent='PAPER'; scalpBadge.style.background='#0d3018'; scalpBadge.style.color='#4ade80'; scalpBadge.style.borderColor='#166534'; scalpBadge.style.animation='none'; } }
-    if(scalpBadge && scalpBadge.style.display==='none') scalpBadge.style.display='none';
-  } catch(e){}` : ''}
+    if(sp.ok){ var spd=await sp.json(); renderScalpPaperStatus(spd); }
+    else { renderScalpPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  } catch(e){ renderScalpPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  // Scalp Live status
+  try {
+    var sr = await fetch('/scalp/status/data',{cache:'no-store'});
+    if(sr.ok){ var sd=await sr.json(); renderScalpLiveStatus(sd); }
+    else { renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
+  } catch(e){ renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
 }
 pollDashboardStatus();
 
