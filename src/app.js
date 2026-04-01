@@ -877,6 +877,20 @@ async function pollDashboardStatus(){
     if(sr.ok){ var sd=await sr.json(); renderScalpLiveStatus(sd); }
     else { renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
   } catch(e){ renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
+  // Toggle quick-action buttons based on running state
+  var bPaper=document.getElementById('btn-both-paper'), bLive=document.getElementById('btn-both-live');
+  if(bPaper){
+    var paperOn=document.getElementById('paper-run-badge')&&document.getElementById('paper-run-badge').style.display!=='none';
+    var spOn=document.getElementById('scalp-paper-run-badge')&&document.getElementById('scalp-paper-run-badge').style.display!=='none';
+    if(paperOn&&spOn){ bPaper.disabled=true; bPaper.textContent='✓ BOTH PAPER RUNNING'; bPaper.style.borderColor='#166534'; bPaper.style.opacity='0.6'; }
+    else { bPaper.disabled=false; bPaper.textContent='▶ START BOTH PAPER TEST'; bPaper.style.opacity='1'; }
+  }
+  if(bLive){
+    var liveOn=document.getElementById('live-run-badge')&&document.getElementById('live-run-badge').style.display!=='none';
+    var slOn=document.getElementById('scalp-live-run-badge')&&document.getElementById('scalp-live-run-badge').style.display!=='none';
+    if(liveOn&&slOn){ bLive.disabled=true; bLive.textContent='✓ BOTH LIVE RUNNING'; bLive.style.borderColor='#7f1d1d'; bLive.style.opacity='0.6'; }
+    else { bLive.disabled=false; bLive.textContent='▶ START BOTH LIVE TRADE'; bLive.style.opacity='1'; }
+  }
 }
 pollDashboardStatus();
 
@@ -885,18 +899,11 @@ async function startBothPaper(btn){
   btn.disabled=true; btn.textContent='⏳ Starting Paper + Scalp Paper...';
   try {
     var r1 = await secretFetch('/paperTrade/start');
-    var d1 = r1.ok ? await r1.json().catch(function(){return {};}) : {};
+    await r1.json().catch(function(){});
     var r2 = await secretFetch('/scalp-paper/start');
-    var d2 = r2.ok ? await r2.json().catch(function(){return {};}) : {};
-    var msgs = [];
-    if(r1.ok) msgs.push('Paper: '+(d1.message||'Started'));
-    else msgs.push('Paper: '+(d1.error||'Failed'));
-    if(r2.ok) msgs.push('Scalp Paper: '+(d2.message||'Started'));
-    else msgs.push('Scalp Paper: '+(d2.error||'Failed'));
-    alert(msgs.join('\\n'));
+    await r2.json().catch(function(){});
   } catch(e){ alert('Error: '+e.message); }
-  btn.disabled=false; btn.textContent='▶ START BOTH PAPER TEST';
-  pollDashboardStatus();
+  setTimeout(function(){ location.reload(); }, 1000);
 }
 
 async function startBothLive(btn){
@@ -904,18 +911,11 @@ async function startBothLive(btn){
   btn.disabled=true; btn.textContent='⏳ Starting Live + Scalp Live...';
   try {
     var r1 = await secretFetch('/trade/start');
-    var d1 = r1.ok ? await r1.json().catch(function(){return {};}) : {};
+    await r1.json().catch(function(){});
     var r2 = await secretFetch('/scalp/start');
-    var d2 = r2.ok ? await r2.json().catch(function(){return {};}) : {};
-    var msgs = [];
-    if(r1.ok) msgs.push('Live: '+(d1.message||'Started'));
-    else msgs.push('Live: '+(d1.error||'Failed'));
-    if(r2.ok) msgs.push('Scalp Live: '+(d2.message||'Started'));
-    else msgs.push('Scalp Live: '+(d2.error||'Failed'));
-    alert(msgs.join('\\n'));
+    await r2.json().catch(function(){});
   } catch(e){ alert('Error: '+e.message); }
-  btn.disabled=false; btn.textContent='▶ START BOTH LIVE TRADE';
-  pollDashboardStatus();
+  setTimeout(function(){ location.reload(); }, 1000);
 }
 
 // ── Candle cache info ─────────────────────────────────────────────────────────
