@@ -448,11 +448,11 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update PSAR trailing SL (tighten only)
+    // Update trailing SL: min(prevCandle, PSAR) — tighten only
     if (window.length >= 15) {
       const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
       if (newSL !== state.position.stopLoss) {
-        log(`📐 [SCALP-PAPER] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
+        log(`📐 [SCALP-PAPER] Trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
         state.position.stopLoss = newSL;
       }
     }
