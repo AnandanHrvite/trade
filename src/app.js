@@ -38,7 +38,7 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 .login-btn{width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#1e40af;color:#fff;font-size:0.82rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;}
 .login-btn:hover{background:#2563eb;}
 .login-error{margin-top:12px;padding:8px 12px;border-radius:7px;background:#1c0610;border:1px solid #500e20;color:#f87171;font-size:0.75rem;text-align:center;display:${error ? 'block' : 'none'};}
-:root[data-theme="light"] { filter: invert(1) hue-rotate(180deg) brightness(1.05); background-color: #fff; }
+:root[data-theme="light"] { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.05); background-color: #fff; }
 :root[data-theme="light"] .login-icon { filter: invert(1) hue-rotate(180deg); }
 </style></head><body>
 <div class="login-box">

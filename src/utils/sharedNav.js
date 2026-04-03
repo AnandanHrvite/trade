@@ -189,7 +189,7 @@ function sidebarCSS() {
 
     /* ── THEME OVERRIDE (Day View) ── */
     :root[data-theme="light"] {
-      filter: invert(1) hue-rotate(180deg) brightness(1.05);
+      filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.05);
       background-color: #fff;
     }
     :root[data-theme="light"] img, 
