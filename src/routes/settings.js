@@ -431,7 +431,7 @@ router.get("/", (req, res) => {
   function renderField(f) {
     const val = envData[f.key] ?? process.env[f.key] ?? f.default ?? "";
     const eff = f.effect || EFFECT.INSTANT;
-    const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" title="${eff.tip}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span>`;
+    const effBadge = `<span class="effect-badge" style="--ec:${eff.color}" title="${eff.tip}"><span class="effect-icon">${eff.icon}</span>${eff.label}<span class="info-i">i</span></span><span class="env-key-tag">${f.key}</span>`;
     const descText = f.desc || "";
     const descHtml = descText ? `<div class="field-desc">${descText}</div>` : "";
     const frozen = isFieldFrozen(f.key);
@@ -703,6 +703,15 @@ router.get("/", (req, res) => {
     .setting-row.frozen .toggle-slider { cursor: not-allowed; }
 
     /* ── Holiday eye button ────────────────────────────────── */
+    /* ── Env key tag after effect badge ──────────────────── */
+    .env-key-tag {
+      font-size: 0.55rem; font-family: 'JetBrains Mono', monospace;
+      color: #4a6080; background: rgba(74,96,128,0.1);
+      border: 1px solid rgba(74,96,128,0.2); border-radius: 3px;
+      padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+      letter-spacing: 0.3px; user-select: all;
+    }
+
     /* ── Section eye button ──────────────────────────────── */
     .section-eye-btn {
       background: none; border: 1px solid var(--border); border-radius: 6px;
