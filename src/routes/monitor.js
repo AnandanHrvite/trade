@@ -124,26 +124,26 @@ ${modalCSS()}
 /* ── stat cards ── */
 .stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
 .stat-card { background:#090f09; border:0.5px solid #162416; border-radius:8px; padding:16px 18px; }
-.stat-label { font-size:0.65rem; color:#3a5070; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
-.stat-value { font-size:1.35rem; font-weight:700; color:#e0eaf8; font-family:'IBM Plex Mono',monospace; }
-.stat-sub   { font-size:0.65rem; color:#3a5070; margin-top:4px; }
+.stat-label { font-size:0.56rem; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:5px; }
+.stat-value { font-size:1.35rem; font-weight:700; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; }
+.stat-sub   { font-size:0.6rem; color:#2a3a20; margin-top:3px; }
 
 /* ── chart cards ── */
 .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; margin-bottom:22px; }
 @media(max-width:900px){ .chart-grid{grid-template-columns:1fr;} }
 .chart-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; }
-.chart-title { font-size:0.72rem; font-weight:700; color:#6b8fc2; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+.chart-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
 canvas { width:100%!important; height:220px!important; }
 
 /* ── process table ── */
 .proc-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; margin-bottom:22px; }
-.proc-title { font-size:0.72rem; font-weight:700; color:#6b8fc2; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
+.proc-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
 .proc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
-.proc-item .pi-label { font-size:0.62rem; color:#3a5070; }
-.proc-item .pi-val   { font-size:0.9rem; font-weight:600; color:#e0eaf8; font-family:'IBM Plex Mono',monospace; }
+.proc-item .pi-label { font-size:0.56rem; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; }
+.proc-item .pi-val   { font-size:0.9rem; font-weight:600; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; }
 
 /* ── progress bar ── */
-.bar-track { height:8px; background:#111827; border-radius:4px; overflow:hidden; margin-top:6px; }
+.bar-track { height:6px; background:#0a120a; border-radius:4px; overflow:hidden; margin-top:6px; }
 .bar-fill  { height:100%; border-radius:4px; transition:width 0.4s; }
 .bar-cpu  { background:linear-gradient(90deg,#3b82f6,#60a5fa); }
 .bar-mem  { background:linear-gradient(90deg,#f59e0b,#fbbf24); }
@@ -232,8 +232,8 @@ ${modalJS()}
 })();
 
 /* ── Chart.js defaults ── */
-Chart.defaults.color = '#3a5070';
-Chart.defaults.borderColor = '#1a2236';
+Chart.defaults.color = '#2a3a20';
+Chart.defaults.borderColor = 'rgba(0,0,0,0)';
 Chart.defaults.font.family = "'IBM Plex Mono', monospace";
 Chart.defaults.font.size = 10;
 Chart.defaults.animation.duration = 300;
@@ -250,8 +250,8 @@ function makeChart(id, datasets, yOpts = {}) {
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 8, padding: 8 } } },
       scales: {
-        x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 9 } }, grid: { display: false } },
-        y: { beginAtZero: true, ...yOpts, grid: { color: '#111827' }, ticks: { font: { size: 9 } } },
+        x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 9 }, color: '#2a3a20' }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, ...yOpts, grid: { color: 'rgba(22,36,22,0.4)' }, ticks: { font: { size: 9 }, color: '#2a3a20' }, border: { display: false } },
       },
       elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } },
     }
