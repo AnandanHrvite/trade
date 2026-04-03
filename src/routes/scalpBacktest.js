@@ -299,8 +299,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
 
     // VIX check
     if (vixFilter.VIX_ENABLED) {
-      const vixCheck = vixFilter.checkBacktestVix(lookupVix, candleDate, "SCALP");
-      if (vixCheck && vixCheck.blocked) continue;
+      const _btVix = lookupVix(candle.time);
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG");
+      if (!vixCheck.allowed) continue;
     }
 
     const result = scalpStrategy.getSignal(window, {
