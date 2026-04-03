@@ -171,6 +171,13 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "UI PREFERENCES",
+    icon: "🎨",
+    fields: [
+      { key: "UI_THEME", label: "Application Theme", type: "select", options: ["dark", "light"], effect: EFFECT.INSTANT, desc: "Switch between Dark Mode (Night view) and Light Mode (Day view)", default: "dark" },
+    ],
+  },
+  {
     section: "Security",
     icon: "🔒",
     fields: [
@@ -214,7 +221,7 @@ const IMMEDIATE_KEYS = new Set([
   "TG_SCALP_ENTRY", "TG_SCALP_EXIT",
   "NIFTY_SPOT_FALLBACK", "SCALP_PAPER_CAPITAL", "CACHE_MAX_DAYS",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
-  "API_SECRET", "LOGIN_SECRET",
+  "API_SECRET", "LOGIN_SECRET", "UI_THEME",
   // Strategy thresholds — read from process.env inside getSignal() on every candle
   "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_SLOPE_MIN",
   "STRONG_SLOPE", "STRONG_RSI_CE", "STRONG_RSI_PE",
@@ -407,6 +414,7 @@ router.get("/", (req, res) => {
       </div>
       </div></div>
       <script>
+      (function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
       function go(e){e.preventDefault();var s=document.getElementById('secretInput').value;if(!s)return;window.location='/settings?secret='+encodeURIComponent(s);}
       ${req.query.secret ? "document.getElementById('authErr').style.display='block';" : ""}
       </script></body></html>`);

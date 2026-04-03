@@ -187,6 +187,21 @@ function sidebarCSS() {
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
+    /* ── THEME OVERRIDE (Day View) ── */
+    :root[data-theme="light"] {
+      filter: invert(1) hue-rotate(180deg) brightness(1.05);
+      background-color: #fff;
+    }
+    :root[data-theme="light"] img, 
+    :root[data-theme="light"] video, 
+    :root[data-theme="light"] .sb-nav-icon,
+    :root[data-theme="light"] .card-hdr-icon,
+    :root[data-theme="light"] .broker-logo,
+    :root[data-theme="light"] .holiday-eye-btn,
+    :root[data-theme="light"] .section-eye-btn {
+      filter: invert(1) hue-rotate(180deg);
+    }
+
     /* ── SIDEBAR ── */
     .app-shell{display:flex;min-height:100vh;}
     .sidebar{width:200px;flex-shrink:0;background:#03080e;border-right:1px solid #0e1e36;display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;overflow-y:auto;}
@@ -615,6 +630,13 @@ async function secretFetch(url, opts) {
   }
   return res;
 }
+
+// ── Theme overriding ────────────────────────────────────────────────────────
+(function(){
+  if ('${process.env.UI_THEME || "dark"}' === 'light') {
+    document.documentElement.setAttribute('data-theme', 'light');
+  }
+})();
 `;
 }
 
