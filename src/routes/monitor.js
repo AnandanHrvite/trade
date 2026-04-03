@@ -123,7 +123,7 @@ ${modalCSS()}
 
 /* ── stat cards ── */
 .stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
-.stat-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:16px 18px; }
+.stat-card { background:#090f09; border:0.5px solid #162416; border-radius:8px; padding:16px 18px; }
 .stat-label { font-size:0.65rem; color:#3a5070; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
 .stat-value { font-size:1.35rem; font-weight:700; color:#e0eaf8; font-family:'IBM Plex Mono',monospace; }
 .stat-sub   { font-size:0.65rem; color:#3a5070; margin-top:4px; }
@@ -131,12 +131,12 @@ ${modalCSS()}
 /* ── chart cards ── */
 .chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; margin-bottom:22px; }
 @media(max-width:900px){ .chart-grid{grid-template-columns:1fr;} }
-.chart-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:18px 20px; }
+.chart-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; }
 .chart-title { font-size:0.72rem; font-weight:700; color:#6b8fc2; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
 canvas { width:100%!important; height:220px!important; }
 
 /* ── process table ── */
-.proc-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:18px 20px; margin-bottom:22px; }
+.proc-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; margin-bottom:22px; }
 .proc-title { font-size:0.72rem; font-weight:700; color:#6b8fc2; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px; }
 .proc-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
 .proc-item .pi-label { font-size:0.62rem; color:#3a5070; }
