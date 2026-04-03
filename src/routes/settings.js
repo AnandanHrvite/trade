@@ -542,16 +542,33 @@ router.get("/", (req, res) => {
       </div>`;
   }
 
-  const sectionsHtml = SETTINGS_SCHEMA.map(s => {
+  // Build section summary data for the eye icon modals
+  const sectionSummaries = {};
+  SETTINGS_SCHEMA.forEach((s, idx) => {
+    const rows = s.fields.map(f => {
+      const val = envData[f.key] ?? process.env[f.key] ?? f.default ?? "";
+      return { key: f.key, label: f.label, value: val, type: f.type };
+    });
+    sectionSummaries[idx] = rows;
+  });
+
+  const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
+    // Add eye icon for Trading Strategy and Scalping Strategy sections
+    const showEye = idx === 0 || idx === 1;
+    const eyeBtn = showEye
+      ? `<button type="button" class="section-eye-btn" onclick="showSectionSummary(${idx})" title="View all configured values">👁</button>`
+      : "";
     return `
     <div class="settings-section" data-section="${sectionId}">
-      <div class="section-title">${s.icon} ${s.section}</div>
+      <div class="section-title">${s.icon} ${s.section}${eyeBtn}</div>
       <div class="section-card">
         ${s.fields.map(renderField).join("")}
       </div>
     </div>`;
   }).join("");
+
+  const sectionSummaryJSON = JSON.stringify(sectionSummaries);
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -686,6 +703,30 @@ router.get("/", (req, res) => {
     .setting-row.frozen .toggle-slider { cursor: not-allowed; }
 
     /* ── Holiday eye button ────────────────────────────────── */
+    /* ── Section eye button ──────────────────────────────── */
+    .section-eye-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      padding: 3px 8px; cursor: pointer; color: var(--muted); font-size: 0.7rem;
+      transition: all 0.15s; flex-shrink: 0; margin-left: 8px;
+    }
+    .section-eye-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Section summary modal ──────────────────────────── */
+    .summary-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; }
+    .summary-table th {
+      text-align: left; padding: 8px 12px; font-size: 0.65rem; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .summary-table td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+    .summary-table tr:last-child td { border-bottom: none; }
+    .summary-table tr:hover td { background: rgba(59,130,246,0.06); }
+    .summary-table .val-true { color: #10b981; font-weight: 600; }
+    .summary-table .val-false { color: #ef4444; font-weight: 600; }
+    .summary-table .val-num { color: #60a5fa; }
+    .summary-table .val-text { color: #a3b8d0; }
+    .summary-label { color: #8aa1bd; font-size: 0.75rem; }
+    .summary-key { color: #4a6080; font-size: 0.65rem; }
+
     .holiday-eye-btn {
       background: none; border: 1px solid var(--border); border-radius: 6px;
       padding: 5px 8px; cursor: pointer; color: var(--muted); font-size: 0.75rem;
@@ -1237,7 +1278,54 @@ async function showExpiryModal() {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">Failed to load expiry dates</td></tr>';
   }
 }
+
+// ── Section Summary (Eye icon) ─────────────────────────────────────────────
+var _sectionSummaries = ${sectionSummaryJSON};
+var _sectionNames = { 0: 'Trading Strategy (15-min)', 1: 'Scalping Strategy (BB+CPR)' };
+
+function showSectionSummary(idx) {
+  var modal = document.getElementById('sectionSummaryModal');
+  var titleEl = document.getElementById('sectionSummaryTitle');
+  var bodyEl = document.getElementById('sectionSummaryBody');
+  if (!modal || !bodyEl) return;
+
+  titleEl.textContent = _sectionNames[idx] || 'Settings Summary';
+
+  // Read current values from the form (not the static data) so it reflects unsaved changes
+  var fields = _sectionSummaries[idx];
+  var html = '<table class="summary-table">';
+  html += '<tr><th>Setting</th><th>Value</th></tr>';
+  for (var i = 0; i < fields.length; i++) {
+    var f = fields[i];
+    var el = document.querySelector('[data-key="' + f.key + '"]');
+    var val = f.value;
+    if (el) {
+      val = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
+    }
+    var valClass = 'val-text';
+    if (val === 'true') valClass = 'val-true';
+    else if (val === 'false') valClass = 'val-false';
+    else if (f.type === 'number' || !isNaN(parseFloat(val))) valClass = 'val-num';
+
+    var displayVal = val === 'true' ? 'ON' : val === 'false' ? 'OFF' : (val || '—');
+    html += '<tr><td><div class="summary-label">' + f.label + '</div><div class="summary-key">' + f.key + '</div></td><td class="' + valClass + '">' + displayVal + '</td></tr>';
+  }
+  html += '</table>';
+  bodyEl.innerHTML = html;
+  modal.style.display = 'block';
+}
 </script>
+<!-- Section summary modal -->
+<div id="sectionSummaryModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:560px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span id="sectionSummaryTitle" style="font-weight:700;font-size:0.95rem;color:#60a5fa;">Settings Summary</span>
+      <button onclick="document.getElementById('sectionSummaryModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div id="sectionSummaryBody" style="padding:12px 16px;max-height:70vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#243048 transparent;">
+    </div>
+  </div>
+</div>
 <!-- Holiday list modal -->
 <div id="holidayModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
   <div style="max-width:520px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
