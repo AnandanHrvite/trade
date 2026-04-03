@@ -115,7 +115,7 @@ ${sidebarCSS()}
 ${modalCSS()}
 
 /* ── page layout ── */
-.main-content { margin-left:var(--sidebar-w,56px); padding:28px 32px 40px; min-height:100vh; background:#080c14; }
+.main-content { margin-left:220px; padding:28px 32px 40px; min-height:100vh; background:#080c14; }
 @media(max-width:900px){ .main-content{margin-left:0;padding:18px 10px 32px;} }
 
 .page-title { font-size:1.1rem; font-weight:700; color:#e0eaf8; margin-bottom:6px; }
