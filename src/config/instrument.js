@@ -606,7 +606,7 @@ async function validateAndGetOptionSymbol(spot, side) {
   return { symbol: weeklySymbol, expiry: weeklyExpiry, strike, side, invalid: true };
 }
 
-async function isSymbolValidViaQuotes(symbol) {
+async function isSymbolValidViaQuotes(symbol, _retried = false) {
   try {
     const res = await fyers.getQuotes([symbol]);
 
@@ -620,7 +620,12 @@ async function isSymbolValidViaQuotes(symbol) {
                         topMsg.includes("session") || topMsg.includes("unauthorized") ||
                         topMsg.includes("limit") || topMsg.includes("rate");
       if (isAuthErr) {
-        console.warn(`[instrument] ⚠️  getQuotes auth/rate error for ${symbol}: "${res.message || res.msg}" — assuming symbol VALID to avoid false-invalid`);
+        if (!_retried) {
+          console.warn(`[instrument] ⚠️  getQuotes auth/rate error for ${symbol}: "${res.message || res.msg}" — retrying in 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+          return isSymbolValidViaQuotes(symbol, true);
+        }
+        console.warn(`[instrument] ⚠️  getQuotes auth/rate error for ${symbol} (after retry): "${res.message || res.msg}" — assuming VALID`);
         return true; // optimistic: don't discard the symbol due to API issues
       }
       console.log(`[instrument] Symbol validation failed: ${symbol} - top-level s="${res.s}" msg="${res.message || ""}"`);
@@ -636,7 +641,12 @@ async function isSymbolValidViaQuotes(symbol) {
                         errmsg.includes("session") || errmsg.includes("unauthorized") ||
                         errmsg.includes("limit") || errmsg.includes("rate");
       if (isAuthErr) {
-        console.warn(`[instrument] ⚠️  getQuotes data-level auth error for ${symbol}: "${v.errmsg}" — assuming VALID`);
+        if (!_retried) {
+          console.warn(`[instrument] ⚠️  getQuotes data-level auth error for ${symbol}: "${v.errmsg}" — retrying in 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+          return isSymbolValidViaQuotes(symbol, true);
+        }
+        console.warn(`[instrument] ⚠️  getQuotes data-level auth error for ${symbol} (after retry): "${v.errmsg}" — assuming VALID`);
         return true;
       }
 
@@ -650,8 +660,13 @@ async function isSymbolValidViaQuotes(symbol) {
     console.log(`[instrument] Symbol validation failed: ${symbol} - no data in response`);
     return false;
   } catch (e) {
-    // Network / timeout errors are also inconclusive — don't mark symbol invalid
-    console.warn(`[instrument] ⚠️  getQuotes threw for ${symbol}: ${e.message} — assuming VALID`);
+    // Network / timeout errors are also inconclusive — retry once before assuming valid
+    if (!_retried) {
+      console.warn(`[instrument] ⚠️  getQuotes threw for ${symbol}: ${e.message} — retrying in 1s...`);
+      await new Promise(r => setTimeout(r, 1000));
+      return isSymbolValidViaQuotes(symbol, true);
+    }
+    console.warn(`[instrument] ⚠️  getQuotes threw for ${symbol} (after retry): ${e.message} — assuming VALID`);
     return true;
   }
 }

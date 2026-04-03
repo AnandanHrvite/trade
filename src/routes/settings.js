@@ -125,7 +125,9 @@ const SETTINGS_SCHEMA = [
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta" },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation" },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees" },
+      { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
       { key: "PAPER_TRADE_CAPITAL", label: "Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT },
+      { key: "SCALP_PAPER_CAPITAL", label: "Scalp Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for scalp paper trading", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
   },
@@ -135,6 +137,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "PORT", label: "Port", type: "number", min: 1000, max: 65535, step: 1, effect: EFFECT.SERVER },
       { key: "EC2_IP", label: "EC2 IP", type: "text", effect: EFFECT.SERVER },
+      { key: "CACHE_MAX_DAYS", label: "Candle Cache (days)", type: "number", min: 15, max: 180, step: 15, effect: EFFECT.INSTANT, desc: "Trim cached candles older than this many days", default: "60" },
       { key: "APP_ID", label: "Fyers App ID", type: "text", effect: EFFECT.SERVER },
       { key: "REDIRECT_URL", label: "Fyers Redirect URL", type: "text", effect: EFFECT.SERVER },
       { key: "ZERODHA_API_KEY", label: "Zerodha API Key", type: "text", effect: EFFECT.SERVER },
@@ -151,7 +154,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_TRADE_SIGNALS", label: "Trade Signals (Skip)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send candle-close signal updates when flat (why trade was/wasn't taken)", default: "true" },
       { key: "TG_SCALP_ENTRY", label: "Scalp Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is entered", default: "true" },
       { key: "TG_SCALP_EXIT", label: "Scalp Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is exited", default: "true" },
-      { key: "TG_SCALP_SIGNALS", label: "Scalp Signals (Skip)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send scalp candle-close signal updates when flat", default: "true" },
     ],
   },
   {
@@ -209,8 +211,8 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_TRADE_ENTRY", "TG_TRADE_EXIT", "TG_TRADE_SIGNALS",
-  "TG_SCALP_ENTRY", "TG_SCALP_EXIT", "TG_SCALP_SIGNALS",
-  "ACTIVE_STRATEGY", "NIFTY_SPOT_FALLBACK",
+  "TG_SCALP_ENTRY", "TG_SCALP_EXIT",
+  "NIFTY_SPOT_FALLBACK", "SCALP_PAPER_CAPITAL", "CACHE_MAX_DAYS",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET",
   // Strategy thresholds — read from process.env inside getSignal() on every candle

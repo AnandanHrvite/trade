@@ -32,6 +32,7 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
+const { getCharges } = require("../utils/charges");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_LIVE";
@@ -43,6 +44,7 @@ const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "200
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
 const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
+const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
@@ -58,6 +60,40 @@ const _ENTRY_STOP_MINS = _STOP_MINS - 10;
 function getISTMinutes() {
   const istSec = Math.floor(Date.now() / 1000) + 19800;
   return Math.floor(istSec / 60) % 1440;
+}
+
+// Fast IST time string from unix ms — avoids toLocaleTimeString/ICU
+function fastISTTime(unixMs) {
+  const ist = new Date(unixMs + 19800000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
+  return `${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+}
+
+// Return last N items in reverse order — avoids spread+reverse on full array
+function reverseSlice(arr, n) {
+  const len = arr.length;
+  const count = Math.min(n, len);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
+  return out;
+}
+
+// Map trades in reverse without intermediate arrays
+function mapTradesReversed(trades) {
+  const len = trades.length;
+  const out = new Array(len);
+  for (let i = 0; i < len; i++) {
+    const t = trades[len - 1 - i];
+    out[i] = {
+      side: t.side || "", symbol: t.symbol || "", strike: t.optionStrike || "",
+      expiry: t.optionExpiry || "", entry: t.entryTime || "", exit: t.exitTime || "",
+      eSpot: t.spotAtEntry || t.entryPrice || 0, eOpt: t.optionEntryLtp || null,
+      eSl: t.stopLoss || t.initialStopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
+      xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
+      pnlMode: t.pnlMode || "", order: t.orderId || "", reason: t.exitReason || "",
+    };
+  }
+  return out;
 }
 
 // ── Persistence ──────────────────────────────────────────────────────────────
@@ -119,21 +155,25 @@ let state = {
   _entryPending:  false,
 };
 
+// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const ist = new Date(Date.now() + 19800000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
+  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
+  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   state.log.push(entry);
-  if (state.log.length > 2000) state.log.shift();
+  if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
+// Pure integer math — avoids Date object allocation on every tick
 function getBucketStart(unixMs) {
-  const d = new Date(unixMs);
-  d.setMinutes(Math.floor(d.getMinutes() / SCALP_RES) * SCALP_RES, 0, 0);
-  return d.getTime();
+  const resMs = SCALP_RES * 60_000;
+  return Math.floor(unixMs / resMs) * resMs;
 }
 
 const _SCALP_START_MINS = (() => {
@@ -277,7 +317,6 @@ async function squareOff(exitPrice, reason) {
     pnlMode = "spot proxy";
   }
 
-  const { getCharges } = require("../utils/charges");
   const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
@@ -299,6 +338,8 @@ async function squareOff(exitPrice, reason) {
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
+  if (netPnl > 0) state._wins = (state._wins || 0) + 1;
+  else if (netPnl < 0) state._losses = (state._losses || 0) + 1;
 
   stopOptionPolling();
   state.optionSymbol = null;
@@ -382,16 +423,14 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const { getCharges: _getChgLive } = require("../utils/charges");
-
     // Running PNL helper (₹)
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-        const _c = _getChgLive({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
+        const _c = getCharges({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      const _c = _getChgLive({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+      const _c = getCharges({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
     };
 
@@ -720,7 +759,7 @@ router.get("/start", async (req, res) => {
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
-    sessionPnl: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
+    sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, _slPauseUntil: null,
     _dailyLossHit: false, _entryPending: false,
     _expiryDayBlocked: _expiryBlocked,
@@ -830,19 +869,18 @@ router.get("/status/data", (req, res) => {
   const pos = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
-  const { getCharges: _getChgData } = require("../utils/charges");
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      const _c = _getChgData({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      const _c = getCharges({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
       unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        const _c = _getChgData({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        const _c = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
         unrealised = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _c).toFixed(2));
       } else {
-        const _c = _getChgData({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _c = getCharges({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
       }
     }
@@ -850,11 +888,11 @@ router.get("/status/data", (req, res) => {
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
-  const _chgOpt = (optEntryLtp && optCurrentLtp) ? _getChgData({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const _chgOpt = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOpt).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-  const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+  const OPT_STOP_PCT_VAL = _OPT_STOP_PCT;
   const optStopPrice = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
 
   res.json({
@@ -862,15 +900,15 @@ router.get("/status/data", (req, res) => {
     isFutures,
     tickCount:     state.tickCount,
     lastTickPrice: state.lastTickPrice,
-    lastTickTime:  state.lastTickTime ? new Date(state.lastTickTime).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : null,
+    lastTickTime:  state.lastTickTime ? fastISTTime(state.lastTickTime) : null,
     candleCount:   state.candles.length,
     currentBar:    state.currentBar,
     sessionPnl:    state.sessionPnl,
     unrealised,
     totalPnl:      parseFloat((state.sessionPnl + unrealised).toFixed(2)),
     tradeCount:    state.sessionTrades.length,
-    wins:          state.sessionTrades.filter(t => t.pnl > 0).length,
-    losses:        state.sessionTrades.filter(t => t.pnl < 0).length,
+    wins:          state._wins || 0,
+    losses:        state._losses || 0,
     dailyLossHit:  state._dailyLossHit,
     sessionStart:  state.sessionStart,
     position: pos ? {
@@ -901,25 +939,9 @@ router.get("/status/data", (req, res) => {
       trailActivatePts:  pos.trailActivatePts || null,
       reason:            pos.reason || null,
     } : null,
-    trades: [...state.sessionTrades].reverse().map(t => ({
-      side:    t.side           || "",
-      symbol:  t.symbol         || "",
-      strike:  t.optionStrike   || "",
-      expiry:  t.optionExpiry   || "",
-      entry:   t.entryTime      || "",
-      exit:    t.exitTime       || "",
-      eSpot:   t.spotAtEntry    || t.entryPrice || 0,
-      eOpt:    t.optionEntryLtp || null,
-      eSl:     t.stopLoss       || t.initialStopLoss || null,
-      xSpot:   t.spotAtExit     || t.exitPrice  || 0,
-      xOpt:    t.optionExitLtp  || null,
-      pnl:     typeof t.pnl === "number" ? t.pnl : null,
-      pnlMode: t.pnlMode        || "",
-      order:   t.orderId        || "",
-      reason:  t.exitReason     || "",
-    })),
+    trades: mapTradesReversed(state.sessionTrades),
     logTotal: state.log.length,
-    logs:    [...state.log].reverse(),
+    logs:    reverseSlice(state.log, 200),
   });
   } catch (err) {
     console.error("[scalp/status/data] Error:", err.message);
@@ -943,19 +965,18 @@ router.get("/status", (req, res) => {
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
 
   // Unrealised PnL (minus charges)
-  const { getCharges: _getChgPage } = require("../utils/charges");
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      const _cp = _getChgPage({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      const _cp = getCharges({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
       unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        const _cp = _getChgPage({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        const _cp = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
         unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _cp).toFixed(2));
       } else {
-        const _cp = _getChgPage({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _cp = getCharges({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
       }
     }
@@ -978,7 +999,7 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+  const OPT_STOP_PCT_VAL = _OPT_STOP_PCT;
   const optStopPrice   = optEntryLtp ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
   const optStopPct     = Math.round(OPT_STOP_PCT_VAL * 100);
 

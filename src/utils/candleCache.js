@@ -21,7 +21,7 @@ const path = require("path");
 const os   = require("os");
 
 const CACHE_DIR    = path.join(os.homedir(), "trading-data", "candle_cache");
-const MAX_CACHE_DAYS = 60; // trim candles older than this
+const MAX_CACHE_DAYS = parseInt(process.env.CACHE_MAX_DAYS || "60"); // trim candles older than this
 const CANDLES_15MIN_PER_DAY = 26; // 9:15–15:30 = 26 fifteen-min bars
 
 function ensureCacheDir() {

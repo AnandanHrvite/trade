@@ -30,6 +30,7 @@ const { getSymbol, getLotQty, getProductType, calcATMStrike, getNearestThursdayE
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const { getCharges } = require("../utils/charges");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -46,6 +47,7 @@ const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
 const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── EOD stop time — cached at module load ─────────────────────────────────────
 // parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
@@ -283,23 +285,36 @@ let tradeState = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const ist = new Date(Date.now() + 19800000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
+  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
+  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   tradeState.log.push(entry);
-  if (tradeState.log.length > 2000) tradeState.log.shift(); // match logStore MAX_LOGS
+  if (tradeState.log.length > 2500) tradeState.log.splice(0, tradeState.log.length - 2000);
+}
+
+// Return last N items in reverse order — avoids spread+reverse on full array
+function reverseSlice(arr, n) {
+  const len = arr.length;
+  const count = Math.min(n, len);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
+  return out;
 }
 
 function getTradeResolution() { return TRADE_RES; } // kept for legacy callers; prefer TRADE_RES directly
 
+// Pure integer math — avoids Date object allocation on every tick
 function get5MinBucketStart(unixMs) {
-  const d = new Date(unixMs);
-  d.setMinutes(Math.floor(d.getMinutes() / TRADE_RES) * TRADE_RES, 0, 0);
-  return d.getTime();
+  const resMs = TRADE_RES * 60_000;
+  return Math.floor(unixMs / resMs) * resMs;
 }
 
 function parseMins(envKey, defaultVal) {
@@ -617,7 +632,6 @@ async function squareOff(exitPrice, reason) {
     pnlMode = "spot proxy (option LTP unavailable)";
   }
 
-  const { getCharges } = require("../utils/charges");
   const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
@@ -646,6 +660,8 @@ async function squareOff(exitPrice, reason) {
     orderId:        result.orderId || null,
   });
   tradeState.sessionPnl = parseFloat((tradeState.sessionPnl + netPnl).toFixed(2));
+  if (netPnl > 0) tradeState._wins = (tradeState._wins || 0) + 1;
+  else if (netPnl < 0) tradeState._losses = (tradeState._losses || 0) + 1;
   log(`💼 [LIVE] Session PnL so far: ₹${tradeState.sessionPnl}`);
 
   // ── Daily loss kill switch ────────────────────────────────────────────────────
@@ -1406,6 +1422,8 @@ router.get("/start", async (req, res) => {
   tradeState.prevCandleMid  = null;
   tradeState.sessionTrades  = [];
   tradeState.sessionPnl     = 0;
+  tradeState._wins          = 0;
+  tradeState._losses        = 0;
   tradeState._entryPending  = false;
   tradeState._consecutiveLosses    = 0;
   tradeState._pauseUntilTime       = null;
@@ -1710,21 +1728,19 @@ router.get("/status/data", (req, res) => {
     let unrealisedPnl = 0;
     const INSTR = instrumentConfig.INSTRUMENT;
     const isFutures = INSTR === "NIFTY_FUTURES";
-    const { getCharges: _getChgStat } = require("../utils/charges");
-
     if (tradeState.position && tradeState.currentBar) {
       const ltp = tradeState.currentBar.close;
       const pos = tradeState.position;
       if (isFutures) {
-        const _c = _getChgStat({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _c = getCharges({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
       } else {
         const cur = tradeState.optionLtp || pos.optionCurrentLtp;
         if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-          const _c = _getChgStat({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+          const _c = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
           unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _c).toFixed(2));
         } else {
-          const _c = _getChgStat({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+          const _c = getCharges({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
           unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
         }
       }
@@ -1739,7 +1755,7 @@ router.get("/status/data", (req, res) => {
       ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
     const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
       ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-    const OPT_STOP_PCT_VAL = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+    const OPT_STOP_PCT_VAL = _OPT_STOP_PCT;
     const optStopPrice   = optEntryLtp
       ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL)).toFixed(2)) : null;
     const liveClose    = tradeState.currentBar?.close || null;
@@ -1761,8 +1777,8 @@ router.get("/status/data", (req, res) => {
       dailyLossHit:      tradeState._dailyLossHit || false,
       sessionStart:      tradeState.sessionStart,
       tradeCount:        tradeState.sessionTrades.length,
-      wins:              tradeState.sessionTrades.filter(t => t.pnl > 0).length,
-      losses:            tradeState.sessionTrades.filter(t => t.pnl < 0).length,
+      wins:              tradeState._wins || 0,
+      losses:            tradeState._losses || 0,
       fyersOk,
       zerodhaOk,
       // Position block
@@ -1812,8 +1828,8 @@ router.get("/status/data", (req, res) => {
         pnl:     typeof t.pnl === "number" ? t.pnl : null,
         reason:  t.exitReason     || "",
       })),
-      logTotal: tradeState.log.length,   // full count — used by AJAX to detect new entries
-      logs: [...tradeState.log].reverse(),
+      logTotal: tradeState.log.length,
+      logs: reverseSlice(tradeState.log, 200),
     });
   } catch (err) {
     console.error("[trade/status/data] Error:", err.message);
@@ -1843,20 +1859,19 @@ router.get("/status", (req, res) => {
   const isFutures = INSTR === "NIFTY_FUTURES";
 
   // Unrealised PnL (minus charges)
-  const { getCharges: _getChgPg } = require("../utils/charges");
   let unrealisedPnl = 0;
   if (pos && tradeState.currentBar) {
     const ltp = tradeState.currentBar.close;
     if (isFutures) {
-      const _cp = _getChgPg({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+      const _cp = getCharges({ isFutures: true, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
       unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
     } else {
       const cur = tradeState.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        const _cp = _getChgPg({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        const _cp = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
         unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _cp).toFixed(2));
       } else {
-        const _cp = _getChgPg({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _cp = getCharges({ isFutures: false, exitPremium: ltp, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealisedPnl = parseFloat(((ltp - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
       }
     }
@@ -1864,7 +1879,7 @@ router.get("/status", (req, res) => {
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp   || null) : null;
   const optCurrentLtp = pos ? (tradeState.optionLtp || pos.optionCurrentLtp || null) : null;
-  const _chgOptTrd = (optEntryLtp && optCurrentLtp) ? _getChgPg({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const _chgOptTrd = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
     ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOptTrd).toFixed(2))
     : null;
@@ -1874,7 +1889,7 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  const OPT_STOP_PCT_VAL2 = parseFloat(process.env.OPT_STOP_PCT || '0.15');
+  const OPT_STOP_PCT_VAL2 = _OPT_STOP_PCT;
   const optStopPrice   = optEntryLtp
     ? parseFloat((optEntryLtp * (1 - OPT_STOP_PCT_VAL2)).toFixed(2)) : null;
   const optStopPct     = Math.round(OPT_STOP_PCT_VAL2 * 100);

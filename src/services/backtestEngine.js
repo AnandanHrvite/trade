@@ -7,6 +7,7 @@ const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
 
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
+const { getCharges } = require("../utils/charges");
 
 
 function maxDaysForResolution(resolution) {
@@ -117,7 +118,6 @@ function getISTHHMM(unixSec) {
 function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const trades    = [];
   let position    = null;
-  const { getCharges } = require("../utils/charges");
   const LOT_SIZE  = getLotQty();
 
   // ── VIX filter for backtest ─────────────────────────────────────────────────

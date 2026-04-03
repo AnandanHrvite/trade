@@ -26,6 +26,7 @@ const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS,
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const { getCharges } = require("../utils/charges");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -173,15 +174,28 @@ let ptState = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const ist = new Date(Date.now() + 19800000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
+  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
+  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   ptState.log.push(entry);
-  if (ptState.log.length > 2000) ptState.log.shift(); // match logStore MAX_LOGS
+  if (ptState.log.length > 2500) ptState.log.splice(0, ptState.log.length - 2000);
+}
+
+// Return last N items in reverse order — avoids spread+reverse on full array
+function reverseSlice(arr, n) {
+  const len = arr.length;
+  const count = Math.min(n, len);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
+  return out;
 }
 
 function getTradeResolution() { return TRADE_RES; } // kept for legacy callers; prefer TRADE_RES directly
@@ -598,7 +612,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Charges: STT + exchange + GST + stamp duty + brokerage (configurable via Settings)
-  const { getCharges } = require("../utils/charges");
   const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
@@ -1877,7 +1890,6 @@ router.get("/status/data", (req, res) => {
     const data     = loadPaperData();
 
     // Unrealised PnL (mirrors /status logic, minus charges)
-    const { getCharges: _getChgPtData } = require("../utils/charges");
     const _isFutPt = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
     let unrealisedPnl = 0;
     let pnlSource     = "spot proxy";
@@ -1885,11 +1897,11 @@ router.get("/status/data", (req, res) => {
       const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
       const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
       if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-        const _c = _getChgPtData({ isFutures: _isFutPt, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+        const _c = getCharges({ isFutures: _isFutPt, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
         unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
         pnlSource     = "option premium";
       } else if (ptState.currentBar) {
-        const _c = _getChgPtData({ isFutures: _isFutPt, exitPremium: ptState.currentBar.close, entryPremium: entryPrice, qty });
+        const _c = getCharges({ isFutures: _isFutPt, exitPremium: ptState.currentBar.close, entryPremium: entryPrice, qty });
         unrealisedPnl = parseFloat(((ptState.currentBar.close - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       }
     }
@@ -1897,7 +1909,7 @@ router.get("/status/data", (req, res) => {
     const pos           = ptState.position;
     const optEntryLtp   = pos ? (pos.optionEntryLtp || null)                       : null;
     const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
-    const _chgPtD = (optEntryLtp && optCurrentLtp) ? _getChgPtData({ isFutures: _isFutPt, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+    const _chgPtD = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures: _isFutPt, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
     const optPremiumPnl = (optEntryLtp && optCurrentLtp)
       ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtD).toFixed(2)) : null;
     const optPremiumMove = (optEntryLtp && optCurrentLtp)
@@ -1968,9 +1980,7 @@ router.get("/status/data", (req, res) => {
       trades: _getCachedTradesForPoll(),
       // Activity log — last 100 entries newest-first (avoids copying/reversing full 2000-entry buffer on every 2s poll)
       logTotal: ptState.log.length,
-      logs: ptState.log.length <= 100
-        ? [...ptState.log].reverse()
-        : ptState.log.slice(-100).reverse(),
+      logs: reverseSlice(ptState.log, 100),
     });
   } catch (err) {
     console.error("[paperTrade/status/data] Error:", err.message);
@@ -1984,7 +1994,6 @@ router.get("/status", (req, res) => {
   const data     = loadPaperData();
 
   // Unrealised PnL if position is open — use OPTION LTP if available, else spot proxy (minus charges)
-  const { getCharges: _getChgPtPg } = require("../utils/charges");
   const _isFutPtPg = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   let unrealisedPnl = 0;
   let pnlSource = "spot proxy";
@@ -1992,12 +2001,12 @@ router.get("/status", (req, res) => {
     const { side, entryPrice, qty, optionEntryLtp, optionCurrentLtp } = ptState.position;
     const currentOptionLtp = ptState.optionLtp || optionCurrentLtp;
     if (optionEntryLtp && currentOptionLtp && optionEntryLtp > 0) {
-      const _c = _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
+      const _c = getCharges({ isFutures: _isFutPtPg, exitPremium: currentOptionLtp, entryPremium: optionEntryLtp, qty });
       unrealisedPnl = parseFloat(((currentOptionLtp - optionEntryLtp) * qty - _c).toFixed(2));
       pnlSource = `option premium`;
     } else {
       const ltp = ptState.currentBar.close;
-      const _c = _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: ltp, entryPremium: entryPrice, qty });
+      const _c = getCharges({ isFutures: _isFutPtPg, exitPremium: ltp, entryPremium: entryPrice, qty });
       unrealisedPnl = parseFloat(((ltp - entryPrice) * (side === "CE" ? 1 : -1) * qty - _c).toFixed(2));
       pnlSource = "spot proxy";
     }
@@ -2036,7 +2045,7 @@ router.get("/status", (req, res) => {
   // Option premium P&L calculation for display
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (ptState.optionLtp || pos.optionCurrentLtp || null) : null;
-  const _chgPtPg2 = (optEntryLtp && optCurrentLtp) ? _getChgPtPg({ isFutures: _isFutPtPg, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const _chgPtPg2 = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures: _isFutPtPg, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
     ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgPtPg2).toFixed(2))
     : null;

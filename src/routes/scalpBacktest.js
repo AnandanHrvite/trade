@@ -22,6 +22,7 @@ const { VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
+const { getCharges } = require("../utils/charges");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -60,7 +61,6 @@ function buildDailyOHLC(candles) {
 function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const trades   = [];
   let position   = null;
-  const { getCharges } = require("../utils/charges");
   const LOT_SIZE  = getLotQty();
 
   // VIX

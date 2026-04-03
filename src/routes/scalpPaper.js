@@ -28,6 +28,7 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
+const { getCharges } = require("../utils/charges");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_PAPER";
@@ -103,21 +104,25 @@ let state = {
   _dailyLossHit:  false,
 };
 
+// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  const ist = new Date(Date.now() + 19800000);
+  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
+  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
+  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
   state.log.push(entry);
-  if (state.log.length > 2000) state.log.shift();
+  if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
+// Pure integer math — avoids Date object allocation on every tick
 function getBucketStart(unixMs) {
-  const d = new Date(unixMs);
-  d.setMinutes(Math.floor(d.getMinutes() / SCALP_RES) * SCALP_RES, 0, 0);
-  return d.getTime();
+  const resMs = SCALP_RES * 60_000;
+  return Math.floor(unixMs / resMs) * resMs;
 }
 
 const _SCALP_START_MINS = (() => {
@@ -125,6 +130,15 @@ const _SCALP_START_MINS = (() => {
   const [h, m] = raw.split(":").map(Number);
   return h * 60 + (isNaN(m) ? 0 : m);
 })();
+
+// Return last N items in reverse order — avoids spread+reverse on full array
+function reverseSlice(arr, n) {
+  const len = arr.length;
+  const count = Math.min(n, len);
+  const out = new Array(count);
+  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
+  return out;
+}
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -273,7 +287,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode = "spot proxy";
   }
 
-  const { getCharges } = require("../utils/charges");
   const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl    = parseFloat((rawPnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
@@ -296,6 +309,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
+  if (netPnl > 0) state._wins = (state._wins || 0) + 1;
+  else if (netPnl < 0) state._losses = (state._losses || 0) + 1;
 
   stopOptionPolling();
   state.optionSymbol = null;
@@ -381,16 +396,14 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    const { getCharges: _getChgTick } = require("../utils/charges");
-
     // Running PNL helper (₹)
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-        const _c = _getChgTick({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
+        const _c = getCharges({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      const _c = _getChgTick({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+      const _c = getCharges({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
     };
 
@@ -663,7 +676,7 @@ router.get("/start", async (req, res) => {
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
-    sessionPnl: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
+    sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
     optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
     _expiryDayBlocked: _expiryBlocked,
   };
@@ -807,17 +820,16 @@ router.get("/status/data", (req, res) => {
 
   // Unrealised PnL — option premium if available, else spot proxy (minus charges)
   const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-  const { getCharges: _getChg } = require("../utils/charges");
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
     const optEntry = pos.optionEntryLtp;
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     const _q = pos.qty || getLotQty();
     if (optEntry && optCurr && optEntry > 0) {
-      const _c = _getChg({ isFutures: isFut, exitPremium: optCurr, entryPremium: optEntry, qty: _q });
+      const _c = getCharges({ isFutures: isFut, exitPremium: optCurr, entryPremium: optEntry, qty: _q });
       unrealised = parseFloat(((optCurr - optEntry) * _q - _c).toFixed(2));
     } else {
-      const _c = _getChg({ isFutures: isFut, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q });
+      const _c = getCharges({ isFutures: isFut, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q });
       unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c).toFixed(2));
     }
   }
@@ -825,7 +837,7 @@ router.get("/status/data", (req, res) => {
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
   const _chgForPrem = (optEntryLtp && optCurrentLtp)
-    ? _getChg({ isFutures: isFut, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+    ? getCharges({ isFutures: isFut, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
     ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgForPrem).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)
@@ -877,14 +889,12 @@ router.get("/status/data", (req, res) => {
     sessionPnl:    state.sessionPnl,
     unrealised,
     tradeCount:    state.sessionTrades.length,
-    wins:          state.sessionTrades.filter(t => t.pnl > 0).length,
-    losses:        state.sessionTrades.filter(t => t.pnl < 0).length,
+    wins:          state._wins || 0,
+    losses:        state._losses || 0,
     dailyLossHit:  state._dailyLossHit,
     slPauseUntil:  state._slPauseUntil || null,
     logTotal:      state.log.length,
-    logs:          state.log.length <= 100
-      ? [...state.log].reverse()
-      : state.log.slice(-100).reverse(),
+    logs:          reverseSlice(state.log, 100),
     trades: [...(state.sessionTrades || [])].reverse().map(t => ({
       side:         t.side           || "",
       symbol:       t.symbol         || "",
@@ -922,7 +932,6 @@ router.get("/status", (req, res) => {
   const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
 
   // Unrealised PnL (minus charges to match exit P&L)
-  const { getCharges: _getChg2 } = require("../utils/charges");
   const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
@@ -930,10 +939,10 @@ router.get("/status", (req, res) => {
     const optCurr  = state.optionLtp || pos.optionCurrentLtp;
     const _q2 = pos.qty || getLotQty();
     if (optEntry && optCurr && optEntry > 0) {
-      const _c2 = _getChg2({ isFutures: isFut2, exitPremium: optCurr, entryPremium: optEntry, qty: _q2 });
+      const _c2 = getCharges({ isFutures: isFut2, exitPremium: optCurr, entryPremium: optEntry, qty: _q2 });
       unrealisedPnl = parseFloat(((optCurr - optEntry) * _q2 - _c2).toFixed(2));
     } else {
-      const _c2 = _getChg2({ isFutures: isFut2, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q2 });
+      const _c2 = getCharges({ isFutures: isFut2, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: _q2 });
       unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q2 - _c2).toFixed(2));
     }
   }
@@ -962,7 +971,7 @@ router.get("/status", (req, res) => {
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
   const _chgForPrem2 = (optEntryLtp && optCurrentLtp)
-    ? _getChg2({ isFutures: isFut2, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+    ? getCharges({ isFutures: isFut2, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp)
     ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgForPrem2).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp)

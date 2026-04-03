@@ -17,7 +17,7 @@
 const { fyersDataSocket } = require('fyers-api-v3');
 
 const HEARTBEAT_MS = 20_000;
-const MAX_BACKOFF  = 30_000;
+const MAX_BACKOFF  = 15_000;
 const BASE_BACKOFF = 2_000;
 
 class SocketManager {
