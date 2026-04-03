@@ -113,9 +113,12 @@ ${faviconLink()}
 <style>
 ${sidebarCSS()}
 ${modalCSS()}
+/* ── base reset ── */
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; min-height:100vh; overflow-x:hidden; }
 
 /* ── page layout ── */
-.main-content { margin-left:220px; padding:28px 32px 40px; min-height:100vh; background:#080c14; }
+.main-content { margin-left:200px; padding:28px 32px 40px; min-height:100vh; background:#080c14; }
 @media(max-width:900px){ .main-content{margin-left:0;padding:18px 10px 32px;} }
 
 .page-title { font-size:1.1rem; font-weight:700; color:#e0eaf8; margin-bottom:6px; }
