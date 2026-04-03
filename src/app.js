@@ -240,6 +240,7 @@ app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
+app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance health monitor
 // ── Scalp mode routes (independent from main trade) ─────────────────────────
 app.use("/scalp",          require("./routes/scalp"));          // ← scalp live (Fyers orders)
 app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade

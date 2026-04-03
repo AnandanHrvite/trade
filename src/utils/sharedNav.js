@@ -66,6 +66,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'SYSTEM',
       items: [
         { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
+        { key: 'monitor',   href: '/monitor',    icon: '📈', label: 'Monitor'    },
         { key: 'settings',  href: '/settings',   icon: '⚙',  label: 'Settings'   },
         { key: 'docs',      href: '/docs',       icon: '📄', label: 'Docs'       },
         { key: 'loginLogs', href: '/login-logs', icon: '🔐', label: 'Login Logs' },
