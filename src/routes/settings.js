@@ -1283,6 +1283,8 @@ async function showExpiryModal() {
 var _sectionSummaries = ${sectionSummaryJSON};
 var _sectionNames = { 0: 'Trading Strategy (15-min)', 1: 'Scalping Strategy (BB+CPR)' };
 
+var _summaryClipboard = '';
+
 function showSectionSummary(idx) {
   var modal = document.getElementById('sectionSummaryModal');
   var titleEl = document.getElementById('sectionSummaryTitle');
@@ -1295,6 +1297,7 @@ function showSectionSummary(idx) {
   var fields = _sectionSummaries[idx];
   var html = '<table class="summary-table">';
   html += '<tr><th>Setting</th><th>Value</th></tr>';
+  var clipLines = [];
   for (var i = 0; i < fields.length; i++) {
     var f = fields[i];
     var el = document.querySelector('[data-key="' + f.key + '"]');
@@ -1302,6 +1305,7 @@ function showSectionSummary(idx) {
     if (el) {
       val = el.type === 'checkbox' ? (el.checked ? 'true' : 'false') : el.value;
     }
+    clipLines.push(f.key + '=' + val);
     var valClass = 'val-text';
     if (val === 'true') valClass = 'val-true';
     else if (val === 'false') valClass = 'val-false';
@@ -1311,8 +1315,20 @@ function showSectionSummary(idx) {
     html += '<tr><td><div class="summary-label">' + f.label + '</div><div class="summary-key">' + f.key + '</div></td><td class="' + valClass + '">' + displayVal + '</td></tr>';
   }
   html += '</table>';
+  _summaryClipboard = clipLines.join('\\n');
   bodyEl.innerHTML = html;
   modal.style.display = 'block';
+  // Reset copy button state
+  var btn = document.getElementById('summaryCopyBtn');
+  if (btn) { btn.textContent = 'COPY'; btn.style.color = '#10b981'; btn.style.background = 'rgba(16,185,129,0.12)'; }
+}
+
+function copySectionSummary() {
+  navigator.clipboard.writeText(_summaryClipboard).then(function() {
+    var btn = document.getElementById('summaryCopyBtn');
+    btn.textContent = 'COPIED!'; btn.style.color = '#fff'; btn.style.background = '#10b981';
+    setTimeout(function() { btn.textContent = 'COPY'; btn.style.color = '#10b981'; btn.style.background = 'rgba(16,185,129,0.12)'; }, 1500);
+  });
 }
 </script>
 <!-- Section summary modal -->
@@ -1320,7 +1336,10 @@ function showSectionSummary(idx) {
   <div style="max-width:560px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span id="sectionSummaryTitle" style="font-weight:700;font-size:0.95rem;color:#60a5fa;">Settings Summary</span>
-      <button onclick="document.getElementById('sectionSummaryModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="summaryCopyBtn" onclick="copySectionSummary()" style="padding:4px 10px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:5px;font-size:0.7rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">COPY</button>
+        <button onclick="document.getElementById('sectionSummaryModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      </div>
     </div>
     <div id="sectionSummaryBody" style="padding:12px 16px;max-height:70vh;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#243048 transparent;">
     </div>
