@@ -391,8 +391,11 @@ h2{color:#ef4444;margin-bottom:12px;font-size:1.1rem;}p{font-size:0.85rem;color:
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
-  const from       = req.query.from       || process.env.BACKTEST_FROM || "2026-01-01";
-  const to         = req.query.to         || process.env.BACKTEST_TO   || "2026-03-28";
+  const now = new Date();
+  const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+  const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const from       = req.query.from       || process.env.BACKTEST_FROM || defFrom;
+  const to         = req.query.to         || process.env.BACKTEST_TO   || defTo;
   const resolution = req.query.resolution || process.env.SCALP_RESOLUTION || "3";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";

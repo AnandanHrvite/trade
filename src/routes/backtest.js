@@ -29,8 +29,11 @@ function buildNav(active, liveActive) {
 
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
-  const from       = req.query.from       || process.env.BACKTEST_FROM || "2024-01-01";
-  const to         = req.query.to         || process.env.BACKTEST_TO   || "2024-12-31";
+  const now = new Date();
+  const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+  const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+  const from       = req.query.from       || process.env.BACKTEST_FROM || defFrom;
+  const to         = req.query.to         || process.env.BACKTEST_TO   || defTo;
   const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "15";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
