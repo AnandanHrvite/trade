@@ -478,7 +478,6 @@ function onCandleClose(bar) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
     const window = [...state.candles];
-    if (state.currentBar) window.push(state.currentBar);
 
     // PSAR flip → exit on reversal signal
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
