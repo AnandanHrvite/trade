@@ -565,11 +565,18 @@ router.get("/", (req, res) => {
     // Add eye icon for Trading Strategy and Scalping Strategy sections
     const showEye = idx === 0 || idx === 1;
     const eyeBtn = showEye
-      ? `<button type="button" class="section-eye-btn" onclick="showSectionSummary(${idx})" title="View all configured values">👁</button>`
+      ? `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`
       : "";
+    const openClass = idx === 0 ? ' open' : '';
+    const fieldCount = s.fields.length;
     return `
-    <div class="settings-section" data-section="${sectionId}">
-      <div class="section-title">${s.icon} ${s.section}${eyeBtn}</div>
+    <div class="settings-section${openClass}" data-section="${sectionId}">
+      <div class="section-title" onclick="toggleSection(this)">
+        <span class="section-chevron">▶</span>
+        ${s.icon} ${s.section}
+        <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">${fieldCount} settings</span>
+        ${eyeBtn}
+      </div>
       <div class="section-card">
         ${s.fields.map(renderField).join("")}
       </div>
@@ -639,19 +646,41 @@ router.get("/", (req, res) => {
     .save-bar .btn-group { display: flex; gap: 10px; }
 
     /* ── Section ─────────────────────────────────────────── */
-    .settings-section { margin-bottom: 24px; }
+    .settings-section { margin-bottom: 16px; }
     .section-title {
       font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
       letter-spacing: 1.5px; color: var(--muted);
-      margin-bottom: 10px;
+      margin-bottom: 0;
       display: flex; align-items: center; gap: 10px;
-    }
-    .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
-    .section-card {
+      cursor: pointer; user-select: none;
+      padding: 12px 16px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .section-title:hover { background: var(--surface2); border-color: var(--border2); }
+    .settings-section.open > .section-title { border-radius: 12px 12px 0 0; border-bottom-color: transparent; }
+    .section-title::after { content:''; flex:1; height:1px; background:var(--border); }
+    .section-chevron {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 20px; height: 20px; font-size: 0.65rem; color: var(--muted);
+      transition: transform 0.25s ease; flex-shrink: 0;
+    }
+    .settings-section.open .section-chevron { transform: rotate(90deg); }
+    .section-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 12px 12px;
       overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transition: max-height 0.35s ease, opacity 0.25s ease;
+    }
+    .settings-section.open > .section-card {
+      max-height: 5000px;
+      opacity: 1;
     }
 
     /* ── Setting row ─────────────────────────────────────── */
@@ -951,6 +980,11 @@ router.get("/", (req, res) => {
 
 <script>
 ${modalJS()}
+function toggleSection(titleEl) {
+  var section = titleEl.parentElement;
+  section.classList.toggle('open');
+}
+
 (function() {
   // Track original values for dirty detection
   var originals = {};
