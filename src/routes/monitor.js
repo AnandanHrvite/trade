@@ -257,6 +257,10 @@ Chart.defaults.animation.duration = 300;
 
 const MAX_PTS = 150; // 5 min at 2s interval
 
+var _lt = document.documentElement.getAttribute('data-theme') === 'light';
+var _mGridC = _lt ? '#e0e4ea' : 'rgba(22,36,22,0.4)';
+var _mTickC = _lt ? '#64748b' : '#2a3a20';
+
 function makeChart(id, datasets, yOpts = {}) {
   return new Chart(document.getElementById(id), {
     type: 'line',
@@ -267,8 +271,8 @@ function makeChart(id, datasets, yOpts = {}) {
       interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 8, padding: 8 } } },
       scales: {
-        x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 9 }, color: '#2a3a20' }, grid: { display: false }, border: { display: false } },
-        y: { beginAtZero: true, ...yOpts, grid: { color: 'rgba(22,36,22,0.4)' }, ticks: { font: { size: 9 }, color: '#2a3a20' }, border: { display: false } },
+        x: { display: true, ticks: { maxTicksLimit: 8, font: { size: 9 }, color: _mTickC }, grid: { display: false }, border: { display: false } },
+        y: { beginAtZero: true, ...yOpts, grid: { color: _mGridC }, ticks: { font: { size: 9 }, color: _mTickC }, border: { display: false } },
       },
       elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } },
     }

@@ -1065,6 +1065,9 @@ function toggleAnalytics(){
 function renderAnalytics(){
   var trades = filtered.slice().sort(function(a,b){ return a.entryTs - b.entryTs; });
   if(!trades.length) return;
+  var _lt = document.documentElement.getAttribute('data-theme') === 'light';
+  var _gc = _lt ? '#e0e4ea' : '#0e1428';
+  var _tc = _lt ? '#64748b' : '#3a5070';
 
   // ── Equity Curve ──
   var cumPnl = [], labels = [], equity = 0;
@@ -1090,7 +1093,7 @@ function renderAnalytics(){
       }}},
       scales:{
         x:{display:false},
-        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+        y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},
           callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
       }
     }
@@ -1119,8 +1122,8 @@ function renderAnalytics(){
         label:function(ctx){return '\\u20b9'+ctx.raw.toLocaleString('en-IN');}
       }}},
       scales:{
-        x:{grid:{display:false},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'}}},
-        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+        x:{grid:{display:false},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'}}},
+        y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},
           callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
       }
     }
@@ -1151,7 +1154,7 @@ function renderAnalytics(){
       }}},
       scales:{
         x:{display:false},
-        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+        y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},
           callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
       }
     }
@@ -1184,8 +1187,8 @@ function renderAnalytics(){
         label:function(ctx){return '\\u20b9'+ctx.raw.toLocaleString('en-IN');}
       }}},
       scales:{
-        x:{grid:{display:false},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'}}},
-        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+        x:{grid:{display:false},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'}}},
+        y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},
           callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
       }
     }
