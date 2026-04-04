@@ -49,6 +49,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
         { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
         { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
         { key: 'history',   href: '/paperTrade/history', icon: '📊', label: 'History'   },
+        { key: 'compare',   href: '/compare/trading',    icon: '⚖',  label: 'Compare'   },
         { key: 'tracker',   href: '/tracker/status',     icon: '🎯', label: 'Tracker'   },
         { key: 'live',      href: '/trade/status',       icon: '●',  label: 'Live'      },
       ]
@@ -59,6 +60,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
         { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
         { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
         { key: 'scalpHistory',  href: '/scalp-paper/history', icon: '📊', label: 'History'   },
+        { key: 'scalpCompare', href: '/compare/scalping',    icon: '⚖',  label: 'Compare'   },
         { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
       ]
     }] : []),
@@ -275,6 +277,16 @@ function sidebarCSS() {
     :root[data-theme="light"] .copy-btn:hover { background:#eff6ff !important; border-color:#3b82f6 !important; }
     :root[data-theme="light"] .copy-btn.copied { background:#dcfce7 !important; border-color:#10b981 !important; color:#059669 !important; }
     :root[data-theme="light"] #tooltip { background:#1e293b !important; }
+
+    /* Analytics cards (scalp/backtest) */
+    :root[data-theme="light"] .ana-card { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
+    :root[data-theme="light"] .ana-card h3 { color:#64748b !important; }
+    :root[data-theme="light"] .ana-mini { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
+    :root[data-theme="light"] .ana-mini h3 { color:#64748b !important; }
+    :root[data-theme="light"] .ana-tbl th { color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .ana-tbl td { color:#334155 !important; border-bottom-color:#f1f5f9 !important; }
+    :root[data-theme="light"] .ana-tbl tr:hover { background:#f8fafc !important; }
+    :root[data-theme="light"] .ana-stat-label { color:#94a3b8 !important; }
 
     /* Trade/Paper/Scalp — capital strip, stat cards, session cards, export btns */
     :root[data-theme="light"] .capital-strip { background:#ffffff !important; border-color:#e0e4ea !important; }

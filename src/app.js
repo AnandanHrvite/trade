@@ -253,6 +253,7 @@ app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance hea
 app.use("/scalp",          require("./routes/scalp"));          // ← scalp live (Fyers orders)
 app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
 app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
+app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
