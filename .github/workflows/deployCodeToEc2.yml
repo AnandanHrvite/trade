@@ -50,3 +50,7 @@ jobs:
               || pm2 start src/app.js --name trading-bot
 
             pm2 save
+
+            # Auto-start PM2 (and trading-bot) on server reboot
+            PM2_PATH=$(which pm2)
+            sudo env PATH=$PATH:$(dirname $PM2_PATH) pm2 startup systemd -u $USER --hp $HOME
