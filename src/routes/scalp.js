@@ -439,15 +439,17 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (initial = prev candle low/high, then PSAR trail tightens)
+    // 1. SL hit (source tracked: PSAR or Prev candle)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit");
+      const _src = pos.slSource || "PSAR";
+      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      squareOff(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit");
+      const _src = pos.slSource || "PSAR";
+      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`);
       return;
     }
 
@@ -485,12 +487,13 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update PSAR trailing SL (tighten only)
+    // Update trailing SL (tighten only) — track source (PSAR or Prev candle)
     if (window.length >= 15) {
-      const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
-      if (newSL !== state.position.stopLoss) {
-        log(`📐 [SCALP-LIVE] PSAR trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
-        state.position.stopLoss = newSL;
+      const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
+      if (trailResult.sl !== state.position.stopLoss) {
+        log(`📐 [SCALP-LIVE] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
+        state.position.stopLoss = trailResult.sl;
+        if (trailResult.source) state.position.slSource = trailResult.source;
       }
     }
 
@@ -575,6 +578,7 @@ async function resolveAndEnter(side, spot, result) {
       reason:           result.reason,
       stopLoss:         result.stopLoss,
       initialStopLoss:  result.stopLoss,
+      slSource:         result.slSource || "PSAR",
       target:           result.target,
       bestPrice:        null,
       candlesHeld:      0,

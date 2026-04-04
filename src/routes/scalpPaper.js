@@ -225,7 +225,7 @@ function parseOptionDetails(symbol) {
 
 // ── Simulated Buy/Sell ──────────────────────────────────────────────────────
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry) {
+function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource) {
   if (state.position) return;
 
   const optDetails = parseOptionDetails(symbol);
@@ -239,6 +239,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     reason,
     stopLoss,
     initialStopLoss:  stopLoss,
+    slSource:         slSource || "PSAR",
     target,
     bestPrice:        null,
     candlesHeld:      0,
@@ -412,15 +413,17 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (initial = prev candle low/high, then PSAR trail tightens)
+    // 1. SL hit (source tracked: PSAR or Prev candle)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit", price);
+      const _src = pos.slSource || "PSAR";
+      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      simulateSell(pos.stopLoss, _isTrail ? "PSAR Trail SL hit" : "Initial SL hit", price);
+      const _src = pos.slSource || "PSAR";
+      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
       return;
     }
 
@@ -461,12 +464,13 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update trailing SL: min(prevCandle, PSAR) — tighten only
+    // Update trailing SL: min(prevCandle, PSAR) — tighten only, track source
     if (window.length >= 15) {
-      const newSL = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
-      if (newSL !== state.position.stopLoss) {
-        log(`📐 [SCALP-PAPER] Trail SL: ₹${state.position.stopLoss} → ₹${newSL}`);
-        state.position.stopLoss = newSL;
+      const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
+      if (trailResult.sl !== state.position.stopLoss) {
+        log(`📐 [SCALP-PAPER] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
+        state.position.stopLoss = trailResult.sl;
+        if (trailResult.source) state.position.slSource = trailResult.source;
       }
     }
 
@@ -525,7 +529,7 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
     const qty = getLotQty();
-    simulateBuy(optionInfo.symbol, side, qty, spot, result.reason, result.stopLoss, result.target, spot);
+    simulateBuy(optionInfo.symbol, side, qty, spot, result.reason, result.stopLoss, result.target, spot, result.slSource);
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
   }

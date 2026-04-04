@@ -205,15 +205,17 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       // EXIT: 1. PSAR SL  2. Trail profit  3. PSAR flip  4. PSAR trail  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. PSAR SL hit (trailing — tightens each candle)
+      // 1. SL hit (trailing — tightens each candle, source tracked: PSAR or Prev candle)
       if (position.side === "CE" && candle.low <= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        exitReason = _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit";
+        const _src = position.slSource || "PSAR";
+        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       } else if (position.side === "PE" && candle.high >= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        exitReason = _isTrail ? "PSAR Trail SL hit" : "PSAR SL hit";
+        const _src = position.slSource || "PSAR";
+        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
       // 2. TRAILING PROFIT — lock at highest reached level: peak 339 w/ start=200,step=100 → lock 300
@@ -233,11 +235,12 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = "PSAR flip";
       }
 
-      // 4. Update PSAR trailing SL (tighten only)
+      // 4. Update trailing SL — tighten only, track source (PSAR or Prev candle)
       if (!exitReason) {
-        const newSL = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
-        if (newSL !== position.stopLoss) {
-          position.stopLoss = newSL;
+        const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
+        if (trailResult.sl !== position.stopLoss) {
+          position.stopLoss = trailResult.sl;
+          if (trailResult.source) position.slSource = trailResult.source;
         }
       }
 
@@ -328,6 +331,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       entryTs:        candle.time,
       stopLoss:       result.stopLoss,
       initialStopLoss: result.stopLoss,
+      slSource:       result.slSource || "PSAR",
       target:         null,
       candlesHeld:    0,
       peakPnl:        0,
@@ -1238,6 +1242,8 @@ function renderAnalytics(){
     var r = t.reason;
     // Normalize: group trail locks together
     if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
+    else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
+    else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
     else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
     else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';

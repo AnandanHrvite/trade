@@ -151,6 +151,7 @@ function getSignal(candles, opts) {
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
+      slSource: slSrc === "PSAR" ? "PSAR" : "Prev candle",
       target: null,
       slPts: slPts,
       reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(" + slSrc + ")=" + sl,
@@ -170,6 +171,7 @@ function getSignal(candles, opts) {
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
+      slSource: slSrc === "PSAR" ? "PSAR" : "Prev candle",
       target: null,
       slPts: slPts,
       reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(" + slSrc + ")=" + sl,
@@ -215,30 +217,30 @@ function updateTrailingSL(candles, currentSL, side, opts) {
   if (side === "CE") {
     // CE: SL is below price — tighter = higher value
     var candidates = [];
-    if (newSar !== null && newSar < close) candidates.push(newSar);
-    if (prevCandle) candidates.push(prevCandle.low);
-    if (candidates.length === 0) return currentSL;
+    if (newSar !== null && newSar < close) candidates.push({ val: newSar, src: "PSAR" });
+    if (prevCandle) candidates.push({ val: prevCandle.low, src: "Prev candle" });
+    if (candidates.length === 0) return { sl: currentSL, source: null };
     // Pick the tighter (higher) of prevCandle.low and PSAR
-    var bestSL = Math.max.apply(null, candidates);
+    var best = candidates.reduce(function(a, b) { return b.val > a.val ? b : a; });
     // Only tighten (move up), never widen
-    if (bestSL > currentSL && bestSL < close) {
-      return parseFloat(bestSL.toFixed(2));
+    if (best.val > currentSL && best.val < close) {
+      return { sl: parseFloat(best.val.toFixed(2)), source: best.src };
     }
   } else {
     // PE: SL is above price — tighter = lower value
     var candidates = [];
-    if (newSar !== null && newSar > close) candidates.push(newSar);
-    if (prevCandle) candidates.push(prevCandle.high);
-    if (candidates.length === 0) return currentSL;
+    if (newSar !== null && newSar > close) candidates.push({ val: newSar, src: "PSAR" });
+    if (prevCandle) candidates.push({ val: prevCandle.high, src: "Prev candle" });
+    if (candidates.length === 0) return { sl: currentSL, source: null };
     // Pick the tighter (lower) of prevCandle.high and PSAR
-    var bestSL = Math.min.apply(null, candidates);
+    var best = candidates.reduce(function(a, b) { return b.val < a.val ? b : a; });
     // Only tighten (move down), never widen
-    if (bestSL < currentSL && bestSL > close) {
-      return parseFloat(bestSL.toFixed(2));
+    if (best.val < currentSL && best.val > close) {
+      return { sl: parseFloat(best.val.toFixed(2)), source: best.src };
     }
   }
 
-  return currentSL;
+  return { sl: currentSL, source: null };
 }
 
 // ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
