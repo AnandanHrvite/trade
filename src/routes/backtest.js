@@ -214,6 +214,10 @@ ${buildSidebar('backtest', true)}
     .pag-info{font-size:0.7rem;color:#4a6080;padding:0 4px;}
 
     #tooltip{position:fixed;z-index:9999;background:#1e293b;color:#e2e8f0;border:1px solid #3b82f6;border-radius:7px;padding:8px 12px;font-size:0.72rem;max-width:340px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,.7);pointer-events:none;display:none;line-height:1.5;font-family:sans-serif;}
+
+    .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
+    .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
     ${sidebarCSS()}
     ${modalCSS()}
   </style>
@@ -299,6 +303,26 @@ ${buildSidebar('backtest', liveActive)}
     ${s.vixEnabled ? `<div class="sc ${s.vixBlocked > 0 ? 'red' : 'green'}"><div class="sc-label">VIX Filter</div><div class="sc-val">${s.vixBlocked}</div><div class="sc-sub">entries blocked (max=${s.vixMaxEntry}, strong-only=${s.vixStrongOnly})</div></div>` : ''}
   </div>
 
+  <!-- Day View -->
+  <div class="tbar">
+    <span class="tbar-label">Day View</span>
+    <span class="tbar-count" id="dayCntLabel"></span>
+    <button class="copy-btn" onclick="copyDayView(this)" style="margin-left:auto;">📋 Copy Day View</button>
+  </div>
+  <div class="tw" style="margin-bottom:16px;">
+    <table>
+      <thead><tr>
+        <th>Date</th>
+        <th>Trades</th>
+        <th>Wins</th>
+        <th>Losses</th>
+        <th>PnL</th>
+        <th>Cumulative PnL</th>
+      </tr></thead>
+      <tbody id="dayBody"></tbody>
+    </table>
+  </div>
+
   <!-- Filter bar -->
   <div class="tbar">
     <span class="tbar-label">Trade Log</span>
@@ -320,7 +344,8 @@ ${buildSidebar('backtest', liveActive)}
       <option value="9999">All</option>
     </select>
     <span class="tbar-count" id="cntLabel"></span>
-    <button onclick="doReset()" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
+    <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
   </div>
 
   <!-- Table -->
@@ -516,7 +541,74 @@ function doReset(){
   doSort2();
 }
 
+// ── Day View ──
+function buildDayView(){
+  var dayMap={};
+  TRADES.forEach(function(t){
+    var d=t.entry?(t.entry.split(' ')[0]||'Unknown'):'Unknown';
+    if(!dayMap[d]) dayMap[d]={date:d,trades:0,wins:0,losses:0,pnl:0};
+    dayMap[d].trades++;
+    if(t.pnl!=null){
+      dayMap[d].pnl+=t.pnl;
+      if(t.pnl>=0) dayMap[d].wins++; else dayMap[d].losses++;
+    }
+  });
+  var days=Object.values(dayMap).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
+  var cumPnl=0, rows='';
+  for(var i=0;i<days.length;i++){
+    var dy=days[i];
+    cumPnl+=dy.pnl;
+    var pc=dy.pnl>=0?'#10b981':'#ef4444';
+    var cc=cumPnl>=0?'#10b981':'#ef4444';
+    rows+='<tr>'
+      +'<td>'+dy.date+'</td>'
+      +'<td>'+dy.trades+'</td>'
+      +'<td style="color:#10b981;">'+dy.wins+'</td>'
+      +'<td style="color:#ef4444;">'+dy.losses+'</td>'
+      +'<td style="color:'+pc+';font-weight:700;">'+fpts(dy.pnl)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;">'+fpts(cumPnl)+'</td>'
+      +'</tr>';
+  }
+  document.getElementById('dayBody').innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
+  document.getElementById('dayCntLabel').textContent=days.length+' days';
+  window._dayData=days;
+}
+
+function copyDayView(btn){
+  var days=window._dayData||[];
+  var lines=['Date\\tTrades\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
+  var cumPnl=0;
+  days.forEach(function(dy){
+    cumPnl+=dy.pnl;
+    lines.push(dy.date+'\\t'+dy.trades+'\\t'+dy.wins+'\\t'+dy.losses+'\\t'+(dy.pnl!=null?dy.pnl.toFixed(2):'—')+'\\t'+cumPnl.toFixed(2));
+  });
+  doCopy(lines.join('\\n'),btn,'Day View');
+}
+
+function copyTradeLog(btn){
+  var lines=['Side\\tEntry Time\\tExit Time\\tEntry\\tExit\\tSL\\tPnL\\tRisk\\tR:R\\tExit Reason'];
+  TRADES.forEach(function(t){
+    lines.push(t.side+'\\t'+t.entry+'\\t'+t.exit+'\\t'+fmt(t.ePrice)+'\\t'+fmt(t.xPrice)+'\\t'+(t.sl!=null?fmt(t.sl):'—')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'—')+'\\t'+(t.risk_pts!=null?t.risk_pts.toFixed(2):'—')+'\\t'+(t.rr||'—')+'\\t'+t.reason);
+  });
+  doCopy(lines.join('\\n'),btn,'Trade Log');
+}
+
+function doCopy(text,btn,label){
+  var orig='📋 Copy '+label;
+  function onOk(){ btn.classList.add('copied');btn.textContent='✅ Copied!'; setTimeout(function(){ btn.classList.remove('copied');btn.textContent=orig; },2000); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(onOk).catch(function(){
+      var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
+    });
+  } else {
+    var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
+  }
+}
+
 // Init
+buildDayView();
 doFilter();
 
 function showBTModal(t){
