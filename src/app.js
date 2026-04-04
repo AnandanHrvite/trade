@@ -38,8 +38,16 @@ body{background:#080c14;font-family:'IBM Plex Sans',sans-serif;min-height:100vh;
 .login-btn{width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#1e40af;color:#fff;font-size:0.82rem;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;}
 .login-btn:hover{background:#2563eb;}
 .login-error{margin-top:12px;padding:8px 12px;border-radius:7px;background:#1c0610;border:1px solid #500e20;color:#f87171;font-size:0.75rem;text-align:center;display:${error ? 'block' : 'none'};}
-:root[data-theme="light"] { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.05); background-color: #fff; }
-:root[data-theme="light"] .login-icon { filter: invert(1) hue-rotate(180deg); }
+:root[data-theme="light"] { background-color:#f4f6f9; }
+:root[data-theme="light"] body { background:#f4f6f9; }
+:root[data-theme="light"] .login-box { background:#ffffff; border-color:#e0e4ea; box-shadow:0 8px 40px rgba(0,0,0,0.1); }
+:root[data-theme="light"] .login-title { color:#1e293b; }
+:root[data-theme="light"] .login-sub { color:#94a3b8; }
+:root[data-theme="light"] .login-input { background:#f8fafc; border-color:#e0e4ea; color:#1e293b; }
+:root[data-theme="light"] .login-input:focus { border-color:#3b82f6; }
+:root[data-theme="light"] .login-btn { background:#2563eb; }
+:root[data-theme="light"] .login-btn:hover { background:#1d4ed8; }
+:root[data-theme="light"] .login-error { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
 </style></head><body>
 <div class="login-box">
 <div class="login-icon">🔒</div>
@@ -496,6 +504,55 @@ app.get("/", (req, res) => {
 
     /* cfg-grid removed — config shown as strip in broker card */
     /* cfg-cell/live-note styles removed — config shown as strip in broker card */
+
+    /* ── DASHBOARD LIGHT THEME ── */
+    :root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
+
+    /* Cards */
+    :root[data-theme="light"] .card { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .card-hdr { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .card-hdr-title { color:#64748b; }
+
+    /* Broker cards */
+    :root[data-theme="light"] .broker-card.connected-green { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
+    :root[data-theme="light"] .broker-card.connected-blue  { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    :root[data-theme="light"] .broker-card.error-state     { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
+    :root[data-theme="light"] .broker-card.no-config       { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-name { color:#1e293b; }
+    :root[data-theme="light"] .broker-role { color:#94a3b8; }
+    :root[data-theme="light"] .broker-meta { color:#64748b; }
+    :root[data-theme="light"] .broker-meta .tag { background:#f1f5f9; border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .broker-status-pill.ok-green { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .broker-status-pill.ok-blue  { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
+    :root[data-theme="light"] .broker-status-pill.err      { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .broker-status-pill.grey     { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-logo.fyers-logo  { background:#dcfce7; border-color:#bbf7d0; }
+    :root[data-theme="light"] .broker-logo.zerodha-logo { background:#ede9fe; border-color:#c4b5fd; }
+    :root[data-theme="light"] .broker-connected-bar.green { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .broker-connected-bar.blue  { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
+    :root[data-theme="light"] .broker-connected-bar .relogin-link { color:#94a3b8; }
+    :root[data-theme="light"] .broker-connected-bar .relogin-link:hover { color:#2563eb; }
+    :root[data-theme="light"] .broker-login-btn.fyers-btn  { background:#16a34a; border-color:#15803d; }
+    :root[data-theme="light"] .broker-login-btn.zerodha-btn { background:#2563eb; border-color:#1d4ed8; }
+    :root[data-theme="light"] .broker-no-config { background:#f8fafc; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .broker-no-config code { color:#6366f1; }
+    :root[data-theme="light"] .broker-expiry-warn.expired  { background:#fff7ed; border-color:#fdba74; color:#c2410c; }
+    :root[data-theme="light"] .broker-expiry-warn.expiring { background:#fffbeb; border-color:#fcd34d; color:#a16207; }
+    :root[data-theme="light"] .broker-expiry-warn.valid    { background:#f8fafc; border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .broker-divider { background:#e0e4ea; }
+    :root[data-theme="light"] .hard-reset-hint { color:#94a3b8; }
+    :root[data-theme="light"] .hard-reset-btn { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .hard-reset-btn:hover { background:#fee2e2; border-color:#dc2626; }
+
+    /* Trade status panels */
+    :root[data-theme="light"] .ts-cell { border-right-color:#e0e4ea; }
+    :root[data-theme="light"] .ts-label { color:#64748b; }
+    :root[data-theme="light"] .ts-val { color:#1e293b; }
+    :root[data-theme="light"] .ts-sub { color:#94a3b8; }
+    :root[data-theme="light"] .ts-pos-bar { background:#f8fafc; border-color:#e0e4ea; }
+    :root[data-theme="light"] .ts-pos-item { color:#64748b; }
+    :root[data-theme="light"] .ts-pos-item strong { color:#334155; }
+    :root[data-theme="light"] .ts-flat-note { color:#94a3b8; }
 
     /* ── MOBILE ── */
     @media (max-width:640px) {

@@ -611,6 +611,23 @@ router.get("/", (req, res) => {
       --yellow:   #f59e0b;
       --purple:   #8b5cf6;
     }
+    :root[data-theme="light"] {
+      --bg:       #f4f6f9;
+      --surface:  #ffffff;
+      --surface2: #f8fafc;
+      --border:   #e0e4ea;
+      --border2:  #cbd5e1;
+      --text:     #334155;
+      --text2:    #1e293b;
+      --muted:    #64748b;
+      --dim:      #94a3b8;
+      --accent:   #2563eb;
+      --green:    #059669;
+      --red:      #dc2626;
+      --yellow:   #d97706;
+      --purple:   #7c3aed;
+    }
+    :root[data-theme="light"] .save-bar { background:rgba(255,255,255,0.95); }
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
 

@@ -152,8 +152,22 @@ canvas { width:100%!important; height:220px!important; }
 .bar-mem  { background:linear-gradient(90deg,#f59e0b,#fbbf24); }
 .bar-disk { background:linear-gradient(90deg,#10b981,#34d399); }
 
-:root[data-theme="light"] { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(1.05); background-color: #fff; }
-:root[data-theme="light"] img, :root[data-theme="light"] .sidebar-icon { filter: invert(1) hue-rotate(180deg); }
+/* ── MONITOR LIGHT THEME ── */
+:root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
+:root[data-theme="light"] .main-content { background:#f4f6f9; }
+:root[data-theme="light"] .page-title { color:#1e293b; }
+:root[data-theme="light"] .page-sub { color:#94a3b8; }
+:root[data-theme="light"] .stat-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+:root[data-theme="light"] .stat-label { color:#64748b; }
+:root[data-theme="light"] .stat-value { color:#1e293b; }
+:root[data-theme="light"] .stat-sub { color:#94a3b8; }
+:root[data-theme="light"] .bar-track { background:#e2e8f0; }
+:root[data-theme="light"] .chart-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+:root[data-theme="light"] .chart-title { color:#64748b; }
+:root[data-theme="light"] .proc-card { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+:root[data-theme="light"] .proc-title { color:#64748b; }
+:root[data-theme="light"] .proc-item .pi-label { color:#64748b; }
+:root[data-theme="light"] .proc-item .pi-val { color:#1e293b; }
 </style>
 </head><body>
 <div class="app-shell">
