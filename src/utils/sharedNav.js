@@ -189,11 +189,11 @@ function sidebarCSS() {
     @keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}
 
     /* ── THEME OVERRIDE (Day View) ── */
-    :root[data-theme="light"] { background-color:#f4f6f9; }
-    :root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
+    :root[data-theme="light"] { background-color:#f4f6f9 !important; }
+    :root[data-theme="light"] body { background:#f4f6f9 !important; color:#334155 !important; }
 
     /* Sidebar — keep dark for contrast */
-    :root[data-theme="light"] .sidebar { background:#1b2638; border-right-color:#15202f; }
+    :root[data-theme="light"] .sidebar { background:#1b2638 !important; border-right-color:#15202f !important; }
     :root[data-theme="light"] .sb-brand { border-bottom-color:#253347; }
     :root[data-theme="light"] .sb-brand-sub { color:#5a7090; }
     :root[data-theme="light"] .sb-section + .sb-section { border-top-color:#253347; }
@@ -206,38 +206,46 @@ function sidebarCSS() {
     :root[data-theme="light"] .sb-status-row { color:#5a7090; }
 
     /* Top bar */
-    :root[data-theme="light"] .top-bar { background:#ffffff; border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .top-bar-title { color:#1e293b; }
-    :root[data-theme="light"] .top-bar-meta { color:#94a3b8; }
-    :root[data-theme="light"] .broker-badges { background:#ffffff; border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
-    :root[data-theme="light"] .broker-badge.err { background:#fef2f2; border-color:#fecaca; color:#dc2626; }
+    :root[data-theme="light"] .top-bar { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .top-bar-title { color:#1e293b !important; }
+    :root[data-theme="light"] .top-bar-meta { color:#94a3b8 !important; }
+    :root[data-theme="light"] .broker-badges { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
+    :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#dc2626 !important; }
 
     /* Page body */
-    :root[data-theme="light"] .page-status-dot { background:#94a3b8; }
-    :root[data-theme="light"] .page-status-text { color:#94a3b8; }
-    :root[data-theme="light"] .page-title { color:#1e293b; }
-    :root[data-theme="light"] .page-subtitle { color:#94a3b8; }
+    :root[data-theme="light"] .page-status-dot { background:#94a3b8 !important; }
+    :root[data-theme="light"] .page-status-text { color:#94a3b8 !important; }
+    :root[data-theme="light"] .page-title { color:#1e293b !important; }
+    :root[data-theme="light"] .page-subtitle { color:#94a3b8 !important; }
+    :root[data-theme="light"] .page-sub { color:#94a3b8 !important; }
 
     /* Stat cards */
-    :root[data-theme="light"] .sc { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-    :root[data-theme="light"] .sc-label { color:#64748b; }
-    :root[data-theme="light"] .sc-val { color:#1e293b; }
-    :root[data-theme="light"] .sc-sub { color:#94a3b8; }
+    :root[data-theme="light"] .sc { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
+    :root[data-theme="light"] .sc::before { background:var(--accent,#93c5fd) !important; }
+    :root[data-theme="light"] .sc-label { color:#64748b !important; }
+    :root[data-theme="light"] .sc-val { color:#1e293b !important; }
+    :root[data-theme="light"] .sc-sub { color:#94a3b8 !important; }
 
     /* Section titles */
-    :root[data-theme="light"] .section-title { color:#64748b; }
-    :root[data-theme="light"] .section-title::after { background:#e0e4ea; }
+    :root[data-theme="light"] .section-title { color:#64748b !important; }
+    :root[data-theme="light"] .section-title::after { background:#e0e4ea !important; }
 
     /* Tables */
-    :root[data-theme="light"] .data-table th { color:#64748b; background:#f1f5f9; }
-    :root[data-theme="light"] .data-table td { border-top-color:#e0e4ea; color:#334155; }
+    :root[data-theme="light"] .data-table th { color:#64748b !important; background:#f1f5f9 !important; }
+    :root[data-theme="light"] .data-table td { border-top-color:#e0e4ea !important; color:#334155 !important; }
+    :root[data-theme="light"] table th { color:#64748b !important; background:#f1f5f9 !important; }
+    :root[data-theme="light"] table td { border-color:#e0e4ea !important; }
+    :root[data-theme="light"] table tr { border-color:#e0e4ea !important; }
 
     /* Main content area */
-    :root[data-theme="light"] .main-content { background:#f4f6f9; }
+    :root[data-theme="light"] .main-content { background:#f4f6f9 !important; }
+
+    /* Page wrapper */
+    :root[data-theme="light"] .page { color:#334155 !important; }
 
     /* Sidebar overlay */
-    :root[data-theme="light"] .sidebar-overlay.active { background:rgba(0,0,0,0.3); }
+    :root[data-theme="light"] .sidebar-overlay.active { background:rgba(0,0,0,0.3) !important; }
 
     /* ── PAGE-SPECIFIC CLASS OVERRIDES ── */
     /* (Inline style="" colors are handled by JS rewriter in modalJS) */
@@ -251,7 +259,9 @@ function sidebarCSS() {
     :root[data-theme="light"] .confirm-box { border-color:#fca5a5 !important; }
 
     /* Backtest/ScalpBacktest — run bar, stat cards, tables, toggles, copy btns */
-    :root[data-theme="light"] .run-bar { background:#f8fafc !important; border-color:#e0e4ea !important; }
+    :root[data-theme="light"] .run-bar { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
+    :root[data-theme="light"] .dw-table tbody tr:hover { background:#f8fafc !important; }
+    :root[data-theme="light"] tbody tr:hover { background:#f8fafc !important; }
     :root[data-theme="light"] .tbar input,
     :root[data-theme="light"] .tbar select { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
     :root[data-theme="light"] .tw { border-color:#e0e4ea !important; }
@@ -293,19 +303,35 @@ function sidebarCSS() {
     :root[data-theme="light"] .toolbar { background:#ffffff !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .counter { background:#f1f5f9 !important; border-color:#e0e4ea !important; color:#64748b !important; }
     :root[data-theme="light"] .badge-live { background:#dcfce7 !important; border-color:#86efac !important; color:#16a34a !important; }
-    :root[data-theme="light"] .fp[data-level="LOG"] { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
-    :root[data-theme="light"] .fp[data-level="INFO"] { background:#f0fdf4 !important; border-color:#bbf7d0 !important; color:#059669 !important; }
+    :root[data-theme="light"] .fp[data-level="ALL"]   { background:#f1f5f9 !important; border-color:#e0e4ea !important; color:#334155 !important; }
+    :root[data-theme="light"] .fp[data-level="LOG"]   { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
+    :root[data-theme="light"] .fp[data-level="INFO"]  { background:#f0fdf4 !important; border-color:#bbf7d0 !important; color:#059669 !important; }
+    :root[data-theme="light"] .fp[data-level="WARN"]  { background:#fffbeb !important; border-color:#fcd34d !important; color:#d97706 !important; }
+    :root[data-theme="light"] .fp[data-level="ERROR"] { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#dc2626 !important; }
+    :root[data-theme="light"] #search { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
+    :root[data-theme="light"] #search::placeholder { color:#94a3b8 !important; }
+    :root[data-theme="light"] .btn { border-color:#e0e4ea !important; }
     :root[data-theme="light"] .btn-scroll { background:#ffffff !important; border-color:#e0e4ea !important; color:#64748b !important; }
     :root[data-theme="light"] .btn-scroll.on { background:#eff6ff !important; border-color:#3b82f6 !important; color:#2563eb !important; }
     :root[data-theme="light"] .btn-export { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
     :root[data-theme="light"] .btn-exportj { background:#f5f3ff !important; border-color:#c4b5fd !important; color:#7c3aed !important; }
+    :root[data-theme="light"] .btn-clear { background:#fef2f2 !important; border-color:#fca5a5 !important; color:#dc2626 !important; }
     :root[data-theme="light"] .log-wrap { background:#ffffff !important; }
     :root[data-theme="light"] .log-wrap::-webkit-scrollbar-track { background:#f4f6f9 !important; }
     :root[data-theme="light"] .log-wrap::-webkit-scrollbar-thumb { background:#cbd5e1 !important; }
+    :root[data-theme="light"] .log-row { border-bottom-color:#f1f5f9 !important; }
     :root[data-theme="light"] .log-row:hover { background:#f8fafc !important; }
     :root[data-theme="light"] .log-row[data-level="WARN"] { background:#fffbeb !important; }
     :root[data-theme="light"] .log-row[data-level="WARN"]:hover { background:#fef9c3 !important; }
     :root[data-theme="light"] .log-row[data-level="ERROR"] { background:#fef2f2 !important; }
+
+    /* History pages (paperTrade, scalpPaper) */
+    :root[data-theme="light"] .session-card { background:#ffffff !important; border-color:#e0e4ea !important; }
+    :root[data-theme="light"] .session-head { background:#f8fafc !important; border-bottom-color:#e0e4ea !important; }
+    :root[data-theme="light"] .summary-table th { background:#f1f5f9 !important; color:#64748b !important; }
+    :root[data-theme="light"] .summary-table td { border-color:#e0e4ea !important; color:#334155 !important; }
+    :root[data-theme="light"] .holiday-table th { background:#f1f5f9 !important; color:#64748b !important; }
+    :root[data-theme="light"] .holiday-table td { border-color:#e0e4ea !important; }
 
     /* Manual Tracker page */
     :root[data-theme="light"] .log-box { background:#ffffff !important; border-color:#e0e4ea !important; }

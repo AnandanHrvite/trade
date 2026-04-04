@@ -511,6 +511,7 @@ ${modalJS()}
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <title>Scalp Backtest — ${scalpStrategy.NAME}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -578,6 +579,25 @@ ${modalJS()}
     .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
     .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
     .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+
+    /* ── Analytics Panel ── */
+    .ana-panel{margin-bottom:16px;}
+    .ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+    @media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
+    .ana-card{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:14px 16px;position:relative;}
+    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .ana-chart-wrap{position:relative;height:220px;}
+    .ana-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
+    @media(max-width:900px){.ana-row3{grid-template-columns:1fr;}}
+    .ana-mini{background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:12px 14px;}
+    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl{width:100%;border-collapse:collapse;}
+    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;padding:5px 8px;border-bottom:0.5px solid #0e1428;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#4a6080;border-bottom:0.5px solid #060a14;}
+    .ana-tbl tr:hover{background:#060c1a;}
+    .ana-stat{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;}
+    .ana-stat-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+    .ana-stat-label{font-size:0.62rem;color:#3a5070;}
     ${sidebarCSS()}
     ${modalCSS()}
   </style>
@@ -691,10 +711,37 @@ ${buildSidebar('scalpBacktest', liveActive)}
     </div>
   </div>
 
+  <!-- Analytics Panel -->
+  <div id="anaWrap" style="display:none;margin-bottom:16px;" class="ana-panel">
+    <div class="ana-row">
+      <div class="ana-card"><h3>📈 Equity Curve</h3><div class="ana-chart-wrap"><canvas id="anaEquity"></canvas></div></div>
+      <div class="ana-card"><h3>📊 Monthly P&L</h3><div class="ana-chart-wrap"><canvas id="anaMonthly"></canvas></div></div>
+    </div>
+    <div class="ana-row">
+      <div class="ana-card"><h3>📉 Drawdown</h3><div class="ana-chart-wrap"><canvas id="anaDrawdown"></canvas></div></div>
+      <div class="ana-card"><h3>⏰ Hourly Performance</h3><div class="ana-chart-wrap"><canvas id="anaHourly"></canvas></div></div>
+    </div>
+    <div class="ana-row3">
+      <div class="ana-mini">
+        <h3>🔥 Win/Loss Streaks</h3>
+        <div id="anaStreaks"></div>
+      </div>
+      <div class="ana-mini">
+        <h3>🚪 Exit Reason Breakdown</h3>
+        <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaExitBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
+        <h3>📅 Day of Week</h3>
+        <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Day</th><th>Trades</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaDowBody"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Filter bar -->
   <div class="tbar">
     <span class="tbar-label">Trade Log</span>
     <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
+    <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
     <input id="fSearch" placeholder="Search reason\u2026" oninput="doFilter()" style="width:150px;"/>
     <select id="fSide" onchange="doFilter()">
       <option value="">All Sides</option>
@@ -1004,6 +1051,238 @@ function doCopy(text,btn,label){
 
 // Init
 doFilter();
+
+// ── Analytics Panel ──────────────────────────────────────────────────────────
+var anaVisible = false;
+var anaCharts = {};
+function toggleAnalytics(){
+  anaVisible = !anaVisible;
+  document.getElementById('anaWrap').style.display = anaVisible ? 'block' : 'none';
+  document.getElementById('anaToggle').classList.toggle('active', anaVisible);
+  if(anaVisible) renderAnalytics();
+}
+
+function renderAnalytics(){
+  var trades = filtered.slice().sort(function(a,b){ return a.entryTs - b.entryTs; });
+  if(!trades.length) return;
+
+  // ── Equity Curve ──
+  var cumPnl = [], labels = [], equity = 0;
+  trades.forEach(function(t,i){
+    equity += (t.pnl||0);
+    cumPnl.push(equity);
+    labels.push(i+1);
+  });
+  if(anaCharts.equity) anaCharts.equity.destroy();
+  anaCharts.equity = new Chart(document.getElementById('anaEquity'),{
+    type:'line',
+    data:{labels:labels,datasets:[{
+      label:'Cumulative P&L',
+      data:cumPnl,
+      borderColor:'#3b82f6',borderWidth:1.5,
+      backgroundColor:'rgba(59,130,246,0.08)',fill:true,
+      pointRadius:0,tension:0.3
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        title:function(ctx){return 'Trade #'+ctx[0].label;},
+        label:function(ctx){return 'P&L: \\u20b9'+Math.round(ctx.raw).toLocaleString('en-IN');}
+      }}},
+      scales:{
+        x:{display:false},
+        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+          callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
+      }
+    }
+  });
+
+  // ── Monthly P&L ──
+  var monthMap = {};
+  trades.forEach(function(t){
+    var parts = t.entry.split(',')[0].trim().split('/');
+    var key = parts[2]+'-'+parts[1].padStart(2,'0');
+    if(!monthMap[key]) monthMap[key] = 0;
+    monthMap[key] += (t.pnl||0);
+  });
+  var monthKeys = Object.keys(monthMap).sort();
+  var monthLabels = monthKeys.map(function(k){ var p=k.split('-'); var mn=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return mn[parseInt(p[1])]+" '"+p[0].slice(2); });
+  var monthVals = monthKeys.map(function(k){ return Math.round(monthMap[k]); });
+  var monthColors = monthVals.map(function(v){ return v>=0?'#10b981':'#ef4444'; });
+  if(anaCharts.monthly) anaCharts.monthly.destroy();
+  anaCharts.monthly = new Chart(document.getElementById('anaMonthly'),{
+    type:'bar',
+    data:{labels:monthLabels,datasets:[{
+      data:monthVals,backgroundColor:monthColors,borderRadius:4,barPercentage:0.7
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label:function(ctx){return '\\u20b9'+ctx.raw.toLocaleString('en-IN');}
+      }}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'}}},
+        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+          callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
+      }
+    }
+  });
+
+  // ── Drawdown Chart ──
+  var eqArr=[], peak=0, ddArr=[];
+  var eq2=0;
+  trades.forEach(function(t){
+    eq2 += (t.pnl||0);
+    eqArr.push(eq2);
+    if(eq2>peak) peak=eq2;
+    ddArr.push(eq2-peak);
+  });
+  if(anaCharts.dd) anaCharts.dd.destroy();
+  anaCharts.dd = new Chart(document.getElementById('anaDrawdown'),{
+    type:'line',
+    data:{labels:labels,datasets:[{
+      label:'Drawdown',
+      data:ddArr,
+      borderColor:'#ef4444',borderWidth:1.5,
+      backgroundColor:'rgba(239,68,68,0.12)',fill:true,
+      pointRadius:0,tension:0.3
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        label:function(ctx){return 'DD: \\u20b9'+Math.round(ctx.raw).toLocaleString('en-IN');}
+      }}},
+      scales:{
+        x:{display:false},
+        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+          callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
+      }
+    }
+  });
+
+  // ── Hourly Performance ──
+  var hourMap = {};
+  trades.forEach(function(t){
+    var hMatch = t.entry.match(/(\\d{1,2}):\\d{2}:\\d{2}$/);
+    if(!hMatch) return;
+    var h = parseInt(hMatch[1]);
+    if(!hourMap[h]) hourMap[h] = {pnl:0,cnt:0,wins:0};
+    hourMap[h].pnl += (t.pnl||0);
+    hourMap[h].cnt++;
+    if(t.pnl>0) hourMap[h].wins++;
+  });
+  var hours = Object.keys(hourMap).map(Number).sort(function(a,b){return a-b;});
+  var hourLabels = hours.map(function(h){return h+':00';});
+  var hourPnl = hours.map(function(h){return Math.round(hourMap[h].pnl);});
+  var hourBarColors = hourPnl.map(function(v){return v>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)';});
+  if(anaCharts.hourly) anaCharts.hourly.destroy();
+  anaCharts.hourly = new Chart(document.getElementById('anaHourly'),{
+    type:'bar',
+    data:{labels:hourLabels,datasets:[{
+      data:hourPnl,backgroundColor:hourBarColors,borderRadius:4,barPercentage:0.7
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{
+        title:function(ctx){var h=hours[ctx[0].dataIndex];return h+':00 - '+(h+1)+':00 ('+hourMap[h].cnt+' trades, '+((hourMap[h].wins/hourMap[h].cnt)*100).toFixed(0)+'% WR)';},
+        label:function(ctx){return '\\u20b9'+ctx.raw.toLocaleString('en-IN');}
+      }}},
+      scales:{
+        x:{grid:{display:false},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'}}},
+        y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},
+          callback:function(v){return '\\u20b9'+Math.round(v/1000)+'k';}}}
+      }
+    }
+  });
+
+  // ── Win/Loss Streaks ──
+  var maxWS=0,maxLS=0,curWS=0,curLS=0,avgWS=[],avgLS=[],wsCount=0,lsCount=0;
+  trades.forEach(function(t){
+    if(t.pnl>0){
+      curWS++; if(curLS>0){avgLS.push(curLS);lsCount++;} curLS=0;
+      if(curWS>maxWS) maxWS=curWS;
+    } else if(t.pnl<0){
+      curLS++; if(curWS>0){avgWS.push(curWS);wsCount++;} curWS=0;
+      if(curLS>maxLS) maxLS=curLS;
+    }
+  });
+  if(curWS>0) avgWS.push(curWS);
+  if(curLS>0) avgLS.push(curLS);
+  var avgW = avgWS.length>0 ? (avgWS.reduce(function(a,b){return a+b;},0)/avgWS.length).toFixed(1) : '0';
+  var avgL = avgLS.length>0 ? (avgLS.reduce(function(a,b){return a+b;},0)/avgLS.length).toFixed(1) : '0';
+
+  // Profitable/losing days
+  var dayPnlMap={};
+  trades.forEach(function(t){
+    var d=t.entry.split(',')[0].trim();
+    if(!dayPnlMap[d]) dayPnlMap[d]=0;
+    dayPnlMap[d]+=(t.pnl||0);
+  });
+  var profDays=0,lossDays=0;
+  Object.values(dayPnlMap).forEach(function(v){if(v>=0)profDays++;else lossDays++;});
+  var totalDays=profDays+lossDays;
+
+  document.getElementById('anaStreaks').innerHTML=
+    '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+maxWS+'</span><span class="ana-stat-label">Best win streak</span></div>'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+maxLS+'</span><span class="ana-stat-label">Worst loss streak</span></div>'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#60a5fa;">'+avgW+'</span><span class="ana-stat-label">Avg win streak</span></div>'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#f59e0b;">'+avgL+'</span><span class="ana-stat-label">Avg loss streak</span></div>'
+    +'<div style="border-top:0.5px solid #0e1428;margin:8px 0;padding-top:8px;">'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+profDays+'</span><span class="ana-stat-label">Profitable days ('+((profDays/totalDays)*100).toFixed(0)+'%)</span></div>'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+lossDays+'</span><span class="ana-stat-label">Losing days ('+((lossDays/totalDays)*100).toFixed(0)+'%)</span></div>'
+    +'<div class="ana-stat"><span class="ana-stat-val" style="color:#c8d8f0;">\\u20b9'+Math.round(Object.values(dayPnlMap).reduce(function(a,b){return a+b;},0)/totalDays).toLocaleString('en-IN')+'</span><span class="ana-stat-label">Avg daily P&L</span></div>'
+    +'</div>';
+
+  // ── Exit Reason Breakdown ──
+  var reasonMap={};
+  trades.forEach(function(t){
+    var r = t.reason;
+    // Normalize: group trail locks together
+    if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
+    else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
+    else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
+    else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+    else if(r.indexOf('EOD')===0) r='EOD square-off';
+    if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
+    reasonMap[r].cnt++;
+    reasonMap[r].pnl+=(t.pnl||0);
+  });
+  var reasons=Object.keys(reasonMap).sort(function(a,b){return reasonMap[b].pnl-reasonMap[a].pnl;});
+  var exitHtml='';
+  reasons.forEach(function(r){
+    var d=reasonMap[r];
+    var pc=d.pnl>=0?'#10b981':'#ef4444';
+    var avgPnl=Math.round(d.pnl/d.cnt);
+    exitHtml+='<tr><td style="color:#c8d8f0;">'+r+'</td><td>'+d.cnt+'</td>'
+      +'<td style="color:'+pc+';font-weight:700;">\\u20b9'+Math.round(d.pnl).toLocaleString('en-IN')+'</td>'
+      +'<td style="color:'+pc+';">\\u20b9'+avgPnl.toLocaleString('en-IN')+'</td></tr>';
+  });
+  document.getElementById('anaExitBody').innerHTML=exitHtml;
+
+  // ── Day of Week ──
+  var dowMap={0:{n:'Sun',t:0,w:0,p:0},1:{n:'Mon',t:0,w:0,p:0},2:{n:'Tue',t:0,w:0,p:0},3:{n:'Wed',t:0,w:0,p:0},4:{n:'Thu',t:0,w:0,p:0},5:{n:'Fri',t:0,w:0,p:0},6:{n:'Sat',t:0,w:0,p:0}};
+  trades.forEach(function(t){
+    var parts=t.entry.split(',')[0].trim().split('/');
+    var dt=new Date(parseInt(parts[2]),parseInt(parts[1])-1,parseInt(parts[0]));
+    var dow=dt.getDay();
+    dowMap[dow].t++;
+    if(t.pnl>0) dowMap[dow].w++;
+    dowMap[dow].p+=(t.pnl||0);
+  });
+  var dowHtml='';
+  [1,2,3,4,5].forEach(function(d){
+    var dd=dowMap[d];
+    if(dd.t===0) return;
+    var wr=((dd.w/dd.t)*100).toFixed(0);
+    var pc=dd.p>=0?'#10b981':'#ef4444';
+    var avg=Math.round(dd.p/dd.t);
+    dowHtml+='<tr><td style="color:#c8d8f0;font-weight:600;">'+dd.n+'</td><td>'+dd.t+'</td>'
+      +'<td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td>'
+      +'<td style="color:'+pc+';font-weight:700;">\\u20b9'+Math.round(dd.p).toLocaleString('en-IN')+'</td>'
+      +'<td style="color:'+pc+';">\\u20b9'+avg.toLocaleString('en-IN')+'</td></tr>';
+  });
+  document.getElementById('anaDowBody').innerHTML=dowHtml;
+}
+
+// Re-render analytics when filters change
+var _origDoSort2Ana = doSort2;
+doSort2 = function(){ _origDoSort2Ana(); if(anaVisible) renderAnalytics(); };
 
 function showBTModal(t){
   var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
