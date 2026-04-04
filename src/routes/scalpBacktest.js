@@ -574,6 +574,10 @@ ${modalJS()}
     .pag-info{font-size:0.7rem;color:#4a6080;padding:0 4px;}
 
     #tooltip{position:fixed;z-index:9999;background:#1e293b;color:#e2e8f0;border:1px solid #3b82f6;border-radius:7px;padding:8px 12px;font-size:0.72rem;max-width:340px;word-break:break-word;box-shadow:0 8px 24px rgba(0,0,0,.7);pointer-events:none;display:none;line-height:1.5;font-family:sans-serif;}
+
+    .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
+    .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
     ${sidebarCSS()}
     ${modalCSS()}
   </style>
@@ -668,6 +672,9 @@ ${buildSidebar('scalpBacktest', liveActive)}
 
   <!-- Day-wise P&L -->
   <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+      <button class="copy-btn" onclick="copyDayView(this)">📋 Copy Day View</button>
+    </div>
     <div class="tw">
       <table class="dw-table">
         <thead><tr>
@@ -706,7 +713,8 @@ ${buildSidebar('scalpBacktest', liveActive)}
       <option value="9999">All</option>
     </select>
     <span class="tbar-count" id="cntLabel"></span>
-    <button onclick="doReset()" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
+    <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
   </div>
 
   <!-- Table -->
@@ -949,6 +957,50 @@ function renderDayWise(){
 // Re-render day-wise when filters change
 var _origDoSort2 = doSort2;
 doSort2 = function(){ _origDoSort2(); if(dwVisible) renderDayWise(); };
+
+// ── Copy functions ──
+function copyDayView(btn){
+  var dayMap={};
+  filtered.forEach(function(t){
+    var d=t.entry.split(',')[0].trim();
+    if(!dayMap[d]) dayMap[d]={date:d,ts:t.entryTs,trades:0,wins:0,losses:0,pnl:0};
+    dayMap[d].trades++;
+    if(t.pnl>0) dayMap[d].wins++;
+    else if(t.pnl<0) dayMap[d].losses++;
+    dayMap[d].pnl+=(t.pnl||0);
+  });
+  var days=Object.values(dayMap);
+  days.sort(function(a,b){ return a.ts-b.ts; });
+  var lines=['Date\\tTrades\\tWins\\tLosses\\tDay PnL\\tCumulative PnL'];
+  var cum=0;
+  days.forEach(function(d){
+    cum+=d.pnl;
+    lines.push(d.date+'\\t'+d.trades+'\\t'+d.wins+'\\t'+d.losses+'\\t'+d.pnl.toFixed(2)+'\\t'+cum.toFixed(2));
+  });
+  doCopy(lines.join('\\n'),btn,'Day View');
+}
+
+function copyTradeLog(btn){
+  var lines=['Side\\tEntry Time\\tExit Time\\tEntry\\tExit\\tSL\\tPnL\\tRisk\\tR:R\\tExit Reason'];
+  TRADES.forEach(function(t){
+    lines.push(t.side+'\\t'+t.entry+'\\t'+t.exit+'\\t'+fmt(t.ePrice)+'\\t'+fmt(t.xPrice)+'\\t'+(t.sl!=null?fmt(t.sl):'\\u2014')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'\\u2014')+'\\t'+(t.risk_pts!=null?t.risk_pts.toFixed(2):'\\u2014')+'\\t'+(t.rr||'\\u2014')+'\\t'+t.reason);
+  });
+  doCopy(lines.join('\\n'),btn,'Trade Log');
+}
+
+function doCopy(text,btn,label){
+  var orig='📋 Copy '+label;
+  function onOk(){ btn.classList.add('copied');btn.textContent='✅ Copied!'; setTimeout(function(){ btn.classList.remove('copied');btn.textContent=orig; },2000); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(onOk).catch(function(){
+      var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
+    });
+  } else {
+    var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
+  }
+}
 
 // Init
 doFilter();
