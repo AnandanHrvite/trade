@@ -427,17 +427,23 @@ ${(paperEquity.length > 0 || btEquity.length > 0) ? `
           }
         }
       },
-      scales: {
+      scales: (function(){
+        var _lt = document.documentElement.getAttribute('data-theme') === 'light';
+        var _gc = _lt ? '#e0e4ea' : '#0a0e1a';
+        var _tc = _lt ? '#64748b' : '#2a3c5a';
+        var _lc = _lt ? '#64748b' : '#4a6080';
+        return {
         x: {
-          title: { display: true, text: 'Trade #', color: '#4a6080', font: { size: 10 } },
-          ticks: { color: '#2a3c5a', font: { size: 9 } },
-          grid: { color: '#0a0e1a' },
+          title: { display: true, text: 'Trade #', color: _lc, font: { size: 10 } },
+          ticks: { color: _tc, font: { size: 9 } },
+          grid: { color: _gc },
         },
         y: {
-          title: { display: true, text: 'Cumulative PnL (\\u20b9)', color: '#4a6080', font: { size: 10 } },
-          ticks: { color: '#2a3c5a', font: { size: 9 }, callback: v => '\\u20b9' + v.toLocaleString('en-IN') },
-          grid: { color: '#0a0e1a' },
-        }
+          title: { display: true, text: 'Cumulative PnL (\\u20b9)', color: _lc, font: { size: 10 } },
+          ticks: { color: _tc, font: { size: 9 }, callback: v => '\\u20b9' + v.toLocaleString('en-IN') },
+          grid: { color: _gc },
+        }};
+      })()
       }
     }
   });
