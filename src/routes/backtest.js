@@ -1,6 +1,6 @@
 const express = require("express");
 const router  = express.Router();
-const { fetchCandles, runBacktest } = require("../services/backtestEngine");
+const { fetchCandles, fetchCandlesCachedBT, runBacktest } = require("../services/backtestEngine");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const { saveResult } = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -37,6 +37,7 @@ router.get("/", async (req, res) => {
   const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "15";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
+  const skipCache  = req.query.skipCache === "true";
 
   // Block backtest while live trade is running — would compete for Fyers API calls
   // and pollute the log viewer with backtest noise during a live session.
@@ -74,11 +75,11 @@ ${buildSidebar('backtest', true)}
 
   try {
     const strategy = getActiveStrategy();
-    // Fetch NIFTY candles and VIX daily candles in parallel
+    // Fetch NIFTY candles and VIX daily candles in parallel (with disk cache)
     const [candles, vixCandles] = await Promise.all([
-      fetchCandles(symbol, resolution, from, to),
+      fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
       vixFilter.VIX_ENABLED
-        ? fetchCandles(VIX_SYMBOL, "D", from, to).catch(err => {
+        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(err => {
             console.warn(`[Backtest] VIX candle fetch failed: ${err.message} — VIX filter will be bypassed`);
             return [];
           })

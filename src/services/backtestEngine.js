@@ -8,6 +8,7 @@ const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { getCharges } = require("../utils/charges");
+const { fetchCandlesWithCache } = require("../utils/backtestCache");
 
 
 function maxDaysForResolution(resolution) {
@@ -736,4 +737,12 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   };
 }
 
-module.exports = { fetchCandles, runBacktest };
+/**
+ * Cached wrapper — uses disk cache for historical ranges, skips cache for today.
+ * Drop-in replacement for fetchCandles in backtest routes.
+ */
+async function fetchCandlesCachedBT(symbol, resolution, from, to, skipCache = false) {
+  return fetchCandlesWithCache(symbol, resolution, from, to, fetchCandles, skipCache);
+}
+
+module.exports = { fetchCandles, fetchCandlesCachedBT, runBacktest };

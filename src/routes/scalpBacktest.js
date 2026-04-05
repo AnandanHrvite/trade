@@ -12,7 +12,7 @@
 
 const express = require("express");
 const router  = express.Router();
-const { fetchCandles } = require("../services/backtestEngine");
+const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngine");
 const scalpStrategy    = require("../strategies/scalp_bb_cpr");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -357,6 +357,30 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     return maxDD;
   })();
 
+  // Extended metrics
+  const grossProfit = wins.reduce((s, t) => s + t.pnl, 0);
+  const grossLoss   = Math.abs(losses.reduce((s, t) => s + t.pnl, 0));
+  const profitFactor = grossLoss > 0 ? parseFloat((grossProfit / grossLoss).toFixed(2)) : grossProfit > 0 ? Infinity : 0;
+  const expectancy   = trades.length > 0 ? parseFloat((totalPnl / trades.length).toFixed(2)) : 0;
+  const maxLoss      = trades.length > 0 ? Math.min(...trades.map(t => t.pnl)) : 0;
+  const recoveryFactor = maxDrawdown > 0 ? parseFloat((totalPnl / maxDrawdown).toFixed(2)) : 0;
+
+  // Sharpe ratio (daily)
+  const sharpeRatio = (() => {
+    const dayMap = {};
+    trades.forEach(t => {
+      const d = toIST(t.entryTs).split(",")[0].trim();
+      if (!dayMap[d]) dayMap[d] = 0;
+      dayMap[d] += t.pnl;
+    });
+    const dailyReturns = Object.values(dayMap);
+    if (dailyReturns.length < 2) return 0;
+    const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+    const variance = dailyReturns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / (dailyReturns.length - 1);
+    const stdDev = Math.sqrt(variance);
+    return stdDev > 0 ? parseFloat((mean / stdDev * Math.sqrt(252)).toFixed(2)) : 0;
+  })();
+
   const summary = {
     totalTrades: trades.length,
     wins:        wins.length,
@@ -374,6 +398,13 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     thetaPerDay: THETA_DAY,
     finalCapital: parseFloat((capital + totalPnl).toFixed(2)),
     vixEnabled:  vixFilter.VIX_ENABLED,
+    profitFactor,
+    expectancy,
+    maxLoss:     parseFloat(parseFloat(maxLoss).toFixed(2)),
+    recoveryFactor,
+    sharpeRatio,
+    grossProfit: parseFloat(grossProfit.toFixed(2)),
+    grossLoss:   parseFloat(grossLoss.toFixed(2)),
   };
 
   console.log(`\n📊 SCALP BACKTEST RESULT: ${trades.length} trades | WR ${winRate}% | PnL ${inr(totalPnl)}`);
@@ -403,6 +434,7 @@ router.get("/", async (req, res) => {
   const resolution = req.query.resolution || process.env.SCALP_RESOLUTION || "3";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
+  const skipCache  = req.query.skipCache === "true";
 
   if (liveActive) {
     res.setHeader("Content-Type", "text/html");
@@ -443,9 +475,9 @@ ${modalJS()}
 
   try {
     const [candles, vixCandles] = await Promise.all([
-      fetchCandles(symbol, resolution, from, to),
+      fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
       vixFilter.VIX_ENABLED
-        ? fetchCandles(VIX_SYMBOL, "D", from, to).catch(() => [])
+        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
         : Promise.resolve([]),
     ]);
 
@@ -524,9 +556,12 @@ ${modalJS()}
     .page{padding:16px 20px 40px;}
 
     .stat-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
-    @media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
+    .stat-grid-2{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px;}
+    .sc.orange::before{background:#f97316;}
+    .sc.cyan::before{background:#06b6d4;}
+    @media(max-width:900px){.stat-grid,.stat-grid-2{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:640px){
-      .stat-grid{grid-template-columns:1fr 1fr;}
+      .stat-grid,.stat-grid-2{grid-template-columns:1fr 1fr;}
       .sc-val{font-size:0.95rem;}
       .form-section{flex-direction:column;}
       #tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
@@ -693,6 +728,15 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <div class="sc purple"><div class="sc-label">Risk/Reward</div><div class="sc-val">${s.riskReward||"\u2014"}</div><div class="sc-sub">1 : avg win \u00f7 avg loss</div></div>
     <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val">${s.winRate||"\u2014"}%</div><div class="sc-sub">${s.wins} wins of ${s.totalTrades}</div></div>
   </div>
+  <div class="stat-grid-2">
+    <div class="sc orange"><div class="sc-label">Profit Factor</div><div class="sc-val" style="color:${s.profitFactor>=1.5?'#10b981':s.profitFactor>=1?'#f59e0b':'#ef4444'};">${s.profitFactor===Infinity?'∞':s.profitFactor}</div><div class="sc-sub">Gross P ₹${Math.round(s.grossProfit).toLocaleString("en-IN")} / L ₹${Math.round(s.grossLoss).toLocaleString("en-IN")}</div></div>
+    <div class="sc cyan"><div class="sc-label">Expectancy</div><div class="sc-val" style="color:${pnlColor(s.expectancy)};">${fmtPnl(s.expectancy, s)}</div><div class="sc-sub">Avg P&L per trade</div></div>
+    <div class="sc red"><div class="sc-label">Max Loss</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.maxLoss, s)}</div><div class="sc-sub">Worst single trade</div></div>
+    <div class="sc green"><div class="sc-label">Avg Win</div><div class="sc-val" style="color:#10b981;">${fmtPnl(s.avgWin, s)}</div><div class="sc-sub">${s.wins} winning trades</div></div>
+    <div class="sc red"><div class="sc-label">Avg Loss</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.avgLoss, s)}</div><div class="sc-sub">${s.losses} losing trades</div></div>
+    <div class="sc blue"><div class="sc-label">Recovery Factor</div><div class="sc-val" style="color:${s.recoveryFactor>=2?'#10b981':s.recoveryFactor>=1?'#f59e0b':'#ef4444'};">${s.recoveryFactor}</div><div class="sc-sub">PnL ÷ Max DD</div></div>
+    <div class="sc purple"><div class="sc-label">Sharpe Ratio</div><div class="sc-val" style="color:${s.sharpeRatio>=1?'#10b981':s.sharpeRatio>=0.5?'#f59e0b':'#ef4444'};">${s.sharpeRatio}</div><div class="sc-sub">Annualized (daily)</div></div>
+  </div>
 
   <!-- Day-wise P&L -->
   <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
@@ -737,6 +781,48 @@ ${buildSidebar('scalpBacktest', liveActive)}
       <div class="ana-mini">
         <h3>📅 Day of Week</h3>
         <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Day</th><th>Trades</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaDowBody"></tbody></table></div>
+      </div>
+    </div>
+
+    <!-- ── Loss-Focused Analytics ── -->
+    <div style="border-top:0.5px solid #0e1428;margin:16px 0 12px;padding-top:12px;">
+      <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#ef4444;font-weight:700;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;">🔍 Loss Analysis</div>
+    </div>
+
+    <div class="ana-row">
+      <div class="ana-card"><h3>📊 Loss Distribution</h3><div class="ana-chart-wrap"><canvas id="anaLossDist"></canvas></div></div>
+      <div class="ana-card"><h3>⏱ Loss by Hold Duration</h3><div class="ana-chart-wrap"><canvas id="anaLossDuration"></canvas></div></div>
+    </div>
+    <div class="ana-row">
+      <div class="ana-card"><h3>🔀 CE vs PE Performance</h3><div class="ana-chart-wrap"><canvas id="anaSidePerf"></canvas></div></div>
+      <div class="ana-card"><h3>📉 Drawdown Periods</h3><div class="ana-chart-wrap"><canvas id="anaDDPeriods"></canvas></div></div>
+    </div>
+    <div class="ana-row3">
+      <div class="ana-mini">
+        <h3>💀 Top 10 Worst Trades</h3>
+        <div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Side</th><th>P&L</th><th>Held</th><th>Exit</th></tr></thead><tbody id="anaWorstBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
+        <h3>🔥 Consecutive Loss Streaks</h3>
+        <div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Start</th><th>Trades</th><th>Total Loss</th><th>Avg Loss</th><th>Recovery</th></tr></thead><tbody id="anaLossStreakBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
+        <h3>⏰ Losing Hours</h3>
+        <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Hour</th><th>Losses</th><th>Loss P&L</th><th>Avg Loss</th><th>Loss%</th></tr></thead><tbody id="anaLossHourBody"></tbody></table></div>
+      </div>
+    </div>
+    <div class="ana-row3">
+      <div class="ana-mini">
+        <h3>📅 Worst Trading Days</h3>
+        <div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Day P&L</th><th>Losses</th><th>Worst Trade</th></tr></thead><tbody id="anaWorstDayBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
+        <h3>🚪 Loss by Exit Reason</h3>
+        <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Loss Count</th><th>Total Loss</th><th>Avg Loss</th><th>% of Losses</th></tr></thead><tbody id="anaLossReasonBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
+        <h3>📊 Risk Metrics</h3>
+        <div id="anaRiskMetrics"></div>
       </div>
     </div>
   </div>
