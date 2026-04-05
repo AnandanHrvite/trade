@@ -435,7 +435,7 @@ function startOptionPolling(symbol) {
         placeHardSL();  // Place exchange-level SL-M once we have option premium
       }
     }
-  });
+  }).catch(err => log(`❌ [LIVE] Initial option LTP fetch error: ${err.message}`));
 
   // ── 10s timeout: if option LTP still null, use last tick price as proxy ───────
   setTimeout(() => {
@@ -446,45 +446,67 @@ function startOptionPolling(symbol) {
       log(`⚠️ [LIVE] Option LTP timeout — using spot ₹${proxy} as proxy entry LTP`);
     }
   }, 10000);
-  // Then every 3 seconds
+  // Then every 1 second
   _optionPollTimer = setInterval(async () => {
-    if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }
-    const ltp = await fetchOptionLtp(symbol);
-    if (!ltp) {
-      // ── LTP staleness alert — warn if no successful fetch for 15+ seconds ──
-      const _staleThreshold = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
-      if (tradeState.optionLtpUpdatedAt && (Date.now() - tradeState.optionLtpUpdatedAt) > _staleThreshold) {
-        if (!tradeState._ltpStaleLogged) {
-          log(`⚠️ [LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - tradeState.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
-          tradeState._ltpStaleLogged = true;
+    try {
+      if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }
+      const ltp = await fetchOptionLtp(symbol);
+      if (!ltp) {
+        // ── LTP staleness alert — warn if no successful fetch for 15+ seconds ──
+        const _staleThreshold = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
+        if (tradeState.optionLtpUpdatedAt && (Date.now() - tradeState.optionLtpUpdatedAt) > _staleThreshold) {
+          if (!tradeState._ltpStaleLogged) {
+            log(`⚠️ [LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - tradeState.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
+            tradeState._ltpStaleLogged = true;
+          }
+        }
+        return;
+      }
+      tradeState.optionLtp = ltp;
+      tradeState.optionLtpUpdatedAt = Date.now();
+      if (tradeState._ltpStaleLogged) {
+        log(`✅ [LIVE] Option LTP recovered — ₹${ltp}`);
+        tradeState._ltpStaleLogged = false;
+      }
+      if (tradeState.position) {
+        tradeState.position.optionCurrentLtp = ltp;
+        if (!tradeState.position.optionEntryLtp) {
+          tradeState.position.optionEntryLtp     = ltp;
+          tradeState.position.optionEntryLtpTime = istNow();
+          log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
+          placeHardSL();  // Place exchange-level SL-M once we have option premium
         }
       }
-      return;
-    }
-    tradeState.optionLtp = ltp;
-    tradeState.optionLtpUpdatedAt = Date.now();
-    if (tradeState._ltpStaleLogged) {
-      log(`✅ [LIVE] Option LTP recovered — ₹${ltp}`);
-      tradeState._ltpStaleLogged = false;
-    }
-    if (tradeState.position) {
-      tradeState.position.optionCurrentLtp = ltp;
-      if (!tradeState.position.optionEntryLtp) {
-        tradeState.position.optionEntryLtp     = ltp;
-        tradeState.position.optionEntryLtpTime = istNow();
-        log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
-        placeHardSL();  // Place exchange-level SL-M once we have option premium
-      }
-
-      // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
-      // Previously: exit if option premium dropped below 50% mid threshold.
-      // Now: breakeven at +25pt moves SL to entry, trail handles everything else.
+    } catch (err) {
+      console.error(`🚨 [LIVE] Option poll error: ${err.message}`);
     }
   }, 1000); // 1000ms — tight option LTP SL monitoring (primary spot SL fires every tick)
 }
 
 function stopOptionPolling() {
   if (_optionPollTimer) { clearInterval(_optionPollTimer); _optionPollTimer = null; }
+}
+
+// ── EOD Backup Timer — force exit at 3:25 PM IST if tick-based exit missed ──
+let _eodBackupTimer = null;
+
+function scheduleEODBackupExit() {
+  clearEODBackupTimer();
+  const _EOD_EXIT_MINS = _STOP_MINS - 5; // 3:25 PM (5 mins before stop)
+  const nowMins = getISTMinutes();
+  if (nowMins >= _EOD_EXIT_MINS) return; // already past
+  const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;
+  _eodBackupTimer = setTimeout(() => {
+    if (!tradeState.running || !tradeState.position) return;
+    const exitPrice = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : 0);
+    log(`🚨 [LIVE] EOD BACKUP TIMER — force exit at 3:25 PM IST (tick-based exit may have missed)`);
+    squareOff(exitPrice, "EOD backup timer (3:25 PM)").catch(e => log(`❌ [LIVE] EOD backup exit error: ${e.message}`));
+  }, msUntil);
+  log(`⏰ [LIVE] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min (3:25 PM IST)`);
+}
+
+function clearEODBackupTimer() {
+  if (_eodBackupTimer) { clearTimeout(_eodBackupTimer); _eodBackupTimer = null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -509,6 +531,7 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
     );
     if (result.success) {
       log(`✅ [LIVE] Zerodha order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
+      verifyOrderFill(result.orderId, `${sideLabel} ${qty} × ${fyersSymbol}`);
     } else {
       log(`❌ [LIVE] Zerodha order FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | ${JSON.stringify(result.raw)}`);
     }
@@ -520,6 +543,37 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
     // Release guard after 5s to allow legitimate next orders
     setTimeout(() => { _orderInFlight = false; }, 5000);
   }
+}
+
+/**
+ * Verify order fill status after placement (async, non-blocking).
+ * Polls Zerodha order book after a delay to confirm the order was filled.
+ * Logs warning + Telegram alert if order was rejected or still pending.
+ */
+function verifyOrderFill(orderId, label) {
+  if (!orderId) return;
+  setTimeout(async () => {
+    try {
+      const orders = await zerodha.getOrders();
+      if (!Array.isArray(orders) || orders.length === 0) return;
+      const order = orders.find(o => o.order_id === orderId);
+      if (!order) {
+        log(`⚠️ [LIVE] Order ${orderId} not found in order book (${label})`);
+        return;
+      }
+      const status = (order.status || "").toUpperCase();
+      if (status === "COMPLETE") {
+        log(`✅ [LIVE] Order VERIFIED filled — ${orderId} (${label}) | qty=${order.filled_quantity}`);
+      } else if (status === "REJECTED") {
+        log(`🚨 [LIVE] Order REJECTED — ${orderId} (${label}) | reason: ${order.status_message || "unknown"}`);
+        sendTelegram(`🚨 Order REJECTED: ${label} | ${order.status_message || "unknown"}`).catch(() => {});
+      } else {
+        log(`⚠️ [LIVE] Order status: ${status} — ${orderId} (${label}) | filled=${order.filled_quantity}/${order.quantity}`);
+      }
+    } catch (err) {
+      log(`⚠️ [LIVE] Order verification failed: ${err.message}`);
+    }
+  }, 3000); // check 3s after placement
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -567,19 +621,25 @@ async function placeHardSL() {
 
   log(`🛡️ [HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} (opt LTP=₹${optionLtp}, spotSL=₹${pos.stopLoss}, Δ=${delta})`);
 
-  try {
-    const result = await zerodha.placeSLMOrder(pos.symbol, slSide, qty, triggerPrice, { isFutures: isFut });
-    if (result.success) {
-      _hardSLOrderId = result.orderId;
-      log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
-    } else {
-      log(`⚠️ [HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
-      _hardSLOrderId = null;
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await zerodha.placeSLMOrder(pos.symbol, slSide, qty, triggerPrice, { isFutures: isFut });
+      if (result.success) {
+        _hardSLOrderId = result.orderId;
+        log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
+        return;
+      } else {
+        log(`⚠️ [HARD SL] SL-M placement failed (attempt ${attempt}/${MAX_RETRIES}): ${JSON.stringify(result.raw)}`);
+      }
+    } catch (err) {
+      log(`❌ [HARD SL] Exception (attempt ${attempt}/${MAX_RETRIES}): ${err.message}`);
     }
-  } catch (err) {
-    log(`❌ [HARD SL] Exception: ${err.message}`);
-    _hardSLOrderId = null;
+    if (attempt < MAX_RETRIES) await new Promise(r => setTimeout(r, 1000));
   }
+  _hardSLOrderId = null;
+  log(`🚨 [HARD SL] All ${MAX_RETRIES} attempts failed — position has NO exchange-level SL protection!`);
+  sendTelegram(`🚨 HARD SL FAILED after ${MAX_RETRIES} retries — position UNPROTECTED!`).catch(() => {});
 }
 
 /**
@@ -1593,6 +1653,7 @@ router.get("/start", async (req, res) => {
   tradeState._slHitCandleTime = null;
   tradeState._expiryDayBlocked = false;
   stopOptionPolling();
+  scheduleEODBackupExit();
 
   // Expiry day check
   if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
@@ -1710,11 +1771,50 @@ router.get("/start", async (req, res) => {
         tradeState.prevCandleLow  = last.low;
         tradeState.prevCandleMid  = parseFloat(((last.high + last.low) / 2).toFixed(2));
       }
+      // ── Gap detection — compare today's open vs yesterday's close ──────────
+      const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const todayCandles = tradeState.candles.filter(c => {
+        const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        return d === todayIST;
+      });
+      const yesterdayCandles = tradeState.candles.filter(c => {
+        const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        return d < todayIST;
+      });
+      if (todayCandles.length > 0 && yesterdayCandles.length > 0) {
+        const todayOpen = todayCandles[0].open;
+        const yesterdayClose = yesterdayCandles[yesterdayCandles.length - 1].close;
+        const gapPts = parseFloat((todayOpen - yesterdayClose).toFixed(1));
+        const GAP_THRESHOLD = parseFloat(process.env.GAP_THRESHOLD_PTS || "50");
+        if (Math.abs(gapPts) >= GAP_THRESHOLD) {
+          const dir = gapPts > 0 ? "UP" : "DOWN";
+          log(`🔔 [LIVE] GAP ${dir} detected: ${Math.abs(gapPts).toFixed(0)} pts (open ₹${todayOpen} vs prev close ₹${yesterdayClose})`);
+          sendTelegram(`🔔 GAP ${dir}: ${Math.abs(gapPts).toFixed(0)} pts — be cautious with early entries`).catch(() => {});
+        } else {
+          log(`✅ [LIVE] No significant gap — open ₹${todayOpen} vs prev close ₹${yesterdayClose} (${gapPts > 0 ? "+" : ""}${gapPts} pts)`);
+        }
+      }
     } else {
       log("⚠️  No candles found — will build from live ticks");
     }
   } catch (err) {
     log(`⚠️  Could not pre-load candles: ${err.message}`);
+  }
+
+  // ── Position reconciliation — check broker for orphaned positions ───────────
+  try {
+    const brokerPositions = await zerodha.getPositions();
+    const dayPositions = (brokerPositions.day || []).filter(p => p.quantity !== 0);
+    if (dayPositions.length > 0) {
+      const symbols = dayPositions.map(p => `${p.tradingsymbol}(qty=${p.quantity})`).join(", ");
+      log(`⚠️ [LIVE] Broker has open day positions: ${symbols}`);
+      log(`   If these are from a previous crash, consider manual square-off on Zerodha dashboard.`);
+      sendTelegram(`⚠️ Orphaned positions detected on Zerodha: ${symbols}`).catch(() => {});
+    } else {
+      log(`✅ [LIVE] No orphaned positions on broker — clean start`);
+    }
+  } catch (err) {
+    log(`⚠️ [LIVE] Position reconciliation failed: ${err.message}`);
   }
 
   log(`📡 Subscribing to ${NIFTY_INDEX_SYMBOL} for live tick data...`);
@@ -1754,6 +1854,7 @@ router.get("/stop", async (req, res) => {
   tradeState._ltpStaleLogged = false;
   tradeState.optionSymbol = null;
   tradeState.running      = false;
+  clearEODBackupTimer();
   sharedSocketState.clear();
   log("⏹ [LIVE] Live trading stopped");
 

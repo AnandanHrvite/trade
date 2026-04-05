@@ -42,11 +42,11 @@ function cacheFilePath(symbol, resolution, from, to) {
 }
 
 /** Load cached candles. Returns null if cache miss. */
-function loadFromCache(symbol, resolution, from, to) {
+async function loadFromCache(symbol, resolution, from, to) {
   try {
     const p = cacheFilePath(symbol, resolution, from, to);
     if (!fs.existsSync(p)) return null;
-    const raw = fs.readFileSync(p, "utf-8");
+    const raw = await fs.promises.readFile(p, "utf-8");
     const data = JSON.parse(raw);
     if (!Array.isArray(data) || data.length === 0) return null;
     return data;
@@ -86,7 +86,7 @@ async function fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, s
   const rangeTouchesToday = to >= today;
 
   if (!skipCache && !rangeTouchesToday) {
-    const cached = loadFromCache(symbol, resolution, from, to);
+    const cached = await loadFromCache(symbol, resolution, from, to);
     if (cached) {
       console.log(`[backtestCache] ✅ Cache hit: ${symbol} ${resolution} ${from}→${to} (${cached.length} candles)`);
       return cached;

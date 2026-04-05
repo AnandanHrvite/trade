@@ -163,7 +163,9 @@ class SocketManager {
       ticks.forEach(t => {
         if (!t || !t.ltp) return;
         // Primary callback
-        if (this._onSpotTick) this._onSpotTick(t);
+        if (this._onSpotTick) {
+          try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
+        }
         // Fan-out to all secondary callbacks (scalp, etc.)
         for (const [, cb] of this._callbacks) {
           try { if (cb.onTick) cb.onTick(t); } catch (_) {}
@@ -173,6 +175,7 @@ class SocketManager {
 
     skt.on('error', (err) => {
       this._log(`❌ [SOCKET] Error: ${JSON.stringify(err)}`);
+      if (!this._stopped) this._scheduleReconnect();
     });
 
     skt.on('close', () => {
@@ -206,14 +209,18 @@ class SocketManager {
   _startWatchdog() {
     this._clearWatchdog();
     this._watchdog = setInterval(() => {
-      if (this._stopped) { this._clearWatchdog(); return; }
-      if (!this._isMarketHours()) return;
-      const silence = this._lastTickAt ? Date.now() - this._lastTickAt : Infinity;
-      if (silence > HEARTBEAT_MS) {
-        this._log(`⚠️  [SOCKET] Watchdog: no tick for ${Math.round(silence / 1000)}s — reconnecting`);
-        this._lastTickAt = Date.now();
-        this._clearRetry();
-        this._connect();
+      try {
+        if (this._stopped) { this._clearWatchdog(); return; }
+        if (!this._isMarketHours()) return;
+        const silence = this._lastTickAt ? Date.now() - this._lastTickAt : Infinity;
+        if (silence > HEARTBEAT_MS) {
+          this._log(`⚠️  [SOCKET] Watchdog: no tick for ${Math.round(silence / 1000)}s — reconnecting`);
+          this._lastTickAt = Date.now();
+          this._clearRetry();
+          this._connect();
+        }
+      } catch (err) {
+        this._log(`🚨 [SOCKET] Watchdog error: ${err.message}`);
       }
     }, 5_000);
   }

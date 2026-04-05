@@ -75,8 +75,8 @@ async function checkLiveVix(signalStrength) {
   const vix = await fetchLiveVix();
 
   if (vix === null) {
-    // Can't fetch VIX — don't block trading (fail-open)
-    return { allowed: true, vix: null, reason: "VIX unavailable — allowing entry (fail-open)" };
+    // Can't fetch VIX — block entry for safety (fail-closed)
+    return { allowed: false, vix: null, reason: "VIX unavailable — blocking entry (fail-closed)" };
   }
 
   const maxEntry   = getVixMaxEntry();

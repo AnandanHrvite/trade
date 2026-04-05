@@ -339,6 +339,37 @@ async function cancelScalpHardSL() {
   }
 }
 
+/**
+ * Verify order fill status after placement (async, non-blocking).
+ * Polls Fyers order book after a delay to confirm the order was filled.
+ */
+function verifyOrderFill(orderId, label) {
+  if (!orderId) return;
+  setTimeout(async () => {
+    try {
+      const orders = await fyersBroker.getOrders();
+      if (!Array.isArray(orders) || orders.length === 0) return;
+      const order = orders.find(o => o.id === orderId || o.orderNumber === orderId);
+      if (!order) {
+        log(`⚠️ [SCALP] Order ${orderId} not found in order book (${label})`);
+        return;
+      }
+      const status = (order.status || 0);
+      // Fyers status: 2=TRADED/FILLED, 5=REJECTED, 1=PENDING, 6=CANCELLED
+      if (status === 2) {
+        log(`✅ [SCALP] Order VERIFIED filled — ${orderId} (${label})`);
+      } else if (status === 5) {
+        log(`🚨 [SCALP] Order REJECTED — ${orderId} (${label}) | ${order.message || "unknown"}`);
+        sendTelegram(`🚨 Scalp Order REJECTED: ${label} | ${order.message || "unknown"}`).catch(() => {});
+      } else {
+        log(`⚠️ [SCALP] Order status=${status} — ${orderId} (${label})`);
+      }
+    } catch (err) {
+      log(`⚠️ [SCALP] Order verification failed: ${err.message}`);
+    }
+  }, 3000);
+}
+
 // ── Order placement (Fyers with duplicate guard) ─────────────────────────────
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
@@ -358,6 +389,7 @@ async function placeOrder(fyersSymbol, side, qty) {
     );
     if (result.success) {
       log(`✅ [SCALP-LIVE] Fyers order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
+      verifyOrderFill(result.orderId, `${sideLabel} ${qty} × ${fyersSymbol}`);
     } else {
       log(`❌ [SCALP-LIVE] Fyers order FAILED — ${JSON.stringify(result.raw)}`);
     }
@@ -545,13 +577,13 @@ function onTick(tick) {
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
-      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`);
+      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
     }
     if (pos.side === "PE" && price >= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
-      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`);
+      squareOff(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
     }
 
@@ -560,14 +592,14 @@ function onTick(tick) {
       const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
       const trailFloor = _SCALP_TRAIL_START + levelsAbove * _SCALP_TRAIL_STEP;
       if (curPnl <= trailFloor) {
-        squareOff(price, `Trail lock ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`);
+        squareOff(price, `Trail lock ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
         return;
       }
     }
 
     // EOD
     if (getISTMinutes() >= _STOP_MINS - 10) {
-      squareOff(price, "EOD square-off");
+      squareOff(price, "EOD square-off").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
     }
   }
@@ -590,7 +622,7 @@ function onCandleClose(bar) {
 
     // PSAR flip → exit on reversal signal
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
-      squareOff(bar.close, "PSAR flip");
+      squareOff(bar.close, "PSAR flip").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
     }
 
@@ -740,6 +772,20 @@ async function preloadHistory() {
     if (candles && candles.length > 0) {
       state.candles = candles.slice(-99);
       log(`📦 [SCALP-LIVE] Pre-loaded ${state.candles.length} × ${SCALP_RES}-min candles (strategy ready!)`);
+
+      // ── Gap detection — compare today's open vs yesterday's close ──────────
+      const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const todayC = state.candles.filter(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) === todayIST);
+      const yesterdayC = state.candles.filter(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }) < todayIST);
+      if (todayC.length > 0 && yesterdayC.length > 0) {
+        const gapPts = parseFloat((todayC[0].open - yesterdayC[yesterdayC.length - 1].close).toFixed(1));
+        const GAP_THRESHOLD = parseFloat(process.env.GAP_THRESHOLD_PTS || "50");
+        if (Math.abs(gapPts) >= GAP_THRESHOLD) {
+          const dir = gapPts > 0 ? "UP" : "DOWN";
+          log(`🔔 [SCALP] GAP ${dir} detected: ${Math.abs(gapPts).toFixed(0)} pts`);
+          sendTelegram(`🔔 [SCALP] GAP ${dir}: ${Math.abs(gapPts).toFixed(0)} pts`).catch(() => {});
+        }
+      }
     } else {
       log(`⚠️ [SCALP-LIVE] No historical candles found — will build from live ticks`);
     }
@@ -780,6 +826,28 @@ async function preloadHistory() {
   } catch (err) {
     log(`⚠️ [SCALP-LIVE] CPR data fetch failed: ${err.message}`);
   }
+}
+
+// ── EOD Backup Timer — force exit at 3:25 PM IST if tick-based exit missed ──
+let _scalpEodBackupTimer = null;
+
+function scheduleScalpEODBackup() {
+  clearScalpEODBackup();
+  const _EOD_EXIT_MINS = _STOP_MINS - 5; // 3:25 PM
+  const nowMins = getISTMinutes();
+  if (nowMins >= _EOD_EXIT_MINS) return;
+  const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;
+  _scalpEodBackupTimer = setTimeout(() => {
+    if (!state.running || !state.position) return;
+    const exitPrice = state.lastTickPrice || (state.currentBar ? state.currentBar.close : 0);
+    log(`🚨 [SCALP] EOD BACKUP TIMER — force exit at 3:25 PM IST`);
+    squareOff(exitPrice, "EOD backup timer (3:25 PM)").catch(e => log(`❌ [SCALP] EOD backup exit error: ${e.message}`));
+  }, msUntil);
+  log(`⏰ [SCALP] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min`);
+}
+
+function clearScalpEODBackup() {
+  if (_scalpEodBackupTimer) { clearTimeout(_scalpEodBackupTimer); _scalpEodBackupTimer = null; }
 }
 
 // ── Auto-stop ───────────────────────────────────────────────────────────────
@@ -889,6 +957,22 @@ router.get("/start", async (req, res) => {
     fetchLiveVix().catch(() => {});
   }
 
+  // ── Position reconciliation — check Fyers for orphaned positions ──────────
+  try {
+    const brokerPositions = await fyersBroker.getPositions();
+    const openPos = (brokerPositions.netPositions || []).filter(p => p.netQty !== 0);
+    if (openPos.length > 0) {
+      const symbols = openPos.map(p => `${p.symbol}(qty=${p.netQty})`).join(", ");
+      log(`⚠️ [SCALP] Broker has open positions: ${symbols}`);
+      log(`   If these are from a previous crash, consider manual square-off on Fyers dashboard.`);
+      sendTelegram(`⚠️ Orphaned positions on Fyers: ${symbols}`).catch(() => {});
+    } else {
+      log(`✅ [SCALP] No orphaned positions on Fyers — clean start`);
+    }
+  } catch (err) {
+    log(`⚠️ [SCALP] Position reconciliation failed: ${err.message}`);
+  }
+
   // Socket: piggyback or start own
   if (socketManager.isRunning()) {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
@@ -899,6 +983,7 @@ router.get("/start", async (req, res) => {
     log("📡 [SCALP-LIVE] Started WebSocket");
   }
 
+  scheduleScalpEODBackup();
   scheduleAutoStop((msg) => {
     log(msg);
     stopSession();
@@ -912,11 +997,12 @@ function stopSession() {
   if (!state.running) return;
 
   if (state.position) {
-    squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped");
+    squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
   }
 
   state.running = false;
   stopOptionPolling();
+  clearScalpEODBackup();
   socketManager.removeCallback(CALLBACK_ID);
 
   if (!sharedSocketState.isActive()) {

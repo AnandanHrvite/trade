@@ -65,6 +65,19 @@ function isInTradingWindow(unixSec) {
   return { ok: true, reason: null };
 }
 
+// ── Indicator cache — avoid redundant recalculation on every tick ────────────
+// Cache key = last closed candle time + current candle OHLC (changes on each tick)
+// If the closed candles haven't changed AND current bar is same, reuse cached indicators.
+let _indicatorCache = { key: null, bb: null, rsi: null, sar: null };
+
+function _makeIndicatorKey(candles) {
+  if (candles.length < 2) return null;
+  const last = candles[candles.length - 1];
+  const prev = candles[candles.length - 2];
+  // Key on: prev candle time (closed candles change) + current bar OHLC
+  return `${prev.time}:${candles.length}:${last.open}:${last.high}:${last.low}:${last.close}`;
+}
+
 // ── Main signal function ─────────────────────────────────────────────────────
 function getSignal(candles, opts) {
   opts = opts || {};
@@ -98,45 +111,68 @@ function getSignal(candles, opts) {
     return base;
   }
 
-  // ── Indicators ───────────────────────────────────────────────────────────
-  var closes = candles.map(function(c) { return c.close; });
-  var highs  = candles.map(function(c) { return c.high; });
-  var lows   = candles.map(function(c) { return c.low; });
+  // ── Indicators (with cache to avoid redundant recalculation) ──────────────
+  var cacheKey = _makeIndicatorKey(candles);
+  var bb, rsi, sar;
 
-  // Bollinger Bands
-  var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
-  if (bbArr.length < 1) { base.reason = "BB warming up"; return base; }
-  var bb = bbArr[bbArr.length - 1];
+  if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
+    bb  = _indicatorCache.bb;
+    rsi = _indicatorCache.rsi;
+    sar = _indicatorCache.sar;
+  } else {
+    var closes = candles.map(function(c) { return c.close; });
+    var highs  = candles.map(function(c) { return c.high; });
+    var lows   = candles.map(function(c) { return c.low; });
+
+    // Bollinger Bands
+    var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+    if (bbArr.length < 1) { base.reason = "BB warming up"; return base; }
+    bb = bbArr[bbArr.length - 1];
+
+    // RSI
+    var rsiArr = RSI.calculate({ period: RSI_PERIOD, values: closes });
+    if (rsiArr.length < 1) { base.reason = "RSI warming up"; return base; }
+    rsi = rsiArr[rsiArr.length - 1];
+
+    // Parabolic SAR
+    var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
+    if (sarArr.length < 1) { base.reason = "SAR warming up"; return base; }
+    sar = sarArr[sarArr.length - 1];
+
+    // Cache for next tick with same window
+    _indicatorCache = { key: cacheKey, bb: bb, rsi: rsi, sar: sar };
+  }
+
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
   base.bbMiddle = parseFloat(bb.middle.toFixed(2));
   base.bbLower  = parseFloat(bb.lower.toFixed(2));
-
-  // RSI
-  var rsiArr = RSI.calculate({ period: RSI_PERIOD, values: closes });
-  if (rsiArr.length < 1) { base.reason = "RSI warming up"; return base; }
-  var rsi = rsiArr[rsiArr.length - 1];
   base.rsi = parseFloat(rsi.toFixed(1));
-
-  // Parabolic SAR
-  var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
-  if (sarArr.length < 1) { base.reason = "SAR warming up"; return base; }
-  var sar = sarArr[sarArr.length - 1];
   base.sar = parseFloat(sar.toFixed(2));
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+
+  // ── ACTIVITY FILTER (optional — disabled by default) ─────────────────────
+  // NIFTY index has no real volume — uses candle range (high-low) as activity proxy.
+  // Skips entries when current candle range is below threshold of recent average.
+  // Enable via Settings: SCALP_ACTIVITY_FILTER=true
+  if (cfg("SCALP_ACTIVITY_FILTER", "false") === "true" && candles.length >= 20) {
+    var activityRatio = parseFloat(cfg("SCALP_ACTIVITY_FILTER_RATIO", "0.5"));
+    var recentRanges = candles.slice(-20).map(function(c) { return c.high - c.low; });
+    var avgRange = recentRanges.reduce(function(s, r) { return s + r; }, 0) / recentRanges.length;
+    var curRange = sc.high - sc.low;
+    if (avgRange > 0 && curRange < avgRange * activityRatio) {
+      base.reason = "Low activity (range " + curRange.toFixed(1) + " < " + (avgRange * activityRatio).toFixed(1) + " threshold)";
+      return base;
+    }
+  }
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
   var MAX_SL_PTS = parseFloat(cfg("SCALP_MAX_SL_PTS", "50"));
   var prevCandle = candles[candles.length - 2];
 
-  // Compute PSAR for initial SL comparison
-  var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
-  var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
-  var _highs = candles.map(function(c) { return c.high; });
-  var _lows  = candles.map(function(c) { return c.low; });
-  var _sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: _highs, low: _lows });
-  var _curSar = _sarArr.length > 0 ? _sarArr[_sarArr.length - 1] : null;
+  // Reuse PSAR already computed above (sar variable) for SL comparison
+  var _curSar = sar;
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
@@ -265,6 +301,6 @@ function isPSARFlip(candles, side) {
   }
 }
 
-function reset() { /* no pending state in this strategy */ }
+function reset() { _indicatorCache = { key: null, bb: null, rsi: null, sar: null }; }
 
 module.exports = { NAME, DESCRIPTION, getSignal, updateTrailingSL, isPSARFlip, calcCPR, isNarrowCPR, reset };

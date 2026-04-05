@@ -1204,11 +1204,16 @@ function scheduleEODTokenClear() {
   console.log(`🕒 EOD token clear scheduled in ${Math.round(msUntil / 60000)} min (at 3:31 PM IST)`);
 
   setTimeout(() => {
-    console.log("🔴 [EOD] 3:31 PM IST — auto-clearing Fyers & Zerodha tokens...");
-    clearFyersToken();
-    zerodha.clearZerodhaToken();
-    console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
-    scheduleEODTokenClear(); // re-schedule for tomorrow's 3:31 PM
+    try {
+      console.log("🔴 [EOD] 3:31 PM IST — auto-clearing Fyers & Zerodha tokens...");
+      clearFyersToken();
+      zerodha.clearZerodhaToken();
+      console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
+    } catch (err) {
+      console.error(`❌ [EOD] Token clear failed: ${err.message}`);
+    } finally {
+      scheduleEODTokenClear(); // always re-schedule for tomorrow's 3:31 PM
+    }
   }, msUntil);
 }
 
