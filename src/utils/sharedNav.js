@@ -838,6 +838,72 @@ async function secretFetch(url, opts) {
   if ('${process.env.UI_THEME || "dark"}' !== 'light') return;
   document.documentElement.setAttribute('data-theme', 'light');
 
+  // ── Force body style immediately ──
+  document.body.style.setProperty('background', '#f4f6f9', 'important');
+  document.body.style.setProperty('color', '#334155', 'important');
+
+  // ── Inject light-theme CSS at END of <head> to guarantee cascade wins ──
+  var _ltStyle = document.createElement('style');
+  _ltStyle.id = 'light-theme-force';
+  _ltStyle.textContent = [
+    'body{background:#f4f6f9!important;color:#334155!important;}',
+    '.main-content{background:#f4f6f9!important;}',
+    '.page{color:#334155!important;}',
+    '.top-bar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.top-bar-title{color:#1e293b!important;}',
+    '.top-bar-meta{color:#94a3b8!important;}',
+    'h1{color:#1e293b!important;}',
+    '.page-title{color:#1e293b!important;}',
+    '.subtitle,.page-subtitle,.page-sub{color:#94a3b8!important;}',
+    '.sc{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,.06)!important;}',
+    '.sc-label,.cap-label{color:#64748b!important;}',
+    '.sc-val{color:#1e293b!important;}',
+    '.sc-sub{color:#94a3b8!important;}',
+    '.section-title{color:#64748b!important;}',
+    '.section-title::after{background:#e0e4ea!important;}',
+    'table th{color:#64748b!important;background:#f1f5f9!important;}',
+    'table td{border-color:#e0e4ea!important;}',
+    'table tr{border-color:#e0e4ea!important;}',
+    'tbody tr:hover{background:#f8fafc!important;}',
+    // Cards & panels
+    '.card,.box,.err-box,.confirm-box,.panel,.chart-wrap,.session-card,.ana-card,.ana-mini,.log-box,.capital-strip{background:#fff!important;border-color:#e0e4ea!important;}',
+    '.metric{background:#f8fafc!important;border-color:#e0e4ea!important;}',
+    '.session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}',
+    '.run-bar{background:#f8fafc!important;border-color:#e0e4ea!important;}',
+    // Text colors
+    '.panel-title,.chart-title,.diff-title,.session-name{color:#1e293b!important;}',
+    '.metric-label,.cap-label,.proc-title,.stat-label,.chart-title-text,.ana-card h3,.ana-mini h3{color:#64748b!important;}',
+    '.metric-val,.cap-val,.stat-value,.proc-item .pi-val{color:#1e293b!important;}',
+    '.metric-sub,.cap-sub,.no-data{color:#94a3b8!important;}',
+    '.cap-val.white{color:#1e293b!important;}',
+    '.cap-val.green{color:#16a34a!important;}',
+    // Tables (compare, diff, day, history, data)
+    '.diff-table th,.day-table th,.data-table th,.summary-table th,.holiday-table th,.ana-tbl th,.tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}',
+    '.diff-table td,.day-table td,.data-table td,.summary-table td,.ana-tbl td,.tbl td{border-color:#e0e4ea!important;color:#334155!important;}',
+    '.diff-table .neutral{color:#334155!important;}',
+    '.diff-table tr:hover,.day-table tr:hover,.ana-tbl tr:hover{background:#f8fafc!important;}',
+    // Cap cells
+    '.cap-cell{border-right-color:#e0e4ea!important;}',
+    // Stat cards for monitor
+    '.stat-card,.chart-card,.proc-card{background:#fff!important;border-color:#e0e4ea!important;}',
+    '.stat-sub,.proc-item .pi-label{color:#94a3b8!important;}',
+    '.bar-track{background:#e2e8f0!important;}',
+    // Logs
+    '.toolbar{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.log-wrap{background:#fff!important;}',
+    '.log-row{border-bottom-color:#f1f5f9!important;}',
+    '#search{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}',
+    // Export/action btns
+    '.export-btn,.copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#64748b!important;}',
+    // Broker badges
+    '.broker-badges{background:#fff!important;border-bottom-color:#e0e4ea!important;}',
+    '.broker-badge.ok{background:#eff6ff!important;border-color:#bfdbfe!important;color:#2563eb!important;}',
+    '.broker-badge.err{background:#fef2f2!important;border-color:#fecaca!important;color:#dc2626!important;}',
+    // Selection
+    '::selection{background:#bfdbfe!important;color:#1e293b!important;}',
+  ].join('\\n');
+  document.head.appendChild(_ltStyle);
+
   // ── Light-theme inline style rewriter ──────────────────────────────────────
   // Maps dark hex colors → light equivalents for inline style="" attributes.
   var bgMap = {
