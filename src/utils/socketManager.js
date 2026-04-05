@@ -64,6 +64,7 @@ class SocketManager {
    */
   addCallback(callbackId, onTick, onLog) {
     this._callbacks.set(callbackId, { onTick, onLog });
+    this._log(`📡 [SOCKET] Callback registered: ${callbackId} (total: ${this._callbacks.size})`);
   }
 
   /**
@@ -71,6 +72,7 @@ class SocketManager {
    */
   removeCallback(callbackId) {
     this._callbacks.delete(callbackId);
+    this._log(`📡 [SOCKET] Callback removed: ${callbackId} (remaining: ${this._callbacks.size})`);
   }
 
   /**
@@ -167,8 +169,8 @@ class SocketManager {
           try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
         }
         // Fan-out to all secondary callbacks (scalp, etc.)
-        for (const [, cb] of this._callbacks) {
-          try { if (cb.onTick) cb.onTick(t); } catch (_) {}
+        for (const [id, cb] of this._callbacks) {
+          try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
         }
       });
     });

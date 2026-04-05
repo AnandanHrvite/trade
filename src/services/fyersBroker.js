@@ -54,12 +54,16 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
     orderTag:      (orderTag || "SCALP").substring(0, 20),
   };
 
+  const sideLabel = side === 1 ? "BUY" : "SELL";
+  console.log(`[FyersBroker] placeMarketOrder: ${sideLabel} ${qty} × ${fyersSymbol} (${orderTag})`);
   try {
     const response = await fyers.place_order(orderParams);
 
     if (response && response.s === "ok" && response.id) {
+      console.log(`[FyersBroker] Order SUCCESS — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${response.id}`);
       return { success: true, orderId: response.id, raw: response };
     } else {
+      console.warn(`[FyersBroker] Order FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | response: ${JSON.stringify(response).slice(0, 200)}`);
       return {
         success: false,
         orderId: null,
@@ -67,6 +71,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
       };
     }
   } catch (err) {
+    console.error(`[FyersBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${fyersSymbol}: ${err.message}`);
     return {
       success: false,
       orderId: null,
@@ -81,6 +86,8 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
 
 async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures = false } = {}) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
+  const sideLabel = side === 1 ? "BUY" : "SELL";
+  console.log(`[FyersBroker] placeSLMOrder: ${sideLabel} ${qty} × ${fyersSymbol} @ trigger ₹${triggerPrice}`);
   const orderParams = {
     symbol:        fyersSymbol,
     qty:           qty,
@@ -97,24 +104,32 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
   try {
     const response = await fyers.place_order(orderParams);
     if (response && response.s === "ok" && response.id) {
+      console.log(`[FyersBroker] SL-M placed — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${response.id} | trigger=₹${triggerPrice}`);
       return { success: true, orderId: response.id, raw: response };
     }
+    console.warn(`[FyersBroker] SL-M FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | ${JSON.stringify(response).slice(0, 200)}`);
     return { success: false, orderId: null, raw: response || { error: "Unknown" } };
   } catch (err) {
+    console.error(`[FyersBroker] SL-M EXCEPTION — ${fyersSymbol}: ${err.message}`);
     return { success: false, orderId: null, raw: { error: err.message } };
   }
 }
 
 async function modifySLMOrder(orderId, newTriggerPrice) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
+  console.log(`[FyersBroker] modifySLMOrder: ${orderId} → trigger ₹${newTriggerPrice}`);
   try {
     const response = await fyers.modify_order({
       id:         orderId,
       type:       4,         // SL-M (Stop Loss Market)
       stopPrice:  newTriggerPrice,
     });
-    return { success: response && response.s === "ok", raw: response };
+    const ok = response && response.s === "ok";
+    if (ok) console.log(`[FyersBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
+    else console.warn(`[FyersBroker] SL-M modify FAILED — ${orderId} | ${JSON.stringify(response).slice(0, 200)}`);
+    return { success: ok, raw: response };
   } catch (err) {
+    console.error(`[FyersBroker] SL-M modify EXCEPTION — ${orderId}: ${err.message}`);
     return { success: false, raw: { error: err.message } };
   }
 }
@@ -153,20 +168,30 @@ async function getPositions() {
 
 async function cancelOrder(orderId) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated");
+  console.log(`[FyersBroker] cancelOrder: ${orderId}`);
   try {
     const response = await fyers.cancel_order({ id: orderId });
-    return { success: response && response.s === "ok", raw: response };
+    const ok = response && response.s === "ok";
+    if (ok) console.log(`[FyersBroker] Order cancelled — ${orderId}`);
+    else console.warn(`[FyersBroker] Cancel FAILED — ${orderId} | ${JSON.stringify(response).slice(0, 200)}`);
+    return { success: ok, raw: response };
   } catch (err) {
+    console.error(`[FyersBroker] Cancel EXCEPTION — ${orderId}: ${err.message}`);
     return { success: false, raw: { error: err.message } };
   }
 }
 
 async function exitPosition(symbol) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated");
+  console.log(`[FyersBroker] exitPosition: ${symbol}`);
   try {
     const response = await fyers.exit_position({ id: symbol });
-    return { success: response && response.s === "ok", raw: response };
+    const ok = response && response.s === "ok";
+    if (ok) console.log(`[FyersBroker] Position exited — ${symbol}`);
+    else console.warn(`[FyersBroker] Exit FAILED — ${symbol} | ${JSON.stringify(response).slice(0, 200)}`);
+    return { success: ok, raw: response };
   } catch (err) {
+    console.error(`[FyersBroker] Exit EXCEPTION — ${symbol}: ${err.message}`);
     return { success: false, raw: { error: err.message } };
   }
 }

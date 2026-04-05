@@ -62,6 +62,7 @@ function loadToken() {
 
     return token;
   } catch (err) {
+    console.warn(`⚠️ [Fyers] Token load failed: ${err.message}`);
     return null;
   }
 }

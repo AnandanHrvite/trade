@@ -30,6 +30,7 @@ const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 // ── Live VIX cache (60-second TTL) ──────────────────────────────────────────
 let _cachedVix   = null;
 let _cachedVixTs = 0;
+let _lastRegime  = null; // track regime transitions: "NORMAL" | "ELEVATED" | "HIGH"
 const VIX_CACHE_TTL = 60_000; // 60 seconds
 
 /**
@@ -52,6 +53,14 @@ async function fetchLiveVix() {
       if (typeof ltp === "number" && ltp > 0) {
         _cachedVix   = ltp;
         _cachedVixTs = now;
+        // Log regime transitions
+        const maxEntry   = getVixMaxEntry();
+        const strongOnly = getVixStrongOnly();
+        const newRegime = ltp > maxEntry ? "HIGH" : ltp > strongOnly ? "ELEVATED" : "NORMAL";
+        if (_lastRegime && newRegime !== _lastRegime) {
+          console.log(`🌡️ [VIX] Regime change: ${_lastRegime} → ${newRegime} (VIX ${ltp.toFixed(1)})`);
+        }
+        _lastRegime = newRegime;
         return ltp;
       }
     }
@@ -185,6 +194,7 @@ function checkBacktestVix(vix, signalStrength) {
 function resetCache() {
   _cachedVix   = null;
   _cachedVixTs = 0;
+  _lastRegime  = null;
 }
 
 /** Get current cached VIX value (for display, no fetch) */

@@ -94,6 +94,7 @@ function loadZerodhaToken() {
 
     return token;
   } catch (err) {
+    console.warn(`⚠️ [Zerodha] Token load failed: ${err.message}`);
     return null;
   }
 }
@@ -217,14 +218,19 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
     validity:         kite.VALIDITY_DAY,
     tag:              orderTag.substring(0, 20),
   };
+  const sideLabel = transactionType === kite.TRANSACTION_TYPE_BUY ? "BUY" : "SELL";
+  console.log(`[ZerodhaBroker] placeMarketOrder: ${sideLabel} ${qty} × ${tradingsymbol} (${exchange}) tag=${orderTag}`);
   try {
     const response = await kite.placeOrder(kite.VARIETY_REGULAR, orderParams);
     if (response && response.order_id) {
+      console.log(`[ZerodhaBroker] Order SUCCESS — ${sideLabel} ${qty} × ${tradingsymbol} | OrderID: ${response.order_id}`);
       return { success: true,  orderId: response.order_id, raw: response };
     } else {
+      console.warn(`[ZerodhaBroker] Order FAILED — ${sideLabel} ${qty} × ${tradingsymbol} | response: ${JSON.stringify(response).slice(0, 200)}`);
       return { success: false, orderId: null, raw: response };
     }
   } catch (err) {
+    console.error(`[ZerodhaBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${tradingsymbol}: ${err.message}`);
     return { success: false, orderId: null, raw: { error: err.message } };
   }
 }
@@ -263,13 +269,18 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
     validity:         kite.VALIDITY_DAY,
     tag:              "HARD_SL",
   };
+  const slSideLabel = transactionType === kite.TRANSACTION_TYPE_BUY ? "BUY" : "SELL";
+  console.log(`[ZerodhaBroker] placeSLMOrder: ${slSideLabel} ${qty} × ${tradingsymbol} @ trigger ₹${triggerPrice}`);
   try {
     const response = await kite.placeOrder(kite.VARIETY_REGULAR, orderParams);
     if (response && response.order_id) {
+      console.log(`[ZerodhaBroker] SL-M placed — ${slSideLabel} ${qty} × ${tradingsymbol} | OrderID: ${response.order_id} | trigger=₹${triggerPrice}`);
       return { success: true, orderId: response.order_id, raw: response };
     }
+    console.warn(`[ZerodhaBroker] SL-M FAILED — ${slSideLabel} ${qty} × ${tradingsymbol} | ${JSON.stringify(response).slice(0, 200)}`);
     return { success: false, orderId: null, raw: response };
   } catch (err) {
+    console.error(`[ZerodhaBroker] SL-M EXCEPTION — ${tradingsymbol}: ${err.message}`);
     return { success: false, orderId: null, raw: { error: err.message } };
   }
 }
@@ -279,14 +290,17 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
  */
 async function modifySLMOrder(orderId, newTriggerPrice) {
   if (!isAuthenticated()) throw new Error("Zerodha not authenticated.");
+  console.log(`[ZerodhaBroker] modifySLMOrder: ${orderId} → trigger ₹${newTriggerPrice}`);
   try {
     const kite = getKite();
     const response = await kite.modifyOrder(kite.VARIETY_REGULAR, orderId, {
       order_type:    kite.ORDER_TYPE_SLM,
       trigger_price: newTriggerPrice,
     });
+    console.log(`[ZerodhaBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
     return { success: true, raw: response };
   } catch (err) {
+    console.error(`[ZerodhaBroker] SL-M modify EXCEPTION — ${orderId}: ${err.message}`);
     return { success: false, raw: { error: err.message } };
   }
 }
@@ -296,11 +310,14 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
  */
 async function cancelOrder(orderId) {
   if (!isAuthenticated()) throw new Error("Zerodha not authenticated.");
+  console.log(`[ZerodhaBroker] cancelOrder: ${orderId}`);
   try {
     const kite = getKite();
     const response = await kite.cancelOrder(kite.VARIETY_REGULAR, orderId);
+    console.log(`[ZerodhaBroker] Order cancelled — ${orderId}`);
     return { success: true, raw: response };
   } catch (err) {
+    console.error(`[ZerodhaBroker] Cancel EXCEPTION — ${orderId}: ${err.message}`);
     return { success: false, raw: { error: err.message } };
   }
 }

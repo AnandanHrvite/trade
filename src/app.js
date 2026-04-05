@@ -1177,11 +1177,14 @@ app.use((err, req, res, next) => {
 });
 
 process.on("unhandledRejection", (reason, promise) => {
-  console.error("[UnhandledRejection]", reason);
+  const msg = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
+  console.error(`[UnhandledRejection] ${msg}`);
 });
 
 process.on("uncaughtException", (err) => {
-  console.error("[UncaughtException]", err.message, err.stack);
+  console.error(`[UncaughtException] ${err.message}\n${err.stack}`);
+  // Send Telegram alert for critical crashes
+  try { sendTelegram(`🚨 UNCAUGHT EXCEPTION: ${err.message}`); } catch (_) {}
 });
 
 // ── EOD Token Auto-Clear Scheduler ──────────────────────────────────────────
@@ -1252,9 +1255,16 @@ server.listen(PORT, HOST, () => {
   console.log(`\n🚀 Trading App running at https://${EC2_IP}:${PORT} (AWS — HTTPS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${instrumentConfig.INSTRUMENT}`);
+  console.log(`   Lot Size         : ${instrumentConfig.getLotQty()}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
+  console.log(`   Scalp Mode       : ${(process.env.SCALP_MODE_ENABLED || "true") === "true" ? "✅ ENABLED" : "🔒 disabled"} | SCALP_ENABLED: ${process.env.SCALP_ENABLED === "true" ? "✅" : "❌"}`);
+  console.log(`   VIX Filter       : ${process.env.VIX_FILTER_ENABLED !== "false" ? `✅ max=${process.env.VIX_MAX_ENTRY || "20"} strong=${process.env.VIX_STRONG_ONLY || "16"}` : "🔒 disabled"}`);
+  console.log(`   Hard SL          : ${process.env.HARD_SL_ENABLED === "true" ? `✅ delta=${process.env.HARD_SL_DELTA || "0.5"}` : "🔒 disabled"}`);
+  console.log(`   Telegram         : ${process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? "✅ configured" : "❌ not set"}`);
+  console.log(`   Login Gate       : ${process.env.LOGIN_SECRET ? "✅ active" : "🔓 open (no LOGIN_SECRET)"}`);
+  console.log(`   Node             : ${process.version} | PID: ${process.pid}`);
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);

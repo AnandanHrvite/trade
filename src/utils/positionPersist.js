@@ -53,6 +53,7 @@ function saveTradePosition(position, sessionMeta) {
     const tmp = TRADE_POS_FILE + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tmp, TRADE_POS_FILE);  // atomic write
+    console.log(`💾 [PERSIST] Trade position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save trade position: ${err.message}`);
   }
@@ -65,17 +66,27 @@ function loadTradePosition() {
     // Only return if saved today (IST) — stale positions from yesterday are invalid
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale trade position from ${data.savedDate} — discarding.`);
       fs.unlinkSync(TRADE_POS_FILE);
       return null;
     }
+    if (data.position) {
+      console.log(`[PERSIST] Trade position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    }
     return data;
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load trade position: ${err.message}`);
     return null;
   }
 }
 
 function clearTradePosition() {
-  try { if (fs.existsSync(TRADE_POS_FILE)) fs.unlinkSync(TRADE_POS_FILE); } catch (_) {}
+  try {
+    if (fs.existsSync(TRADE_POS_FILE)) {
+      fs.unlinkSync(TRADE_POS_FILE);
+      console.log("[PERSIST] Trade position file cleared.");
+    }
+  } catch (_) {}
 }
 
 // ── Scalp (3-min Fyers) ─────────────────────────────────────────────────────
@@ -112,6 +123,7 @@ function saveScalpPosition(position, sessionMeta) {
     const tmp = SCALP_POS_FILE + ".tmp";
     fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tmp, SCALP_POS_FILE);
+    console.log(`💾 [PERSIST] Scalp position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save scalp position: ${err.message}`);
   }
@@ -123,17 +135,27 @@ function loadScalpPosition() {
     const data = JSON.parse(fs.readFileSync(SCALP_POS_FILE, "utf-8"));
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale scalp position from ${data.savedDate} — discarding.`);
       fs.unlinkSync(SCALP_POS_FILE);
       return null;
     }
+    if (data.position) {
+      console.log(`[PERSIST] Scalp position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    }
     return data;
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load scalp position: ${err.message}`);
     return null;
   }
 }
 
 function clearScalpPosition() {
-  try { if (fs.existsSync(SCALP_POS_FILE)) fs.unlinkSync(SCALP_POS_FILE); } catch (_) {}
+  try {
+    if (fs.existsSync(SCALP_POS_FILE)) {
+      fs.unlinkSync(SCALP_POS_FILE);
+      console.log("[PERSIST] Scalp position file cleared.");
+    }
+  } catch (_) {}
 }
 
 module.exports = {
