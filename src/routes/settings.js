@@ -628,6 +628,10 @@ router.get("/", (req, res) => {
       --purple:   #7c3aed;
     }
     :root[data-theme="light"] .save-bar { background:rgba(255,255,255,0.95); }
+    :root[data-theme="light"] .toggle-slider { background:#e2e8f0; border-color:#cbd5e1; }
+    :root[data-theme="light"] .toggle-slider::before { background:#ffffff; box-shadow:0 1px 3px rgba(0,0,0,0.15); }
+    :root[data-theme="light"] .toggle-switch input:checked + .toggle-slider { background:#059669; border-color:#047857; }
+    :root[data-theme="light"] .toggle-switch input:checked + .toggle-slider::before { background:#ffffff; box-shadow:0 0 6px rgba(5,150,105,0.3); }
     *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
     body { font-family:'IBM Plex Sans',system-ui,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; overflow-x:hidden; }
 
