@@ -954,7 +954,10 @@ router.get("/", (req, res) => {
         <div class="top-bar-title">Settings</div>
         <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
-      <button onclick="showEnvModal()" style="margin-left:auto;padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button onclick="showHealthModal()" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">HEALTH CHECK</button>
+        <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
+      </div>
     </div>
 
     <!-- Sticky save bar (appears when you change something) -->
@@ -1274,6 +1277,53 @@ function copyEnvTable(){
   });
 }
 
+// ── Health Check Modal ──────────────────────────────────────────────────────
+async function showHealthModal() {
+  var modal = document.getElementById('healthModal');
+  var body  = document.getElementById('healthBody');
+  if (!modal || !body) return;
+  body.innerHTML = '<div style="text-align:center;color:#4a6080;padding:20px;">Checking system health...</div>';
+  modal.style.display = 'block';
+  try {
+    var res = await fetch('/health', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var d = await res.json();
+    var allOk = d.status === 'ok';
+    var uptimeStr = d.uptime >= 3600
+      ? Math.floor(d.uptime/3600) + 'h ' + Math.floor((d.uptime%3600)/60) + 'm'
+      : Math.floor(d.uptime/60) + 'm ' + (d.uptime%60) + 's';
+    var rows = [
+      { label: 'Status',        value: d.status === 'ok' ? 'ALL OK' : d.status, ok: d.status === 'ok' },
+      { label: 'Uptime',        value: uptimeStr, ok: true },
+      { label: 'Memory',        value: d.memoryMB + ' MB', ok: d.memoryMB < 500 },
+      { label: 'Fyers Auth',    value: d.fyers ? 'Connected' : 'Not logged in', ok: d.fyers },
+      { label: 'Zerodha Auth',  value: d.zerodha ? 'Connected' : 'Not logged in', ok: d.zerodha },
+      { label: 'Trading Mode',  value: d.activeMode || 'Idle', ok: true },
+      { label: 'Scalp Mode',    value: d.scalpMode || 'Idle', ok: true },
+    ];
+    var html = '<div style="text-align:center;margin-bottom:16px;">';
+    html += allOk
+      ? '<div style="font-size:2.5rem;margin-bottom:4px;">✅</div><div style="font-size:1.1rem;font-weight:800;color:#10b981;">ALL SYSTEMS OK</div>'
+      : '<div style="font-size:2.5rem;margin-bottom:4px;">⚠️</div><div style="font-size:1.1rem;font-weight:800;color:#f59e0b;">DEGRADED</div>';
+    html += '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;font-family:IBM Plex Mono,monospace;">';
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
+      var dot = r.ok ? '<span style="color:#10b981;margin-right:6px;">●</span>' : '<span style="color:#ef4444;margin-right:6px;">●</span>';
+      html += '<tr style="border-bottom:1px solid #0e1428;background:' + bg + '">';
+      html += '<td style="padding:8px 12px;color:#8aa1bd;">' + r.label + '</td>';
+      html += '<td style="padding:8px 12px;color:#e0eaf8;text-align:right;">' + dot + r.value + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    html += '<div style="margin-top:12px;color:#4a6080;font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour12:false}) + ' IST</div>';
+    body.innerHTML = html;
+  } catch(e) {
+    body.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:2.5rem;margin-bottom:8px;">❌</div><div style="color:#ef4444;font-weight:700;">Health check failed</div><div style="color:#4a6080;font-size:0.75rem;margin-top:6px;">' + e.message + '</div></div>';
+  }
+}
+
 // ── NSE Holiday List Modal ──────────────────────────────────────────────────
 var _holidayNames = {
   '01-15': 'Municipal Corp. Election – Maharashtra', '01-26': 'Republic Day',
@@ -1470,6 +1520,18 @@ function copySectionSummary() {
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
       <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
+    </div>
+  </div>
+</div>
+<!-- Health Check modal -->
+<div id="healthModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:480px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#10b981;">System Health</span>
+      <button onclick="document.getElementById('healthModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div id="healthBody" style="padding:20px;">
+      <div style="color:#4a6080;font-size:0.8rem;text-align:center;">Checking...</div>
     </div>
   </div>
 </div>
