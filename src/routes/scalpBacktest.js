@@ -1373,6 +1373,347 @@ function renderAnalytics(){
       +'<td style="color:'+pc+';">\\u20b9'+avg.toLocaleString('en-IN')+'</td></tr>';
   });
   document.getElementById('anaDowBody').innerHTML=dowHtml;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ── LOSS-FOCUSED ANALYTICS ────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  var lossTrades = trades.filter(function(t){ return t.pnl < 0; });
+  var winTrades  = trades.filter(function(t){ return t.pnl > 0; });
+
+  // ── Loss Distribution Histogram ──
+  (function(){
+    if(!lossTrades.length) return;
+    var lossVals = lossTrades.map(function(t){ return Math.abs(t.pnl); }).sort(function(a,b){return a-b;});
+    var maxVal = lossVals[lossVals.length-1];
+    var bucketCount = Math.min(12, Math.max(5, Math.ceil(Math.sqrt(lossVals.length))));
+    var step = Math.ceil(maxVal / bucketCount / 100) * 100;
+    if(step < 1) step = 1;
+    var buckets = [], bucketLabels = [];
+    for(var i=0; i<bucketCount; i++){
+      buckets.push(0);
+      bucketLabels.push('\u20b9'+(i*step)+'-'+(i+1)*step);
+    }
+    lossVals.forEach(function(v){
+      var idx = Math.min(Math.floor(v / step), bucketCount-1);
+      buckets[idx]++;
+    });
+    if(anaCharts.lossDist) anaCharts.lossDist.destroy();
+    anaCharts.lossDist = new Chart(document.getElementById('anaLossDist'),{
+      type:'bar',
+      data:{labels:bucketLabels,datasets:[{
+        data:buckets,backgroundColor:'rgba(239,68,68,0.6)',borderRadius:4,barPercentage:0.85
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{
+          title:function(ctx){return ctx[0].label;},
+          label:function(ctx){return ctx.raw+' trades ('+((ctx.raw/lossTrades.length)*100).toFixed(0)+'%)';}
+        }}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:_tc,font:{size:9,family:'IBM Plex Mono'},maxRotation:45}},
+          y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},stepSize:1},title:{display:true,text:'# Trades',color:_tc,font:{size:9,family:'IBM Plex Mono'}}}
+        }
+      }
+    });
+  })();
+
+  // ── Loss by Hold Duration ──
+  (function(){
+    if(!trades.length) return;
+    var durationMap = {};
+    trades.forEach(function(t){
+      var h = t.held || 0;
+      var bucket;
+      if(h<=2) bucket='1-2';
+      else if(h<=5) bucket='3-5';
+      else if(h<=10) bucket='6-10';
+      else if(h<=20) bucket='11-20';
+      else if(h<=40) bucket='21-40';
+      else bucket='40+';
+      if(!durationMap[bucket]) durationMap[bucket]={wins:0,losses:0,winPnl:0,lossPnl:0,total:0};
+      durationMap[bucket].total++;
+      if(t.pnl>0){ durationMap[bucket].wins++; durationMap[bucket].winPnl+=t.pnl; }
+      else if(t.pnl<0){ durationMap[bucket].losses++; durationMap[bucket].lossPnl+=t.pnl; }
+    });
+    var bucketOrder=['1-2','3-5','6-10','11-20','21-40','40+'];
+    var activeBuckets=bucketOrder.filter(function(b){return durationMap[b];});
+    var dLabels=activeBuckets.map(function(b){return b+' candles';});
+    var dWinPnl=activeBuckets.map(function(b){return Math.round(durationMap[b].winPnl);});
+    var dLossPnl=activeBuckets.map(function(b){return Math.round(durationMap[b].lossPnl);});
+    if(anaCharts.lossDur) anaCharts.lossDur.destroy();
+    anaCharts.lossDur = new Chart(document.getElementById('anaLossDuration'),{
+      type:'bar',
+      data:{labels:dLabels,datasets:[
+        {label:'Win P&L',data:dWinPnl,backgroundColor:'rgba(16,185,129,0.6)',borderRadius:4,barPercentage:0.7},
+        {label:'Loss P&L',data:dLossPnl,backgroundColor:'rgba(239,68,68,0.6)',borderRadius:4,barPercentage:0.7}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:_tc,font:{size:9,family:'IBM Plex Mono'}}},tooltip:{callbacks:{
+          label:function(ctx){return ctx.dataset.label+': \u20b9'+ctx.raw.toLocaleString('en-IN');}
+        }}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:_tc,font:{size:9,family:'IBM Plex Mono'}}},
+          y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},callback:function(v){return '\u20b9'+Math.round(v/1000)+'k';}}}
+        }
+      }
+    });
+  })();
+
+  // ── CE vs PE Performance ──
+  (function(){
+    if(!trades.length) return;
+    var sides={CE:{wins:0,losses:0,winPnl:0,lossPnl:0,total:0},PE:{wins:0,losses:0,winPnl:0,lossPnl:0,total:0}};
+    trades.forEach(function(t){
+      var s=t.side||'CE';
+      if(!sides[s]) return;
+      sides[s].total++;
+      if(t.pnl>0){sides[s].wins++;sides[s].winPnl+=t.pnl;}
+      else if(t.pnl<0){sides[s].losses++;sides[s].lossPnl+=t.pnl;}
+    });
+    var sLabels=['CE','PE'];
+    var sWinPnl=sLabels.map(function(s){return Math.round(sides[s].winPnl);});
+    var sLossPnl=sLabels.map(function(s){return Math.round(sides[s].lossPnl);});
+    var sNet=sLabels.map(function(s){return Math.round(sides[s].winPnl+sides[s].lossPnl);});
+    if(anaCharts.sidePerf) anaCharts.sidePerf.destroy();
+    anaCharts.sidePerf = new Chart(document.getElementById('anaSidePerf'),{
+      type:'bar',
+      data:{labels:sLabels.map(function(s){
+        return s+' ('+sides[s].total+' trades, '+((sides[s].wins/Math.max(sides[s].total,1))*100).toFixed(0)+'% WR)';
+      }),datasets:[
+        {label:'Win P&L',data:sWinPnl,backgroundColor:'rgba(16,185,129,0.65)',borderRadius:4,barPercentage:0.6},
+        {label:'Loss P&L',data:sLossPnl,backgroundColor:'rgba(239,68,68,0.65)',borderRadius:4,barPercentage:0.6},
+        {label:'Net P&L',data:sNet,backgroundColor:sNet.map(function(v){return v>=0?'rgba(59,130,246,0.65)':'rgba(245,158,11,0.65)';}),borderRadius:4,barPercentage:0.6}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:_tc,font:{size:9,family:'IBM Plex Mono'}}},tooltip:{callbacks:{
+          label:function(ctx){return ctx.dataset.label+': \u20b9'+ctx.raw.toLocaleString('en-IN');}
+        }}},
+        scales:{
+          x:{grid:{display:false},ticks:{color:_tc,font:{size:9,family:'IBM Plex Mono'}}},
+          y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},callback:function(v){return '\u20b9'+Math.round(v/1000)+'k';}}}
+        }
+      }
+    });
+  })();
+
+  // ── Drawdown Periods Chart (Underwater Equity) ──
+  (function(){
+    if(!trades.length) return;
+    var uwLabels=[],uwData=[];
+    var eq4=0,pk4=0;
+    trades.forEach(function(t,i){
+      eq4+=(t.pnl||0);if(eq4>pk4) pk4=eq4;
+      uwLabels.push(i+1);
+      uwData.push(eq4-pk4);
+    });
+    if(anaCharts.ddPeriods) anaCharts.ddPeriods.destroy();
+    anaCharts.ddPeriods = new Chart(document.getElementById('anaDDPeriods'),{
+      type:'line',
+      data:{labels:uwLabels,datasets:[{
+        label:'Underwater Equity',
+        data:uwData,
+        borderColor:'#f97316',borderWidth:1.5,
+        backgroundColor:'rgba(249,115,22,0.1)',fill:true,
+        pointRadius:0,tension:0.3
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{
+          label:function(ctx){return 'Underwater: \u20b9'+Math.round(ctx.raw).toLocaleString('en-IN');}
+        }}},
+        scales:{
+          x:{display:false},
+          y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10,family:'IBM Plex Mono'},callback:function(v){return '\u20b9'+Math.round(v/1000)+'k';}}}
+        }
+      }
+    });
+  })();
+
+  // ── Top 10 Worst Trades ──
+  (function(){
+    var worst = lossTrades.slice().sort(function(a,b){return a.pnl-b.pnl;}).slice(0,10);
+    var html='';
+    worst.forEach(function(t){
+      var dateStr=t.entry.split(',')[0].trim();
+      html+='<tr><td style="color:#c8d8f0;">'+dateStr+'</td>'
+        +'<td style="color:'+(t.side==='CE'?'#10b981':'#ef4444')+';font-weight:700;">'+t.side+'</td>'
+        +'<td style="color:#ef4444;font-weight:700;">\u20b9'+Math.round(t.pnl).toLocaleString('en-IN')+'</td>'
+        +'<td>'+(t.held||0)+'</td>'
+        +'<td style="font-size:0.65rem;">'+t.reason+'</td></tr>';
+    });
+    document.getElementById('anaWorstBody').innerHTML=html;
+  })();
+
+  // ── Consecutive Loss Streaks ──
+  (function(){
+    var streaks=[],cur=[];
+    trades.forEach(function(t,i){
+      if(t.pnl<0){
+        cur.push({trade:t,idx:i});
+      } else {
+        if(cur.length>=2) streaks.push({items:cur.slice(),startIdx:cur[0].idx});
+        cur=[];
+      }
+    });
+    if(cur.length>=2) streaks.push({items:cur.slice(),startIdx:cur[0].idx});
+    streaks.sort(function(a,b){
+      var aPnl=a.items.reduce(function(s,c){return s+c.trade.pnl;},0);
+      var bPnl=b.items.reduce(function(s,c){return s+c.trade.pnl;},0);
+      return aPnl-bPnl;
+    });
+    var html='';
+    streaks.slice(0,10).forEach(function(streak){
+      var totalLoss=streak.items.reduce(function(s,c){return s+c.trade.pnl;},0);
+      var avgLoss=totalLoss/streak.items.length;
+      var startDate=streak.items[0].trade.entry.split(',')[0].trim();
+      var recovered=0,recTrades=0;
+      for(var i=streak.startIdx+streak.items.length;i<trades.length;i++){
+        recovered+=trades[i].pnl;
+        recTrades++;
+        if(recovered>=Math.abs(totalLoss)) break;
+      }
+      var recText=recovered>=Math.abs(totalLoss)?recTrades+' trades':'Not yet';
+      html+='<tr><td style="color:#c8d8f0;">'+startDate+'</td>'
+        +'<td>'+streak.items.length+'</td>'
+        +'<td style="color:#ef4444;font-weight:700;">\u20b9'+Math.round(totalLoss).toLocaleString('en-IN')+'</td>'
+        +'<td style="color:#ef4444;">\u20b9'+Math.round(avgLoss).toLocaleString('en-IN')+'</td>'
+        +'<td style="color:'+(recText==='Not yet'?'#f59e0b':'#10b981')+';">'+recText+'</td></tr>';
+    });
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No consecutive loss streaks (2+)</td></tr>';
+    document.getElementById('anaLossStreakBody').innerHTML=html;
+  })();
+
+  // ── Losing Hours Breakdown ──
+  (function(){
+    var lhMap={};
+    trades.forEach(function(t){
+      var hMatch=t.entry.match(/(\d{1,2}):\d{2}:\d{2}$/);
+      if(!hMatch) return;
+      var h=parseInt(hMatch[1]);
+      if(!lhMap[h]) lhMap[h]={total:0,losses:0,lossPnl:0};
+      lhMap[h].total++;
+      if(t.pnl<0){lhMap[h].losses++;lhMap[h].lossPnl+=t.pnl;}
+    });
+    var hrs=Object.keys(lhMap).map(Number).sort(function(a,b){return a-b;});
+    var html='';
+    hrs.forEach(function(h){
+      var d=lhMap[h];
+      if(d.losses===0) return;
+      var lossPct=((d.losses/d.total)*100).toFixed(0);
+      var avgLoss=Math.round(d.lossPnl/d.losses);
+      var dangerColor=parseFloat(lossPct)>=60?'#ef4444':parseFloat(lossPct)>=45?'#f59e0b':'#10b981';
+      html+='<tr><td style="color:#c8d8f0;font-weight:600;">'+h+':00</td>'
+        +'<td>'+d.losses+' / '+d.total+'</td>'
+        +'<td style="color:#ef4444;font-weight:700;">\u20b9'+Math.round(d.lossPnl).toLocaleString('en-IN')+'</td>'
+        +'<td style="color:#ef4444;">\u20b9'+avgLoss.toLocaleString('en-IN')+'</td>'
+        +'<td style="color:'+dangerColor+';font-weight:700;">'+lossPct+'%</td></tr>';
+    });
+    document.getElementById('anaLossHourBody').innerHTML=html;
+  })();
+
+  // ── Worst Trading Days ──
+  (function(){
+    var dayTrades={};
+    trades.forEach(function(t){
+      var d=t.entry.split(',')[0].trim();
+      if(!dayTrades[d]) dayTrades[d]={trades:[],pnl:0,losses:0,worstTrade:0};
+      dayTrades[d].trades.push(t);
+      dayTrades[d].pnl+=(t.pnl||0);
+      if(t.pnl<0) dayTrades[d].losses++;
+      if(t.pnl<dayTrades[d].worstTrade) dayTrades[d].worstTrade=t.pnl;
+    });
+    var days=Object.keys(dayTrades).filter(function(d){return dayTrades[d].pnl<0;});
+    days.sort(function(a,b){return dayTrades[a].pnl-dayTrades[b].pnl;});
+    var html='';
+    days.slice(0,10).forEach(function(d){
+      var dd=dayTrades[d];
+      html+='<tr><td style="color:#c8d8f0;">'+d+'</td>'
+        +'<td>'+dd.trades.length+'</td>'
+        +'<td style="color:#ef4444;font-weight:700;">\u20b9'+Math.round(dd.pnl).toLocaleString('en-IN')+'</td>'
+        +'<td>'+dd.losses+'</td>'
+        +'<td style="color:#ef4444;">\u20b9'+Math.round(dd.worstTrade).toLocaleString('en-IN')+'</td></tr>';
+    });
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
+    document.getElementById('anaWorstDayBody').innerHTML=html;
+  })();
+
+  // ── Loss by Exit Reason ──
+  (function(){
+    var lrMap={};
+    lossTrades.forEach(function(t){
+      var r=t.reason;
+      if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
+      else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
+      else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
+      else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
+      else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
+      else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+      else if(r.indexOf('EOD')===0) r='EOD square-off';
+      if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
+      lrMap[r].cnt++;
+      lrMap[r].pnl+=t.pnl;
+    });
+    var reasons2=Object.keys(lrMap).sort(function(a,b){return lrMap[a].pnl-lrMap[b].pnl;});
+    var totalLossCnt=lossTrades.length;
+    var html='';
+    reasons2.forEach(function(r){
+      var d=lrMap[r];
+      var pct=((d.cnt/totalLossCnt)*100).toFixed(0);
+      html+='<tr><td style="color:#c8d8f0;">'+r+'</td>'
+        +'<td>'+d.cnt+'</td>'
+        +'<td style="color:#ef4444;font-weight:700;">\u20b9'+Math.round(d.pnl).toLocaleString('en-IN')+'</td>'
+        +'<td style="color:#ef4444;">\u20b9'+Math.round(d.pnl/d.cnt).toLocaleString('en-IN')+'</td>'
+        +'<td style="font-weight:600;">'+pct+'%</td></tr>';
+    });
+    document.getElementById('anaLossReasonBody').innerHTML=html;
+  })();
+
+  // ── Risk Metrics Summary ──
+  (function(){
+    var avgHeldWin=winTrades.length>0?(winTrades.reduce(function(s,t){return s+(t.held||0);},0)/winTrades.length).toFixed(1):'0';
+    var avgHeldLoss=lossTrades.length>0?(lossTrades.reduce(function(s,t){return s+(t.held||0);},0)/lossTrades.length).toFixed(1):'0';
+
+    var maxConsLoss=0,curCons=0;
+    trades.forEach(function(t){if(t.pnl<0){curCons++;if(curCons>maxConsLoss)maxConsLoss=curCons;}else{curCons=0;}});
+
+    // Ulcer index
+    var eq5=0,pk5=0,ddSqSum=0;
+    trades.forEach(function(t){
+      eq5+=(t.pnl||0);if(eq5>pk5)pk5=eq5;
+      var ddPct=pk5>0?((pk5-eq5)/pk5)*100:0;
+      ddSqSum+=ddPct*ddPct;
+    });
+    var ulcerIdx=trades.length>0?Math.sqrt(ddSqSum/trades.length).toFixed(2):'0';
+
+    // Tail ratio
+    var sortedPnl=trades.map(function(t){return t.pnl;}).sort(function(a,b){return a-b;});
+    var p5Idx=Math.floor(sortedPnl.length*0.05);
+    var p95Idx=Math.floor(sortedPnl.length*0.95);
+    var p5=sortedPnl[p5Idx]||0;
+    var p95=sortedPnl[p95Idx]||0;
+    var tailRatio=p5!==0?(Math.abs(p95)/Math.abs(p5)).toFixed(2):'\u2014';
+
+    // Loss after loss probability
+    var lossAfterLoss=0,totalAfterLoss=0;
+    for(var i=1;i<trades.length;i++){
+      if(trades[i-1].pnl<0){
+        totalAfterLoss++;
+        if(trades[i].pnl<0) lossAfterLoss++;
+      }
+    }
+    var lossAfterLossPct=totalAfterLoss>0?((lossAfterLoss/totalAfterLoss)*100).toFixed(0):'\u2014';
+
+    document.getElementById('anaRiskMetrics').innerHTML=
+      '<div class="ana-stat"><span class="ana-stat-val" style="color:#f59e0b;">'+avgHeldWin+'</span><span class="ana-stat-label">Avg candles held (wins)</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+avgHeldLoss+'</span><span class="ana-stat-label">Avg candles held (losses)</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+maxConsLoss+'</span><span class="ana-stat-label">Max consecutive losses</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#f97316;">'+ulcerIdx+'</span><span class="ana-stat-label">Ulcer Index</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#8b5cf6;">'+tailRatio+'</span><span class="ana-stat-label">Tail ratio (P95 win / P5 loss)</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:'+(parseFloat(lossAfterLossPct)>=50?'#ef4444':'#10b981')+';">'+lossAfterLossPct+'%</span><span class="ana-stat-label">Loss after loss probability</span></div>'
+      +'<div style="border-top:0.5px solid #0e1428;margin:8px 0;padding-top:8px;">'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">\u20b9'+Math.round(Math.abs(p5)).toLocaleString('en-IN')+'</span><span class="ana-stat-label">5th percentile (worst case)</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">\u20b9'+Math.round(p95).toLocaleString('en-IN')+'</span><span class="ana-stat-label">95th percentile (best case)</span></div>'
+      +'</div>';
+  })();
 }
 
 // Re-render analytics when filters change
