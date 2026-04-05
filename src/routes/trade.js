@@ -31,6 +31,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
+const { saveTradePosition, clearTradePosition } = require("../utils/positionPersist");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -250,6 +251,7 @@ let tradeState = {
   currentBar:     null,
   barStartTime:   null,
   optionLtp:      null,
+  optionLtpUpdatedAt: null,   // timestamp of last successful LTP fetch (staleness detection)
   optionSymbol:   null,
   tickCount:      0,
   lastTickPrice:  null,
@@ -423,12 +425,14 @@ function startOptionPolling(symbol) {
   fetchOptionLtp(symbol).then(ltp => {
     if (!ltp) return;
     tradeState.optionLtp = ltp;
+    tradeState.optionLtpUpdatedAt = Date.now();
     if (tradeState.position) {
       tradeState.position.optionCurrentLtp = ltp;
       if (!tradeState.position.optionEntryLtp) {
         tradeState.position.optionEntryLtp     = ltp;
         tradeState.position.optionEntryLtpTime = istNow();
         log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
+        placeHardSL();  // Place exchange-level SL-M once we have option premium
       }
     }
   });
@@ -446,14 +450,30 @@ function startOptionPolling(symbol) {
   _optionPollTimer = setInterval(async () => {
     if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }
     const ltp = await fetchOptionLtp(symbol);
-    if (!ltp) return;
+    if (!ltp) {
+      // ── LTP staleness alert — warn if no successful fetch for 15+ seconds ──
+      const _staleThreshold = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
+      if (tradeState.optionLtpUpdatedAt && (Date.now() - tradeState.optionLtpUpdatedAt) > _staleThreshold) {
+        if (!tradeState._ltpStaleLogged) {
+          log(`⚠️ [LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - tradeState.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
+          tradeState._ltpStaleLogged = true;
+        }
+      }
+      return;
+    }
     tradeState.optionLtp = ltp;
+    tradeState.optionLtpUpdatedAt = Date.now();
+    if (tradeState._ltpStaleLogged) {
+      log(`✅ [LIVE] Option LTP recovered — ₹${ltp}`);
+      tradeState._ltpStaleLogged = false;
+    }
     if (tradeState.position) {
       tradeState.position.optionCurrentLtp = ltp;
       if (!tradeState.position.optionEntryLtp) {
         tradeState.position.optionEntryLtp     = ltp;
         tradeState.position.optionEntryLtpTime = istNow();
         log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
+        placeHardSL();  // Place exchange-level SL-M once we have option premium
       }
 
       // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
@@ -499,6 +519,110 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
   } finally {
     // Release guard after 5s to allow legitimate next orders
     setTimeout(() => { _orderInFlight = false; }, 5000);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hard SL — exchange-level SL-M orders (ZERODHA only)
+// ─────────────────────────────────────────────────────────────────────────────
+// When HARD_SL_ENABLED=true, the bot places a SL-M (Stop Loss Market) order
+// at Zerodha immediately after entry. This order sits at the exchange and fires
+// even if the bot crashes, the EC2 instance dies, or the socket disconnects.
+//
+// On every trail tighten, the SL-M trigger is modified via API.
+// On any bot-initiated exit (opposite signal, EOD, manual), the SL-M is
+// cancelled first, then a normal market exit is placed.
+//
+// The trigger price is estimated on the option premium:
+//   triggerPremium = currentPremium - (spotMove * DELTA)
+// This is approximate but provides >90% protection even if delta drifts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _hardSLOrderId = null;  // Zerodha order ID of the active SL-M order
+
+function isHardSLEnabled() {
+  return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
+}
+
+/**
+ * Place a Hard SL-M order after entry. Called once option LTP is captured.
+ * Uses option premium as trigger: if spot hits SL, option premium drops roughly by delta * spotGap.
+ */
+async function placeHardSL() {
+  if (!isHardSLEnabled() || !tradeState.position) return;
+  const pos = tradeState.position;
+  const optionLtp = tradeState.optionLtp || pos.optionEntryLtp;
+  if (!optionLtp || !pos.stopLoss) return;
+
+  const delta    = parseFloat(process.env.HARD_SL_DELTA || "0.5");
+  const spotGap  = Math.abs(pos.spotAtEntry - pos.stopLoss);
+  const premDrop = spotGap * delta;
+  // SL-M trigger: option premium that corresponds to spot hitting the SL
+  const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
+
+  const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
+  // For options: always SELL (-1) to exit the bought CE/PE
+  const slSide = -1;
+  const qty = pos.qty || getLotQty();
+
+  log(`🛡️ [HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} (opt LTP=₹${optionLtp}, spotSL=₹${pos.stopLoss}, Δ=${delta})`);
+
+  try {
+    const result = await zerodha.placeSLMOrder(pos.symbol, slSide, qty, triggerPrice, { isFutures: isFut });
+    if (result.success) {
+      _hardSLOrderId = result.orderId;
+      log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
+    } else {
+      log(`⚠️ [HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
+      _hardSLOrderId = null;
+    }
+  } catch (err) {
+    log(`❌ [HARD SL] Exception: ${err.message}`);
+    _hardSLOrderId = null;
+  }
+}
+
+/**
+ * Modify the Hard SL trigger price (called when trailing tightens the SL).
+ */
+async function updateHardSL(newSpotSL) {
+  if (!isHardSLEnabled() || !_hardSLOrderId || !tradeState.position) return;
+  const optionLtp = tradeState.optionLtp;
+  if (!optionLtp) return;
+
+  const pos   = tradeState.position;
+  const delta = parseFloat(process.env.HARD_SL_DELTA || "0.5");
+  const spotGap = Math.abs(tradeState.lastTickPrice - newSpotSL);
+  const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
+
+  try {
+    const result = await zerodha.modifySLMOrder(_hardSLOrderId, newTrigger);
+    if (result.success) {
+      log(`🔄 [HARD SL] Modified trigger → ₹${newTrigger} (spotSL=₹${newSpotSL})`);
+    } else {
+      log(`⚠️ [HARD SL] Modify failed: ${JSON.stringify(result.raw)}`);
+    }
+  } catch (err) {
+    log(`❌ [HARD SL] Modify exception: ${err.message}`);
+  }
+}
+
+/**
+ * Cancel the Hard SL-M order (called before bot-initiated market exit).
+ */
+async function cancelHardSL() {
+  if (!_hardSLOrderId) return;
+  const orderId = _hardSLOrderId;
+  _hardSLOrderId = null;
+  try {
+    const result = await zerodha.cancelOrder(orderId);
+    if (result.success) {
+      log(`🗑️ [HARD SL] Cancelled SL-M order ${orderId}`);
+    } else {
+      log(`⚠️ [HARD SL] Cancel failed for ${orderId}: ${JSON.stringify(result.raw)}`);
+    }
+  } catch (err) {
+    log(`❌ [HARD SL] Cancel exception: ${err.message}`);
   }
 }
 
@@ -600,6 +724,10 @@ async function squareOff(exitPrice, reason) {
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
   const exitLabel = exitOrderSide === 1 ? "BUY (close short)" : "SELL (close long)";
   log(`🔄 [LIVE] Square off triggered: ${reason}`);
+
+  // Cancel Hard SL-M order before placing market exit (prevents double-exit)
+  await cancelHardSL();
+
   log(`📤 [LIVE] ${exitLabel} ${qty} × ${symbol} via Zerodha`);
 
   const result = await placeMarketOrder(symbol, exitOrderSide, qty);
@@ -717,8 +845,12 @@ async function squareOff(exitPrice, reason) {
 
   stopOptionPolling();
   tradeState.optionLtp    = null;
+  tradeState.optionLtpUpdatedAt = null;
+  tradeState._ltpStaleLogged = false;
   tradeState.optionSymbol = null;
   tradeState.position     = null;
+  clearTradePosition();  // remove persisted state — position is closed
+  _hardSLOrderId = null; // clear Hard SL tracking (already cancelled before exit)
   _squareOffInFlight      = false; // release only AFTER position is cleared
 
   // ── 50%-rule exit pause (mirrors paperTrade) ──────────────────────────────
@@ -1002,6 +1134,8 @@ async function onCandleClose(candle) {
         qty:            getLotQty(),
         reason,
       });
+      // Persist position to disk for crash recovery
+      saveTradePosition(tradeState.position, { sessionPnl: tradeState.sessionPnl || 0 });
     } catch (err) {
       log(`❌ [LIVE] Entry error: ${err.message}`);
       tradeState._entryPending = false;
@@ -1025,6 +1159,7 @@ function getDynamicTrailGap(moveInFavour) {
 
 function onSpotTick(tick) {
   if (!tick || !tick.ltp) return;
+  try {
 
   tradeState.tickCount++;
   tradeState.lastTickPrice = tick.ltp;
@@ -1257,6 +1392,8 @@ function onSpotTick(tick) {
           qty:            getLotQty(),
           reason,
         });
+        // Persist position to disk for crash recovery
+        saveTradePosition(tradeState.position, { sessionPnl: tradeState.sessionPnl || 0 });
       }).catch(err => {
         log(`❌ [LIVE] Intra-tick symbol lookup error: ${err.message}`);
         tradeState._entryPending = false;
@@ -1281,12 +1418,16 @@ function onSpotTick(tick) {
       if (_beMove >= _bePts && _bePos.stopLoss < _bePos.spotAtEntry) {
         log(`✅ [LIVE] BREAKEVEN CE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
         _bePos.stopLoss = _bePos.spotAtEntry;
+        saveTradePosition(_bePos, { sessionPnl: tradeState.sessionPnl || 0 });
+        updateHardSL(_bePos.spotAtEntry);
       }
     } else {
       const _beMove = _bePos.spotAtEntry - (_bePos.bestPrice || ltp);
       if (_beMove >= _bePts && _bePos.stopLoss > _bePos.spotAtEntry) {
         log(`✅ [LIVE] BREAKEVEN PE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
         _bePos.stopLoss = _bePos.spotAtEntry;
+        saveTradePosition(_bePos, { sessionPnl: tradeState.sessionPnl || 0 });
+        updateHardSL(_bePos.spotAtEntry);
       }
     }
   }
@@ -1310,6 +1451,8 @@ function onSpotTick(tick) {
           const _optTrCE = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
           log(`📈 [LIVE] Trail CE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL}${_optTrCE}`);
           pos.stopLoss = effectiveTrailSL;
+          saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
+          updateHardSL(effectiveTrailSL);
         }
       } else if (pos.bestPrice !== prevBestCE) {
         const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
@@ -1345,6 +1488,8 @@ function onSpotTick(tick) {
           const _optTrPE = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
           log(`📉 [LIVE] Trail PE [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL}${_optTrPE}`);
           pos.stopLoss = effectiveTrailSL;
+          saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
+          updateHardSL(effectiveTrailSL);
         }
       } else if (pos.bestPrice !== prevBestPE) {
         const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
@@ -1367,6 +1512,11 @@ function onSpotTick(tick) {
         return;
       }
     }
+  }
+
+  } catch (err) {
+    // Catch-all: prevent a single bad tick/NaN from crashing the entire Node process
+    console.error(`🚨 [LIVE] onSpotTick crash caught: ${err.message}`, err.stack);
   }
 }
 
@@ -1413,6 +1563,8 @@ router.get("/start", async (req, res) => {
   tradeState.currentBar     = null;
   tradeState.barStartTime   = null;
   tradeState.optionLtp      = null;
+  tradeState.optionLtpUpdatedAt = null;
+  tradeState._ltpStaleLogged = false;
   tradeState.optionSymbol   = null;
   tradeState.tickCount      = 0;
   tradeState.lastTickPrice  = null;
@@ -1598,6 +1750,8 @@ router.get("/stop", async (req, res) => {
     log("📡 [LIVE] Socket kept alive — scalp mode still active");
   }
   tradeState.optionLtp    = null;
+  tradeState.optionLtpUpdatedAt = null;
+  tradeState._ltpStaleLogged = false;
   tradeState.optionSymbol = null;
   tradeState.running      = false;
   sharedSocketState.clear();
@@ -1708,6 +1862,7 @@ router.post("/manualEntry", async (req, res) => {
     }
 
     log(`📝 [LIVE] MANUAL BUY ${qty} × ${symbol} @ SPOT ₹${spot} | SL: ₹${stopLoss} | OrderID: ${result.orderId || "?"}`);
+    saveTradePosition(tradeState.position, { sessionPnl: tradeState.sessionPnl || 0 });
     return res.json({ success: true, spot, side, sl: stopLoss, symbol, orderId: result.orderId });
   } catch (e) {
     log(`❌ [LIVE] Manual entry failed: ${e.message}`);
@@ -1797,6 +1952,7 @@ router.get("/status/data", (req, res) => {
         optionEntryLtp:    optEntryLtp,
         optionCurrentLtp:  optCurrentLtp,
         optionEntryLtpTime: pos.optionEntryLtpTime || null,
+        optionLtpStaleSec: tradeState.optionLtpUpdatedAt ? Math.round((Date.now() - tradeState.optionLtpUpdatedAt) / 1000) : null,
         optPremiumPnl,
         optPremiumMove,
         optPremiumPct,

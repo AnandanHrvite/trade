@@ -13,6 +13,9 @@ const sharedSocketState = require("./utils/sharedSocketState");
 
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
+const fyersBroker   = require("./services/fyersBroker");
+const { sendTelegram } = require("./utils/notify");
+const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(express.json());
 
@@ -96,25 +99,54 @@ app.get("/login", (req, res) => {
   res.send(loginPageHTML());
 });
 
+// ── Login rate limiting — brute-force protection ─────────────────────────────
+const _loginAttempts = {};  // { ip: { count, firstAttempt } }
+const LOGIN_RATE_MAX     = 5;       // max failed attempts per window
+const LOGIN_RATE_WINDOW  = 15 * 60 * 1000;  // 15 minutes
+
 app.post("/login", (req, res) => {
   const secret = process.env.LOGIN_SECRET;
   if (!secret) return res.redirect("/");
+
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+           || req.socket?.remoteAddress || "unknown";
+
+  // Rate limit check
+  const now = Date.now();
+  if (_loginAttempts[ip]) {
+    const entry = _loginAttempts[ip];
+    if (now - entry.firstAttempt > LOGIN_RATE_WINDOW) {
+      // Window expired — reset
+      _loginAttempts[ip] = { count: 0, firstAttempt: now };
+    } else if (entry.count >= LOGIN_RATE_MAX) {
+      const waitMin = Math.ceil((LOGIN_RATE_WINDOW - (now - entry.firstAttempt)) / 60000);
+      console.warn(`🚫 [LOGIN] Rate limited IP ${ip} — ${entry.count} failed attempts. Wait ${waitMin}min.`);
+      res.setHeader("Content-Type", "text/html");
+      return res.status(429).send(loginPageHTML(`Too many attempts. Try again in ${waitMin} minutes.`));
+    }
+  } else {
+    _loginAttempts[ip] = { count: 0, firstAttempt: now };
+  }
   if (req.body.password === secret) {
+    // Successful login — clear rate limit counter for this IP
+    delete _loginAttempts[ip];
     const token = crypto.createHash("sha256").update(secret).digest("hex");
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
     return res.redirect("/");
   }
 
+  // ── Failed attempt — increment rate limit counter ──────────────────────────
+  if (_loginAttempts[ip]) _loginAttempts[ip].count++;
+  else _loginAttempts[ip] = { count: 1, firstAttempt: now };
+
   // ── Log failed attempt ────────────────────────────────────────────────────
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
-           || req.socket?.remoteAddress || "unknown";
-  const now = new Date();
+  const _failNow = new Date();
   const browserLat = parseFloat(req.body.lat);
   const browserLon = parseFloat(req.body.lon);
   const hasBrowserGPS = !isNaN(browserLat) && !isNaN(browserLon);
   const entry = {
-    time: now.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
-    date: now.toISOString().slice(0, 10),
+    time: _failNow.toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }),
+    date: _failNow.toISOString().slice(0, 10),
     ip,
     password: req.body.password || "",
     userAgent: req.headers["user-agent"] || "",
@@ -220,6 +252,7 @@ const OPEN_PATHS = [
   "/scalp-paper/status",
   "/scalp-paper/status/data",
   "/scalp-backtest",
+  "/health",              // health check — must be open for uptime monitors / PM2 probes
   // NOTE: /settings/save requires API_SECRET (write operation)
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
@@ -1209,7 +1242,8 @@ try {
   process.exit(1);
 }
 
-https.createServer(sslOptions, app).listen(PORT, HOST, () => {
+const server = https.createServer(sslOptions, app);
+server.listen(PORT, HOST, () => {
   console.log(`\n🚀 Trading App running at https://${EC2_IP}:${PORT} (AWS — HTTPS)`);
   console.log(`   Active Strategy  : ${ACTIVE}`);
   console.log(`   Instrument       : ${instrumentConfig.INSTRUMENT}`);
@@ -1219,4 +1253,126 @@ https.createServer(sslOptions, app).listen(PORT, HOST, () => {
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);
+
+  // ── Startup position reconciliation (crash recovery) ───────────────────────
+  // Checks both brokers for orphaned positions that survived a crash/restart.
+  // Alert-only — does NOT auto-close (too risky without user confirmation).
+  reconcileOrphanedPositions();
+});
+
+// ── Position Reconciliation — detect orphaned positions after crash ──────────
+async function reconcileOrphanedPositions() {
+  try {
+    // ── Check persisted position files first (bot was tracking a live position) ──
+    const savedTrade = loadTradePosition();
+    if (savedTrade && savedTrade.position) {
+      const p = savedTrade.position;
+      const msg = `🚨 [STARTUP] Persisted TRADE position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedTrade.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Zerodha dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+      // Don't clear — keep file until user manually starts a new session
+    }
+
+    const savedScalp = loadScalpPosition();
+    if (savedScalp && savedScalp.position) {
+      const p = savedScalp.position;
+      const msg = `🚨 [STARTUP] Persisted SCALP position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Fyers dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
+    // ── Check broker positions (live API) ──
+    if (zerodha.isAuthenticated()) {
+      const zPos = await zerodha.getPositions();
+      const zOpen = (zPos.net || zPos.day || []).filter(p =>
+        p.quantity !== 0 && p.tradingsymbol && p.tradingsymbol.includes("NIFTY")
+      );
+      if (zOpen.length > 0) {
+        const msg = `🚨 [STARTUP] Orphaned Zerodha position detected!\n` +
+          zOpen.map(p => `  ${p.tradingsymbol}: qty=${p.quantity} pnl=₹${p.pnl || 0}`).join("\n") +
+          `\nBot is NOT tracking this. Check Zerodha dashboard and close manually if needed.`;
+        console.warn(msg);
+        sendTelegram(msg);
+      } else {
+        console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
+        if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
+      }
+    }
+
+    if (fyersBroker.isAuthenticated()) {
+      const fPos = await fyersBroker.getPositions();
+      const fOpen = (fPos.netPositions || []).filter(p =>
+        p.netQty !== 0 && p.symbol && p.symbol.includes("NIFTY")
+      );
+      if (fOpen.length > 0) {
+        const msg = `🚨 [STARTUP] Orphaned Fyers position detected!\n` +
+          fOpen.map(p => `  ${p.symbol}: qty=${p.netQty} pnl=₹${p.pl || 0}`).join("\n") +
+          `\nBot is NOT tracking this. Check Fyers dashboard and close manually if needed.`;
+        console.warn(msg);
+        sendTelegram(msg);
+      } else {
+        console.log("✅ [STARTUP] Fyers: no orphaned positions.");
+        if (savedScalp) clearScalpPosition();  // broker confirms no position — safe to clear
+      }
+    }
+  } catch (err) {
+    console.warn(`⚠️ [STARTUP] Position reconciliation failed: ${err.message}`);
+  }
+}
+
+// ── Graceful Shutdown — square off positions on SIGTERM/SIGINT ───────────────
+// When PM2 or Docker sends SIGTERM, attempt to exit open positions before dying.
+let _shutdownInProgress = false;
+
+async function gracefulShutdown(signal) {
+  if (_shutdownInProgress) return;
+  _shutdownInProgress = true;
+  console.log(`\n🛑 [SHUTDOWN] Received ${signal} — attempting graceful exit...`);
+
+  try {
+    // Check if any trading mode is active
+    const isAnyActive = sharedSocketState.isAnyActive();
+    if (!isAnyActive) {
+      console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
+      process.exit(0);
+      return;
+    }
+
+    // Alert via Telegram
+    sendTelegram(`🛑 SHUTDOWN: Trading bot received ${signal}. Active modes detected — check broker dashboards for open positions!`);
+
+    // Give Telegram message time to send, then exit
+    console.warn("⚠️ [SHUTDOWN] Active trading detected. Check broker dashboards for any open positions!");
+    console.log("🔄 [SHUTDOWN] Waiting 3s for alerts to flush...");
+    setTimeout(() => {
+      console.log("👋 [SHUTDOWN] Exiting.");
+      process.exit(0);
+    }, 3000);
+  } catch (err) {
+    console.error(`[SHUTDOWN] Error during graceful exit: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
+
+// ── Health Check Endpoint ────────────────────────────────────────────────────
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    uptime: Math.floor(process.uptime()),
+    memoryMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+    fyers: !!process.env.ACCESS_TOKEN,
+    zerodha: zerodha.isAuthenticated(),
+    activeMode: sharedSocketState.getMode() || null,
+    scalpMode: sharedSocketState.getScalpMode() || null,
+    timestamp: new Date().toISOString(),
+  });
 });

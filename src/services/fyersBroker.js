@@ -76,6 +76,50 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Hard SL — SL-M orders for exchange-level protection
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures = false } = {}) {
+  if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
+  const orderParams = {
+    symbol:        fyersSymbol,
+    qty:           qty,
+    type:          4,              // 4 = SL-M (Stop Loss Market) in Fyers API
+    side:          side === 1 ? 1 : -1,
+    productType:   isFutures ? "MARGIN" : "INTRADAY",
+    limitPrice:    0,
+    stopPrice:     triggerPrice,   // trigger price for SL-M
+    validity:      "DAY",
+    disclosedQty:  0,
+    offlineOrder:  false,
+    orderTag:      "HARD_SL",
+  };
+  try {
+    const response = await fyers.place_order(orderParams);
+    if (response && response.s === "ok" && response.id) {
+      return { success: true, orderId: response.id, raw: response };
+    }
+    return { success: false, orderId: null, raw: response || { error: "Unknown" } };
+  } catch (err) {
+    return { success: false, orderId: null, raw: { error: err.message } };
+  }
+}
+
+async function modifySLMOrder(orderId, newTriggerPrice) {
+  if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
+  try {
+    const response = await fyers.modify_order({
+      id:         orderId,
+      type:       4,         // SL-M (Stop Loss Market)
+      stopPrice:  newTriggerPrice,
+    });
+    return { success: response && response.s === "ok", raw: response };
+  } catch (err) {
+    return { success: false, raw: { error: err.message } };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Queries
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -132,6 +176,8 @@ async function exitPosition(symbol) {
 module.exports = {
   isAuthenticated,
   placeMarketOrder,
+  placeSLMOrder,
+  modifySLMOrder,
   getOrders,
   getPositions,
   cancelOrder,

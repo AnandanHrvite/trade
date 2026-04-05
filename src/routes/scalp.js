@@ -33,6 +33,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const { saveScalpPosition, clearScalpPosition } = require("../utils/positionPersist");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_LIVE";
@@ -149,6 +150,8 @@ let state = {
   lastTickTime:   null,
   lastTickPrice:  null,
   optionLtp:      null,
+  optionLtpUpdatedAt: null,
+  _ltpStaleLogged: false,
   optionSymbol:   null,
   _slPauseUntil:  null,
   _dailyLossHit:  false,
@@ -217,11 +220,26 @@ function startOptionPolling(symbol) {
       const ltp = await fetchOptionLtp(symbol);
       if (ltp && state.position) {
         state.optionLtp = ltp;
+        state.optionLtpUpdatedAt = Date.now();
+        if (state._ltpStaleLogged) {
+          log(`✅ [SCALP-LIVE] Option LTP recovered — ₹${ltp}`);
+          state._ltpStaleLogged = false;
+        }
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
           state.position.optionEntryLtpTime = istNow();
           log(`📌 [SCALP-LIVE] Option entry LTP: ₹${ltp}`);
+          placeScalpHardSL();
+        }
+      } else if (!ltp) {
+        // ── LTP staleness alert ──
+        const _staleThreshold = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
+        if (state.optionLtpUpdatedAt && (Date.now() - state.optionLtpUpdatedAt) > _staleThreshold) {
+          if (!state._ltpStaleLogged) {
+            log(`⚠️ [SCALP-LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
+            state._ltpStaleLogged = true;
+          }
         }
       }
       scheduleNext();
@@ -230,6 +248,7 @@ function startOptionPolling(symbol) {
   fetchOptionLtp(symbol).then(ltp => {
     if (ltp && state.position) {
       state.optionLtp = ltp;
+      state.optionLtpUpdatedAt = Date.now();
       state.position.optionCurrentLtp = ltp;
       if (!state.position.optionEntryLtp) {
         state.position.optionEntryLtp = ltp;
@@ -244,6 +263,80 @@ function startOptionPolling(symbol) {
 function stopOptionPolling() {
   if (_optionPollTimer && _optionPollTimer !== true) clearTimeout(_optionPollTimer);
   _optionPollTimer = null;
+}
+
+// ── Hard SL — exchange-level SL-M orders (Fyers) ─────────────────────────────
+// Same concept as trade.js Hard SL but via Fyers API.
+// Controlled by HARD_SL_ENABLED env var.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _scalpHardSLOrderId = null;
+
+function isScalpHardSLEnabled() {
+  return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
+}
+
+async function placeScalpHardSL() {
+  if (!isScalpHardSLEnabled() || !state.position) return;
+  const pos = state.position;
+  const optionLtp = state.optionLtp || pos.optionEntryLtp;
+  if (!optionLtp || !pos.stopLoss) return;
+
+  const delta    = parseFloat(process.env.HARD_SL_DELTA || "0.5");
+  const spotGap  = Math.abs(pos.spotAtEntry - pos.stopLoss);
+  const premDrop = spotGap * delta;
+  const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
+  const qty = pos.qty || getLotQty();
+
+  log(`🛡️ [SCALP HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice}`);
+  try {
+    const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, qty, triggerPrice);
+    if (result.success) {
+      _scalpHardSLOrderId = result.orderId;
+      log(`✅ [SCALP HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
+    } else {
+      log(`⚠️ [SCALP HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
+    }
+  } catch (err) {
+    log(`❌ [SCALP HARD SL] Exception: ${err.message}`);
+  }
+}
+
+async function updateScalpHardSL(newSpotSL) {
+  if (!isScalpHardSLEnabled() || !_scalpHardSLOrderId || !state.position) return;
+  const optionLtp = state.optionLtp;
+  if (!optionLtp) return;
+
+  const delta = parseFloat(process.env.HARD_SL_DELTA || "0.5");
+  const spotGap = Math.abs(state.lastTickPrice - newSpotSL);
+  const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
+
+  try {
+    const result = await fyersBroker.modifySLMOrder(_scalpHardSLOrderId, newTrigger);
+    if (result.success) {
+      log(`🔄 [SCALP HARD SL] Modified trigger → ₹${newTrigger}`);
+    } else {
+      log(`⚠️ [SCALP HARD SL] Modify failed: ${JSON.stringify(result.raw)}`);
+    }
+  } catch (err) {
+    log(`❌ [SCALP HARD SL] Modify exception: ${err.message}`);
+  }
+}
+
+async function cancelScalpHardSL() {
+  if (!_scalpHardSLOrderId) return;
+  const orderId = _scalpHardSLOrderId;
+  _scalpHardSLOrderId = null;
+  try {
+    const result = await fyersBroker.cancelOrder(orderId);
+    if (result.success) {
+      log(`🗑️ [SCALP HARD SL] Cancelled SL-M order ${orderId}`);
+    } else {
+      log(`⚠️ [SCALP HARD SL] Cancel failed: ${JSON.stringify(result.raw)}`);
+    }
+  } catch (err) {
+    log(`❌ [SCALP HARD SL] Cancel exception: ${err.message}`);
+  }
 }
 
 // ── Order placement (Fyers with duplicate guard) ─────────────────────────────
@@ -293,6 +386,10 @@ async function squareOff(exitPrice, reason) {
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
   log(`🔄 [SCALP-LIVE] Square off: ${reason}`);
+
+  // Cancel Hard SL-M order before placing market exit (prevents double-exit)
+  await cancelScalpHardSL();
+
   const result = await placeOrder(symbol, exitOrderSide, qty);
 
   if (!result.success) {
@@ -344,6 +441,10 @@ async function squareOff(exitPrice, reason) {
   stopOptionPolling();
   state.optionSymbol = null;
   state.optionLtp    = null;
+  state.optionLtpUpdatedAt = null;
+  state._ltpStaleLogged = false;
+  _scalpHardSLOrderId = null;  // clear Hard SL tracking
+  clearScalpPosition();  // remove persisted state — position is closed
 
   if (reason.includes("SL")) {
     state._slPauseUntil = Date.now() + (_SCALP_PAUSE_CANDLES * SCALP_RES * 60 * 1000);
@@ -380,6 +481,7 @@ function onTick(tick) {
   if (!state.running) return;
   const price = tick.ltp;
   if (!price || price <= 0) return;
+  try {
 
   state.tickCount++;
   state.lastTickTime  = Date.now();
@@ -469,6 +571,11 @@ function onTick(tick) {
       return;
     }
   }
+
+  } catch (err) {
+    // Catch-all: prevent a single bad tick/NaN from crashing the entire Node process
+    console.error(`🚨 [SCALP-LIVE] onTick crash caught: ${err.message}`, err.stack);
+  }
 }
 
 // ── onCandleClose ───────────────────────────────────────────────────────────
@@ -494,6 +601,8 @@ function onCandleClose(bar) {
         log(`📐 [SCALP-LIVE] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
         state.position.stopLoss = trailResult.sl;
         if (trailResult.source) state.position.slSource = trailResult.source;
+        saveScalpPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
+        updateScalpHardSL(trailResult.sl);
       }
     }
 
@@ -606,6 +715,8 @@ async function resolveAndEnter(side, spot, result) {
       optionEntryLtp: null,
       stopLoss: result.stopLoss, qty, reason: result.reason,
     });
+    // Persist position to disk for crash recovery
+    saveScalpPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
   } catch (err) {
     log(`⚠️ [SCALP-LIVE] Entry failed: ${err.message}`);
   } finally {
@@ -763,7 +874,8 @@ router.get("/start", async (req, res) => {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null,
+    optionLtp: null, optionLtpUpdatedAt: null, _ltpStaleLogged: false,
+    optionSymbol: null, _slPauseUntil: null,
     _dailyLossHit: false, _entryPending: false,
     _expiryDayBlocked: _expiryBlocked,
   };
@@ -933,6 +1045,7 @@ router.get("/status/data", (req, res) => {
       optionEntryLtp:    optEntryLtp,
       optionCurrentLtp:  optCurrentLtp,
       optionEntryLtpTime: pos.optionEntryLtpTime || null,
+      optionLtpStaleSec: state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null,
       optPremiumPnl,
       optPremiumMove,
       optPremiumPct,

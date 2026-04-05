@@ -157,6 +157,11 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const THETA_PER_DAY = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
   const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
 
+  // ── Slippage simulation ────────────────────────────────────────────────────
+  // Real market orders on NIFTY options see 1-3 pts slippage. Without this,
+  // backtest overstates P&L vs live trading. Applied to BOTH entry and exit.
+  const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
+
   // Trail gap — tiered dynamic (aligned with Settings page defaults):
   //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 40pt — wide early, room to breathe)
   //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 25pt — tightening)
@@ -231,6 +236,7 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
   let _slHitCandleTime      = null;    // block re-entry on same candle where SL was hit
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
+  if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
   for (let i = 30; i < candles.length; i++) {
     const candle     = candles[i];
@@ -403,6 +409,12 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
       }
 
       if (exitReason) {
+        // Apply slippage: exit is worse (lower for CE sell, higher for PE sell)
+        if (SLIPPAGE_PTS > 0) {
+          exitPrice = position.side === "CE"
+            ? parseFloat((exitPrice - SLIPPAGE_PTS).toFixed(2))
+            : parseFloat((exitPrice + SLIPPAGE_PTS).toFixed(2));
+        }
         // ── PnL Calculation — realistic option simulation ─────────────────────
         // spotPnlPts: NIFTY index point move in our favour
         const spotPnlPts = parseFloat(((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
@@ -551,6 +563,12 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
           entryPrice = parseFloat(Math.max(candle.close, indicators.ema9).toFixed(2));
         }
       }
+      // Apply slippage: entry is worse (higher for CE buy, lower for PE buy)
+      if (SLIPPAGE_PTS > 0) {
+        entryPrice = side === "CE"
+          ? parseFloat((entryPrice + SLIPPAGE_PTS).toFixed(2))
+          : parseFloat((entryPrice - SLIPPAGE_PTS).toFixed(2));
+      }
 
       // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
       // If entry price is already on the wrong side of prev candle mid,
@@ -589,7 +607,14 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   // Square off any still-open position at end of run
   if (position) {
     const lastCandle = candles[candles.length - 1];
-    const spotPnlPts = parseFloat(((lastCandle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+    // Apply slippage to final exit
+    let _finalExit = lastCandle.close;
+    if (SLIPPAGE_PTS > 0) {
+      _finalExit = position.side === "CE"
+        ? parseFloat((_finalExit - SLIPPAGE_PTS).toFixed(2))
+        : parseFloat((_finalExit + SLIPPAGE_PTS).toFixed(2));
+    }
+    const spotPnlPts = parseFloat(((_finalExit - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
     let pnlRupees, pnlMode;
     if (isFutures) {
       const _chgEod = getCharges({ isFutures: true, exitPremium: lastCandle.close, entryPremium: position.entryPrice, qty: LOT_SIZE });
@@ -616,7 +641,7 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
       entryTs:     position.entryTime,
       exitTs:      lastCandle.time,
       entryPrice:  position.entryPrice,
-      exitPrice:   lastCandle.close,
+      exitPrice:   _finalExit,
       stopLoss:         position.stopLoss || "N/A",
       initialStopLoss:  position.initialStopLoss || position.stopLoss || "N/A",
       bestPrice:        position.bestPrice || null,

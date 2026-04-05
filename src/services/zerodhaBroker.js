@@ -230,6 +230,82 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Hard SL — SL-M (Stop Loss Market) orders for exchange-level protection
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Place a SL-M (Stop Loss Market) order at Zerodha.
+ * This order sits at the exchange and triggers automatically when the trigger
+ * price is hit — even if the bot is offline.
+ *
+ * @param {string} fyersSymbol - e.g. "NSE:NIFTY2631024550CE"
+ * @param {number} side - -1 for SELL (exit CE buy), 1 for BUY (exit PE short)
+ * @param {number} qty - lot quantity
+ * @param {number} triggerPrice - price at which the SL-M order fires
+ * @param {object} opts - { isFutures: bool }
+ * @returns {{ success, orderId, raw }}
+ */
+async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures = false } = {}) {
+  if (!isAuthenticated()) {
+    throw new Error("Zerodha not authenticated.");
+  }
+  const kite = getKite();
+  const { exchange, tradingsymbol } = convertSymbol(fyersSymbol);
+  const transactionType = side === 1 ? kite.TRANSACTION_TYPE_BUY : kite.TRANSACTION_TYPE_SELL;
+  const product = isFutures ? kite.PRODUCT_NRML : kite.PRODUCT_MIS;
+  const orderParams = {
+    exchange, tradingsymbol,
+    transaction_type: transactionType,
+    quantity:         qty,
+    product,
+    order_type:       kite.ORDER_TYPE_SLM,   // SL-M = Stop Loss Market
+    trigger_price:    triggerPrice,
+    validity:         kite.VALIDITY_DAY,
+    tag:              "HARD_SL",
+  };
+  try {
+    const response = await kite.placeOrder(kite.VARIETY_REGULAR, orderParams);
+    if (response && response.order_id) {
+      return { success: true, orderId: response.order_id, raw: response };
+    }
+    return { success: false, orderId: null, raw: response };
+  } catch (err) {
+    return { success: false, orderId: null, raw: { error: err.message } };
+  }
+}
+
+/**
+ * Modify the trigger price of an existing SL-M order (for trailing).
+ */
+async function modifySLMOrder(orderId, newTriggerPrice) {
+  if (!isAuthenticated()) throw new Error("Zerodha not authenticated.");
+  try {
+    const kite = getKite();
+    const response = await kite.modifyOrder(kite.VARIETY_REGULAR, orderId, {
+      order_type:    kite.ORDER_TYPE_SLM,
+      trigger_price: newTriggerPrice,
+    });
+    return { success: true, raw: response };
+  } catch (err) {
+    return { success: false, raw: { error: err.message } };
+  }
+}
+
+/**
+ * Cancel an open SL-M order (before placing market exit).
+ */
+async function cancelOrder(orderId) {
+  if (!isAuthenticated()) throw new Error("Zerodha not authenticated.");
+  try {
+    const kite = getKite();
+    const response = await kite.cancelOrder(kite.VARIETY_REGULAR, orderId);
+    return { success: true, raw: response };
+  } catch (err) {
+    return { success: false, raw: { error: err.message } };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Queries
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -257,5 +333,6 @@ module.exports = {
   getLoginUrl, generateAccessToken, setAccessToken,
   isAuthenticated, logout, clearZerodhaToken,
   convertSymbol, placeMarketOrder,
+  placeSLMOrder, modifySLMOrder, cancelOrder,
   getOrders, getPositions, getFunds,
 };
