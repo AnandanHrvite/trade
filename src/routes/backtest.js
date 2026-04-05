@@ -325,24 +325,26 @@ ${buildSidebar('backtest', liveActive)}
     ${s.vixEnabled ? `<div class="sc ${s.vixBlocked > 0 ? 'red' : 'green'}"><div class="sc-label">VIX Filter</div><div class="sc-val">${s.vixBlocked}</div><div class="sc-sub">entries blocked (max=${s.vixMaxEntry}, strong-only=${s.vixStrongOnly})</div></div>` : ''}
   </div>
 
-  <!-- Day View -->
-  <div class="tbar">
-    <span class="tbar-label">Day View</span>
-    <span class="tbar-count" id="dayCntLabel"></span>
-    <button class="copy-btn" onclick="copyDayView(this)" style="margin-left:auto;">📋 Copy Day View</button>
-  </div>
-  <div class="tw" style="margin-bottom:16px;">
-    <table>
-      <thead><tr>
-        <th>Date</th>
-        <th>Trades</th>
-        <th>Wins</th>
-        <th>Losses</th>
-        <th>PnL</th>
-        <th>Cumulative PnL</th>
-      </tr></thead>
-      <tbody id="dayBody"></tbody>
-    </table>
+  <!-- Day View (toggleable) -->
+  <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
+    <div class="tbar">
+      <span class="tbar-label">Day View</span>
+      <span class="tbar-count" id="dayCntLabel"></span>
+      <button class="copy-btn" onclick="copyDayView(this)" style="margin-left:auto;">📋 Copy Day View</button>
+    </div>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>Date</th>
+          <th>Trades</th>
+          <th>Wins</th>
+          <th>Losses</th>
+          <th>PnL</th>
+          <th>Cumulative PnL</th>
+        </tr></thead>
+        <tbody id="dayBody"></tbody>
+      </table>
+    </div>
   </div>
 
   <!-- Analytics Panel -->
@@ -416,6 +418,7 @@ ${buildSidebar('backtest', liveActive)}
   <!-- Filter bar -->
   <div class="tbar">
     <span class="tbar-label">Trade Log</span>
+    <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
     <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
     <input id="fSearch" placeholder="Search reason…" oninput="doFilter()" style="width:150px;"/>
     <select id="fSide" onchange="doFilter()">
@@ -702,11 +705,25 @@ function doCopy(text,btn,label){
 buildDayView();
 doFilter();
 
+// ── Day View Toggle ──────────────────────────────────────────────────────────
+var dwVisible = false;
+function toggleDayWise(){
+  dwVisible = !dwVisible;
+  document.getElementById('dayWiseWrap').style.display = dwVisible ? 'block' : 'none';
+  document.getElementById('dwToggle').classList.toggle('active', dwVisible);
+}
+
 // ── Analytics Panel ──────────────────────────────────────────────────────────
 var anaVisible = false;
 var anaCharts = {};
-function fmtAna(v){ return OPT_SIM ? '\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN') : v.toFixed(2)+' pts'; }
+function fmtAna(v){ return OPT_SIM ? '\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN') : (typeof v==='number'?v.toFixed(2):v)+' pts'; }
 function fmtAnaShort(v){ return OPT_SIM ? '\\u20b9'+Math.round(v/1000)+'k' : Math.round(v)+' pts'; }
+// Helper: get IST Date object from entryTs (unix seconds)
+function tsToIST(ts){ return ts ? new Date(ts * 1000) : null; }
+function tsFmtDate(ts){ var d=tsToIST(ts); if(!d) return 'Unknown'; return d.toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'}); }
+function tsFmtMonth(ts){ var d=tsToIST(ts); if(!d) return '2025-01'; var m=new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',timeZone:'Asia/Kolkata'}).format(d); return m; }
+function tsHour(ts){ var d=tsToIST(ts); if(!d) return 9; return parseInt(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hour12:false,timeZone:'Asia/Kolkata'}).format(d)); }
+function tsDow(ts){ var d=tsToIST(ts); if(!d) return 1; var s=new Intl.DateTimeFormat('en-US',{weekday:'short',timeZone:'Asia/Kolkata'}).format(d); var map={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}; return map[s]!=null?map[s]:1; }
 function toggleAnalytics(){
   anaVisible = !anaVisible;
   document.getElementById('anaWrap').style.display = anaVisible ? 'block' : 'none';
@@ -753,8 +770,7 @@ function renderAnalytics(){
   // ── Monthly P&L ──
   var monthMap = {};
   trades.forEach(function(t){
-    var parts = t.entry.split(',')[0].trim().split('/');
-    var key = parts[2]+'-'+parts[1].padStart(2,'0');
+    var key = tsFmtMonth(t.entryTs);
     if(!monthMap[key]) monthMap[key] = 0;
     monthMap[key] += (t.pnl||0);
   });
@@ -814,9 +830,8 @@ function renderAnalytics(){
   // ── Hourly Performance ──
   var hourMap = {};
   trades.forEach(function(t){
-    var hMatch = t.entry.match(/(\\d{1,2}):\\d{2}:\\d{2}$/);
-    if(!hMatch) return;
-    var h = parseInt(hMatch[1]);
+    var h = tsHour(t.entryTs);
+    if(h==null) return;
     if(!hourMap[h]) hourMap[h] = {pnl:0,cnt:0,wins:0};
     hourMap[h].pnl += (t.pnl||0);
     hourMap[h].cnt++;
@@ -864,7 +879,7 @@ function renderAnalytics(){
   // Profitable/losing days
   var dayPnlMap={};
   trades.forEach(function(t){
-    var d=t.entry.split(',')[0].trim();
+    var d=tsFmtDate(t.entryTs);
     if(!dayPnlMap[d]) dayPnlMap[d]=0;
     dayPnlMap[d]+=(t.pnl||0);
   });
@@ -913,9 +928,7 @@ function renderAnalytics(){
   // ── Day of Week ──
   var dowMap={0:{n:'Sun',t:0,w:0,p:0},1:{n:'Mon',t:0,w:0,p:0},2:{n:'Tue',t:0,w:0,p:0},3:{n:'Wed',t:0,w:0,p:0},4:{n:'Thu',t:0,w:0,p:0},5:{n:'Fri',t:0,w:0,p:0},6:{n:'Sat',t:0,w:0,p:0}};
   trades.forEach(function(t){
-    var parts=t.entry.split(',')[0].trim().split('/');
-    var dt=new Date(parseInt(parts[2]),parseInt(parts[1])-1,parseInt(parts[0]));
-    var dow=dt.getDay();
+    var dow=tsDow(t.entryTs);
     dowMap[dow].t++;
     if(t.pnl>0) dowMap[dow].w++;
     dowMap[dow].p+=(t.pnl||0);
@@ -1093,7 +1106,7 @@ function renderAnalytics(){
     var worst = lossTrades.slice().sort(function(a,b){return a.pnl-b.pnl;}).slice(0,10);
     var html='';
     worst.forEach(function(t){
-      var dateStr=t.entry.split(',')[0].trim();
+      var dateStr=tsFmtDate(t.entryTs);
       html+='<tr><td style="color:#c8d8f0;">'+dateStr+'</td>'
         +'<td style="color:'+(t.side==='CE'?'#10b981':'#ef4444')+';font-weight:700;">'+t.side+'</td>'
         +'<td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td>'
@@ -1124,7 +1137,7 @@ function renderAnalytics(){
     streaks.slice(0,10).forEach(function(streak){
       var totalLoss=streak.items.reduce(function(s,c){return s+c.trade.pnl;},0);
       var avgLoss=totalLoss/streak.items.length;
-      var startDate=streak.items[0].trade.entry.split(',')[0].trim();
+      var startDate=tsFmtDate(streak.items[0].trade.entryTs);
       var recovered=0,recTrades=0;
       for(var i=streak.startIdx+streak.items.length;i<trades.length;i++){
         recovered+=trades[i].pnl;
@@ -1146,9 +1159,8 @@ function renderAnalytics(){
   (function(){
     var lhMap={};
     trades.forEach(function(t){
-      var hMatch=t.entry.match(/(\\d{1,2}):\\d{2}:\\d{2}$/);
-      if(!hMatch) return;
-      var h=parseInt(hMatch[1]);
+      var h=tsHour(t.entryTs);
+      if(h==null) return;
       if(!lhMap[h]) lhMap[h]={total:0,losses:0,lossPnl:0};
       lhMap[h].total++;
       if(t.pnl<0){lhMap[h].losses++;lhMap[h].lossPnl+=t.pnl;}
@@ -1174,7 +1186,7 @@ function renderAnalytics(){
   (function(){
     var dayTrades={};
     trades.forEach(function(t){
-      var d=t.entry.split(',')[0].trim();
+      var d=tsFmtDate(t.entryTs);
       if(!dayTrades[d]) dayTrades[d]={trades:[],pnl:0,losses:0,worstTrade:0};
       dayTrades[d].trades.push(t);
       dayTrades[d].pnl+=(t.pnl||0);
