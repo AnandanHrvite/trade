@@ -246,6 +246,10 @@ function sidebarCSS() {
     /* Page wrapper */
     :root[data-theme="light"] .page { color:#334155 !important; }
 
+    /* Text selection */
+    :root[data-theme="light"] ::selection { background:#bfdbfe !important; color:#1e293b !important; }
+    :root[data-theme="light"] ::-moz-selection { background:#bfdbfe !important; color:#1e293b !important; }
+
     /* Sidebar overlay */
     :root[data-theme="light"] .sidebar-overlay.active { background:rgba(0,0,0,0.3) !important; }
 
