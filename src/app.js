@@ -1351,19 +1351,28 @@ async function gracefulShutdown(signal) {
   console.log(`\n🛑 [SHUTDOWN] Received ${signal} — attempting graceful exit...`);
 
   try {
-    // Check if any trading mode is active
-    const isAnyActive = sharedSocketState.isAnyActive();
-    if (!isAnyActive) {
+    // Identify which modes are active
+    const activeModes = [];
+    if (sharedSocketState.getMode())      activeModes.push(sharedSocketState.getMode());
+    if (sharedSocketState.getScalpMode()) activeModes.push(sharedSocketState.getScalpMode());
+
+    if (activeModes.length === 0) {
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
       process.exit(0);
       return;
     }
 
-    // Alert via Telegram
-    sendTelegram(`🛑 SHUTDOWN: Trading bot received ${signal}. Active modes detected — check broker dashboards for open positions!`);
+    const modeList = activeModes.join(", ");
+    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}`);
 
-    // Give Telegram message time to send, then exit
-    console.warn("⚠️ [SHUTDOWN] Active trading detected. Check broker dashboards for any open positions!");
+    // Only send alarming Telegram for LIVE modes; paper modes are harmless
+    const hasLive = activeModes.some(m => m === "LIVE_TRADE" || m === "SCALP_LIVE");
+    if (hasLive) {
+      sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes active: ${modeList} — check broker dashboard for open positions!`);
+    } else {
+      sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`);
+    }
+
     console.log("🔄 [SHUTDOWN] Waiting 3s for alerts to flush...");
     setTimeout(() => {
       console.log("👋 [SHUTDOWN] Exiting.");
