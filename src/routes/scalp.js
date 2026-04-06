@@ -900,7 +900,7 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/scalp/status");
+  if (state.running) return res.json({ success: true, message: "Already running" });
 
   const check = sharedSocketState.canStart("SCALP_LIVE");
   if (!check.allowed) {
@@ -990,7 +990,7 @@ router.get("/start", async (req, res) => {
   });
 
   log(`🟢 [SCALP-LIVE] Session started — ${SCALP_RES}-min candles | Fyers orders`);
-  res.redirect("/scalp/status");
+  res.json({ success: true, message: "Scalp live trading started" });
 });
 
 function stopSession() {
@@ -1023,14 +1023,14 @@ function stopSession() {
 
 router.get("/stop", (req, res) => {
   stopSession();
-  res.redirect("/scalp/status");
+  res.json({ success: true, message: "Scalp live trading stopped" });
 });
 
 router.get("/exit", (req, res) => {
   if (state.position) {
     squareOff(state.lastTickPrice || state.position.entryPrice, "Manual exit");
   }
-  res.redirect("/scalp/status");
+  res.json({ success: true, message: "Position exit triggered" });
 });
 
 // ── Manual entry ────────────────────────────────────────────────────────────
