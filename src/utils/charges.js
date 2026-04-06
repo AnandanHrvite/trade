@@ -43,9 +43,9 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
   const isFyers = broker === "fyers";
 
   // ── Rates from env (or defaults — April 2026 rates) ─────────────────────
-  const sttOptPct       = isFyers ? 0.1 : env("STT_OPT_SELL_PCT", 0.15);    // % of sell-side premium turnover
+  const sttOptPct       = env("STT_OPT_SELL_PCT", 0.15);                     // % of sell-side premium turnover (govt tax — same for all brokers)
   const sttFutPct       = env("STT_FUT_SELL_PCT",       0.05);    // % of sell-side turnover
-  const exchOptPct      = isFyers ? 0.0495 : env("EXCHANGE_TXN_OPT_PCT", 0.05);    // % — options exchange txn
+  const exchOptPct      = isFyers ? 0.0445 : env("EXCHANGE_TXN_OPT_PCT", 0.05);    // % — options exchange txn (Fyers: 0.0445%)
   const exchFutPct      = env("EXCHANGE_TXN_FUT_PCT",   0.002);   // % — futures exchange txn (much lower)
   const sebiPerCrore    = env("SEBI_CHARGES_PER_CRORE", 10);      // ₹ per crore
   const gstPct          = env("GST_PCT",                18);      // % on (brokerage + exchange charges)
