@@ -35,13 +35,17 @@ function env(key, fallback) {
  * @param {number}  opts.exitPremium    — option premium at exit (sell side) or futures exit price
  * @param {number}  opts.entryPremium   — option premium at entry (buy side) or futures entry price
  * @param {number}  opts.qty            — quantity (lot size × multiplier)
+ * @param {string}  [opts.broker]       — "fyers" for Fyers rates, default uses Kite/env rates
  * @returns {{ stt, exchangeTxn, sebi, gst, stampDuty, brokerage, total }}
  */
-function calcCharges({ isFutures, exitPremium, entryPremium, qty }) {
+function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
+  // ── Fyers-specific rates (scalping) ─────────────────────────────────────
+  const isFyers = broker === "fyers";
+
   // ── Rates from env (or defaults — April 2026 rates) ─────────────────────
-  const sttOptPct       = env("STT_OPT_SELL_PCT",       0.15);    // % of sell-side premium turnover
+  const sttOptPct       = isFyers ? 0.1 : env("STT_OPT_SELL_PCT", 0.15);    // % of sell-side premium turnover
   const sttFutPct       = env("STT_FUT_SELL_PCT",       0.05);    // % of sell-side turnover
-  const exchOptPct      = env("EXCHANGE_TXN_OPT_PCT",   0.05);    // % — options exchange txn
+  const exchOptPct      = isFyers ? 0.0495 : env("EXCHANGE_TXN_OPT_PCT", 0.05);    // % — options exchange txn
   const exchFutPct      = env("EXCHANGE_TXN_FUT_PCT",   0.002);   // % — futures exchange txn (much lower)
   const sebiPerCrore    = env("SEBI_CHARGES_PER_CRORE", 10);      // ₹ per crore
   const gstPct          = env("GST_PCT",                18);      // % on (brokerage + exchange charges)
@@ -88,12 +92,12 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty }) {
  * Quick helper: returns just the total charges number.
  * Falls back to a flat estimate when premium data is unavailable.
  */
-function getCharges({ isFutures, exitPremium, entryPremium, qty }) {
+function getCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
   // If we have no premium data, use a conservative flat estimate
   if (!exitPremium && !entryPremium) {
     return isFutures ? 60 : 100;
   }
-  return calcCharges({ isFutures, exitPremium, entryPremium, qty }).total;
+  return calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }).total;
 }
 
 module.exports = { calcCharges, getCharges };

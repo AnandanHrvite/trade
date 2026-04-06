@@ -243,7 +243,7 @@ function startOptionPolling(symbol) {
         }
       }
       scheduleNext();
-    }, 1000); // 1s for live scalp — tight monitoring
+    }, 500); // 500ms for live scalp — reduce trail lock slippage
   }
   fetchOptionLtp(symbol).then(ltp => {
     if (ltp && state.position) {
@@ -446,7 +446,7 @@ async function squareOff(exitPrice, reason) {
     pnlMode = "spot proxy";
   }
 
-  const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
+  const charges = getCharges({ broker: "fyers", isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
   log(`${emoji} [SCALP-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
@@ -561,10 +561,10 @@ function onTick(tick) {
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
-        const _c = getCharges({ isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
+        const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      const _c = getCharges({ isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+      const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
     };
 
@@ -1073,15 +1073,15 @@ router.get("/status/data", (req, res) => {
   let unrealised = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      const _c = getCharges({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      const _c = getCharges({ broker: "fyers", isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
       unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        const _c = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        const _c = getCharges({ broker: "fyers", isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
         unrealised = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _c).toFixed(2));
       } else {
-        const _c = getCharges({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _c = getCharges({ broker: "fyers", isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealised = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _c).toFixed(2));
       }
     }
@@ -1089,7 +1089,7 @@ router.get("/status/data", (req, res) => {
 
   const optEntryLtp   = pos ? (pos.optionEntryLtp || null) : null;
   const optCurrentLtp = pos ? (state.optionLtp || pos.optionCurrentLtp || null) : null;
-  const _chgOpt = (optEntryLtp && optCurrentLtp) ? getCharges({ isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
+  const _chgOpt = (optEntryLtp && optCurrentLtp) ? getCharges({ broker: "fyers", isFutures, exitPremium: optCurrentLtp, entryPremium: optEntryLtp, qty: pos ? pos.qty : 0 }) : 0;
   const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOpt).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
@@ -1170,15 +1170,15 @@ router.get("/status", (req, res) => {
   let unrealisedPnl = 0;
   if (pos && state.lastTickPrice) {
     if (isFutures) {
-      const _cp = getCharges({ isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+      const _cp = getCharges({ broker: "fyers", isFutures: true, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
       unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
     } else {
       const cur = state.optionLtp || pos.optionCurrentLtp;
       if (pos.optionEntryLtp && cur && pos.optionEntryLtp > 0) {
-        const _cp = getCharges({ isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
+        const _cp = getCharges({ broker: "fyers", isFutures: false, exitPremium: cur, entryPremium: pos.optionEntryLtp, qty: pos.qty });
         unrealisedPnl = parseFloat(((cur - pos.optionEntryLtp) * pos.qty - _cp).toFixed(2));
       } else {
-        const _cp = getCharges({ isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
+        const _cp = getCharges({ broker: "fyers", isFutures: false, exitPremium: state.lastTickPrice, entryPremium: pos.entryPrice, qty: pos.qty });
         unrealisedPnl = parseFloat(((state.lastTickPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * pos.qty - _cp).toFixed(2));
       }
     }

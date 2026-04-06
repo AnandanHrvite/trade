@@ -177,7 +177,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
 
       // ── Helper: calculate running PNL at a given spot price ──
       // Use flat charge estimate for running PnL (exact charges applied at exit)
-      const _estCharges = getCharges({ isFutures, exitPremium: null, entryPremium: null, qty: LOT_SIZE });
+      const _estCharges = getCharges({ broker: "fyers", isFutures, exitPremium: null, entryPremium: null, qty: LOT_SIZE });
       const _runPnl = (spotExit) => {
         const pts = (spotExit - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         if (OPTION_SIM) {
@@ -257,10 +257,10 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
           const netPremPts = spotPnlPts * DELTA - thetaCost / LOT_SIZE;
           const estEntry   = 200;
           const estExit    = Math.max(1, estEntry + netPremPts);
-          const _chg = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
+          const _chg = getCharges({ broker: "fyers", isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
           pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
         } else {
-          const _chg = getCharges({ isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
+          const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
           pnl = parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
         }
 
