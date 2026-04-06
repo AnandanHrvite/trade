@@ -1060,6 +1060,7 @@ router.post("/manualEntry", async (req, res) => {
 
   log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (prevCandle)`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
+  if (!state.position) return res.status(400).json({ success: false, error: "Entry failed — check logs for details." });
   return res.json({ success: true, spot, side, sl });
 });
 
@@ -1760,7 +1761,7 @@ async function scManualEntry(side) {
     var data = await res.json();
     if (data.success) {
       scToast('\u2705 Manual ' + side + ' entry @ \u20b9' + data.spot, '#10b981');
-      setTimeout(function(){ location.reload(); }, 1500);
+      location.reload();
     } else {
       scToast('\u274c ' + (data.error || 'Entry failed'), '#ef4444');
     }
