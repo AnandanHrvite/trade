@@ -763,10 +763,10 @@ async function preloadHistory() {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    // Fetch from 3 days ago to ensure 30+ candles even before market open
-    const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    // Fetch from 7 days ago to cover weekends + holidays (e.g., Thu trading → Mon start)
+    const lookbackDate = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const candles = await fetchCandlesCached(
-      NIFTY_INDEX_SYMBOL, String(SCALP_RES), threeDaysAgo, today,
+      NIFTY_INDEX_SYMBOL, String(SCALP_RES), lookbackDate, today,
       fetchCandles
     );
     if (candles && candles.length > 0) {

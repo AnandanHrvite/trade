@@ -1611,8 +1611,9 @@ router.get("/start", async (req, res) => {
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  // Go back 7 calendar days to cover weekends + holidays (e.g., Thu trading → Mon start)
   const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  fromDate.setDate(fromDate.getDate() - 5);
+  fromDate.setDate(fromDate.getDate() - 7);
   const fromStr  = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   // Reset state

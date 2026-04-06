@@ -22,8 +22,8 @@ async function fetchChunk(symbol, resolution, from, to) {
   const params = { symbol, resolution: String(resolution), date_format: "1", range_from: from, range_to: to, cont_flag: "1" };
   console.log(`   📦 Fetching chunk: ${from} → ${to}`);
   const response = await fyers.getHistory(params);
+  if (response.s === "no_data" || (!response.candles || response.candles.length === 0)) return [];
   if (response.s !== "ok") throw new Error(`Fyers API error: ${JSON.stringify(response)}`);
-  if (!response.candles || response.candles.length === 0) return [];
   return response.candles.map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }));
 }
 

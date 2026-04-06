@@ -101,8 +101,8 @@ function mergeCandles(existing, fresh) {
  * @returns {Promise<Array>}     - full candle array from `from` to `to`
  */
 async function fetchCandlesCached(symbol, resolution, from, to, rawFetcher) {
-  // Only cache 15-min candles — backtest uses arbitrary ranges, cache for warm-up only
-  const shouldCache = String(resolution) === "15";
+  // Cache intraday candles used for warm-up (3, 5, 15-min)
+  const shouldCache = ["3", "5", "15"].includes(String(resolution));
 
   if (!shouldCache) {
     // Bypass cache for non-15min (backtest) — fetch directly
