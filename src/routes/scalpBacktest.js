@@ -887,7 +887,7 @@ ${buildSidebar('scalpBacktest', liveActive)}
       <div class="ana-mini" style="grid-column:1/-1;">
         <div style="overflow-x:auto;max-height:350px;overflow-y:auto;">
           <table class="ana-tbl"><thead><tr><th style="text-align:right;width:70px;">Count</th><th>Rejection Reason</th></tr></thead><tbody>
-          ${s.rejectBreakdown.map(r => \`<tr><td style="text-align:right;font-weight:600;color:#f59e0b;">\${r.count}</td><td style="font-size:0.82rem;opacity:0.85;">\${r.reason}</td></tr>\`).join('')}
+          ${s.rejectBreakdown.map(r => `<tr><td style="text-align:right;font-weight:600;color:#f59e0b;">${r.count}</td><td style="font-size:0.82rem;opacity:0.85;">${r.reason}</td></tr>`).join('')}
           </tbody></table>
         </div>
       </div>
