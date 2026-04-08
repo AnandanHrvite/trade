@@ -573,7 +573,7 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (source tracked: PSAR or Prev candle)
+    // 1. SL hit (ATR initial, PSAR trailing)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
@@ -625,7 +625,7 @@ function onCandleClose(bar) {
       return;
     }
 
-    // Update trailing SL (tighten only) — track source (PSAR or Prev candle)
+    // Update trailing SL (PSAR only, tighten only)
     if (window.length >= 15) {
       const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
       if (trailResult.sl !== state.position.stopLoss) {
@@ -1041,23 +1041,18 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = previous candle low (CE) / high (PE), hard-capped at MAX_SL_PTS
+  // SL = ATR-based, hard-capped at MAX_SL_PTS
   const candles = state.candles || [];
-  const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "50");
-  const prevCandle = candles.length >= 1 ? candles[candles.length - 1] : null;
-  let sl;
-  if (side === "CE") {
-    const prevLow = prevCandle ? prevCandle.low : spot - MAX_SL_PTS;
-    sl = parseFloat(Math.max(prevLow, spot - MAX_SL_PTS).toFixed(2));
-  } else {
-    const prevHigh = prevCandle ? prevCandle.high : spot + MAX_SL_PTS;
-    sl = parseFloat(Math.min(prevHigh, spot + MAX_SL_PTS).toFixed(2));
-  }
+  const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
+  const ATR_SL_MULT = parseFloat(process.env.SCALP_ATR_SL_MULT || "1.5");
+  const sig = candles.length >= 30 ? scalpStrategy.getSignal(candles, { silent: true }) : null;
+  const atrSL = sig && sig.atr ? Math.min(parseFloat((sig.atr * ATR_SL_MULT).toFixed(2)), MAX_SL_PTS) : MAX_SL_PTS;
+  let sl = side === "CE" ? parseFloat((spot - atrSL).toFixed(2)) : parseFloat((spot + atrSL).toFixed(2));
   if ((side === "CE" && sl >= spot) || (side === "PE" && sl <= spot)) {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
 
-  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (prevCandle)`);
+  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (ATR=${sig && sig.atr || 'n/a'})`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
   if (!state.position) return res.status(400).json({ success: false, error: "Entry failed — check logs for details." });
   return res.json({ success: true, spot, side, sl });

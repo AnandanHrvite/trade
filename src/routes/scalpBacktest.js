@@ -205,7 +205,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       // EXIT: 1. PSAR SL  2. Trail profit  3. PSAR flip  4. PSAR trail  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. SL hit (trailing — tightens each candle, source tracked: PSAR or Prev candle)
+      // 1. SL hit (ATR initial, PSAR trailing — tightens each candle)
       if (position.side === "CE" && candle.low <= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
@@ -234,7 +234,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = "PSAR flip";
       }
 
-      // 4. Update trailing SL — tighten only, track source (PSAR or Prev candle)
+      // 4. Update trailing SL (PSAR only, tighten only)
       if (!exitReason) {
         const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
         if (trailResult.sl !== position.stopLoss) {

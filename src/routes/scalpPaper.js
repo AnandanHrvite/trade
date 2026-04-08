@@ -413,7 +413,7 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (source tracked: PSAR or Prev candle)
+    // 1. SL hit (ATR initial, PSAR trailing)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
@@ -785,19 +785,13 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = previous candle low (CE) / high (PE), hard-capped at MAX_SL_PTS
+  // SL = ATR-based, hard-capped at MAX_SL_PTS
   const candles = state.candles || [];
-  const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "50");
-  const prevCandle = candles.length >= 1 ? candles[candles.length - 1] : null;
-  let sl;
-  if (side === "CE") {
-    const prevLow = prevCandle ? prevCandle.low : spot - MAX_SL_PTS;
-    sl = parseFloat(Math.max(prevLow, spot - MAX_SL_PTS).toFixed(2));
-  } else {
-    const prevHigh = prevCandle ? prevCandle.high : spot + MAX_SL_PTS;
-    sl = parseFloat(Math.min(prevHigh, spot + MAX_SL_PTS).toFixed(2));
-  }
-  // Validate SL direction
+  const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
+  const ATR_SL_MULT = parseFloat(process.env.SCALP_ATR_SL_MULT || "1.5");
+  const sig = candles.length >= 30 ? scalpStrategy.getSignal(candles, { silent: true }) : null;
+  const atrSL = sig && sig.atr ? Math.min(parseFloat((sig.atr * ATR_SL_MULT).toFixed(2)), MAX_SL_PTS) : MAX_SL_PTS;
+  let sl = side === "CE" ? parseFloat((spot - atrSL).toFixed(2)) : parseFloat((spot + atrSL).toFixed(2));
   if ((side === "CE" && sl >= spot) || (side === "PE" && sl <= spot)) {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
@@ -806,7 +800,7 @@ router.post("/manualEntry", async (req, res) => {
     const optResult = await validateAndGetOptionSymbol(spot, side);
     const symbol = optResult.symbol;
     const qty = getLotQty();
-    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (prevCandle)`);
+    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (ATR=${sig && sig.atr || 'n/a'})`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot);
     return res.json({ success: true, spot, side, sl, symbol });
   } catch (e) {
