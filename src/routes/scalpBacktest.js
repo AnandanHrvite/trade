@@ -79,9 +79,12 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 
-  // PNL-based trailing profit (% of peak)
-  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "200");   // activate trailing at ₹200
-  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "50");      // exit when profit < X% of peak
+  // PNL-based trailing profit (tiered % of peak)
+  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "200");
+  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "50");
+  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "1000:60,3000:70,5000:80,10000:90")
+    .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
+    .sort((a, b) => b.peak - a.peak);
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -131,7 +134,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, ${SCALP_TRAIL_PCT}% of peak | SL: ATR-based`);
+  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: ATR-based`);
   console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
   console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
@@ -218,14 +221,18 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING PROFIT — % of peak: exit when profit drops below X% of peak PnL
+      // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
       if (!exitReason && SCALP_TRAIL_START > 0 && position.peakPnl >= SCALP_TRAIL_START) {
-        const trailFloor = parseFloat((position.peakPnl * SCALP_TRAIL_PCT / 100).toFixed(2));
+        let _pct = SCALP_TRAIL_PCT;
+        for (const tier of SCALP_TRAIL_TIERS) {
+          if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+        }
+        const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
 
         const curPnl = _runPnl(candle.close);
         if (curPnl <= trailFloor) {
           exitPrice  = _exitPriceForPnl(trailFloor);
-          exitReason = `Trail ${SCALP_TRAIL_PCT}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
+          exitReason = `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
         }
       }
 

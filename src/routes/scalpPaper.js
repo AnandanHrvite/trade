@@ -40,6 +40,9 @@ const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "200
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "200");
 const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "50");
+const _SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "1000:60,3000:70,5000:80,10000:90")
+  .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
+  .sort((a, b) => b.peak - a.peak);
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -427,11 +430,15 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — % of peak: exit when profit drops below X% of peak PnL
+    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      const trailFloor = parseFloat((pos.peakPnl * _SCALP_TRAIL_PCT / 100).toFixed(2));
+      let _pct = _SCALP_TRAIL_PCT;
+      for (const tier of _SCALP_TRAIL_TIERS) {
+        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+      }
+      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
       if (curPnl <= trailFloor) {
-        simulateSell(price, `Trail ${_SCALP_TRAIL_PCT}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
+        simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
         return;
       }
     }
@@ -1204,7 +1211,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ATR \u00b7 Trail ${_SCALP_TRAIL_PCT}% from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ATR \u00b7 Trail ${_SCALP_TRAIL_PCT}%+ tiered from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

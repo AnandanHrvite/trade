@@ -99,9 +99,10 @@ const SETTINGS_SCHEMA = [
       // ── Parabolic SAR (initial SL + trailing) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      // ── Trail profit (% of peak) ──
+      // ── Trail profit (tiered % of peak) ──
       { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "200" },
-      { key: "SCALP_TRAIL_PCT", label: "Trail Keep (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak (50 = keep half)", default: "50" },
+      { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Base: exit when profit drops below X% of peak", default: "50" },
+      { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows (e.g. 1000:60,3000:70,5000:80,10000:90)", default: "1000:60,3000:70,5000:80,10000:90" },
       // ── Risk management (ATR-based SL) ──
       { key: "SCALP_ATR_PERIOD", label: "ATR Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "ATR calculation period for SL", default: "14" },
       { key: "SCALP_ATR_SL_MULT", label: "ATR SL Multiplier", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "SL = ATR x multiplier (1.5 = 1.5x ATR)", default: "1.5" },
@@ -251,7 +252,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_PE_THRESHOLD",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
-  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT",
+  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS",
   "SCALP_ATR_PERIOD", "SCALP_ATR_SL_MULT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
   "SCALP_MAX_SL_PTS", "SCALP_CPR_NARROW_PCT",
