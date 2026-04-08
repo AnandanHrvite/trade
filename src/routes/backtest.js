@@ -325,6 +325,19 @@ ${buildSidebar('backtest', liveActive)}
     ${s.vixEnabled ? `<div class="sc ${s.vixBlocked > 0 ? 'red' : 'green'}"><div class="sc-label">VIX Filter</div><div class="sc-val">${s.vixBlocked}</div><div class="sc-sub">entries blocked (max=${s.vixMaxEntry}, strong-only=${s.vixStrongOnly})</div></div>` : ''}
   </div>
 
+  ${s.rejectBreakdown && s.rejectBreakdown.length > 0 ? `
+  <div style="margin-bottom:16px;">
+    <div class="tbar">
+      <span class="tbar-label">Signal Rejection Breakdown</span>
+      <span class="tbar-count">(why entries were blocked while flat)</span>
+    </div>
+    <div class="tw">
+      <table><thead><tr><th style="text-align:right;width:60px;">Count</th><th>Rejection Reason</th></tr></thead><tbody>
+      ${s.rejectBreakdown.map(r => `<tr><td style="text-align:right;font-weight:600;color:#f59e0b;">${r.count}</td><td style="font-size:0.82rem;opacity:0.85;">${r.reason}</td></tr>`).join('')}
+      </tbody></table>
+    </div>
+  </div>` : ''}
+
   <!-- Day View (toggleable) -->
   <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
     <div class="tbar">

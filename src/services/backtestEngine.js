@@ -125,6 +125,9 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   const lookupVix = buildVixLookup(vixCandles || []);
   let _vixBlockCount = 0;
 
+  // ── Signal rejection counters (diagnose why trade count is low) ────────────
+  const _rejectCounts = {};
+
   // ── Option premium simulation ────────────────────────────────────────────────
   // Backtest doesn't have real option prices. We simulate them with two factors:
   //
@@ -294,6 +297,13 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
     } else if (_dbgSignalCount === 5) {
       console.log(`  🔍 [DBG] (suppressing further debug logs — first 5 shown above)`);
       _dbgSignalCount++;
+    }
+
+    // Track rejection reasons when flat (no position) — diagnose low trade count
+    if (!position && signal === "NONE" && reason) {
+      // Bucket the reason into a short key
+      const rKey = reason.length > 60 ? reason.slice(0, 60) : reason;
+      _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
     // ── SL FIX: use cached SL from previous iteration (closed candles only) ───
@@ -721,6 +731,14 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   Object.entries(exitGroups).sort((a,b) => b[1].count - a[1].count).forEach(([label, g]) => {
     console.log(`  ${label.padEnd(18)}: ${g.count} trades | ${g.wins}W/${g.count-g.wins}L | WR=${((g.wins/g.count)*100).toFixed(0)}% | PnL=${fmtPnl(g.pnl)}`);
   });
+  // ── Signal Rejection Breakdown (why trades were blocked) ─────────────────
+  const sortedRejects = Object.entries(_rejectCounts).sort((a, b) => b[1] - a[1]);
+  if (sortedRejects.length > 0) {
+    console.log("── Signal Rejection Breakdown (while flat) ────────");
+    sortedRejects.slice(0, 15).forEach(([reason, count]) => {
+      console.log(`  ${String(count).padStart(5)}× | ${reason}`);
+    });
+  }
   console.log("══════════════════════════════════════════════\n");
 
   return {
@@ -757,6 +775,7 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
       vixBlocked:      _vixBlockCount,
       vixMaxEntry:     vixFilter.VIX_MAX_ENTRY,
       vixStrongOnly:   vixFilter.VIX_STRONG_ONLY,
+      rejectBreakdown: sortedRejects.slice(0, 10).map(([reason, count]) => ({ reason, count })),
     },
     trades,
   };
