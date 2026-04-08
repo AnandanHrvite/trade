@@ -107,6 +107,7 @@ const SETTINGS_SCHEMA = [
       // ── Risk management (Prev Candle SL) ──
       { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on prev candle SL distance", default: "25" },
       { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on prev candle SL (prevents too-tight SL on tiny candles)", default: "8" },
+      { key: "SCALP_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
       { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.SESSION, desc: "CPR range % threshold for narrow CPR filter", default: "33" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
@@ -254,7 +255,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
   "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
-  "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_CPR_NARROW_PCT",
+  "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
 ]);
 

@@ -61,6 +61,7 @@ function buildDailyOHLC(candles) {
 function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const trades   = [];
   let position   = null;
+  let pendingSignal = null; // queued signal — enters on next candle's open
   const LOT_SIZE  = getLotQty();
 
   // VIX
@@ -78,6 +79,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+
+  // Slippage simulation (pts added against you on entry & exit)
+  const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
 
   // PNL-based trailing profit (tiered % of peak)
   const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "200");
@@ -134,7 +138,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: Prev Candle`);
+  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: Prev Candle | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
   console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
@@ -158,6 +162,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       _dailyTradeCount = 0;
       _dailyPnl = 0;
       _slPauseUntilTs = 0;
+      pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
 
@@ -170,6 +175,28 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     const dateIdx = sortedDates.indexOf(candleDate);
     const prevDayOHLC     = dateIdx > 0 ? dailyOHLC[sortedDates[dateIdx - 1]] : null;
     const prevPrevDayOHLC = dateIdx > 1 ? dailyOHLC[sortedDates[dateIdx - 2]] : null;
+
+    // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
+    if (pendingSignal && !position && !isEOD) {
+      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
+      // Recalculate SL relative to actual entry price (keep same pts distance)
+      const slPts = pendingSignal.slPts;
+      const sl = parseFloat((entryPrice + slPts * (pendingSignal.side === "CE" ? -1 : 1)).toFixed(2));
+      position = {
+        side:           pendingSignal.side,
+        entryPrice:     entryPrice,
+        entryTs:        candle.time,
+        stopLoss:       sl,
+        initialStopLoss: sl,
+        slSource:       pendingSignal.slSource,
+        target:         null,
+        candlesHeld:    0,
+        peakPnl:        0,
+      };
+      pendingSignal = null;
+    } else if (pendingSignal && (position || isEOD)) {
+      pendingSignal = null; // can't enter, discard
+    }
 
     // ── EXIT LOGIC ──────────────────────────────────────────────────────────
     if (position) {
@@ -210,12 +237,12 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
 
       // 1. SL hit (Prev Candle initial, PSAR trailing — tightens each candle)
       if (position.side === "CE" && candle.low <= position.stopLoss) {
-        exitPrice  = position.stopLoss;
+        exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "PSAR";
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-        exitPrice  = position.stopLoss;
+        exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "PSAR";
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
@@ -329,19 +356,13 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       continue;
     }
 
+    // Queue signal — will enter on NEXT candle's open (eliminates look-ahead bias)
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
-
-    position = {
+    pendingSignal = {
       side,
-      entryPrice:     candle.close,
-      entryTs:        candle.time,
-      stopLoss:       result.stopLoss,
-      initialStopLoss: result.stopLoss,
-      slSource:       result.slSource || "PSAR",
-      target:         null,
-      candlesHeld:    0,
-      peakPnl:        0,
-
+      slPts:    result.slPts || Math.abs(candle.close - result.stopLoss),
+      slSource: result.slSource || "PSAR",
+      signalTs: candle.time,
     };
   }
 
