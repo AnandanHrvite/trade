@@ -60,6 +60,7 @@ const SETTINGS_SCHEMA = [
       { key: "BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "SL moves to entry after +N pts move", default: "25" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "Bullish momentum: RSI must be above this for CE entry", default: "52" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "Bearish momentum: RSI must be below this for PE entry", default: "48" },
+      { key: "EMA30_FILTER", label: "EMA30 Trend Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Block counter-trend entries (CE below EMA30, PE above EMA30). Disable for more trades in range-bound markets", default: "true" },
       { key: "ADX_MIN_TREND", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.INSTANT, desc: "Minimum ADX to confirm trend (below = ranging, block entry)", default: "25" },
       { key: "EMA_TOUCH_MAX", label: "EMA Touch Max (pts)", type: "number", min: 5, max: 50, step: 5, effect: EFFECT.INSTANT, desc: "Max distance from EMA9 to count as touch (low for CE, high for PE)", default: "20" },
       { key: "EMA_SLOPE_MIN", label: "EMA9 Slope Min (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Min EMA9 slope for entry (pts vs prev candle)", default: "6" },
@@ -234,6 +235,7 @@ const IMMEDIATE_KEYS = new Set([
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
   // Strategy thresholds — read from process.env inside getSignal() on every candle
+  "EMA30_FILTER",
   "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_TOUCH_MAX", "EMA_SLOPE_MIN",
   "STRONG_SLOPE", "STRONG_RSI_CE", "STRONG_RSI_PE",
   "MIN_SAR_DISTANCE", "MIN_CANDLE_BODY",

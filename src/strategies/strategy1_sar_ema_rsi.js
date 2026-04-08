@@ -377,16 +377,19 @@ function getSignal(candles, opts) {
     adxTrending:    isTrending,
   };
 
+  // ── EMA30 filter toggle (configurable via Settings) ─────────────────────
+  var EMA30_FILTER = process.env.EMA30_FILTER !== "false"; // default ON
+
   // ── BUY CE ──────────────────────────────────────────────────────────────────
   if (emaTouchCE && sarOkForCE) {
-    // ── TREND FILTER (first gate — most impactful) ────────────────────────
+    // ── TREND FILTER (most impactful gate — skipped when EMA30_FILTER=false) ──
     // CE only when price is above EMA30 (uptrend) AND EMA9 > EMA21 (momentum aligned up).
     // This single filter eliminates counter-trend CE entries — the biggest losers.
-    if (ema30 !== null && signalCandle.close < ema30) {
+    if (EMA30_FILTER && ema30 !== null && signalCandle.close < ema30) {
       if (!silent) console.log("  ❌ CE TREND FAIL: close " + signalCandle.close + " < EMA30 " + ema30.toFixed(1) + " (below medium-term trend)");
       return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: close < EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
     }
-    if (!silent && ema30 !== null) console.log("  ✓ CE TREND PASS: close > EMA30 " + ema30.toFixed(1) + " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+    if (!silent && ema30 !== null) console.log("  ✓ CE TREND " + (EMA30_FILTER ? "PASS" : "SKIP") + ": close " + (signalCandle.close >= ema30 ? ">" : "<") + " EMA30 " + ema30.toFixed(1) + (EMA30_FILTER ? " | EMA9 > EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a") : " (EMA30 filter OFF)"));
 
     // Sanity check: SAR SL must be BELOW current price for CE
     if (sarSL >= signalCandle.close) {
@@ -470,13 +473,13 @@ function getSignal(candles, opts) {
 
   // ── BUY PE ──────────────────────────────────────────────────────────────────
   if (emaTouchPE && sarOkForPE) {
-    // ── TREND FILTER (first gate — most impactful) ────────────────────────
+    // ── TREND FILTER (most impactful gate — skipped when EMA30_FILTER=false) ──
     // PE only when price is below EMA30 (downtrend) AND EMA9 < EMA21 (momentum aligned down).
-    if (ema30 !== null && signalCandle.close > ema30) {
+    if (EMA30_FILTER && ema30 !== null && signalCandle.close > ema30) {
       if (!silent) console.log("  ❌ PE TREND FAIL: close " + signalCandle.close + " > EMA30 " + ema30.toFixed(1) + " (above medium-term trend)");
       return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: close > EMA30 ₹" + ema30.toFixed(1) + " — counter-trend" });
     }
-    if (!silent && ema30 !== null) console.log("  ✓ PE TREND PASS: close < EMA30 " + ema30.toFixed(1) + " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a"));
+    if (!silent && ema30 !== null) console.log("  ✓ PE TREND " + (EMA30_FILTER ? "PASS" : "SKIP") + ": close " + (signalCandle.close <= ema30 ? "<" : ">") + " EMA30 " + ema30.toFixed(1) + (EMA30_FILTER ? " | EMA9 < EMA21 " + (ema21 ? ema21.toFixed(1) : "n/a") : " (EMA30 filter OFF)"));
 
     // Sanity check: SAR SL must be ABOVE current price for PE
     if (sarSL <= signalCandle.close) {
