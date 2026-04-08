@@ -179,8 +179,16 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
     if (pendingSignal && !position && !isEOD) {
       const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Recalculate SL relative to actual entry price (keep same pts distance)
-      const slPts = pendingSignal.slPts;
+      // Skip if open gapped past the raw SL (entry would be instant loss)
+      const gapBad = (pendingSignal.side === "CE" && entryPrice <= pendingSignal.rawSL)
+                  || (pendingSignal.side === "PE" && entryPrice >= pendingSignal.rawSL);
+      if (gapBad) { pendingSignal = null; }
+    }
+    if (pendingSignal && !position && !isEOD) {
+      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
+      // Recalculate SL: use raw SL level but clamp distance from actual entry
+      const rawGap = Math.abs(entryPrice - pendingSignal.rawSL);
+      const slPts = Math.max(Math.min(rawGap, pendingSignal.maxSlPts), pendingSignal.minSlPts);
       const sl = parseFloat((entryPrice + slPts * (pendingSignal.side === "CE" ? -1 : 1)).toFixed(2));
       position = {
         side:           pendingSignal.side,
@@ -360,7 +368,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
     pendingSignal = {
       side,
-      slPts:    result.slPts || Math.abs(candle.close - result.stopLoss),
+      rawSL:    result.stopLoss, // absolute SL level from strategy
+      maxSlPts: parseFloat(process.env.SCALP_MAX_SL_PTS || "25"),
+      minSlPts: parseFloat(process.env.SCALP_MIN_SL_PTS || "8"),
       slSource: result.slSource || "PSAR",
       signalTs: candle.time,
     };
