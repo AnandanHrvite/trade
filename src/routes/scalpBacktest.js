@@ -79,9 +79,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 
-  // PNL-based trailing profit (₹ amounts)
-  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "300");   // start trailing at ₹300
-  const SCALP_TRAIL_STEP   = parseFloat(process.env.SCALP_TRAIL_STEP || "200");   // step: 300,500,700,900...
+  // PNL-based trailing profit (% of peak)
+  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "200");   // activate trailing at ₹200
+  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "50");      // exit when profit < X% of peak
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -131,7 +131,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, ₹${SCALP_TRAIL_STEP} step | SL: PSAR initial`);
+  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, ${SCALP_TRAIL_PCT}% of peak | SL: ATR-based`);
   console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
   console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
@@ -218,15 +218,14 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING PROFIT — lock at highest reached level: peak 339 w/ start=200,step=100 → lock 300
+      // 2. TRAILING PROFIT — % of peak: exit when profit drops below X% of peak PnL
       if (!exitReason && SCALP_TRAIL_START > 0 && position.peakPnl >= SCALP_TRAIL_START) {
-        const levelsAbove = Math.floor((position.peakPnl - SCALP_TRAIL_START) / SCALP_TRAIL_STEP);
-        const trailFloor = SCALP_TRAIL_START + levelsAbove * SCALP_TRAIL_STEP;
+        const trailFloor = parseFloat((position.peakPnl * SCALP_TRAIL_PCT / 100).toFixed(2));
 
         const curPnl = _runPnl(candle.close);
         if (curPnl <= trailFloor) {
           exitPrice  = _exitPriceForPnl(trailFloor);
-          exitReason = `Trail lock ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
+          exitReason = `Trail ${SCALP_TRAIL_PCT}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
         }
       }
 

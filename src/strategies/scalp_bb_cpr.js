@@ -4,18 +4,17 @@
  * ENTRY:
  *   CE: close >= BB upper + RSI > 55
  *   PE: close <= BB lower + RSI < 45
- *   SL = tighter of (previous candle low/high, PSAR)
- *       with hard cap of SCALP_MAX_SL_PTS (default 50 pts)
+ *   SL = ATR-based (ATR × multiplier), capped at SCALP_MAX_SL_PTS
  *
  * EXIT:
- *   1. Initial SL hit (tighter of prevCandle / PSAR)
- *   2. Trailing profit: ₹300, ₹500, ₹700, ₹900...
- *   3. Trailing SL: tighter of (prevCandle low/high, PSAR) — tightens only
+ *   1. Initial SL hit (ATR-based)
+ *   2. Trailing profit: % of peak PnL (exit when profit drops below X% of peak)
+ *   3. Trailing SL: PSAR only — tightens only
  *   4. PSAR flip → immediate exit
  *   5. EOD / daily loss / max trades (handled by routes)
  */
 
-const { BollingerBands, RSI, PSAR } = require("technicalindicators");
+const { BollingerBands, RSI, PSAR, ATR } = require("technicalindicators");
 
 const NAME        = "SCALP_BB_RSI_V4";
 const DESCRIPTION = "BB + RSI + PSAR trail";
@@ -168,49 +167,45 @@ function getSignal(candles, opts) {
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
-  var MAX_SL_PTS = parseFloat(cfg("SCALP_MAX_SL_PTS", "50"));
-  var prevCandle = candles[candles.length - 2];
+  var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "25"));
+  var ATR_PERIOD  = parseInt(cfg("SCALP_ATR_PERIOD", "14"), 10);
+  var ATR_SL_MULT = parseFloat(cfg("SCALP_ATR_SL_MULT", "1.5"));
 
-  // Reuse PSAR already computed above (sar variable) for SL comparison
-  var _curSar = sar;
+  // Calculate ATR for SL
+  var atrCloses = candles.map(function(c) { return c.close; });
+  var atrArr = ATR.calculate({ period: ATR_PERIOD, high: candles.map(function(c) { return c.high; }), low: candles.map(function(c) { return c.low; }), close: atrCloses });
+  var curATR = atrArr.length > 0 ? atrArr[atrArr.length - 1] : MAX_SL_PTS;
+  var atrSL = Math.min(parseFloat((curATR * ATR_SL_MULT).toFixed(2)), MAX_SL_PTS);
+
+  base.atr = parseFloat(curATR.toFixed(2));
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
-    // SL = max(prevCandle.low, PSAR) — pick tighter (higher) value, hard-capped at MAX_SL_PTS
-    var prevLow = prevCandle ? prevCandle.low : sc.close - MAX_SL_PTS;
-    var candidates = [prevLow];
-    if (_curSar !== null && _curSar < sc.close) candidates.push(_curSar);
-    var sl = parseFloat(Math.max(Math.max.apply(null, candidates), sc.close - MAX_SL_PTS).toFixed(2));
-    var slPts = parseFloat((sc.close - sl).toFixed(2));
-    var slSrc = (_curSar !== null && _curSar < sc.close && _curSar >= prevLow) ? "PSAR" : "prevLow";
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(" + slSrc + ")=" + sl + " [prevLow=" + prevLow + " PSAR=" + (_curSar !== null ? _curSar.toFixed(2) : "n/a") + "]");
+    var sl = parseFloat((sc.close - atrSL).toFixed(2));
+    var slPts = atrSL;
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(ATR)=" + sl + " [ATR=" + curATR.toFixed(2) + " x" + ATR_SL_MULT + "=" + atrSL + " cap=" + MAX_SL_PTS + "]");
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: slSrc === "PSAR" ? "PSAR" : "Prev candle",
+      slSource: "ATR",
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(" + slSrc + ")=" + sl,
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(ATR)=" + sl + " [" + curATR.toFixed(1) + "x" + ATR_SL_MULT + "]",
     });
   }
 
   // PE (Short): price at/below BB lower + RSI < 45
   if (sc.close <= bb.lower && rsi < RSI_PE) {
-    // SL = min(prevCandle.high, PSAR) — pick tighter (lower) value, hard-capped at MAX_SL_PTS
-    var prevHigh = prevCandle ? prevCandle.high : sc.close + MAX_SL_PTS;
-    var candidates = [prevHigh];
-    if (_curSar !== null && _curSar > sc.close) candidates.push(_curSar);
-    var sl = parseFloat(Math.min(Math.min.apply(null, candidates), sc.close + MAX_SL_PTS).toFixed(2));
-    var slPts = parseFloat((sl - sc.close).toFixed(2));
-    var slSrc = (_curSar !== null && _curSar > sc.close && _curSar <= prevHigh) ? "PSAR" : "prevHigh";
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(" + slSrc + ")=" + sl + " [prevHigh=" + prevHigh + " PSAR=" + (_curSar !== null ? _curSar.toFixed(2) : "n/a") + "]");
+    var sl = parseFloat((sc.close + atrSL).toFixed(2));
+    var slPts = atrSL;
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(ATR)=" + sl + " [ATR=" + curATR.toFixed(2) + " x" + ATR_SL_MULT + "=" + atrSL + " cap=" + MAX_SL_PTS + "]");
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: slSrc === "PSAR" ? "PSAR" : "Prev candle",
+      slSource: "ATR",
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(" + slSrc + ")=" + sl,
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(ATR)=" + sl + " [" + curATR.toFixed(1) + "x" + ATR_SL_MULT + "]",
     });
   }
 
@@ -236,7 +231,7 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Trailing SL update: min(prevCandle, PSAR) — pick tighter, tighten only ──
+// ── Trailing SL update: PSAR only — tighten only, never widen ──
 function updateTrailingSL(candles, currentSL, side, opts) {
   opts = opts || {};
   var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
@@ -247,32 +242,19 @@ function updateTrailingSL(candles, currentSL, side, opts) {
 
   var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
   var newSar = sarArr.length > 0 ? sarArr[sarArr.length - 1] : null;
-  var prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
   var close = candles[candles.length - 1].close;
 
+  if (newSar === null) return { sl: currentSL, source: null };
+
   if (side === "CE") {
-    // CE: SL is below price — tighter = higher value
-    var candidates = [];
-    if (newSar !== null && newSar < close) candidates.push({ val: newSar, src: "PSAR" });
-    if (prevCandle) candidates.push({ val: prevCandle.low, src: "Prev candle" });
-    if (candidates.length === 0) return { sl: currentSL, source: null };
-    // Pick the tighter (higher) of prevCandle.low and PSAR
-    var best = candidates.reduce(function(a, b) { return b.val > a.val ? b : a; });
-    // Only tighten (move up), never widen
-    if (best.val > currentSL && best.val < close) {
-      return { sl: parseFloat(best.val.toFixed(2)), source: best.src };
+    // CE: SL is below price — tighter = higher value; only tighten (move up)
+    if (newSar < close && newSar > currentSL) {
+      return { sl: parseFloat(newSar.toFixed(2)), source: "PSAR" };
     }
   } else {
-    // PE: SL is above price — tighter = lower value
-    var candidates = [];
-    if (newSar !== null && newSar > close) candidates.push({ val: newSar, src: "PSAR" });
-    if (prevCandle) candidates.push({ val: prevCandle.high, src: "Prev candle" });
-    if (candidates.length === 0) return { sl: currentSL, source: null };
-    // Pick the tighter (lower) of prevCandle.high and PSAR
-    var best = candidates.reduce(function(a, b) { return b.val < a.val ? b : a; });
-    // Only tighten (move down), never widen
-    if (best.val < currentSL && best.val > close) {
-      return { sl: parseFloat(best.val.toFixed(2)), source: best.src };
+    // PE: SL is above price — tighter = lower value; only tighten (move down)
+    if (newSar > close && newSar < currentSL) {
+      return { sl: parseFloat(newSar.toFixed(2)), source: "PSAR" };
     }
   }
 

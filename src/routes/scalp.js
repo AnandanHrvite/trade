@@ -43,8 +43,8 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "300");
-const _SCALP_TRAIL_STEP    = parseFloat(process.env.SCALP_TRAIL_STEP || "200");
+const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "200");
+const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "50");
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
@@ -587,12 +587,11 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — lock at highest reached level: peak 339 w/ start=200,step=100 → lock 300
+    // 2. TRAILING PROFIT — % of peak: exit when profit drops below X% of peak PnL
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      const levelsAbove = Math.floor((pos.peakPnl - _SCALP_TRAIL_START) / _SCALP_TRAIL_STEP);
-      const trailFloor = _SCALP_TRAIL_START + levelsAbove * _SCALP_TRAIL_STEP;
+      const trailFloor = parseFloat((pos.peakPnl * _SCALP_TRAIL_PCT / 100).toFixed(2));
       if (curPnl <= trailFloor) {
-        squareOff(price, `Trail lock ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+        squareOff(price, `Trail ${_SCALP_TRAIL_PCT}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
         return;
       }
     }
@@ -1504,7 +1503,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PrevCandle \u00b7 Trail \u20b9${_SCALP_TRAIL_START}/\u20b9${_SCALP_TRAIL_STEP} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ATR \u00b7 Trail ${_SCALP_TRAIL_PCT}% from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

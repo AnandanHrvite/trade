@@ -99,11 +99,13 @@ const SETTINGS_SCHEMA = [
       // ── Parabolic SAR (initial SL + trailing) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      // ── Trail profit (₹ PNL levels) ──
-      { key: "SCALP_TRAIL_START", label: "Trail Start (₹)", type: "number", min: 100, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Lock profit at this level (300,500,700...)", default: "300" },
-      { key: "SCALP_TRAIL_STEP", label: "Trail Step (₹)", type: "number", min: 100, max: 500, step: 50, effect: EFFECT.SESSION, desc: "Step between trail levels", default: "200" },
-      // ── Risk management ──
-      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Reject scalp entries with SL > this many pts", default: "50" },
+      // ── Trail profit (% of peak) ──
+      { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "200" },
+      { key: "SCALP_TRAIL_PCT", label: "Trail Keep (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak (50 = keep half)", default: "50" },
+      // ── Risk management (ATR-based SL) ──
+      { key: "SCALP_ATR_PERIOD", label: "ATR Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "ATR calculation period for SL", default: "14" },
+      { key: "SCALP_ATR_SL_MULT", label: "ATR SL Multiplier", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "SL = ATR x multiplier (1.5 = 1.5x ATR)", default: "1.5" },
+      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on ATR-based SL distance", default: "25" },
       { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.SESSION, desc: "CPR range % threshold for narrow CPR filter", default: "33" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
@@ -249,7 +251,8 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_PE_THRESHOLD",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
-  "SCALP_TRAIL_START", "SCALP_TRAIL_STEP",
+  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT",
+  "SCALP_ATR_PERIOD", "SCALP_ATR_SL_MULT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
   "SCALP_MAX_SL_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
