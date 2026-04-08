@@ -313,8 +313,8 @@ function getSignal(candles, opts) {
     currSAR.trend === 1                          &&  // SAR still bullish (hasn't flipped yet)
     ema9SlopeDown                                &&  // EMA9 falling >=3pts confirmed
     signalCandle.close < ema9                    &&  // close is below EMA9
-    rsi < parseFloat(process.env.LOGIC3_RSI_MAX || "42") &&  // bearish momentum
-    (signalCandle.close - currSAR.sar) > parseFloat(process.env.LOGIC3_SAR_GAP || "50")  // SAR lagging behind price
+    rsi < parseFloat(process.env.LOGIC3_RSI_MAX || "46") &&  // bearish momentum (loosened: 42→46 to catch more early downmoves)
+    (signalCandle.close - currSAR.sar) > parseFloat(process.env.LOGIC3_SAR_GAP || "30")  // SAR lagging behind price (loosened: 50→30 for 15-min scale)
   );
 
   // Logic 3 CE: SAR still BEAR but price is in strong bullish momentum (mirror of PE Logic 3)
@@ -325,13 +325,13 @@ function getSignal(candles, opts) {
   //   d) RSI > LOGIC3_RSI_MIN — bullish momentum (mirror of PE's RSI < LOGIC3_RSI_MAX)
   //   e) SAR dot is 50+ pts ABOVE current close — SAR lagging behind price
   //   SL = EMA9 value (SAR too far above to be useful as stop)
-  var LOGIC3_RSI_MIN_CE = parseFloat(process.env.LOGIC3_RSI_MIN_CE || "58");
+  var LOGIC3_RSI_MIN_CE = parseFloat(process.env.LOGIC3_RSI_MIN_CE || "53");
   var sarBearOverrideCE = (
     currSAR.trend === -1                         &&  // SAR still bearish (hasn't flipped yet)
     ema9SlopeUp                                  &&  // EMA9 rising >= EMA_SLOPE_MIN confirmed
     signalCandle.close > ema9                    &&  // close is above EMA9
     rsi > LOGIC3_RSI_MIN_CE                      &&  // bullish momentum
-    (currSAR.sar - signalCandle.close) > parseFloat(process.env.LOGIC3_SAR_GAP || "50")  // SAR lagging above price
+    (currSAR.sar - signalCandle.close) > parseFloat(process.env.LOGIC3_SAR_GAP || "30")  // SAR lagging above price (loosened: 50→30 for 15-min scale)
   );
 
   // Combined SAR condition — either already positioned OR just flipped OR strong override
