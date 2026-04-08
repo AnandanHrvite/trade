@@ -938,7 +938,7 @@ router.get("/status", (req, res) => {
 
   // VIX details for top-bar display
   const _vix          = getCachedVix();
-  const _vixEnabled   = vixFilter.VIX_ENABLED;
+  const _vixEnabled   = process.env.SCALP_VIX_ENABLED === "true";
   const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
   const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
 

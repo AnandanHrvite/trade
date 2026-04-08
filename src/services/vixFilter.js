@@ -157,8 +157,8 @@ function buildVixLookup(vixCandles) {
  * @param {string} signalStrength - "STRONG" or "MARGINAL"
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
-function checkBacktestVix(vix, signalStrength) {
-  if (!getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
+function checkBacktestVix(vix, signalStrength, { force = false } = {}) {
+  if (!force && !getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
     return { allowed: true, vix: null, reason: "VIX data unavailable for this date — allowing entry (fail-open)" };

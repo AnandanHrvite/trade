@@ -342,9 +342,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     if (candle.time < _slPauseUntilTs) continue;
 
     // VIX check
-    if (vixFilter.VIX_ENABLED) {
+    if (process.env.SCALP_VIX_ENABLED === "true") {
       const _btVix = lookupVix(candle.time);
-      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG");
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { force: true });
       if (!vixCheck.allowed) continue;
     }
 
@@ -434,7 +434,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     delta:       DELTA,
     thetaPerDay: THETA_DAY,
     finalCapital: parseFloat((capital + totalPnl).toFixed(2)),
-    vixEnabled:  vixFilter.VIX_ENABLED,
+    vixEnabled:  process.env.SCALP_VIX_ENABLED === "true",
     profitFactor,
     expectancy,
     maxLoss:     parseFloat(parseFloat(maxLoss).toFixed(2)),
@@ -513,7 +513,7 @@ ${modalJS()}
   try {
     const [candles, vixCandles] = await Promise.all([
       fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
-      vixFilter.VIX_ENABLED
+      process.env.SCALP_VIX_ENABLED === "true"
         ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
         : Promise.resolve([]),
     ]);
