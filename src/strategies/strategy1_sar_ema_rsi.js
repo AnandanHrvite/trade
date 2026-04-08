@@ -317,19 +317,40 @@ function getSignal(candles, opts) {
     (signalCandle.close - currSAR.sar) > parseFloat(process.env.LOGIC3_SAR_GAP || "50")  // SAR lagging behind price
   );
 
+  // Logic 3 CE: SAR still BEAR but price is in strong bullish momentum (mirror of PE Logic 3)
+  //   Allow CE entry when ALL of these are true:
+  //   a) SAR still bearish (dots above — hasn't flipped yet, lagging)
+  //   b) EMA9 slope rising >= EMA_SLOPE_MIN (bullish directional conviction)
+  //   c) Candle closes ABOVE EMA9 — price decisively crossed over
+  //   d) RSI > LOGIC3_RSI_MIN — bullish momentum (mirror of PE's RSI < LOGIC3_RSI_MAX)
+  //   e) SAR dot is 50+ pts ABOVE current close — SAR lagging behind price
+  //   SL = EMA9 value (SAR too far above to be useful as stop)
+  var LOGIC3_RSI_MIN_CE = parseFloat(process.env.LOGIC3_RSI_MIN_CE || "58");
+  var sarBearOverrideCE = (
+    currSAR.trend === -1                         &&  // SAR still bearish (hasn't flipped yet)
+    ema9SlopeUp                                  &&  // EMA9 rising >= EMA_SLOPE_MIN confirmed
+    signalCandle.close > ema9                    &&  // close is above EMA9
+    rsi > LOGIC3_RSI_MIN_CE                      &&  // bullish momentum
+    (currSAR.sar - signalCandle.close) > parseFloat(process.env.LOGIC3_SAR_GAP || "50")  // SAR lagging above price
+  );
+
   // Combined SAR condition — either already positioned OR just flipped OR strong override
   // PLUS EMA9 slope gate: CE requires rising EMA9, PE requires falling EMA9
-  var sarOkForCE = (sarAlreadyBullish || sarJustFlippedBull) && ema9SlopeUp;
+  var sarOkForCE = (sarAlreadyBullish || sarJustFlippedBull || sarBearOverrideCE) && ema9SlopeUp;
   var sarOkForPE = (sarAlreadyBearish || sarJustFlippedBear || sarBullOverridePE) && ema9SlopeDown;
 
-  // SL: normally the SAR dot value. For the bull-override PE case, use EMA9
-  // (SAR is too far below price to be a useful stop — EMA9 is the resistance level)
+  // SL: normally the SAR dot value. For override cases, use EMA9
+  // (SAR is too far from price to be a useful stop — EMA9 is the support/resistance level)
   var sarSL = sarBullOverridePE
+    ? Math.round(ema9 * 100) / 100
+    : sarBearOverrideCE
     ? Math.round(ema9 * 100) / 100
     : Math.round(currSAR.sar * 100) / 100;
 
   // Label for logging
-  var sarLabelCE = sarJustFlippedBull ? "SAR_FLIP_BULL" : "SAR_BULL";
+  var sarLabelCE = sarJustFlippedBull ? "SAR_FLIP_BULL"
+                 : sarBearOverrideCE  ? "SAR_BEAR_OVERRIDE(EMA_SL)"
+                 : "SAR_BULL";
   var sarLabelPE = sarJustFlippedBear ? "SAR_FLIP_BEAR"
                  : sarBullOverridePE  ? "SAR_BULL_OVERRIDE(EMA_SL)"
                  : "SAR_BEAR";
@@ -402,14 +423,14 @@ function getSignal(candles, opts) {
     if (!silent) console.log("  ✓ CE gate PASS: SAR SL " + sarSL + " < close " + signalCandle.close + " (gap=" + (signalCandle.close - sarSL).toFixed(1) + "pt)");
     var MIN_SAR_DIST = parseFloat(process.env.MIN_SAR_DISTANCE || "45");
     var sarDistCE = Math.round((signalCandle.close - sarSL) * 100) / 100;
-    if (sarDistCE < MIN_SAR_DIST) {
+    if (!sarBearOverrideCE && sarDistCE < MIN_SAR_DIST) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt < " + MIN_SAR_DIST + "pt minimum (SL within candle noise)");
       return Object.assign({}, base, {
         signal: "NONE",
         reason: "CE blocked: SAR too close (gap=" + sarDistCE + " pts < " + MIN_SAR_DIST + " min for 15-min) — insufficient buffer",
       });
     }
-    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt >=" + MIN_SAR_DIST + "pt");
+    if (!silent) console.log("  ✓ CE gate PASS: SAR gap " + sarDistCE + "pt" + (sarBearOverrideCE ? " (Logic3 EMA-SL — min check skipped)" : " >=" + MIN_SAR_DIST + "pt"));
     var MAX_SAR_DIST = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
     if (sarDistCE > MAX_SAR_DIST) {
       if (!silent) console.log("  ❌ CE gate FAIL: SAR gap " + sarDistCE + "pt > " + MAX_SAR_DIST + "pt max — use Manual CE if needed");
@@ -577,7 +598,12 @@ function getSignal(candles, opts) {
     noTouchReason.push("No EMA9 touch (low=" + signalCandle.low + " gap=" + ceDist + "pt | high=" + signalCandle.high + " gap=" + peDist + "pt | EMA9=" + ema9.toFixed(2) + " | max=" + EMA_TOUCH_MAX + "pt)");
   } else if (emaTouchCE && !sarOkForCE) {
     var ceBlock = "CE EMA touch but blocked:";
-    if (!sarAlreadyBullish && !sarJustFlippedBull) ceBlock += " SAR bearish (dots above, trend=-1) — no flip either";
+    if (!sarAlreadyBullish && !sarJustFlippedBull && !sarBearOverrideCE) {
+      ceBlock += " SAR bearish (dots above, trend=-1) — no flip, no override" +
+        " (need: EMA9 rising>=" + EMA_SLOPE_MIN + "pt + close>EMA9 + RSI>" + LOGIC3_RSI_MIN_CE + " + SAR 50pts above)" +
+        " | SAR=" + currSAR.sar + " close=" + signalCandle.close +
+        " gap=" + (currSAR.sar - signalCandle.close).toFixed(1) + "pts";
+    }
     if (!ema9SlopeUp) ceBlock += " | EMA9 slope=" + ema9SlopeValue + "pts < +" + EMA_SLOPE_MIN + " (flat/falling EMA — no CE on drifting EMA9)";
     noTouchReason.push(ceBlock);
   } else if (emaTouchPE && !sarOkForPE) {

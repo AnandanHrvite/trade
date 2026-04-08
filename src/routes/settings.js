@@ -69,8 +69,9 @@ const SETTINGS_SCHEMA = [
       { key: "STRONG_RSI_PE", label: "STRONG RSI PE (<)", type: "number", min: 30, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "RSI must be below this for STRONG PE signal", default: "40" },
       { key: "MIN_SAR_DISTANCE", label: "Min SL Distance (pts)", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Reject entries with SL closer than this (too tight = noise)", default: "45" },
       { key: "MIN_CANDLE_BODY", label: "Min Candle Body (pts)", type: "number", min: 3, max: 25, step: 1, effect: EFFECT.INSTANT, desc: "Min candle body size for valid entry (filters dojis)", default: "10" },
-      { key: "LOGIC3_RSI_MAX", label: "Logic3 RSI Max (<)", type: "number", min: 35, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "PE override when SAR still bull: RSI must be below this", default: "42" },
-      { key: "LOGIC3_SAR_GAP", label: "Logic3 SAR Gap (pts)", type: "number", min: 20, max: 150, step: 5, effect: EFFECT.INSTANT, desc: "PE override: SAR must be this many pts below price (lagging)", default: "50" },
+      { key: "LOGIC3_RSI_MAX", label: "Logic3 PE RSI Max (<)", type: "number", min: 35, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "PE override when SAR still bull: RSI must be below this", default: "42" },
+      { key: "LOGIC3_RSI_MIN_CE", label: "Logic3 CE RSI Min (>)", type: "number", min: 50, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE override when SAR still bear: RSI must be above this", default: "58" },
+      { key: "LOGIC3_SAR_GAP", label: "Logic3 SAR Gap (pts)", type: "number", min: 20, max: 150, step: 5, effect: EFFECT.INSTANT, desc: "SAR override: SAR must be this many pts from price (lagging)", default: "50" },
       { key: "TRAIL_ACTIVATE_PTS", label: "Trail Activate (pts)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Min profit before trail starts", default: "12" },
       { key: "TRAIL_TIER1_UPTO", label: "T1 Upto (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "0 to N pts profit → T1 gap", default: "30" },
       { key: "TRAIL_TIER1_GAP", label: "T1 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap during T1 (widest)", default: "40" },
@@ -239,7 +240,7 @@ const IMMEDIATE_KEYS = new Set([
   "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_TOUCH_MAX", "EMA_SLOPE_MIN",
   "STRONG_SLOPE", "STRONG_RSI_CE", "STRONG_RSI_PE",
   "MIN_SAR_DISTANCE", "MIN_CANDLE_BODY",
-  "LOGIC3_RSI_MAX", "LOGIC3_SAR_GAP",
+  "LOGIC3_RSI_MAX", "LOGIC3_RSI_MIN_CE", "LOGIC3_SAR_GAP",
 ]);
 
 // These are cached as const at module load — need session stop+start

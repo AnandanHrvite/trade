@@ -325,19 +325,6 @@ ${buildSidebar('backtest', liveActive)}
     ${s.vixEnabled ? `<div class="sc ${s.vixBlocked > 0 ? 'red' : 'green'}"><div class="sc-label">VIX Filter</div><div class="sc-val">${s.vixBlocked}</div><div class="sc-sub">entries blocked (max=${s.vixMaxEntry}, strong-only=${s.vixStrongOnly})</div></div>` : ''}
   </div>
 
-  ${s.rejectBreakdown && s.rejectBreakdown.length > 0 ? `
-  <div style="margin-bottom:16px;">
-    <div class="tbar">
-      <span class="tbar-label">Signal Rejection Breakdown</span>
-      <span class="tbar-count">(why entries were blocked while flat)</span>
-    </div>
-    <div class="tw">
-      <table><thead><tr><th style="text-align:right;width:60px;">Count</th><th>Rejection Reason</th></tr></thead><tbody>
-      ${s.rejectBreakdown.map(r => `<tr><td style="text-align:right;font-weight:600;color:#f59e0b;">${r.count}</td><td style="font-size:0.82rem;opacity:0.85;">${r.reason}</td></tr>`).join('')}
-      </tbody></table>
-    </div>
-  </div>` : ''}
-
   <!-- Day View (toggleable) -->
   <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
     <div class="tbar">
@@ -426,6 +413,20 @@ ${buildSidebar('backtest', liveActive)}
         <div id="anaRiskMetrics"></div>
       </div>
     </div>
+
+    ${s.rejectBreakdown && s.rejectBreakdown.length > 0 ? `
+    <div style="border-top:0.5px solid #0e1428;margin:16px 0 12px;padding-top:12px;">
+      <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#f59e0b;font-weight:700;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;">🔍 Signal Rejection Breakdown (why entries were blocked while flat)</div>
+    </div>
+    <div class="ana-row3">
+      <div class="ana-mini" style="grid-column:1/-1;">
+        <div style="overflow-x:auto;max-height:350px;overflow-y:auto;">
+          <table class="ana-tbl"><thead><tr><th style="text-align:right;width:70px;">Count</th><th>Rejection Reason</th></tr></thead><tbody>
+          ${s.rejectBreakdown.map(r => `<tr><td style="text-align:right;font-weight:600;color:#f59e0b;">${r.count}</td><td style="font-size:0.82rem;opacity:0.85;">${r.reason}</td></tr>`).join('')}
+          </tbody></table>
+        </div>
+      </div>
+    </div>` : ''}
   </div>
 
   <!-- Filter bar -->
