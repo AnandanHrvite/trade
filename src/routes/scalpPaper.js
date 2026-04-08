@@ -162,6 +162,9 @@ async function fetchOptionLtp(symbol) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
       if (ltp && ltp > 0) return parseFloat(ltp);
+      log(`⚠️ [SCALP-PAPER] fetchOptionLtp no LTP in response for ${symbol}: ${JSON.stringify(v).slice(0, 200)}`);
+    } else {
+      log(`⚠️ [SCALP-PAPER] fetchOptionLtp bad response for ${symbol}: s=${response?.s}, d.length=${response?.d?.length}`);
     }
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] fetchOptionLtp error for ${symbol}: ${err.message}`);
@@ -1024,7 +1027,7 @@ router.get("/status", (req, res) => {
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
             <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${(pos.qty / getLotQty()).toFixed(0)} lot)</span></div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65)).toFixed(0)} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">

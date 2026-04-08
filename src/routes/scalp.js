@@ -1270,7 +1270,7 @@ router.get("/status", (req, res) => {
           <div style="width:1px;height:44px;background:#134e35;"></div>
           <div>
             <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Lots</div>
-            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${Math.round(pos.qty / 75)} lot)</span></div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty} <span style="font-size:0.72rem;color:#4a6080;">(${Math.round(pos.qty / (instrumentConfig.LOT_SIZE[instrumentConfig.INSTRUMENT] || 65))} lot)</span></div>
           </div>
           <div style="width:1px;height:44px;background:#134e35;flex-shrink:0;"></div>
           <div style="flex:1;min-width:200px;">
