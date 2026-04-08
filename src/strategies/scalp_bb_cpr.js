@@ -4,17 +4,17 @@
  * ENTRY:
  *   CE: close >= BB upper + RSI > 55
  *   PE: close <= BB lower + RSI < 45
- *   SL = ATR-based (ATR × multiplier), capped at SCALP_MAX_SL_PTS
+ *   SL = Previous candle low (CE) / high (PE), capped at SCALP_MAX_SL_PTS, floored at SCALP_MIN_SL_PTS
  *
  * EXIT:
- *   1. Initial SL hit (ATR-based)
+ *   1. Initial SL hit (Prev Candle)
  *   2. Trailing profit: % of peak PnL (exit when profit drops below X% of peak)
  *   3. Trailing SL: PSAR only — tightens only
  *   4. PSAR flip → immediate exit
  *   5. EOD / daily loss / max trades (handled by routes)
  */
 
-const { BollingerBands, RSI, PSAR, ATR } = require("technicalindicators");
+const { BollingerBands, RSI, PSAR } = require("technicalindicators");
 
 const NAME        = "SCALP_BB_RSI_V4";
 const DESCRIPTION = "BB + RSI + PSAR trail";
@@ -168,44 +168,40 @@ function getSignal(candles, opts) {
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
   var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "25"));
-  var ATR_PERIOD  = parseInt(cfg("SCALP_ATR_PERIOD", "14"), 10);
-  var ATR_SL_MULT = parseFloat(cfg("SCALP_ATR_SL_MULT", "1.5"));
+  var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
 
-  // Calculate ATR for SL
-  var atrCloses = candles.map(function(c) { return c.close; });
-  var atrArr = ATR.calculate({ period: ATR_PERIOD, high: candles.map(function(c) { return c.high; }), low: candles.map(function(c) { return c.low; }), close: atrCloses });
-  var curATR = atrArr.length > 0 ? atrArr[atrArr.length - 1] : MAX_SL_PTS;
-  var atrSL = Math.min(parseFloat((curATR * ATR_SL_MULT).toFixed(2)), MAX_SL_PTS);
-
-  base.atr = parseFloat(curATR.toFixed(2));
+  // Previous candle for SL
+  var prevCandle = candles[candles.length - 2];
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
-    var sl = parseFloat((sc.close - atrSL).toFixed(2));
-    var slPts = atrSL;
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(ATR)=" + sl + " [ATR=" + curATR.toFixed(2) + " x" + ATR_SL_MULT + "=" + atrSL + " cap=" + MAX_SL_PTS + "]");
+    var rawSL = prevCandle.low;
+    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close - slPts).toFixed(2));
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(PrevLow)=" + sl + " [prev.low=" + prevCandle.low + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: "ATR",
+      slSource: "Prev Candle",
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(ATR)=" + sl + " [" + curATR.toFixed(1) + "x" + ATR_SL_MULT + "]",
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(PrevLow)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
   // PE (Short): price at/below BB lower + RSI < 45
   if (sc.close <= bb.lower && rsi < RSI_PE) {
-    var sl = parseFloat((sc.close + atrSL).toFixed(2));
-    var slPts = atrSL;
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(ATR)=" + sl + " [ATR=" + curATR.toFixed(2) + " x" + ATR_SL_MULT + "=" + atrSL + " cap=" + MAX_SL_PTS + "]");
+    var rawSL = prevCandle.high;
+    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close + slPts).toFixed(2));
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(PrevHigh)=" + sl + " [prev.high=" + prevCandle.high + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: "ATR",
+      slSource: "Prev Candle",
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(ATR)=" + sl + " [" + curATR.toFixed(1) + "x" + ATR_SL_MULT + "]",
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(PrevHigh)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 

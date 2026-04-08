@@ -2,16 +2,16 @@
  * STRATEGY 5: SAR_EMA9_RSI
  *
  * ENTRY — BUY_CE (bullish):
- *   TRIGGER    : Candle HIGH touches/crosses EMA9 intra-candle (candle.high >= ema9)
- *                → price pushed up into EMA9 during the candle
+ *   TRIGGER    : Candle LOW within 20pt of EMA9 AND high >= EMA9 (candle.low <= ema9+20)
+ *                → price pulled back to EMA9 and bounced (true touch, not floating above)
  *   CONFIRM 1  : SAR trend = 1 (uptrend — dots are BELOW price, supporting the move up)
  *   CONFIRM 2  : RSI > 55 (bullish momentum — tightened from 53 in v56)
  *   CONFIRM 3  : EMA9 slope rising >= 6pts vs previous candle (v56: raised from 3)
  *   STOP LOSS  : Current SAR dot value (sitting below price)
  *
  * ENTRY — BUY_PE (bearish):
- *   TRIGGER    : Candle LOW touches/crosses EMA9 intra-candle (candle.low <= ema9)
- *                → price pushed down into EMA9 during the candle
+ *   TRIGGER    : Candle HIGH within 20pt of EMA9 AND low <= EMA9 (candle.high >= ema9-20)
+ *                → price rallied to EMA9 and rejected (true touch, not floating below)
  *   CONFIRM 1  : SAR trend = -1 (downtrend — dots are ABOVE price, pressing down)
  *   CONFIRM 2  : RSI < 45 (bearish momentum — tightened from 49 in v56)
  *   CONFIRM 3  : EMA9 slope falling >= 6pts vs previous candle (v56: raised from 3)
@@ -120,15 +120,15 @@ function isInTradingWindow(unixSec) {
  * TWO valid entry scenarios — both fire BUY_CE or BUY_PE:
  *
  * LOGIC 1 — EMA touch, SAR already positioned, slope confirmed:
- *   CE: candle.high >= EMA9  AND  currSAR.trend=1 (dots already below price)  AND  RSI > 53  AND  EMA9 slope rising >=3pts
- *   PE: candle.low  <= EMA9  AND  currSAR.trend=-1 (dots already above price) AND  RSI < 47  AND  EMA9 slope falling >=3pts
+ *   CE: candle.low within 20pt of EMA9 AND high >= EMA9  AND  currSAR.trend=1  AND  RSI > 53  AND  EMA9 slope rising >=3pts
+ *   PE: candle.high within 20pt of EMA9 AND low <= EMA9  AND  currSAR.trend=-1 AND  RSI < 47  AND  EMA9 slope falling >=3pts
  *
  * LOGIC 2 — EMA touch causes SAR to flip on the same candle, slope confirmed:
- *   CE: candle.high >= EMA9  AND  SAR flipped -1→1 THIS candle (just moved below) AND  RSI > 53  AND  EMA9 slope rising >=3pts
- *   PE: candle.low  <= EMA9  AND  SAR flipped 1→-1 THIS candle (just moved above) AND  RSI < 47  AND  EMA9 slope falling >=3pts
+ *   CE: candle.low within 20pt of EMA9 AND high >= EMA9  AND  SAR flipped -1→1 THIS candle  AND  RSI > 53  AND  EMA9 slope rising >=3pts
+ *   PE: candle.high within 20pt of EMA9 AND low <= EMA9  AND  SAR flipped 1→-1 THIS candle  AND  RSI < 47  AND  EMA9 slope falling >=3pts
  *
  * LOGIC 3 — SAR still BULL but strong bearish momentum override (PE only):
- *   PE: candle.low <= EMA9  AND  EMA9 falling >=3pts  AND  close < EMA9
+ *   PE: candle.high within 20pt of EMA9 AND low <= EMA9  AND  EMA9 falling >=3pts  AND  close < EMA9
  *       AND  RSI < 45  AND  SAR dot is 50+ pts below close (SAR lagging behind price)
  *   Stop loss = EMA9 value (SAR too far below to be useful stop)
  *   This catches fast downmoves where SAR hasn't flipped yet.
@@ -271,8 +271,13 @@ function getSignal(candles, opts) {
   var rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
 
   // ── EMA9 intra-candle touch ───────────────────────────────────────────────
-  var emaTouchCE = signalCandle.high >= ema9;
-  var emaTouchPE = signalCandle.low  <= ema9;
+  // A true "touch" means price pulled back NEAR the EMA, not just that price
+  // is somewhere above/below it.  CE: candle low must be within TOUCH_MAX of
+  // EMA9 (price dipped toward EMA then bounced).  PE: candle high must be
+  // within TOUCH_MAX of EMA9 (price rallied toward EMA then rejected).
+  var EMA_TOUCH_MAX = parseFloat(process.env.EMA_TOUCH_MAX || "20");  // max pts from EMA9 to count as "touch"
+  var emaTouchCE = signalCandle.low <= ema9 + EMA_TOUCH_MAX && signalCandle.high >= ema9;
+  var emaTouchPE = signalCandle.high >= ema9 - EMA_TOUCH_MAX && signalCandle.low  <= ema9;
 
   // Tiebreaker: if candle straddles EMA9 (both true), use close direction
   // Close above EMA9 → favour CE touch; close below → favour PE touch
@@ -449,7 +454,7 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, {
         signal:         "BUY_CE",
         signalStrength: ceStrength,
-        reason: "EMA9 touch CE (high=" + signalCandle.high + " >= EMA9=" + ema9.toFixed(2) + ")" +
+        reason: "EMA9 touch CE (low=" + signalCandle.low + " within " + EMA_TOUCH_MAX + "pt of EMA9=" + ema9.toFixed(2) + ")" +
                 " | " + sarLabelCE + " @ " + currSAR.sar +
                 " | RSI=" + rsi.toFixed(1) +
                 " | EMA9slope=+" + ema9SlopeValue + "pts (>=" + EMA_SLOPE_MIN + " ok)" +
@@ -547,7 +552,7 @@ function getSignal(candles, opts) {
       return Object.assign({}, base, {
         signal:         "BUY_PE",
         signalStrength: peStrength,
-        reason: "EMA9 touch PE (low=" + signalCandle.low + " <= EMA9=" + ema9.toFixed(2) + ")" +
+        reason: "EMA9 touch PE (high=" + signalCandle.high + " within " + EMA_TOUCH_MAX + "pt of EMA9=" + ema9.toFixed(2) + ")" +
                 " | " + sarLabelPE + " @ " + currSAR.sar +
                 " | RSI=" + rsi.toFixed(1) +
                 " | EMA9slope=" + ema9SlopeValue + "pts (<=-" + EMA_SLOPE_MIN + " ok)" +
@@ -564,7 +569,9 @@ function getSignal(candles, opts) {
   // ── No signal ───────────────────────────────────────────────────────────────
   var noTouchReason = [];
   if (!emaTouchCE && !emaTouchPE) {
-    noTouchReason.push("No EMA9 touch (high=" + signalCandle.high + " low=" + signalCandle.low + " EMA9=" + ema9.toFixed(2) + ")");
+    var ceDist = (signalCandle.low - ema9).toFixed(1);
+    var peDist = (ema9 - signalCandle.high).toFixed(1);
+    noTouchReason.push("No EMA9 touch (low=" + signalCandle.low + " gap=" + ceDist + "pt | high=" + signalCandle.high + " gap=" + peDist + "pt | EMA9=" + ema9.toFixed(2) + " | max=" + EMA_TOUCH_MAX + "pt)");
   } else if (emaTouchCE && !sarOkForCE) {
     var ceBlock = "CE EMA touch but blocked:";
     if (!sarAlreadyBullish && !sarJustFlippedBull) ceBlock += " SAR bearish (dots above, trend=-1) — no flip either";

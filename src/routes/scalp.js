@@ -578,7 +578,7 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (ATR initial, PSAR trailing)
+    // 1. SL hit (Prev Candle initial, PSAR trailing)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
@@ -1050,18 +1050,22 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = ATR-based, hard-capped at MAX_SL_PTS
+  // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
   const candles = state.candles || [];
   const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
-  const ATR_SL_MULT = parseFloat(process.env.SCALP_ATR_SL_MULT || "1.5");
-  const sig = candles.length >= 30 ? scalpStrategy.getSignal(candles, { silent: true }) : null;
-  const atrSL = sig && sig.atr ? Math.min(parseFloat((sig.atr * ATR_SL_MULT).toFixed(2)), MAX_SL_PTS) : MAX_SL_PTS;
-  let sl = side === "CE" ? parseFloat((spot - atrSL).toFixed(2)) : parseFloat((spot + atrSL).toFixed(2));
-  if ((side === "CE" && sl >= spot) || (side === "PE" && sl <= spot)) {
+  const MIN_SL_PTS  = parseFloat(process.env.SCALP_MIN_SL_PTS || "8");
+  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+  let sl;
+  if (prevCandle) {
+    const rawSL = side === "CE" ? prevCandle.low : prevCandle.high;
+    const slPts = Math.max(Math.min(Math.abs(spot - rawSL), MAX_SL_PTS), MIN_SL_PTS);
+    sl = side === "CE" ? parseFloat((spot - slPts).toFixed(2)) : parseFloat((spot + slPts).toFixed(2));
+  } else {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
+  const sig = candles.length >= 30 ? scalpStrategy.getSignal(candles, { silent: true }) : null;
 
-  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (ATR=${sig && sig.atr || 'n/a'})`);
+  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
   if (!state.position) return res.status(400).json({ success: false, error: "Entry failed — check logs for details." });
   return res.json({ success: true, spot, side, sl });
@@ -1342,7 +1346,7 @@ router.get("/status", (req, res) => {
           <div id="ax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (ATR)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
         </div>
@@ -1507,7 +1511,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ATR \u00b7 Trail ${_SCALP_TRAIL_PCT}%+ tiered from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail ${_SCALP_TRAIL_PCT}%+ tiered from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

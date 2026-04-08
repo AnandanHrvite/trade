@@ -61,6 +61,7 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "Bullish momentum: RSI must be above this for CE entry", default: "52" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "Bearish momentum: RSI must be below this for PE entry", default: "48" },
       { key: "ADX_MIN_TREND", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.INSTANT, desc: "Minimum ADX to confirm trend (below = ranging, block entry)", default: "25" },
+      { key: "EMA_TOUCH_MAX", label: "EMA Touch Max (pts)", type: "number", min: 5, max: 50, step: 5, effect: EFFECT.INSTANT, desc: "Max distance from EMA9 to count as touch (low for CE, high for PE)", default: "20" },
       { key: "EMA_SLOPE_MIN", label: "EMA9 Slope Min (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.INSTANT, desc: "Min EMA9 slope for entry (pts vs prev candle)", default: "6" },
       { key: "STRONG_SLOPE", label: "STRONG Slope (pts)", type: "number", min: 6, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "EMA9 slope >= this for STRONG signal (intra-candle entry)", default: "9" },
       { key: "STRONG_RSI_CE", label: "STRONG RSI CE (>)", type: "number", min: 50, max: 70, step: 1, effect: EFFECT.INSTANT, desc: "RSI must be above this for STRONG CE signal", default: "58" },
@@ -103,10 +104,9 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "200" },
       { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Base: exit when profit drops below X% of peak", default: "50" },
       { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows (e.g. 1000:60,3000:70,5000:80,10000:90)", default: "1000:60,3000:70,5000:80,10000:90" },
-      // ── Risk management (ATR-based SL) ──
-      { key: "SCALP_ATR_PERIOD", label: "ATR Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "ATR calculation period for SL", default: "14" },
-      { key: "SCALP_ATR_SL_MULT", label: "ATR SL Multiplier", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "SL = ATR x multiplier (1.5 = 1.5x ATR)", default: "1.5" },
-      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on ATR-based SL distance", default: "25" },
+      // ── Risk management (Prev Candle SL) ──
+      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on prev candle SL distance", default: "25" },
+      { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on prev candle SL (prevents too-tight SL on tiny candles)", default: "8" },
       { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow %", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.SESSION, desc: "CPR range % threshold for narrow CPR filter", default: "33" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
@@ -233,7 +233,7 @@ const IMMEDIATE_KEYS = new Set([
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
   // Strategy thresholds — read from process.env inside getSignal() on every candle
-  "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_SLOPE_MIN",
+  "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_TOUCH_MAX", "EMA_SLOPE_MIN",
   "STRONG_SLOPE", "STRONG_RSI_CE", "STRONG_RSI_PE",
   "MIN_SAR_DISTANCE", "MIN_CANDLE_BODY",
   "LOGIC3_RSI_MAX", "LOGIC3_SAR_GAP",
@@ -253,9 +253,8 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_PE_THRESHOLD",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
   "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS",
-  "SCALP_ATR_PERIOD", "SCALP_ATR_SL_MULT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
-  "SCALP_MAX_SL_PTS", "SCALP_CPR_NARROW_PCT",
+  "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
 ]);
 

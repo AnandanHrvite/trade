@@ -134,7 +134,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: ATR-based`);
+  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: Prev Candle`);
   console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
   console.log(`   CPR Narrow threshold: ${narrowPct}%`);
   console.log("══════════════════════════════════════════════");
@@ -208,7 +208,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       // EXIT: 1. PSAR SL  2. Trail profit  3. PSAR flip  4. PSAR trail  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. SL hit (ATR initial, PSAR trailing — tightens each candle)
+      // 1. SL hit (Prev Candle initial, PSAR trailing — tightens each candle)
       if (position.side === "CE" && candle.low <= position.stopLoss) {
         exitPrice  = position.stopLoss;
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
