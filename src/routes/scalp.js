@@ -666,7 +666,7 @@ function onCandleClose(bar) {
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
-      if (vix.value > vixMax) { log(`⏭️ [SCALP-LIVE] SKIP: VIX ${vix.value.toFixed(1)} > max ${vixMax}`); return; }
+      if (vix > vixMax) { log(`⏭️ [SCALP-LIVE] SKIP: VIX ${vix.toFixed(1)} > max ${vixMax}`); return; }
     }
   }
 
@@ -962,7 +962,7 @@ router.get("/start", async (req, res) => {
 
   if (process.env.SCALP_VIX_ENABLED === "true") {
     resetVixCache();
-    fetchLiveVix().catch(() => {});
+    fetchLiveVix({ force: true }).catch(() => {});
   }
 
   // ── Position reconciliation — check Fyers for orphaned positions ──────────

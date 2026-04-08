@@ -38,8 +38,8 @@ const VIX_CACHE_TTL = 60_000; // 60 seconds
  * Cached for 60 seconds — VIX doesn't change tick-to-tick.
  * Returns null if fetch fails (filter becomes permissive on failure).
  */
-async function fetchLiveVix() {
-  if (!getVixEnabled()) return null;
+async function fetchLiveVix({ force = false } = {}) {
+  if (!force && !getVixEnabled()) return null;
 
   const now = Date.now();
   if (_cachedVix !== null && (now - _cachedVixTs) < VIX_CACHE_TTL) {

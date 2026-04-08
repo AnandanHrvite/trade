@@ -502,8 +502,8 @@ function onCandleClose(bar) {
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
-      if (vix.value > vixMax) {
-        log(`⏭️ [SCALP-PAPER] SKIP: VIX ${vix.value.toFixed(1)} > max ${vixMax}`);
+      if (vix > vixMax) {
+        log(`⏭️ [SCALP-PAPER] SKIP: VIX ${vix.toFixed(1)} > max ${vixMax}`);
         return;
       }
     }
@@ -702,7 +702,7 @@ router.get("/start", async (req, res) => {
   // Start VIX polling
   if (process.env.SCALP_VIX_ENABLED === "true") {
     resetVixCache();
-    fetchLiveVix().catch(() => {});
+    fetchLiveVix({ force: true }).catch(() => {});
   }
 
   // Socket: piggyback if already running, else start our own
