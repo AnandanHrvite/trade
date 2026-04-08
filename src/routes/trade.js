@@ -957,8 +957,8 @@ async function onCandleClose(candle) {
 
   // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
   fetchLiveVix().catch(() => {});
-  const _vixDisplay = getCachedVix();
-  log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${_vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  const _vixDisplay = vixFilter.VIX_ENABLED ? getCachedVix() : null;
+  log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   // Telegram: candle close signal update (only when flat — no position open)
   // Tells you exactly why a trade was/wasn't taken every 15 min candle

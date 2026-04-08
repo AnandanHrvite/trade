@@ -751,12 +751,12 @@ async function onCandleClose(candle) {
 
   // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
   fetchLiveVix().catch(() => {});
-  const _vixDisplay = getCachedVix();
+  const _vixDisplay = vixFilter.VIX_ENABLED ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
-  log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${_vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   // Telegram: candle close signal update (only when flat — no position open)
   if (!ptState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
