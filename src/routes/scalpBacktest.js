@@ -584,9 +584,9 @@ ${modalJS()}
                  : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
         if (!sl) return null;
         const risk   = Math.abs(t.entryPrice - sl);
-        const reward = Math.abs(t.pnl);
         if (risk === 0) return null;
-        const ratio = reward / risk;
+        const rewardPts = typeof t.spotPnlPts === "number" ? Math.abs(t.spotPnlPts) : Math.abs(t.pnl);
+        const ratio = rewardPts / risk;
         return (t.pnl >= 0 ? "1:" : "-1:") + ratio.toFixed(2);
       })(),
     }));
