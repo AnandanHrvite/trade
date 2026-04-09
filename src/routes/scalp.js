@@ -61,7 +61,11 @@ const _STOP_MINS = (() => {
   const [h, m] = raw.split(":").map(Number);
   return h * 60 + (isNaN(m) ? 0 : m);
 })();
-const _ENTRY_STOP_MINS = _STOP_MINS - 10;
+const _ENTRY_STOP_MINS = (() => {
+  const raw = process.env.SCALP_ENTRY_END || "14:30";
+  const [h, m] = raw.split(":").map(Number);
+  return h * 60 + (isNaN(m) ? 0 : m);
+})();
 
 function getISTMinutes() {
   const istSec = Math.floor(Date.now() / 1000) + 19800;
@@ -718,6 +722,13 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
 
+    // Clamp SL distance to [MIN_SL_PTS, MAX_SL_PTS] — matches backtest logic
+    const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
+    const MIN_SL_PTS = parseFloat(process.env.SCALP_MIN_SL_PTS || "8");
+    const rawGap = Math.abs(spot - result.stopLoss);
+    const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
+    const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
+
     state.position = {
       side,
       symbol,
@@ -726,8 +737,8 @@ async function resolveAndEnter(side, spot, result) {
       spotAtEntry:      spot,
       entryTime:        istNow(),
       reason:           result.reason,
-      stopLoss:         result.stopLoss,
-      initialStopLoss:  result.stopLoss,
+      stopLoss:         clampedSL,
+      initialStopLoss:  clampedSL,
       slSource:         result.slSource || "PSAR",
       target:           result.target,
       bestPrice:        null,
@@ -748,7 +759,7 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${result.stopLoss} | ${result.reason}`);
+    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
 
     notifyEntry({
       mode: "SCALP-LIVE",
