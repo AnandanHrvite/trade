@@ -1611,9 +1611,11 @@ router.get("/start", async (req, res) => {
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  // Go back 7 calendar days to cover weekends + holidays (e.g., Thu trading → Mon start)
+  // Go back 21 calendar days (~15 trading days) to match backtest candle depth.
+  // SAR is path-dependent — 7 days gave only ~66 candles, causing SAR/indicator
+  // divergence vs backtest (150+ candles). 21 days ensures convergence.
   const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  fromDate.setDate(fromDate.getDate() - 7);
+  fromDate.setDate(fromDate.getDate() - 21);
   const fromStr  = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   // Reset state

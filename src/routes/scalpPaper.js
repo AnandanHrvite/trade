@@ -379,7 +379,7 @@ function onTick(tick) {
         state.candles.push({ ...state.currentBar });
       }
       if (state.candles.length > 200) state.candles.shift();
-      onCandleClose(state.currentBar);
+      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [SCALP-PAPER] onCandleClose error: ${e.message}`));
     }
     // Start new bar — if last preloaded candle covers same bucket, merge with it
     const bucketTimeSec = Math.floor(bucketMs / 1000);
@@ -457,7 +457,7 @@ function onTick(tick) {
 
 // ── onCandleClose — evaluate signal on 3-min bar close ──────────────────────
 
-function onCandleClose(bar) {
+async function onCandleClose(bar) {
   if (!state.running) return;
 
   // Count candles held + PSAR-based exit checks
@@ -497,8 +497,9 @@ function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [SCALP-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX check
+  // VIX check — refresh on every candle close (cache TTL 60s)
   if (process.env.SCALP_VIX_ENABLED === "true") {
+    await fetchLiveVix({ force: false });
     const vix = getCachedVix();
     if (vix) {
       const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");

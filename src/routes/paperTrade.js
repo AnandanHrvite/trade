@@ -1580,9 +1580,12 @@ router.get("/start", async (req, res) => {
     const { fetchCandles } = require("../services/backtestEngine");
     const { fetchCandlesCached } = require("../utils/candleCache");
 
-    // Go back 7 calendar days to cover weekends + holidays (e.g., Thu trading → Mon start)
+    // Go back 21 calendar days (~15 trading days ≈ 390 candles) to match backtest depth.
+    // SAR (Parabolic SAR) is path-dependent — with too few seed candles, SAR dots/trend
+    // diverge from backtest, causing paper trade to miss or take different signals.
+    // 7 days was insufficient (only ~66 candles); 21 days ensures SAR convergence.
     const fromDate = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    fromDate.setDate(fromDate.getDate() - 7);
+    fromDate.setDate(fromDate.getDate() - 21);
     const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     // fetchCandlesCached: reads cache first, only calls Fyers API for missing/today's candles
