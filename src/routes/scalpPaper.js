@@ -35,7 +35,7 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_PAPER";
 
 // ── Module-level config (read once at module load) ────────────────────────────
-const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
+const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);

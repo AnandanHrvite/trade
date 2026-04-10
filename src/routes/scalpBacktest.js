@@ -72,7 +72,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
+  const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
   const CANDLES_PER_DAY = Math.round(390 / SCALP_RES); // 6.5h trading day
 
   // Scalp config
@@ -484,7 +484,7 @@ router.get("/", async (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.SCALP_RESOLUTION || "3";
+  const resolution = req.query.resolution || process.env.SCALP_RESOLUTION || "5";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
