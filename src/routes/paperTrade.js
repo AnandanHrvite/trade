@@ -3886,127 +3886,267 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 <div class="app-shell">
 ${buildSidebar('paperTrade', false)}
 <div class="main-content">
-  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate Market Scenarios</h1>
+  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Paper Trade</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:#4a6080;">Resolution: ${TRADE_RES}-min candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
+  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${TRADE_RES}-min</strong> candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
 
-  <div style="font-size:0.75rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:1.5px;margin-top:28px;">Choose a Scenario</div>
-  <div class="sim-grid" id="scenarioGrid">${cards}</div>
-
-  <div class="config-row">
-    <div>
-      <div class="config-label">Base Price (NIFTY)</div>
-      <input type="number" id="basePrice" value="24500" class="config-input"/>
-    </div>
-    <div>
-      <div class="config-label">Speed (x faster)</div>
-      <input type="number" id="speed" value="10" min="1" max="100" class="config-input"/>
-    </div>
-    <div>
-      <div class="config-label">Session Candles</div>
-      <input type="number" id="candleCount" value="75" min="20" max="200" class="config-input"/>
-    </div>
+  <!-- ── Tab switcher ─────────────────────────────────────────────── -->
+  <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">
+    <button id="tabScenario" onclick="switchTab('scenario')" style="padding:10px 24px;font-size:0.82rem;font-weight:700;background:transparent;border:none;border-bottom:2px solid #f59e0b;color:#f59e0b;cursor:pointer;font-family:inherit;margin-bottom:-2px;">Synthetic Scenarios</button>
+    <button id="tabHistory" onclick="switchTab('history')" style="padding:10px 24px;font-size:0.82rem;font-weight:700;background:transparent;border:none;border-bottom:2px solid transparent;color:#6b7fa0;cursor:pointer;font-family:inherit;margin-bottom:-2px;">Replay Historical Date</button>
   </div>
 
-  <button class="sim-btn" id="startBtn" disabled onclick="submitSim()">Select a scenario above</button>
+  <!-- ── Scenario tab ─────────────────────────────────────────────── -->
+  <div id="panelScenario">
+    <div style="font-size:0.75rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:1.5px;margin-top:20px;">Choose a Scenario</div>
+    <div class="sim-grid" id="scenarioGrid">${cards}</div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Base Price (NIFTY)</div>
+        <input type="number" id="basePrice" value="24500" class="config-input"/>
+      </div>
+      <div>
+        <div class="config-label">Speed (x faster)</div>
+        <input type="number" id="speed" value="10" min="1" max="100" class="config-input"/>
+      </div>
+      <div>
+        <div class="config-label">Session Candles</div>
+        <input type="number" id="candleCount" value="75" min="20" max="200" class="config-input"/>
+      </div>
+    </div>
+    <button class="sim-btn" id="startBtn" disabled onclick="submitSim()">Select a scenario above</button>
+  </div>
+
+  <!-- ── History tab ──────────────────────────────────────────────── -->
+  <div id="panelHistory" style="display:none;">
+    <div style="font-size:0.75rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1.5px;margin-top:20px;">Replay a Past Trading Day</div>
+    <p style="font-size:0.78rem;color:#6b7fa0;margin-top:8px;">Pick a date to replay that day's real ${TRADE_RES}-min candles as ticks through your <strong>${strategy.NAME}</strong> strategy.</p>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Trading Date</div>
+        <input type="date" id="replayDate" class="config-input" style="width:180px;" />
+      </div>
+      <div>
+        <div class="config-label">Speed (x faster)</div>
+        <input type="number" id="replaySpeed" value="10" min="1" max="100" class="config-input"/>
+      </div>
+    </div>
+    <button class="sim-btn" id="replayBtn" style="background:#065f46;" onclick="submitReplay()">Replay Selected Date</button>
+  </div>
+
   <div id="status" style="margin-top:12px;font-size:0.82rem;color:#6b7fa0;"></div>
 </div></div>
 
 <script>
+// Set default date to yesterday
+(function(){
+  const d = new Date(); d.setDate(d.getDate()-1);
+  document.getElementById('replayDate').value = d.toISOString().split('T')[0];
+})();
+
+function switchTab(tab) {
+  const isScenario = tab === 'scenario';
+  document.getElementById('panelScenario').style.display = isScenario ? '' : 'none';
+  document.getElementById('panelHistory').style.display  = isScenario ? 'none' : '';
+  document.getElementById('tabScenario').style.borderBottomColor = isScenario ? '#f59e0b' : 'transparent';
+  document.getElementById('tabScenario').style.color = isScenario ? '#f59e0b' : '#6b7fa0';
+  document.getElementById('tabHistory').style.borderBottomColor  = isScenario ? 'transparent' : '#10b981';
+  document.getElementById('tabHistory').style.color  = isScenario ? '#6b7fa0' : '#10b981';
+}
+
 let selectedScenario = null;
 function startSim(key) {
   selectedScenario = key;
   document.querySelectorAll('.sim-grid > div').forEach(el => el.classList.remove('selected'));
   event.currentTarget.classList.add('selected');
-  const btn = document.getElementById('startBtn');
-  btn.disabled = false;
-  btn.textContent = 'Start Simulation';
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('startBtn').textContent = 'Start Simulation';
 }
 function submitSim() {
   const btn = document.getElementById('startBtn');
-  btn.disabled = true;
-  btn.textContent = 'Starting...';
-  const body = {
-    scenario: selectedScenario,
+  btn.disabled = true; btn.textContent = 'Starting...';
+  _post('/paperTrade/simulate/start', {
+    mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
     candleCount: parseInt(document.getElementById('candleCount').value) || 75,
-  };
-  fetch('/paperTrade/simulate/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then(r => r.json()).then(d => {
-    if (d.success) {
-      window.location.href = '/paperTrade/status';
-    } else {
-      document.getElementById('status').textContent = 'Error: ' + (d.error || 'Unknown');
-      btn.disabled = false;
-      btn.textContent = 'Start Simulation';
-    }
-  }).catch(e => {
-    document.getElementById('status').textContent = 'Error: ' + e.message;
-    btn.disabled = false;
-    btn.textContent = 'Start Simulation';
-  });
+  }, btn, 'Start Simulation');
+}
+function submitReplay() {
+  const btn = document.getElementById('replayBtn');
+  const date = document.getElementById('replayDate').value;
+  if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
+  btn.disabled = true; btn.textContent = 'Fetching candles...';
+  _post('/paperTrade/simulate/start', {
+    mode: 'historical', date: date,
+    speed: parseInt(document.getElementById('replaySpeed').value) || 10,
+  }, btn, 'Replay Selected Date');
+}
+function _post(url, body, btn, resetLabel) {
+  fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ window.location.href='/paperTrade/status'; }
+      else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
+    }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }
 </script>
 </body></html>`);
 });
 
-router.post("/simulate/start", (req, res) => {
+router.post("/simulate/start", async (req, res) => {
   if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
 
-  const { scenario = "trending_up", basePrice = 24500, speed = 10, candleCount = 75 } = req.body || {};
-
-  if (!tickSimulator.SCENARIOS[scenario]) {
-    return res.json({ success: false, error: `Unknown scenario: ${scenario}` });
-  }
+  const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
   const strategy = getActiveStrategy();
   if (typeof strategy.reset === "function") strategy.reset();
 
-  // Reset session state
-  ptState.running       = true;
-  ptState.candles       = [];
-  ptState.currentBar    = null;
-  ptState.barStartTime  = null;
-  ptState.position      = null;
-  ptState.sessionTrades = [];
-  ptState.sessionPnl    = 0;
-  ptState.sessionStart  = istNow();
-  ptState.log           = [];
-  ptState.tickCount     = 0;
-  ptState._entryPending = false;
-  ptState.lastTickTime  = null;
-  ptState.lastTickPrice = null;
-  ptState.prevCandleHigh = null;
-  ptState.prevCandleLow  = null;
-  ptState.prevCandleMid  = null;
-  ptState.optionLtp      = null;
-  ptState.optionSymbol   = null;
-  ptState._consecutiveLosses   = 0;
-  ptState._pauseUntilTime      = null;
-  ptState._fiftyPctPauseUntil  = null;
-  ptState._dailyLossHit        = false;
-  ptState._cachedCE            = null;
-  ptState._cachedPE            = null;
-  ptState._maxTradesLoggedCandle = null;
-  ptState._slHitCandleTime     = null;
-  ptState._lastCheckedBarHigh  = null;
-  ptState._lastCheckedBarLow   = null;
-  ptState._missedLoggedCandle  = null;
-  ptState._sessionWins         = 0;
-  ptState._sessionLosses       = 0;
-  ptState._expiryDayBlocked    = false;
-  ptState._simMode             = true;
-  ptState._simScenario         = scenario;
-  _cachedClosedCandleSL        = null;
+  // Common state reset
+  function resetSimState(label) {
+    ptState.running       = true;
+    ptState.candles       = [];
+    ptState.currentBar    = null;
+    ptState.barStartTime  = null;
+    ptState.position      = null;
+    ptState.sessionTrades = [];
+    ptState.sessionPnl    = 0;
+    ptState.sessionStart  = istNow();
+    ptState.log           = [];
+    ptState.tickCount     = 0;
+    ptState._entryPending = false;
+    ptState.lastTickTime  = null;
+    ptState.lastTickPrice = null;
+    ptState.prevCandleHigh = null;
+    ptState.prevCandleLow  = null;
+    ptState.prevCandleMid  = null;
+    ptState.optionLtp      = null;
+    ptState.optionSymbol   = null;
+    ptState._consecutiveLosses   = 0;
+    ptState._pauseUntilTime      = null;
+    ptState._fiftyPctPauseUntil  = null;
+    ptState._dailyLossHit        = false;
+    ptState._cachedCE            = null;
+    ptState._cachedPE            = null;
+    ptState._maxTradesLoggedCandle = null;
+    ptState._slHitCandleTime     = null;
+    ptState._lastCheckedBarHigh  = null;
+    ptState._lastCheckedBarLow   = null;
+    ptState._missedLoggedCandle  = null;
+    ptState._sessionWins         = 0;
+    ptState._sessionLosses       = 0;
+    ptState._expiryDayBlocked    = false;
+    ptState._simMode             = true;
+    ptState._simScenario         = label;
+    _cachedClosedCandleSL        = null;
+    const simStart = new Date();
+    simStart.setUTCHours(3, 45, 0, 0);
+    _simClockMs = simStart.getTime();
+  }
 
-  // Set simulated clock to 09:15 IST today
-  const simStart = new Date();
-  simStart.setUTCHours(3, 45, 0, 0);
-  _simClockMs = simStart.getTime();
+  function seedWarmup(result) {
+    if (result.warmupCandles.length > 0) {
+      ptState.candles = result.warmupCandles;
+      const { stopLoss: preloadSL } = strategy.getSignal(ptState.candles, { silent: true });
+      _cachedClosedCandleSL = preloadSL ?? null;
+      const lastC = ptState.candles[ptState.candles.length - 1];
+      if (lastC) {
+        ptState.prevCandleHigh = lastC.high;
+        ptState.prevCandleLow  = lastC.low;
+        ptState.prevCandleMid  = parseFloat(((lastC.high + lastC.low) / 2).toFixed(2));
+      }
+      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | SAR SL: ${_cachedClosedCandleSL || "n/a"}`);
+    }
+  }
+
+  function makeCandleDone(total) {
+    return (candle, idx) => {
+      if ((idx + 1) % 10 === 0) {
+        log(`🎮 [SIM] Progress: ${idx + 1}/${total} candles | Trades: ${ptState.sessionTrades.length} | PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
+      }
+    };
+  }
+  function onSimDone() {
+    log(`🏁 [SIM] Simulation complete — ${ptState.sessionTrades.length} trades, PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
+    if (ptState.position) {
+      simulateSell(ptState.lastTickPrice || ptState.position.entryPrice, "Simulation ended", ptState.lastTickPrice);
+    }
+    ptState._simMode = false;
+  }
+
+  // ── Historical date replay ──────────────────────────────────────────────
+  if (mode === "historical") {
+    if (!date) return res.json({ success: false, error: "Date is required for historical replay" });
+
+    resetSimState(`replay:${date}`);
+
+    log(`\n════════════════════════════════════════════════════════════════════`);
+    log(`🎮 [SIM] Historical replay: ${date}`);
+    log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
+    log(`   Resolution : ${TRADE_RES}-min candles | Speed: ${speed}x`);
+    log(`════════════════════════════════════════════════════════════════════\n`);
+
+    try {
+      const { fetchCandlesCached } = require("../utils/candleCache");
+      const { fetchCandles } = require("../services/backtestEngine");
+
+      const targetDate = new Date(date + "T00:00:00+05:30");
+      const fromDate = new Date(targetDate);
+      fromDate.setDate(fromDate.getDate() - 21); // 21 days back for warmup (matches live pre-load depth)
+      const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+      log(`📥 [SIM] Fetching ${TRADE_RES}-min candles from ${fromStr} to ${date}...`);
+      const allCandles = await fetchCandlesCached(
+        "NSE:NIFTY50-INDEX", String(TRADE_RES), fromStr, date, fetchCandles
+      );
+
+      if (!allCandles || allCandles.length < 35) {
+        ptState.running = false; ptState._simMode = false;
+        return res.json({ success: false, error: `Not enough candles for ${date} — got ${allCandles ? allCandles.length : 0}. Is it a trading day?` });
+      }
+
+      // Split by date
+      const warmupCandles = [];
+      const sessionCandles = [];
+      for (const c of allCandles) {
+        const cDate = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        if (cDate < date) warmupCandles.push(c);
+        else if (cDate === date) sessionCandles.push(c);
+      }
+
+      if (sessionCandles.length === 0) {
+        ptState.running = false; ptState._simMode = false;
+        return res.json({ success: false, error: `No candles found for ${date} — holiday or weekend?` });
+      }
+
+      const warmup = warmupCandles.slice(-30);
+      log(`📦 [SIM] Date: ${date} | ${warmup.length} warmup + ${sessionCandles.length} session candles (${TRADE_RES}-min) | Speed: ${speed}x`);
+
+      const result = tickSimulator.startFromCandles({
+        candles: [...warmup, ...sessionCandles],
+        warmupCount: warmup.length,
+        resolution: TRADE_RES,
+        speed,
+        onTick,
+        onCandleDone: makeCandleDone(sessionCandles.length),
+        onDone: onSimDone,
+      });
+
+      seedWarmup(result);
+      log(`🎮 [SIM] Replaying ${result.totalSessionCandles} candles as ticks...`);
+      return res.json({ success: true, scenario: `Replay ${date}`, candles: result.totalSessionCandles });
+    } catch (err) {
+      ptState.running = false; ptState._simMode = false;
+      log(`❌ [SIM] Historical replay failed: ${err.message}`);
+      return res.json({ success: false, error: err.message });
+    }
+  }
+
+  // ── Synthetic scenario ──────────────────────────────────────────────────
+  if (!tickSimulator.SCENARIOS[scenario]) {
+    return res.json({ success: false, error: `Unknown scenario: ${scenario}` });
+  }
+
+  resetSimState(scenario);
 
   const scenarioLabel = tickSimulator.SCENARIOS[scenario].label;
   log(`\n════════════════════════════════════════════════════════════════════`);
@@ -4018,47 +4158,18 @@ router.post("/simulate/start", (req, res) => {
 
   try {
     const result = tickSimulator.start({
-      scenario,
-      basePrice,
-      speed,
-      candleCount,
-      warmupCandles: 30,
+      scenario, basePrice, speed, candleCount,
+      warmupCandles: 30, resolution: TRADE_RES,
       onTick,
-      onCandleDone: (candle, idx) => {
-        if ((idx + 1) % 10 === 0) {
-          log(`🎮 [SIM] Progress: ${idx + 1}/${candleCount} candles | Trades: ${ptState.sessionTrades.length} | PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
-        }
-      },
-      onDone: () => {
-        log(`🏁 [SIM] Simulation complete — ${ptState.sessionTrades.length} trades, PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
-        if (ptState.position) {
-          simulateSell(ptState.lastTickPrice || ptState.position.entryPrice, "Simulation ended", ptState.lastTickPrice);
-        }
-        ptState._simMode = false;
-      },
+      onCandleDone: makeCandleDone(candleCount),
+      onDone: onSimDone,
     });
 
-    // Pre-load warmup candles
-    if (result.warmupCandles.length > 0) {
-      ptState.candles = result.warmupCandles;
-      // Seed _cachedClosedCandleSL from warmup data so intra-tick entries work
-      const { stopLoss: preloadSL } = strategy.getSignal(ptState.candles, { silent: true });
-      _cachedClosedCandleSL = preloadSL ?? null;
-      // Seed display values
-      const lastC = ptState.candles[ptState.candles.length - 1];
-      if (lastC) {
-        ptState.prevCandleHigh = lastC.high;
-        ptState.prevCandleLow  = lastC.low;
-        ptState.prevCandleMid  = parseFloat(((lastC.high + lastC.low) / 2).toFixed(2));
-      }
-      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | SAR SL: ${_cachedClosedCandleSL || "n/a"}`);
-    }
-
+    seedWarmup(result);
     log(`🎮 [SIM] Emitting ${result.totalSessionCandles} candles as ticks...`);
     res.json({ success: true, scenario: scenarioLabel, candles: result.totalSessionCandles });
   } catch (err) {
-    ptState.running = false;
-    ptState._simMode = false;
+    ptState.running = false; ptState._simMode = false;
     log(`❌ [SIM] Start failed: ${err.message}`);
     res.json({ success: false, error: err.message });
   }

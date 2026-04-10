@@ -2052,6 +2052,13 @@ router.get("/history", (req, res) => {
     .tbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;margin-bottom:10px;flex-wrap:wrap;}
     .tbar-label{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;}
     .tbar-count{font-size:0.68rem;color:#4a6080;}
+    @media print {
+      .sidebar, .hamburger, .sidebar-overlay, .top-bar, .export-btn, .reset-btn, .copy-btn, .dw-toggle, .ana-panel, #dayWiseWrap, .tbar { display: none !important; }
+      .main-content { margin-left: 0 !important; }
+      body { background: #fff !important; color: #000 !important; }
+      .session-card { background: #fff !important; border: 1px solid #ccc !important; break-inside: avoid; }
+      .tbl td, .tbl th { color: #000 !important; border-color: #ddd !important; }
+    }
     @media(max-width:768px){
       .sidebar{transform:translateX(-100%);}
       .main-content{margin-left:0;}
@@ -2602,98 +2609,236 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 <div class="app-shell">
 ${buildSidebar('scalpPaper', false)}
 <div class="main-content">
-  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate Market Scenarios</h1>
+  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Scalp Paper</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:8px;">Run your scalp strategy against fake ticks — no broker login needed. Works after market hours.</p>
+  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${SCALP_RES}-min</strong> candles</p>
 
-  <div style="font-size:0.75rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-top:28px;">Choose a Scenario</div>
-  <div class="sim-grid" id="scenarioGrid">${cards}</div>
-
-  <div class="config-row">
-    <div>
-      <div class="config-label">Base Price (NIFTY)</div>
-      <input type="number" id="basePrice" value="24500" class="config-input"/>
-    </div>
-    <div>
-      <div class="config-label">Speed (x faster)</div>
-      <input type="number" id="speed" value="10" min="1" max="100" class="config-input"/>
-    </div>
-    <div>
-      <div class="config-label">Session Candles</div>
-      <input type="number" id="candleCount" value="75" min="20" max="200" class="config-input"/>
-    </div>
+  <!-- ── Tab switcher ─────────────────────────────────────────────── -->
+  <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">
+    <button id="tabScenario" onclick="switchTab('scenario')" style="padding:10px 24px;font-size:0.82rem;font-weight:700;background:transparent;border:none;border-bottom:2px solid #3b82f6;color:#3b82f6;cursor:pointer;font-family:inherit;margin-bottom:-2px;">Synthetic Scenarios</button>
+    <button id="tabHistory" onclick="switchTab('history')" style="padding:10px 24px;font-size:0.82rem;font-weight:700;background:transparent;border:none;border-bottom:2px solid transparent;color:#6b7fa0;cursor:pointer;font-family:inherit;margin-bottom:-2px;">Replay Historical Date</button>
   </div>
 
-  <button class="sim-btn" id="startBtn" disabled onclick="submitSim()">Select a scenario above</button>
+  <!-- ── Scenario tab ─────────────────────────────────────────────── -->
+  <div id="panelScenario">
+    <div style="font-size:0.75rem;font-weight:700;color:#3b82f6;text-transform:uppercase;letter-spacing:1.5px;margin-top:20px;">Choose a Scenario</div>
+    <div class="sim-grid" id="scenarioGrid">${cards}</div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Base Price (NIFTY)</div>
+        <input type="number" id="basePrice" value="24500" class="config-input"/>
+      </div>
+      <div>
+        <div class="config-label">Speed (x faster)</div>
+        <input type="number" id="speed" value="10" min="1" max="100" class="config-input"/>
+      </div>
+      <div>
+        <div class="config-label">Session Candles</div>
+        <input type="number" id="candleCount" value="75" min="20" max="200" class="config-input"/>
+      </div>
+    </div>
+    <button class="sim-btn" id="startBtn" disabled onclick="submitSim()">Select a scenario above</button>
+  </div>
+
+  <!-- ── History tab ──────────────────────────────────────────────── -->
+  <div id="panelHistory" style="display:none;">
+    <div style="font-size:0.75rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1.5px;margin-top:20px;">Replay a Past Trading Day</div>
+    <p style="font-size:0.78rem;color:#6b7fa0;margin-top:8px;">Pick a date to replay that day's real ${SCALP_RES}-min candles as ticks through your strategy.</p>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Trading Date</div>
+        <input type="date" id="replayDate" class="config-input" style="width:180px;" />
+      </div>
+      <div>
+        <div class="config-label">Speed (x faster)</div>
+        <input type="number" id="replaySpeed" value="10" min="1" max="100" class="config-input"/>
+      </div>
+    </div>
+    <button class="sim-btn" id="replayBtn" style="background:#065f46;" onclick="submitReplay()">Replay Selected Date</button>
+  </div>
+
   <div id="status" style="margin-top:12px;font-size:0.82rem;color:#6b7fa0;"></div>
 </div></div>
 
 <script>
+// Set default date to yesterday
+(function(){
+  const d = new Date(); d.setDate(d.getDate()-1);
+  document.getElementById('replayDate').value = d.toISOString().split('T')[0];
+})();
+
+function switchTab(tab) {
+  const isScenario = tab === 'scenario';
+  document.getElementById('panelScenario').style.display = isScenario ? '' : 'none';
+  document.getElementById('panelHistory').style.display  = isScenario ? 'none' : '';
+  document.getElementById('tabScenario').style.borderBottomColor = isScenario ? '#3b82f6' : 'transparent';
+  document.getElementById('tabScenario').style.color = isScenario ? '#3b82f6' : '#6b7fa0';
+  document.getElementById('tabHistory').style.borderBottomColor  = isScenario ? 'transparent' : '#10b981';
+  document.getElementById('tabHistory').style.color  = isScenario ? '#6b7fa0' : '#10b981';
+}
+
 let selectedScenario = null;
 function startSim(key) {
   selectedScenario = key;
   document.querySelectorAll('.sim-grid > div').forEach(el => el.classList.remove('selected'));
   event.currentTarget.classList.add('selected');
-  const btn = document.getElementById('startBtn');
-  btn.disabled = false;
-  btn.textContent = 'Start Simulation';
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('startBtn').textContent = 'Start Simulation';
 }
 function submitSim() {
   const btn = document.getElementById('startBtn');
-  btn.disabled = true;
-  btn.textContent = 'Starting...';
-  const body = {
-    scenario: selectedScenario,
+  btn.disabled = true; btn.textContent = 'Starting...';
+  _post('/scalp-paper/simulate/start', {
+    mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
     candleCount: parseInt(document.getElementById('candleCount').value) || 75,
-  };
-  fetch('/scalp-paper/simulate/start', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  }).then(r => r.json()).then(d => {
-    if (d.success) {
-      window.location.href = '/scalp-paper/status';
-    } else {
-      document.getElementById('status').textContent = 'Error: ' + (d.error || 'Unknown');
-      btn.disabled = false;
-      btn.textContent = 'Start Simulation';
-    }
-  }).catch(e => {
-    document.getElementById('status').textContent = 'Error: ' + e.message;
-    btn.disabled = false;
-    btn.textContent = 'Start Simulation';
-  });
+  }, btn, 'Start Simulation');
+}
+function submitReplay() {
+  const btn = document.getElementById('replayBtn');
+  const date = document.getElementById('replayDate').value;
+  if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
+  btn.disabled = true; btn.textContent = 'Fetching candles...';
+  _post('/scalp-paper/simulate/start', {
+    mode: 'historical', date: date,
+    speed: parseInt(document.getElementById('replaySpeed').value) || 10,
+  }, btn, 'Replay Selected Date');
+}
+function _post(url, body, btn, resetLabel) {
+  fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
+    .then(r=>r.json()).then(d=>{
+      if(d.success){ window.location.href='/scalp-paper/status'; }
+      else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
+    }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }
 </script>
 </body></html>`);
 });
 
-router.post("/simulate/start", (req, res) => {
+router.post("/simulate/start", async (req, res) => {
   if (state.running) return res.json({ success: false, error: "Session already running. Stop it first." });
 
-  const { scenario = "trending_up", basePrice = 24500, speed = 10, candleCount = 75 } = req.body || {};
+  const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
+  // Common state reset
+  function resetSimState(label) {
+    state = {
+      running: true, position: null, candles: [], currentBar: null, barStartTime: null,
+      log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
+      sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
+      optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+      _expiryDayBlocked: false,
+      _simMode: true, _simScenario: label,
+    };
+    const simStart = new Date();
+    simStart.setUTCHours(3, 45, 0, 0);
+    _simClockMs = simStart.getTime();
+  }
+
+  function makeCandleDone(total) {
+    return (candle, idx) => {
+      if ((idx + 1) % 10 === 0) {
+        log(`🎮 [SIM] Progress: ${idx + 1}/${total} candles | Trades: ${state.sessionTrades.length} | PnL: ₹${state.sessionPnl.toFixed(2)}`);
+      }
+    };
+  }
+  function onSimDone() {
+    log(`🏁 [SIM] Simulation complete — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl.toFixed(2)}`);
+    if (state.position) {
+      simulateSell(state.lastTickPrice || state.position.entryPrice, "Simulation ended", state.lastTickPrice);
+    }
+    state._simMode = false;
+  }
+
+  // ── Historical date replay ──────────────────────────────────────────────
+  if (mode === "historical") {
+    if (!date) return res.json({ success: false, error: "Date is required for historical replay" });
+
+    resetSimState(`replay:${date}`);
+    log(`🎮 [SIM] Fetching ${SCALP_RES}-min candles for ${date}...`);
+
+    try {
+      const { fetchCandlesCached } = require("../utils/candleCache");
+      const { fetchCandles } = require("../services/backtestEngine");
+
+      // Fetch candles: 10 calendar days before target date for warmup
+      const targetDate = new Date(date + "T00:00:00+05:30");
+      const fromDate = new Date(targetDate);
+      fromDate.setDate(fromDate.getDate() - 10);
+      const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+      const allCandles = await fetchCandlesCached(
+        NIFTY_INDEX_SYMBOL, String(SCALP_RES), fromStr, date, fetchCandles
+      );
+
+      if (!allCandles || allCandles.length < 35) {
+        state.running = false; state._simMode = false;
+        return res.json({ success: false, error: `Not enough candles for ${date} — got ${allCandles ? allCandles.length : 0}. Is it a trading day?` });
+      }
+
+      // Split by date: before target = warmup, on target = session
+      const warmupCandles = [];
+      const sessionCandles = [];
+      for (const c of allCandles) {
+        const cDate = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        if (cDate < date) warmupCandles.push(c);
+        else if (cDate === date) sessionCandles.push(c);
+      }
+
+      if (sessionCandles.length === 0) {
+        state.running = false; state._simMode = false;
+        return res.json({ success: false, error: `No candles found for ${date} — holiday or weekend?` });
+      }
+
+      const warmup = warmupCandles.slice(-30);
+
+      // Fetch prev day OHLC for CPR
+      try {
+        const dailyCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, "D", fromStr, date);
+        const pastDays = dailyCandles.filter(c => {
+          const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+          return d < date;
+        }).sort((a, b) => a.time - b.time);
+        if (pastDays.length >= 1) {
+          const prev = pastDays[pastDays.length - 1];
+          _prevDayOHLC = { high: prev.high, low: prev.low, close: prev.close };
+        }
+        if (pastDays.length >= 2) {
+          const pp = pastDays[pastDays.length - 2];
+          _prevPrevDayOHLC = { high: pp.high, low: pp.low, close: pp.close };
+        }
+      } catch (_) {}
+
+      log(`📦 [SIM] Date: ${date} | ${warmup.length} warmup + ${sessionCandles.length} session candles (${SCALP_RES}-min) | Speed: ${speed}x`);
+
+      const result = tickSimulator.startFromCandles({
+        candles: [...warmup, ...sessionCandles],
+        warmupCount: warmup.length,
+        resolution: SCALP_RES,
+        speed,
+        onTick,
+        onCandleDone: makeCandleDone(sessionCandles.length),
+        onDone: onSimDone,
+      });
+
+      state.candles = result.warmupCandles;
+      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles`);
+      log(`🎮 [SIM] Replaying ${result.totalSessionCandles} candles as ticks...`);
+      return res.json({ success: true, scenario: `Replay ${date}`, candles: result.totalSessionCandles });
+    } catch (err) {
+      state.running = false; state._simMode = false;
+      log(`❌ [SIM] Historical replay failed: ${err.message}`);
+      return res.json({ success: false, error: err.message });
+    }
+  }
+
+  // ── Synthetic scenario ──────────────────────────────────────────────────
   if (!tickSimulator.SCENARIOS[scenario]) {
     return res.json({ success: false, error: `Unknown scenario: ${scenario}` });
   }
 
-  // Reset state for simulation
-  state = {
-    running: true, position: null, candles: [], currentBar: null, barStartTime: null,
-    log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
-    sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
-    _expiryDayBlocked: false,
-    _simMode: true, _simScenario: scenario,
-  };
-
-  // Set simulated clock to 09:15 IST today
-  const simStart = new Date();
-  simStart.setUTCHours(3, 45, 0, 0);
-  _simClockMs = simStart.getTime();
-
-  // Fake prev day OHLC for CPR (centered around basePrice)
+  resetSimState(scenario);
   _prevDayOHLC = { high: basePrice + 80, low: basePrice - 80, close: basePrice + 10 };
   _prevPrevDayOHLC = { high: basePrice + 60, low: basePrice - 100, close: basePrice - 5 };
 
@@ -2702,29 +2847,13 @@ router.post("/simulate/start", (req, res) => {
 
   try {
     const result = tickSimulator.start({
-      scenario,
-      basePrice,
-      speed,
-      candleCount,
-      warmupCandles: 30,
+      scenario, basePrice, speed, candleCount,
+      warmupCandles: 30, resolution: SCALP_RES,
       onTick,
-      onCandleDone: (candle, idx) => {
-        // Optional: log progress every 10 candles
-        if ((idx + 1) % 10 === 0) {
-          log(`🎮 [SIM] Progress: ${idx + 1}/${candleCount} candles | Trades: ${state.sessionTrades.length} | PnL: ₹${state.sessionPnl.toFixed(2)}`);
-        }
-      },
-      onDone: () => {
-        log(`🏁 [SIM] Simulation complete — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl.toFixed(2)}`);
-        // Close any open position
-        if (state.position) {
-          simulateSell(state.lastTickPrice || state.position.entryPrice, "Simulation ended", state.lastTickPrice);
-        }
-        state._simMode = false;
-      },
+      onCandleDone: makeCandleDone(candleCount),
+      onDone: onSimDone,
     });
 
-    // Pre-load warmup candles into state
     if (result.warmupCandles.length > 0) {
       state.candles = result.warmupCandles;
       log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles`);
@@ -2733,8 +2862,7 @@ router.post("/simulate/start", (req, res) => {
     log(`🎮 [SIM] Emitting ${result.totalSessionCandles} candles as ticks...`);
     res.json({ success: true, scenario: scenarioLabel, candles: result.totalSessionCandles });
   } catch (err) {
-    state.running = false;
-    state._simMode = false;
+    state.running = false; state._simMode = false;
     log(`❌ [SIM] Start failed: ${err.message}`);
     res.json({ success: false, error: err.message });
   }

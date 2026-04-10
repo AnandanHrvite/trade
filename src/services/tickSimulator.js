@@ -238,60 +238,22 @@ let _simRunning = false;
 let _simCandles = [];  // generated scenario candles (for status display)
 
 /**
- * Start simulation
- * @param {Object} opts
- * @param {string}   opts.scenario     — scenario key (e.g. "trending_up")
- * @param {number}   opts.basePrice    — starting NIFTY price (default 24500)
- * @param {Function} opts.onTick       — callback receiving { ltp }
- * @param {Function} opts.onCandleDone — optional, called after each candle's ticks are emitted
- * @param {Function} opts.onDone       — called when all candles are emitted
- * @param {number}   opts.speed        — speed multiplier (default 10 = 3min candle in 18s)
- * @param {number}   opts.candleCount  — number of candles to simulate (default 75)
- * @param {number}   opts.warmupCandles — pre-loaded candles for indicator warmup (default 30)
+ * Core tick emission loop — shared by start() and startFromCandles()
+ * @param {Array}    warmup         — candles for indicator warmup (returned, not emitted)
+ * @param {Array}    sessionCandles — candles to emit as ticks
+ * @param {number}   resolutionMin  — candle resolution in minutes (3, 5, 15)
+ * @param {number}   speed          — speed multiplier
+ * @param {Function} onTick         — callback receiving { ltp }
+ * @param {Function} onCandleDone   — optional, called after each candle's ticks
+ * @param {Function} onDone         — called when all candles are emitted
  */
-function start(opts) {
-  if (_simRunning) throw new Error("Simulation already running");
-
-  const {
-    scenario     = "trending_up",
-    basePrice    = 24500,
-    onTick,
-    onCandleDone,
-    onDone,
-    speed        = 10,
-    candleCount  = 75,
-    warmupCandles = 30,
-  } = opts;
-
-  if (!SCENARIOS[scenario]) throw new Error(`Unknown scenario: ${scenario}`);
-  if (!onTick) throw new Error("onTick callback required");
-
-  // Generate warmup + session candles
-  const totalCandles = warmupCandles + candleCount;
-  const allCandles = SCENARIOS[scenario].generate(basePrice, totalCandles);
-  _simCandles = allCandles;
-
-  // Assign simulated timestamps — 3-min intervals starting at 09:15 IST today
-  const simDate = new Date();
-  // Set to 09:15 IST = 03:45 UTC
-  simDate.setUTCHours(3, 45, 0, 0);
-  const startUnixSec = Math.floor(simDate.getTime() / 1000);
-
-  for (let i = 0; i < allCandles.length; i++) {
-    allCandles[i].time = startUnixSec + i * (3 * 60); // 3-min intervals
-    allCandles[i].volume = Math.floor(rand(50000, 200000));
-  }
-
+function _emitLoop(warmup, sessionCandles, resolutionMin, speed, onTick, onCandleDone, onDone) {
+  _simCandles = [...warmup, ...sessionCandles];
   _simRunning = true;
 
-  // Return warmup candles immediately (for pre-loading into state.candles)
-  const warmup = allCandles.slice(0, warmupCandles);
-  const sessionCandles = allCandles.slice(warmupCandles);
-
-  // Emit ticks for session candles sequentially
-  const tickInterval = (3 * 60 * 1000) / speed; // ms per candle (real time)
+  const tickInterval = (resolutionMin * 60 * 1000) / speed;
   const ticksPerCandle = 20;
-  const tickDelay = tickInterval / ticksPerCandle; // ms between ticks
+  const tickDelay = tickInterval / ticksPerCandle;
 
   let candleIdx = 0;
   let tickIdx = 0;
@@ -301,7 +263,6 @@ function start(opts) {
     if (!_simRunning) return;
 
     if (tickIdx >= currentTicks.length) {
-      // Move to next candle
       if (onCandleDone && candleIdx > 0) {
         onCandleDone(sessionCandles[candleIdx - 1], candleIdx - 1);
       }
@@ -321,8 +282,94 @@ function start(opts) {
   }
 
   emitNext();
-
   return { warmupCandles: warmup, totalSessionCandles: sessionCandles.length };
+}
+
+/**
+ * Start simulation from synthetic scenario
+ * @param {Object} opts
+ * @param {string}   opts.scenario      — scenario key (e.g. "trending_up")
+ * @param {number}   opts.basePrice     — starting NIFTY price (default 24500)
+ * @param {Function} opts.onTick        — callback receiving { ltp }
+ * @param {Function} opts.onCandleDone  — optional
+ * @param {Function} opts.onDone        — called when all candles are emitted
+ * @param {number}   opts.speed         — speed multiplier (default 10)
+ * @param {number}   opts.candleCount   — session candles (default 75)
+ * @param {number}   opts.warmupCandles — warmup candles (default 30)
+ * @param {number}   opts.resolution    — candle resolution in minutes (default 3)
+ */
+function start(opts) {
+  if (_simRunning) throw new Error("Simulation already running");
+
+  const {
+    scenario     = "trending_up",
+    basePrice    = 24500,
+    onTick,
+    onCandleDone,
+    onDone,
+    speed        = 10,
+    candleCount  = 75,
+    warmupCandles = 30,
+    resolution   = 3,
+  } = opts;
+
+  if (!SCENARIOS[scenario]) throw new Error(`Unknown scenario: ${scenario}`);
+  if (!onTick) throw new Error("onTick callback required");
+
+  const totalCandles = warmupCandles + candleCount;
+  const allCandles = SCENARIOS[scenario].generate(basePrice, totalCandles);
+
+  // Assign simulated timestamps using the correct resolution
+  const simDate = new Date();
+  simDate.setUTCHours(3, 45, 0, 0); // 09:15 IST
+  const startUnixSec = Math.floor(simDate.getTime() / 1000);
+
+  for (let i = 0; i < allCandles.length; i++) {
+    allCandles[i].time = startUnixSec + i * (resolution * 60);
+    allCandles[i].volume = Math.floor(rand(50000, 200000));
+  }
+
+  const warmup = allCandles.slice(0, warmupCandles);
+  const sessionCandles = allCandles.slice(warmupCandles);
+
+  return _emitLoop(warmup, sessionCandles, resolution, speed, onTick, onCandleDone, onDone);
+}
+
+/**
+ * Start simulation from real historical candles (date replay)
+ * @param {Object} opts
+ * @param {Array}    opts.candles       — pre-fetched OHLC candles (must include warmup + session)
+ * @param {number}   opts.warmupCount   — how many candles to use for warmup (default 30)
+ * @param {number}   opts.resolution    — candle resolution in minutes (3, 5, 15)
+ * @param {Function} opts.onTick        — callback receiving { ltp }
+ * @param {Function} opts.onCandleDone  — optional
+ * @param {Function} opts.onDone        — called when all candles are emitted
+ * @param {number}   opts.speed         — speed multiplier (default 10)
+ */
+function startFromCandles(opts) {
+  if (_simRunning) throw new Error("Simulation already running");
+
+  const {
+    candles,
+    warmupCount  = 30,
+    resolution   = 15,
+    onTick,
+    onCandleDone,
+    onDone,
+    speed        = 10,
+  } = opts;
+
+  if (!candles || candles.length === 0) throw new Error("No candles provided");
+  if (!onTick) throw new Error("onTick callback required");
+
+  if (candles.length <= warmupCount) {
+    throw new Error(`Need more than ${warmupCount} candles for warmup — got ${candles.length}. Try an earlier date range.`);
+  }
+
+  const warmup = candles.slice(0, warmupCount);
+  const sessionCandles = candles.slice(warmupCount);
+
+  return _emitLoop(warmup, sessionCandles, resolution, speed, onTick, onCandleDone, onDone);
 }
 
 function stop() {
@@ -334,4 +381,4 @@ function isRunning() { return _simRunning; }
 function getScenarios() { return SCENARIOS; }
 function getSimCandles() { return _simCandles; }
 
-module.exports = { start, stop, isRunning, getScenarios, getSimCandles, SCENARIOS };
+module.exports = { start, startFromCandles, stop, isRunning, getScenarios, getSimCandles, SCENARIOS };
