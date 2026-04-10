@@ -578,19 +578,21 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     // log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
   }
 
-  // ── Telegram notification ─────────────────────────────────────────────────
-  notifyEntry({
-    mode:           'PAPER',
-    side,
-    symbol,
-    strike:         ptState.position.optionStrike,
-    expiry:         ptState.position.optionExpiry,
-    spotAtEntry:    price,
-    optionEntryLtp: ptState.optionLtp || null,
-    stopLoss:       stopLoss || null,
-    qty,
-    reason,
-  });
+  // ── Telegram notification (skip in simulation mode) ───────────────────────
+  if (!ptState._simMode) {
+    notifyEntry({
+      mode:           'PAPER',
+      side,
+      symbol,
+      strike:         ptState.position.optionStrike,
+      expiry:         ptState.position.optionExpiry,
+      spotAtEntry:    price,
+      optionEntryLtp: ptState.optionLtp || null,
+      stopLoss:       stopLoss || null,
+      qty,
+      reason,
+    });
+  }
 }
 
 function simulateSell(exitPrice, reason, spotAtExit) {
@@ -713,24 +715,26 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   log(`${emoji} [PAPER] SELL ${qty} × ${symbol} @ SPOT ₹${exitPrice} | ${isFutures ? "" : `Option LTP: ₹${exitOptionLtp || "?"} | `}PnL: ₹${netPnl} | ${pnlMode}`);
   log(`💼 [PAPER] Session PnL so far: ₹${ptState.sessionPnl}`);
 
-  // ── Telegram notification ─────────────────────────────────────────────────
-  notifyExit({
-    mode:           'PAPER',
-    side,
-    symbol,
-    strike:         trade.optionStrike,
-    expiry:         trade.optionExpiry,
-    spotAtEntry:    trade.spotAtEntry,
-    spotAtExit:     spotAtExit || exitPrice,
-    optionEntryLtp: trade.optionEntryLtp,
-    optionExitLtp:  trade.optionExitLtp,
-    pnl:            netPnl,
-    sessionPnl:     ptState.sessionPnl,
-    exitReason:     reason,
-    entryTime:      trade.entryTime,
-    exitTime:       trade.exitTime,
-    qty,
-  });
+  // ── Telegram notification (skip in simulation mode) ───────────────────────
+  if (!ptState._simMode) {
+    notifyExit({
+      mode:           'PAPER',
+      side,
+      symbol,
+      strike:         trade.optionStrike,
+      expiry:         trade.optionExpiry,
+      spotAtEntry:    trade.spotAtEntry,
+      spotAtExit:     spotAtExit || exitPrice,
+      optionEntryLtp: trade.optionEntryLtp,
+      optionExitLtp:  trade.optionExitLtp,
+      pnl:            netPnl,
+      sessionPnl:     ptState.sessionPnl,
+      exitReason:     reason,
+      entryTime:      trade.entryTime,
+      exitTime:       trade.exitTime,
+      qty,
+    });
+  }
 
   ptState.position = null;
 
@@ -770,8 +774,8 @@ async function onCandleClose(candle) {
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
   log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
-  // Telegram: candle close signal update (only when flat — no position open)
-  if (!ptState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
+  // Telegram: candle close signal update (only when flat — no position open; skip in sim mode)
+  if (!ptState._simMode && !ptState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
     const _shortReason = reason ? reason.slice(0, 120) : "—";
