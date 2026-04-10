@@ -84,9 +84,9 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
 
   // PNL-based trailing profit (tiered % of peak)
-  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "200");
-  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "50");
-  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "1000:60,3000:70,5000:80,10000:90")
+  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "350");
+  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
+  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
     .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
     .sort((a, b) => b.peak - a.peak);
 

@@ -43,11 +43,11 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "3", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "200");
-const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "50");
+const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "350");
+const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
-// Default: ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
-const _SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "1000:60,3000:70,5000:80,10000:90")
+// Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
+const _SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
   .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
   .sort((a, b) => b.peak - a.peak);
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
@@ -488,8 +488,16 @@ async function squareOff(exitPrice, reason) {
   clearScalpPosition();  // remove persisted state — position is closed
 
   if (reason.includes("SL")) {
-    state._slPauseUntil = Date.now() + (_SCALP_PAUSE_CANDLES * SCALP_RES * 60 * 1000);
-    log(`⏸️ [SCALP-LIVE] SL pause — ${_SCALP_PAUSE_CANDLES} candles`);
+    state._consecSLs = (state._consecSLs || 0) + 1;
+    const extraPause = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
+    const pauseCandles = state._consecSLs >= 2
+      ? _SCALP_PAUSE_CANDLES + extraPause * (state._consecSLs - 1)
+      : _SCALP_PAUSE_CANDLES;
+    state._slPauseUntil = Date.now() + (pauseCandles * SCALP_RES * 60 * 1000);
+    const escalateNote = state._consecSLs >= 2 ? ` (${state._consecSLs} consecutive SLs → ${pauseCandles} candles)` : "";
+    log(`⏸️ [SCALP-LIVE] SL pause — ${pauseCandles} candles${escalateNote}`);
+  } else if (netPnl > 0) {
+    state._consecSLs = 0;
   }
 
   if (state.sessionPnl <= -_SCALP_MAX_LOSS) {

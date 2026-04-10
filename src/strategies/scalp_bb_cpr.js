@@ -145,6 +145,7 @@ function getSignal(candles, opts) {
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
   base.bbMiddle = parseFloat(bb.middle.toFixed(2));
   base.bbLower  = parseFloat(bb.lower.toFixed(2));
+  base.bbWidth  = parseFloat((bb.upper - bb.lower).toFixed(2));
   base.rsi = parseFloat(rsi.toFixed(1));
   base.sar = parseFloat(sar.toFixed(2));
 
@@ -161,6 +162,19 @@ function getSignal(candles, opts) {
     var curRange = sc.high - sc.low;
     if (avgRange > 0 && curRange < avgRange * activityRatio) {
       base.reason = "Low activity (range " + curRange.toFixed(1) + " < " + (avgRange * activityRatio).toFixed(1) + " threshold)";
+      return base;
+    }
+  }
+
+  // ── BB SQUEEZE FILTER — skip entries when bands are narrow (consolidation) ──
+  if (cfg("SCALP_BB_SQUEEZE_FILTER", "true") === "true") {
+    var bbWidth    = bb.upper - bb.lower;
+    var bbWidthPct = (bbWidth / bb.middle) * 100;
+    var minWidthPct = parseFloat(cfg("SCALP_BB_MIN_WIDTH_PCT", "0.15"));
+    base.bbWidth    = parseFloat(bbWidth.toFixed(2));
+    base.bbWidthPct = parseFloat(bbWidthPct.toFixed(3));
+    if (bbWidthPct < minWidthPct) {
+      base.reason = "BB squeeze (width " + bbWidth.toFixed(1) + "pts / " + bbWidthPct.toFixed(2) + "% < " + minWidthPct + "%)";
       return base;
     }
   }

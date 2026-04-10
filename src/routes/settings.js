@@ -103,9 +103,9 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
       // ── Trail profit (tiered % of peak) ──
-      { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "200" },
-      { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Base: exit when profit drops below X% of peak", default: "50" },
-      { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows (e.g. 1000:60,3000:70,5000:80,10000:90)", default: "1000:60,3000:70,5000:80,10000:90" },
+      { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
+      { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Base: exit when profit drops below X% of peak", default: "65" },
+      { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
       // ── Risk management (Prev Candle SL) ──
       { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on prev candle SL distance", default: "25" },
       { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on prev candle SL (prevents too-tight SL on tiny candles)", default: "8" },
@@ -114,6 +114,10 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "2000" },
       { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
+      { key: "SCALP_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL after the 2nd (e.g. 2 = 4 candle pause on 2nd SL, 6 on 3rd)", default: "2" },
+      // ── BB Squeeze filter ──
+      { key: "SCALP_BB_SQUEEZE_FILTER", label: "BB Squeeze Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when BB bands are narrow (consolidation = false breakouts)", default: "true" },
+      { key: "SCALP_BB_MIN_WIDTH_PCT", label: "BB Min Width (%)", type: "number", min: 0.05, max: 0.5, step: 0.01, effect: EFFECT.SESSION, desc: "Min BB width as % of price (0.15 = skip if BB width < 36pts on NIFTY 24000)", default: "0.15" },
       // ── Activity filter ──
       { key: "SCALP_ACTIVITY_FILTER", label: "Activity Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when candle range is below average (low activity = false BB breakouts)", default: "false" },
       { key: "SCALP_ACTIVITY_FILTER_RATIO", label: "Activity Ratio", type: "number", min: 0.2, max: 1.0, step: 0.1, effect: EFFECT.SESSION, desc: "Min candle range vs 20-bar avg (0.5 = skip if range < 50% of avg)", default: "0.5" },
