@@ -48,6 +48,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
         { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
+        { key: 'simulate',  href: '/paperTrade/simulate', icon: '🎮', label: 'Simulate'  },
         { key: 'history',   href: '/paperTrade/history', icon: '📊', label: 'History'   },
         { key: 'compare',   href: '/compare/trading',    icon: '⚖',  label: 'Compare'   },
         { key: 'tracker',   href: '/tracker/status',     icon: '🎯', label: 'Tracker'   },
@@ -59,6 +60,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
         { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
+        { key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate'  },
         { key: 'scalpHistory',  href: '/scalp-paper/history', icon: '📊', label: 'History'   },
         { key: 'scalpCompare', href: '/compare/scalping',    icon: '⚖',  label: 'Compare'   },
         { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
