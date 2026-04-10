@@ -15,7 +15,7 @@ const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram } = require("./utils/notify");
-const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(express.json());
 
@@ -252,6 +252,12 @@ const OPEN_PATHS = [
   "/scalp-paper/status",
   "/scalp-paper/status/data",
   "/scalp-backtest",
+  // Price Action mode (read-only status/data)
+  "/pa-live/status",
+  "/pa-live/status/data",
+  "/pa-paper/status",
+  "/pa-paper/status/data",
+  "/pa-backtest",
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
@@ -289,6 +295,10 @@ app.use("/scalp",          require("./routes/scalp"));          // ← scalp liv
 app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
 app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
 app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
+// ── Price Action mode routes (5-min, independent from main & scalp) ─────────
+app.use("/pa-live",        require("./routes/priceActionLive"));      // ← PA live (Fyers orders)
+app.use("/pa-paper",       require("./routes/priceActionPaper"));     // ← PA paper trade
+app.use("/pa-backtest",    require("./routes/priceActionBacktest"));  // ← PA backtest
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 
 // ── Holiday Management API ────────────────────────────────────────────────────

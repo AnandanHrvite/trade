@@ -124,6 +124,41 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "PRICE ACTION (5-min) — Fyers",
+    icon: "📐",
+    fields: [
+      { key: "PA_MODE_ENABLED", label: "Price Action Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide price action menus", default: "true" },
+      { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
+      { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high", default: "false" },
+      { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new PA entries (HH:MM IST)", default: "09:20" },
+      { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new PA entries after this time (HH:MM IST)", default: "14:30" },
+      { key: "PA_RESOLUTION", label: "Candle (min)", type: "select", options: ["5", "3"], effect: EFFECT.SESSION, desc: "Price action candle resolution", default: "5" },
+      // ── RSI (confluence filter) ──
+      { key: "PA_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
+      { key: "PA_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (confluence)", default: "45" },
+      { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
+      // ── Pattern parameters ──
+      { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size for engulfing/BOS patterns", default: "5" },
+      { key: "PA_PIN_WICK_RATIO", label: "Pin Bar Wick Ratio", type: "number", min: 1.5, max: 4, step: 0.5, effect: EFFECT.SESSION, desc: "Min wick-to-body ratio for hammer/shooting star", default: "2" },
+      // ── Support/Resistance ──
+      { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows", default: "30" },
+      { key: "PA_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Price must be within this many pts of S/R level", default: "15" },
+      // ── Trail profit ──
+      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
+      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
+      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
+      // ── Risk management ──
+      { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on signal candle SL distance", default: "25" },
+      { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
+      { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
+      { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max PA entries per day", default: "30" },
+      { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
+      { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
+      { key: "PA_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL", default: "2" },
+      { key: "PA_PAPER_CAPITAL", label: "PA Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for PA paper trading", default: "100000" },
+    ],
+  },
+  {
     section: "COMMON — Instrument & Backtest",
     icon: "📈",
     fields: [

@@ -11,13 +11,15 @@
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
-  // Import scalp/primary state inline to avoid circular dependency issues
+  // Import scalp/primary/PA state inline to avoid circular dependency issues
   let _scalpMode = null;
   let _primaryMode = null;
+  let _paMode = null;
   try {
     const sss = require('./sharedSocketState');
     _scalpMode = sss.getScalpMode();
     _primaryMode = sss.getMode();
+    _paMode = sss.getPAMode();
   } catch (_) {}
 
   const {
@@ -34,17 +36,28 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   } = opts;
 
   const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
-  // ── Grouped navigation sections ──
+  // Determine which collapsible group the active page belongs to
+  const tradingKeys = ['backtest', 'paper', 'simulate', 'history', 'compare', 'tracker', 'live'];
+  const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
+  const paKeys      = ['paBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive'];
+
+  const isTradingOpen = tradingKeys.includes(activePage);
+  const isScalpOpen   = scalpKeys.includes(activePage);
+  const isPAOpen      = paKeys.includes(activePage);
+
+  // ── Grouped navigation sections (collapsible) ──
   const sections = [
     {
-      header: null, // no header for top section
+      header: null, collapsible: false,
       items: [
         { key: 'dashboard', href: '/',  icon: '⌂',  label: 'Dashboard' },
       ]
     },
     {
-      header: 'TRADING',
+      header: 'TRADE', collapsible: true, collapsed: !isTradingOpen,
+      groupId: 'nav-trade',
       items: [
         { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
         { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
@@ -56,7 +69,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ]
     },
     ...(scalpModeOn ? [{
-      header: 'SCALPING',
+      header: 'SCALP', collapsible: true, collapsed: !isScalpOpen,
+      groupId: 'nav-scalp',
       items: [
         { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
         { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
@@ -66,8 +80,20 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
         { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
       ]
     }] : []),
+    ...(paModeOn ? [{
+      header: 'PRICE ACTION', collapsible: true, collapsed: !isPAOpen,
+      groupId: 'nav-pa',
+      items: [
+        { key: 'paBacktest', href: '/pa-backtest',       icon: '📐', label: 'Backtest'  },
+        { key: 'paPaper',    href: '/pa-paper/status',   icon: '📐', label: 'Paper'     },
+        { key: 'paSim',      href: '/pa-paper/simulate', icon: '🎮', label: 'Simulate'  },
+        { key: 'paHistory',  href: '/pa-paper/history',  icon: '📊', label: 'History'   },
+        { key: 'paCompare',  href: '/compare/priceaction', icon: '⚖', label: 'Compare'  },
+        { key: 'paLive',     href: '/pa-live/status',    icon: '📐', label: 'Live'      },
+      ]
+    }] : []),
     {
-      header: 'SYSTEM',
+      header: 'SYSTEM', collapsible: false,
       items: [
         { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
         { key: 'monitor',   href: '/monitor',    icon: '📈', label: 'Monitor'    },
@@ -78,9 +104,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     },
   ];
 
-  // Block all backtest & paper (both trading + scalping) when ANY live mode is active
-  const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE';
-  const blocked = anyLiveActive ? ['backtest', 'paper', 'scalpBacktest', 'scalpPaper'] : [];
+  // Block all backtest & paper (trading + scalping + PA) when ANY live mode is active
+  const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE' || _paMode === 'PA_LIVE';
+  const blocked = anyLiveActive ? ['backtest', 'paper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
 
   function renderItem(p) {
     const isActive   = p.key === activePage;
@@ -109,17 +135,36 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const paLiveBadge = p.key === 'paLive' && _paMode === 'PA_LIVE'
+      ? `<span class="sb-nav-badge live">LIVE</span>`
+      : '';
+
+    const paPaperBadge = p.key === 'paPaper' && _paMode === 'PA_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}
+      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}
     </a>`;
   }
 
   const navItems = sections.map(section => {
+    const items = section.items.map(renderItem).join('');
+    if (section.collapsible && section.header) {
+      const gid = section.groupId || 'nav-' + section.header.toLowerCase().replace(/\s+/g, '-');
+      const collapsed = section.collapsed ? ' collapsed' : '';
+      return `<div class="sb-section">
+        <div class="sb-section-header sb-collapsible${collapsed}" onclick="toggleNavGroup('${gid}')" data-group="${gid}">
+          <span>${section.header}</span>
+          <span class="sb-chevron">${section.collapsed ? '›' : '‹'}</span>
+        </div>
+        <div class="sb-group-items${collapsed}" id="${gid}">${items}</div>
+      </div>`;
+    }
     const header = section.header
       ? `<div class="sb-section-header">${section.header}</div>`
       : '';
-    const items = section.items.map(renderItem).join('');
     return `<div class="sb-section">${header}${items}</div>`;
   }).join('');
 
@@ -184,6 +229,27 @@ function closeSidebar(){
   if(ov) ov.classList.remove('active');
   document.body.style.overflow='';
 }
+function toggleNavGroup(gid){
+  var el=document.getElementById(gid);
+  var hdr=document.querySelector('[data-group="'+gid+'"]');
+  if(!el) return;
+  var isCollapsed=el.classList.toggle('collapsed');
+  if(hdr) hdr.classList.toggle('collapsed',isCollapsed);
+  // Persist state in sessionStorage
+  try{sessionStorage.setItem('nav_'+gid,isCollapsed?'0':'1');}catch(e){}
+}
+// Restore collapsed state from sessionStorage on load
+(function(){
+  var groups=document.querySelectorAll('.sb-group-items');
+  groups.forEach(function(g){
+    var gid=g.id;
+    try{
+      var saved=sessionStorage.getItem('nav_'+gid);
+      if(saved==='1'){g.classList.remove('collapsed');var h=document.querySelector('[data-group="'+gid+'"]');if(h)h.classList.remove('collapsed');}
+      else if(saved==='0'){g.classList.add('collapsed');var h=document.querySelector('[data-group="'+gid+'"]');if(h)h.classList.add('collapsed');}
+    }catch(e){}
+  });
+})();
 
 /* ── Deploy status chip (top-right floating) ───────────────── */
 (function(){
@@ -472,6 +538,13 @@ function sidebarCSS() {
     .sb-section{padding-bottom:4px;}
     .sb-section + .sb-section{border-top:1px solid #0e1e36;padding-top:4px;}
     .sb-section-header{font-size:0.52rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#1e3a5a;padding:8px 16px 2px;user-select:none;}
+    .sb-section-header.sb-collapsible{cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding-right:16px;transition:color 0.15s;}
+    .sb-section-header.sb-collapsible:hover{color:#3b82f6;}
+    .sb-chevron{font-size:0.7rem;transition:transform 0.2s;display:inline-block;}
+    .sb-section-header.sb-collapsible:not(.collapsed) .sb-chevron{transform:rotate(-90deg);}
+    .sb-section-header.sb-collapsible.collapsed .sb-chevron{transform:rotate(0deg);}
+    .sb-group-items{overflow:hidden;max-height:500px;transition:max-height 0.25s ease-in-out,opacity 0.2s;opacity:1;}
+    .sb-group-items.collapsed{max-height:0;opacity:0;padding:0;}
     .sb-nav-item{display:flex;align-items:center;gap:8px;padding:9px 16px;font-size:0.72rem;color:#2a4060;cursor:pointer;border-left:2px solid transparent;transition:all 0.12s;text-decoration:none;}
     .sb-nav-item:hover{color:#7aacf0;background:rgba(59,130,246,0.04);}
     .sb-nav-item.active{color:#60a5fa;background:rgba(59,130,246,0.08);border-left-color:#3b82f6;}

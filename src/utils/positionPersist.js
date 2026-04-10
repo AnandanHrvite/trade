@@ -158,7 +158,77 @@ function clearScalpPosition() {
   } catch (_) {}
 }
 
+// ── Price Action (5-min Fyers) ──────────────────────────────────────────────
+
+const PA_POS_FILE = path.join(DATA_DIR, ".active_pa_position.json");
+
+function savePAPosition(position, sessionMeta) {
+  try {
+    if (!position) {
+      if (fs.existsSync(PA_POS_FILE)) fs.unlinkSync(PA_POS_FILE);
+      return;
+    }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry,
+        stopLoss:        position.stopLoss,
+        initialStopLoss: position.initialStopLoss,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    const tmp = PA_POS_FILE + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
+    fs.renameSync(tmp, PA_POS_FILE);
+    console.log(`💾 [PERSIST] PA position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save PA position: ${err.message}`);
+  }
+}
+
+function loadPAPosition() {
+  try {
+    if (!fs.existsSync(PA_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(PA_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale PA position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(PA_POS_FILE);
+      return null;
+    }
+    if (data.position) {
+      console.log(`[PERSIST] PA position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    }
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load PA position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearPAPosition() {
+  try {
+    if (fs.existsSync(PA_POS_FILE)) {
+      fs.unlinkSync(PA_POS_FILE);
+      console.log("[PERSIST] PA position file cleared.");
+    }
+  } catch (_) {}
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveScalpPosition, loadScalpPosition, clearScalpPosition,
+  savePAPosition, loadPAPosition, clearPAPosition,
 };
