@@ -190,7 +190,7 @@ app.get("/logout", (req, res) => {
 app.use((req, res, next) => {
   const secret = process.env.LOGIN_SECRET;
   if (!secret) return next(); // no login secret → open
-  if (req.path === "/login") return next();
+  if (req.path === "/login" || req.path === "/deploy/webhook") return next();
   // Parse cookie (split on first = only — values may contain =)
   const cookies = (req.headers.cookie || "").split(";").reduce((acc, c) => {
     const idx = c.indexOf("=");
@@ -253,6 +253,8 @@ const OPEN_PATHS = [
   "/scalp-paper/status/data",
   "/scalp-backtest",
   "/health",              // health check — must be open for uptime monitors / PM2 probes
+  "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
+  "/deploy/status",       // deploy status poll — read-only
   // NOTE: /settings/save requires API_SECRET (write operation)
   // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
   // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
@@ -287,6 +289,7 @@ app.use("/scalp",          require("./routes/scalp"));          // ← scalp liv
 app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
 app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
 app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
+app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
