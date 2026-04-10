@@ -27,6 +27,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
+const tickSimulator = require("../services/tickSimulator");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -167,10 +168,16 @@ let ptState = {
   _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
   _entryPending:      false, // prevents double-entry on rapid ticks
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
+  _simMode:           false, // simulation mode (fake ticks, no broker)
+  _simScenario:       null,  // active scenario name
   // Win/loss counters: maintained in simulateSell so /status/data doesn't filter on every poll
   _sessionWins:   0,
   _sessionLosses: 0,
 };
+
+// ── Simulation clock ────────────────────────────────────────────────────────
+let _simClockMs = 0;
+function simNow() { return ptState._simMode ? _simClockMs : Date.now(); }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -245,6 +252,7 @@ const _ENTRY_STOP_MINS = _STOP_MINS - 10;
 
 // Trade EXECUTION gate: cached 60s TTL, uses fast integer IST calc
 function isMarketHours() {
+  if (ptState._simMode) return true; // always "in hours" during simulation
   const now = Date.now();
   if (now - _mktHoursCacheTs < 60_000) return _mktHoursCache;
   const total = getISTMinutes();
@@ -553,9 +561,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   };
 
   // Set option symbol and start REST polling (no socket changes)
-  // Skip option polling for futures — no option premium to track
+  // Skip option polling for futures and simulation mode — no option premium to track
   ptState.optionSymbol = symbol;
-  if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+  if (ptState._simMode) {
+    log(`📊 [PAPER] Simulation mode — skipping option LTP polling`);
+  } else if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
     log(`📊 [PAPER] Starting option LTP polling (REST/3s): ${symbol}`);
     startOptionPolling(symbol);
   } else {
@@ -747,11 +757,13 @@ async function onCandleClose(candle) {
   _cachedClosedCandleSL = stopLoss ?? null;
 
   // ── Pre-fetch option symbols in background so entry is instant on next tick ──
-  if (!ptState.position) prefetchOptionSymbols(candle.close).catch(() => {});
+  // Skip in simulation mode (no broker API)
+  if (!ptState.position && !ptState._simMode) prefetchOptionSymbols(candle.close).catch(() => {});
 
   // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
-  fetchLiveVix().catch(() => {});
-  const _vixDisplay = vixFilter.VIX_ENABLED ? getCachedVix() : null;
+  // Skip in simulation mode
+  if (!ptState._simMode) fetchLiveVix().catch(() => {});
+  const _vixDisplay = (vixFilter.VIX_ENABLED && !ptState._simMode) ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
@@ -842,7 +854,8 @@ async function onCandleClose(candle) {
 
   // ── Exit Rule 4: EOD square-off + auto-stop at TRADE_STOP_TIME ─────────────
   // Use fast integer IST calc (no Date/ICU allocation) + module-level cached _STOP_MINS.
-  const _eodMinNow  = getISTMinutes();
+  // Skip EOD exit in simulation mode
+  const _eodMinNow  = ptState._simMode ? 0 : getISTMinutes();
   const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
   if (_eodMinNow >= _STOP_MINS) {
     if (ptState.position) {
@@ -1000,10 +1013,13 @@ function onTick(tick) {
 
   // ── Everything below: NIFTY index tick ───────────────────────────────────
   ptState.tickCount++;
-  ptState.lastTickTime  = Date.now(); // raw ms — formatted only on status poll (istNow() is expensive on every tick)
+  ptState.lastTickTime  = simNow(); // raw ms — formatted only on status poll (istNow() is expensive on every tick)
   ptState.lastTickPrice = tick.ltp;
 
-  const now    = Date.now();
+  // In sim mode, advance simulated clock (~9s per tick, 20 ticks per candle)
+  if (ptState._simMode) _simClockMs += 9000;
+
+  const now    = simNow();
   const bucket = get5MinBucket(now);
 
   if (!ptState.currentBar || ptState.barStartTime !== bucket) {
@@ -1109,8 +1125,9 @@ function onTick(tick) {
 
     if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
-      const _vixIntraVal = getCachedVix();
-      const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
+      // Skip VIX filter in simulation mode
+      const _vixIntraVal = ptState._simMode ? null : getCachedVix();
+      const _vixIntraBlocked = !ptState._simMode && vixFilter.VIX_ENABLED && _vixIntraVal != null && (
         _vixIntraVal > vixFilter.VIX_MAX_ENTRY ||
         (_vixIntraVal > vixFilter.VIX_STRONG_ONLY && signalStrength !== "STRONG")
       );
@@ -1128,7 +1145,11 @@ function onTick(tick) {
       const INSTR = instrumentConfig.INSTRUMENT; // top-level constant — no inline require needed
 
       let symbolPromise;
-      if (INSTR === "NIFTY_FUTURES") {
+      if (ptState._simMode) {
+        // In simulation mode, use a dummy option symbol (no broker API needed)
+        const strike = Math.round(ltp / 50) * 50;
+        symbolPromise = Promise.resolve({ symbol: `NSE:NIFTY-SIM-${strike}${side}`, expiry: "SIM", strike, invalid: false });
+      } else if (INSTR === "NIFTY_FUTURES") {
         symbolPromise = getSymbol(side).then(sym => ({ symbol: sym, expiry: null, strike: null, invalid: false }));
       } else {
         const cached = getCachedSymbol(side, ltp);
@@ -1678,7 +1699,12 @@ router.get("/stop", async (req, res) => {
   }
 
   stopOptionPolling();
-  if (!sharedSocketState.isScalpActive()) {
+  // Stop tick simulator if in sim mode, otherwise stop socket
+  if (ptState._simMode) {
+    tickSimulator.stop();
+    ptState._simMode = false;
+    ptState._simScenario = null;
+  } else if (!sharedSocketState.isScalpActive()) {
     socketManager.stop();
   }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
@@ -1942,6 +1968,8 @@ router.get("/status/data", (req, res) => {
       consecutiveLosses: ptState._consecutiveLosses || 0,
       pauseUntilTime:    ptState._pauseUntilTime || null,
       dailyLossHit:      ptState._dailyLossHit || false,
+      simMode:           ptState._simMode || false,
+      simScenario:       ptState._simScenario || null,
       sessionStart:      ptState.sessionStart,
       tradeCount:        ptState.sessionTrades.length,
       wins:              ptState._sessionWins,
@@ -2257,6 +2285,11 @@ ${modalCSS()}
     .section-title{font-size:0.58rem;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:#2a3a20;margin-bottom:8px;display:flex;align-items:center;gap:8px;}
     .section-title::after{content:'';flex:1;height:0.5px;background:#162416;}
 
+    /* ── COPY / TOGGLE BUTTONS ── */
+    .copy-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;transition:all 0.15s;white-space:nowrap;}
+    .copy-btn:hover{background:#0a1e3d;border-color:#3b82f6;}
+    .copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
+
     /* ── POSITION BLOCK ── */
     /* inherits existing inline styles */
 
@@ -2403,6 +2436,7 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
         <option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="999999">All</option>
       </select>
       <span id="ptCount" style="font-size:0.72rem;color:#4a6080;"></span>
+      <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
     </div>
     <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -3376,5 +3410,224 @@ async function manualEntry(side) {
 // CSV export route removed — server-side CSV no longer available.
 // All console output is accessible via the /logs page.
 
+
+// ── Simulation mode routes ─────────────────────────────────────────────────
+
+router.get("/simulate", (req, res) => {
+  if (ptState.running) return res.redirect("/paperTrade/status");
+
+  const scenarios = tickSimulator.getScenarios();
+  const cards = Object.entries(scenarios).map(([key, s]) => `
+    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;cursor:pointer;transition:border-color 0.2s,background 0.2s;"
+         onmouseover="this.style.borderColor='#f59e0b';this.style.background='#111b2e'"
+         onmouseout="this.style.borderColor='#1a2236';this.style.background='#0d1320'"
+         onclick="startSim('${key}')">
+      <div style="font-size:1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px;">${s.label}</div>
+      <div style="font-size:0.78rem;color:#6b7fa0;line-height:1.5;">${s.desc}</div>
+    </div>
+  `).join("");
+
+  const strategy = getActiveStrategy();
+
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Simulate — Paper Trade</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+${sidebarCSS()}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;}
+.main-content{margin-left:220px;padding:32px 40px;}
+@media(max-width:900px){.main-content{margin-left:0;padding:20px;}}
+.sim-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px;}
+.config-row{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap;}
+.config-label{font-size:0.78rem;color:#6b7fa0;}
+.config-input{background:#0d1320;border:1px solid #1a2236;border-radius:8px;padding:8px 14px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;width:120px;}
+.sim-btn{background:#92400e;color:#fff;border:none;border-radius:8px;padding:12px 28px;font-size:0.9rem;font-weight:700;cursor:pointer;font-family:inherit;transition:background 0.15s;margin-top:16px;}
+.sim-btn:hover{background:#b45309;}
+.sim-btn:disabled{opacity:0.5;cursor:not-allowed;}
+.selected{border-color:#f59e0b !important;background:#111b2e !important;box-shadow:0 0 0 2px #f59e0b44;}
+</style>
+</head><body>
+<div class="app-shell">
+${buildSidebar('paperTrade', false)}
+<div class="main-content">
+  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate Market Scenarios</h1>
+  <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
+  <p style="font-size:0.75rem;color:#4a6080;">Resolution: ${TRADE_RES}-min candles | Instrument: ${instrumentConfig.INSTRUMENT}</p>
+
+  <div style="font-size:0.75rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:1.5px;margin-top:28px;">Choose a Scenario</div>
+  <div class="sim-grid" id="scenarioGrid">${cards}</div>
+
+  <div class="config-row">
+    <div>
+      <div class="config-label">Base Price (NIFTY)</div>
+      <input type="number" id="basePrice" value="24500" class="config-input"/>
+    </div>
+    <div>
+      <div class="config-label">Speed (x faster)</div>
+      <input type="number" id="speed" value="10" min="1" max="100" class="config-input"/>
+    </div>
+    <div>
+      <div class="config-label">Session Candles</div>
+      <input type="number" id="candleCount" value="75" min="20" max="200" class="config-input"/>
+    </div>
+  </div>
+
+  <button class="sim-btn" id="startBtn" disabled onclick="submitSim()">Select a scenario above</button>
+  <div id="status" style="margin-top:12px;font-size:0.82rem;color:#6b7fa0;"></div>
+</div></div>
+
+<script>
+let selectedScenario = null;
+function startSim(key) {
+  selectedScenario = key;
+  document.querySelectorAll('.sim-grid > div').forEach(el => el.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+  const btn = document.getElementById('startBtn');
+  btn.disabled = false;
+  btn.textContent = 'Start Simulation';
+}
+function submitSim() {
+  const btn = document.getElementById('startBtn');
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  const body = {
+    scenario: selectedScenario,
+    basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
+    speed: parseInt(document.getElementById('speed').value) || 10,
+    candleCount: parseInt(document.getElementById('candleCount').value) || 75,
+  };
+  fetch('/paperTrade/simulate/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(r => r.json()).then(d => {
+    if (d.success) {
+      window.location.href = '/paperTrade/status';
+    } else {
+      document.getElementById('status').textContent = 'Error: ' + (d.error || 'Unknown');
+      btn.disabled = false;
+      btn.textContent = 'Start Simulation';
+    }
+  }).catch(e => {
+    document.getElementById('status').textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = 'Start Simulation';
+  });
+}
+</script>
+</body></html>`);
+});
+
+router.post("/simulate/start", (req, res) => {
+  if (ptState.running) return res.json({ success: false, error: "Session already running. Stop it first." });
+
+  const { scenario = "trending_up", basePrice = 24500, speed = 10, candleCount = 75 } = req.body || {};
+
+  if (!tickSimulator.SCENARIOS[scenario]) {
+    return res.json({ success: false, error: `Unknown scenario: ${scenario}` });
+  }
+
+  const strategy = getActiveStrategy();
+  if (typeof strategy.reset === "function") strategy.reset();
+
+  // Reset session state
+  ptState.running       = true;
+  ptState.candles       = [];
+  ptState.currentBar    = null;
+  ptState.barStartTime  = null;
+  ptState.position      = null;
+  ptState.sessionTrades = [];
+  ptState.sessionPnl    = 0;
+  ptState.sessionStart  = istNow();
+  ptState.log           = [];
+  ptState.tickCount     = 0;
+  ptState._entryPending = false;
+  ptState.lastTickTime  = null;
+  ptState.lastTickPrice = null;
+  ptState.prevCandleHigh = null;
+  ptState.prevCandleLow  = null;
+  ptState.prevCandleMid  = null;
+  ptState.optionLtp      = null;
+  ptState.optionSymbol   = null;
+  ptState._consecutiveLosses   = 0;
+  ptState._pauseUntilTime      = null;
+  ptState._fiftyPctPauseUntil  = null;
+  ptState._dailyLossHit        = false;
+  ptState._cachedCE            = null;
+  ptState._cachedPE            = null;
+  ptState._maxTradesLoggedCandle = null;
+  ptState._slHitCandleTime     = null;
+  ptState._lastCheckedBarHigh  = null;
+  ptState._lastCheckedBarLow   = null;
+  ptState._missedLoggedCandle  = null;
+  ptState._sessionWins         = 0;
+  ptState._sessionLosses       = 0;
+  ptState._expiryDayBlocked    = false;
+  ptState._simMode             = true;
+  ptState._simScenario         = scenario;
+  _cachedClosedCandleSL        = null;
+
+  // Set simulated clock to 09:15 IST today
+  const simStart = new Date();
+  simStart.setUTCHours(3, 45, 0, 0);
+  _simClockMs = simStart.getTime();
+
+  const scenarioLabel = tickSimulator.SCENARIOS[scenario].label;
+  log(`\n════════════════════════════════════════════════════════════════════`);
+  log(`🎮 [SIM] Simulation started: ${scenarioLabel}`);
+  log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
+  log(`   Resolution : ${TRADE_RES}-min candles`);
+  log(`   Base Price : ₹${basePrice} | Speed: ${speed}x | Candles: ${candleCount}`);
+  log(`════════════════════════════════════════════════════════════════════\n`);
+
+  try {
+    const result = tickSimulator.start({
+      scenario,
+      basePrice,
+      speed,
+      candleCount,
+      warmupCandles: 30,
+      onTick,
+      onCandleDone: (candle, idx) => {
+        if ((idx + 1) % 10 === 0) {
+          log(`🎮 [SIM] Progress: ${idx + 1}/${candleCount} candles | Trades: ${ptState.sessionTrades.length} | PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
+        }
+      },
+      onDone: () => {
+        log(`🏁 [SIM] Simulation complete — ${ptState.sessionTrades.length} trades, PnL: ₹${ptState.sessionPnl.toFixed(2)}`);
+        if (ptState.position) {
+          simulateSell(ptState.lastTickPrice || ptState.position.entryPrice, "Simulation ended", ptState.lastTickPrice);
+        }
+        ptState._simMode = false;
+      },
+    });
+
+    // Pre-load warmup candles
+    if (result.warmupCandles.length > 0) {
+      ptState.candles = result.warmupCandles;
+      // Seed _cachedClosedCandleSL from warmup data so intra-tick entries work
+      const { stopLoss: preloadSL } = strategy.getSignal(ptState.candles, { silent: true });
+      _cachedClosedCandleSL = preloadSL ?? null;
+      // Seed display values
+      const lastC = ptState.candles[ptState.candles.length - 1];
+      if (lastC) {
+        ptState.prevCandleHigh = lastC.high;
+        ptState.prevCandleLow  = lastC.low;
+        ptState.prevCandleMid  = parseFloat(((lastC.high + lastC.low) / 2).toFixed(2));
+      }
+      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | SAR SL: ${_cachedClosedCandleSL || "n/a"}`);
+    }
+
+    log(`🎮 [SIM] Emitting ${result.totalSessionCandles} candles as ticks...`);
+    res.json({ success: true, scenario: scenarioLabel, candles: result.totalSessionCandles });
+  } catch (err) {
+    ptState.running = false;
+    ptState._simMode = false;
+    log(`❌ [SIM] Start failed: ${err.message}`);
+    res.json({ success: false, error: err.message });
+  }
+});
 
 module.exports = router;
