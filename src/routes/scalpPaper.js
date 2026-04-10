@@ -276,11 +276,13 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   };
 
   state.optionSymbol = symbol;
-  if (instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
+  if (!state._simMode && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES") {
     startOptionPolling(symbol);
   }
 
   log(`📝 [SCALP-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | ${reason}`);
+
+  if (state._simMode) return; // skip Telegram in sim mode
 
   notifyEntry({
     mode: "SCALP-PAPER",
@@ -361,20 +363,22 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   state.position = null;
 
-  notifyExit({
-    mode: "SCALP-PAPER",
-    side, symbol,
-    spotAtEntry: spotAtEntry || entryPrice,
-    spotAtExit: spotAtExit || exitPrice,
-    optionEntryLtp: optionEntryLtp || null,
-    optionExitLtp: exitOptionLtp || null,
-    pnl: netPnl,
-    sessionPnl: state.sessionPnl,
-    exitReason: reason,
-    entryTime,
-    exitTime: istNow(),
-    qty,
-  });
+  if (!state._simMode) {
+    notifyExit({
+      mode: "SCALP-PAPER",
+      side, symbol,
+      spotAtEntry: spotAtEntry || entryPrice,
+      spotAtExit: spotAtExit || exitPrice,
+      optionEntryLtp: optionEntryLtp || null,
+      optionExitLtp: exitOptionLtp || null,
+      pnl: netPnl,
+      sessionPnl: state.sessionPnl,
+      exitReason: reason,
+      entryTime,
+      exitTime: istNow(),
+      qty,
+    });
+  }
 }
 
 // ── onTick — processes each WebSocket tick ───────────────────────────────────
