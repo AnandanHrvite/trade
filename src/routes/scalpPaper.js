@@ -548,6 +548,7 @@ async function onCandleClose(bar) {
 
   const result = scalpStrategy.getSignal(window, {
     silent: true,
+    skipTimeCheck: state._simMode,
     prevDayOHLC: _prevDayOHLC,
     prevPrevDayOHLC: _prevPrevDayOHLC,
   });

@@ -104,10 +104,12 @@ function getSignal(candles, opts) {
   }
 
   var sc = candles[candles.length - 1];
-  var windowCheck = isInTradingWindow(sc.time);
-  if (!windowCheck.ok) {
-    base.reason = windowCheck.reason;
-    return base;
+  if (!opts.skipTimeCheck) {
+    var windowCheck = isInTradingWindow(sc.time);
+    if (!windowCheck.ok) {
+      base.reason = windowCheck.reason;
+      return base;
+    }
   }
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
