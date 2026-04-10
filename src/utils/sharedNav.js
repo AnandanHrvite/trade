@@ -147,14 +147,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       <span class="sb-status-dot ${isRunning ? '' : 'stopped'}"></span>
       ${statusLabel}
     </div>
-    <div class="sb-deploy-row" id="sb-deploy-row" style="display:none;">
-      <span class="sb-deploy-dot" id="sb-deploy-dot"></span>
-      <span id="sb-deploy-label">—</span>
-    </div>
     ${bottomBtns}
     ${process.env.LOGIN_SECRET ? '<a href="/logout" class="sb-nav-item" style="margin-top:6px;font-size:0.62rem;color:#4a5878;justify-content:center;padding:5px;"><span class="sb-nav-icon">🔓</span> Logout</a>' : ''}
   </div>
 </nav>
+<div class="deploy-chip" id="deploy-chip" style="display:none;">
+  <span class="deploy-chip-dot" id="deploy-chip-dot"></span>
+  <span id="deploy-chip-label"></span>
+</div>
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
 (function(){
@@ -185,12 +185,12 @@ function closeSidebar(){
   document.body.style.overflow='';
 }
 
-/* ── Deploy status polling ─────────────────────────────────── */
+/* ── Deploy status chip (top-right floating) ───────────────── */
 (function(){
-  var row=document.getElementById('sb-deploy-row');
-  var dot=document.getElementById('sb-deploy-dot');
-  var lbl=document.getElementById('sb-deploy-label');
-  if(!row) return;
+  var chip=document.getElementById('deploy-chip');
+  var dot=document.getElementById('deploy-chip-dot');
+  var lbl=document.getElementById('deploy-chip-label');
+  if(!chip) return;
 
   var hideTimer=null;
 
@@ -215,15 +215,15 @@ function closeSidebar(){
   function poll(){
     fetch('/deploy/status').then(function(r){return r.json()}).then(function(d){
       if(d.status==='idle'){
-        row.style.display='none';
+        chip.style.display='none';
         clearInterval(deployingTimer); deployingTimer=null;
         return;
       }
-      row.style.display='flex';
+      chip.style.display='flex';
       clearTimeout(hideTimer);
 
       if(d.status==='deploying'){
-        dot.className='sb-deploy-dot deploying';
+        chip.className='deploy-chip deploying';
         deployStart=d.startedAt;
         lbl.textContent='DEPLOYING '+elapsed(d.startedAt);
         if(!deployingTimer){
@@ -234,14 +234,14 @@ function closeSidebar(){
       } else {
         clearInterval(deployingTimer); deployingTimer=null;
         if(d.status==='success'){
-          dot.className='sb-deploy-dot success';
-          lbl.innerHTML='DEPLOYED <span style="opacity:.6;font-size:.55rem">'+ago(d.finishedAt)+'</span>';
+          chip.className='deploy-chip success';
+          lbl.textContent='DEPLOYED '+ago(d.finishedAt);
         } else {
-          dot.className='sb-deploy-dot failure';
-          lbl.innerHTML='DEPLOY FAILED <span style="opacity:.6;font-size:.55rem">'+ago(d.finishedAt)+'</span>';
+          chip.className='deploy-chip failure';
+          lbl.textContent='DEPLOY FAILED '+ago(d.finishedAt);
         }
         // auto-hide after 5 minutes
-        hideTimer=setTimeout(function(){ row.style.display='none'; },5*60*1000);
+        hideTimer=setTimeout(function(){ chip.style.display='none'; },5*60*1000);
       }
     }).catch(function(){});
   }
@@ -484,11 +484,15 @@ function sidebarCSS() {
     .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:#1a3050;margin-bottom:10px;}
     .sb-status-dot{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:pulse 1.3s infinite;}
     .sb-status-dot.stopped{background:#2a4060;animation:none;}
-    .sb-deploy-row{display:flex;align-items:center;gap:6px;font-size:0.58rem;color:#8aa0c0;margin-bottom:10px;letter-spacing:0.3px;}
-    .sb-deploy-dot{width:5px;height:5px;border-radius:50%;background:#475569;flex-shrink:0;}
-    .sb-deploy-dot.deploying{background:#f59e0b;animation:pulse 1s infinite;}
-    .sb-deploy-dot.success{background:#10b981;animation:none;}
-    .sb-deploy-dot.failure{background:#ef4444;animation:ltpulse 1.5s infinite;}
+    .deploy-chip{display:none;position:fixed;top:12px;right:16px;z-index:9999;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;font-weight:600;letter-spacing:0.4px;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.3);cursor:default;transition:all 0.3s;}
+    .deploy-chip.deploying{background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);color:#f59e0b;}
+    .deploy-chip.success{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);color:#10b981;}
+    .deploy-chip.failure{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);color:#ef4444;}
+    .deploy-chip-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+    .deploy-chip.deploying .deploy-chip-dot{background:#f59e0b;animation:pulse 1s infinite;}
+    .deploy-chip.success .deploy-chip-dot{background:#10b981;}
+    .deploy-chip.failure .deploy-chip-dot{background:#ef4444;animation:ltpulse 1.5s infinite;}
+    :root[data-theme="light"] .deploy-chip{box-shadow:0 2px 12px rgba(0,0,0,0.1);}
     .sb-action-btn{width:100%;padding:7px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.68rem;font-weight:700;cursor:pointer;text-align:center;border:1px solid;transition:all 0.12s;background:transparent;margin-bottom:6px;}
     .sb-stop-btn{border-color:#1a3a6a;color:#60a5fa;}
     .sb-stop-btn:hover{background:rgba(59,130,246,0.08);border-color:#3b82f6;}
