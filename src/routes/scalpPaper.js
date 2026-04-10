@@ -125,7 +125,7 @@ function simNow() {
 
 // Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  const ist = new Date(Date.now() + 19800000);
+  const ist = new Date(simNow() + 19800000);
   const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
   const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
   return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
@@ -307,6 +307,12 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   } else if (optionEntryLtp && exitOptionLtp) {
     rawPnl  = (exitOptionLtp - optionEntryLtp) * qty;
     pnlMode = `option: ₹${optionEntryLtp} → ₹${exitOptionLtp}`;
+  } else if (state._simMode) {
+    // Sim mode: no real option LTP — use delta approximation like backtest
+    const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    const spotMove = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1);
+    rawPnl  = spotMove * DELTA * qty;
+    pnlMode = `sim delta(${DELTA})`;
   } else {
     rawPnl  = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1) * qty;
     pnlMode = "spot proxy";
@@ -348,7 +354,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     const pauseCandles = state._consecSLs >= 2
       ? _SCALP_PAUSE_CANDLES + extraPause * (state._consecSLs - 1)
       : _SCALP_PAUSE_CANDLES;
-    state._slPauseUntil = Date.now() + (pauseCandles * SCALP_RES * 60 * 1000);
+    state._slPauseUntil = simNow() + (pauseCandles * SCALP_RES * 60 * 1000);
     const escalateNote = state._consecSLs >= 2 ? ` (${state._consecSLs} consecutive SLs → ${pauseCandles} candles)` : "";
     log(`⏸️ [SCALP-PAPER] SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
   } else if (netPnl > 0) {
@@ -523,8 +529,8 @@ async function onCandleClose(bar) {
   if (!state._simMode && !isMarketHours()) { log(`⏭️ [SCALP-PAPER] SKIP: outside market hours`); return; }
   if (state._dailyLossHit) { log(`⏭️ [SCALP-PAPER] SKIP: daily loss limit hit`); return; }
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-PAPER] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
-  if (state._slPauseUntil && Date.now() < state._slPauseUntil) {
-    const secsLeft = Math.ceil((state._slPauseUntil - Date.now()) / 1000);
+  if (state._slPauseUntil && simNow() < state._slPauseUntil) {
+    const secsLeft = Math.ceil((state._slPauseUntil - simNow()) / 1000);
     log(`⏭️ [SCALP-PAPER] SKIP: SL cooldown (${secsLeft}s left)`);
     return;
   }

@@ -183,7 +183,7 @@ function simNow() { return ptState._simMode ? _simClockMs : Date.now(); }
 
 // Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
 function istNow() {
-  const ist = new Date(Date.now() + 19800000);
+  const ist = new Date(simNow() + 19800000);
   const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
   const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
   return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
@@ -617,6 +617,12 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     // Options: use actual option premium movement (entry LTP → exit LTP)
     rawPnl  = (exitOptionLtp - optionEntryLtp) * qty;
     pnlMode = `option premium: entry ₹${optionEntryLtp} → exit ₹${exitOptionLtp}`;
+  } else if (ptState._simMode) {
+    // Sim mode: no real option LTP — use delta approximation like backtest
+    const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    const spotMove = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1);
+    rawPnl  = spotMove * DELTA * qty;
+    pnlMode = `sim delta(${DELTA})`;
   } else {
     // Options fallback: spot movement proxy
     rawPnl  = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1) * qty;
@@ -679,7 +685,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       } else {
         // 5-min: pause 4 candles (~20 min) then resume
         const pauseMs = 4 * getTradeResolution() * 60 * 1000;
-        ptState._pauseUntilTime = Date.now() + pauseMs;
+        ptState._pauseUntilTime = simNow() + pauseMs;
         const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
         log(`⚠️ [PAPER] 3 consecutive losses — entries PAUSED for ${getTradeResolution() * 4} min (resume ~${resumeTime})`);
         ptState._consecutiveLosses = 0; // reset only for 5-min (will re-enter later)
@@ -915,7 +921,7 @@ async function onCandleClose(candle) {
       log(`🛑 [PAPER] Daily loss limit active — candle-close entry blocked (${signal})`);
       return;
     }
-    if (ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime) {
+    if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
       const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
       return;
@@ -1091,7 +1097,7 @@ function onTick(tick) {
       // silently skip — no log spam on every tick
     } else if (ptState._dailyLossHit) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
-    } else if (ptState._pauseUntilTime && Date.now() < ptState._pauseUntilTime) {
+    } else if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (false) { // 50% pause DISABLED — replaced by breakeven
       // 50%-rule pause active — silently skip to avoid log spam
