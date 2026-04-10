@@ -3353,22 +3353,23 @@ function exportPDF() {
   window.print();
 }
 
-function resetHistory() {
-  showConfirm({
+async function resetHistory() {
+  var ok = await showConfirm({
     icon: '🗑️',
     title: 'Reset All Paper Trade History?',
     message: 'This will permanently delete all sessions, trades, and reset capital. This cannot be undone.',
     confirmText: 'Yes, Reset Everything',
-    confirmClass: 'modal-btn-danger',
-    cancelText: 'Cancel'
-  }).then(function(confirmed) {
-    if (!confirmed) return;
-    secretFetch('/paperTrade/reset').then(function(r){ if (!r) return; return r.json(); }).then(function(d){
-      if (!d) return;
-      if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
-      else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
-    }).catch(function(){ showToast('❌ Reset request failed', '#ef4444'); });
+    confirmClass: 'modal-btn-danger'
   });
+  if (!ok) return;
+  try {
+    var r = await secretFetch('/paperTrade/reset');
+    if (!r) return;
+    var d;
+    try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
+    if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
+    else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
+  } catch(e) { showToast('❌ Reset request failed: ' + e.message, '#ef4444'); }
 }
 
 // ── Copy & Analytics Functions ────────────────────────────────────────────
