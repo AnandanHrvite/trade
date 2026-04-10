@@ -3104,6 +3104,7 @@ router.get("/history", (req, res) => {
   <title>ௐ Palani Andawar Thunai ॐ — History</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
@@ -3148,6 +3149,39 @@ router.get("/history", (req, res) => {
     .tbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;margin-bottom:10px;flex-wrap:wrap;}
     .tbar-label{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;}
     .tbar-count{font-size:0.68rem;color:#4a6080;}
+    /* ── Light theme overrides ── */
+    :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
+    :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
+    :root[data-theme="light"] .session-card{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .session-meta{color:#94a3b8!important;}
+    :root[data-theme="light"] .session-name{color:#1e293b!important;}
+    :root[data-theme="light"] .session-wl{color:#64748b!important;}
+    :root[data-theme="light"] .tbl th{color:#64748b!important;background:#f1f5f9!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
+    :root[data-theme="light"] .export-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#64748b!important;}
+    :root[data-theme="light"] .export-btn:hover{border-color:#3b82f6!important;color:#2563eb!important;}
+    :root[data-theme="light"] .copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
+    :root[data-theme="light"] .copy-btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
+    :root[data-theme="light"] .dw-toggle{border-color:#e0e4ea!important;color:#2563eb!important;}
+    :root[data-theme="light"] .dw-toggle:hover,.dw-toggle.active{background:#eff6ff!important;border-color:#3b82f6!important;}
+    :root[data-theme="light"] .ana-card{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-card h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-mini h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
+    :root[data-theme="light"] .ana-tbl td{color:#334155!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-tbl tr:hover{background:#f8fafc!important;}
+    :root[data-theme="light"] .ana-stat-label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbar-label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar-count{color:#94a3b8!important;}
+    :root[data-theme="light"] .sc{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .sc-label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-val{color:#1e293b!important;}
+    :root[data-theme="light"] .sc-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .reset-btn{background:rgba(239,68,68,0.08)!important;color:#dc2626!important;border-color:rgba(239,68,68,0.3)!important;}
     @media print {
       .sidebar, .hamburger, .sidebar-overlay, .top-bar, .export-btn, .reset-btn, .copy-btn, .dw-toggle, .ana-panel, #dayWiseWrap, .tbar { display: none !important; }
       .main-content { margin-left: 0 !important; }
@@ -3320,12 +3354,21 @@ function exportPDF() {
 }
 
 function resetHistory() {
-  if (!confirm('⚠️ This will DELETE all paper trade history and reset capital. Are you sure?')) return;
-  if (!confirm('This action CANNOT be undone. Proceed?')) return;
-  fetch('/paperTrade/reset').then(function(r){ return r.json(); }).then(function(d){
-    if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
-    else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
-  }).catch(function(){ showToast('❌ Reset request failed', '#ef4444'); });
+  showConfirm({
+    icon: '🗑️',
+    title: 'Reset All Paper Trade History?',
+    message: 'This will permanently delete all sessions, trades, and reset capital. This cannot be undone.',
+    confirmText: 'Yes, Reset Everything',
+    confirmClass: 'modal-btn-danger',
+    cancelText: 'Cancel'
+  }).then(function(confirmed) {
+    if (!confirmed) return;
+    secretFetch('/paperTrade/reset').then(function(r){ if (!r) return; return r.json(); }).then(function(d){
+      if (!d) return;
+      if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
+      else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
+    }).catch(function(){ showToast('❌ Reset request failed', '#ef4444'); });
+  });
 }
 
 // ── Copy & Analytics Functions ────────────────────────────────────────────
