@@ -484,7 +484,7 @@ function sidebarCSS() {
     .sb-status-row{display:flex;align-items:center;gap:6px;font-size:0.62rem;color:#1a3050;margin-bottom:10px;}
     .sb-status-dot{width:5px;height:5px;border-radius:50%;background:#3b82f6;animation:pulse 1.3s infinite;}
     .sb-status-dot.stopped{background:#2a4060;animation:none;}
-    .deploy-chip{display:none;position:fixed;top:12px;right:16px;z-index:9999;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;font-weight:600;letter-spacing:0.4px;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.3);cursor:default;transition:all 0.3s;}
+    .deploy-chip{display:none;position:fixed;bottom:16px;right:20px;z-index:9999;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;font-weight:600;letter-spacing:0.4px;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,0.3);cursor:default;transition:all 0.3s;}
     .deploy-chip.deploying{background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.4);color:#f59e0b;}
     .deploy-chip.success{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);color:#10b981;}
     .deploy-chip.failure{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.4);color:#ef4444;}
