@@ -3,6 +3,7 @@
  * ─────────────────────────────────────────────────────
  * POST /deploy/webhook   — receives GitHub workflow_run events
  * GET  /deploy/status    — returns current deploy state (polled by sidebar)
+ * Webhook setup: GitHub repo → Settings → Webhooks → workflow_run event
  */
 
 const express = require("express");
