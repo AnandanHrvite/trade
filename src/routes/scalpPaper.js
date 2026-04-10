@@ -2218,21 +2218,22 @@ function exportAllCSV() {
 }
 
 function confirmReset() {
-  showAlert({
+  showConfirm({
     icon: '🗑️',
     title: 'Reset All Scalp Paper History?',
     message: 'This will permanently delete all sessions, trades, and reset capital to ₹${startCap.toLocaleString("en-IN")}. This cannot be undone.',
-    btnText: 'Yes, Reset Everything',
-    btnClass: 'modal-btn-danger',
-    onConfirm: function() {
-      fetch('/scalp-paper/reset')
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-          if (d.success) { window.location.reload(); }
-          else { showAlert({icon:'⚠️',title:'Error',message:d.error||'Reset failed',btnClass:'modal-btn-primary'}); }
-        })
-        .catch(function() { showAlert({icon:'⚠️',title:'Error',message:'Network error',btnClass:'modal-btn-primary'}); });
-    }
+    confirmText: 'Yes, Reset Everything',
+    confirmClass: 'modal-btn-danger',
+    cancelText: 'Cancel'
+  }).then(function(confirmed) {
+    if (!confirmed) return;
+    fetch('/scalp-paper/reset')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.success) { window.location.reload(); }
+        else { showAlert({icon:'⚠️',title:'Error',message:d.error||'Reset failed',btnClass:'modal-btn-primary'}); }
+      })
+      .catch(function() { showAlert({icon:'⚠️',title:'Error',message:'Network error',btnClass:'modal-btn-primary'}); });
   });
 }
 
