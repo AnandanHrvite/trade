@@ -398,8 +398,8 @@ function onTick(tick) {
   state.lastTickTime  = simNow();
   state.lastTickPrice = price;
 
-  // In sim mode, advance simulated clock by ~9 seconds per tick (20 ticks per 3-min candle)
-  if (state._simMode) _simClockMs += 9000;
+  // In sim mode, advance simulated clock per tick (resolution-aware: 20 ticks per candle)
+  if (state._simMode) _simClockMs += (SCALP_RES * 60 * 1000) / 20;
 
   // ── Build 3-min candle ─────────────────────────────────────────────────────
   const tickMs    = simNow();
@@ -2733,8 +2733,8 @@ router.post("/simulate/start", async (req, res) => {
 
   const { mode = "scenario", scenario, basePrice = 24500, speed = 10, candleCount = 75, date } = req.body || {};
 
-  // Common state reset
-  function resetSimState(label) {
+  // Common state reset — simDate is optional YYYY-MM-DD for historical replay
+  function resetSimState(label, simDate) {
     state = {
       running: true, position: null, candles: [], currentBar: null, barStartTime: null,
       log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
@@ -2743,8 +2743,8 @@ router.post("/simulate/start", async (req, res) => {
       _expiryDayBlocked: false,
       _simMode: true, _simScenario: label,
     };
-    const simStart = new Date();
-    simStart.setUTCHours(3, 45, 0, 0);
+    const simStart = simDate ? new Date(simDate + "T00:00:00+05:30") : new Date();
+    simStart.setUTCHours(3, 45, 0, 0); // 09:15 IST
     _simClockMs = simStart.getTime();
   }
 
@@ -2767,7 +2767,7 @@ router.post("/simulate/start", async (req, res) => {
   if (mode === "historical") {
     if (!date) return res.json({ success: false, error: "Date is required for historical replay" });
 
-    resetSimState(`replay:${date}`);
+    resetSimState(`replay:${date}`, date);
     log(`🎮 [SIM] Fetching ${SCALP_RES}-min candles for ${date}...`);
 
     try {
