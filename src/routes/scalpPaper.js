@@ -2191,9 +2191,10 @@ ${buildSidebar('scalpHistory', liveActive)}
 </div>
 </div>
 
+<script>${modalJS()}</script>
+<script id="trades-data" type="application/json">${JSON.stringify(allTrades)}</script>
 <script>
-${modalJS()}
-var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
+var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }

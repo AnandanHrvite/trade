@@ -3224,7 +3224,7 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
       <button class="copy-btn" onclick="copyTradeLog(this)">📋 Copy Trade Log</button>
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
       <button class="export-btn" onclick="exportPDF()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.2);">📄 Export PDF</button>
-      <button class="export-btn reset-btn" onclick="try{resetHistory()}catch(e){alert('Reset error: '+e.message+' | showConfirm='+(typeof showConfirm)+' | secretFetch='+(typeof secretFetch))}" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);">🗑️ Reset All</button>
+      <button class="export-btn reset-btn" onclick="resetHistory()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);">🗑️ Reset All</button>
       <a href="/paperTrade/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
   </div>
@@ -3322,10 +3322,11 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
 </div>
 </div>
 
+<script>${modalJS()}</script>
+<script id="trades-data" type="application/json">${JSON.stringify(allTrades)}</script>
 <script>
-${modalJS()}
 // Flatten all trades for CSV export
-var ALL_TRADES_JSON = ${JSON.stringify(allTrades)};
+var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
