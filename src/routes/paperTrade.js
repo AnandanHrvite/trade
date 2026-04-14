@@ -4057,7 +4057,7 @@ router.post("/simulate/start", async (req, res) => {
   if (typeof strategy.reset === "function") strategy.reset();
 
   // Common state reset
-  function resetSimState(label) {
+  function resetSimState(label, simDate) {
     ptState.running       = true;
     ptState.candles       = [];
     ptState.currentBar    = null;
@@ -4093,8 +4093,11 @@ router.post("/simulate/start", async (req, res) => {
     ptState._simMode             = true;
     ptState._simScenario         = label;
     _cachedClosedCandleSL        = null;
-    const simStart = new Date();
-    simStart.setUTCHours(3, 45, 0, 0);
+    // 09:15 IST = 03:45 UTC on the same IST date
+    const simStart = simDate
+      ? new Date(simDate + "T09:15:00+05:30")
+      : new Date();
+    if (!simDate) simStart.setUTCHours(3, 45, 0, 0);
     _simClockMs = simStart.getTime();
   }
 
@@ -4132,7 +4135,7 @@ router.post("/simulate/start", async (req, res) => {
   if (mode === "historical") {
     if (!date) return res.json({ success: false, error: "Date is required for historical replay" });
 
-    resetSimState(`replay:${date}`);
+    resetSimState(`replay:${date}`, date);
 
     log(`\n════════════════════════════════════════════════════════════════════`);
     log(`🎮 [SIM] Historical replay: ${date}`);
@@ -4141,13 +4144,16 @@ router.post("/simulate/start", async (req, res) => {
     log(`════════════════════════════════════════════════════════════════════\n`);
 
     try {
-      const { fetchCandlesCached } = require("../utils/candleCache");
+      const { fetchCandlesCached, clearCache } = require("../utils/candleCache");
       const { fetchCandles } = require("../services/backtestEngine");
 
       const targetDate = new Date(date + "T00:00:00+05:30");
       const fromDate = new Date(targetDate);
       fromDate.setDate(fromDate.getDate() - 21); // 21 days back for warmup (matches live pre-load depth)
       const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+      // Clear cache to avoid stale partial data from a previous live session
+      clearCache("NSE:NIFTY50-INDEX", String(TRADE_RES));
 
       log(`📥 [SIM] Fetching ${TRADE_RES}-min candles from ${fromStr} to ${date}...`);
       const allCandles = await fetchCandlesCached(

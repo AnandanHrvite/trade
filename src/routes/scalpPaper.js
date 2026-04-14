@@ -440,12 +440,19 @@ function onTick(tick) {
   if (state.position) {
     const pos = state.position;
     const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
-    // Running PNL helper (₹)
+    // Running PNL helper (₹) — must match simulateSell logic for consistent trailing
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
       if (!isFut && pos.optionEntryLtp && state.optionLtp) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
+      }
+      // Sim mode: use delta approximation (same as simulateSell) for consistent trailing
+      if (state._simMode) {
+        const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+        const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+        const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
+        return spotMove * DELTA * _q - _c;
       }
       const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
@@ -2835,8 +2842,11 @@ router.post("/simulate/start", async (req, res) => {
       _expiryDayBlocked: false,
       _simMode: true, _simScenario: label,
     };
-    const simStart = simDate ? new Date(simDate + "T00:00:00+05:30") : new Date();
-    simStart.setUTCHours(3, 45, 0, 0); // 09:15 IST
+    // 09:15 IST = 03:45 UTC on the same IST date
+    const simStart = simDate
+      ? new Date(simDate + "T09:15:00+05:30")
+      : new Date();
+    if (!simDate) simStart.setUTCHours(3, 45, 0, 0);
     _simClockMs = simStart.getTime();
   }
 
@@ -2863,7 +2873,7 @@ router.post("/simulate/start", async (req, res) => {
     log(`🎮 [SIM] Fetching ${SCALP_RES}-min candles for ${date}...`);
 
     try {
-      const { fetchCandlesCached } = require("../utils/candleCache");
+      const { fetchCandlesCached, clearCache } = require("../utils/candleCache");
       const { fetchCandles } = require("../services/backtestEngine");
 
       // Fetch candles: 10 calendar days before target date for warmup
@@ -2871,6 +2881,9 @@ router.post("/simulate/start", async (req, res) => {
       const fromDate = new Date(targetDate);
       fromDate.setDate(fromDate.getDate() - 10);
       const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+      // Clear cache to avoid stale partial data from a previous live session
+      clearCache(NIFTY_INDEX_SYMBOL, String(SCALP_RES));
 
       const allCandles = await fetchCandlesCached(
         NIFTY_INDEX_SYMBOL, String(SCALP_RES), fromStr, date, fetchCandles
