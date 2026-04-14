@@ -1298,6 +1298,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
     ${state.running
       ? `<button onclick="location='/scalp-paper/stop'" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
       : `<button onclick="location='/scalp-paper/start'" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start Scalp Paper</button>`}
+    <button onclick="spHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
 
@@ -1506,6 +1507,26 @@ function spHandleExit(btn) {
   btn.disabled = true;
   btn.textContent = 'Exiting...';
   fetch('/scalp-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+}
+
+async function spHandleReset(btn) {
+  if (!confirm('Reset ALL scalp paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.')) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    var res = await fetch('/scalp-paper/reset');
+    var data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      alert('Reset failed: ' + (data.error || 'Unknown error'));
+      if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      return;
+    }
+    alert('Reset successful! ' + data.message);
+    location.reload();
+  } catch(e) {
+    alert('Reset error: ' + e.message);
+    if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+  }
 }
 
 async function spManualEntry(side) {
@@ -1948,6 +1969,7 @@ router.get("/history", (req, res) => {
        </div>`
     : data.sessions.slice().reverse().map((s, idx) => {
         const sIdx = data.sessions.length - idx;
+        const actualIdx = data.sessions.length - 1 - idx; // 0-based index in original array
         const trades = s.trades || [];
         const sessionWins   = trades.filter(t => t.pnl > 0).length;
         const sessionLosses = trades.filter(t => t.pnl < 0).length;
@@ -2002,6 +2024,10 @@ router.get("/history", (req, res) => {
               <tbody>${tradeRows}</tbody>
             </table></div>
           </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-top:0.5px solid #0e1e36;">
+            <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
+            <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
+          </div>
           </div>
         </div>`;
       }).join("");
@@ -2096,7 +2122,6 @@ ${buildSidebar('scalpHistory', liveActive)}
     <div class="top-bar-right">
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
-      <button class="copy-btn" onclick="copyTradeLog(this)">📋 Copy Trade Log</button>
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="/scalp-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
@@ -2193,8 +2218,10 @@ ${buildSidebar('scalpHistory', liveActive)}
 
 <script>${modalJS()}</script>
 <script id="trades-data" type="application/json">${JSON.stringify(allTrades)}</script>
+<script id="sessions-data" type="application/json">${JSON.stringify(data.sessions)}</script>
 <script>
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
+var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
@@ -2235,6 +2262,38 @@ async function confirmReset() {
     if (d.success) { window.location.reload(); }
     else { showAlert({icon:'⚠️',title:'Error',message:d.error||'Reset failed',btnClass:'modal-btn-primary'}); }
   } catch(e) { showAlert({icon:'⚠️',title:'Error',message:'Network error: ' + e.message,btnClass:'modal-btn-primary'}); }
+}
+
+async function deleteSession(idx, label) {
+  var ok = await showConfirm({
+    icon: '🗑️',
+    title: 'Delete ' + label + '?',
+    message: 'This will permanently delete this session and all its trades. Capital and P&L will be recalculated. This cannot be undone.',
+    confirmText: 'Yes, Delete',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  try {
+    var r = await secretFetch('/scalp-paper/session/' + idx, { method: 'DELETE' });
+    if (!r) return;
+    var d;
+    try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error' }; }
+    if (d.success) { window.location.reload(); }
+    else { showAlert({icon:'⚠️',title:'Error',message:d.error||'Delete failed',btnClass:'modal-btn-primary'}); }
+  } catch(e) { showAlert({icon:'⚠️',title:'Error',message:'Network error: ' + e.message,btnClass:'modal-btn-primary'}); }
+}
+
+function copySessionLog(btn, idx) {
+  var session = ALL_SESSIONS_JSON[idx];
+  if (!session || !session.trades || !session.trades.length) {
+    showAlert({icon:'⚠️',title:'No Data',message:'No trades in this session to copy',btnClass:'modal-btn-primary'});
+    return;
+  }
+  var lines = ['Date\\tSide\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+  session.trades.forEach(function(t) {
+    lines.push((session.date||'')+'\\t'+(t.side||'')+'\\t'+(t.entryTime||'')+'\\t'+(t.exitTime||'')+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+(t.optionEntryLtp||'')+'\\t'+(t.optionExitLtp||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.exitReason||''));
+  });
+  doCopy(lines.join('\\n'), btn, 'Trade Log');
 }
 
 // ── Copy & Analytics Functions ────────────────────────────────────────────
@@ -2557,6 +2616,39 @@ function renderAnalytics(){
 
   res.setHeader("Content-Type", "text/html");
   return res.send(html);
+});
+
+/**
+ * DELETE /scalp-paper/session/:index
+ * Delete a single session by its 0-based index in the sessions array
+ */
+router.delete("/session/:index", (req, res) => {
+  if (state.running) {
+    return res.status(400).json({
+      success: false,
+      error: "Stop scalp paper trading first before deleting a session.",
+    });
+  }
+
+  const data = loadScalpData();
+  const idx = parseInt(req.params.index, 10);
+
+  if (isNaN(idx) || idx < 0 || idx >= data.sessions.length) {
+    return res.status(400).json({ success: false, error: "Invalid session index." });
+  }
+
+  const removed = data.sessions.splice(idx, 1)[0];
+  // Recalculate totalPnl and capital from remaining sessions
+  data.totalPnl = data.sessions.reduce((sum, s) => sum + (s.pnl || 0), 0);
+  data.capital = getScalpCapitalFromEnv() + data.totalPnl;
+  saveScalpData(data);
+
+  log(`🗑️ Deleted scalp paper session ${idx + 1} (${removed.date || "unknown date"}, PnL: ${removed.pnl})`);
+
+  return res.json({
+    success: true,
+    message: `Session deleted successfully.`,
+  });
 });
 
 /**
