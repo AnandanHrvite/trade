@@ -4165,6 +4165,24 @@ router.post("/simulate/start", async (req, res) => {
         return res.json({ success: false, error: `Not enough candles for ${date} — got ${allCandles ? allCandles.length : 0}. Is it a trading day?` });
       }
 
+      // Fetch 1-min candles for high-fidelity tick replay
+      let tickCandles1m = [];
+      try {
+        clearCache("NSE:NIFTY50-INDEX", "1");
+        const allTick = await fetchCandlesCached(
+          "NSE:NIFTY50-INDEX", "1", date, date, fetchCandles
+        );
+        if (allTick && allTick.length > 0) {
+          tickCandles1m = allTick.filter(c => {
+            const cDate = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+            return cDate === date;
+          });
+          log(`📊 [SIM] Fetched ${tickCandles1m.length} × 1-min candles for high-fidelity tick replay`);
+        }
+      } catch (e) {
+        log(`⚠️ [SIM] 1-min candle fetch failed (${e.message}) — using ${TRADE_RES}-min interpolation`);
+      }
+
       // Split by date
       const warmupCandles = [];
       const sessionCandles = [];
@@ -4190,6 +4208,8 @@ router.post("/simulate/start", async (req, res) => {
         onTick,
         onCandleDone: makeCandleDone(sessionCandles.length),
         onDone: onSimDone,
+        tickCandles: tickCandles1m.length > 0 ? tickCandles1m : undefined,
+        tickResolution: tickCandles1m.length > 0 ? 1 : undefined,
       });
 
       seedWarmup(result);

@@ -200,6 +200,7 @@ function r2(n) { return parseFloat(n.toFixed(2)); }
 function interpolateTicks(candle, ticksPerCandle = 20) {
   const { open, high, low, close } = candle;
   const ticks = [];
+  const range = high - low;
 
   // Determine path: if close > open (bullish), go O → L → H → C
   //                 if close < open (bearish), go O → H → L → C
@@ -215,13 +216,16 @@ function interpolateTicks(candle, ticksPerCandle = 20) {
     ticksPerCandle - Math.floor(ticksPerCandle * 0.25) - Math.floor(ticksPerCandle * 0.45),
   ];
 
+  // Noise proportional to candle range — larger candles get more volatile ticks
+  const noiseScale = Math.max(0.3, range * 0.08);
+
   for (let s = 0; s < 3; s++) {
     const from = path[s], to = path[s + 1];
     const n = segs[s];
     for (let i = 0; i < n; i++) {
       const t = (i + 1) / n;
-      // Add small noise to make it realistic
-      const noise = rand(-0.5, 0.5);
+      // Noise scaled to candle range + random walk component
+      const noise = rand(-noiseScale, noiseScale);
       const price = from + (to - from) * t + noise;
       // Clamp within candle range
       ticks.push(r2(Math.min(high, Math.max(low, price))));
@@ -246,14 +250,32 @@ let _simCandles = [];  // generated scenario candles (for status display)
  * @param {Function} onTick         — callback receiving { ltp }
  * @param {Function} onCandleDone   — optional, called after each candle's ticks
  * @param {Function} onDone         — called when all candles are emitted
+ * @param {Array}    [tickCandles]  — optional finer-resolution candles for tick generation
+ * @param {number}   [tickRes]      — resolution of tickCandles in minutes (e.g. 1)
  */
-function _emitLoop(warmup, sessionCandles, resolutionMin, speed, onTick, onCandleDone, onDone) {
+function _emitLoop(warmup, sessionCandles, resolutionMin, speed, onTick, onCandleDone, onDone, tickCandles, tickRes) {
   _simCandles = [...warmup, ...sessionCandles];
   _simRunning = true;
 
-  const tickInterval = (resolutionMin * 60 * 1000) / speed;
+  // If finer tick candles provided, group them by parent candle time buckets
+  let tickGroups = null;
+  if (tickCandles && tickCandles.length > 0 && tickRes) {
+    const parentResMs = resolutionMin * 60;
+    tickGroups = new Map();
+    for (const tc of tickCandles) {
+      const bucket = Math.floor(tc.time / parentResMs) * parentResMs;
+      if (!tickGroups.has(bucket)) tickGroups.set(bucket, []);
+      tickGroups.get(bucket).push(tc);
+    }
+  }
+
   const ticksPerCandle = 20;
-  const tickDelay = tickInterval / ticksPerCandle;
+  // When using tick candles, each 1-min candle gets fewer interpolated ticks
+  const ticksPerSubCandle = tickGroups ? Math.max(4, Math.floor(ticksPerCandle / (resolutionMin / (tickRes || 1)))) : ticksPerCandle;
+
+  const tickInterval = (resolutionMin * 60 * 1000) / speed;
+  const totalTicksPerParent = tickGroups ? ticksPerSubCandle * (resolutionMin / (tickRes || 1)) : ticksPerCandle;
+  const tickDelay = tickInterval / totalTicksPerParent;
 
   let candleIdx = 0;
   let tickIdx = 0;
@@ -271,7 +293,25 @@ function _emitLoop(warmup, sessionCandles, resolutionMin, speed, onTick, onCandl
         if (onDone) onDone();
         return;
       }
-      currentTicks = interpolateTicks(sessionCandles[candleIdx], ticksPerCandle);
+
+      // Generate ticks: use finer candles if available, else interpolate from parent
+      const parentCandle = sessionCandles[candleIdx];
+      if (tickGroups) {
+        const parentResMs = resolutionMin * 60;
+        const bucket = Math.floor(parentCandle.time / parentResMs) * parentResMs;
+        const subCandles = tickGroups.get(bucket);
+        if (subCandles && subCandles.length > 0) {
+          currentTicks = [];
+          for (const sc of subCandles) {
+            currentTicks.push(...interpolateTicks(sc, ticksPerSubCandle));
+          }
+        } else {
+          currentTicks = interpolateTicks(parentCandle, ticksPerCandle);
+        }
+      } else {
+        currentTicks = interpolateTicks(parentCandle, ticksPerCandle);
+      }
+
       tickIdx = 0;
       candleIdx++;
     }
@@ -357,6 +397,8 @@ function startFromCandles(opts) {
     onCandleDone,
     onDone,
     speed        = 10,
+    tickCandles,        // optional: finer-resolution candles for tick generation
+    tickResolution,     // optional: resolution of tickCandles in minutes (e.g. 1)
   } = opts;
 
   if (!candles || candles.length === 0) throw new Error("No candles provided");
@@ -369,7 +411,7 @@ function startFromCandles(opts) {
   const warmup = candles.slice(0, warmupCount);
   const sessionCandles = candles.slice(warmupCount);
 
-  return _emitLoop(warmup, sessionCandles, resolution, speed, onTick, onCandleDone, onDone);
+  return _emitLoop(warmup, sessionCandles, resolution, speed, onTick, onCandleDone, onDone, tickCandles, tickResolution);
 }
 
 function stop() {
