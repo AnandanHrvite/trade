@@ -83,6 +83,9 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
 
+  // Minimum candles to hold before trailing can exit (let trade develop)
+  const PA_MIN_HOLD_CANDLES = parseInt(process.env.PA_MIN_HOLD_CANDLES || "3", 10);
+
   // PNL-based trailing profit (tiered % of peak)
   const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "350");
   const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "65");
@@ -127,7 +130,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 PRICE ACTION BACKTEST — ${paStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | Swing trailing SL | Price Action entry`);
   console.log(`   MaxTrades: ${PA_MAX_TRADES}/day | MaxLoss: ₹${PA_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | MinHold: ${PA_MIN_HOLD_CANDLES} candles | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -246,7 +249,8 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       }
 
       // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
+      //    Skip if trade hasn't been held long enough (let it develop)
+      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START && position.candlesHeld >= PA_MIN_HOLD_CANDLES) {
         let _pct = PA_TRAIL_PCT;
         for (const tier of PA_TRAIL_TIERS) {
           if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }

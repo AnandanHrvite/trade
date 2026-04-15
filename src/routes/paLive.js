@@ -45,6 +45,7 @@ const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
 const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
 const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
+const _PA_MIN_HOLD_CANDLES = parseInt(process.env.PA_MIN_HOLD_CANDLES || "3", 10);
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
 // Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 const _PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
@@ -606,7 +607,8 @@ function onTick(tick) {
     }
 
     // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
+    //    Skip if trade hasn't been held long enough (let it develop)
+    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START && (pos.candlesHeld || 0) >= _PA_MIN_HOLD_CANDLES) {
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
