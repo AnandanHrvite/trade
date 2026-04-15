@@ -39,9 +39,9 @@ const PA_RES            = parseInt(process.env.PA_RESOLUTION || "5", 10);
 const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
 const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
-const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
-const _PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
+const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "800");
+const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "75");
+const _PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "1500:65,3000:70,5000:80,10000:90")
   .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
   .sort((a, b) => b.peak - a.peak);
 
@@ -561,7 +561,7 @@ async function onCandleClose(bar) {
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}`);
+    log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
     return;
   }
 

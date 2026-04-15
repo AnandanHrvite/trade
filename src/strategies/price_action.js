@@ -26,7 +26,7 @@
  * Timeframe: 5-min | Window: 9:20 AM – 2:30 PM IST
  */
 
-const { RSI } = require("technicalindicators");
+const { RSI, ADX } = require("technicalindicators");
 
 const NAME        = "PRICE_ACTION_5M";
 const DESCRIPTION = "5-min | Engulfing + Pin Bar + Inside Bar + BOS | S/R zones | RSI confluence";
@@ -196,7 +196,11 @@ function getSignal(candles, opts) {
 
   var RSI_PERIOD    = parseInt(cfg("PA_RSI_PERIOD", "14"), 10);
   var RSI_CE_MIN    = parseFloat(cfg("PA_RSI_CE_MIN", "45"));
+  var RSI_CE_MAX    = parseFloat(cfg("PA_RSI_CE_MAX", "70"));
   var RSI_PE_MAX    = parseFloat(cfg("PA_RSI_PE_MAX", "55"));
+  var RSI_PE_MIN    = parseFloat(cfg("PA_RSI_PE_MIN", "30"));
+  var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "true") === "true";
+  var ADX_MIN       = parseFloat(cfg("PA_ADX_MIN", "20"));
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
   var PIN_WICK_RATIO = parseFloat(cfg("PA_PIN_WICK_RATIO", "2"));
   var SR_LOOKBACK   = parseInt(cfg("PA_SR_LOOKBACK", "30"), 10);
@@ -246,6 +250,20 @@ function getSignal(candles, opts) {
 
   base.rsi = parseFloat(rsi.toFixed(1));
 
+  // ── ADX trend filter ──────────────────────────────────────────────────────
+  var adxVal = null;
+  var isTrending = true; // default pass if ADX disabled
+  if (ADX_ENABLED) {
+    var highs  = candles.map(function(c) { return c.high; });
+    var lows   = candles.map(function(c) { return c.low; });
+    var adxCloses = candles.map(function(c) { return c.close; });
+    var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: adxCloses });
+    adxVal = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
+    isTrending = adxVal === null ? true : adxVal >= ADX_MIN;
+  }
+  base.adx = adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null;
+  base.isTrending = isTrending;
+
   // ── Swing points & S/R zones ───────────────────────────────────────────────
   var swings = findSwingPoints(candles, SR_LOOKBACK);
   base.swingHighs = swings.swingHighs.slice(-3).map(function(s) { return s.price; });
@@ -259,11 +277,23 @@ function getSignal(candles, opts) {
     _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
   }
 
+  // ── ADX chop gate — block all entries when market is ranging ────────────────
+  if (ADX_ENABLED && !isTrending) {
+    var _adxSkip = "ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " < " + ADX_MIN + " (ranging)";
+    base.reason = "No setup (market ranging — " + _adxSkip + ")";
+    if (_insideBarPending) {
+      if (!_insideBarPending._waitCount) _insideBarPending._waitCount = 0;
+      _insideBarPending._waitCount++;
+      if (_insideBarPending._waitCount > 3) _insideBarPending = null;
+    }
+    return base;
+  }
+
   // ── INSIDE BAR BREAKOUT CHECK ──────────────────────────────────────────────
   // If we had a pending inside bar, check if this candle breaks out
   if (_insideBarPending) {
     var mother = _insideBarPending;
-    if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN) {
+    if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
       // Bullish breakout
       var rawSL = mother.motherCandle.low;
       var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
@@ -278,7 +308,7 @@ function getSignal(candles, opts) {
         reason: "CE: Inside Bar Breakout above " + mother.triggerHigh.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
       });
     }
-    if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX) {
+    if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
       // Bearish breakout
       var rawSL = mother.motherCandle.high;
       var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
@@ -313,7 +343,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
-  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN) {
+  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -328,7 +358,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
-  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX) {
+  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -343,7 +373,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
-  if (isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN) {
+  if (isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -358,7 +388,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
-  if (isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX) {
+  if (isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -374,7 +404,7 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 5: BREAK OF STRUCTURE ──────────────────────────────────────────
   var bos = checkBOS(sc, swings.swingHighs, swings.swingLows);
-  if (bos.bullish && rsi > RSI_CE_MIN && candleBody(sc) >= MIN_BODY) {
+  if (bos.bullish && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.min(sc.low, prev.low);
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -387,7 +417,7 @@ function getSignal(candles, opts) {
       reason: "CE: BOS above swing high " + bos.level.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
-  if (bos.bearish && rsi < RSI_PE_MAX && candleBody(sc) >= MIN_BODY) {
+  if (bos.bearish && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.max(sc.high, prev.high);
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -404,9 +434,13 @@ function getSignal(candles, opts) {
   // ── No signal — build reason ───────────────────────────────────────────────
   var parts = [];
   if (isBullishEngulfing(prev, sc, MIN_BODY) && !supportCheck.near) parts.push("Bull Engulf but no support");
+  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi >= RSI_CE_MAX) parts.push("Bull Engulf but RSI " + rsi.toFixed(0) + " >= " + RSI_CE_MAX + " (overbought)");
   if (isBearishEngulfing(prev, sc, MIN_BODY) && !resistanceCheck.near) parts.push("Bear Engulf but no resistance");
+  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi <= RSI_PE_MIN) parts.push("Bear Engulf but RSI " + rsi.toFixed(0) + " <= " + RSI_PE_MIN + " (oversold)");
   if (isHammer(sc, PIN_WICK_RATIO) && !supportCheck.near) parts.push("Hammer but no support");
   if (isShootingStar(sc, PIN_WICK_RATIO) && !resistanceCheck.near) parts.push("Shooting Star but no resistance");
+  if (bos.bullish && rsi >= RSI_CE_MAX) parts.push("BOS bullish but RSI " + rsi.toFixed(0) + " >= " + RSI_CE_MAX + " (overbought)");
+  if (bos.bearish && rsi <= RSI_PE_MIN) parts.push("BOS bearish but RSI " + rsi.toFixed(0) + " <= " + RSI_PE_MIN + " (oversold)");
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
   return base;
