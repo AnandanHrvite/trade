@@ -53,11 +53,14 @@ router.get("/", (req, res) => {
 
   const docListHtml = docFiles.length > 0
     ? docFiles.map(f =>
-        `<a href="/docs/file/${encodeURIComponent(f.name)}" class="guide-link" target="_blank">
-          <span class="guide-icon">${f.icon}</span>
-          <span style="flex:1">${f.name}</span>
-          <span style="color:#4a6080;font-size:0.72rem;white-space:nowrap">${f.sizeKB} KB &nbsp;·&nbsp; ${f.modified}</span>
-        </a>`
+        `<div class="guide-link">
+          <a href="/docs/file/${encodeURIComponent(f.name)}" target="_blank" style="display:flex;align-items:center;gap:10px;flex:1;color:inherit;text-decoration:none;">
+            <span class="guide-icon">${f.icon}</span>
+            <span style="flex:1">${f.name}</span>
+            <span style="color:#4a6080;font-size:0.72rem;white-space:nowrap">${f.sizeKB} KB &nbsp;·&nbsp; ${f.modified}</span>
+          </a>
+          <button class="del-btn" onclick="deleteDoc('${f.name.replace(/'/g, "\\'")}')">DELETE</button>
+        </div>`
       ).join("\n      ")
     : '<p style="color:#4a6080;font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
 
@@ -116,6 +119,10 @@ router.get("/", (req, res) => {
                   font-size:0.85rem; font-weight:600; transition:all 0.15s; margin:8px 0; }
     .guide-link:hover { background:#1a2640; border-color:#3b82f6; color:#60a5fa; }
     .guide-icon { font-size:1.2rem; }
+    .guide-link .del-btn { background:none; border:1px solid #ef4444; color:#ef4444; border-radius:5px;
+                           padding:3px 10px; font-size:0.7rem; font-weight:600; cursor:pointer;
+                           font-family:'IBM Plex Mono',monospace; transition:all 0.15s; opacity:0.6; }
+    .guide-link .del-btn:hover { background:rgba(239,68,68,0.15); opacity:1; }
   </style>
 </head>
 <body>
@@ -144,11 +151,19 @@ ${buildSidebar("docs", liveActive)}
   </div>
 </div>
 <script>
+(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
 function showTab(el, id) {
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
   document.querySelectorAll('.content').forEach(function(c){ c.classList.remove('active'); });
   el.classList.add('active');
   document.getElementById(id).classList.add('active');
+}
+function deleteDoc(name) {
+  if (!confirm('Delete "' + name + '"?')) return;
+  fetch('/docs/file/' + encodeURIComponent(name), { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.ok) location.reload(); else alert(d.error || 'Delete failed'); })
+    .catch(function() { alert('Delete failed'); });
 }
 </script>
 </body></html>`);
@@ -161,6 +176,21 @@ router.get("/file/:filename", (req, res) => {
     res.sendFile(filepath);
   } else {
     res.status(404).send("File not found");
+  }
+});
+
+router.delete("/file/:filename", (req, res) => {
+  const filename = path.basename(req.params.filename); // prevent path traversal
+  const filepath = path.join(process.cwd(), "documents", filename);
+  if (fs.existsSync(filepath)) {
+    try {
+      fs.unlinkSync(filepath);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to delete file" });
+    }
+  } else {
+    res.status(404).json({ error: "File not found" });
   }
 });
 
