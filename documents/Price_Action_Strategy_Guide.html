@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Price Action Strategy Guide — NIFTY Options</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0f1923;
+    --bg2: #152232;
+    --bg3: #1a2d42;
+    --text: #c8d8f0;
+    --text2: #8aa1bd;
+    --accent: #3b82f6;
+    --accent2: #60a5fa;
+    --green: #10b981;
+    --red: #ef4444;
+    --cyan: #22d3ee;
+    --yellow: #fbbf24;
+    --border: #1e3a5f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @page {
+    size: A4;
+    margin: 20mm 15mm 20mm 15mm;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 11pt;
+    line-height: 1.6;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px 30px;
+  }
+
+  /* ── Cover page ─────────────────────────────────────────── */
+  .cover {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 90vh; text-align: center; page-break-after: always;
+  }
+  .cover .badge {
+    background: var(--green); color: #000; font-weight: 700; font-size: 0.75rem;
+    padding: 6px 20px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;
+    margin-bottom: 30px;
+  }
+  .cover h1 { font-size: 2.8rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+  .cover .sub { color: var(--accent2); font-size: 1rem; margin-bottom: 40px; }
+  .cover .version {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 24px;
+    font-size: 0.8rem; color: var(--text2); margin-bottom: 12px;
+  }
+  .cover .patterns { font-size: 0.78rem; color: var(--text2); }
+
+  /* ── Section headers ────────────────────────────────────── */
+  .page-header {
+    font-size: 0.7rem; color: var(--text2); text-align: right;
+    margin-bottom: 16px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
+  }
+
+  h2 {
+    font-size: 1.5rem; font-weight: 700; color: #fff; margin: 30px 0 14px;
+    padding-left: 14px; border-left: 4px solid var(--accent);
+  }
+
+  h3 {
+    font-size: 1.05rem; font-weight: 600; margin: 22px 0 10px;
+  }
+  h3.green { color: var(--green); }
+  h3.red { color: var(--red); }
+  h3.blue { color: var(--accent2); }
+
+  p { margin: 8px 0; }
+  strong { color: #e5e7eb; }
+
+  .page-break { page-break-before: always; }
+
+  /* ── Cards ──────────────────────────────────────────────── */
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 22px; margin: 14px 0;
+  }
+  .card-green { border-left: 4px solid var(--green); }
+  .card-red { border-left: 4px solid var(--red); }
+  .card-blue { border-left: 4px solid var(--accent2); }
+  .card-yellow { border-left: 4px solid var(--yellow); }
+
+  .card h4 {
+    font-size: 0.95rem; font-weight: 700; margin-bottom: 10px;
+  }
+  .card h4.green { color: var(--green); }
+  .card h4.red { color: var(--red); }
+  .card h4.blue { color: var(--accent2); }
+
+  /* ── Numbered steps ─────────────────────────────────────── */
+  .step {
+    display: flex; align-items: flex-start; gap: 10px; margin: 6px 0;
+  }
+  .step-num {
+    min-width: 24px; height: 24px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 0.7rem;
+    font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .step-num.green { background: var(--green); }
+  .step-num.red { background: var(--red); }
+  .step-num.blue { background: var(--accent); }
+  .step-num.cyan { background: var(--cyan); color: #000; }
+
+  .sl-line { font-size: 0.85rem; margin-top: 8px; color: var(--text2); }
+  .sl-line strong { color: var(--yellow); }
+
+  /* ── Metric boxes ───────────────────────────────────────── */
+  .metrics { display: flex; gap: 12px; margin: 14px 0; flex-wrap: wrap; }
+  .metric {
+    flex: 1; min-width: 120px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px; text-align: center;
+  }
+  .metric .val { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .metric .lbl { font-size: 0.7rem; color: var(--text2); margin-top: 4px; }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+    font-size: 0.8rem;
+  }
+  thead th {
+    background: var(--bg3); color: #fff; padding: 10px 12px; text-align: left;
+    font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  tbody td {
+    padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text);
+  }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  code {
+    background: var(--bg3); padding: 1px 5px; border-radius: 3px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--yellow);
+  }
+
+  /* ── Two-column layout ──────────────────────────────────── */
+  .cols { display: flex; gap: 14px; margin: 14px 0; }
+  .cols > * { flex: 1; }
+
+  /* ── Decision tree ──────────────────────────────────────── */
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 12px; margin: 0;
+  }
+  .flow-num {
+    min-width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .flow-text { padding: 4px 0 16px; font-size: 0.85rem; }
+  .flow-arrow { text-align: center; color: var(--text2); margin: 0; font-size: 0.8rem; }
+
+  /* ── Highlight box ──────────────────────────────────────── */
+  .highlight {
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);
+    border-radius: 10px; padding: 16px 20px; margin: 14px 0;
+  }
+  .highlight strong { color: var(--accent2); }
+
+  /* ── Bullet list ────────────────────────────────────────── */
+  ul { margin: 8px 0 8px 20px; }
+  li { margin: 4px 0; }
+
+  @media print {
+    body { background: #fff; color: #222; max-width: 100%; padding: 0; }
+    .card { background: #f8f9fa; border-color: #dee2e6; }
+    .card-green { border-left-color: #10b981; }
+    .card-red { border-left-color: #ef4444; }
+    h2 { color: #1a1a1a; border-left-color: #3b82f6; }
+    .metric { background: #f8f9fa; border-color: #dee2e6; }
+    .metric .val { color: #1a1a1a; }
+    thead th { background: #e5e7eb; color: #1a1a1a; }
+    tbody td { color: #333; border-bottom-color: #e5e7eb; }
+    code { background: #f0f0f0; color: #b45309; }
+    .cover { background: var(--bg); color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- COVER PAGE                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="badge">NIFTY OPTIONS</div>
+  <h1>Price Action Strategy</h1>
+  <div class="sub">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</div>
+  <div class="version">Version 2.0 &bull; 5-Min Timeframe &bull; S/R + Patterns + RSI</div>
+  <div class="patterns">Engulfing &bull; Pin Bar &bull; Inside Bar Breakout &bull; Break of Structure &bull; Double Top/Bottom &bull; Triangles &bull; Swing Trail SL</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. STRATEGY OVERVIEW                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 2</div>
+
+<h2>1. Strategy Overview</h2>
+
+<p>The <code>PRICE_ACTION_5M</code> strategy is a <strong>5-minute</strong> timeframe system designed for <strong>NIFTY index options</strong> (CE/PE). Unlike indicator-heavy approaches, it reads <strong>what price itself is doing</strong> — identifying candlestick patterns and chart patterns at key Support/Resistance levels, confirmed by RSI momentum.</p>
+
+<div class="metrics">
+  <div class="metric"><div class="val">5 min</div><div class="lbl">Candle Timeframe</div></div>
+  <div class="metric"><div class="val">S/R</div><div class="lbl">Support & Resistance</div></div>
+  <div class="metric"><div class="val">Patterns</div><div class="lbl">Engulf / Pin / IB / BOS / DT-DB / Tri</div></div>
+  <div class="metric"><div class="val">Swing</div><div class="lbl">Trailing SL Method</div></div>
+</div>
+
+<h3 class="blue">Core Principle</h3>
+<p>Price action trading focuses on <strong>price structure</strong> rather than lagging indicators. The strategy identifies 9 pattern types, but only takes trades when the pattern occurs at a <strong>meaningful S/R level</strong> (swing high/low). RSI acts as a lightweight confirmation filter — not the primary signal.</p>
+
+<h3 class="blue">Why Price Action on 5-Min?</h3>
+<ul>
+  <li><strong>More opportunities</strong> than 15-min (3x candles per day)</li>
+  <li><strong>Cleaner patterns</strong> than 3-min (less noise, fewer false signals)</li>
+  <li><strong>Reasonable SL</strong> from signal candle wick (typically 10-20 pts)</li>
+  <li><strong>No lag</strong> — reacts to what price is doing NOW, not what indicators say it was doing</li>
+</ul>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. SUPPORT & RESISTANCE                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2>2. Support & Resistance Detection</h2>
+
+<p>S/R levels are derived dynamically from <strong>swing highs and swing lows</strong> in the last 30 candles. A swing high is a candle whose high is greater than both neighbors. A swing low is a candle whose low is less than both neighbors.</p>
+
+<table>
+  <thead><tr><th>Parameter</th><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Lookback</td><td><code>PA_SR_LOOKBACK</code></td><td>30</td><td>Candles to scan for swing points</td></tr>
+    <tr><td>Zone Width</td><td><code>PA_SR_ZONE_PTS</code></td><td>15 pts</td><td>Price must be within this distance of S/R level</td></tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. ENTRY PATTERNS (Candlestick)                                         -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 3</div>
+
+<h2>3. Entry Patterns — Candlestick</h2>
+
+<p>Nine patterns are detected, each requiring <strong>RSI confirmation</strong>. Candlestick patterns (1-5) also require <strong>S/R confluence</strong>. Patterns are checked in priority order.</p>
+
+<!-- Pattern 1: Bullish Engulfing -->
+<h3 class="green">Pattern 1: Bullish Engulfing at Support</h3>
+<div class="card card-green">
+  <h4 class="green">BUY CE — Bullish Engulfing</h4>
+  <div class="step"><div class="step-num green">1</div><div>Previous candle is RED (bearish)</div></div>
+  <div class="step"><div class="step-num green">2</div><div>Current candle is GREEN and its body fully engulfs the previous candle's body</div></div>
+  <div class="step"><div class="step-num green">3</div><div>Current candle's <strong>low is within 15 pts of a swing low</strong> (support zone)</div></div>
+  <div class="step"><div class="step-num green">4</div><div>RSI &gt; 45 (not deeply oversold — momentum supports move up)</div></div>
+  <div class="step"><div class="step-num green">5</div><div>Candle body &ge; 5 pts (filters out dojis)</div></div>
+  <div class="sl-line"><strong>SL:</strong> Signal candle low &nbsp;|&nbsp; <strong>Strength:</strong> STRONG (immediate entry)</div>
+</div>
+
+<!-- Pattern 2: Bearish Engulfing -->
+<h3 class="red">Pattern 2: Bearish Engulfing at Resistance</h3>
+<div class="card card-red">
+  <h4 class="red">BUY PE — Bearish Engulfing</h4>
+  <div class="step"><div class="step-num red">1</div><div>Previous candle is GREEN (bullish)</div></div>
+  <div class="step"><div class="step-num red">2</div><div>Current candle is RED and its body fully engulfs the previous candle's body</div></div>
+  <div class="step"><div class="step-num red">3</div><div>Current candle's <strong>high is within 15 pts of a swing high</strong> (resistance zone)</div></div>
+  <div class="step"><div class="step-num red">4</div><div>RSI &lt; 55 (not overbought — momentum supports move down)</div></div>
+  <div class="step"><div class="step-num red">5</div><div>Candle body &ge; 5 pts</div></div>
+  <div class="sl-line"><strong>SL:</strong> Signal candle high &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
+</div>
+
+<!-- Pattern 3: Hammer -->
+<h3 class="green">Pattern 3: Hammer (Pin Bar) at Support</h3>
+<div class="card card-green">
+  <h4 class="green">BUY CE — Hammer</h4>
+  <div class="step"><div class="step-num green">1</div><div>Lower wick &ge; 2&times; the body size (long rejection wick)</div></div>
+  <div class="step"><div class="step-num green">2</div><div>Upper wick &le; 0.5&times; the body size (small upper shadow)</div></div>
+  <div class="step"><div class="step-num green">3</div><div>Candle low within <strong>support zone</strong> (15 pts of swing low)</div></div>
+  <div class="step"><div class="step-num green">4</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 2 pts minimum</div></div>
+  <div class="sl-line"><strong>SL:</strong> Pin bar low &nbsp;|&nbsp; <strong>Strength:</strong> MARGINAL (wait for close confirmation)</div>
+</div>
+
+<!-- Pattern 4: Shooting Star -->
+<h3 class="red">Pattern 4: Shooting Star (Bearish Pin Bar) at Resistance</h3>
+<div class="card card-red">
+  <h4 class="red">BUY PE — Shooting Star</h4>
+  <div class="step"><div class="step-num red">1</div><div>Upper wick &ge; 2&times; the body size (long rejection wick upward)</div></div>
+  <div class="step"><div class="step-num red">2</div><div>Lower wick &le; 0.5&times; the body size</div></div>
+  <div class="step"><div class="step-num red">3</div><div>Candle high within <strong>resistance zone</strong></div></div>
+  <div class="step"><div class="step-num red">4</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 2 pts minimum</div></div>
+  <div class="sl-line"><strong>SL:</strong> Pin bar high &nbsp;|&nbsp; <strong>Strength:</strong> MARGINAL</div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- Pattern 5: Inside Bar                                                   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 4</div>
+
+<h3 class="blue">Pattern 5: Inside Bar Breakout</h3>
+
+<p>An <strong>inside bar</strong> is a candle whose entire range fits within the previous candle's range (the "mother candle"). It signals consolidation. Entry triggers when <strong>the next candle breaks out</strong> of the mother candle's range.</p>
+
+<div class="cols">
+  <div class="card card-green">
+    <h4 class="green">CE Breakout</h4>
+    <div class="step"><div class="step-num green">1</div><div>Breakout candle closes ABOVE mother high</div></div>
+    <div class="step"><div class="step-num green">2</div><div>RSI &gt; 45</div></div>
+    <div class="sl-line"><strong>SL:</strong> Mother candle low</div>
+  </div>
+  <div class="card card-red">
+    <h4 class="red">PE Breakout</h4>
+    <div class="step"><div class="step-num red">1</div><div>Breakout candle closes BELOW mother low</div></div>
+    <div class="step"><div class="step-num red">2</div><div>RSI &lt; 55</div></div>
+    <div class="sl-line"><strong>SL:</strong> Mother candle high</div>
+  </div>
+</div>
+
+<p><strong>Note:</strong> Inside Bar does NOT require S/R confluence (breakouts work anywhere). If no breakout occurs within 3 candles, the pending signal is cancelled.</p>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- Pattern 6: BOS                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h3 class="blue">Pattern 6: Break of Structure (BOS)</h3>
+
+<p>A BOS occurs when price <strong>closes beyond the most recent swing high or swing low</strong>, indicating a shift in market structure. This is the strongest signal type.</p>
+
+<div class="cols">
+  <div class="card card-green">
+    <h4 class="green">Bullish BOS</h4>
+    <div class="step"><div class="step-num green">1</div><div>Candle closes ABOVE last swing high</div></div>
+    <div class="step"><div class="step-num green">2</div><div>Candle opened AT or BELOW that swing high</div></div>
+    <div class="step"><div class="step-num green">3</div><div>RSI &gt; 45 + body &ge; 5 pts</div></div>
+    <div class="sl-line"><strong>SL:</strong> Recent swing low</div>
+  </div>
+  <div class="card card-red">
+    <h4 class="red">Bearish BOS</h4>
+    <div class="step"><div class="step-num red">1</div><div>Candle closes BELOW last swing low</div></div>
+    <div class="step"><div class="step-num red">2</div><div>Candle opened AT or ABOVE that swing low</div></div>
+    <div class="step"><div class="step-num red">3</div><div>RSI &lt; 55 + body &ge; 5 pts</div></div>
+    <div class="sl-line"><strong>SL:</strong> Recent swing high</div>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. CHART PATTERNS (NEW)                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 5</div>
+
+<h2>4. Entry Patterns — Chart Patterns (Multi-Candle)</h2>
+
+<p>These are <strong>multi-candle formations</strong> that require structural confirmation from swing points. They don't need S/R zone proximity — the pattern <em>itself</em> defines the key levels. All chart patterns use a configurable tolerance (<code>PA_CHART_PATTERN_TOL</code>, default 12 pts) to match swing point levels.</p>
+
+<table>
+  <thead><tr><th>Parameter</th><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Pattern Tolerance</td><td><code>PA_CHART_PATTERN_TOL</code></td><td>12 pts</td><td>Max difference between swing points for pattern match</td></tr>
+  </tbody>
+</table>
+
+<!-- Pattern 7: Double Top -->
+<h3 class="red">Pattern 7: Double Top (Bearish Reversal)</h3>
+
+<p>Two swing highs form at approximately the <strong>same price level</strong>. The valley between them creates the <strong>neckline</strong>. Entry triggers when the current candle <strong>breaks below the neckline</strong>.</p>
+
+<div class="card card-red">
+  <h4 class="red">BUY PE — Double Top</h4>
+  <div class="step"><div class="step-num red">1</div><div>Two recent swing highs within <strong>12 pts tolerance</strong> of each other</div></div>
+  <div class="step"><div class="step-num red">2</div><div>At least <strong>5 candles separation</strong> between the two tops (prevents noise)</div></div>
+  <div class="step"><div class="step-num red">3</div><div><strong>Neckline</strong> = lowest low between the two swing highs</div></div>
+  <div class="step"><div class="step-num red">4</div><div>Current candle <strong>closes below neckline</strong> (opened at or above it)</div></div>
+  <div class="step"><div class="step-num red">5</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
+  <div class="sl-line"><strong>SL:</strong> Above the double top level (avg of two highs) &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
+</div>
+
+<div class="highlight">
+  <strong>How it works:</strong> Price tests a resistance level twice and fails both times. When it breaks below the valley (neckline) between those tests, it confirms sellers have taken control. This is a high-probability reversal pattern because it shows buyers exhausting at a clear level.
+</div>
+
+<!-- Pattern 8: Double Bottom -->
+<h3 class="green">Pattern 8: Double Bottom (Bullish Reversal)</h3>
+
+<p>Two swing lows form at approximately the <strong>same price level</strong>. The peak between them creates the <strong>neckline</strong>. Entry triggers when the current candle <strong>breaks above the neckline</strong>.</p>
+
+<div class="card card-green">
+  <h4 class="green">BUY CE — Double Bottom</h4>
+  <div class="step"><div class="step-num green">1</div><div>Two recent swing lows within <strong>12 pts tolerance</strong> of each other</div></div>
+  <div class="step"><div class="step-num green">2</div><div>At least <strong>5 candles separation</strong> between the two bottoms</div></div>
+  <div class="step"><div class="step-num green">3</div><div><strong>Neckline</strong> = highest high between the two swing lows</div></div>
+  <div class="step"><div class="step-num green">4</div><div>Current candle <strong>closes above neckline</strong> (opened at or below it)</div></div>
+  <div class="step"><div class="step-num green">5</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
+  <div class="sl-line"><strong>SL:</strong> Below the double bottom level (avg of two lows) &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
+</div>
+
+<div class="highlight">
+  <strong>How it works:</strong> Price tests a support level twice and bounces both times. When it breaks above the peak (neckline) between those tests, it confirms buyers have regained control. The double test of support builds a strong floor.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- Pattern 9 & 10: Triangles                                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 6</div>
+
+<!-- Pattern 9: Ascending Triangle -->
+<h3 class="green">Pattern 9: Ascending Triangle (Bullish Breakout)</h3>
+
+<p>A pattern with <strong>flat resistance</strong> (swing highs at similar levels) and <strong>rising support</strong> (each swing low is higher than the previous). Signals building buying pressure. Entry triggers on <strong>breakout above the flat resistance</strong>.</p>
+
+<div class="card card-green">
+  <h4 class="green">BUY CE — Ascending Triangle</h4>
+  <div class="step"><div class="step-num green">1</div><div>Last 2 swing highs within <strong>12 pts tolerance</strong> (flat resistance line)</div></div>
+  <div class="step"><div class="step-num green">2</div><div>Last 2 swing lows are <strong>rising</strong> (second low &gt; first low)</div></div>
+  <div class="step"><div class="step-num green">3</div><div><strong>Resistance level</strong> = average of the two flat swing highs</div></div>
+  <div class="step"><div class="step-num green">4</div><div>Current candle <strong>closes above resistance</strong> (opened at or below it)</div></div>
+  <div class="step"><div class="step-num green">5</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
+  <div class="sl-line"><strong>SL:</strong> Most recent rising swing low &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
+</div>
+
+<div class="highlight">
+  <strong>How it works:</strong> Buyers are consistently bidding at higher prices (higher lows), while sellers hold a fixed resistance. Eventually buyers overwhelm sellers and price breaks out upward. The rising lows show increasing demand — a strong bullish signal.
+</div>
+
+<!-- Pattern 10: Descending Triangle -->
+<h3 class="red">Pattern 10: Descending Triangle (Bearish Breakout)</h3>
+
+<p>A pattern with <strong>flat support</strong> (swing lows at similar levels) and <strong>falling resistance</strong> (each swing high is lower than the previous). Signals building selling pressure. Entry triggers on <strong>breakdown below the flat support</strong>.</p>
+
+<div class="card card-red">
+  <h4 class="red">BUY PE — Descending Triangle</h4>
+  <div class="step"><div class="step-num red">1</div><div>Last 2 swing lows within <strong>12 pts tolerance</strong> (flat support line)</div></div>
+  <div class="step"><div class="step-num red">2</div><div>Last 2 swing highs are <strong>falling</strong> (second high &lt; first high)</div></div>
+  <div class="step"><div class="step-num red">3</div><div><strong>Support level</strong> = average of the two flat swing lows</div></div>
+  <div class="step"><div class="step-num red">4</div><div>Current candle <strong>closes below support</strong> (opened at or above it)</div></div>
+  <div class="step"><div class="step-num red">5</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
+  <div class="sl-line"><strong>SL:</strong> Most recent falling swing high &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
+</div>
+
+<div class="highlight">
+  <strong>How it works:</strong> Sellers are consistently offering at lower prices (lower highs), while buyers hold a fixed support. Eventually sellers overwhelm buyers and price breaks down. The falling highs show decreasing demand — a strong bearish signal.
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. STOP LOSS RULES                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 7</div>
+
+<h2>5. Stop Loss Rules</h2>
+
+<p>Every entry has an <strong>initial SL</strong> derived from the signal candle, then clamped within safe limits:</p>
+
+<table>
+  <thead><tr><th>Pattern</th><th>CE Stop Loss</th><th>PE Stop Loss</th></tr></thead>
+  <tbody>
+    <tr><td>Bullish Engulfing</td><td>Signal candle LOW</td><td>—</td></tr>
+    <tr><td>Bearish Engulfing</td><td>—</td><td>Signal candle HIGH</td></tr>
+    <tr><td>Hammer</td><td>Pin bar LOW (wick tip)</td><td>—</td></tr>
+    <tr><td>Shooting Star</td><td>—</td><td>Pin bar HIGH (wick tip)</td></tr>
+    <tr><td>Inside Bar</td><td>Mother candle LOW</td><td>Mother candle HIGH</td></tr>
+    <tr><td>BOS (Bullish)</td><td>min(current low, prev low)</td><td>—</td></tr>
+    <tr><td>BOS (Bearish)</td><td>—</td><td>max(current high, prev high)</td></tr>
+    <tr><td>Double Top</td><td>—</td><td>Above double top level</td></tr>
+    <tr><td>Double Bottom</td><td>Below double bottom level</td><td>—</td></tr>
+    <tr><td>Ascending Triangle</td><td>Most recent rising swing low</td><td>—</td></tr>
+    <tr><td>Descending Triangle</td><td>—</td><td>Most recent falling swing high</td></tr>
+  </tbody>
+</table>
+
+<div class="cols">
+  <div class="metric"><div class="val">8 pts</div><div class="lbl">Min SL Floor (PA_MIN_SL_PTS)</div></div>
+  <div class="metric"><div class="val">25 pts</div><div class="lbl">Max SL Cap (PA_MAX_SL_PTS)</div></div>
+</div>
+
+<p><strong>Clamping rule:</strong> <code>SL distance = max(min(raw_distance, 25), 8)</code>. Too-tight SL on tiny candles is floored to 8 pts. Too-wide SL on volatile candles is capped at 25 pts.</p>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. TRAILING SL                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2>6. Trailing Stop Loss (Swing-Based)</h2>
+
+<p>After entry, the SL is <strong>trailed using swing structure</strong> — moving the SL to the most recent swing low (for CE) or swing high (for PE). The trailing SL only tightens, never widens.</p>
+
+<div class="card card-blue">
+  <h4 class="blue">Trailing Rules</h4>
+  <div class="step"><div class="step-num green">CE</div><div><strong>CE (Long):</strong> Trail to latest swing low — must be ABOVE current SL AND below current price</div></div>
+  <div class="step"><div class="step-num red">PE</div><div><strong>PE (Short):</strong> Trail to latest swing high — must be BELOW current SL AND above current price</div></div>
+  <p style="margin-top:8px; color: var(--yellow);"><strong>Key:</strong> Only tightens. If new swing point would widen SL, it's ignored.</p>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. EXIT LOGIC                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 8</div>
+
+<h2>7. Exit Logic (Priority Order)</h2>
+
+<table>
+  <thead><tr><th>#</th><th>Exit Condition</th><th>Description</th><th>Applies To</th></tr></thead>
+  <tbody>
+    <tr><td><strong>1</strong></td><td>SL Hit</td><td>Price touches stop loss (initial or trailed)</td><td>Every tick</td></tr>
+    <tr><td><strong>2</strong></td><td>Trailing Profit %</td><td>If peak PnL &ge; 350, exit when profit drops below X% of peak. Tiered: 55% at 500, 60% at 1000, 70% at 3000, 80% at 5000, 90% at 10000</td><td>Every tick</td></tr>
+    <tr><td><strong>3</strong></td><td>Swing Trail SL Update</td><td>Tighten SL to latest swing low/high on each candle close</td><td>Candle close</td></tr>
+    <tr><td><strong>4</strong></td><td>EOD Square-Off</td><td>Force exit at 3:20 PM IST (no overnight positions)</td><td>Time check</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. RSI FILTER                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2>8. RSI as Confluence Filter</h2>
+
+<p>RSI is used as a <strong>lightweight confirmation</strong>, NOT the primary signal. It ensures momentum doesn't contradict the pattern.</p>
+
+<div class="cols">
+  <div class="card card-green">
+    <h4 class="green">CE Entry (Bullish)</h4>
+    <p>RSI must be &gt; <strong>45</strong>. This means momentum isn't deeply bearish. It's permissive — RSI 46 is fine for a CE entry because the pattern itself is the signal.</p>
+    <p style="margin-top:8px;"><code>Default: PA_RSI_CE_MIN = 45</code></p>
+  </div>
+  <div class="card card-red">
+    <h4 class="red">PE Entry (Bearish)</h4>
+    <p>RSI must be &lt; <strong>55</strong>. Momentum isn't deeply bullish. Same principle — the pattern leads, RSI confirms.</p>
+    <p style="margin-top:8px;"><code>Default: PA_RSI_PE_MAX = 55</code></p>
+  </div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. SIGNAL FLOW                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 9</div>
+
+<h2>9. Signal Flow (Decision Tree)</h2>
+
+<div class="card">
+  <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">New 5-min candle closes</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Check trading window (9:20 AM – 2:30 PM IST)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Check daily limits (max trades, max loss, SL pause)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Check VIX filter (if enabled)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">Calculate RSI(14) + find swing highs/lows (last 30 candles)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">Check ADX trend filter (if enabled) — block all entries when ADX &lt; 20</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">7</div><div class="flow-text">Check pending <strong>Inside Bar breakout</strong> (if queued from prior candle)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">8</div><div class="flow-text">Detect new <strong>Inside Bar</strong> &rarr; queue for next candle</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">9</div><div class="flow-text">Check <strong>Bullish Engulfing</strong> at support &rarr; check <strong>Bearish Engulfing</strong> at resistance</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">10</div><div class="flow-text">Check <strong>Hammer</strong> at support &rarr; check <strong>Shooting Star</strong> at resistance</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">11</div><div class="flow-text">Check <strong>Break of Structure</strong> (bullish/bearish)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">12</div><div class="flow-text">Check <strong>Double Top</strong> (neckline break) &rarr; check <strong>Double Bottom</strong> (neckline break)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">13</div><div class="flow-text">Check <strong>Ascending Triangle</strong> (breakout above flat R) &rarr; check <strong>Descending Triangle</strong> (breakdown below flat S)</div></div>
+  <div class="flow-arrow">&darr;</div>
+  <div class="flow-step"><div class="flow-num">14</div><div class="flow-text">If signal found &rarr; calculate SL (clamp 8–25 pts) &rarr; queue entry for NEXT candle open</div></div>
+</div>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. CONFIGURATION REFERENCE                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 10</div>
+
+<h2>10. Full Configuration Reference</h2>
+
+<table>
+  <thead><tr><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>PA_MODE_ENABLED</code></td><td>true</td><td>Show/hide Price Action menus</td></tr>
+    <tr><td><code>PA_RESOLUTION</code></td><td>5</td><td>Candle timeframe (minutes)</td></tr>
+    <tr><td><code>PA_ENTRY_START</code></td><td>09:20</td><td>Earliest entry time (IST)</td></tr>
+    <tr><td><code>PA_ENTRY_END</code></td><td>14:30</td><td>Latest entry time (IST)</td></tr>
+    <tr><td><code>PA_RSI_PERIOD</code></td><td>14</td><td>RSI calculation period</td></tr>
+    <tr><td><code>PA_RSI_CE_MIN</code></td><td>45</td><td>Min RSI for CE entries</td></tr>
+    <tr><td><code>PA_RSI_CE_MAX</code></td><td>70</td><td>Max RSI for CE entries (overbought block)</td></tr>
+    <tr><td><code>PA_RSI_PE_MAX</code></td><td>55</td><td>Max RSI for PE entries</td></tr>
+    <tr><td><code>PA_RSI_PE_MIN</code></td><td>30</td><td>Min RSI for PE entries (oversold block)</td></tr>
+    <tr><td><code>PA_ADX_ENABLED</code></td><td>true</td><td>Enable ADX trend filter</td></tr>
+    <tr><td><code>PA_ADX_MIN</code></td><td>20</td><td>Minimum ADX for trend confirmation</td></tr>
+    <tr><td><code>PA_MIN_BODY</code></td><td>5</td><td>Min candle body (pts) for engulfing/BOS/chart patterns</td></tr>
+    <tr><td><code>PA_PIN_WICK_RATIO</code></td><td>2</td><td>Wick-to-body ratio for pin bars</td></tr>
+    <tr><td><code>PA_SR_LOOKBACK</code></td><td>30</td><td>Candles to scan for swing points</td></tr>
+    <tr><td><code>PA_SR_ZONE_PTS</code></td><td>15</td><td>S/R zone tolerance (pts)</td></tr>
+    <tr><td><code>PA_CHART_PATTERN_TOL</code></td><td>12</td><td>Tolerance for double top/bottom & triangle matching (pts)</td></tr>
+    <tr><td><code>PA_MAX_SL_PTS</code></td><td>25</td><td>Max SL distance cap</td></tr>
+    <tr><td><code>PA_MIN_SL_PTS</code></td><td>8</td><td>Min SL distance floor</td></tr>
+    <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td>30</td><td>Max entries per day</td></tr>
+    <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td>2000</td><td>Daily loss kill-switch (&#8377;)</td></tr>
+    <tr><td><code>PA_SL_PAUSE_CANDLES</code></td><td>2</td><td>Candles to pause after SL hit</td></tr>
+    <tr><td><code>PA_TRAIL_START</code></td><td>350</td><td>Activate trailing after this profit (&#8377;)</td></tr>
+    <tr><td><code>PA_TRAIL_PCT</code></td><td>65</td><td>Base trail % of peak profit</td></tr>
+    <tr><td><code>PA_TRAIL_TIERS</code></td><td>500:55,1000:60,...</td><td>Tiered trail percentages</td></tr>
+    <tr><td><code>PA_VIX_ENABLED</code></td><td>false</td><td>VIX filter for PA entries</td></tr>
+  </tbody>
+</table>
+
+<div class="page-break"></div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. COMPARISON TABLE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-header">Price Action Strategy Guide — Page 11</div>
+
+<h2>11. Price Action vs Other Strategies</h2>
+
+<table>
+  <thead><tr><th>Aspect</th><th>Strategy 1 (SAR+EMA+RSI)</th><th>Scalp (BB+RSI+PSAR)</th><th>Price Action</th></tr></thead>
+  <tbody>
+    <tr><td>Timeframe</td><td>15-min</td><td>5-min</td><td>5-min</td></tr>
+    <tr><td>Entry Signal</td><td>EMA9 touch + SAR + RSI</td><td>BB breakout + RSI</td><td>Candle & chart patterns at S/R</td></tr>
+    <tr><td>Primary SL</td><td>SAR value</td><td>Previous candle</td><td>Signal candle wick / pattern level</td></tr>
+    <tr><td>Trailing SL</td><td>SAR dots (tiered)</td><td>PSAR (tighten only)</td><td>Swing lows/highs</td></tr>
+    <tr><td>Lag</td><td>Medium (EMA + SAR)</td><td>Low (BB + RSI)</td><td><strong>None</strong> (reads price directly)</td></tr>
+    <tr><td>Works in Range</td><td>No (ADX filter)</td><td>No (BB squeeze filter)</td><td><strong>Yes</strong> (inside bar breakouts)</td></tr>
+    <tr><td>Best Condition</td><td>Clean trends</td><td>Volatile breakouts</td><td><strong>All conditions</strong></td></tr>
+    <tr><td>Pattern Count</td><td>1 pattern</td><td>1 pattern</td><td><strong>9 patterns</strong></td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 12. PRACTICAL TIPS                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2>12. Practical Tips</h2>
+
+<div class="cols">
+  <div class="card">
+    <h4 class="blue">Start with Backtest</h4>
+    <p>Run <strong>/pa-backtest</strong> on the last 3-6 months first. Check win rate, drawdown, and which patterns perform best. Tune S/R zone width based on results.</p>
+  </div>
+  <div class="card">
+    <h4 class="blue">Paper Trade First</h4>
+    <p>Use <strong>/pa-paper</strong> for at least 2 weeks of live simulation. Watch how patterns fire in real-time. Note which setups you'd trust and which feel forced.</p>
+  </div>
+</div>
+<div class="cols">
+  <div class="card">
+    <h4 class="blue">S/R Zone Tuning</h4>
+    <p>If too few signals: increase <code>PA_SR_ZONE_PTS</code> (20-25). If too many false signals: decrease to 10. The zone width is the most impactful parameter.</p>
+  </div>
+  <div class="card">
+    <h4 class="blue">Pattern Quality</h4>
+    <p><strong>Engulfing</strong> at S/R = highest conviction. <strong>BOS</strong> = strongest trend signal. <strong>Double Top/Bottom</strong> = best reversal. <strong>Triangles</strong> = best breakout. <strong>Pin bars</strong> = marginal (need strong wick). <strong>Inside bar</strong> = works best in volatility compression.</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 13. RISK MANAGEMENT                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2>13. Risk Management Summary</h2>
+
+<div class="metrics">
+  <div class="metric"><div class="val">8-25</div><div class="lbl">SL Range (pts)</div></div>
+  <div class="metric"><div class="val">30</div><div class="lbl">Max Trades/Day</div></div>
+  <div class="metric"><div class="val">&#8377;2000</div><div class="lbl">Daily Loss Limit</div></div>
+  <div class="metric"><div class="val">2+</div><div class="lbl">Pause After SL (candles)</div></div>
+</div>
+
+<div class="highlight">
+  <strong>Key insight:</strong> Price action trading is about reading <em>what the market is telling you</em> through its candle structure, not about calculating indicator values. The best price action setups have a clear story: "price hit support, formed a rejection candle, and buyers stepped in" or "price failed twice at resistance and broke the neckline." If you can't explain the story in one sentence, the setup might not be clean enough.
+</div>
+
+<p style="text-align:center; margin-top:40px; color:var(--text2); font-size:0.75rem;">
+  Price Action Strategy Guide &bull; Version 2.0 &bull; Updated April 2026 &bull; PRICE_ACTION_5M
+</p>
+
+</body>
+</html>

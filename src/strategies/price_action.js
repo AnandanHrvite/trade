@@ -9,6 +9,8 @@
  *   2. Pin Bar (Hammer / Shooting Star) at S/R levels
  *   3. Inside Bar Breakout (consolidation → expansion)
  *   4. Break of Structure (BOS) — higher-high / lower-low confirmation
+ *   5. Double Top / Double Bottom — two equal swing points + neckline break
+ *   6. Ascending / Descending Triangle — flat S/R + converging trendline break
  *
  * SUPPORT/RESISTANCE:
  *   Dynamic S/R from recent swing highs/lows (lookback 30 candles)
@@ -29,7 +31,7 @@
 const { RSI, ADX } = require("technicalindicators");
 
 const NAME        = "PRICE_ACTION_5M";
-const DESCRIPTION = "5-min | Engulfing + Pin Bar + Inside Bar + BOS | S/R zones | RSI confluence";
+const DESCRIPTION = "5-min | Engulfing + Pin Bar + Inside Bar + BOS + Double Top/Bottom + Triangles | S/R zones | RSI confluence";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
 
@@ -176,6 +178,94 @@ function checkBOS(candle, swingHighs, swingLows) {
   return result;
 }
 
+/**
+ * Double Top: Two swing highs at similar price, current candle breaks below the neckline (valley between them)
+ * Double Bottom: Two swing lows at similar price, current candle breaks above the neckline (peak between them)
+ * Requires at least 2 swing points and the valley/peak between them.
+ */
+function checkDoubleTop(candle, swingHighs, candles, tolerancePts) {
+  if (swingHighs.length < 2) return { detected: false };
+  // Check last two swing highs
+  var sh1 = swingHighs[swingHighs.length - 2];
+  var sh2 = swingHighs[swingHighs.length - 1];
+  // Two highs must be at similar levels
+  if (Math.abs(sh1.price - sh2.price) > tolerancePts) return { detected: false };
+  // Must have some separation (at least 5 candles apart)
+  if (sh2.index - sh1.index < 5) return { detected: false };
+  // Find the neckline: lowest low between the two swing highs
+  var neckline = Infinity;
+  for (var i = sh1.index; i <= sh2.index; i++) {
+    if (i < candles.length && candles[i].low < neckline) neckline = candles[i].low;
+  }
+  if (neckline === Infinity) return { detected: false };
+  // Current candle must break below neckline (close below, open was above or near)
+  var topLevel = (sh1.price + sh2.price) / 2;
+  if (candle.close < neckline && candle.open >= neckline) {
+    return { detected: true, neckline: neckline, topLevel: topLevel };
+  }
+  return { detected: false };
+}
+
+function checkDoubleBottom(candle, swingLows, candles, tolerancePts) {
+  if (swingLows.length < 2) return { detected: false };
+  var sl1 = swingLows[swingLows.length - 2];
+  var sl2 = swingLows[swingLows.length - 1];
+  if (Math.abs(sl1.price - sl2.price) > tolerancePts) return { detected: false };
+  if (sl2.index - sl1.index < 5) return { detected: false };
+  // Find the neckline: highest high between the two swing lows
+  var neckline = -Infinity;
+  for (var i = sl1.index; i <= sl2.index; i++) {
+    if (i < candles.length && candles[i].high > neckline) neckline = candles[i].high;
+  }
+  if (neckline === -Infinity) return { detected: false };
+  var bottomLevel = (sl1.price + sl2.price) / 2;
+  if (candle.close > neckline && candle.open <= neckline) {
+    return { detected: true, neckline: neckline, bottomLevel: bottomLevel };
+  }
+  return { detected: false };
+}
+
+/**
+ * Ascending Triangle: Flat resistance (swing highs at similar levels) + rising swing lows
+ * Descending Triangle: Flat support (swing lows at similar levels) + falling swing highs
+ * Need at least 2 swing highs and 2 swing lows to confirm the pattern.
+ */
+function checkAscendingTriangle(candle, swingHighs, swingLows, tolerancePts) {
+  if (swingHighs.length < 2 || swingLows.length < 2) return { detected: false };
+  var sh1 = swingHighs[swingHighs.length - 2];
+  var sh2 = swingHighs[swingHighs.length - 1];
+  var sl1 = swingLows[swingLows.length - 2];
+  var sl2 = swingLows[swingLows.length - 1];
+  // Flat resistance: swing highs at similar levels
+  if (Math.abs(sh1.price - sh2.price) > tolerancePts) return { detected: false };
+  // Rising lows: second swing low must be higher than first
+  if (sl2.price <= sl1.price) return { detected: false };
+  var resistanceLevel = (sh1.price + sh2.price) / 2;
+  // Breakout: current candle closes above resistance
+  if (candle.close > resistanceLevel && candle.open <= resistanceLevel) {
+    return { detected: true, resistance: resistanceLevel, risingLow: sl2.price };
+  }
+  return { detected: false };
+}
+
+function checkDescendingTriangle(candle, swingHighs, swingLows, tolerancePts) {
+  if (swingHighs.length < 2 || swingLows.length < 2) return { detected: false };
+  var sh1 = swingHighs[swingHighs.length - 2];
+  var sh2 = swingHighs[swingHighs.length - 1];
+  var sl1 = swingLows[swingLows.length - 2];
+  var sl2 = swingLows[swingLows.length - 1];
+  // Flat support: swing lows at similar levels
+  if (Math.abs(sl1.price - sl2.price) > tolerancePts) return { detected: false };
+  // Falling highs: second swing high must be lower than first
+  if (sh2.price >= sh1.price) return { detected: false };
+  var supportLevel = (sl1.price + sl2.price) / 2;
+  // Breakout: current candle closes below support
+  if (candle.close < supportLevel && candle.open >= supportLevel) {
+    return { detected: true, support: supportLevel, fallingHigh: sh2.price };
+  }
+  return { detected: false };
+}
+
 // ── Indicator cache ──────────────────────────────────────────────────────────
 let _indicatorCache = { key: null, rsi: null };
 
@@ -207,6 +297,7 @@ function getSignal(candles, opts) {
   var SR_ZONE_PTS   = parseFloat(cfg("PA_SR_ZONE_PTS", "15"));
   var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
+  var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -431,6 +522,70 @@ function getSignal(candles, opts) {
     });
   }
 
+  // ── PATTERN 6: DOUBLE TOP (Bearish reversal) ────────────────────────────────
+  var dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
+  if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+    var rawSL = dblTop.topLevel;
+    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close + slPts).toFixed(2));
+    if (!silent) console.log("[PA " + _ist + "] PE Double Top neckline break " + dblTop.neckline.toFixed(0) + " top=" + dblTop.topLevel.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    return Object.assign({}, base, {
+      signal: "BUY_PE", signalStrength: "STRONG",
+      pattern: "Double Top",
+      stopLoss: sl, slSource: "Above Double Top",
+      srLevel: dblTop.neckline,
+      reason: "PE: Double Top neckline break " + dblTop.neckline.toFixed(0) + " | top=" + dblTop.topLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+    });
+  }
+
+  // ── PATTERN 7: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
+  var dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
+  if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+    var rawSL = dblBot.bottomLevel;
+    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close - slPts).toFixed(2));
+    if (!silent) console.log("[PA " + _ist + "] CE Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " bottom=" + dblBot.bottomLevel.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    return Object.assign({}, base, {
+      signal: "BUY_CE", signalStrength: "STRONG",
+      pattern: "Double Bottom",
+      stopLoss: sl, slSource: "Below Double Bottom",
+      srLevel: dblBot.neckline,
+      reason: "CE: Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " | bottom=" + dblBot.bottomLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+    });
+  }
+
+  // ── PATTERN 8: ASCENDING TRIANGLE (Bullish breakout) ──────────────────────
+  var ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+  if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+    var rawSL = ascTri.risingLow;
+    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close - slPts).toFixed(2));
+    if (!silent) console.log("[PA " + _ist + "] CE Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    return Object.assign({}, base, {
+      signal: "BUY_CE", signalStrength: "STRONG",
+      pattern: "Ascending Triangle",
+      stopLoss: sl, slSource: "Rising Swing Low",
+      srLevel: ascTri.resistance,
+      reason: "CE: Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+    });
+  }
+
+  // ── PATTERN 9: DESCENDING TRIANGLE (Bearish breakout) ─────────────────────
+  var descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+  if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+    var rawSL = descTri.fallingHigh;
+    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
+    var sl = parseFloat((sc.close + slPts).toFixed(2));
+    if (!silent) console.log("[PA " + _ist + "] PE Descending Triangle breakdown below " + descTri.support.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    return Object.assign({}, base, {
+      signal: "BUY_PE", signalStrength: "STRONG",
+      pattern: "Descending Triangle",
+      stopLoss: sl, slSource: "Falling Swing High",
+      srLevel: descTri.support,
+      reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+    });
+  }
+
   // ── No signal — build reason ───────────────────────────────────────────────
   var parts = [];
   if (isBullishEngulfing(prev, sc, MIN_BODY) && !supportCheck.near) parts.push("Bull Engulf but no support");
@@ -441,6 +596,10 @@ function getSignal(candles, opts) {
   if (isShootingStar(sc, PIN_WICK_RATIO) && !resistanceCheck.near) parts.push("Shooting Star but no resistance");
   if (bos.bullish && rsi >= RSI_CE_MAX) parts.push("BOS bullish but RSI " + rsi.toFixed(0) + " >= " + RSI_CE_MAX + " (overbought)");
   if (bos.bearish && rsi <= RSI_PE_MIN) parts.push("BOS bearish but RSI " + rsi.toFixed(0) + " <= " + RSI_PE_MIN + " (oversold)");
+  if (dblTop.detected && (rsi >= RSI_PE_MAX || rsi <= RSI_PE_MIN)) parts.push("Double Top but RSI " + rsi.toFixed(0) + " out of range");
+  if (dblBot.detected && (rsi <= RSI_CE_MIN || rsi >= RSI_CE_MAX)) parts.push("Double Bottom but RSI " + rsi.toFixed(0) + " out of range");
+  if (ascTri.detected && (rsi <= RSI_CE_MIN || rsi >= RSI_CE_MAX)) parts.push("Asc Triangle but RSI " + rsi.toFixed(0) + " out of range");
+  if (descTri.detected && (rsi >= RSI_PE_MAX || rsi <= RSI_PE_MIN)) parts.push("Desc Triangle but RSI " + rsi.toFixed(0) + " out of range");
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
   return base;
