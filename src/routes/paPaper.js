@@ -41,7 +41,6 @@ const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
 const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
 const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
-const _PA_MIN_HOLD_CANDLES = parseInt(process.env.PA_MIN_HOLD_CANDLES || "3", 10);
 const _PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
   .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
   .sort((a, b) => b.peak - a.peak);
@@ -478,20 +477,8 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TARGET HIT — exit at opposite S/R level
-    if (pos.target) {
-      if (pos.side === "CE" && price >= pos.target) {
-        simulateSell(pos.target, `Target hit ₹${pos.target.toFixed(0)}`, price);
-        return;
-      } else if (pos.side === "PE" && price <= pos.target) {
-        simulateSell(pos.target, `Target hit ₹${pos.target.toFixed(0)}`, price);
-        return;
-      }
-    }
-
-    // 3. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-    //    Skip if trade hasn't been held long enough (let it develop)
-    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START && (pos.candlesHeld || 0) >= _PA_MIN_HOLD_CANDLES) {
+    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }

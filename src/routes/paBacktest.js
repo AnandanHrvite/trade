@@ -1,7 +1,7 @@
 /**
  * PRICE ACTION BACKTEST — /pa-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the price action strategy (Structure + Zones + Sweep + Break & Retest) on 5-min candles.
+ * Backtests the price action strategy (Engulfing + Pin Bar + Inside Bar + BOS) on 5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -83,9 +83,6 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
 
-  // Minimum candles to hold before trailing can exit (let trade develop)
-  const PA_MIN_HOLD_CANDLES = parseInt(process.env.PA_MIN_HOLD_CANDLES || "3", 10);
-
   // PNL-based trailing profit (tiered % of peak)
   const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "350");
   const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "65");
@@ -130,7 +127,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 PRICE ACTION BACKTEST — ${paStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | Swing trailing SL | Price Action entry`);
   console.log(`   MaxTrades: ${PA_MAX_TRADES}/day | MaxLoss: ₹${PA_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | MinHold: ${PA_MIN_HOLD_CANDLES} candles | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -189,7 +186,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         initialStopLoss: sl,
         slSource:       pendingSignal.slSource,
         entryReason:    pendingSignal.reason || "",
-        target:         pendingSignal.target || null,
+        target:         null,
         candlesHeld:    0,
         peakPnl:        0,
       };
@@ -248,20 +245,8 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TARGET HIT — exit at opposite S/R level
-      if (!exitReason && position.target) {
-        if (position.side === "CE" && candle.high >= position.target) {
-          exitPrice  = position.target;
-          exitReason = `Target hit ₹${position.target.toFixed(0)}`;
-        } else if (position.side === "PE" && candle.low <= position.target) {
-          exitPrice  = position.target;
-          exitReason = `Target hit ₹${position.target.toFixed(0)}`;
-        }
-      }
-
-      // 3. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-      //    Skip if trade hasn't been held long enough (let it develop)
-      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START && position.candlesHeld >= PA_MIN_HOLD_CANDLES) {
+      // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
         let _pct = PA_TRAIL_PCT;
         for (const tier of PA_TRAIL_TIERS) {
           if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
@@ -385,7 +370,6 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       slSource: result.slSource || "Swing",
       signalTs: candle.time,
       reason:   result.reason || `${side} signal`,
-      target:   result.target || null,
     };
   }
 
