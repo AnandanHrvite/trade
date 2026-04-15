@@ -42,16 +42,16 @@ const EFFECT = {
 
 const SETTINGS_SCHEMA = [
   {
-    section: "TRADING STRATEGY (15-min) — Zerodha",
+    section: "SWING STRATEGY (15-min) — Zerodha",
     icon: "📊",
     fields: [
-      { key: "SWING_LIVE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "09:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry", default: "weekly" },
-      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Trading)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Strategy 1 entries when VIX is high (independent from scalp)" },
+      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Swing entries when VIX is high (independent from scalp)" },
       { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block ALL entries above this VIX" },
       { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Only STRONG signals above this VIX" },
       { key: "VIX_FAIL_MODE", label: "VIX Unavailable", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "When VIX data missing: closed = block entries (safe), open = allow entries", default: "closed" },
@@ -83,7 +83,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "SCALPING STRATEGY (BB+CPR) — Fyers",
+    section: "SCALP STRATEGY (BB+CPR) — Fyers",
     icon: "⚡",
     fields: [
       { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
@@ -125,7 +125,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "PRICE ACTION (5-min) — Fyers",
+    section: "PRICE ACTION STRATEGY (5-min) — Fyers",
     icon: "📐",
     fields: [
       { key: "PA_MODE_ENABLED", label: "Price Action Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide price action menus", default: "true" },
@@ -163,7 +163,7 @@ const SETTINGS_SCHEMA = [
       { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
       { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
       { key: "PA_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL", default: "2" },
-      { key: "PA_PAPER_CAPITAL", label: "PA Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for PA paper trading", default: "100000" },
+      { key: "PA_PAPER_CAPITAL", label: "Price Action Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for PA paper trading", default: "100000" },
     ],
   },
   {
@@ -186,7 +186,7 @@ const SETTINGS_SCHEMA = [
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place SL-M order at exchange on every entry. Protects against bot crash/disconnect. Options only.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta for converting spot SL to option premium trigger price", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
-      { key: "SWING_PAPER_CAPITAL", label: "Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT },
+      { key: "SWING_PAPER_CAPITAL", label: "Swing Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for swing paper trading", default: "100000" },
       { key: "SCALP_PAPER_CAPITAL", label: "Scalp Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for scalp paper trading", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
