@@ -54,6 +54,7 @@ const SETTINGS_SCHEMA = [
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Trading)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Strategy 1 entries when VIX is high (independent from scalp)" },
       { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block ALL entries above this VIX" },
       { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Only STRONG signals above this VIX" },
+      { key: "VIX_FAIL_MODE", label: "VIX Unavailable", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "When VIX data missing: closed = block entries (safe), open = allow entries", default: "closed" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum entries per day" },
       { key: "MAX_SAR_DISTANCE", label: "Max SL Distance (pts)", type: "number", min: 40, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Reject entries with SL > this (caps risk per trade)", default: "80" },

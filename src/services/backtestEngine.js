@@ -496,9 +496,14 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
         _dailyPnl += pnlRupees;
         _dailyTradeCount++;
 
-        // Track consecutive losses (for stats only — no kill in backtest to preserve data)
+        // Track consecutive losses — escalating pause matching paper/live behavior
         if (pnlRupees < 0) {
           _consecutiveLosses++;
+          if (_consecutiveLosses >= 3) {
+            // Pause for escalating duration: 3+ consecutive losses
+            const pauseMins = candleResolutionMins * (2 + (_consecutiveLosses - 2));
+            _consecPauseUntilTs = candle.time + (pauseMins * 60);
+          }
         } else {
           _consecutiveLosses = 0;
         }
@@ -526,10 +531,12 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
     }
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Gate checks: SL re-entry block only. 50% rule and its pause removed (replaced by breakeven stop).
+    // Gate checks: SL re-entry block, consecutive loss pause, daily loss limit
     const isSLBlocked = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
+    const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
+    const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
 
-    if (!position && !isEODcandle && (signal === "BUY_CE" || signal === "BUY_PE")) {
+    if (!position && !isEODcandle && !isConsecPaused && !isDailyLossHit && (signal === "BUY_CE" || signal === "BUY_PE")) {
       // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
       if (expiryDates && !expiryDates.has(candleDate)) {
         _cachedPrevSL = signalSL ?? null;

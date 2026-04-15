@@ -84,7 +84,10 @@ async function checkLiveVix(signalStrength) {
   const vix = await fetchLiveVix();
 
   if (vix === null) {
-    // Can't fetch VIX — block entry for safety (fail-closed)
+    const failMode = (process.env.VIX_FAIL_MODE || "closed").toLowerCase();
+    if (failMode === "open") {
+      return { allowed: true, vix: null, reason: "VIX unavailable — allowing entry (fail-open)" };
+    }
     return { allowed: false, vix: null, reason: "VIX unavailable — blocking entry (fail-closed)" };
   }
 
@@ -161,7 +164,11 @@ function checkBacktestVix(vix, signalStrength, { force = false } = {}) {
   if (!force && !getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
-    return { allowed: true, vix: null, reason: "VIX data unavailable for this date — allowing entry (fail-open)" };
+    const failMode = (process.env.VIX_FAIL_MODE || "closed").toLowerCase();
+    if (failMode === "open") {
+      return { allowed: true, vix: null, reason: "VIX data unavailable — allowing entry (fail-open)" };
+    }
+    return { allowed: false, vix: null, reason: "VIX data unavailable — blocking entry (fail-closed)" };
   }
 
   const maxEntry   = getVixMaxEntry();

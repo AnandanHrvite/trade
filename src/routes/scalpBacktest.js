@@ -79,6 +79,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
   const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
   const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+  const SCALP_CONSEC_EXTRA = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
 
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
@@ -145,6 +146,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
 
   const window = candles.slice(0, 30);
   let _slPauseUntilTs = 0;
+  let _consecSLs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
@@ -163,6 +165,7 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
       _dailyTradeCount = 0;
       _dailyPnl = 0;
       _slPauseUntilTs = 0;
+      _consecSLs = 0;
       pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
@@ -329,7 +332,13 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
         _dailyPnl += pnl;
         _dailyTradeCount++;
         if (exitReason.includes("SL")) {
-          _slPauseUntilTs = candle.time + (SCALP_PAUSE_CANDLES * SCALP_RES * 60);
+          _consecSLs++;
+          const pauseCandles = _consecSLs >= 2
+            ? SCALP_PAUSE_CANDLES + SCALP_CONSEC_EXTRA * (_consecSLs - 1)
+            : SCALP_PAUSE_CANDLES;
+          _slPauseUntilTs = candle.time + (pauseCandles * SCALP_RES * 60);
+        } else if (pnl > 0) {
+          _consecSLs = 0;
         }
         position = null;
       }

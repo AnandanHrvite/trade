@@ -131,8 +131,11 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
+  const PA_CONSEC_EXTRA = parseInt(process.env.PA_CONSEC_SL_EXTRA_PAUSE || "2", 10);
+
   const window = candles.slice(0, 30);
   let _slPauseUntilTs = 0;
+  let _consecSLs = 0;
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
@@ -151,6 +154,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       _dailyTradeCount = 0;
       _dailyPnl = 0;
       _slPauseUntilTs = 0;
+      _consecSLs = 0;
       pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
@@ -307,7 +311,13 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         _dailyPnl += pnl;
         _dailyTradeCount++;
         if (exitReason.includes("SL")) {
-          _slPauseUntilTs = candle.time + (PA_PAUSE_CANDLES * PA_RES * 60);
+          _consecSLs++;
+          const pauseCandles = _consecSLs >= 2
+            ? PA_PAUSE_CANDLES + PA_CONSEC_EXTRA * (_consecSLs - 1)
+            : PA_PAUSE_CANDLES;
+          _slPauseUntilTs = candle.time + (pauseCandles * PA_RES * 60);
+        } else if (pnl > 0) {
+          _consecSLs = 0;
         }
         position = null;
       }
