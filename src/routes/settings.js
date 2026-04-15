@@ -621,11 +621,7 @@ router.get("/", (req, res) => {
 
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
-    // Add eye icon for Trading Strategy and Scalping Strategy sections
-    const showEye = idx === 0 || idx === 1;
-    const eyeBtn = showEye
-      ? `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`
-      : "";
+    const eyeBtn = `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`;
     const openClass = idx === 0 ? ' open' : '';
     const fieldCount = s.fields.length;
     return `
