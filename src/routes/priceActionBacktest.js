@@ -1212,6 +1212,7 @@ function doCopy(text,btn,label){
 doFilter();
 
 // ── Analytics Panel ──────────────────────────────────────────────────────────
+function fmtAna(v){ return '\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN'); }
 var anaVisible = false;
 var anaCharts = {};
 function toggleAnalytics(){
