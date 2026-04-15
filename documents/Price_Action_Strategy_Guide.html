@@ -1,689 +1,1630 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Price Action Strategy Guide — NIFTY Options</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY OPTIONS — Price Action Strategy</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+/* ── Reset & Base ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1a2332; --bg2: #1e293b; --bg3: #243044;
+  --card: #1e293b; --card2: #243044;
+  --teal: #2dd4bf; --teal2: #14b8a6; --teal-dark: #0d9488;
+  --green: #22c55e; --green2: #16a34a; --green-bg: rgba(34,197,94,0.12);
+  --red: #ef4444; --red2: #dc2626; --red-bg: rgba(239,68,68,0.12);
+  --amber: #f59e0b; --amber-bg: rgba(245,158,11,0.1);
+  --blue: #3b82f6; --blue-bg: rgba(59,130,246,0.1);
+  --purple: #a78bfa;
+  --text: #e2e8f0; --text2: #94a3b8; --text3: #64748b;
+  --border: #334155; --border2: #475569;
+  --new-badge: #f59e0b;
+  --radius: 12px; --radius-sm: 8px;
+}
+html { scroll-behavior: smooth; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+a { color: var(--teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
 
-  :root {
-    --bg: #0f1923;
-    --bg2: #152232;
-    --bg3: #1a2d42;
-    --text: #c8d8f0;
-    --text2: #8aa1bd;
-    --accent: #3b82f6;
-    --accent2: #60a5fa;
-    --green: #10b981;
-    --red: #ef4444;
-    --cyan: #22d3ee;
-    --yellow: #fbbf24;
-    --border: #1e3a5f;
-  }
+/* ── Print ─────────────────────────────────────────────────────────────── */
+@media print {
+  body { background: #fff; color: #1a1a1a; font-size: 11pt; }
+  .hero, nav { page-break-after: always; }
+  section { page-break-inside: avoid; }
+  .pattern-section { page-break-inside: avoid; }
+  .no-print { display: none !important; }
+  :root { --bg:#fff; --bg2:#f8f8f8; --bg3:#f0f0f0; --card:#f8f8f8; --card2:#f0f0f0; --text:#1a1a1a; --text2:#444; --text3:#666; --border:#ddd; --border2:#ccc; }
+}
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+/* ── Layout ────────────────────────────────────────────────────────────── */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
 
-  @page {
-    size: A4;
-    margin: 20mm 15mm 20mm 15mm;
-  }
+/* ── Hero ──────────────────────────────────────────────────────────────── */
+.hero {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #134e4a 100%);
+  padding: 60px 0 50px;
+  text-align: center;
+  border-bottom: 3px solid var(--teal-dark);
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 30% 80%, rgba(45,212,191,0.08) 0%, transparent 60%),
+              radial-gradient(ellipse at 70% 20%, rgba(59,130,246,0.06) 0%, transparent 50%);
+}
+.hero h1 { font-size: 2.6rem; font-weight: 800; color: #fff; letter-spacing: -0.5px; position: relative; }
+.hero h1 span { color: var(--teal); }
+.hero .subtitle { font-size: 1.15rem; color: var(--text2); margin-top: 10px; position: relative; }
+.hero .meta { margin-top: 18px; display: flex; gap: 20px; justify-content: center; position: relative; }
+.hero .meta span { background: var(--bg3); padding: 5px 14px; border-radius: 20px; font-size: 0.82rem; color: var(--text2); border: 1px solid var(--border); }
+.hero .pillars { display: flex; gap: 14px; justify-content: center; margin-top: 28px; flex-wrap: wrap; position: relative; }
+.hero .pillar { background: rgba(45,212,191,0.1); border: 1px solid rgba(45,212,191,0.25); padding: 10px 20px; border-radius: var(--radius-sm); color: var(--teal); font-weight: 600; font-size: 0.9rem; }
 
-  body {
-    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    font-size: 11pt;
-    line-height: 1.6;
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 20px 30px;
-  }
+/* ── Nav ───────────────────────────────────────────────────────────────── */
+nav { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 14px 0; position: sticky; top: 0; z-index: 100; }
+nav .container { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+nav a { padding: 5px 12px; border-radius: 6px; font-size: 0.8rem; color: var(--text2); transition: all 0.2s; }
+nav a:hover { background: var(--bg3); color: var(--teal); text-decoration: none; }
 
-  /* ── Cover page ─────────────────────────────────────────── */
-  .cover {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: 90vh; text-align: center; page-break-after: always;
-  }
-  .cover .badge {
-    background: var(--green); color: #000; font-weight: 700; font-size: 0.75rem;
-    padding: 6px 20px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;
-    margin-bottom: 30px;
-  }
-  .cover h1 { font-size: 2.8rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
-  .cover .sub { color: var(--accent2); font-size: 1rem; margin-bottom: 40px; }
-  .cover .version {
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 24px;
-    font-size: 0.8rem; color: var(--text2); margin-bottom: 12px;
-  }
-  .cover .patterns { font-size: 0.78rem; color: var(--text2); }
+/* ── Sections ──────────────────────────────────────────────────────────── */
+section { padding: 50px 0; border-bottom: 1px solid var(--border); }
+section:last-child { border-bottom: none; }
+.section-header { margin-bottom: 30px; }
+.section-header h2 { font-size: 1.8rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 12px; }
+.section-header h2 .num { background: var(--teal-dark); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.95rem; flex-shrink: 0; }
+.section-header p { color: var(--text2); margin-top: 8px; font-size: 1rem; max-width: 800px; }
 
-  /* ── Section headers ────────────────────────────────────── */
-  .page-header {
-    font-size: 0.7rem; color: var(--text2); text-align: right;
-    margin-bottom: 16px; padding-bottom: 6px; border-bottom: 1px solid var(--border);
-  }
+/* ── Badge ─────────────────────────────────────────────────────────────── */
+.badge-new {
+  display: inline-block; background: var(--new-badge); color: #000; font-size: 0.65rem; font-weight: 800;
+  padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; vertical-align: middle; margin-left: 8px; text-transform: uppercase;
+}
 
-  h2 {
-    font-size: 1.5rem; font-weight: 700; color: #fff; margin: 30px 0 14px;
-    padding-left: 14px; border-left: 4px solid var(--accent);
-  }
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; margin-bottom: 20px; }
+.card h3 { font-size: 1.15rem; color: #fff; margin-bottom: 12px; }
 
-  h3 {
-    font-size: 1.05rem; font-weight: 600; margin: 22px 0 10px;
-  }
-  h3.green { color: var(--green); }
-  h3.red { color: var(--red); }
-  h3.blue { color: var(--accent2); }
+/* ── Grid ──────────────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+@media (max-width: 768px) { .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
 
-  p { margin: 8px 0; }
-  strong { color: #e5e7eb; }
+/* ── Inline code & lists ───────────────────────────────────────────────── */
+code { background: var(--bg3); padding: 2px 7px; border-radius: 4px; font-size: 0.88em; color: var(--teal); font-family: 'Fira Code', 'Cascadia Code', monospace; }
+ul, ol { padding-left: 22px; }
+li { margin-bottom: 6px; color: var(--text); }
+li strong { color: #fff; }
 
-  .page-break { page-break-before: always; }
+/* ── Tables ────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+th { background: var(--bg3); color: var(--teal); font-weight: 600; text-align: left; padding: 12px 16px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+td { padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(45,212,191,0.04); }
+td.ce { color: var(--green); }
+td.pe { color: var(--red); }
 
-  /* ── Cards ──────────────────────────────────────────────── */
-  .card {
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
-    padding: 18px 22px; margin: 14px 0;
-  }
-  .card-green { border-left: 4px solid var(--green); }
-  .card-red { border-left: 4px solid var(--red); }
-  .card-blue { border-left: 4px solid var(--accent2); }
-  .card-yellow { border-left: 4px solid var(--yellow); }
+/* ── CSS Candlestick Charts ────────────────────────────────────────────── */
+.chart-box {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px 24px; margin: 16px 0; position: relative; overflow: hidden;
+}
+.chart-box .chart-title { font-size: 0.78rem; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+.chart-area { display: flex; align-items: flex-end; gap: 12px; height: 180px; padding-bottom: 24px; position: relative; }
+.chart-area.tall { height: 220px; }
 
-  .card h4 {
-    font-size: 0.95rem; font-weight: 700; margin-bottom: 10px;
-  }
-  .card h4.green { color: var(--green); }
-  .card h4.red { color: var(--red); }
-  .card h4.blue { color: var(--accent2); }
+/* S/R zones */
+.sr-zone {
+  position: absolute; left: 0; right: 0; border-radius: 4px; z-index: 0;
+}
+.sr-zone.support { background: rgba(34,197,94,0.08); border-top: 1px dashed rgba(34,197,94,0.3); border-bottom: 1px dashed rgba(34,197,94,0.3); }
+.sr-zone.resistance { background: rgba(239,68,68,0.08); border-top: 1px dashed rgba(239,68,68,0.3); border-bottom: 1px dashed rgba(239,68,68,0.3); }
+.sr-label { position: absolute; right: 8px; font-size: 0.65rem; font-weight: 600; letter-spacing: 0.5px; }
+.sr-label.support { color: var(--green); }
+.sr-label.resistance { color: var(--red); }
 
-  /* ── Numbered steps ─────────────────────────────────────── */
-  .step {
-    display: flex; align-items: flex-start; gap: 10px; margin: 6px 0;
-  }
-  .step-num {
-    min-width: 24px; height: 24px; border-radius: 50%; display: flex;
-    align-items: center; justify-content: center; font-size: 0.7rem;
-    font-weight: 700; color: #fff; flex-shrink: 0;
-  }
-  .step-num.green { background: var(--green); }
-  .step-num.red { background: var(--red); }
-  .step-num.blue { background: var(--accent); }
-  .step-num.cyan { background: var(--cyan); color: #000; }
+/* Candle */
+.candle { display: flex; flex-direction: column; align-items: center; position: relative; z-index: 2; }
+.candle .wick { width: 2px; }
+.candle .wick.green { background: var(--green); }
+.candle .wick.red { background: var(--red); }
+.candle .body { width: 20px; border-radius: 2px; min-height: 4px; }
+.candle .body.green { background: var(--green); }
+.candle .body.red { background: var(--red); }
+.candle .body.green-outline { border: 2px solid var(--green); background: transparent; }
+.candle .label { font-size: 0.65rem; color: var(--text3); margin-top: 6px; white-space: nowrap; }
 
-  .sl-line { font-size: 0.85rem; margin-top: 8px; color: var(--text2); }
-  .sl-line strong { color: var(--yellow); }
+/* Markers */
+.entry-arrow { position: absolute; z-index: 5; }
+.entry-arrow::after { content: ''; display: block; width: 0; height: 0; }
+.entry-arrow.up::after { border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 10px solid var(--green); }
+.entry-arrow.down::after { border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid var(--red); }
+.sl-line { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--red); z-index: 1; }
+.sl-tag { position: absolute; left: 4px; font-size: 0.6rem; color: var(--red); font-weight: 700; background: var(--bg); padding: 0 4px; }
+.swing-dot { width: 10px; height: 10px; border-radius: 50%; position: absolute; z-index: 3; }
+.swing-dot.high { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.swing-dot.low { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+.neckline { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--amber); z-index: 1; }
+.neckline-tag { position: absolute; right: 4px; font-size: 0.6rem; color: var(--amber); font-weight: 700; background: var(--bg); padding: 0 4px; }
+.trendline { position: absolute; z-index: 1; }
+.breakout-arrow { font-size: 1.2rem; position: absolute; z-index: 5; }
 
-  /* ── Metric boxes ───────────────────────────────────────── */
-  .metrics { display: flex; gap: 12px; margin: 14px 0; flex-wrap: wrap; }
-  .metric {
-    flex: 1; min-width: 120px; background: var(--bg2); border: 1px solid var(--border);
-    border-radius: 10px; padding: 16px; text-align: center;
-  }
-  .metric .val { font-size: 1.6rem; font-weight: 700; color: #fff; }
-  .metric .lbl { font-size: 0.7rem; color: var(--text2); margin-top: 4px; }
+/* ── Pattern Section ───────────────────────────────────────────────────── */
+.pattern-section { margin-bottom: 32px; }
+.pattern-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pattern-num { background: var(--teal-dark); color: #fff; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700; flex-shrink: 0; }
+.pattern-name { font-size: 1.15rem; font-weight: 700; color: #fff; }
+.strength-badge { font-size: 0.7rem; font-weight: 700; padding: 3px 10px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.strength-badge.strong { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+.strength-badge.marginal { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
+.pattern-rules { background: var(--bg3); border-radius: var(--radius-sm); padding: 16px 20px; }
+.pattern-rules li { font-size: 0.9rem; }
 
-  /* ── Tables ─────────────────────────────────────────────── */
-  table {
-    width: 100%; border-collapse: collapse; margin: 12px 0;
-    font-size: 0.8rem;
-  }
-  thead th {
-    background: var(--bg3); color: #fff; padding: 10px 12px; text-align: left;
-    font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;
-  }
-  tbody td {
-    padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text);
-  }
-  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-  code {
-    background: var(--bg3); padding: 1px 5px; border-radius: 3px;
-    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--yellow);
-  }
+/* ── Flowchart ─────────────────────────────────────────────────────────── */
+.flowchart { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 20px 0; }
+.flow-node { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 12px 22px; text-align: center; font-size: 0.88rem; color: var(--text); max-width: 420px; width: 100%; position: relative; }
+.flow-node.start { background: var(--teal-dark); border-color: var(--teal); color: #fff; font-weight: 600; }
+.flow-node.decision { background: var(--bg3); border-color: var(--amber); transform: rotate(0deg); }
+.flow-node.decision::before { content: ''; position: absolute; top: -1px; left: 50%; transform: translateX(-50%); width: 10px; height: 10px; background: var(--amber); border-radius: 50%; margin-top: -5px; }
+.flow-node.action { background: var(--green-bg); border-color: var(--green); }
+.flow-node.end { background: var(--red-bg); border-color: var(--red); }
+.flow-arrow { width: 2px; height: 24px; background: var(--text3); position: relative; }
+.flow-arrow::after { content: ''; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%); border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid var(--text3); }
+.flow-label { font-size: 0.7rem; color: var(--text3); padding: 2px 0; }
 
-  /* ── Two-column layout ──────────────────────────────────── */
-  .cols { display: flex; gap: 14px; margin: 14px 0; }
-  .cols > * { flex: 1; }
+/* ── Config Cards ──────────────────────────────────────────────────────── */
+.config-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+.config-card .key { font-family: 'Fira Code', monospace; font-size: 0.82rem; color: var(--teal); }
+.config-card .val { font-size: 0.85rem; color: var(--text); font-weight: 600; }
 
-  /* ── Decision tree ──────────────────────────────────────── */
-  .flow-step {
-    display: flex; align-items: flex-start; gap: 12px; margin: 0;
-  }
-  .flow-num {
-    min-width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.72rem; font-weight: 700; color: #fff; flex-shrink: 0;
-  }
-  .flow-text { padding: 4px 0 16px; font-size: 0.85rem; }
-  .flow-arrow { text-align: center; color: var(--text2); margin: 0; font-size: 0.8rem; }
+/* ── Risk Cards ────────────────────────────────────────────────────────── */
+.risk-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; text-align: center; }
+.risk-card .big { font-size: 2.2rem; font-weight: 800; color: var(--teal); }
+.risk-card .label { font-size: 0.85rem; color: var(--text2); margin-top: 6px; }
 
-  /* ── Highlight box ──────────────────────────────────────── */
-  .highlight {
-    background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);
-    border-radius: 10px; padding: 16px 20px; margin: 14px 0;
-  }
-  .highlight strong { color: var(--accent2); }
+/* ── Comparison Table colors ───────────────────────────────────────────── */
+.cmp-sar { background: rgba(59,130,246,0.08); }
+.cmp-scalp { background: rgba(168,85,247,0.08); }
+.cmp-pa { background: rgba(45,212,191,0.08); }
 
-  /* ── Bullet list ────────────────────────────────────────── */
-  ul { margin: 8px 0 8px 20px; }
-  li { margin: 4px 0; }
+/* ── Tip box ───────────────────────────────────────────────────────────── */
+.tip-box { background: rgba(45,212,191,0.06); border: 1px solid rgba(45,212,191,0.2); border-left: 4px solid var(--teal); border-radius: var(--radius-sm); padding: 16px 20px; margin: 14px 0; }
+.tip-box .tip-title { font-weight: 700; color: var(--teal); font-size: 0.85rem; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
 
-  @media print {
-    body { background: #fff; color: #222; max-width: 100%; padding: 0; }
-    .card { background: #f8f9fa; border-color: #dee2e6; }
-    .card-green { border-left-color: #10b981; }
-    .card-red { border-left-color: #ef4444; }
-    h2 { color: #1a1a1a; border-left-color: #3b82f6; }
-    .metric { background: #f8f9fa; border-color: #dee2e6; }
-    .metric .val { color: #1a1a1a; }
-    thead th { background: #e5e7eb; color: #1a1a1a; }
-    tbody td { color: #333; border-bottom-color: #e5e7eb; }
-    code { background: #f0f0f0; color: #b45309; }
-    .cover { background: var(--bg); color: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  }
+/* ── Utility ───────────────────────────────────────────────────────────── */
+.mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; } .mt-3 { margin-top: 24px; }
+.mb-1 { margin-bottom: 8px; } .mb-2 { margin-bottom: 16px; }
+.text-green { color: var(--green); } .text-red { color: var(--red); } .text-amber { color: var(--amber); } .text-teal { color: var(--teal); }
+.text-muted { color: var(--text2); }
+.fw-600 { font-weight: 600; } .fw-700 { font-weight: 700; }
+.fs-sm { font-size: 0.88rem; }
 </style>
 </head>
 <body>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- COVER PAGE                                                             -->
+<!-- HERO                                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="cover">
-  <div class="badge">NIFTY OPTIONS</div>
-  <h1>Price Action Strategy</h1>
-  <div class="sub">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</div>
-  <div class="version">Version 2.0 &bull; 5-Min Timeframe &bull; S/R + Patterns + RSI</div>
-  <div class="patterns">Engulfing &bull; Pin Bar &bull; Inside Bar Breakout &bull; Break of Structure &bull; Double Top/Bottom &bull; Triangles &bull; Swing Trail SL</div>
-</div>
+<header class="hero">
+  <div class="container">
+    <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
+    <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
+    <div class="meta">
+      <span>Version 2.0</span>
+      <span>April 2026</span>
+      <span>8 Patterns | ADX Filter | Swing Trail SL</span>
+    </div>
+    <div class="pillars">
+      <div class="pillar">5-Min Candle</div>
+      <div class="pillar">S/R Zones</div>
+      <div class="pillar">8 Patterns</div>
+      <div class="pillar">Swing Trailing SL</div>
+    </div>
+  </div>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- NAV                                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<nav class="no-print">
+  <div class="container">
+    <a href="#overview">Overview</a>
+    <a href="#sr">S/R Detection</a>
+    <a href="#patterns">8 Patterns</a>
+    <a href="#adx">ADX Filter</a>
+    <a href="#sl">Stop Loss</a>
+    <a href="#trail">Trailing SL</a>
+    <a href="#exit">Exit Logic</a>
+    <a href="#rsi">RSI Filter</a>
+    <a href="#flowchart">Signal Flow</a>
+    <a href="#compare">Comparison</a>
+    <a href="#risk">Risk Mgmt</a>
+    <a href="#config">Config</a>
+    <a href="#tips">Tips</a>
+  </div>
+</nav>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 1. STRATEGY OVERVIEW                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 2</div>
+<section id="overview">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">1</span> Strategy Overview</h2>
+      <p>PRICE_ACTION_5M reads raw price structure on 5-minute NIFTY candles. No lagging indicators as the primary signal — patterns lead, RSI confirms.</p>
+    </div>
 
-<h2>1. Strategy Overview</h2>
+    <div class="card">
+      <h3>Why 5-Minute Candles?</h3>
+      <div class="grid-2 mt-2">
+        <div>
+          <ul>
+            <li><strong>3x more opportunities</strong> vs 15-min timeframe</li>
+            <li><strong>Cleaner patterns</strong> — engulfing and pin bars resolve faster</li>
+            <li><strong>Reasonable SL</strong> — typically 10-20 pts per trade</li>
+          </ul>
+        </div>
+        <div>
+          <ul>
+            <li><strong>Zero indicator lag</strong> — reads what price IS doing</li>
+            <li><strong>S/R zones</strong> from dynamic swing highs/lows</li>
+            <li><strong>ADX filter</strong> blocks trades in choppy markets</li>
+          </ul>
+        </div>
+      </div>
+    </div>
 
-<p>The <code>PRICE_ACTION_5M</code> strategy is a <strong>5-minute</strong> timeframe system designed for <strong>NIFTY index options</strong> (CE/PE). Unlike indicator-heavy approaches, it reads <strong>what price itself is doing</strong> — identifying candlestick patterns and chart patterns at key Support/Resistance levels, confirmed by RSI momentum.</p>
-
-<div class="metrics">
-  <div class="metric"><div class="val">5 min</div><div class="lbl">Candle Timeframe</div></div>
-  <div class="metric"><div class="val">S/R</div><div class="lbl">Support & Resistance</div></div>
-  <div class="metric"><div class="val">Patterns</div><div class="lbl">Engulf / Pin / IB / BOS / DT-DB / Tri</div></div>
-  <div class="metric"><div class="val">Swing</div><div class="lbl">Trailing SL Method</div></div>
-</div>
-
-<h3 class="blue">Core Principle</h3>
-<p>Price action trading focuses on <strong>price structure</strong> rather than lagging indicators. The strategy identifies 9 pattern types, but only takes trades when the pattern occurs at a <strong>meaningful S/R level</strong> (swing high/low). RSI acts as a lightweight confirmation filter — not the primary signal.</p>
-
-<h3 class="blue">Why Price Action on 5-Min?</h3>
-<ul>
-  <li><strong>More opportunities</strong> than 15-min (3x candles per day)</li>
-  <li><strong>Cleaner patterns</strong> than 3-min (less noise, fewer false signals)</li>
-  <li><strong>Reasonable SL</strong> from signal candle wick (typically 10-20 pts)</li>
-  <li><strong>No lag</strong> — reacts to what price is doing NOW, not what indicators say it was doing</li>
-</ul>
+    <div class="card">
+      <h3>4 Key Pillars</h3>
+      <div class="grid-4 mt-2">
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F56F;</div>
+          <div class="fw-700" style="color:#fff;">5-Min Candle</div>
+          <div class="fs-sm text-muted mt-1">Optimal resolution for NIFTY intraday</div>
+        </div>
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F4CA;</div>
+          <div class="fw-700" style="color:#fff;">S/R Zones</div>
+          <div class="fs-sm text-muted mt-1">Dynamic from swing highs/lows (30 candles)</div>
+        </div>
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F50D;</div>
+          <div class="fw-700" style="color:#fff;">8 Patterns</div>
+          <div class="fs-sm text-muted mt-1">Engulfing, Pin Bar, Inside Bar, BOS, Double Top/Bottom, Triangles</div>
+        </div>
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F6E1;</div>
+          <div class="fw-700" style="color:#fff;">Swing Trail SL</div>
+          <div class="fs-sm text-muted mt-1">Tighten only, never widen</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 2. SUPPORT & RESISTANCE                                                 -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2>2. Support & Resistance Detection</h2>
+<section id="sr">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">2</span> Support &amp; Resistance Detection</h2>
+      <p>S/R levels derived from swing highs and swing lows within the last 30 candles. Each level creates a zone of +/- 15 points.</p>
+    </div>
 
-<p>S/R levels are derived dynamically from <strong>swing highs and swing lows</strong> in the last 30 candles. A swing high is a candle whose high is greater than both neighbors. A swing low is a candle whose low is less than both neighbors.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>Swing Point Rules</h3>
+        <ul>
+          <li><strong>Swing High:</strong> Candle whose <code>high</code> is greater than both its neighbors' highs</li>
+          <li><strong>Swing Low:</strong> Candle whose <code>low</code> is less than both its neighbors' lows</li>
+          <li><strong>Lookback:</strong> <code>PA_SR_LOOKBACK = 30</code> candles</li>
+          <li><strong>Zone Width:</strong> <code>PA_SR_ZONE_PTS = 15</code> points above and below</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>How S/R Is Used</h3>
+        <ul>
+          <li>Engulfing patterns <strong>require</strong> S/R confluence</li>
+          <li>Pin bars (Hammer/Shooting Star) <strong>require</strong> S/R confluence</li>
+          <li>Inside Bar, BOS, Double Top/Bottom, Triangles do <strong>NOT</strong> require S/R</li>
+          <li>S/R zones re-calculate every new candle</li>
+        </ul>
+      </div>
+    </div>
 
-<table>
-  <thead><tr><th>Parameter</th><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td>Lookback</td><td><code>PA_SR_LOOKBACK</code></td><td>30</td><td>Candles to scan for swing points</td></tr>
-    <tr><td>Zone Width</td><td><code>PA_SR_ZONE_PTS</code></td><td>15 pts</td><td>Price must be within this distance of S/R level</td></tr>
-  </tbody>
-</table>
-
-<div class="page-break"></div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. ENTRY PATTERNS (Candlestick)                                         -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 3</div>
-
-<h2>3. Entry Patterns — Candlestick</h2>
-
-<p>Nine patterns are detected, each requiring <strong>RSI confirmation</strong>. Candlestick patterns (1-5) also require <strong>S/R confluence</strong>. Patterns are checked in priority order.</p>
-
-<!-- Pattern 1: Bullish Engulfing -->
-<h3 class="green">Pattern 1: Bullish Engulfing at Support</h3>
-<div class="card card-green">
-  <h4 class="green">BUY CE — Bullish Engulfing</h4>
-  <div class="step"><div class="step-num green">1</div><div>Previous candle is RED (bearish)</div></div>
-  <div class="step"><div class="step-num green">2</div><div>Current candle is GREEN and its body fully engulfs the previous candle's body</div></div>
-  <div class="step"><div class="step-num green">3</div><div>Current candle's <strong>low is within 15 pts of a swing low</strong> (support zone)</div></div>
-  <div class="step"><div class="step-num green">4</div><div>RSI &gt; 45 (not deeply oversold — momentum supports move up)</div></div>
-  <div class="step"><div class="step-num green">5</div><div>Candle body &ge; 5 pts (filters out dojis)</div></div>
-  <div class="sl-line"><strong>SL:</strong> Signal candle low &nbsp;|&nbsp; <strong>Strength:</strong> STRONG (immediate entry)</div>
-</div>
-
-<!-- Pattern 2: Bearish Engulfing -->
-<h3 class="red">Pattern 2: Bearish Engulfing at Resistance</h3>
-<div class="card card-red">
-  <h4 class="red">BUY PE — Bearish Engulfing</h4>
-  <div class="step"><div class="step-num red">1</div><div>Previous candle is GREEN (bullish)</div></div>
-  <div class="step"><div class="step-num red">2</div><div>Current candle is RED and its body fully engulfs the previous candle's body</div></div>
-  <div class="step"><div class="step-num red">3</div><div>Current candle's <strong>high is within 15 pts of a swing high</strong> (resistance zone)</div></div>
-  <div class="step"><div class="step-num red">4</div><div>RSI &lt; 55 (not overbought — momentum supports move down)</div></div>
-  <div class="step"><div class="step-num red">5</div><div>Candle body &ge; 5 pts</div></div>
-  <div class="sl-line"><strong>SL:</strong> Signal candle high &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
-</div>
-
-<!-- Pattern 3: Hammer -->
-<h3 class="green">Pattern 3: Hammer (Pin Bar) at Support</h3>
-<div class="card card-green">
-  <h4 class="green">BUY CE — Hammer</h4>
-  <div class="step"><div class="step-num green">1</div><div>Lower wick &ge; 2&times; the body size (long rejection wick)</div></div>
-  <div class="step"><div class="step-num green">2</div><div>Upper wick &le; 0.5&times; the body size (small upper shadow)</div></div>
-  <div class="step"><div class="step-num green">3</div><div>Candle low within <strong>support zone</strong> (15 pts of swing low)</div></div>
-  <div class="step"><div class="step-num green">4</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 2 pts minimum</div></div>
-  <div class="sl-line"><strong>SL:</strong> Pin bar low &nbsp;|&nbsp; <strong>Strength:</strong> MARGINAL (wait for close confirmation)</div>
-</div>
-
-<!-- Pattern 4: Shooting Star -->
-<h3 class="red">Pattern 4: Shooting Star (Bearish Pin Bar) at Resistance</h3>
-<div class="card card-red">
-  <h4 class="red">BUY PE — Shooting Star</h4>
-  <div class="step"><div class="step-num red">1</div><div>Upper wick &ge; 2&times; the body size (long rejection wick upward)</div></div>
-  <div class="step"><div class="step-num red">2</div><div>Lower wick &le; 0.5&times; the body size</div></div>
-  <div class="step"><div class="step-num red">3</div><div>Candle high within <strong>resistance zone</strong></div></div>
-  <div class="step"><div class="step-num red">4</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 2 pts minimum</div></div>
-  <div class="sl-line"><strong>SL:</strong> Pin bar high &nbsp;|&nbsp; <strong>Strength:</strong> MARGINAL</div>
-</div>
-
-<div class="page-break"></div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- Pattern 5: Inside Bar                                                   -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 4</div>
-
-<h3 class="blue">Pattern 5: Inside Bar Breakout</h3>
-
-<p>An <strong>inside bar</strong> is a candle whose entire range fits within the previous candle's range (the "mother candle"). It signals consolidation. Entry triggers when <strong>the next candle breaks out</strong> of the mother candle's range.</p>
-
-<div class="cols">
-  <div class="card card-green">
-    <h4 class="green">CE Breakout</h4>
-    <div class="step"><div class="step-num green">1</div><div>Breakout candle closes ABOVE mother high</div></div>
-    <div class="step"><div class="step-num green">2</div><div>RSI &gt; 45</div></div>
-    <div class="sl-line"><strong>SL:</strong> Mother candle low</div>
+    <!-- S/R Visual Chart -->
+    <div class="chart-box mt-2">
+      <div class="chart-title">S/R Detection — Swing Highs (Red) &amp; Swing Lows (Green) with Zones</div>
+      <!-- Resistance zone at top -->
+      <div class="sr-zone resistance" style="top: 16px; height: 36px;">
+        <span class="sr-label resistance" style="top: 10px;">RESISTANCE ZONE (+/-15pts)</span>
+      </div>
+      <!-- Support zone at bottom -->
+      <div class="sr-zone support" style="bottom: 36px; height: 36px;">
+        <span class="sr-label support" style="bottom: 10px;">SUPPORT ZONE (+/-15pts)</span>
+      </div>
+      <div class="chart-area" style="justify-content: center; padding: 30px 0 30px;">
+        <!-- Candle 1 -->
+        <div class="candle">
+          <div class="wick green" style="height: 18px;"></div>
+          <div class="body green" style="height: 28px;"></div>
+          <div class="wick green" style="height: 14px;"></div>
+          <div class="label">C1</div>
+        </div>
+        <!-- Candle 2: swing high -->
+        <div class="candle" style="position: relative;">
+          <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="body green" style="height: 40px;"></div>
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="label">Swing H</div>
+        </div>
+        <!-- Candle 3 -->
+        <div class="candle">
+          <div class="wick red" style="height: 12px;"></div>
+          <div class="body red" style="height: 24px;"></div>
+          <div class="wick red" style="height: 20px;"></div>
+          <div class="label">C3</div>
+        </div>
+        <!-- Candle 4 -->
+        <div class="candle">
+          <div class="wick red" style="height: 8px;"></div>
+          <div class="body red" style="height: 18px;"></div>
+          <div class="wick red" style="height: 30px;"></div>
+          <div class="label">C4</div>
+        </div>
+        <!-- Candle 5: swing low -->
+        <div class="candle" style="position: relative;">
+          <div class="wick red" style="height: 6px;"></div>
+          <div class="body red" style="height: 14px;"></div>
+          <div class="wick red" style="height: 36px;"></div>
+          <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+          <div class="label">Swing L</div>
+        </div>
+        <!-- Candle 6 -->
+        <div class="candle">
+          <div class="wick green" style="height: 14px;"></div>
+          <div class="body green" style="height: 22px;"></div>
+          <div class="wick green" style="height: 12px;"></div>
+          <div class="label">C6</div>
+        </div>
+        <!-- Candle 7: swing high -->
+        <div class="candle" style="position: relative;">
+          <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="body green" style="height: 36px;"></div>
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="label">Swing H</div>
+        </div>
+        <!-- Candle 8 -->
+        <div class="candle">
+          <div class="wick red" style="height: 10px;"></div>
+          <div class="body red" style="height: 20px;"></div>
+          <div class="wick red" style="height: 16px;"></div>
+          <div class="label">C8</div>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="card card-red">
-    <h4 class="red">PE Breakout</h4>
-    <div class="step"><div class="step-num red">1</div><div>Breakout candle closes BELOW mother low</div></div>
-    <div class="step"><div class="step-num red">2</div><div>RSI &lt; 55</div></div>
-    <div class="sl-line"><strong>SL:</strong> Mother candle high</div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. ENTRY PATTERNS                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="patterns">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">3</span> Entry Patterns — 8 Patterns</h2>
+      <p>Each pattern has specific structure rules, S/R requirements, RSI confluence gates, and a defined stop-loss source.</p>
+    </div>
+
+    <!-- ── Pattern 1: Bullish Engulfing ────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">1</span>
+        <span class="pattern-name">Bullish Engulfing at Support</span>
+        <span class="strength-badge strong">STRONG</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Bullish Engulfing at Support Zone</div>
+        <div class="sr-zone support" style="bottom: 28px; height: 40px;">
+          <span class="sr-label support" style="bottom: 12px;">SUPPORT ZONE</span>
+        </div>
+        <div class="sl-line" style="bottom: 38px;"></div>
+        <span class="sl-tag" style="bottom: 42px;">SL = Signal Candle Low</span>
+        <div class="chart-area" style="justify-content: center;">
+          <!-- Prev: small red -->
+          <div class="candle">
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="body red" style="height: 24px; width: 18px;"></div>
+            <div class="wick red" style="height: 14px;"></div>
+            <div class="label">Prev (RED)</div>
+          </div>
+          <!-- Current: large green engulfing -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="body green" style="height: 44px; width: 26px;"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="label">Current (GREEN)</div>
+            <div class="entry-arrow up" style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li>Previous candle is <strong class="text-red">RED</strong>, current candle is <strong class="text-green">GREEN</strong></li>
+          <li>Current body <strong>fully engulfs</strong> previous body: <code>curr.open &lt;= prev.close</code> AND <code>curr.close &gt;= prev.open</code></li>
+          <li>Low within <strong>15pts</strong> of a swing low (support zone)</li>
+          <li>RSI &gt; 45 and &lt; 70 (not overbought) | Body size &ge; 5 pts</li>
+          <li><strong>SL = Signal candle LOW</strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 2: Bearish Engulfing ────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">2</span>
+        <span class="pattern-name">Bearish Engulfing at Resistance</span>
+        <span class="strength-badge strong">STRONG</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Bearish Engulfing at Resistance Zone</div>
+        <div class="sr-zone resistance" style="top: 14px; height: 40px;">
+          <span class="sr-label resistance" style="top: 12px;">RESISTANCE ZONE</span>
+        </div>
+        <div class="sl-line" style="top: 30px;"></div>
+        <span class="sl-tag" style="top: 34px;">SL = Signal Candle High</span>
+        <div class="chart-area" style="justify-content: center; align-items: flex-start; padding-top: 50px;">
+          <!-- Prev: small green -->
+          <div class="candle">
+            <div class="wick green" style="height: 14px;"></div>
+            <div class="body green" style="height: 24px; width: 18px;"></div>
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="label">Prev (GREEN)</div>
+          </div>
+          <!-- Current: large red engulfing -->
+          <div class="candle" style="position: relative;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 44px; width: 26px;"></div>
+            <div class="wick red" style="height: 12px;"></div>
+            <div class="label">Current (RED)</div>
+            <div class="entry-arrow down" style="position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li>Previous candle is <strong class="text-green">GREEN</strong>, current candle is <strong class="text-red">RED</strong></li>
+          <li>Current body <strong>fully engulfs</strong> previous body: <code>curr.open &gt;= prev.close</code> AND <code>curr.close &lt;= prev.open</code></li>
+          <li>High within <strong>15pts</strong> of a swing high (resistance zone)</li>
+          <li>RSI &lt; 55 and &gt; 30 (not oversold) | Body size &ge; 5 pts</li>
+          <li><strong>SL = Signal candle HIGH</strong></li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 3: Hammer ───────────────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">3</span>
+        <span class="pattern-name">Hammer (Pin Bar) at Support</span>
+        <span class="strength-badge marginal">MARGINAL</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Hammer at Support — Long Lower Wick</div>
+        <div class="sr-zone support" style="bottom: 24px; height: 40px;">
+          <span class="sr-label support" style="bottom: 12px;">SUPPORT ZONE</span>
+        </div>
+        <div class="sl-line" style="bottom: 32px;"></div>
+        <span class="sl-tag" style="bottom: 36px;">SL = Pin Bar Low (Wick Tip)</span>
+        <div class="chart-area" style="justify-content: center;">
+          <div class="candle">
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="body red" style="height: 20px;"></div>
+            <div class="wick red" style="height: 16px;"></div>
+            <div class="label">C1</div>
+          </div>
+          <!-- Hammer candle -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="body green" style="height: 16px; width: 18px;"></div>
+            <div class="wick green" style="height: 50px;"></div>
+            <div class="label">Hammer</div>
+            <div class="entry-arrow up" style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+          <div class="candle">
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="body green" style="height: 26px;"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="label">C3</div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li>Lower wick &ge; <strong>2x body size</strong> (<code>PA_PIN_WICK_RATIO = 2</code>)</li>
+          <li>Upper wick &le; 0.5x body (small upper shadow)</li>
+          <li>Low within <strong>support zone</strong> (+/- 15pts of swing low)</li>
+          <li>RSI &gt; 45 and &lt; 70 | Body &ge; 2 pts</li>
+          <li><strong>SL = Pin bar LOW</strong> (wick tip)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 4: Shooting Star ────────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">4</span>
+        <span class="pattern-name">Shooting Star at Resistance</span>
+        <span class="strength-badge marginal">MARGINAL</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Shooting Star at Resistance — Long Upper Wick</div>
+        <div class="sr-zone resistance" style="top: 14px; height: 40px;">
+          <span class="sr-label resistance" style="top: 12px;">RESISTANCE ZONE</span>
+        </div>
+        <div class="sl-line" style="top: 28px;"></div>
+        <span class="sl-tag" style="top: 32px;">SL = Pin Bar High (Wick Tip)</span>
+        <div class="chart-area" style="justify-content: center; align-items: flex-start; padding-top: 50px;">
+          <div class="candle">
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="body green" style="height: 22px;"></div>
+            <div class="wick green" style="height: 14px;"></div>
+            <div class="label">C1</div>
+          </div>
+          <!-- Shooting Star -->
+          <div class="candle" style="position: relative;">
+            <div class="wick red" style="height: 50px;"></div>
+            <div class="body red" style="height: 16px; width: 18px;"></div>
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="label">Shooting Star</div>
+            <div class="entry-arrow down" style="position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+          <div class="candle">
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="body red" style="height: 24px;"></div>
+            <div class="wick red" style="height: 12px;"></div>
+            <div class="label">C3</div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li>Upper wick &ge; <strong>2x body size</strong> (<code>PA_PIN_WICK_RATIO = 2</code>)</li>
+          <li>Lower wick &le; 0.5x body (small lower shadow)</li>
+          <li>High within <strong>resistance zone</strong> (+/- 15pts of swing high)</li>
+          <li>RSI &lt; 55 and &gt; 30 | Body &ge; 2 pts</li>
+          <li><strong>SL = Pin bar HIGH</strong> (wick tip)</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 5: Inside Bar Breakout ──────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">5</span>
+        <span class="pattern-name">Inside Bar Breakout</span>
+        <span class="strength-badge strong">STRONG</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Inside Bar — Consolidation then Breakout</div>
+        <div class="chart-area" style="justify-content: center;">
+          <!-- Mother candle (large) -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="body green" style="height: 55px; width: 28px; opacity: 0.7;"></div>
+            <div class="wick green" style="height: 14px;"></div>
+            <div class="label">Mother</div>
+            <!-- Mother high/low dashed lines extending right -->
+          </div>
+          <!-- Inside bar (small, within mother range) -->
+          <div class="candle" style="margin-top: 10px;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 18px; width: 16px;"></div>
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="label">Inside</div>
+          </div>
+          <!-- Breakout candle -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="body green" style="height: 48px; width: 24px;"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="label">Breakout</div>
+            <div class="entry-arrow up" style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li>Inside bar: <strong>entire range</strong> within mother candle range (<code>curr.high &lt;= prev.high &amp;&amp; curr.low &gt;= prev.low</code>)</li>
+          <li><strong>CE:</strong> Breakout candle closes <strong>ABOVE</strong> mother high | RSI &gt; 45 and &lt; 70</li>
+          <li><strong>PE:</strong> Breakout candle closes <strong>BELOW</strong> mother low | RSI &lt; 55 and &gt; 30</li>
+          <li><strong>SL:</strong> Mother candle low (CE) / Mother candle high (PE)</li>
+          <li>Does <strong>NOT</strong> require S/R confluence (works anywhere)</li>
+          <li>Pending state tracked for max <strong>3 candles</strong>, resets if ADX &lt; 20</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 6: Break of Structure ───────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">6</span>
+        <span class="pattern-name">Break of Structure (BOS)</span>
+        <span class="strength-badge strong">STRONG</span>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">Bullish BOS — Close Above Last Swing High</div>
+        <div class="chart-area" style="justify-content: center;">
+          <div class="candle">
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="body green" style="height: 24px;"></div>
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="label">C1</div>
+          </div>
+          <!-- Swing high candle -->
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="body green" style="height: 34px;"></div>
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="label">Swing H</div>
+          </div>
+          <!-- Pullback -->
+          <div class="candle">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 20px;"></div>
+            <div class="wick red" style="height: 14px;"></div>
+            <div class="label">Pullback</div>
+          </div>
+          <!-- BOS candle breaking above -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="body green" style="height: 46px; width: 24px;"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="label">BOS</div>
+            <div class="entry-arrow up" style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pattern-rules">
+        <ul>
+          <li><strong>Bullish BOS:</strong> Close <strong>ABOVE</strong> last swing high, opened <strong>AT or BELOW</strong> that swing high | RSI &gt; 45 and &lt; 70 | Body &ge; 5 pts</li>
+          <li><strong>Bearish BOS:</strong> Close <strong>BELOW</strong> last swing low, opened <strong>AT or ABOVE</strong> that swing low | RSI &lt; 55 and &gt; 30 | Body &ge; 5 pts</li>
+          <li><strong>SL:</strong> Recent swing low (bullish) / Recent swing high (bearish) — uses <code>min(sc.low, prev.low)</code> or <code>max(sc.high, prev.high)</code></li>
+          <li>Does NOT require S/R zone confluence</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 7: Double Top/Bottom ────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">7</span>
+        <span class="pattern-name">Double Top / Double Bottom</span>
+        <span class="strength-badge strong">STRONG</span>
+        <span class="badge-new">NEW</span>
+      </div>
+
+      <!-- Double Top chart -->
+      <div class="chart-box">
+        <div class="chart-title">Double Top — Two Swing Highs at Same Level, Neckline Break</div>
+        <div class="chart-area tall" style="justify-content: center; position: relative;">
+          <!-- Neckline -->
+          <div class="neckline" style="bottom: 70px;"></div>
+          <span class="neckline-tag" style="bottom: 74px;">NECKLINE (lowest low between peaks)</span>
+          <!-- First peak -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="body green" style="height: 28px;"></div>
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="label">Rise</div>
+          </div>
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="body green" style="height: 38px;"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="label">Peak 1</div>
+          </div>
+          <!-- Valley -->
+          <div class="candle" style="margin-top: 30px;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 18px;"></div>
+            <div class="wick red" style="height: 20px;"></div>
+            <div class="label">Valley</div>
+          </div>
+          <!-- Second peak -->
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="body green" style="height: 36px;"></div>
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="label">Peak 2</div>
+          </div>
+          <!-- Neckline break candle -->
+          <div class="candle" style="position: relative; margin-top: 40px;">
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="body red" style="height: 40px; width: 24px;"></div>
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="label">Break</div>
+            <div class="entry-arrow down" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Double Bottom chart -->
+      <div class="chart-box">
+        <div class="chart-title">Double Bottom — Two Swing Lows at Same Level, Neckline Break</div>
+        <div class="chart-area tall" style="justify-content: center; position: relative;">
+          <div class="neckline" style="top: 70px;"></div>
+          <span class="neckline-tag" style="top: 74px;">NECKLINE (highest high between troughs)</span>
+          <!-- First trough -->
+          <div class="candle" style="margin-top: 30px;">
+            <div class="wick red" style="height: 10px;"></div>
+            <div class="body red" style="height: 26px;"></div>
+            <div class="wick red" style="height: 14px;"></div>
+            <div class="label">Drop</div>
+          </div>
+          <div class="candle" style="position: relative; margin-top: 40px;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 16px;"></div>
+            <div class="wick red" style="height: 30px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">Trough 1</div>
+          </div>
+          <!-- Peak between -->
+          <div class="candle" style="margin-top: 0;">
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="body green" style="height: 22px;"></div>
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="label">Peak</div>
+          </div>
+          <!-- Second trough -->
+          <div class="candle" style="position: relative; margin-top: 40px;">
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="body red" style="height: 14px;"></div>
+            <div class="wick red" style="height: 32px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">Trough 2</div>
+          </div>
+          <!-- Neckline break candle -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="body green" style="height: 44px; width: 24px;"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="label">Break</div>
+            <div class="entry-arrow up" style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pattern-rules">
+        <ul>
+          <li><strong>Double Top:</strong> Two swing highs within <code>PA_CHART_PATTERN_TOL = 12</code> pts of each other, at least <strong>5 candles apart</strong></li>
+          <li>Close breaks <strong>below neckline</strong> (lowest low between the two peaks), open was at/above neckline</li>
+          <li><strong>Double Bottom:</strong> Two swing lows within 12pts, close breaks <strong>above neckline</strong> (highest high between troughs)</li>
+          <li>RSI confirmation required: PE (Double Top) RSI &lt; 55 &amp; &gt; 30 | CE (Double Bottom) RSI &gt; 45 &amp; &lt; 70</li>
+          <li>Body &ge; 5 pts | <strong>SL:</strong> Above double top level / Below double bottom level</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ── Pattern 8: Triangles ────────────────────────────────────────────── -->
+    <div class="pattern-section">
+      <div class="pattern-header">
+        <span class="pattern-num">8</span>
+        <span class="pattern-name">Ascending / Descending Triangle</span>
+        <span class="strength-badge strong">STRONG</span>
+        <span class="badge-new">NEW</span>
+      </div>
+
+      <!-- Ascending Triangle -->
+      <div class="chart-box">
+        <div class="chart-title">Ascending Triangle — Flat Resistance + Rising Lows + CE Breakout</div>
+        <div class="chart-area tall" style="justify-content: center; position: relative;">
+          <!-- Flat resistance line -->
+          <div style="position: absolute; top: 30px; left: 10%; right: 10%; border-top: 2px solid var(--red); opacity: 0.6;"></div>
+          <span style="position: absolute; top: 14px; right: 12%; font-size: 0.65rem; color: var(--red); font-weight: 600;">FLAT RESISTANCE</span>
+          <!-- Rising support trendline (visual approximation) -->
+          <div style="position: absolute; bottom: 50px; left: 14%; width: 50%; border-top: 2px dashed var(--green); transform: rotate(-12deg); transform-origin: left; opacity: 0.5;"></div>
+          <span style="position: absolute; bottom: 30px; left: 14%; font-size: 0.65rem; color: var(--green); font-weight: 600;">RISING LOWS</span>
+
+          <!-- Swing High 1 -->
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="body green" style="height: 32px;"></div>
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="label">SH1</div>
+          </div>
+          <!-- Swing Low 1 (lower) -->
+          <div class="candle" style="margin-top: 30px; position: relative;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 18px;"></div>
+            <div class="wick red" style="height: 20px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">SL1</div>
+          </div>
+          <!-- Swing High 2 (same level as SH1) -->
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="body green" style="height: 30px;"></div>
+            <div class="wick green" style="height: 12px;"></div>
+            <div class="label">SH2</div>
+          </div>
+          <!-- Swing Low 2 (higher than SL1) -->
+          <div class="candle" style="margin-top: 16px; position: relative;">
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="body red" style="height: 16px;"></div>
+            <div class="wick red" style="height: 14px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">SL2 (higher)</div>
+          </div>
+          <!-- Breakout candle -->
+          <div class="candle" style="position: relative;">
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="body green" style="height: 48px; width: 26px;"></div>
+            <div class="wick green" style="height: 4px;"></div>
+            <div class="label">Breakout</div>
+            <div class="entry-arrow up" style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Descending Triangle -->
+      <div class="chart-box">
+        <div class="chart-title">Descending Triangle — Flat Support + Falling Highs + PE Breakdown</div>
+        <div class="chart-area tall" style="justify-content: center; align-items: flex-start; padding-top: 30px; position: relative;">
+          <!-- Flat support line -->
+          <div style="position: absolute; bottom: 50px; left: 10%; right: 10%; border-top: 2px solid var(--green); opacity: 0.6;"></div>
+          <span style="position: absolute; bottom: 34px; right: 12%; font-size: 0.65rem; color: var(--green); font-weight: 600;">FLAT SUPPORT</span>
+          <!-- Falling resistance trendline -->
+          <div style="position: absolute; top: 30px; left: 14%; width: 50%; border-top: 2px dashed var(--red); transform: rotate(12deg); transform-origin: left; opacity: 0.5;"></div>
+          <span style="position: absolute; top: 14px; left: 14%; font-size: 0.65rem; color: var(--red); font-weight: 600;">FALLING HIGHS</span>
+
+          <!-- Swing Low 1 -->
+          <div class="candle" style="margin-top: 60px; position: relative;">
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="body red" style="height: 18px;"></div>
+            <div class="wick red" style="height: 16px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">SL1</div>
+          </div>
+          <!-- Swing High 1 (higher) -->
+          <div class="candle" style="position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 6px;"></div>
+            <div class="body green" style="height: 36px;"></div>
+            <div class="wick green" style="height: 8px;"></div>
+            <div class="label">SH1</div>
+          </div>
+          <!-- Swing Low 2 (same level as SL1) -->
+          <div class="candle" style="margin-top: 60px; position: relative;">
+            <div class="wick red" style="height: 8px;"></div>
+            <div class="body red" style="height: 16px;"></div>
+            <div class="wick red" style="height: 18px;"></div>
+            <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="label">SL2</div>
+          </div>
+          <!-- Swing High 2 (lower than SH1) -->
+          <div class="candle" style="margin-top: 10px; position: relative;">
+            <div class="swing-dot high" style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%);"></div>
+            <div class="wick green" style="height: 4px;"></div>
+            <div class="body green" style="height: 26px;"></div>
+            <div class="wick green" style="height: 10px;"></div>
+            <div class="label">SH2 (lower)</div>
+          </div>
+          <!-- Breakdown candle -->
+          <div class="candle" style="margin-top: 50px; position: relative;">
+            <div class="wick red" style="height: 4px;"></div>
+            <div class="body red" style="height: 48px; width: 26px;"></div>
+            <div class="wick red" style="height: 6px;"></div>
+            <div class="label">Breakdown</div>
+            <div class="entry-arrow down" style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pattern-rules">
+        <ul>
+          <li><strong>Ascending Triangle:</strong> Two swing highs within <code>PA_CHART_PATTERN_TOL = 12</code> pts (flat resistance) + Second swing low <strong>higher</strong> than first (rising lows)</li>
+          <li>CE breakout: Close above resistance, open was at/below resistance | RSI &gt; 45 &amp; &lt; 70</li>
+          <li><strong>Descending Triangle:</strong> Two swing lows within 12pts (flat support) + Second swing high <strong>lower</strong> than first (falling highs)</li>
+          <li>PE breakdown: Close below support, open was at/above support | RSI &lt; 55 &amp; &gt; 30</li>
+          <li><strong>SL:</strong> Rising swing low (ascending) / Falling swing high (descending) | Body &ge; 5 pts</li>
+        </ul>
+      </div>
+    </div>
+
   </div>
-</div>
-
-<p><strong>Note:</strong> Inside Bar does NOT require S/R confluence (breakouts work anywhere). If no breakout occurs within 3 candles, the pending signal is cancelled.</p>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- Pattern 6: BOS                                                          -->
+<!-- 4. ADX TREND FILTER                                                     -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h3 class="blue">Pattern 6: Break of Structure (BOS)</h3>
+<section id="adx">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">4</span> ADX Trend Filter <span class="badge-new">NEW</span></h2>
+      <p>The Average Directional Index (ADX) with period 14 acts as a market regime filter, blocking all entries in choppy, trendless conditions.</p>
+    </div>
 
-<p>A BOS occurs when price <strong>closes beyond the most recent swing high or swing low</strong>, indicating a shift in market structure. This is the strongest signal type.</p>
+    <div class="grid-2">
+      <div class="card">
+        <h3>How It Works</h3>
+        <ul>
+          <li>ADX(14) calculated on every candle from high/low/close arrays</li>
+          <li>Minimum threshold: <code>PA_ADX_MIN = 20</code></li>
+          <li>When <strong>ADX &lt; 20</strong> — market is <strong>ranging/choppy</strong> — ALL entries blocked</li>
+          <li>When <strong>ADX &ge; 20</strong> — market is <strong>trending</strong> — patterns allowed to fire</li>
+          <li>Can be disabled: <code>PA_ADX_ENABLED = false</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Inside Bar + ADX Interaction</h3>
+        <ul>
+          <li>If an inside bar is pending and ADX drops below 20, the pending state is <strong>preserved</strong> (not immediately cancelled)</li>
+          <li>A wait counter increments each candle while ADX is low</li>
+          <li>After <strong>3 candles</strong> in low-ADX, the pending inside bar <strong>resets</strong></li>
+          <li>This prevents stale breakouts in extended chop periods</li>
+        </ul>
+      </div>
+    </div>
 
-<div class="cols">
-  <div class="card card-green">
-    <h4 class="green">Bullish BOS</h4>
-    <div class="step"><div class="step-num green">1</div><div>Candle closes ABOVE last swing high</div></div>
-    <div class="step"><div class="step-num green">2</div><div>Candle opened AT or BELOW that swing high</div></div>
-    <div class="step"><div class="step-num green">3</div><div>RSI &gt; 45 + body &ge; 5 pts</div></div>
-    <div class="sl-line"><strong>SL:</strong> Recent swing low</div>
+    <div class="chart-box mt-2">
+      <div class="chart-title">ADX Filter Gate — Below 20 = All Entries Blocked</div>
+      <div style="display: flex; align-items: center; gap: 30px; padding: 20px 0; justify-content: center; flex-wrap: wrap;">
+        <div style="text-align: center; padding: 20px 30px; background: var(--red-bg); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-sm);">
+          <div style="font-size: 2rem; font-weight: 800; color: var(--red);">ADX &lt; 20</div>
+          <div style="color: var(--text2); margin-top: 6px;">RANGING — No entries</div>
+          <div style="color: var(--text3); font-size: 0.8rem; margin-top: 4px;">Choppy, low-conviction</div>
+        </div>
+        <div style="font-size: 1.8rem; color: var(--text3);">&#x2192;</div>
+        <div style="text-align: center; padding: 20px 30px; background: var(--green-bg); border: 1px solid rgba(34,197,94,0.3); border-radius: var(--radius-sm);">
+          <div style="font-size: 2rem; font-weight: 800; color: var(--green);">ADX &ge; 20</div>
+          <div style="color: var(--text2); margin-top: 6px;">TRENDING — Patterns active</div>
+          <div style="color: var(--text3); font-size: 0.8rem; margin-top: 4px;">Directional movement confirmed</div>
+        </div>
+      </div>
+    </div>
   </div>
-  <div class="card card-red">
-    <h4 class="red">Bearish BOS</h4>
-    <div class="step"><div class="step-num red">1</div><div>Candle closes BELOW last swing low</div></div>
-    <div class="step"><div class="step-num red">2</div><div>Candle opened AT or ABOVE that swing low</div></div>
-    <div class="step"><div class="step-num red">3</div><div>RSI &lt; 55 + body &ge; 5 pts</div></div>
-    <div class="sl-line"><strong>SL:</strong> Recent swing high</div>
-  </div>
-</div>
-
-<div class="page-break"></div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. CHART PATTERNS (NEW)                                                 -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 5</div>
-
-<h2>4. Entry Patterns — Chart Patterns (Multi-Candle)</h2>
-
-<p>These are <strong>multi-candle formations</strong> that require structural confirmation from swing points. They don't need S/R zone proximity — the pattern <em>itself</em> defines the key levels. All chart patterns use a configurable tolerance (<code>PA_CHART_PATTERN_TOL</code>, default 12 pts) to match swing point levels.</p>
-
-<table>
-  <thead><tr><th>Parameter</th><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td>Pattern Tolerance</td><td><code>PA_CHART_PATTERN_TOL</code></td><td>12 pts</td><td>Max difference between swing points for pattern match</td></tr>
-  </tbody>
-</table>
-
-<!-- Pattern 7: Double Top -->
-<h3 class="red">Pattern 7: Double Top (Bearish Reversal)</h3>
-
-<p>Two swing highs form at approximately the <strong>same price level</strong>. The valley between them creates the <strong>neckline</strong>. Entry triggers when the current candle <strong>breaks below the neckline</strong>.</p>
-
-<div class="card card-red">
-  <h4 class="red">BUY PE — Double Top</h4>
-  <div class="step"><div class="step-num red">1</div><div>Two recent swing highs within <strong>12 pts tolerance</strong> of each other</div></div>
-  <div class="step"><div class="step-num red">2</div><div>At least <strong>5 candles separation</strong> between the two tops (prevents noise)</div></div>
-  <div class="step"><div class="step-num red">3</div><div><strong>Neckline</strong> = lowest low between the two swing highs</div></div>
-  <div class="step"><div class="step-num red">4</div><div>Current candle <strong>closes below neckline</strong> (opened at or above it)</div></div>
-  <div class="step"><div class="step-num red">5</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
-  <div class="sl-line"><strong>SL:</strong> Above the double top level (avg of two highs) &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
-</div>
-
-<div class="highlight">
-  <strong>How it works:</strong> Price tests a resistance level twice and fails both times. When it breaks below the valley (neckline) between those tests, it confirms sellers have taken control. This is a high-probability reversal pattern because it shows buyers exhausting at a clear level.
-</div>
-
-<!-- Pattern 8: Double Bottom -->
-<h3 class="green">Pattern 8: Double Bottom (Bullish Reversal)</h3>
-
-<p>Two swing lows form at approximately the <strong>same price level</strong>. The peak between them creates the <strong>neckline</strong>. Entry triggers when the current candle <strong>breaks above the neckline</strong>.</p>
-
-<div class="card card-green">
-  <h4 class="green">BUY CE — Double Bottom</h4>
-  <div class="step"><div class="step-num green">1</div><div>Two recent swing lows within <strong>12 pts tolerance</strong> of each other</div></div>
-  <div class="step"><div class="step-num green">2</div><div>At least <strong>5 candles separation</strong> between the two bottoms</div></div>
-  <div class="step"><div class="step-num green">3</div><div><strong>Neckline</strong> = highest high between the two swing lows</div></div>
-  <div class="step"><div class="step-num green">4</div><div>Current candle <strong>closes above neckline</strong> (opened at or below it)</div></div>
-  <div class="step"><div class="step-num green">5</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
-  <div class="sl-line"><strong>SL:</strong> Below the double bottom level (avg of two lows) &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
-</div>
-
-<div class="highlight">
-  <strong>How it works:</strong> Price tests a support level twice and bounces both times. When it breaks above the peak (neckline) between those tests, it confirms buyers have regained control. The double test of support builds a strong floor.
-</div>
-
-<div class="page-break"></div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- Pattern 9 & 10: Triangles                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 6</div>
-
-<!-- Pattern 9: Ascending Triangle -->
-<h3 class="green">Pattern 9: Ascending Triangle (Bullish Breakout)</h3>
-
-<p>A pattern with <strong>flat resistance</strong> (swing highs at similar levels) and <strong>rising support</strong> (each swing low is higher than the previous). Signals building buying pressure. Entry triggers on <strong>breakout above the flat resistance</strong>.</p>
-
-<div class="card card-green">
-  <h4 class="green">BUY CE — Ascending Triangle</h4>
-  <div class="step"><div class="step-num green">1</div><div>Last 2 swing highs within <strong>12 pts tolerance</strong> (flat resistance line)</div></div>
-  <div class="step"><div class="step-num green">2</div><div>Last 2 swing lows are <strong>rising</strong> (second low &gt; first low)</div></div>
-  <div class="step"><div class="step-num green">3</div><div><strong>Resistance level</strong> = average of the two flat swing highs</div></div>
-  <div class="step"><div class="step-num green">4</div><div>Current candle <strong>closes above resistance</strong> (opened at or below it)</div></div>
-  <div class="step"><div class="step-num green">5</div><div>RSI &gt; 45 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
-  <div class="sl-line"><strong>SL:</strong> Most recent rising swing low &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
-</div>
-
-<div class="highlight">
-  <strong>How it works:</strong> Buyers are consistently bidding at higher prices (higher lows), while sellers hold a fixed resistance. Eventually buyers overwhelm sellers and price breaks out upward. The rising lows show increasing demand — a strong bullish signal.
-</div>
-
-<!-- Pattern 10: Descending Triangle -->
-<h3 class="red">Pattern 10: Descending Triangle (Bearish Breakout)</h3>
-
-<p>A pattern with <strong>flat support</strong> (swing lows at similar levels) and <strong>falling resistance</strong> (each swing high is lower than the previous). Signals building selling pressure. Entry triggers on <strong>breakdown below the flat support</strong>.</p>
-
-<div class="card card-red">
-  <h4 class="red">BUY PE — Descending Triangle</h4>
-  <div class="step"><div class="step-num red">1</div><div>Last 2 swing lows within <strong>12 pts tolerance</strong> (flat support line)</div></div>
-  <div class="step"><div class="step-num red">2</div><div>Last 2 swing highs are <strong>falling</strong> (second high &lt; first high)</div></div>
-  <div class="step"><div class="step-num red">3</div><div><strong>Support level</strong> = average of the two flat swing lows</div></div>
-  <div class="step"><div class="step-num red">4</div><div>Current candle <strong>closes below support</strong> (opened at or above it)</div></div>
-  <div class="step"><div class="step-num red">5</div><div>RSI &lt; 55 &nbsp;|&nbsp; Body &ge; 5 pts</div></div>
-  <div class="sl-line"><strong>SL:</strong> Most recent falling swing high &nbsp;|&nbsp; <strong>Strength:</strong> STRONG</div>
-</div>
-
-<div class="highlight">
-  <strong>How it works:</strong> Sellers are consistently offering at lower prices (lower highs), while buyers hold a fixed support. Eventually sellers overwhelm buyers and price breaks down. The falling highs show decreasing demand — a strong bearish signal.
-</div>
-
-<div class="page-break"></div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 5. STOP LOSS RULES                                                      -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 7</div>
+<section id="sl">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">5</span> Stop Loss Rules</h2>
+      <p>Each pattern has a specific SL source. Raw SL distance is clamped to a range of 8-25 points to balance risk and noise.</p>
+    </div>
 
-<h2>5. Stop Loss Rules</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pattern</th>
+            <th>CE Stop Loss</th>
+            <th>PE Stop Loss</th>
+            <th>Strength</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Bullish Engulfing</strong></td>
+            <td class="ce">Signal candle LOW</td>
+            <td class="pe">—</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Bearish Engulfing</strong></td>
+            <td class="ce">—</td>
+            <td class="pe">Signal candle HIGH</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Hammer</strong></td>
+            <td class="ce">Pin bar LOW (wick tip)</td>
+            <td class="pe">—</td>
+            <td><span class="strength-badge marginal" style="font-size:0.65rem;">MARGINAL</span></td>
+          </tr>
+          <tr>
+            <td><strong>Shooting Star</strong></td>
+            <td class="ce">—</td>
+            <td class="pe">Pin bar HIGH (wick tip)</td>
+            <td><span class="strength-badge marginal" style="font-size:0.65rem;">MARGINAL</span></td>
+          </tr>
+          <tr>
+            <td><strong>Inside Bar Breakout</strong></td>
+            <td class="ce">Mother candle LOW</td>
+            <td class="pe">Mother candle HIGH</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>BOS</strong></td>
+            <td class="ce">Recent swing low (min of sc.low, prev.low)</td>
+            <td class="pe">Recent swing high (max of sc.high, prev.high)</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Double Top</strong></td>
+            <td class="ce">—</td>
+            <td class="pe">Above double top level</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Double Bottom</strong></td>
+            <td class="ce">Below double bottom level</td>
+            <td class="pe">—</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Ascending Triangle</strong></td>
+            <td class="ce">Rising swing low</td>
+            <td class="pe">—</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+          <tr>
+            <td><strong>Descending Triangle</strong></td>
+            <td class="ce">—</td>
+            <td class="pe">Falling swing high</td>
+            <td><span class="strength-badge strong" style="font-size:0.65rem;">STRONG</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-<p>Every entry has an <strong>initial SL</strong> derived from the signal candle, then clamped within safe limits:</p>
-
-<table>
-  <thead><tr><th>Pattern</th><th>CE Stop Loss</th><th>PE Stop Loss</th></tr></thead>
-  <tbody>
-    <tr><td>Bullish Engulfing</td><td>Signal candle LOW</td><td>—</td></tr>
-    <tr><td>Bearish Engulfing</td><td>—</td><td>Signal candle HIGH</td></tr>
-    <tr><td>Hammer</td><td>Pin bar LOW (wick tip)</td><td>—</td></tr>
-    <tr><td>Shooting Star</td><td>—</td><td>Pin bar HIGH (wick tip)</td></tr>
-    <tr><td>Inside Bar</td><td>Mother candle LOW</td><td>Mother candle HIGH</td></tr>
-    <tr><td>BOS (Bullish)</td><td>min(current low, prev low)</td><td>—</td></tr>
-    <tr><td>BOS (Bearish)</td><td>—</td><td>max(current high, prev high)</td></tr>
-    <tr><td>Double Top</td><td>—</td><td>Above double top level</td></tr>
-    <tr><td>Double Bottom</td><td>Below double bottom level</td><td>—</td></tr>
-    <tr><td>Ascending Triangle</td><td>Most recent rising swing low</td><td>—</td></tr>
-    <tr><td>Descending Triangle</td><td>—</td><td>Most recent falling swing high</td></tr>
-  </tbody>
-</table>
-
-<div class="cols">
-  <div class="metric"><div class="val">8 pts</div><div class="lbl">Min SL Floor (PA_MIN_SL_PTS)</div></div>
-  <div class="metric"><div class="val">25 pts</div><div class="lbl">Max SL Cap (PA_MAX_SL_PTS)</div></div>
-</div>
-
-<p><strong>Clamping rule:</strong> <code>SL distance = max(min(raw_distance, 25), 8)</code>. Too-tight SL on tiny candles is floored to 8 pts. Too-wide SL on volatile candles is capped at 25 pts.</p>
+    <div class="card mt-2">
+      <h3>SL Distance Clamping</h3>
+      <p class="fs-sm text-muted mb-2">Formula: <code>SL distance = max(min(raw_distance, 25), 8)</code></p>
+      <div class="grid-2">
+        <div class="tip-box">
+          <div class="tip-title">Min SL Floor: 8 pts</div>
+          <p class="fs-sm"><code>PA_MIN_SL_PTS = 8</code> — Prevents noise stops. If raw SL is only 3 pts away, it widens to 8 pts to avoid getting stopped on normal volatility.</p>
+        </div>
+        <div class="tip-box">
+          <div class="tip-title">Max SL Cap: 25 pts</div>
+          <p class="fs-sm"><code>PA_MAX_SL_PTS = 25</code> — Limits risk per trade. If the signal candle has a 40pt wick, SL caps at 25pts from entry.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. TRAILING SL                                                          -->
+<!-- 6. TRAILING STOP LOSS                                                   -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2>6. Trailing Stop Loss (Swing-Based)</h2>
+<section id="trail">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">6</span> Trailing Stop Loss — Swing-Based</h2>
+      <p>The trailing SL uses swing structure: CE trails to swing lows, PE trails to swing highs. It only tightens — never widens.</p>
+    </div>
 
-<p>After entry, the SL is <strong>trailed using swing structure</strong> — moving the SL to the most recent swing low (for CE) or swing high (for PE). The trailing SL only tightens, never widens.</p>
+    <div class="chart-box">
+      <div class="chart-title">CE Trade — SL Trailing to Successive Swing Lows (Only Tightens)</div>
+      <div class="chart-area tall" style="justify-content: center; position: relative;">
+        <!-- SL levels -->
+        <div class="sl-line" style="bottom: 30px; border-color: var(--red); opacity: 0.4;"></div>
+        <span class="sl-tag" style="bottom: 34px; opacity: 0.6;">SL1 (Initial — Signal Candle Low)</span>
+        <div class="sl-line" style="bottom: 65px; border-color: var(--amber); opacity: 0.6;"></div>
+        <span class="sl-tag" style="bottom: 69px; color: var(--amber);">SL2 (Swing Low above SL1)</span>
+        <div class="sl-line" style="bottom: 95px; border-color: var(--green); opacity: 0.8;"></div>
+        <span class="sl-tag" style="bottom: 99px; color: var(--green);">SL3 (Next Swing Low, tighter)</span>
 
-<div class="card card-blue">
-  <h4 class="blue">Trailing Rules</h4>
-  <div class="step"><div class="step-num green">CE</div><div><strong>CE (Long):</strong> Trail to latest swing low — must be ABOVE current SL AND below current price</div></div>
-  <div class="step"><div class="step-num red">PE</div><div><strong>PE (Short):</strong> Trail to latest swing high — must be BELOW current SL AND above current price</div></div>
-  <p style="margin-top:8px; color: var(--yellow);"><strong>Key:</strong> Only tightens. If new swing point would widen SL, it's ignored.</p>
-</div>
+        <!-- Entry candle -->
+        <div class="candle" style="position: relative;">
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="body green" style="height: 30px;"></div>
+          <div class="wick green" style="height: 20px;"></div>
+          <div class="label">Entry</div>
+          <div class="entry-arrow up" style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%);"></div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="body green" style="height: 26px;"></div>
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="label">C2</div>
+        </div>
+        <!-- Swing low (SL2 trail point) -->
+        <div class="candle" style="margin-top: 20px; position: relative;">
+          <div class="wick red" style="height: 6px;"></div>
+          <div class="body red" style="height: 14px;"></div>
+          <div class="wick red" style="height: 18px;"></div>
+          <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+          <div class="label">SL trail</div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 6px;"></div>
+          <div class="body green" style="height: 34px;"></div>
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="label">C4</div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 4px;"></div>
+          <div class="body green" style="height: 40px;"></div>
+          <div class="wick green" style="height: 6px;"></div>
+          <div class="label">C5</div>
+        </div>
+        <!-- Another swing low (SL3 trail point, higher than previous) -->
+        <div class="candle" style="margin-top: 8px; position: relative;">
+          <div class="wick red" style="height: 4px;"></div>
+          <div class="body red" style="height: 12px;"></div>
+          <div class="wick red" style="height: 14px;"></div>
+          <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
+          <div class="label">SL trail</div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 6px;"></div>
+          <div class="body green" style="height: 44px;"></div>
+          <div class="wick green" style="height: 4px;"></div>
+          <div class="label">C7</div>
+        </div>
+      </div>
+    </div>
 
-<div class="page-break"></div>
+    <div class="grid-2 mt-2">
+      <div class="card">
+        <h3 class="text-green">CE Trailing Rule</h3>
+        <ul>
+          <li>Trail to the <strong>latest swing low</strong></li>
+          <li>Must be <strong>ABOVE current SL</strong> (only tightens)</li>
+          <li>Must be <strong>BELOW current price</strong> (valid protection)</li>
+          <li>Uses <code>findSwingPoints()</code> with lookback of 30</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 class="text-red">PE Trailing Rule</h3>
+        <ul>
+          <li>Trail to the <strong>latest swing high</strong></li>
+          <li>Must be <strong>BELOW current SL</strong> (only tightens)</li>
+          <li>Must be <strong>ABOVE current price</strong> (valid protection)</li>
+          <li>Check happens on every candle close, not every tick</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 7. EXIT LOGIC                                                           -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 8</div>
+<section id="exit">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">7</span> Exit Logic — Priority Order</h2>
+      <p>Exits are checked in strict priority. The first condition that triggers wins.</p>
+    </div>
 
-<h2>7. Exit Logic (Priority Order)</h2>
-
-<table>
-  <thead><tr><th>#</th><th>Exit Condition</th><th>Description</th><th>Applies To</th></tr></thead>
-  <tbody>
-    <tr><td><strong>1</strong></td><td>SL Hit</td><td>Price touches stop loss (initial or trailed)</td><td>Every tick</td></tr>
-    <tr><td><strong>2</strong></td><td>Trailing Profit %</td><td>If peak PnL &ge; 350, exit when profit drops below X% of peak. Tiered: 55% at 500, 60% at 1000, 70% at 3000, 80% at 5000, 90% at 10000</td><td>Every tick</td></tr>
-    <tr><td><strong>3</strong></td><td>Swing Trail SL Update</td><td>Tighten SL to latest swing low/high on each candle close</td><td>Candle close</td></tr>
-    <tr><td><strong>4</strong></td><td>EOD Square-Off</td><td>Force exit at 3:20 PM IST (no overnight positions)</td><td>Time check</td></tr>
-  </tbody>
-</table>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. RSI FILTER                                                           -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2>8. RSI as Confluence Filter</h2>
-
-<p>RSI is used as a <strong>lightweight confirmation</strong>, NOT the primary signal. It ensures momentum doesn't contradict the pattern.</p>
-
-<div class="cols">
-  <div class="card card-green">
-    <h4 class="green">CE Entry (Bullish)</h4>
-    <p>RSI must be &gt; <strong>45</strong>. This means momentum isn't deeply bearish. It's permissive — RSI 46 is fine for a CE entry because the pattern itself is the signal.</p>
-    <p style="margin-top:8px;"><code>Default: PA_RSI_CE_MIN = 45</code></p>
+    <div style="display: grid; grid-template-columns: 50px 1fr; gap: 0; max-width: 700px;">
+      <!-- Priority 1 -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="background: var(--red); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">1</div>
+        <div style="width: 2px; flex: 1; background: var(--border);"></div>
+      </div>
+      <div class="card" style="margin-bottom: 12px;">
+        <h3>SL Hit <span class="text-muted fw-600" style="font-size: 0.8rem;">(every tick)</span></h3>
+        <p class="fs-sm text-muted">Price touches initial SL or trailed SL. Checked on every incoming tick for immediate protection.</p>
+      </div>
+      <!-- Priority 2 -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="background: var(--amber); color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">2</div>
+        <div style="width: 2px; flex: 1; background: var(--border);"></div>
+      </div>
+      <div class="card" style="margin-bottom: 12px;">
+        <h3>Trailing Profit % <span class="text-muted fw-600" style="font-size: 0.8rem;">(every tick)</span></h3>
+        <p class="fs-sm text-muted">Tiered trailing percentage locks in profits as they grow:</p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+          <code>&#8377;500 &rarr; 55%</code>
+          <code>&#8377;1000 &rarr; 60%</code>
+          <code>&#8377;3000 &rarr; 70%</code>
+          <code>&#8377;5000 &rarr; 80%</code>
+          <code>&#8377;10000 &rarr; 90%</code>
+        </div>
+      </div>
+      <!-- Priority 3 -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="background: var(--teal); color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">3</div>
+        <div style="width: 2px; flex: 1; background: var(--border);"></div>
+      </div>
+      <div class="card" style="margin-bottom: 12px;">
+        <h3>Swing Trail SL Update <span class="text-muted fw-600" style="font-size: 0.8rem;">(candle close)</span></h3>
+        <p class="fs-sm text-muted">At each candle close, tighten SL to the latest swing point. Only tightens — never widens.</p>
+      </div>
+      <!-- Priority 4 -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="background: var(--text3); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">4</div>
+      </div>
+      <div class="card">
+        <h3>EOD Square-off <span class="text-muted fw-600" style="font-size: 0.8rem;">(3:20 PM IST)</span></h3>
+        <p class="fs-sm text-muted">All open positions closed at market. No overnight risk for intraday options strategy.</p>
+      </div>
+    </div>
   </div>
-  <div class="card card-red">
-    <h4 class="red">PE Entry (Bearish)</h4>
-    <p>RSI must be &lt; <strong>55</strong>. Momentum isn't deeply bullish. Same principle — the pattern leads, RSI confirms.</p>
-    <p style="margin-top:8px;"><code>Default: PA_RSI_PE_MAX = 55</code></p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. RSI AS CONFLUENCE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="rsi">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">8</span> RSI as Confluence Filter</h2>
+      <p>RSI(14) is NOT the primary signal. Patterns lead, RSI confirms. It prevents entries against momentum extremes.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card" style="border-left: 4px solid var(--green);">
+        <h3 class="text-green">CE Entry — RSI Gate</h3>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--green); margin: 10px 0;">45 &lt; RSI &lt; 70</div>
+        <ul class="fs-sm">
+          <li><strong>RSI &gt; 45:</strong> Not deeply bearish — momentum supports upward move</li>
+          <li><strong>RSI &lt; 70:</strong> Not overbought — room to run</li>
+          <li>RSI 46 is perfectly fine for CE — the pattern IS the signal</li>
+        </ul>
+      </div>
+      <div class="card" style="border-left: 4px solid var(--red);">
+        <h3 class="text-red">PE Entry — RSI Gate</h3>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--red); margin: 10px 0;">30 &lt; RSI &lt; 55</div>
+        <ul class="fs-sm">
+          <li><strong>RSI &lt; 55:</strong> Not deeply bullish — momentum supports downward move</li>
+          <li><strong>RSI &gt; 30:</strong> Not oversold — room to fall</li>
+          <li>RSI 54 is fine for PE — the pattern provides the conviction</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="tip-box mt-2">
+      <div class="tip-title">Key Insight</div>
+      <p class="fs-sm">RSI acts as a <strong>veto</strong>, not a trigger. A perfect bullish engulfing at support with RSI = 75 is blocked (overbought). A mediocre pattern with RSI = 50 passes. The pattern provides the trade thesis; RSI prevents counter-momentum trades.</p>
+    </div>
   </div>
-</div>
-
-<div class="page-break"></div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. SIGNAL FLOW                                                          -->
+<!-- 9. SIGNAL FLOW DECISION TREE                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 9</div>
+<section id="flowchart">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">9</span> Signal Flow Decision Tree</h2>
+      <p>The exact order of checks when each new 5-minute candle closes.</p>
+    </div>
 
-<h2>9. Signal Flow (Decision Tree)</h2>
+    <div class="flowchart">
+      <div class="flow-node start">New 5-Min Candle Closes</div>
+      <div class="flow-arrow"></div>
 
-<div class="card">
-  <div class="flow-step"><div class="flow-num">1</div><div class="flow-text">New 5-min candle closes</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">2</div><div class="flow-text">Check trading window (9:20 AM – 2:30 PM IST)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">3</div><div class="flow-text">Check daily limits (max trades, max loss, SL pause)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">4</div><div class="flow-text">Check VIX filter (if enabled)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">5</div><div class="flow-text">Calculate RSI(14) + find swing highs/lows (last 30 candles)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">6</div><div class="flow-text">Check ADX trend filter (if enabled) — block all entries when ADX &lt; 20</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">7</div><div class="flow-text">Check pending <strong>Inside Bar breakout</strong> (if queued from prior candle)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">8</div><div class="flow-text">Detect new <strong>Inside Bar</strong> &rarr; queue for next candle</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">9</div><div class="flow-text">Check <strong>Bullish Engulfing</strong> at support &rarr; check <strong>Bearish Engulfing</strong> at resistance</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">10</div><div class="flow-text">Check <strong>Hammer</strong> at support &rarr; check <strong>Shooting Star</strong> at resistance</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">11</div><div class="flow-text">Check <strong>Break of Structure</strong> (bullish/bearish)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">12</div><div class="flow-text">Check <strong>Double Top</strong> (neckline break) &rarr; check <strong>Double Bottom</strong> (neckline break)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">13</div><div class="flow-text">Check <strong>Ascending Triangle</strong> (breakout above flat R) &rarr; check <strong>Descending Triangle</strong> (breakdown below flat S)</div></div>
-  <div class="flow-arrow">&darr;</div>
-  <div class="flow-step"><div class="flow-num">14</div><div class="flow-text">If signal found &rarr; calculate SL (clamp 8–25 pts) &rarr; queue entry for NEXT candle open</div></div>
-</div>
+      <div class="flow-node decision">Check Trading Window (9:20 AM — 2:30 PM IST)</div>
+      <div class="flow-arrow"></div>
 
-<div class="page-break"></div>
+      <div class="flow-node decision">Check Daily Limits (Max 30 trades, Max &#8377;2000 loss)</div>
+      <div class="flow-arrow"></div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. CONFIGURATION REFERENCE                                             -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 10</div>
+      <div class="flow-node decision">Check VIX Filter (if enabled)</div>
+      <div class="flow-arrow"></div>
 
-<h2>10. Full Configuration Reference</h2>
+      <div class="flow-node decision" style="border-color: var(--new-badge);">Check ADX &ge; 20 (Trend Filter) <span class="badge-new" style="margin-left: 4px;">NEW</span></div>
+      <div class="flow-arrow"></div>
 
-<table>
-  <thead><tr><th>Setting Key</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td><code>PA_MODE_ENABLED</code></td><td>true</td><td>Show/hide Price Action menus</td></tr>
-    <tr><td><code>PA_RESOLUTION</code></td><td>5</td><td>Candle timeframe (minutes)</td></tr>
-    <tr><td><code>PA_ENTRY_START</code></td><td>09:20</td><td>Earliest entry time (IST)</td></tr>
-    <tr><td><code>PA_ENTRY_END</code></td><td>14:30</td><td>Latest entry time (IST)</td></tr>
-    <tr><td><code>PA_RSI_PERIOD</code></td><td>14</td><td>RSI calculation period</td></tr>
-    <tr><td><code>PA_RSI_CE_MIN</code></td><td>45</td><td>Min RSI for CE entries</td></tr>
-    <tr><td><code>PA_RSI_CE_MAX</code></td><td>70</td><td>Max RSI for CE entries (overbought block)</td></tr>
-    <tr><td><code>PA_RSI_PE_MAX</code></td><td>55</td><td>Max RSI for PE entries</td></tr>
-    <tr><td><code>PA_RSI_PE_MIN</code></td><td>30</td><td>Min RSI for PE entries (oversold block)</td></tr>
-    <tr><td><code>PA_ADX_ENABLED</code></td><td>true</td><td>Enable ADX trend filter</td></tr>
-    <tr><td><code>PA_ADX_MIN</code></td><td>20</td><td>Minimum ADX for trend confirmation</td></tr>
-    <tr><td><code>PA_MIN_BODY</code></td><td>5</td><td>Min candle body (pts) for engulfing/BOS/chart patterns</td></tr>
-    <tr><td><code>PA_PIN_WICK_RATIO</code></td><td>2</td><td>Wick-to-body ratio for pin bars</td></tr>
-    <tr><td><code>PA_SR_LOOKBACK</code></td><td>30</td><td>Candles to scan for swing points</td></tr>
-    <tr><td><code>PA_SR_ZONE_PTS</code></td><td>15</td><td>S/R zone tolerance (pts)</td></tr>
-    <tr><td><code>PA_CHART_PATTERN_TOL</code></td><td>12</td><td>Tolerance for double top/bottom & triangle matching (pts)</td></tr>
-    <tr><td><code>PA_MAX_SL_PTS</code></td><td>25</td><td>Max SL distance cap</td></tr>
-    <tr><td><code>PA_MIN_SL_PTS</code></td><td>8</td><td>Min SL distance floor</td></tr>
-    <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td>30</td><td>Max entries per day</td></tr>
-    <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td>2000</td><td>Daily loss kill-switch (&#8377;)</td></tr>
-    <tr><td><code>PA_SL_PAUSE_CANDLES</code></td><td>2</td><td>Candles to pause after SL hit</td></tr>
-    <tr><td><code>PA_TRAIL_START</code></td><td>350</td><td>Activate trailing after this profit (&#8377;)</td></tr>
-    <tr><td><code>PA_TRAIL_PCT</code></td><td>65</td><td>Base trail % of peak profit</td></tr>
-    <tr><td><code>PA_TRAIL_TIERS</code></td><td>500:55,1000:60,...</td><td>Tiered trail percentages</td></tr>
-    <tr><td><code>PA_VIX_ENABLED</code></td><td>false</td><td>VIX filter for PA entries</td></tr>
-  </tbody>
-</table>
+      <div class="flow-node">Calculate RSI(14) + Find Swing Points (30 candle lookback)</div>
+      <div class="flow-arrow"></div>
 
-<div class="page-break"></div>
+      <div class="flow-node decision">Check Pending Inside Bar Breakout</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">No breakout</div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. COMPARISON TABLE                                                    -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="page-header">Price Action Strategy Guide — Page 11</div>
+      <div class="flow-node decision">Detect New Inside Bar &rarr; queue pending</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">Not inside bar</div>
 
-<h2>11. Price Action vs Other Strategies</h2>
+      <div class="flow-node decision">Check Bullish/Bearish Engulfing at S/R</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">No match</div>
 
-<table>
-  <thead><tr><th>Aspect</th><th>Strategy 1 (SAR+EMA+RSI)</th><th>Scalp (BB+RSI+PSAR)</th><th>Price Action</th></tr></thead>
-  <tbody>
-    <tr><td>Timeframe</td><td>15-min</td><td>5-min</td><td>5-min</td></tr>
-    <tr><td>Entry Signal</td><td>EMA9 touch + SAR + RSI</td><td>BB breakout + RSI</td><td>Candle & chart patterns at S/R</td></tr>
-    <tr><td>Primary SL</td><td>SAR value</td><td>Previous candle</td><td>Signal candle wick / pattern level</td></tr>
-    <tr><td>Trailing SL</td><td>SAR dots (tiered)</td><td>PSAR (tighten only)</td><td>Swing lows/highs</td></tr>
-    <tr><td>Lag</td><td>Medium (EMA + SAR)</td><td>Low (BB + RSI)</td><td><strong>None</strong> (reads price directly)</td></tr>
-    <tr><td>Works in Range</td><td>No (ADX filter)</td><td>No (BB squeeze filter)</td><td><strong>Yes</strong> (inside bar breakouts)</td></tr>
-    <tr><td>Best Condition</td><td>Clean trends</td><td>Volatile breakouts</td><td><strong>All conditions</strong></td></tr>
-    <tr><td>Pattern Count</td><td>1 pattern</td><td>1 pattern</td><td><strong>9 patterns</strong></td></tr>
-  </tbody>
-</table>
+      <div class="flow-node decision">Check Hammer / Shooting Star at S/R</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">No match</div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 12. PRACTICAL TIPS                                                      -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2>12. Practical Tips</h2>
+      <div class="flow-node decision">Check Break of Structure (BOS)</div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">No match</div>
 
-<div class="cols">
-  <div class="card">
-    <h4 class="blue">Start with Backtest</h4>
-    <p>Run <strong>/pa-backtest</strong> on the last 3-6 months first. Check win rate, drawdown, and which patterns perform best. Tune S/R zone width based on results.</p>
+      <div class="flow-node decision" style="border-color: var(--new-badge);">Check Double Top / Double Bottom <span class="badge-new" style="margin-left: 4px;">NEW</span></div>
+      <div class="flow-arrow"></div>
+      <div class="flow-label">No match</div>
+
+      <div class="flow-node decision" style="border-color: var(--new-badge);">Check Ascending / Descending Triangle <span class="badge-new" style="margin-left: 4px;">NEW</span></div>
+      <div class="flow-arrow"></div>
+
+      <div class="flow-node action">Pattern Matched &rarr; Calculate SL (clamp 8-25 pts) &rarr; Queue Entry</div>
+      <div class="flow-arrow"></div>
+
+      <div class="flow-node end">Return Signal: BUY_CE or BUY_PE with SL</div>
+    </div>
   </div>
-  <div class="card">
-    <h4 class="blue">Paper Trade First</h4>
-    <p>Use <strong>/pa-paper</strong> for at least 2 weeks of live simulation. Watch how patterns fire in real-time. Note which setups you'd trust and which feel forced.</p>
-  </div>
-</div>
-<div class="cols">
-  <div class="card">
-    <h4 class="blue">S/R Zone Tuning</h4>
-    <p>If too few signals: increase <code>PA_SR_ZONE_PTS</code> (20-25). If too many false signals: decrease to 10. The zone width is the most impactful parameter.</p>
-  </div>
-  <div class="card">
-    <h4 class="blue">Pattern Quality</h4>
-    <p><strong>Engulfing</strong> at S/R = highest conviction. <strong>BOS</strong> = strongest trend signal. <strong>Double Top/Bottom</strong> = best reversal. <strong>Triangles</strong> = best breakout. <strong>Pin bars</strong> = marginal (need strong wick). <strong>Inside bar</strong> = works best in volatility compression.</p>
-  </div>
-</div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 13. RISK MANAGEMENT                                                     -->
+<!-- 10. COMPARISON TABLE                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2>13. Risk Management Summary</h2>
+<section id="compare">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">10</span> Price Action vs Other Strategies</h2>
+      <p>How PRICE_ACTION_5M compares to the other two trading strategies in the system.</p>
+    </div>
 
-<div class="metrics">
-  <div class="metric"><div class="val">8-25</div><div class="lbl">SL Range (pts)</div></div>
-  <div class="metric"><div class="val">30</div><div class="lbl">Max Trades/Day</div></div>
-  <div class="metric"><div class="val">&#8377;2000</div><div class="lbl">Daily Loss Limit</div></div>
-  <div class="metric"><div class="val">2+</div><div class="lbl">Pause After SL (candles)</div></div>
-</div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Aspect</th>
+            <th class="cmp-sar" style="color: var(--blue);">Strategy 1 (SAR+EMA)</th>
+            <th class="cmp-scalp" style="color: var(--purple);">Scalp (BB+RSI)</th>
+            <th class="cmp-pa" style="color: var(--teal);">Price Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Timeframe</strong></td>
+            <td class="cmp-sar">15-min</td>
+            <td class="cmp-scalp">3-min</td>
+            <td class="cmp-pa"><strong>5-min</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Entry Signal</strong></td>
+            <td class="cmp-sar">EMA9 touch + SAR + RSI</td>
+            <td class="cmp-scalp">BB breakout + RSI</td>
+            <td class="cmp-pa"><strong>Candle patterns at S/R</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Primary SL</strong></td>
+            <td class="cmp-sar">SAR value</td>
+            <td class="cmp-scalp">Previous candle</td>
+            <td class="cmp-pa"><strong>Signal candle wick</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Trail SL</strong></td>
+            <td class="cmp-sar">SAR dots (tiered)</td>
+            <td class="cmp-scalp">PSAR (tighten only)</td>
+            <td class="cmp-pa"><strong>Swing lows/highs</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Lag</strong></td>
+            <td class="cmp-sar">Medium</td>
+            <td class="cmp-scalp">Low</td>
+            <td class="cmp-pa"><strong>None</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Works in Range</strong></td>
+            <td class="cmp-sar">No (ADX filter)</td>
+            <td class="cmp-scalp">No (BB squeeze)</td>
+            <td class="cmp-pa"><strong>Yes (inside bar)</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Pattern Count</strong></td>
+            <td class="cmp-sar">1 (EMA touch)</td>
+            <td class="cmp-scalp">1 (BB breakout)</td>
+            <td class="cmp-pa"><strong>8 patterns</strong></td>
+          </tr>
+          <tr>
+            <td><strong>Market Filter</strong></td>
+            <td class="cmp-sar">ADX + VIX</td>
+            <td class="cmp-scalp">VIX</td>
+            <td class="cmp-pa"><strong>ADX(14) + VIX</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
 
-<div class="highlight">
-  <strong>Key insight:</strong> Price action trading is about reading <em>what the market is telling you</em> through its candle structure, not about calculating indicator values. The best price action setups have a clear story: "price hit support, formed a rejection candle, and buyers stepped in" or "price failed twice at resistance and broke the neckline." If you can't explain the story in one sentence, the setup might not be clean enough.
-</div>
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. RISK MANAGEMENT                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="risk">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">11</span> Risk Management Summary</h2>
+      <p>Key risk parameters that protect capital during live trading.</p>
+    </div>
 
-<p style="text-align:center; margin-top:40px; color:var(--text2); font-size:0.75rem;">
-  Price Action Strategy Guide &bull; Version 2.0 &bull; Updated April 2026 &bull; PRICE_ACTION_5M
-</p>
+    <div class="grid-4">
+      <div class="risk-card">
+        <div class="big">8–25</div>
+        <div class="label">SL Range (pts)</div>
+        <div class="text-muted fs-sm mt-1">Clamped for every trade</div>
+      </div>
+      <div class="risk-card">
+        <div class="big">30</div>
+        <div class="label">Max Trades/Day</div>
+        <div class="text-muted fs-sm mt-1">PA_MAX_DAILY_TRADES</div>
+      </div>
+      <div class="risk-card">
+        <div class="big" style="color: var(--red);">&#8377;2000</div>
+        <div class="label">Daily Loss Limit</div>
+        <div class="text-muted fs-sm mt-1">PA_MAX_DAILY_LOSS</div>
+      </div>
+      <div class="risk-card">
+        <div class="big">2+</div>
+        <div class="label">Pause After SL</div>
+        <div class="text-muted fs-sm mt-1">PA_SL_PAUSE_CANDLES</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 12. CONFIGURATION REFERENCE                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="config">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">12</span> Full Configuration Reference</h2>
+      <p>All <code>PA_*</code> environment variables with their default values.</p>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">General</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_MODE_ENABLED</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_RESOLUTION</span><span class="val">5</span></div>
+        <div class="config-card"><span class="key">PA_ENTRY_START</span><span class="val">09:20</span></div>
+        <div class="config-card"><span class="key">PA_ENTRY_END</span><span class="val">14:30</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">RSI Confluence</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_RSI_PERIOD</span><span class="val">14</span></div>
+        <div class="config-card"><span class="key">PA_RSI_CE_MIN</span><span class="val">45</span></div>
+        <div class="config-card"><span class="key">PA_RSI_CE_MAX</span><span class="val">70</span></div>
+        <div class="config-card"><span class="key">PA_RSI_PE_MIN</span><span class="val">30</span></div>
+        <div class="config-card"><span class="key">PA_RSI_PE_MAX</span><span class="val">55</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">ADX Trend Filter <span class="badge-new">NEW</span></h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_ADX_ENABLED</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_ADX_MIN</span><span class="val">20</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">Pattern Detection</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_MIN_BODY</span><span class="val">5</span></div>
+        <div class="config-card"><span class="key">PA_PIN_WICK_RATIO</span><span class="val">2</span></div>
+        <div class="config-card"><span class="key">PA_SR_LOOKBACK</span><span class="val">30</span></div>
+        <div class="config-card"><span class="key">PA_SR_ZONE_PTS</span><span class="val">15</span></div>
+        <div class="config-card"><span class="key">PA_CHART_PATTERN_TOL</span><span class="val">12</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">Stop Loss &amp; Risk</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_MAX_SL_PTS</span><span class="val">25</span></div>
+        <div class="config-card"><span class="key">PA_MIN_SL_PTS</span><span class="val">8</span></div>
+        <div class="config-card"><span class="key">PA_MAX_DAILY_TRADES</span><span class="val">30</span></div>
+        <div class="config-card"><span class="key">PA_MAX_DAILY_LOSS</span><span class="val">2000</span></div>
+        <div class="config-card"><span class="key">PA_SL_PAUSE_CANDLES</span><span class="val">2</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">Trailing &amp; Profit Lock</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_TRAIL_START</span><span class="val">350</span></div>
+        <div class="config-card"><span class="key">PA_TRAIL_PCT</span><span class="val">65</span></div>
+        <div class="config-card"><span class="key">PA_TRAIL_TIERS</span><span class="val" style="font-size:0.75rem;">500:55,1000:60,3000:70,5000:80,10000:90</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">VIX Filter</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_VIX_ENABLED</span><span class="val">false</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 13. PRACTICAL TIPS                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="tips">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">13</span> Practical Tips</h2>
+      <p>Recommendations for deploying and tuning the Price Action strategy.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="tip-box">
+        <div class="tip-title">Getting Started</div>
+        <ul class="fs-sm">
+          <li>Start with backtest: <code>/pa-backtest</code></li>
+          <li>Paper trade for <strong>2+ weeks</strong>: <code>/pa-paper</code></li>
+          <li>Validate pattern hit rate before going live</li>
+          <li>Monitor ADX values — if your market regime rarely exceeds 20, consider lowering the threshold</li>
+        </ul>
+      </div>
+      <div class="tip-box">
+        <div class="tip-title">S/R Zone Tuning</div>
+        <ul class="fs-sm">
+          <li><strong>Too few signals:</strong> Increase <code>PA_SR_ZONE_PTS</code> to 20-25 pts</li>
+          <li><strong>Too many false signals:</strong> Decrease to 10 pts</li>
+          <li>Wider zones = more trades but lower precision</li>
+          <li>Tighter zones = fewer trades but higher conviction</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card mt-2">
+      <h3>Pattern Quality Ranking (best to worst)</h3>
+      <div style="display: flex; gap: 0; margin-top: 16px; flex-wrap: wrap;">
+        <div style="padding: 10px 18px; background: var(--green-bg); border: 1px solid rgba(34,197,94,0.2); border-radius: 8px 0 0 8px; text-align: center;">
+          <div class="fw-700 text-green" style="font-size: 0.9rem;">Engulfing</div>
+          <div class="text-muted" style="font-size: 0.7rem;">Best</div>
+        </div>
+        <div style="padding: 10px 14px; background: var(--green-bg); border: 1px solid rgba(34,197,94,0.15); text-align: center; opacity: 0.9;">
+          <div class="fw-700 text-green" style="font-size: 0.9rem;">BOS</div>
+          <div class="text-muted" style="font-size: 0.7rem;">&nbsp;</div>
+        </div>
+        <div style="padding: 10px 14px; background: var(--green-bg); border: 1px solid rgba(34,197,94,0.1); text-align: center; opacity: 0.8;">
+          <div class="fw-700 text-green" style="font-size: 0.9rem;">Double Top/Bot</div>
+          <div class="text-muted" style="font-size: 0.7rem;">&nbsp;</div>
+        </div>
+        <div style="padding: 10px 14px; background: var(--amber-bg); border: 1px solid rgba(245,158,11,0.15); text-align: center; opacity: 0.85;">
+          <div class="fw-700 text-amber" style="font-size: 0.9rem;">Triangles</div>
+          <div class="text-muted" style="font-size: 0.7rem;">&nbsp;</div>
+        </div>
+        <div style="padding: 10px 14px; background: var(--amber-bg); border: 1px solid rgba(245,158,11,0.1); text-align: center; opacity: 0.75;">
+          <div class="fw-700 text-amber" style="font-size: 0.9rem;">Pin Bars</div>
+          <div class="text-muted" style="font-size: 0.7rem;">&nbsp;</div>
+        </div>
+        <div style="padding: 10px 18px; background: rgba(100,116,139,0.1); border: 1px solid rgba(100,116,139,0.15); border-radius: 0 8px 8px 0; text-align: center; opacity: 0.7;">
+          <div class="fw-700 text-muted" style="font-size: 0.9rem;">Inside Bar</div>
+          <div class="text-muted" style="font-size: 0.7rem;">Lowest</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip-box mt-2">
+      <div class="tip-title">Important Reminders</div>
+      <ul class="fs-sm">
+        <li>The ADX filter is a <strong>market regime gate</strong>, not a directional signal. ADX = 25 says "the market is moving" — not which direction.</li>
+        <li>Inside Bar is the only pattern that does NOT need S/R AND works in ranging conditions (before ADX filter was added).</li>
+        <li>Double Top/Bottom and Triangles require <strong>at least 2 swing points each</strong> — they need history to form. Don't expect them in the first 30 minutes.</li>
+        <li>All patterns share the same RSI gates and SL clamping logic — consistency across the entire strategy.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
+  <div class="container">
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v2.0 | Generated April 2026</p>
+    <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Swing Trailing SL | RSI Confluence</p>
+  </div>
+</footer>
 
 </body>
 </html>

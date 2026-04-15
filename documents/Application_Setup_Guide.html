@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Application Setup &amp; Configuration Guide — Palani Andawar Trading System</title>
+<style>
+  /* ── Reset & Base ────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2333;
+    --bg-card: #1a1f2e;
+    --border: #30363d;
+    --border-accent: #3b82f6;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+    --accent-cyan: #39d2c0;
+    --accent-pink: #f778ba;
+    --gradient-blue: linear-gradient(135deg, #1e3a5f 0%, #0d1117 100%);
+    --gradient-green: linear-gradient(135deg, #1a3d2a 0%, #0d1117 100%);
+    --gradient-orange: linear-gradient(135deg, #3d2e1a 0%, #0d1117 100%);
+    --gradient-purple: linear-gradient(135deg, #2d1a3d 0%, #0d1117 100%);
+    --gradient-red: linear-gradient(135deg, #3d1a1a 0%, #0d1117 100%);
+    --gradient-cyan: linear-gradient(135deg, #1a3d3d 0%, #0d1117 100%);
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 40px rgba(0,0,0,0.5);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  html { font-size: 15px; scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* ── Print Styles ────────────────────────────────────── */
+  @media print {
+    body { background: #fff; color: #111; font-size: 11pt; }
+    .section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; background: #fff !important; }
+    .hero { background: #1a1f2e !important; color: #fff !important; }
+    code, pre { background: #f4f4f4 !important; color: #111 !important; }
+    .page-footer { position: fixed; bottom: 0; left: 0; right: 0; }
+    nav.toc { display: none; }
+  }
+
+  /* ── Hero / Title ────────────────────────────────────── */
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 40%, #0f172a 100%);
+    border-bottom: 3px solid var(--accent-blue);
+    text-align: center;
+    padding: 60px 30px 50px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(88,166,255,0.06) 0%, transparent 50%),
+                radial-gradient(circle at 70% 50%, rgba(188,140,255,0.04) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #58a6ff 0%, #bc8cff 50%, #39d2c0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .subtitle {
+    font-size: 1.15rem;
+    color: var(--text-secondary);
+    margin-bottom: 18px;
+  }
+  .hero .meta {
+    display: inline-flex;
+    gap: 20px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+  .hero .meta span { display: flex; align-items: center; gap: 5px; }
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--accent-blue); }
+
+  /* ── Table of Contents ───────────────────────────────── */
+  nav.toc {
+    max-width: 900px;
+    margin: 30px auto;
+    padding: 28px 32px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+  }
+  nav.toc h2 {
+    font-size: 1.15rem;
+    margin-bottom: 14px;
+    color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  nav.toc ol {
+    list-style: none;
+    counter-reset: toc;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 30px;
+  }
+  nav.toc li { counter-increment: toc; }
+  nav.toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--accent-blue);
+    font-weight: 700;
+    font-size: 0.8rem;
+    margin-right: 8px;
+  }
+  nav.toc a {
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: color 0.2s;
+  }
+  nav.toc a:hover { color: var(--accent-blue); }
+
+  /* ── Container ───────────────────────────────────────── */
+  .container { max-width: 900px; margin: 0 auto; padding: 0 20px 60px; }
+
+  /* ── Section Cards ───────────────────────────────────── */
+  .section {
+    margin: 30px 0;
+    padding: 32px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .section.blue::before   { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .section.green::before  { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .section.orange::before { background: linear-gradient(90deg, var(--accent-orange), transparent); }
+  .section.purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .section.red::before    { background: linear-gradient(90deg, var(--accent-red), transparent); }
+  .section.cyan::before   { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .section.pink::before   { background: linear-gradient(90deg, var(--accent-pink), transparent); }
+
+  .section-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    margin-right: 12px;
+    flex-shrink: 0;
+  }
+  .icon-blue   { background: rgba(88,166,255,0.12); color: var(--accent-blue); }
+  .icon-green  { background: rgba(63,185,80,0.12); color: var(--accent-green); }
+  .icon-orange { background: rgba(210,153,34,0.12); color: var(--accent-orange); }
+  .icon-purple { background: rgba(188,140,255,0.12); color: var(--accent-purple); }
+  .icon-red    { background: rgba(248,81,73,0.12); color: var(--accent-red); }
+  .icon-cyan   { background: rgba(57,210,192,0.12); color: var(--accent-cyan); }
+  .icon-pink   { background: rgba(247,120,186,0.12); color: var(--accent-pink); }
+
+  h2 {
+    font-size: 1.45rem;
+    font-weight: 700;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+  }
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 22px 0 10px;
+    color: var(--accent-blue);
+  }
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 16px 0 8px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  p, li { color: var(--text-primary); }
+  p { margin-bottom: 12px; }
+  ul, ol { margin-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+
+  /* ── Code Blocks ─────────────────────────────────────── */
+  pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 12px 0 16px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+    font-size: 0.85rem;
+  }
+  :not(pre) > code {
+    background: rgba(88,166,255,0.1);
+    color: var(--accent-blue);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.83rem;
+  }
+  /* Syntax colors */
+  .kw  { color: #ff7b72; }   /* keyword */
+  .str { color: #a5d6ff; }   /* string */
+  .cmd { color: #79c0ff; }   /* command */
+  .cmt { color: #6e7681; font-style: italic; }  /* comment */
+  .var { color: #ffa657; }   /* variable */
+  .op  { color: #ff7b72; }   /* operator */
+  .fn  { color: #d2a8ff; }   /* function */
+  .num { color: #79c0ff; }   /* number */
+  .flag { color: #7ee787; }  /* flag */
+
+  /* ── Tables ──────────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0 18px;
+    font-size: 0.88rem;
+  }
+  thead th {
+    background: var(--bg-tertiary);
+    color: var(--accent-blue);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 2px solid var(--border);
+  }
+  tbody td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    vertical-align: top;
+  }
+  tbody tr:nth-child(even) td { background: rgba(22,27,34,0.5); }
+  tbody tr:hover td { background: rgba(88,166,255,0.04); }
+
+  /* ── Architecture Diagram ────────────────────────────── */
+  .arch-diagram {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0;
+    margin: 24px 0;
+    padding: 30px 10px;
+    background: linear-gradient(135deg, rgba(13,17,23,0.8), rgba(28,35,51,0.5));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .arch-box {
+    padding: 14px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: center;
+    min-width: 130px;
+    border: 1px solid;
+    position: relative;
+  }
+  .arch-box small {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 400;
+    opacity: 0.7;
+    margin-top: 3px;
+  }
+  .arch-arrow {
+    font-size: 1.5rem;
+    color: var(--text-muted);
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+  .arch-fyers  { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3); color: var(--accent-blue); }
+  .arch-candle { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.3); color: var(--accent-orange); }
+  .arch-engine { background: rgba(188,140,255,0.1); border-color: rgba(188,140,255,0.3); color: var(--accent-purple); }
+  .arch-zerodha { background: rgba(63,185,80,0.1); border-color: rgba(63,185,80,0.3); color: var(--accent-green); }
+  .arch-tg     { background: rgba(57,210,192,0.1); border-color: rgba(57,210,192,0.3); color: var(--accent-cyan); }
+
+  /* ── OAuth Flow Diagram ──────────────────────────────── */
+  .oauth-flow {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin: 18px 0;
+    overflow-x: auto;
+    padding: 10px 0;
+  }
+  .oauth-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 140px;
+    flex: 1;
+  }
+  .oauth-box {
+    padding: 12px 14px;
+    border-radius: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-align: center;
+    width: 100%;
+    border: 1px solid;
+    line-height: 1.4;
+  }
+  .oauth-box small {
+    display: block;
+    font-weight: 400;
+    opacity: 0.7;
+    margin-top: 2px;
+    font-size: 0.7rem;
+  }
+  .oauth-connector {
+    display: flex;
+    align-items: center;
+    padding: 0 2px;
+  }
+  .oauth-connector span {
+    display: block;
+    width: 30px;
+    height: 2px;
+    background: var(--text-muted);
+    position: relative;
+  }
+  .oauth-connector span::after {
+    content: '';
+    position: absolute;
+    right: -1px;
+    top: -4px;
+    border: 5px solid transparent;
+    border-left-color: var(--text-muted);
+  }
+
+  .ob-blue   { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.3); color: var(--accent-blue); }
+  .ob-green  { background: rgba(63,185,80,0.1); border-color: rgba(63,185,80,0.3); color: var(--accent-green); }
+  .ob-orange { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.3); color: var(--accent-orange); }
+  .ob-purple { background: rgba(188,140,255,0.1); border-color: rgba(188,140,255,0.3); color: var(--accent-purple); }
+
+  /* ── Callout / Note Boxes ────────────────────────────── */
+  .note {
+    padding: 14px 18px;
+    border-radius: var(--radius-sm);
+    margin: 14px 0;
+    font-size: 0.9rem;
+    border-left: 4px solid;
+  }
+  .note-info    { background: rgba(88,166,255,0.06); border-color: var(--accent-blue); }
+  .note-warn    { background: rgba(210,153,34,0.06); border-color: var(--accent-orange); }
+  .note-danger  { background: rgba(248,81,73,0.06); border-color: var(--accent-red); }
+  .note-success { background: rgba(63,185,80,0.06); border-color: var(--accent-green); }
+  .note strong  { display: block; margin-bottom: 4px; }
+
+  /* ── Env Var Group Headers ───────────────────────────── */
+  .env-group {
+    margin-top: 24px;
+    padding: 10px 16px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-blue);
+    font-weight: 700;
+    font-size: 0.92rem;
+    margin-bottom: 2px;
+  }
+  .env-group.g-green  { border-color: var(--accent-green); }
+  .env-group.g-orange { border-color: var(--accent-orange); }
+  .env-group.g-purple { border-color: var(--accent-purple); }
+  .env-group.g-red    { border-color: var(--accent-red); }
+  .env-group.g-cyan   { border-color: var(--accent-cyan); }
+  .env-group.g-pink   { border-color: var(--accent-pink); }
+
+  /* ── Steps ───────────────────────────────────────────── */
+  .steps { counter-reset: step; list-style: none; margin-left: 0; }
+  .steps li {
+    counter-increment: step;
+    padding: 10px 0 10px 44px;
+    position: relative;
+    border-left: 2px solid var(--border);
+    margin-left: 14px;
+  }
+  .steps li:last-child { border-left-color: transparent; }
+  .steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: -13px;
+    top: 8px;
+    width: 26px;
+    height: 26px;
+    background: var(--accent-blue);
+    color: #fff;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Separator ───────────────────────────────────────── */
+  hr {
+    border: none;
+    height: 1px;
+    background: var(--border);
+    margin: 24px 0;
+  }
+
+  /* ── Footer ──────────────────────────────────────────── */
+  .page-footer {
+    text-align: center;
+    padding: 30px 20px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    margin-top: 40px;
+  }
+
+  /* ── Responsive ──────────────────────────────────────── */
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 1.8rem; }
+    nav.toc ol { grid-template-columns: 1fr; }
+    .arch-diagram { flex-direction: column; }
+    .arch-arrow { transform: rotate(90deg); }
+    .oauth-flow { flex-direction: column; align-items: center; }
+    .oauth-connector { transform: rotate(90deg); padding: 8px 0; }
+    .section { padding: 22px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- HERO                                                       -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<header class="hero">
+  <h1>Application Setup &amp; Configuration Guide</h1>
+  <p class="subtitle">Palani Andawar Trading System &mdash; Complete Registration &amp; Secrets Reference</p>
+  <div class="meta">
+    <span><span class="badge badge-blue">v2.0</span></span>
+    <span>Generated: April 2026</span>
+    <span>NIFTY Options Algo Trading</span>
+  </div>
+</header>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- TABLE OF CONTENTS                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<nav class="toc">
+  <h2>&#9776; Table of Contents</h2>
+  <ol>
+    <li><a href="#architecture">System Architecture Overview</a></li>
+    <li><a href="#fyers">Fyers API Registration</a></li>
+    <li><a href="#zerodha">Zerodha Kite Connect Registration</a></li>
+    <li><a href="#ssl">SSL Certificate Setup</a></li>
+    <li><a href="#ec2">EC2 Server Deployment</a></li>
+    <li><a href="#telegram">Telegram Bot Setup</a></li>
+    <li><a href="#env">.env Variable Reference</a></li>
+    <li><a href="#auth-routes">Auth Status Routes</a></li>
+    <li><a href="#storage">Data Storage</a></li>
+  </ol>
+</nav>
+
+<div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 1. SYSTEM ARCHITECTURE                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section blue" id="architecture">
+  <h2><span class="section-icon icon-blue">&#9881;</span> 1. System Architecture Overview</h2>
+
+  <p>The trading system connects two brokers and orchestrates three independent strategy engines, all running on a single HTTPS Node.js server on AWS EC2.</p>
+
+  <div class="arch-diagram">
+    <div class="arch-box arch-fyers">
+      Fyers API
+      <small>Data Feed + WebSocket<br>Historical Candles<br>Scalp &amp; PA Orders</small>
+    </div>
+    <div class="arch-arrow">&#10145;</div>
+    <div class="arch-box arch-candle">
+      Candle Builder
+      <small>1-min / 3-min / 5-min<br>15-min aggregation</small>
+    </div>
+    <div class="arch-arrow">&#10145;</div>
+    <div class="arch-box arch-engine">
+      Strategy Engine
+      <small>SAR+EMA9+RSI (S1)<br>BB+RSI Scalp (S2)<br>Price Action (S3)</small>
+    </div>
+    <div class="arch-arrow">&#10145;</div>
+    <div class="arch-box arch-zerodha">
+      Zerodha Kite
+      <small>Order Placement<br>Strategy 1 Live Only</small>
+    </div>
+  </div>
+
+  <div class="arch-diagram" style="margin-top: 10px;">
+    <div class="arch-box arch-engine">
+      Strategy Engine
+    </div>
+    <div class="arch-arrow">&#10145;</div>
+    <div class="arch-box arch-tg">
+      Telegram Bot
+      <small>Trade Alerts<br>Entry / Exit / Signals</small>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>Role</th>
+        <th>Protocol</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Fyers API</strong></td>
+        <td>Real-time data feed (WebSocket), historical candle data, order execution for Scalp &amp; Price Action modes</td>
+        <td>REST + WSS</td>
+      </tr>
+      <tr>
+        <td><strong>Zerodha Kite Connect</strong></td>
+        <td>Order placement exclusively for Strategy 1 live trades</td>
+        <td>REST</td>
+      </tr>
+      <tr>
+        <td><strong>Node.js Server</strong></td>
+        <td>HTTPS server on port 3000, candle aggregation, strategy evaluation, position management</td>
+        <td>HTTPS (self-signed)</td>
+      </tr>
+      <tr>
+        <td><strong>PM2 Process Manager</strong></td>
+        <td>Auto-restart, memory limits (800 MB), production process management</td>
+        <td>&mdash;</td>
+      </tr>
+      <tr>
+        <td><strong>Telegram Bot</strong></td>
+        <td>Push notifications for trade entries, exits, and signal alerts</td>
+        <td>HTTPS (Bot API)</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 2. FYERS API REGISTRATION                                  -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section green" id="fyers">
+  <h2><span class="section-icon icon-green">&#128279;</span> 2. Fyers API Registration</h2>
+
+  <h3>Create Your App</h3>
+  <ol class="steps">
+    <li>Go to <code>https://myapi.fyers.in</code> and log in with your Fyers credentials.</li>
+    <li>Click <strong>Create App</strong> on the dashboard.</li>
+    <li>
+      Fill in the form:
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>App Type</td><td><code>Web</code></td></tr>
+          <tr><td>App Name</td><td>Any descriptive name (e.g., <code>PalaniBot</code>)</td></tr>
+          <tr><td>Redirect URL</td><td><code>https://YOUR_EC2_IP:3000/auth/callback</code></td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li>After creation, copy the <strong>APP_ID</strong> and <strong>SECRET_KEY</strong> into your <code>.env</code> file.</li>
+  </ol>
+
+  <h3>OAuth Authentication Flow</h3>
+
+  <div class="oauth-flow">
+    <div class="oauth-step">
+      <div class="oauth-box ob-blue">
+        User visits<br><code>/auth/login</code>
+        <small>Browser redirect</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-orange">
+        Fyers OAuth<br>Login Page
+        <small>User enters credentials</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-purple">
+        Redirect to<br><code>/auth/callback</code>
+        <small>With auth_code</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-green">
+        Token Stored<br><code>~/.fyers_token</code>
+        <small>trading-data dir</small>
+      </div>
+    </div>
+  </div>
+
+  <h3>Token Lifecycle</h3>
+  <ul>
+    <li>Token is stored at <code>~/trading-data/.fyers_token</code></li>
+    <li>Auto-validates daily using IST date check</li>
+    <li>Fallback: token is considered expired after <strong>20 hours</strong> of age</li>
+    <li>Re-authentication required each trading day before market open</li>
+  </ul>
+
+  <div class="note note-info">
+    <strong>Note:</strong> The Fyers token is used for both data feed (WebSocket, candles) and order placement for Scalp and Price Action strategies. Strategy 1 live orders go through Zerodha.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 3. ZERODHA KITE CONNECT                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section purple" id="zerodha">
+  <h2><span class="section-icon icon-purple">&#128273;</span> 3. Zerodha Kite Connect Registration</h2>
+
+  <h3>Create Your App</h3>
+  <ol class="steps">
+    <li>Go to <code>https://developers.kite.trade</code> and log in.</li>
+    <li>Click <strong>Create App</strong> (Kite Connect type).</li>
+    <li>
+      Fill in the details:
+      <table>
+        <thead><tr><th>Field</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>App Name</td><td>Any name (e.g., <code>PalaniTrader</code>)</td></tr>
+          <tr><td>Redirect URL</td><td><code>https://YOUR_EC2_IP:3000/auth/zerodha/callback</code></td></tr>
+        </tbody>
+      </table>
+    </li>
+    <li>Copy <strong>ZERODHA_API_KEY</strong> and <strong>ZERODHA_API_SECRET</strong> into your <code>.env</code> file.</li>
+  </ol>
+
+  <h3>OAuth Authentication Flow</h3>
+
+  <div class="oauth-flow">
+    <div class="oauth-step">
+      <div class="oauth-box ob-blue">
+        User visits<br><code>/auth/zerodha/login</code>
+        <small>Browser redirect</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-orange">
+        Kite Login<br>Page
+        <small>User enters credentials</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-purple">
+        Redirect to<br><code>/auth/zerodha/callback</code>
+        <small>With request_token</small>
+      </div>
+    </div>
+    <div class="oauth-connector"><span></span></div>
+    <div class="oauth-step">
+      <div class="oauth-box ob-green">
+        Token Stored<br><code>~/.zerodha_token</code>
+        <small>trading-data dir</small>
+      </div>
+    </div>
+  </div>
+
+  <h3>Token Lifecycle</h3>
+  <ul>
+    <li>Token is stored at <code>~/trading-data/.zerodha_token</code></li>
+    <li>Expires at <strong>6:00 AM IST</strong> the next day (Zerodha policy)</li>
+    <li>Must re-authenticate every trading day before market open</li>
+  </ul>
+
+  <div class="note note-warn">
+    <strong>Important:</strong> Zerodha tokens expire strictly at 6 AM IST. Unlike Fyers, there is no age-based fallback &mdash; the token is invalidated server-side by Zerodha at the fixed time.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 4. SSL CERTIFICATE                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section orange" id="ssl">
+  <h2><span class="section-icon icon-orange">&#128274;</span> 4. SSL Certificate Setup</h2>
+
+  <p>Both Fyers and Zerodha OAuth require HTTPS redirect URLs. Generate a self-signed certificate for your EC2 instance:</p>
+
+  <pre><code><span class="cmt"># Create the certs directory in the project root</span>
+<span class="cmd">mkdir</span> <span class="flag">-p</span> certs
+
+<span class="cmt"># Generate a 4096-bit RSA self-signed certificate (valid for 10 years)</span>
+<span class="cmd">openssl</span> req <span class="flag">-x509</span> <span class="flag">-newkey</span> rsa:4096 \
+  <span class="flag">-keyout</span> <span class="str">certs/key.pem</span> <span class="flag">-out</span> <span class="str">certs/cert.pem</span> \
+  <span class="flag">-days</span> <span class="num">3650</span> <span class="flag">-nodes</span> <span class="flag">-subj</span> <span class="str">"/CN=YOUR_EC2_IP"</span></code></pre>
+
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th><th>Location</th></tr></thead>
+    <tbody>
+      <tr><td><code>certs/key.pem</code></td><td>Private key (RSA 4096-bit)</td><td>Project root &rarr; <code>certs/</code></td></tr>
+      <tr><td><code>certs/cert.pem</code></td><td>Self-signed X.509 certificate</td><td>Project root &rarr; <code>certs/</code></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-danger">
+    <strong>Security:</strong> Never commit <code>certs/</code> to version control. Ensure it is listed in <code>.gitignore</code>. The private key must remain on the server only.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 5. EC2 SERVER DEPLOYMENT                                   -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="ec2">
+  <h2><span class="section-icon icon-cyan">&#9729;</span> 5. EC2 Server Deployment</h2>
+
+  <h3>Initial Setup</h3>
+  <pre><code><span class="cmt"># 1. Clone the repository</span>
+<span class="cmd">git</span> clone &lt;your-repo-url&gt; trade
+<span class="cmd">cd</span> trade
+
+<span class="cmt"># 2. Install dependencies</span>
+<span class="cmd">npm</span> install
+
+<span class="cmt"># 3. Create the persistent data directory</span>
+<span class="cmd">mkdir</span> <span class="flag">-p</span> ~/trading-data
+
+<span class="cmt"># 4. Copy environment template and fill in values</span>
+<span class="cmd">cp</span> .env.example .env
+<span class="cmd">nano</span> .env   <span class="cmt"># Fill in all required values</span>
+
+<span class="cmt"># 5. Generate SSL certificates (see Section 4)</span>
+<span class="cmd">mkdir</span> <span class="flag">-p</span> certs
+<span class="cmd">openssl</span> req <span class="flag">-x509</span> <span class="flag">-newkey</span> rsa:4096 \
+  <span class="flag">-keyout</span> certs/key.pem <span class="flag">-out</span> certs/cert.pem \
+  <span class="flag">-days</span> <span class="num">3650</span> <span class="flag">-nodes</span> <span class="flag">-subj</span> <span class="str">"/CN=YOUR_EC2_IP"</span></code></pre>
+
+  <h3>PM2 Process Management</h3>
+  <pre><code><span class="cmt"># Install PM2 globally</span>
+<span class="cmd">npm</span> install <span class="flag">-g</span> pm2
+
+<span class="cmt"># Start the trading bot</span>
+<span class="cmd">pm2</span> start ecosystem.config.js
+
+<span class="cmt"># Enable startup on reboot</span>
+<span class="cmd">pm2</span> startup
+<span class="cmd">pm2</span> save
+
+<span class="cmt"># Useful commands</span>
+<span class="cmd">pm2</span> logs trading-bot      <span class="cmt"># View live logs</span>
+<span class="cmd">pm2</span> restart trading-bot   <span class="cmt"># Restart the process</span>
+<span class="cmd">pm2</span> monit                 <span class="cmt"># Monitor CPU/Memory</span></code></pre>
+
+  <h3>PM2 Ecosystem Config</h3>
+  <table>
+    <thead><tr><th>Setting</th><th>Value</th><th>Purpose</th></tr></thead>
+    <tbody>
+      <tr><td><code>script</code></td><td><code>src/app.js</code></td><td>Application entry point</td></tr>
+      <tr><td><code>max-old-space-size</code></td><td><code>768 MB</code></td><td>V8 heap limit</td></tr>
+      <tr><td><code>max_memory_restart</code></td><td><code>800 MB</code></td><td>Auto-restart if memory exceeds this</td></tr>
+      <tr><td><code>autorestart</code></td><td><code>true</code></td><td>Restart on crash</td></tr>
+      <tr><td><code>restart_delay</code></td><td><code>5000 ms</code></td><td>Wait 5 seconds between restarts</td></tr>
+      <tr><td><code>NODE_ENV</code></td><td><code>production</code></td><td>Production environment flag</td></tr>
+    </tbody>
+  </table>
+
+  <h3>GitHub Actions Deploy Webhook</h3>
+  <p>The server exposes a deploy webhook for automated CI/CD:</p>
+  <pre><code><span class="cmt"># GitHub Actions calls this endpoint after a successful build</span>
+<span class="cmd">POST</span> <span class="str">https://YOUR_EC2_IP:3000/deploy/webhook</span></code></pre>
+  <p>Configure the webhook URL and secret in your GitHub repository settings or workflow file.</p>
+
+  <div class="note note-info">
+    <strong>EC2 Security Group:</strong> Ensure port <strong>3000</strong> is open for inbound TCP traffic (HTTPS). Restrict source IPs if possible for additional security.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 6. TELEGRAM BOT                                            -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section pink" id="telegram">
+  <h2><span class="section-icon icon-pink">&#128172;</span> 6. Telegram Bot Setup</h2>
+
+  <h3>Create the Bot</h3>
+  <ol class="steps">
+    <li>Open Telegram and search for <code>@BotFather</code>.</li>
+    <li>Send <code>/newbot</code> and follow the prompts to name your bot.</li>
+    <li>Copy the <strong>BOT_TOKEN</strong> provided by BotFather.</li>
+    <li>Open a conversation with your new bot and send any message (e.g., <code>/start</code>).</li>
+    <li>
+      Get your <strong>Chat ID</strong> by calling the Telegram API:
+      <pre><code><span class="cmd">curl</span> <span class="str">"https://api.telegram.org/bot&lt;YOUR_BOT_TOKEN&gt;/getUpdates"</span> | <span class="cmd">jq</span> <span class="str">'.result[0].message.chat.id'</span></code></pre>
+    </li>
+    <li>Set both values in your <code>.env</code> file.</li>
+  </ol>
+
+  <h3>Notification Toggles</h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TG_TRADE_ENTRY</code></td><td><code>true</code></td><td>Strategy 1 trade entry alerts</td></tr>
+      <tr><td><code>TG_TRADE_EXIT</code></td><td><code>true</code></td><td>Strategy 1 trade exit alerts</td></tr>
+      <tr><td><code>TG_TRADE_SIGNALS</code></td><td><code>true</code></td><td>Strategy 1 signal detection alerts</td></tr>
+      <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Scalp trade entry alerts</td></tr>
+      <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Scalp trade exit alerts</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-success">
+    <strong>Tip:</strong> Leave <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> blank to disable all Telegram notifications without changing individual toggle values.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 7. COMPLETE .ENV REFERENCE                                 -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section red" id="env">
+  <h2><span class="section-icon icon-red">&#128221;</span> 7. Complete .env Variable Reference</h2>
+
+  <p>All environment variables grouped by section. Copy <code>.env.example</code> to <code>.env</code> and fill in values.</p>
+
+  <!-- ── Fyers ─────────────────────────────────────────── -->
+  <div class="env-group">Fyers &mdash; Data Feed, WebSocket, Historical Candles, Scalp Orders</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>APP_ID</code></td><td>&mdash;</td><td>Fyers App ID from myapi.fyers.in</td></tr>
+      <tr><td><code>SECRET_KEY</code></td><td>&mdash;</td><td>Fyers App Secret</td></tr>
+      <tr><td><code>REDIRECT_URL</code></td><td><code>https://IP:3000/auth/callback</code></td><td>OAuth callback URL</td></tr>
+      <tr><td><code>ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Fyers access token</td></tr>
+      <tr><td><code>NIFTY_SPOT_FALLBACK</code></td><td><code>24000</code></td><td>Fallback NIFTY spot price if API fails</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Zerodha ───────────────────────────────────────── -->
+  <div class="env-group g-green">Zerodha &mdash; Order Placement (Strategy 1 Live Trade Only)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ZERODHA_API_KEY</code></td><td>&mdash;</td><td>Kite Connect API key</td></tr>
+      <tr><td><code>ZERODHA_API_SECRET</code></td><td>&mdash;</td><td>Kite Connect API secret</td></tr>
+      <tr><td><code>ZERODHA_REDIRECT_URL</code></td><td><code>https://IP:3000/auth/zerodha/callback</code></td><td>OAuth callback URL</td></tr>
+      <tr><td><code>ZERODHA_ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Zerodha access token</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Security ──────────────────────────────────────── -->
+  <div class="env-group g-red">Security</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>API_SECRET</code></td><td>&mdash;</td><td>Secret for API authentication</td></tr>
+      <tr><td><code>LOGIN_SECRET</code></td><td>&mdash;</td><td>Secret for login session management</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Server ────────────────────────────────────────── -->
+  <div class="env-group g-cyan">Server</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>PORT</code></td><td><code>3000</code></td><td>HTTPS server port</td></tr>
+      <tr><td><code>EC2_IP</code></td><td>&mdash;</td><td>Public IP of the EC2 instance</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Instrument ────────────────────────────────────── -->
+  <div class="env-group g-orange">Instrument</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>INSTRUMENT</code></td><td><code>NIFTY_OPTIONS</code></td><td>Trading instrument</td></tr>
+      <tr><td><code>NIFTY_LOT_SIZE</code></td><td><code>75</code></td><td>Lot size for NIFTY options</td></tr>
+      <tr><td><code>LOT_MULTIPLIER</code></td><td><code>1</code></td><td>Number of lots per trade</td></tr>
+      <tr><td><code>STRIKE_OFFSET_CE</code></td><td><code>0</code></td><td>CE strike offset from ATM</td></tr>
+      <tr><td><code>STRIKE_OFFSET_PE</code></td><td><code>0</code></td><td>PE strike offset from ATM</td></tr>
+      <tr><td><code>OPTION_EXPIRY_TYPE</code></td><td><code>weekly</code></td><td>Expiry type: <code>weekly</code> or <code>monthly</code></td></tr>
+      <tr><td><code>OPTION_EXPIRY_OVERRIDE</code></td><td><em>(blank)</em></td><td>Override specific expiry date</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Strategy 1 ───────────────────────────────────── -->
+  <div class="env-group g-purple">Strategy 1 &mdash; SAR + EMA9 + RSI (15-min, Zerodha Orders)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td><code>15</code></td><td>Candle resolution in minutes</td></tr>
+      <tr><td><code>TRADE_START_TIME</code></td><td><code>09:15</code></td><td>Trading window start (IST)</td></tr>
+      <tr><td><code>TRADE_STOP_TIME</code></td><td><code>15:30</code></td><td>Trading window end (IST)</td></tr>
+      <tr><td><code>TRADE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
+      <tr><td><code>LIVE_TRADE_ENABLED</code></td><td><code>false</code></td><td>Enable live order placement via Zerodha</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Risk Controls</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Max daily loss in INR before halting</td></tr>
+      <tr><td><code>MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>Max trades per day</td></tr>
+      <tr><td><code>MAX_SAR_DISTANCE</code></td><td><code>80</code></td><td>Max SAR distance for entry</td></tr>
+      <tr><td><code>OPT_STOP_PCT</code></td><td><code>0.15</code></td><td>Option stop loss percentage</td></tr>
+      <tr><td><code>BREAKEVEN_PTS</code></td><td><code>25</code></td><td>Points profit to move SL to breakeven</td></tr>
+    </tbody>
+  </table>
+
+  <h4>3-Tier Trailing Stop Loss</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TRAIL_ACTIVATE_PTS</code></td><td><code>12</code></td><td>Profit points to activate trailing</td></tr>
+      <tr><td><code>TRAIL_TIER1_UPTO</code></td><td><code>30</code></td><td>Tier 1 upper bound (profit points)</td></tr>
+      <tr><td><code>TRAIL_TIER2_UPTO</code></td><td><code>55</code></td><td>Tier 2 upper bound (profit points)</td></tr>
+      <tr><td><code>TRAIL_TIER1_GAP</code></td><td><code>40</code></td><td>Trailing gap for Tier 1</td></tr>
+      <tr><td><code>TRAIL_TIER2_GAP</code></td><td><code>25</code></td><td>Trailing gap for Tier 2</td></tr>
+      <tr><td><code>TRAIL_TIER3_GAP</code></td><td><code>15</code></td><td>Trailing gap for Tier 3 (tightest)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Signal Filters</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>RSI_CE_MIN</code></td><td><code>52</code></td><td>Min RSI for CE entry</td></tr>
+      <tr><td><code>RSI_PE_MAX</code></td><td><code>48</code></td><td>Max RSI for PE entry</td></tr>
+      <tr><td><code>EMA30_FILTER</code></td><td><code>true</code></td><td>Enable EMA30 trend filter</td></tr>
+      <tr><td><code>ADX_MIN_TREND</code></td><td><code>25</code></td><td>Min ADX for trend confirmation</td></tr>
+      <tr><td><code>EMA_SLOPE_MIN</code></td><td><code>6</code></td><td>Min EMA slope for entry</td></tr>
+      <tr><td><code>STRONG_SLOPE</code></td><td><code>9</code></td><td>Slope threshold for strong signal</td></tr>
+      <tr><td><code>STRONG_RSI_CE</code></td><td><code>58</code></td><td>Strong RSI threshold for CE</td></tr>
+      <tr><td><code>STRONG_RSI_PE</code></td><td><code>40</code></td><td>Strong RSI threshold for PE</td></tr>
+      <tr><td><code>MIN_SAR_DISTANCE</code></td><td><code>45</code></td><td>Min SAR distance for valid signal</td></tr>
+      <tr><td><code>MIN_CANDLE_BODY</code></td><td><code>10</code></td><td>Min candle body size in points</td></tr>
+      <tr><td><code>LOGIC3_RSI_MAX</code></td><td><code>46</code></td><td>Logic 3 RSI max threshold</td></tr>
+      <tr><td><code>LOGIC3_RSI_MIN_CE</code></td><td><code>53</code></td><td>Logic 3 min RSI for CE</td></tr>
+      <tr><td><code>LOGIC3_SAR_GAP</code></td><td><code>30</code></td><td>Logic 3 SAR gap requirement</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── VIX Filter ────────────────────────────────────── -->
+  <div class="env-group g-red">VIX Filter &mdash; Market Regime Filter</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry blocking (Strategy 1)</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block all entries when VIX exceeds this level</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Allow only strong signals when VIX &gt; this value</td></tr>
+      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Scalp mode (independent)</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Scalp ─────────────────────────────────────────── -->
+  <div class="env-group g-cyan">Scalping &mdash; BB+RSI Strategy (Fyers Orders)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Enable scalp mode UI and engine</td></tr>
+      <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Start scalp trading on boot</td></tr>
+      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code></td><td>Candle resolution in minutes</td></tr>
+      <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
+      <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
+      <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp SL &amp; Trailing</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>25</code></td><td>Max stop loss points (cap)</td></tr>
+      <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min stop loss points (floor)</td></tr>
+      <tr><td><code>SCALP_TRAIL_START</code></td><td><code>200</code></td><td>Profit (INR) to activate trailing</td></tr>
+      <tr><td><code>SCALP_TRAIL_PCT</code></td><td><code>50</code></td><td>Base trail % of peak profit</td></tr>
+      <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>1000:60,3000:70,...</code></td><td>Tiered trail: profit:pct pairs</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp Signal Params</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_RSI_CE_MIN</code></td><td><code>55</code></td><td>Min RSI for CE scalp entry</td></tr>
+      <tr><td><code>SCALP_RSI_PE_MAX</code></td><td><code>45</code></td><td>Max RSI for PE scalp entry</td></tr>
+      <tr><td><code>SCALP_SL_PTS</code></td><td><code>12</code></td><td>Default SL points</td></tr>
+      <tr><td><code>SCALP_TARGET_PTS</code></td><td><code>18</code></td><td>Target profit points</td></tr>
+      <tr><td><code>SCALP_MIN_BODY</code></td><td><code>5</code></td><td>Min candle body size</td></tr>
+      <tr><td><code>SCALP_MIN_SLOPE</code></td><td><code>2</code></td><td>Min EMA slope</td></tr>
+      <tr><td><code>SCALP_ADX_ENABLED</code></td><td><code>false</code></td><td>Enable ADX filter for scalp</td></tr>
+      <tr><td><code>SCALP_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX threshold</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp BB+CPR Params</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_CPR_NARROW_PCT</code></td><td><code>33</code></td><td>CPR narrow zone percentile</td></tr>
+      <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
+      <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
+      <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
+      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>55</code></td><td>CE RSI threshold</td></tr>
+      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>45</code></td><td>PE RSI threshold</td></tr>
+      <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
+      <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp ATR Limits &amp; Risk Controls</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_ATR_MIN_SL</code></td><td><code>3</code></td><td>ATR-based min SL</td></tr>
+      <tr><td><code>SCALP_ATR_MAX_SL</code></td><td><code>10</code></td><td>ATR-based max SL</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp trades per day</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Max daily scalp loss (INR)</td></tr>
+      <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>1</code></td><td>Candles to pause after SL hit</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Price Action ──────────────────────────────────── -->
+  <div class="env-group g-pink">Price Action Strategy (Fyers Orders)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>PA_ENTRY_START</code></td><td><code>09:20</code></td><td>Entry window start (IST)</td></tr>
+      <tr><td><code>PA_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
+      <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes</td></tr>
+      <tr><td><code>PA_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
+      <tr><td><code>PA_RSI_CE_MIN</code></td><td><code>45</code></td><td>Min RSI for CE entry</td></tr>
+      <tr><td><code>PA_RSI_CE_MAX</code></td><td><code>70</code></td><td>Max RSI for CE entry (overbought cap)</td></tr>
+      <tr><td><code>PA_RSI_PE_MAX</code></td><td><code>55</code></td><td>Max RSI for PE entry</td></tr>
+      <tr><td><code>PA_RSI_PE_MIN</code></td><td><code>30</code></td><td>Min RSI for PE entry (oversold cap)</td></tr>
+      <tr><td><code>PA_ADX_ENABLED</code></td><td><code>true</code></td><td>Enable ADX trend filter</td></tr>
+      <tr><td><code>PA_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX threshold</td></tr>
+      <tr><td><code>PA_MIN_BODY</code></td><td><code>5</code></td><td>Min candle body size</td></tr>
+      <tr><td><code>PA_PIN_WICK_RATIO</code></td><td><code>2</code></td><td>Pin bar wick-to-body ratio</td></tr>
+      <tr><td><code>PA_SR_LOOKBACK</code></td><td><code>30</code></td><td>Support/Resistance lookback candles</td></tr>
+      <tr><td><code>PA_SR_ZONE_PTS</code></td><td><code>15</code></td><td>S/R zone tolerance in points</td></tr>
+      <tr><td><code>PA_MAX_SL_PTS</code></td><td><code>25</code></td><td>Max stop loss points</td></tr>
+      <tr><td><code>PA_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min stop loss points</td></tr>
+      <tr><td><code>PA_CHART_PATTERN_TOL</code></td><td><code>12</code></td><td>Tolerance for double top/bottom &amp; triangles</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Price Action Risk &amp; Trailing</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max PA trades per day</td></tr>
+      <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Max daily PA loss (INR)</td></tr>
+      <tr><td><code>PA_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
+      <tr><td><code>PA_TRAIL_START</code></td><td><code>800</code></td><td>Profit (INR) to activate trailing</td></tr>
+      <tr><td><code>PA_TRAIL_PCT</code></td><td><code>75</code></td><td>Base trail % of peak profit</td></tr>
+      <tr><td><code>PA_TRAIL_TIERS</code></td><td><code>1500:65,3000:70,...</code></td><td>Tiered trail: profit:pct pairs</td></tr>
+      <tr><td><code>PA_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points for backtest</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Paper Trade ───────────────────────────────────── -->
+  <div class="env-group">Paper Trade</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>PAPER_TRADE_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Strategy 1</td></tr>
+      <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Scalp mode</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Backtest ──────────────────────────────────────── -->
+  <div class="env-group g-purple">Backtest</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>BACKTEST_FROM</code></td><td><code>2026-01-01</code></td><td>Backtest start date</td></tr>
+      <tr><td><code>BACKTEST_TO</code></td><td><code>2026-03-28</code></td><td>Backtest end date</td></tr>
+      <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for backtest</td></tr>
+      <tr><td><code>BACKTEST_OPTION_SIM</code></td><td><code>true</code></td><td>Simulate option prices from NIFTY spot</td></tr>
+      <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td><td>Option delta for simulation</td></tr>
+      <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td><td>Theta decay per day (points)</td></tr>
+      <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points per trade</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Capital Protection ────────────────────────────── -->
+  <div class="env-group g-red">Capital Protection</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>LTP_STALE_THRESHOLD_SEC</code></td><td><code>15</code></td><td>Warn if no fresh LTP for this many seconds</td></tr>
+      <tr><td><code>HARD_SL_ENABLED</code></td><td><code>false</code></td><td>Place SL-M order at exchange on every entry</td></tr>
+      <tr><td><code>HARD_SL_DELTA</code></td><td><code>0.5</code></td><td>Delta multiplier for hard SL calculation</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Telegram ──────────────────────────────────────── -->
+  <div class="env-group g-cyan">Telegram (Optional)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td><em>(blank)</em></td><td>Bot token from @BotFather</td></tr>
+      <tr><td><code>TELEGRAM_CHAT_ID</code></td><td><em>(blank)</em></td><td>Your Telegram chat ID</td></tr>
+      <tr><td><code>TG_TRADE_ENTRY</code></td><td><code>true</code></td><td>Strategy 1 entry alerts</td></tr>
+      <tr><td><code>TG_TRADE_EXIT</code></td><td><code>true</code></td><td>Strategy 1 exit alerts</td></tr>
+      <tr><td><code>TG_TRADE_SIGNALS</code></td><td><code>true</code></td><td>Strategy 1 signal alerts</td></tr>
+      <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Scalp entry alerts</td></tr>
+      <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Scalp exit alerts</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Cache ─────────────────────────────────────────── -->
+  <div class="env-group">Cache</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>CACHE_MAX_DAYS</code></td><td><code>60</code></td><td>Max days to retain cached candle data</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 8. AUTH STATUS ROUTES                                      -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section green" id="auth-routes">
+  <h2><span class="section-icon icon-green">&#128268;</span> 8. Auth Status Routes</h2>
+
+  <p>Use these endpoints to check broker authentication status and manage tokens.</p>
+
+  <table>
+    <thead><tr><th>Method</th><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
+        <td><code>/auth/status</code></td>
+        <td>Check Fyers authentication status. Returns token validity and expiry info.</td>
+      </tr>
+      <tr>
+        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
+        <td><code>/auth/zerodha/status</code></td>
+        <td>Check Zerodha Kite Connect authentication status.</td>
+      </tr>
+      <tr>
+        <td><code style="background:rgba(88,166,255,0.15);color:var(--accent-blue);">GET</code></td>
+        <td><code>/auth/status/all</code></td>
+        <td>Combined status for both Fyers and Zerodha brokers in a single response.</td>
+      </tr>
+      <tr>
+        <td><code style="background:rgba(248,81,73,0.15);color:var(--accent-red);">GET</code></td>
+        <td><code>/auth/zerodha/logout</code></td>
+        <td>Clear Zerodha token and force re-authentication.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Login Endpoints</h3>
+  <table>
+    <thead><tr><th>Method</th><th>Route</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
+        <td><code>/auth/login</code></td>
+        <td>Initiates Fyers OAuth flow. Redirects browser to Fyers login page.</td>
+      </tr>
+      <tr>
+        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
+        <td><code>/auth/zerodha/login</code></td>
+        <td>Initiates Zerodha OAuth flow. Redirects browser to Kite login page.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Daily Workflow:</strong> Before market open each trading day, visit <code>/auth/status/all</code> to verify both tokens are valid. If expired, use the respective <code>/login</code> endpoints to re-authenticate.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 9. DATA STORAGE                                            -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section orange" id="storage">
+  <h2><span class="section-icon icon-orange">&#128451;</span> 9. Data Storage</h2>
+
+  <p>All persistent data is stored in <code>~/trading-data/</code>, which lives <strong>outside</strong> the project directory. This ensures data survives code deployments, git pulls, and PM2 restarts.</p>
+
+  <table>
+    <thead><tr><th>File / Directory</th><th>Purpose</th><th>Lifecycle</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>~/trading-data/.fyers_token</code></td>
+        <td>Fyers OAuth access token</td>
+        <td>Refreshed daily via <code>/auth/login</code></td>
+      </tr>
+      <tr>
+        <td><code>~/trading-data/.zerodha_token</code></td>
+        <td>Zerodha Kite access token</td>
+        <td>Expires at 6 AM IST daily</td>
+      </tr>
+      <tr>
+        <td><code>~/trading-data/trade-logs/</code></td>
+        <td>Strategy 1 &amp; Scalp trade history (JSON)</td>
+        <td>Persistent, one file per session</td>
+      </tr>
+      <tr>
+        <td><code>~/trading-data/backtest/</code></td>
+        <td>Backtest results and reports</td>
+        <td>Persistent</td>
+      </tr>
+      <tr>
+        <td><code>~/trading-data/cache/</code></td>
+        <td>Cached historical candle data</td>
+        <td>Auto-pruned after <code>CACHE_MAX_DAYS</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Directory Structure</h3>
+  <pre><code><span class="var">~/trading-data/</span>
+  <span class="cmt">|</span>
+  <span class="cmt">|--</span> <span class="str">.fyers_token</span>         <span class="cmt"># Fyers access token</span>
+  <span class="cmt">|--</span> <span class="str">.zerodha_token</span>       <span class="cmt"># Zerodha access token</span>
+  <span class="cmt">|--</span> <span class="var">trade-logs/</span>          <span class="cmt"># Trade history files</span>
+  <span class="cmt">|--</span> <span class="var">backtest/</span>            <span class="cmt"># Backtest result files</span>
+  <span class="cmt">|--</span> <span class="var">cache/</span>               <span class="cmt"># Candle data cache</span></code></pre>
+
+  <div class="note note-warn">
+    <strong>Backup:</strong> The <code>~/trading-data/</code> directory contains all your trade history and tokens. Back it up regularly, especially before any EC2 instance changes or migrations.
+  </div>
+</section>
+
+</div><!-- /.container -->
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<footer class="page-footer">
+  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v2.0 &nbsp;|&nbsp; April 2026
+</footer>
+
+</body>
+</html>

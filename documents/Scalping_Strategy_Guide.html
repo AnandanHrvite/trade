@@ -1,0 +1,1227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>NIFTY OPTIONS — Scalping Strategy</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0e0b1e;
+    --bg2: #16122e;
+    --bg3: #1e1840;
+    --text: #ccc8e8;
+    --text2: #8a85b0;
+    --accent: #7c3aed;
+    --accent2: #a78bfa;
+    --green: #10b981;
+    --red: #ef4444;
+    --cyan: #22d3ee;
+    --yellow: #fbbf24;
+    --orange: #f97316;
+    --border: #2e2860;
+    --blue: #3b82f6;
+    --pink: #ec4899;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  @page {
+    size: A4;
+    margin: 20mm 15mm 20mm 15mm;
+  }
+
+  body {
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 11pt;
+    line-height: 1.6;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 20px 30px;
+  }
+
+  /* ── Cover page ─────────────────────────────────────────── */
+  .cover {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 92vh; text-align: center; page-break-after: always;
+    background: radial-gradient(ellipse at 50% 40%, rgba(124,58,237,0.15) 0%, transparent 70%);
+  }
+  .cover .badge {
+    background: linear-gradient(135deg, var(--accent), var(--pink)); color: #fff; font-weight: 700; font-size: 0.75rem;
+    padding: 6px 24px; border-radius: 20px; letter-spacing: 1.5px; text-transform: uppercase;
+    margin-bottom: 30px;
+  }
+  .cover h1 { font-size: 2.6rem; font-weight: 700; color: #fff; margin-bottom: 12px; }
+  .cover .sub { color: var(--accent2); font-size: 1rem; margin-bottom: 40px; font-weight: 500; }
+  .cover .version {
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 24px;
+    font-size: 0.8rem; color: var(--text2); margin-bottom: 12px;
+  }
+  .cover .tags { font-size: 0.78rem; color: var(--text2); margin-top: 8px; }
+
+  /* ── Section headers ────────────────────────────────────── */
+  h2 {
+    font-size: 1.45rem; font-weight: 700; color: #fff; margin: 36px 0 14px;
+    padding: 10px 16px; border-left: 4px solid var(--accent);
+    background: linear-gradient(90deg, rgba(124,58,237,0.12) 0%, transparent 80%);
+    border-radius: 0 8px 8px 0;
+  }
+  h2 .sec-num {
+    color: var(--accent2); font-size: 0.85rem; font-weight: 600; margin-right: 8px;
+  }
+
+  h3 { font-size: 1.05rem; font-weight: 600; margin: 22px 0 10px; color: #e0daf0; }
+  h3.green { color: var(--green); }
+  h3.red { color: var(--red); }
+  h3.blue { color: var(--accent2); }
+
+  p { margin: 8px 0; }
+  strong { color: #e5e7eb; }
+
+  .page-break { page-break-before: always; }
+
+  /* ── Cards ──────────────────────────────────────────────── */
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 22px; margin: 14px 0;
+  }
+  .card-green { border-left: 4px solid var(--green); }
+  .card-red { border-left: 4px solid var(--red); }
+  .card-blue { border-left: 4px solid var(--accent2); }
+  .card-yellow { border-left: 4px solid var(--yellow); }
+  .card-purple { border-left: 4px solid var(--accent); }
+
+  .card h4 { font-size: 0.95rem; font-weight: 700; margin-bottom: 10px; }
+  .card h4.green { color: var(--green); }
+  .card h4.red { color: var(--red); }
+  .card h4.blue { color: var(--accent2); }
+  .card h4.purple { color: var(--accent2); }
+
+  /* ── Numbered steps ─────────────────────────────────────── */
+  .step { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0; }
+  .step-num {
+    min-width: 24px; height: 24px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 0.7rem;
+    font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .step-num.green { background: var(--green); }
+  .step-num.red { background: var(--red); }
+  .step-num.blue { background: var(--accent); }
+
+  /* ── Metric boxes ───────────────────────────────────────── */
+  .metrics { display: flex; gap: 12px; margin: 14px 0; flex-wrap: wrap; }
+  .metric {
+    flex: 1; min-width: 140px; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 14px; text-align: center;
+  }
+  .metric .val { font-size: 1.6rem; font-weight: 700; color: #fff; }
+  .metric .lbl { font-size: 0.7rem; color: var(--text2); margin-top: 4px; }
+  .metric.green { border-bottom: 3px solid var(--green); }
+  .metric.red { border-bottom: 3px solid var(--red); }
+  .metric.yellow { border-bottom: 3px solid var(--yellow); }
+  .metric.purple { border-bottom: 3px solid var(--accent); }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  table {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+    font-size: 0.8rem;
+  }
+  thead th {
+    background: var(--bg3); color: #fff; padding: 10px 12px; text-align: left;
+    font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  tbody td {
+    padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text);
+  }
+  tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+  code {
+    background: var(--bg3); padding: 1px 5px; border-radius: 3px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem; color: var(--yellow);
+  }
+
+  /* ── Two-column layout ──────────────────────────────────── */
+  .cols { display: flex; gap: 14px; margin: 14px 0; }
+  .cols > * { flex: 1; }
+
+  /* ── Highlight box ──────────────────────────────────────── */
+  .highlight {
+    background: rgba(124,58,237,0.08); border: 1px solid rgba(124,58,237,0.25);
+    border-radius: 10px; padding: 16px 20px; margin: 14px 0;
+  }
+  .highlight strong { color: var(--accent2); }
+
+  ul { margin: 8px 0 8px 20px; }
+  li { margin: 4px 0; }
+
+  /* ════════════════════════════════════════════════════════════════════════ */
+  /* CSS CHARTS                                                             */
+  /* ════════════════════════════════════════════════════════════════════════ */
+
+  /* ── BB Chart ──────────────────────────────────────────── */
+  .bb-chart {
+    position: relative; width: 100%; height: 320px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    margin: 14px 0;
+  }
+  .bb-band {
+    position: absolute; left: 5%; right: 5%;
+    border: 2px dashed rgba(59,130,246,0.5); border-radius: 40%;
+  }
+  .bb-upper { top: 15%; height: 0; border-bottom: 2px dashed rgba(59,130,246,0.6); }
+  .bb-lower { bottom: 18%; height: 0; border-top: 2px dashed rgba(59,130,246,0.6); }
+  .bb-sma {
+    position: absolute; top: 48%; left: 5%; right: 5%; height: 0;
+    border-top: 2px solid rgba(251,191,36,0.6);
+  }
+  .bb-label {
+    position: absolute; font-size: 0.65rem; font-weight: 600; color: var(--text2);
+  }
+  .bb-label.upper { top: 11%; right: 6%; color: var(--blue); }
+  .bb-label.sma { top: 44%; right: 6%; color: var(--yellow); }
+  .bb-label.lower { bottom: 14%; right: 6%; color: var(--blue); }
+
+  .candle {
+    position: absolute; width: 8px;
+  }
+  .candle .wick {
+    position: absolute; width: 2px; left: 3px; background: #888;
+  }
+  .candle .body {
+    position: absolute; width: 8px; border-radius: 1px;
+  }
+  .candle.bull .body { background: var(--green); }
+  .candle.bear .body { background: var(--red); }
+  .candle.bull .wick { background: var(--green); }
+  .candle.bear .wick { background: var(--red); }
+
+  .signal-marker {
+    position: absolute; padding: 3px 8px; border-radius: 4px; font-size: 0.65rem;
+    font-weight: 700; white-space: nowrap; z-index: 5;
+  }
+  .signal-marker.ce {
+    background: var(--green); color: #000;
+  }
+  .signal-marker.pe {
+    background: var(--red); color: #fff;
+  }
+  .signal-marker::after {
+    content: ''; position: absolute; width: 0; height: 0;
+    left: 50%; transform: translateX(-50%);
+  }
+  .signal-marker.ce::after {
+    bottom: -6px; border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-top: 6px solid var(--green);
+  }
+  .signal-marker.pe::after {
+    top: -6px; border-left: 5px solid transparent; border-right: 5px solid transparent;
+    border-bottom: 6px solid var(--red);
+  }
+
+  /* ── RSI Gauge ─────────────────────────────────────────── */
+  .rsi-gauge {
+    display: flex; height: 40px; border-radius: 8px; overflow: hidden;
+    margin: 14px 0; font-size: 0.7rem; font-weight: 600;
+  }
+  .rsi-gauge div {
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rsi-zone-pe { flex: 45; background: linear-gradient(90deg, #dc2626, #f87171); color: #fff; }
+  .rsi-zone-dead { flex: 10; background: #4b5563; color: #d1d5db; }
+  .rsi-zone-ce { flex: 45; background: linear-gradient(90deg, #34d399, #059669); color: #fff; }
+
+  .rsi-labels {
+    display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--text2);
+    margin-top: 4px; padding: 0 4px;
+  }
+
+  /* ── PSAR Chart ────────────────────────────────────────── */
+  .psar-chart {
+    position: relative; width: 100%; height: 220px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    margin: 14px 0; padding: 20px 0;
+  }
+  .psar-dot {
+    position: absolute; width: 8px; height: 8px; border-radius: 50%;
+  }
+  .psar-dot.bull { background: var(--green); }
+  .psar-dot.bear { background: var(--red); }
+  .psar-price-line {
+    position: absolute; height: 3px; border-radius: 2px;
+  }
+
+  /* ── Profit Trail Chart ────────────────────────────────── */
+  .trail-chart {
+    position: relative; width: 100%; height: 280px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    margin: 14px 0;
+  }
+  .trail-line {
+    position: absolute; left: 0; right: 0; height: 0;
+    border-top: 1px dashed;
+  }
+  .trail-label {
+    position: absolute; right: 8px; font-size: 0.6rem; font-weight: 600;
+    transform: translateY(-50%);
+  }
+
+  /* ── VIX Bar ───────────────────────────────────────────── */
+  .vix-bar {
+    display: flex; height: 50px; border-radius: 10px; overflow: hidden;
+    margin: 14px 0; font-size: 0.75rem; font-weight: 700;
+  }
+  .vix-bar div {
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    line-height: 1.3;
+  }
+  .vix-bar .zone-green { flex: 16; background: linear-gradient(135deg, #059669, #10b981); color: #fff; }
+  .vix-bar .zone-yellow { flex: 4; background: linear-gradient(135deg, #d97706, #fbbf24); color: #000; }
+  .vix-bar .zone-red { flex: 10; background: linear-gradient(135deg, #dc2626, #ef4444); color: #fff; }
+  .vix-bar span { font-size: 0.6rem; font-weight: 500; opacity: 0.85; }
+
+  /* ── Flowchart ─────────────────────────────────────────── */
+  .flowchart {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+    margin: 14px 0;
+  }
+  .flow-box {
+    padding: 10px 20px; border-radius: 10px; font-size: 0.8rem; font-weight: 600;
+    text-align: center; min-width: 200px; max-width: 340px;
+  }
+  .flow-box.start { background: var(--accent); color: #fff; }
+  .flow-box.process { background: var(--bg3); color: var(--text); border: 1px solid var(--border); }
+  .flow-box.decision {
+    background: var(--bg3); color: var(--yellow); border: 2px solid var(--yellow);
+    transform: rotate(0deg); /* keep readable */
+  }
+  .flow-box.action-green { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid var(--green); }
+  .flow-box.action-red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid var(--red); }
+  .flow-box.exit { background: var(--red); color: #fff; }
+  .flow-box.entry { background: var(--green); color: #fff; }
+  .flow-arrow {
+    color: var(--text2); font-size: 1.2rem; line-height: 1; padding: 2px 0;
+  }
+  .flow-arrow-label {
+    font-size: 0.65rem; color: var(--text2); margin-top: -2px; margin-bottom: 2px;
+  }
+  .flow-row {
+    display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; justify-content: center;
+  }
+  .flow-col {
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+
+  /* ── SL Flow ───────────────────────────────────────────── */
+  .sl-flow {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin: 14px 0; padding: 16px; background: var(--bg2); border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  .sl-box {
+    padding: 8px 14px; border-radius: 8px; font-size: 0.78rem; font-weight: 600;
+    text-align: center; white-space: nowrap;
+  }
+  .sl-arrow { color: var(--accent2); font-size: 1.1rem; }
+
+  /* ── Exit priority list ────────────────────────────────── */
+  .exit-priority {
+    counter-reset: exitp;
+  }
+  .exit-item {
+    display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px;
+    margin: 6px 0; background: var(--bg2); border-radius: 8px;
+    border: 1px solid var(--border);
+  }
+  .exit-badge {
+    min-width: 32px; height: 32px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 0.7rem;
+    font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .exit-badge.p1 { background: var(--red); }
+  .exit-badge.p2 { background: var(--orange); }
+  .exit-badge.p3 { background: var(--yellow); color: #000; }
+  .exit-badge.p4 { background: var(--text2); }
+
+  /* ── Print ──────────────────────────────────────────────── */
+  @media print {
+    body { background: #fff; color: #222; max-width: 100%; padding: 0; }
+    .card { background: #f8f9fa; border-color: #dee2e6; }
+    .card-green { border-left-color: #10b981; }
+    .card-red { border-left-color: #ef4444; }
+    h2 { color: #1a1a1a; border-left-color: #7c3aed; background: #f3f0ff; }
+    .metric { background: #f8f9fa; border-color: #dee2e6; }
+    .metric .val { color: #1a1a1a; }
+    thead th { background: #e5e7eb; color: #1a1a1a; }
+    tbody td { color: #333; border-bottom-color: #e5e7eb; }
+    code { background: #f0f0f0; color: #7c3aed; }
+    .cover { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .bb-chart, .psar-chart, .trail-chart { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rsi-gauge, .vix-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- COVER PAGE                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="cover">
+  <div class="badge">NIFTY OPTIONS</div>
+  <h1>Scalping Strategy</h1>
+  <div class="sub">SCALP_BB_RSI_V4 &mdash; 3-Minute Bollinger Band + RSI Scalping</div>
+  <div class="version">Version 4.0 &bull; 3-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail</div>
+  <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Dynamic SL</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. STRATEGY OVERVIEW                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">01</span> Strategy Overview</h2>
+
+<div class="highlight">
+  <strong>SCALP_BB_RSI_V4</strong> is a 3-minute timeframe scalping strategy for NIFTY index options (CE/PE).
+  It identifies short-term momentum breakouts using Bollinger Bands and RSI, with Parabolic SAR providing dynamic trailing stop-loss management.
+</div>
+
+<div class="metrics">
+  <div class="metric purple">
+    <div class="val">3 min</div>
+    <div class="lbl">Candle Timeframe</div>
+  </div>
+  <div class="metric green">
+    <div class="val">BB+RSI</div>
+    <div class="lbl">Entry Signal</div>
+  </div>
+  <div class="metric yellow">
+    <div class="val">PSAR</div>
+    <div class="lbl">Trailing SL</div>
+  </div>
+  <div class="metric red">
+    <div class="val">50 pts</div>
+    <div class="lbl">Max SL Cap</div>
+  </div>
+</div>
+
+<div class="card card-purple">
+  <h4 class="purple">Core Concept</h4>
+  <p>When price breaks above the upper Bollinger Band with RSI confirming bullish momentum (&gt;55), buy a NIFTY ATM Call option. When price breaks below the lower band with bearish RSI (&lt;45), buy an ATM Put option. PSAR dynamically trails the stop loss — tightening only, never widening — to capture the momentum move while protecting profits.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. INDICATORS USED                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">02</span> Indicators Used</h2>
+
+<!-- BB Section -->
+<h3 class="blue">Bollinger Bands (BB) &mdash; Volatility Envelope</h3>
+<div class="card card-blue">
+  <h4 class="blue">Parameters: Period 20, StdDev 1.0</h4>
+  <p>Bollinger Bands create a dynamic price envelope. The upper and lower bands represent 1 standard deviation from the 20-period SMA. Price breaking outside these bands indicates a momentum breakout.</p>
+</div>
+
+<!-- CSS BB Diagram -->
+<div class="bb-chart">
+  <div class="bb-label upper">Upper BB (SMA+1&sigma;)</div>
+  <div class="bb-label sma">SMA 20</div>
+  <div class="bb-label lower">Lower BB (SMA-1&sigma;)</div>
+
+  <!-- BB bands -->
+  <div class="bb-upper"></div>
+  <div class="bb-sma"></div>
+  <div class="bb-lower"></div>
+
+  <!-- Candles moving between bands -->
+  <div class="candle bull" style="left:8%; bottom:38%; height:60px;">
+    <div class="wick" style="top:0; height:60px;"></div>
+    <div class="body" style="top:15px; height:30px;"></div>
+  </div>
+  <div class="candle bear" style="left:13%; bottom:42%; height:50px;">
+    <div class="wick" style="top:0; height:50px;"></div>
+    <div class="body" style="top:10px; height:28px;"></div>
+  </div>
+  <div class="candle bull" style="left:18%; bottom:40%; height:55px;">
+    <div class="wick" style="top:0; height:55px;"></div>
+    <div class="body" style="top:12px; height:30px;"></div>
+  </div>
+  <div class="candle bull" style="left:23%; bottom:44%; height:52px;">
+    <div class="wick" style="top:0; height:52px;"></div>
+    <div class="body" style="top:8px; height:32px;"></div>
+  </div>
+  <div class="candle bull" style="left:28%; bottom:48%; height:58px;">
+    <div class="wick" style="top:0; height:58px;"></div>
+    <div class="body" style="top:10px; height:35px;"></div>
+  </div>
+  <div class="candle bull" style="left:33%; bottom:52%; height:65px;">
+    <div class="wick" style="top:0; height:65px;"></div>
+    <div class="body" style="top:8px; height:40px;"></div>
+  </div>
+  <!-- Breakout above upper BB = CE signal -->
+  <div class="candle bull" style="left:38%; bottom:56%; height:70px;">
+    <div class="wick" style="top:0; height:70px;"></div>
+    <div class="body" style="top:5px; height:45px;"></div>
+  </div>
+  <div class="signal-marker ce" style="left:34%; top:6%;">BUY CE</div>
+
+  <div class="candle bull" style="left:43%; bottom:58%; height:60px;">
+    <div class="wick" style="top:0; height:60px;"></div>
+    <div class="body" style="top:10px; height:35px;"></div>
+  </div>
+  <div class="candle bear" style="left:48%; bottom:54%; height:55px;">
+    <div class="wick" style="top:0; height:55px;"></div>
+    <div class="body" style="top:10px; height:30px;"></div>
+  </div>
+  <div class="candle bear" style="left:53%; bottom:48%; height:60px;">
+    <div class="wick" style="top:0; height:60px;"></div>
+    <div class="body" style="top:12px; height:32px;"></div>
+  </div>
+  <div class="candle bear" style="left:58%; bottom:42%; height:55px;">
+    <div class="wick" style="top:0; height:55px;"></div>
+    <div class="body" style="top:10px; height:28px;"></div>
+  </div>
+  <div class="candle bear" style="left:63%; bottom:36%; height:60px;">
+    <div class="wick" style="top:0; height:60px;"></div>
+    <div class="body" style="top:8px; height:35px;"></div>
+  </div>
+  <div class="candle bear" style="left:68%; bottom:30%; height:58px;">
+    <div class="wick" style="top:0; height:58px;"></div>
+    <div class="body" style="top:10px; height:30px;"></div>
+  </div>
+  <!-- Breakout below lower BB = PE signal -->
+  <div class="candle bear" style="left:73%; bottom:20%; height:72px;">
+    <div class="wick" style="top:0; height:72px;"></div>
+    <div class="body" style="top:8px; height:45px;"></div>
+  </div>
+  <div class="signal-marker pe" style="left:70%; bottom:6%;">BUY PE</div>
+
+  <div class="candle bear" style="left:78%; bottom:22%; height:55px;">
+    <div class="wick" style="top:0; height:55px;"></div>
+    <div class="body" style="top:12px; height:28px;"></div>
+  </div>
+  <div class="candle bull" style="left:83%; bottom:26%; height:50px;">
+    <div class="wick" style="top:0; height:50px;"></div>
+    <div class="body" style="top:10px; height:28px;"></div>
+  </div>
+  <div class="candle bull" style="left:88%; bottom:32%; height:48px;">
+    <div class="wick" style="top:0; height:48px;"></div>
+    <div class="body" style="top:10px; height:26px;"></div>
+  </div>
+</div>
+
+<!-- RSI Section -->
+<h3 class="blue">RSI (14) &mdash; Momentum Confirmation</h3>
+<div class="card card-blue">
+  <h4 class="blue">CE Entry: RSI &gt; 55 | PE Entry: RSI &lt; 45</h4>
+  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above 55), while PE signals need bearish momentum (RSI below 45). The 45-55 "dead zone" avoids entries during indecisive momentum.</p>
+</div>
+
+<div class="rsi-gauge">
+  <div class="rsi-zone-pe">PE Zone (&lt; 45)</div>
+  <div class="rsi-zone-dead">Dead</div>
+  <div class="rsi-zone-ce">CE Zone (&gt; 55)</div>
+</div>
+<div class="rsi-labels">
+  <span>0</span>
+  <span>30</span>
+  <span>45</span>
+  <span>55</span>
+  <span>70</span>
+  <span>100</span>
+</div>
+
+<!-- PSAR Section -->
+<h3 class="blue">Parabolic SAR &mdash; Dynamic Trailing SL</h3>
+<div class="card card-blue">
+  <h4 class="blue">Parameters: Step 0.02, Max 0.2</h4>
+  <p>PSAR provides adaptive stop levels that accelerate toward price as a trend progresses. In an uptrend, dots appear below price and tighten upward. When SAR flips to the opposite side, it signals trend reversal and triggers an immediate exit.</p>
+</div>
+
+<!-- CSS PSAR diagram -->
+<div class="psar-chart">
+  <!-- Price line trending up then flipping -->
+  <div style="position:absolute; left:5%; top:70%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-8deg);"></div>
+  <div style="position:absolute; left:16%; top:62%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-10deg);"></div>
+  <div style="position:absolute; left:27%; top:50%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-8deg);"></div>
+  <div style="position:absolute; left:38%; top:40%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-5deg);"></div>
+  <div style="position:absolute; left:49%; top:35%; width:12%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-2deg);"></div>
+  <div style="position:absolute; left:60%; top:34%; width:10%; height:3px; background:var(--yellow); border-radius:2px; transform:rotate(3deg);"></div>
+  <div style="position:absolute; left:69%; top:38%; width:10%; height:3px; background:var(--red); border-radius:2px; transform:rotate(8deg);"></div>
+  <div style="position:absolute; left:78%; top:46%; width:10%; height:3px; background:var(--red); border-radius:2px; transform:rotate(10deg);"></div>
+
+  <!-- Bullish PSAR dots (below price) -->
+  <div class="psar-dot bull" style="left:8%; top:78%;"></div>
+  <div class="psar-dot bull" style="left:14%; top:75%;"></div>
+  <div class="psar-dot bull" style="left:20%; top:71%;"></div>
+  <div class="psar-dot bull" style="left:26%; top:66%;"></div>
+  <div class="psar-dot bull" style="left:32%; top:60%;"></div>
+  <div class="psar-dot bull" style="left:38%; top:54%;"></div>
+  <div class="psar-dot bull" style="left:44%; top:48%;"></div>
+  <div class="psar-dot bull" style="left:50%; top:43%;"></div>
+  <div class="psar-dot bull" style="left:56%; top:40%;"></div>
+  <div class="psar-dot bull" style="left:62%; top:38%;"></div>
+
+  <!-- Bearish PSAR dots (above price, after flip) -->
+  <div class="psar-dot bear" style="left:68%; top:26%;"></div>
+  <div class="psar-dot bear" style="left:74%; top:28%;"></div>
+  <div class="psar-dot bear" style="left:80%; top:32%;"></div>
+  <div class="psar-dot bear" style="left:86%; top:37%;"></div>
+
+  <!-- Labels -->
+  <div style="position:absolute; left:20%; top:6%; font-size:0.7rem; color:var(--green); font-weight:600;">Bullish: Dots BELOW Price</div>
+  <div style="position:absolute; left:45%; top:12%; font-size:0.65rem; color:var(--text2);">SL tightens each candle</div>
+  <div style="position:absolute; right:8%; top:6%; font-size:0.7rem; color:var(--red); font-weight:600;">SAR FLIP = EXIT</div>
+  <div style="position:absolute; left:63%; top:30%; font-size:1.2rem; color:var(--yellow);">&#8593;</div>
+  <div style="position:absolute; left:60%; bottom:8%; font-size:0.65rem; color:var(--yellow); font-weight:600;">Flip Point</div>
+
+  <!-- Entry label -->
+  <div style="position:absolute; left:6%; bottom:8%; font-size:0.7rem; color:var(--cyan); font-weight:600;">ENTRY</div>
+  <div style="position:absolute; left:6%; top:72%; width:1px; height:12%; border-left:2px dashed var(--cyan);"></div>
+</div>
+
+<!-- VIX Filter Section -->
+<h3 class="blue">VIX Filter &mdash; Market Regime</h3>
+<div class="card card-blue">
+  <h4 class="blue">Max 20 (All Blocked Above) | Strong Only Above 16</h4>
+  <p>India VIX measures market fear. High VIX means wide swings, false breakouts, and elevated option premiums — poor conditions for scalping. The filter blocks entries in volatile regimes.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. HOW BB + RSI SIGNAL WORKS                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">03</span> How BB + RSI Signal Works</h2>
+
+<div class="highlight">
+  <p>Both conditions must be met simultaneously on the same 3-minute candle close:</p>
+  <ul>
+    <li><strong>BUY CE:</strong> Candle Close &ge; Upper BB <em>AND</em> RSI &gt; 55</li>
+    <li><strong>BUY PE:</strong> Candle Close &le; Lower BB <em>AND</em> RSI &lt; 45</li>
+  </ul>
+</div>
+
+<!-- Detailed BB chart with annotations -->
+<div class="bb-chart" style="height:300px;">
+  <div class="bb-upper"></div>
+  <div class="bb-sma"></div>
+  <div class="bb-lower"></div>
+
+  <div class="bb-label upper">Upper BB</div>
+  <div class="bb-label sma">SMA 20</div>
+  <div class="bb-label lower">Lower BB</div>
+
+  <!-- Price candles approaching and breaking upper band -->
+  <div class="candle bull" style="left:8%; bottom:36%; height:45px;">
+    <div class="wick" style="top:0; height:45px;"></div>
+    <div class="body" style="top:10px; height:22px;"></div>
+  </div>
+  <div class="candle bull" style="left:14%; bottom:40%; height:48px;">
+    <div class="wick" style="top:0; height:48px;"></div>
+    <div class="body" style="top:8px; height:28px;"></div>
+  </div>
+  <div class="candle bull" style="left:20%; bottom:44%; height:52px;">
+    <div class="wick" style="top:0; height:52px;"></div>
+    <div class="body" style="top:6px; height:32px;"></div>
+  </div>
+  <!-- Breakout candle -->
+  <div class="candle bull" style="left:26%; bottom:50%; height:68px;">
+    <div class="wick" style="top:0; height:68px;"></div>
+    <div class="body" style="top:5px; height:45px;"></div>
+  </div>
+  <div class="signal-marker ce" style="left:22%; top:5%;">BUY CE: Close &ge; Upper BB, RSI &gt; 55</div>
+
+  <!-- Middle range candles -->
+  <div class="candle bear" style="left:34%; bottom:52%; height:50px;">
+    <div class="wick" style="top:0; height:50px;"></div>
+    <div class="body" style="top:10px; height:26px;"></div>
+  </div>
+  <div class="candle bear" style="left:40%; bottom:46%; height:48px;">
+    <div class="wick" style="top:0; height:48px;"></div>
+    <div class="body" style="top:12px; height:22px;"></div>
+  </div>
+  <div class="candle bear" style="left:46%; bottom:40%; height:45px;">
+    <div class="wick" style="top:0; height:45px;"></div>
+    <div class="body" style="top:10px; height:20px;"></div>
+  </div>
+  <div class="candle bear" style="left:52%; bottom:34%; height:50px;">
+    <div class="wick" style="top:0; height:50px;"></div>
+    <div class="body" style="top:8px; height:28px;"></div>
+  </div>
+  <div class="candle bear" style="left:58%; bottom:28%; height:55px;">
+    <div class="wick" style="top:0; height:55px;"></div>
+    <div class="body" style="top:6px; height:34px;"></div>
+  </div>
+  <div class="candle bear" style="left:64%; bottom:22%; height:60px;">
+    <div class="wick" style="top:0; height:60px;"></div>
+    <div class="body" style="top:5px; height:38px;"></div>
+  </div>
+  <!-- Breakdown candle -->
+  <div class="candle bear" style="left:70%; bottom:14%; height:70px;">
+    <div class="wick" style="top:0; height:70px;"></div>
+    <div class="body" style="top:8px; height:45px;"></div>
+  </div>
+  <div class="signal-marker pe" style="left:66%; bottom:3%;">BUY PE: Close &le; Lower BB, RSI &lt; 45</div>
+
+  <div class="candle bear" style="left:78%; bottom:18%; height:48px;">
+    <div class="wick" style="top:0; height:48px;"></div>
+    <div class="body" style="top:10px; height:24px;"></div>
+  </div>
+  <div class="candle bull" style="left:84%; bottom:22%; height:45px;">
+    <div class="wick" style="top:0; height:45px;"></div>
+    <div class="body" style="top:10px; height:22px;"></div>
+  </div>
+</div>
+
+<div class="card card-yellow">
+  <h4 style="color:var(--yellow);">BB Squeeze Filter</h4>
+  <p>When BB width is below <code>0.15%</code> of price (approx &lt;36pts on NIFTY 24000), entries are skipped. Narrow bands indicate consolidation where breakouts are unreliable. Controlled via <code>SCALP_BB_SQUEEZE_FILTER</code> and <code>SCALP_BB_MIN_WIDTH_PCT</code>.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. ENTRY LOGIC                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">04</span> Entry Logic</h2>
+
+<div class="cols">
+  <div class="card card-green">
+    <h4 class="green">BUY CE (Bullish)</h4>
+    <div class="step"><div class="step-num green">1</div><div>Candle Close &ge; Bollinger Upper Band</div></div>
+    <div class="step"><div class="step-num green">2</div><div>RSI &gt; 55 (momentum confirmation)</div></div>
+    <div class="step"><div class="step-num green">3</div><div>SL = tighter of (Previous candle LOW, PSAR value), capped at 50pts, floored at 8pts</div></div>
+    <div class="step"><div class="step-num green">4</div><div>Select ATM Call option</div></div>
+  </div>
+
+  <div class="card card-red">
+    <h4 class="red">BUY PE (Bearish)</h4>
+    <div class="step"><div class="step-num red">1</div><div>Candle Close &le; Bollinger Lower Band</div></div>
+    <div class="step"><div class="step-num red">2</div><div>RSI &lt; 45 (momentum confirmation)</div></div>
+    <div class="step"><div class="step-num red">3</div><div>SL = tighter of (Previous candle HIGH, PSAR value), capped at 50pts, floored at 8pts</div></div>
+    <div class="step"><div class="step-num red">4</div><div>Select ATM Put option</div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. PRE-ENTRY VALIDATIONS                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">05</span> Pre-Entry Validations</h2>
+
+<table>
+  <thead>
+    <tr><th>Check</th><th>Condition</th><th>Details</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Market Hours</strong></td><td>9:21 AM &ndash; 2:30 PM IST</td><td>No entries before warm-up or near EOD</td></tr>
+    <tr><td><strong>Candle Warmup</strong></td><td>&ge; 30 candles loaded</td><td>BB(20), RSI(14), PSAR all need warm-up data</td></tr>
+    <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -&#8377;2,000</td><td>Kill switch halts all entries for the day</td></tr>
+    <tr><td><strong>Max Daily Trades</strong></td><td>&lt; 30 trades</td><td>Prevents overtrading on choppy days</td></tr>
+    <tr><td><strong>SL Pause Cooldown</strong></td><td>2 candles after SL hit</td><td>Configurable via <code>SCALP_SL_PAUSE_CANDLES</code>; extra candles added per consecutive SL</td></tr>
+    <tr><td><strong>VIX Filter</strong></td><td>India VIX &le; 20</td><td>Strong-only signals between 16&ndash;20; all blocked above 20</td></tr>
+    <tr><td><strong>No Open Position</strong></td><td>No active scalp trade</td><td>Only one scalp position at a time</td></tr>
+    <tr><td><strong>BB Squeeze</strong></td><td>BB width &ge; 0.15% of price</td><td>Narrow bands = consolidation, skip entry</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. STOP LOSS CALCULATION                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">06</span> Stop Loss Calculation</h2>
+
+<div class="sl-flow">
+  <div class="sl-box" style="background:var(--accent); color:#fff;">Entry Signal</div>
+  <div class="sl-arrow">&rarr;</div>
+  <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">Prev Candle Low/High</div>
+  <div class="sl-arrow">+</div>
+  <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">PSAR Value</div>
+  <div class="sl-arrow">&rarr;</div>
+  <div class="sl-box" style="background:var(--yellow); color:#000;">Pick Tighter<br/>(closer to entry)</div>
+  <div class="sl-arrow">&rarr;</div>
+  <div class="sl-box" style="background:var(--red); color:#fff;">Cap at 50pts<br/>Floor at 8pts</div>
+</div>
+
+<div class="card card-green">
+  <h4 class="green">Example: CE Entry at 22,500</h4>
+  <table>
+    <thead><tr><th>Source</th><th>Value</th><th>Distance from Entry</th><th>Selected?</th></tr></thead>
+    <tbody>
+      <tr><td>Previous Candle Low</td><td>22,465</td><td>35 pts</td><td>No</td></tr>
+      <tr><td>PSAR Value</td><td>22,470</td><td>30 pts</td><td style="color:var(--green); font-weight:700;">Yes (tighter)</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:10px;"><strong>Result:</strong> SL = 22,470 (PSAR, 30pts from entry). Within 8&ndash;50pt bounds, so no capping needed.</p>
+</div>
+
+<div class="card card-red">
+  <h4 class="red">Example: PE Entry at 22,200</h4>
+  <table>
+    <thead><tr><th>Source</th><th>Value</th><th>Distance from Entry</th><th>Selected?</th></tr></thead>
+    <tbody>
+      <tr><td>Previous Candle High</td><td>22,260</td><td>60 pts</td><td>No (would be capped)</td></tr>
+      <tr><td>PSAR Value</td><td>22,240</td><td>40 pts</td><td style="color:var(--green); font-weight:700;">Yes (tighter)</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:10px;"><strong>Result:</strong> SL = 22,240 (PSAR, 40pts). Even if Prev High was chosen, it would be capped to 50pts = 22,250.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. EXIT LOGIC                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">07</span> Exit Logic &mdash; Priority Ordered</h2>
+
+<div class="exit-priority">
+  <div class="exit-item">
+    <div class="exit-badge p1">P1</div>
+    <div>
+      <strong style="color:var(--red);">PSAR Stop Loss</strong>
+      <p style="font-size:0.85rem;">Price crosses the SL level. SL tightens every candle via PSAR, but never widens. This is the primary risk management exit.</p>
+    </div>
+  </div>
+  <div class="exit-item">
+    <div class="exit-badge p2">P2</div>
+    <div>
+      <strong style="color:var(--orange);">Trailing Profit Lock</strong>
+      <p style="font-size:0.85rem;">When peak P&amp;L reaches &#8377;350, trailing activates. Exit when current P&amp;L drops below 65% of peak (base tier). Higher tiers lock in more: &#8377;500&rarr;55%, &#8377;1000&rarr;60%, &#8377;3000&rarr;70%, &#8377;5000&rarr;80%, &#8377;10000&rarr;90%.</p>
+    </div>
+  </div>
+  <div class="exit-item">
+    <div class="exit-badge p3">P3</div>
+    <div>
+      <strong style="color:var(--yellow);">SAR Flip (Reversal)</strong>
+      <p style="font-size:0.85rem;">PSAR crosses to the opposite side of price. For CE, SAR moves from below to above price. For PE, SAR moves from above to below. Indicates trend reversal.</p>
+    </div>
+  </div>
+  <div class="exit-item">
+    <div class="exit-badge p4">P4</div>
+    <div>
+      <strong style="color:var(--text2);">EOD Square-off</strong>
+      <p style="font-size:0.85rem;">All open positions squared off at 3:20 PM IST. No overnight holding for scalp trades.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. PSAR TRAILING SL VISUALIZATION                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">08</span> PSAR Trailing SL Visualization</h2>
+
+<div class="highlight">
+  <p><strong>Tightening Only:</strong> PSAR trailing SL can only move in the direction of the trade (up for CE, down for PE). It never widens. Each candle potentially tightens the SL, protecting more of the gains as the trend progresses.</p>
+</div>
+
+<div class="psar-chart" style="height:260px;">
+  <!-- Price line trending up -->
+  <div style="position:absolute; left:8%; top:75%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-12deg);"></div>
+  <div style="position:absolute; left:15%; top:66%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-10deg);"></div>
+  <div style="position:absolute; left:22%; top:58%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-8deg);"></div>
+  <div style="position:absolute; left:29%; top:50%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-10deg);"></div>
+  <div style="position:absolute; left:36%; top:42%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-6deg);"></div>
+  <div style="position:absolute; left:43%; top:38%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-3deg);"></div>
+  <div style="position:absolute; left:50%; top:35%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(-2deg);"></div>
+  <div style="position:absolute; left:57%; top:33%; width:8%; height:3px; background:var(--green); border-radius:2px; transform:rotate(0deg);"></div>
+  <div style="position:absolute; left:64%; top:34%; width:8%; height:3px; background:var(--yellow); border-radius:2px; transform:rotate(5deg);"></div>
+  <div style="position:absolute; left:71%; top:38%; width:8%; height:3px; background:var(--red); border-radius:2px; transform:rotate(10deg);"></div>
+  <div style="position:absolute; left:78%; top:46%; width:8%; height:3px; background:var(--red); border-radius:2px; transform:rotate(12deg);"></div>
+
+  <!-- SAR dots below (bullish, tightening) -->
+  <div class="psar-dot bull" style="left:10%; top:82%;"></div>
+  <div class="psar-dot bull" style="left:17%; top:76%;"></div>
+  <div class="psar-dot bull" style="left:24%; top:70%;"></div>
+  <div class="psar-dot bull" style="left:31%; top:63%;"></div>
+  <div class="psar-dot bull" style="left:38%; top:56%;"></div>
+  <div class="psar-dot bull" style="left:45%; top:50%;"></div>
+  <div class="psar-dot bull" style="left:52%; top:45%;"></div>
+  <div class="psar-dot bull" style="left:59%; top:41%;"></div>
+
+  <!-- Tightening arrows -->
+  <div style="position:absolute; left:24%; top:66%; font-size:0.7rem; color:var(--green);">&#8593;</div>
+  <div style="position:absolute; left:38%; top:52%; font-size:0.7rem; color:var(--green);">&#8593;</div>
+  <div style="position:absolute; left:52%; top:41%; font-size:0.7rem; color:var(--green);">&#8593;</div>
+
+  <!-- SAR flip to above -->
+  <div class="psar-dot bear" style="left:66%; top:26%;"></div>
+  <div class="psar-dot bear" style="left:73%; top:28%;"></div>
+  <div class="psar-dot bear" style="left:80%; top:32%;"></div>
+
+  <!-- Labels -->
+  <div style="position:absolute; left:8%; top:5%; font-size:0.7rem; color:var(--cyan); font-weight:700;">ENTRY</div>
+  <div style="position:absolute; left:8%; top:10%; width:1px; height:60%; border-left:2px dashed var(--cyan);"></div>
+
+  <div style="position:absolute; left:30%; top:5%; font-size:0.65rem; color:var(--green); font-weight:600;">SL tightens &uarr; each candle</div>
+
+  <div style="position:absolute; left:62%; top:5%; font-size:0.7rem; color:var(--red); font-weight:700;">SAR FLIP = EXIT</div>
+  <div style="position:absolute; left:66%; top:10%; width:1px; height:14%; border-left:2px dashed var(--red);"></div>
+
+  <div style="position:absolute; left:42%; bottom:6%; font-size:0.65rem; color:var(--text2); font-weight:600;">Never widens &mdash; only tightens toward price</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. TRAILING PROFIT LOCK MECHANISM                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">09</span> Trailing Profit Lock Mechanism</h2>
+
+<div class="card card-yellow">
+  <h4 style="color:var(--yellow);">Tiered % of Peak P&amp;L</h4>
+  <p>Unlike fixed targets, this system locks in a <em>percentage</em> of peak profit. The higher the peak, the higher the lock percentage. This lets winners run while protecting large gains.</p>
+</div>
+
+<div class="trail-chart">
+  <!-- Y-axis labels -->
+  <div style="position:absolute; left:2%; top:8%; font-size:0.6rem; color:var(--text2);">&#8377;800</div>
+  <div style="position:absolute; left:2%; top:25%; font-size:0.6rem; color:var(--text2);">&#8377;600</div>
+  <div style="position:absolute; left:2%; top:42%; font-size:0.6rem; color:var(--text2);">&#8377;400</div>
+  <div style="position:absolute; left:2%; top:60%; font-size:0.6rem; color:var(--text2);">&#8377;200</div>
+  <div style="position:absolute; left:2%; top:78%; font-size:0.6rem; color:var(--text2);">&#8377;0</div>
+
+  <!-- Tier threshold lines -->
+  <div class="trail-line" style="top:55%; border-color:rgba(251,191,36,0.3);"></div>
+  <div class="trail-label" style="top:55%; color:var(--yellow);">&#8377;350 (Trail Activates, Base 65%)</div>
+
+  <div class="trail-line" style="top:43%; border-color:rgba(251,191,36,0.3);"></div>
+  <div class="trail-label" style="top:43%; color:var(--yellow);">&#8377;500 (Lock 55%)</div>
+
+  <div class="trail-line" style="top:18%; border-color:rgba(251,191,36,0.3);"></div>
+  <div class="trail-label" style="top:18%; color:var(--yellow);">&#8377;1000 (Lock 60%)</div>
+
+  <!-- Profit curve going up (green) -->
+  <div style="position:absolute; left:10%; bottom:22%; width:6%; height:3px; background:var(--green); transform:rotate(-15deg);"></div>
+  <div style="position:absolute; left:15%; bottom:28%; width:6%; height:3px; background:var(--green); transform:rotate(-20deg);"></div>
+  <div style="position:absolute; left:20%; bottom:36%; width:6%; height:3px; background:var(--green); transform:rotate(-18deg);"></div>
+  <div style="position:absolute; left:25%; bottom:44%; width:6%; height:3px; background:var(--green); transform:rotate(-15deg);"></div>
+  <div style="position:absolute; left:30%; bottom:50%; width:6%; height:3px; background:var(--green); transform:rotate(-12deg);"></div>
+  <div style="position:absolute; left:35%; bottom:55%; width:6%; height:3px; background:var(--green); transform:rotate(-10deg);"></div>
+  <div style="position:absolute; left:40%; bottom:59%; width:6%; height:3px; background:var(--green); transform:rotate(-8deg);"></div>
+  <div style="position:absolute; left:45%; bottom:62%; width:6%; height:3px; background:var(--green); transform:rotate(-5deg);"></div>
+  <div style="position:absolute; left:50%; bottom:64%; width:6%; height:3px; background:var(--green); transform:rotate(-3deg);"></div>
+  <!-- Peak at ~680 -->
+  <div style="position:absolute; left:55%; bottom:66%; width:6%; height:3px; background:var(--green); transform:rotate(0deg);"></div>
+  <div style="position:absolute; left:55%; bottom:67%; font-size:0.6rem; color:var(--green); font-weight:700; transform:translateY(-12px);">Peak &#8377;680</div>
+
+  <!-- Profit dropping (yellow) -->
+  <div style="position:absolute; left:60%; bottom:64%; width:6%; height:3px; background:var(--yellow); transform:rotate(8deg);"></div>
+  <div style="position:absolute; left:65%; bottom:60%; width:6%; height:3px; background:var(--yellow); transform:rotate(10deg);"></div>
+
+  <!-- Lock level at 55% of 680 = 374, shown as horizontal -->
+  <div style="position:absolute; left:45%; bottom:52%; width:28%; height:0; border-top:2px solid var(--orange);"></div>
+  <div style="position:absolute; left:45%; bottom:53%; font-size:0.55rem; color:var(--orange); font-weight:600; transform:translateY(-10px);">Lock: 55% of &#8377;680 = &#8377;374</div>
+
+  <!-- Exit trigger -->
+  <div style="position:absolute; left:70%; bottom:56%; width:5%; height:3px; background:var(--red); transform:rotate(12deg);"></div>
+  <div style="position:absolute; left:73%; bottom:53%; font-size:0.7rem; color:var(--red); font-weight:700;">EXIT &#8377;370</div>
+  <div style="position:absolute; left:73%; bottom:50%; font-size:0.55rem; color:var(--text2);">P&amp;L &lt; lock level</div>
+</div>
+
+<table>
+  <thead><tr><th>Peak P&amp;L Tier</th><th>Lock %</th><th>Min Locked Profit</th><th>Example Exit Level</th></tr></thead>
+  <tbody>
+    <tr><td>&#8377;350 (Activation)</td><td>65% (base)</td><td>&#8377;228</td><td>P&amp;L drops to &#8377;227 &rarr; EXIT</td></tr>
+    <tr><td>&#8377;500</td><td>55%</td><td>&#8377;275</td><td>P&amp;L drops to &#8377;274 &rarr; EXIT</td></tr>
+    <tr><td>&#8377;1,000</td><td>60%</td><td>&#8377;600</td><td>P&amp;L drops to &#8377;599 &rarr; EXIT</td></tr>
+    <tr><td>&#8377;3,000</td><td>70%</td><td>&#8377;2,100</td><td>P&amp;L drops to &#8377;2,099 &rarr; EXIT</td></tr>
+    <tr><td>&#8377;5,000</td><td>80%</td><td>&#8377;4,000</td><td>P&amp;L drops to &#8377;3,999 &rarr; EXIT</td></tr>
+    <tr><td>&#8377;10,000</td><td>90%</td><td>&#8377;9,000</td><td>P&amp;L drops to &#8377;8,999 &rarr; EXIT</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. VIX MARKET REGIME FILTER                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">10</span> VIX Market Regime Filter</h2>
+
+<div class="vix-bar">
+  <div class="zone-green">VIX &le; 16<span>ALL signals allowed</span></div>
+  <div class="zone-yellow">16 &ndash; 20<span>STRONG only</span></div>
+  <div class="zone-red">VIX &gt; 20<span>ALL blocked</span></div>
+</div>
+
+<div class="cols">
+  <div class="card card-green">
+    <h4 class="green">VIX &le; 16 &mdash; Calm Market</h4>
+    <p>Low volatility, trending conditions. All BB breakout signals are allowed. Ideal for scalping &mdash; tight spreads, predictable moves.</p>
+  </div>
+  <div class="card card-yellow">
+    <h4 style="color:var(--yellow);">VIX 16&ndash;20 &mdash; Elevated</h4>
+    <p>Moderate volatility. Only "STRONG" signals pass (higher-conviction setups). Filters out marginal breakouts that might fail in choppy conditions.</p>
+  </div>
+  <div class="card card-red">
+    <h4 class="red">VIX &gt; 20 &mdash; High Vol</h4>
+    <p>Panic/fear zone. All scalp entries blocked. Wide swings cause whipsaws, inflated option premiums erode edge. Wait for VIX to cool.</p>
+  </div>
+</div>
+
+<div class="highlight">
+  <strong>Note:</strong> The VIX filter is independent for scalp mode (<code>SCALP_VIX_ENABLED</code>). It uses the shared <code>VIX_MAX_ENTRY</code> (default 20) and <code>VIX_STRONG_ONLY</code> (default 16) thresholds from the global VIX service.
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. RISK MANAGEMENT SUMMARY                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">11</span> Risk Management Summary</h2>
+
+<div class="metrics">
+  <div class="metric red">
+    <div class="val">&#8377;2,000</div>
+    <div class="lbl">Max Daily Loss</div>
+  </div>
+  <div class="metric yellow">
+    <div class="val">30</div>
+    <div class="lbl">Max Trades / Day</div>
+  </div>
+  <div class="metric purple">
+    <div class="val">2</div>
+    <div class="lbl">SL Pause Candles</div>
+  </div>
+  <div class="metric green">
+    <div class="val">50 pts</div>
+    <div class="lbl">Hard SL Cap</div>
+  </div>
+</div>
+
+<div class="card card-red">
+  <h4 class="red">Multi-Layer Safety Net</h4>
+  <table>
+    <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
+    <tbody>
+      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>PSAR trailing + 50pt hard cap + 8pt floor</td></tr>
+      <tr><td>2. Trailing Profit</td><td>Protect unrealized gains</td><td>Tiered % lock starting at &#8377;350 peak</td></tr>
+      <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
+      <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>2 candle pause after SL, +2 per consecutive SL</td></tr>
+      <tr><td>5. Daily Loss Limit</td><td>Session-level risk</td><td>All entries halted at -&#8377;2,000 day P&amp;L</td></tr>
+      <tr><td>6. Max Trade Count</td><td>Overtrading prevention</td><td>30 trade cap per session</td></tr>
+      <tr><td>7. VIX Filter</td><td>Regime-level risk</td><td>Block entries in high-volatility markets</td></tr>
+      <tr><td>8. EOD Square-off</td><td>Overnight risk</td><td>All positions closed at 3:20 PM IST</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 12. COMPLETE TRADE FLOW                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">12</span> Complete Trade Flow</h2>
+
+<div class="flowchart">
+  <div class="flow-box start">Market Open 9:15 AM</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box process">Load 30+ candles (BB/RSI/PSAR warm-up)</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box process">Every 3-min candle close</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-box decision">In Position?</div>
+
+  <div class="flow-row" style="margin-top:8px;">
+    <!-- YES branch -->
+    <div class="flow-col">
+      <div class="flow-arrow-label" style="color:var(--green); font-weight:700;">YES</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box process" style="font-size:0.75rem;">
+        Check PSAR SL hit?<br/>
+        Check Trailing Profit Lock?<br/>
+        Check SAR Flip reversal?<br/>
+        Tighten SL (PSAR, never widen)<br/>
+        EOD check (3:20 PM)?
+      </div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box exit">EXIT (if any trigger)</div>
+    </div>
+
+    <!-- NO branch -->
+    <div class="flow-col">
+      <div class="flow-arrow-label" style="color:var(--red); font-weight:700;">NO</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box process" style="font-size:0.75rem;">
+        Validate: Hours, Warmup,<br/>
+        Daily Loss, Trade Count,<br/>
+        SL Pause, BB Squeeze
+      </div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box process">VIX Filter Check</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box process">BB + RSI Signal?</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box process">Calculate SL (Prev Candle / PSAR)</div>
+      <div class="flow-arrow">&#8595;</div>
+      <div class="flow-box entry">ENTER (ATM CE or PE)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 13. OPERATING MODES                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">13</span> Operating Modes</h2>
+
+<div class="cols" style="flex-wrap:wrap;">
+  <div class="card card-green">
+    <h4 class="green">Live Trading</h4>
+    <p><code>scalp.js</code></p>
+    <ul>
+      <li>Real orders via Fyers API</li>
+      <li>WebSocket price ticks</li>
+      <li>1-sec option LTP polling</li>
+      <li>Full risk management active</li>
+    </ul>
+  </div>
+  <div class="card card-blue">
+    <h4 class="blue">Paper Trading</h4>
+    <p><code>scalpPaper.js</code></p>
+    <ul>
+      <li>Simulated order fills</li>
+      <li>Same strategy logic as live</li>
+      <li>Real-time candle data</li>
+      <li>Configurable capital</li>
+    </ul>
+  </div>
+</div>
+<div class="cols" style="flex-wrap:wrap;">
+  <div class="card card-yellow">
+    <h4 style="color:var(--yellow);">Backtesting</h4>
+    <p><code>scalpBacktest.js</code></p>
+    <ul>
+      <li>Historical candle data replay</li>
+      <li>Delta (0.55) / Theta (10pts/day) simulation</li>
+      <li>Configurable slippage</li>
+      <li>Multi-day batch runs</li>
+    </ul>
+  </div>
+  <div class="card card-purple">
+    <h4 class="purple">Settings UI</h4>
+    <p><code>settings.js</code> (web-based)</p>
+    <ul>
+      <li>All parameters adjustable live</li>
+      <li>Changes apply immediately</li>
+      <li>Grouped by category</li>
+      <li>Effect indicators (instant/session)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 14. KEY DESIGN PRINCIPLES                                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="page-break"></div>
+<h2><span class="sec-num">14</span> Key Design Principles</h2>
+
+<div class="card card-green">
+  <h4 class="green">No Fixed Targets</h4>
+  <p>There are no hard profit targets. All exits are dynamic &mdash; PSAR trail, profit lock tiers, or SAR flip. This lets winning trades run as far as the trend carries, rather than cutting winners short at an arbitrary level.</p>
+</div>
+
+<div class="card card-yellow">
+  <h4 style="color:var(--yellow);">Tightening-Only SL</h4>
+  <p>The stop loss can only move in one direction: toward the current price (tightening). For CE trades, SL only moves up. For PE trades, SL only moves down. This ensures that as a trade progresses favorably, the protected floor keeps rising &mdash; never giving back ground.</p>
+</div>
+
+<div class="card card-red">
+  <h4 class="red">Multi-Layer Safety</h4>
+  <p>Eight independent safety layers protect capital at trade, session, and regime levels. No single failure point can cause catastrophic loss. Each layer operates independently, and any one of them can trigger an exit or prevent an entry.</p>
+</div>
+
+<div class="card card-blue">
+  <h4 class="blue">Indicator Caching</h4>
+  <p>BB, RSI, and PSAR values are cached and only recalculated when candle data changes. This avoids redundant computation on every WebSocket tick during intra-candle updates, keeping CPU usage minimal during high-frequency polling.</p>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 15. FULL CONFIGURATION REFERENCE                                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">15</span> Full Configuration Reference</h2>
+
+<h3>Core Settings</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide scalp menus in the UI</td></tr>
+    <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Enable live scalp orders via Fyers API</td></tr>
+    <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code></td><td>Candle timeframe in minutes</td></tr>
+    <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest entry time (HH:MM IST)</td></tr>
+    <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>No new entries after this time (HH:MM IST)</td></tr>
+    <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on NIFTY weekly expiry day</td></tr>
+    <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for paper trading (&#8377;)</td></tr>
+  </tbody>
+</table>
+
+<h3>Indicator Parameters</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
+    <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
+    <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
+    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>55</code></td><td>RSI above this for CE entry</td></tr>
+    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>45</code></td><td>RSI below this for PE entry</td></tr>
+    <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
+    <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
+  </tbody>
+</table>
+
+<h3>BB + Squeeze Filter</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_BB_SQUEEZE_FILTER</code></td><td><code>true</code></td><td>Skip entries when BB bands are narrow</td></tr>
+    <tr><td><code>SCALP_BB_MIN_WIDTH_PCT</code></td><td><code>0.15</code></td><td>Min BB width as % of price</td></tr>
+    <tr><td><code>SCALP_CPR_NARROW_PCT</code></td><td><code>33</code></td><td>CPR range % threshold (backtest compat)</td></tr>
+    <tr><td><code>SCALP_ACTIVITY_FILTER</code></td><td><code>false</code></td><td>Skip entries on low candle range</td></tr>
+    <tr><td><code>SCALP_ACTIVITY_FILTER_RATIO</code></td><td><code>0.5</code></td><td>Min candle range vs 20-bar average</td></tr>
+  </tbody>
+</table>
+
+<h3>Risk Controls</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>25</code></td><td>Hard cap on SL distance (points)</td></tr>
+    <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Floor on SL distance (prevents too-tight SL)</td></tr>
+    <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
+    <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp entries per day</td></tr>
+    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
+    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
+    <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra pause candles per consecutive SL</td></tr>
+  </tbody>
+</table>
+
+<h3>VIX Filter</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry filtering for scalp</td></tr>
+    <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block ALL entries above this VIX level</td></tr>
+    <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Only STRONG signals allowed above this VIX</td></tr>
+  </tbody>
+</table>
+
+<h3>Trail Settings</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_TRAIL_START</code></td><td><code>350</code></td><td>Activate trailing after this profit (&#8377;)</td></tr>
+    <tr><td><code>SCALP_TRAIL_PCT</code></td><td><code>65</code></td><td>Base exit: P&amp;L drops below X% of peak</td></tr>
+    <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>500:55,1000:60,<br/>3000:70,5000:80,<br/>10000:90</code></td><td>Tiered lock: peak:pct pairs &mdash; higher profit = tighter lock %</td></tr>
+  </tbody>
+</table>
+
+<h3>Telegram Notifications</h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Send Telegram alert on scalp entry</td></tr>
+    <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Send Telegram alert on scalp exit</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- FOOTER                                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
+  <p style="font-size:0.75rem; color:var(--text2);">
+    SCALP_BB_RSI_V4 &mdash; Version 4.0 &bull; Generated April 2026<br/>
+    NIFTY Options Scalping Strategy Guide &bull; 3-Minute Bollinger Band + RSI + PSAR
+  </p>
+</div>
+
+</body>
+</html>
