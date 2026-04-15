@@ -841,6 +841,7 @@ async function squareOff(exitPrice, reason) {
     pnl:            netPnl,
     pnlMode,
     exitReason:     reason,
+    entryReason:    tradeState.position ? (tradeState.position.reason || "") : "",
     stopLoss:       stopLoss || null,
     optionExpiry:   optionExpiry   || null,
     optionStrike:   optionStrike   || null,

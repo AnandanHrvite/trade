@@ -473,6 +473,7 @@ async function squareOff(exitPrice, reason) {
     stopLoss: state.position ? state.position.initialStopLoss : null,
     entryTime, exitTime: istNow(),
     pnl: netPnl, pnlMode, exitReason: reason,
+    entryReason: state.position ? (state.position.reason || "") : "",
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));

@@ -181,6 +181,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         stopLoss:       sl,
         initialStopLoss: sl,
         slSource:       pendingSignal.slSource,
+        entryReason:    pendingSignal.reason || "",
         target:         null,
         candlesHeld:    0,
         peakPnl:        0,
@@ -299,6 +300,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
           spotPnlPts:   parseFloat(spotPnlPts.toFixed(2)),
           candlesHeld:  position.candlesHeld,
           exitReason,
+          entryReason:  position.entryReason || "",
           pnlMode:      OPTION_SIM ? "option sim" : "raw pts",
         });
 
@@ -357,6 +359,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       minSlPts: parseFloat(process.env.PA_MIN_SL_PTS || "8"),
       slSource: result.slSource || "Swing",
       signalTs: candle.time,
+      reason:   result.reason || `${side} signal`,
     };
   }
 
