@@ -3285,6 +3285,7 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
       </div>
       <div class="ana-row3">
         <div class="ana-mini"><h3>🔥 Win/Loss Streaks</h3><div id="anaStreaks"></div></div>
+        <div class="ana-mini"><h3>📥 Entry Reason Breakdown</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>Wins</th><th>Losses</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaEntryBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>🚪 Exit Reason Breakdown</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaExitBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>📅 Day of Week</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Day</th><th>Trades</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaDowBody"></tbody></table></div></div>
       </div>
@@ -3557,6 +3558,32 @@ function renderAnalytics(){
     +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+lossDays+'</span><span class="ana-stat-label">Losing days ('+(totalDays>0?((lossDays/totalDays)*100).toFixed(0):'0')+'%)</span></div>'
     +'<div class="ana-stat"><span class="ana-stat-val" style="color:#c8d8f0;">'+fmtAna(totalDays>0?Object.values(dayPnlMap).reduce(function(a,b){return a+b;},0)/totalDays:0)+'</span><span class="ana-stat-label">Avg daily P&L</span></div>'
     +'</div>';
+
+  // ── Entry Reason Breakdown ──
+  var entryReasonMap={};
+  trades.forEach(function(t){
+    var r = t.entryReason || 'Unknown';
+    if(r.length>50) r=r.substring(0,50)+'…';
+    if(!entryReasonMap[r]) entryReasonMap[r]={cnt:0,wins:0,losses:0,pnl:0};
+    entryReasonMap[r].cnt++;
+    if(t.pnl>0) entryReasonMap[r].wins++;
+    else if(t.pnl<0) entryReasonMap[r].losses++;
+    entryReasonMap[r].pnl+=(t.pnl||0);
+  });
+  var entryReasons=Object.keys(entryReasonMap).sort(function(a,b){return entryReasonMap[b].cnt-entryReasonMap[a].cnt;});
+  var entryHtml='';
+  entryReasons.forEach(function(r){
+    var d=entryReasonMap[r];
+    var pc=d.pnl>=0?'#10b981':'#ef4444';
+    var wr=d.cnt>0?((d.wins/d.cnt)*100).toFixed(0):'0';
+    var avgPnl=d.cnt>0?Math.round(d.pnl/d.cnt):0;
+    entryHtml+='<tr><td style="color:#c8d8f0;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+r+'">'+r+'</td><td>'+d.cnt+'</td>'
+      +'<td style="color:#10b981;">'+d.wins+'</td><td style="color:#ef4444;">'+d.losses+'</td>'
+      +'<td>'+wr+'%</td>'
+      +'<td style="color:'+pc+';font-weight:700;">'+fmtAna(d.pnl)+'</td>'
+      +'<td style="color:'+pc+';">'+fmtAna(avgPnl)+'</td></tr>';
+  });
+  document.getElementById('anaEntryBody').innerHTML=entryHtml;
 
   // ── Exit Reason Breakdown ──
   var reasonMap={};

@@ -1922,6 +1922,7 @@ function showSCModal(t){
     +cell('Option LTP @ Entry',fmt(t.eOpt),'#60a5fa','Option premium paid')
     +cell('Initial Stop Loss',fmt(t.eSl),'#f59e0b','NIFTY spot SL level')
     +cell('SL Distance',(t.eSl&&t.eSpot)?Math.abs(t.eSpot-t.eSl).toFixed(2)+' pts':'\u2014','#f59e0b','pts from entry to SL')
+    +cell('Entry Signal',t.entryReason||'\u2014','#a0b8d0','Strategy signal that triggered entry')
     +cell('PnL Mode',t.pnlMode||'spot-diff','#8b8bf0')
     +'</div></div>';
 

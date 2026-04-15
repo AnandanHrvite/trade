@@ -832,6 +832,10 @@ ${buildSidebar('scalpBacktest', liveActive)}
         <div id="anaStreaks"></div>
       </div>
       <div class="ana-mini">
+        <h3>📥 Entry Reason Breakdown</h3>
+        <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>Wins</th><th>Losses</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaEntryBody"></tbody></table></div>
+      </div>
+      <div class="ana-mini">
         <h3>🚪 Exit Reason Breakdown</h3>
         <div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaExitBody"></tbody></table></div>
       </div>
@@ -1409,6 +1413,32 @@ function renderAnalytics(){
     +'<div class="ana-stat"><span class="ana-stat-val" style="color:#c8d8f0;">\\u20b9'+Math.round(Object.values(dayPnlMap).reduce(function(a,b){return a+b;},0)/totalDays).toLocaleString('en-IN')+'</span><span class="ana-stat-label">Avg daily P&L</span></div>'
     +'</div>';
 
+  // ── Entry Reason Breakdown ──
+  var entryReasonMap={};
+  trades.forEach(function(t){
+    var r = t.entryReason || 'Unknown';
+    if(r.length>50) r=r.substring(0,50)+'…';
+    if(!entryReasonMap[r]) entryReasonMap[r]={cnt:0,wins:0,losses:0,pnl:0};
+    entryReasonMap[r].cnt++;
+    if(t.pnl>0) entryReasonMap[r].wins++;
+    else if(t.pnl<0) entryReasonMap[r].losses++;
+    entryReasonMap[r].pnl+=(t.pnl||0);
+  });
+  var entryReasons=Object.keys(entryReasonMap).sort(function(a,b){return entryReasonMap[b].cnt-entryReasonMap[a].cnt;});
+  var entryHtml2='';
+  entryReasons.forEach(function(r){
+    var d=entryReasonMap[r];
+    var pc=d.pnl>=0?'#10b981':'#ef4444';
+    var wr=d.cnt>0?((d.wins/d.cnt)*100).toFixed(0):'0';
+    var avgPnl=d.cnt>0?Math.round(d.pnl/d.cnt):0;
+    entryHtml2+='<tr><td style="color:#c8d8f0;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+r+'">'+r+'</td><td>'+d.cnt+'</td>'
+      +'<td style="color:#10b981;">'+d.wins+'</td><td style="color:#ef4444;">'+d.losses+'</td>'
+      +'<td>'+wr+'%</td>'
+      +'<td style="color:'+pc+';font-weight:700;">'+fmtAna(d.pnl)+'</td>'
+      +'<td style="color:'+pc+';">'+fmtAna(avgPnl)+'</td></tr>';
+  });
+  document.getElementById('anaEntryBody').innerHTML=entryHtml2;
+
   // ── Exit Reason Breakdown ──
   var reasonMap={};
   trades.forEach(function(t){
@@ -1832,6 +1862,7 @@ function showBTModal(t){
     +cell('NIFTY Spot @ Entry', fmt(t.ePrice), '#fff', 'Spot price at signal')
     +cell('Stop Loss',      t.sl!=null?fmt(t.sl):'\u2014', '#f59e0b', 'NIFTY spot SL level')
     +cell('Risk (pts)',     t.risk_pts!=null?'\u00b1'+t.risk_pts.toFixed(2)+' pts':'\u2014', '#94a3b8', 'Entry to SL distance')
+    +cell('Entry Signal',  t.entryReason||'\u2014', '#a0b8d0', 'Strategy signal that triggered entry')
     +'</div></div>';
 
   var exitHtml='<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
