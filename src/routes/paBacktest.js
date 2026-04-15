@@ -1,7 +1,7 @@
 /**
  * PRICE ACTION BACKTEST — /pa-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the price action strategy (Engulfing + Pin Bar + Inside Bar + BOS) on 5-min candles.
+ * Backtests the price action strategy (Structure + Zones + Sweep + Break & Retest) on 5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -189,7 +189,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         initialStopLoss: sl,
         slSource:       pendingSignal.slSource,
         entryReason:    pendingSignal.reason || "",
-        target:         null,
+        target:         pendingSignal.target || null,
         candlesHeld:    0,
         peakPnl:        0,
       };
@@ -248,7 +248,18 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+      // 2. TARGET HIT — exit at opposite S/R level
+      if (!exitReason && position.target) {
+        if (position.side === "CE" && candle.high >= position.target) {
+          exitPrice  = position.target;
+          exitReason = `Target hit ₹${position.target.toFixed(0)}`;
+        } else if (position.side === "PE" && candle.low <= position.target) {
+          exitPrice  = position.target;
+          exitReason = `Target hit ₹${position.target.toFixed(0)}`;
+        }
+      }
+
+      // 3. TRAILING PROFIT — tiered % of peak: keep more as profit grows
       //    Skip if trade hasn't been held long enough (let it develop)
       if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START && position.candlesHeld >= PA_MIN_HOLD_CANDLES) {
         let _pct = PA_TRAIL_PCT;
@@ -374,6 +385,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       slSource: result.slSource || "Swing",
       signalTs: candle.time,
       reason:   result.reason || `${side} signal`,
+      target:   result.target || null,
     };
   }
 

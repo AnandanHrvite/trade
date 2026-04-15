@@ -606,7 +606,18 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    // 2. TARGET HIT — exit at opposite S/R level
+    if (pos.target) {
+      if (pos.side === "CE" && price >= pos.target) {
+        squareOff(pos.target, `Target hit ₹${pos.target.toFixed(0)}`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      } else if (pos.side === "PE" && price <= pos.target) {
+        squareOff(pos.target, `Target hit ₹${pos.target.toFixed(0)}`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      }
+    }
+
+    // 3. TRAILING PROFIT — tiered % of peak: keep more as profit grows
     //    Skip if trade hasn't been held long enough (let it develop)
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START && (pos.candlesHeld || 0) >= _PA_MIN_HOLD_CANDLES) {
       let _pct = _PA_TRAIL_PCT;

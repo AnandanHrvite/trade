@@ -144,13 +144,17 @@ const SETTINGS_SCHEMA = [
       // ── ADX chop filter ──
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "false" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
-      // ── Pattern parameters ──
-      { key: "PA_CHART_PATTERNS_ENABLED", label: "Chart Patterns", type: "toggle", effect: EFFECT.SESSION, desc: "Enable Double Top/Bottom and Triangle pattern signals", default: "false" },
-      { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size for engulfing/BOS patterns", default: "5" },
-      { key: "PA_PIN_WICK_RATIO", label: "Pin Bar Wick Ratio", type: "number", min: 1.5, max: 4, step: 0.5, effect: EFFECT.SESSION, desc: "Min wick-to-body ratio for hammer/shooting star", default: "2" },
-      // ── Support/Resistance ──
-      { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows", default: "30" },
-      { key: "PA_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Price must be within this many pts of S/R level", default: "15" },
+      // ── EMA trend filter ──
+      { key: "PA_EMA_TREND_ENABLED", label: "EMA Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only CE above EMA, PE below EMA (trade with trend)", default: "false" },
+      { key: "PA_EMA_PERIOD", label: "EMA Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.SESSION, desc: "EMA period for trend direction (e.g. 20)", default: "20" },
+      // ── R:R filter ──
+      { key: "PA_MIN_RR", label: "Min R:R Ratio", type: "number", min: 0, max: 5, step: 0.5, effect: EFFECT.SESSION, desc: "Skip entry if reward/risk < this (0 = disabled, e.g. 1.5 = need 1.5x reward vs risk)", default: "0" },
+      // ── Structure & Zone parameters ──
+      { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows for structure", default: "30" },
+      { key: "PA_FRACTAL_N", label: "Fractal N", type: "number", min: 1, max: 4, step: 1, effect: EFFECT.SESSION, desc: "Candles each side for swing detection (2 = standard, 3 = stricter)", default: "2" },
+      { key: "PA_ZONE_MIN_IMPULSE", label: "Zone Min Impulse (pts)", type: "number", min: 5, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Min pts move away from zone to qualify as supply/demand", default: "15" },
+      { key: "PA_ZONE_MAX_TESTS", label: "Zone Max Tests", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Max times a zone can be retested before considered dead", default: "2" },
+      { key: "PA_SWEEP_MAX_PTS", label: "Sweep Max (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Max pts past swing level to qualify as liquidity sweep", default: "20" },
       // ── Trail profit ──
       { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
       { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
