@@ -155,6 +155,8 @@ const SETTINGS_SCHEMA = [
       { key: "PA_ZONE_MIN_IMPULSE", label: "Zone Min Impulse (pts)", type: "number", min: 5, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Min pts move away from zone to qualify as supply/demand", default: "15" },
       { key: "PA_ZONE_MAX_TESTS", label: "Zone Max Tests", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Max times a zone can be retested before considered dead", default: "2" },
       { key: "PA_SWEEP_MAX_PTS", label: "Sweep Max (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Max pts past swing level to qualify as liquidity sweep", default: "20" },
+      { key: "PA_SWEEP_MIN_RECOVERY", label: "Sweep Min Recovery (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Close must be this many pts past swing after sweep (proves real reversal)", default: "5" },
+      { key: "PA_ZONE_BOUNCE_MIN", label: "Zone Bounce Min (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Close must be this many pts above/below zone edge (proves strong bounce)", default: "5" },
       // ── Trail profit ──
       { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
       { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },

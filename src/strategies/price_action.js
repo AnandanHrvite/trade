@@ -189,6 +189,8 @@ function getSignal(candles, opts) {
   var ZONE_MIN_IMPULSE = parseFloat(cfg("PA_ZONE_MIN_IMPULSE", "15"));
   var ZONE_MAX_TESTS = parseInt(cfg("PA_ZONE_MAX_TESTS", "2"), 10);
   var SWEEP_MAX_PTS  = parseFloat(cfg("PA_SWEEP_MAX_PTS", "20"));
+  var SWEEP_MIN_RECOVERY = parseFloat(cfg("PA_SWEEP_MIN_RECOVERY", "5")); // close must be X pts past swing after sweep
+  var ZONE_BOUNCE_MIN = parseFloat(cfg("PA_ZONE_BOUNCE_MIN", "5"));       // close must be X pts above/below zone edge
   var MAX_SL_PTS     = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
   var MIN_SL_PTS     = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
   var MIN_RR         = parseFloat(cfg("PA_MIN_RR", "0"));
@@ -332,7 +334,12 @@ function getSignal(candles, opts) {
   // CE: Price sweeps below swing low, closes back above (bears trapped)
   for (var i = swings.swingLows.length - 1; i >= Math.max(0, swings.swingLows.length - 4); i--) {
     var swLow = swings.swingLows[i].price;
-    if (sc.low < swLow && sc.close > swLow && rsi > 25) {
+    var _recovery = sc.close - swLow; // how far above swing did it close?
+    // Wick ratio: lower wick should dominate (rejection proof)
+    var _range = sc.high - sc.low;
+    var _lowerWick = Math.min(sc.open, sc.close) - sc.low;
+    var _wickRatio = _range > 0 ? _lowerWick / _range : 0;
+    if (sc.low < swLow && sc.close > swLow && _recovery >= SWEEP_MIN_RECOVERY && _wickRatio >= 0.5 && rsi > 25) {
       var sweepPts = swLow - sc.low;
       if (sweepPts > 0 && sweepPts <= SWEEP_MAX_PTS) {
         var rawSL = sc.low;
@@ -360,7 +367,11 @@ function getSignal(candles, opts) {
   // PE: Price sweeps above swing high, closes back below (bulls trapped)
   for (var i = swings.swingHighs.length - 1; i >= Math.max(0, swings.swingHighs.length - 4); i--) {
     var swHigh = swings.swingHighs[i].price;
-    if (sc.high > swHigh && sc.close < swHigh && rsi < 75) {
+    var _recovery = swHigh - sc.close; // how far below swing did it close?
+    var _range = sc.high - sc.low;
+    var _upperWick = sc.high - Math.max(sc.open, sc.close);
+    var _wickRatio = _range > 0 ? _upperWick / _range : 0;
+    if (sc.high > swHigh && sc.close < swHigh && _recovery >= SWEEP_MIN_RECOVERY && _wickRatio >= 0.5 && rsi < 75) {
       var sweepPts = sc.high - swHigh;
       if (sweepPts > 0 && sweepPts <= SWEEP_MAX_PTS) {
         var rawSL = sc.high;
@@ -395,8 +406,8 @@ function getSignal(candles, opts) {
   if (structure.trend === "BULLISH" && emaTrendUp && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     for (var i = freshDemand.length - 1; i >= 0; i--) {
       var zone = freshDemand[i];
-      // Price low touched/entered demand zone AND closed above zone top = bounce
-      if (sc.low <= zone.top && sc.close > zone.top) {
+      // Price low touched/entered demand zone AND closed well above zone top = strong bounce
+      if (sc.low <= zone.top && sc.close > zone.top + ZONE_BOUNCE_MIN) {
         var rawSL = zone.bottom;
         var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
         var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -424,8 +435,8 @@ function getSignal(candles, opts) {
   if (structure.trend === "BEARISH" && emaTrendDown && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     for (var i = freshSupply.length - 1; i >= 0; i--) {
       var zone = freshSupply[i];
-      // Price high touched/entered supply zone AND closed below zone bottom = rejection
-      if (sc.high >= zone.bottom && sc.close < zone.bottom) {
+      // Price high touched/entered supply zone AND closed well below zone bottom = strong rejection
+      if (sc.high >= zone.bottom && sc.close < zone.bottom - ZONE_BOUNCE_MIN) {
         var rawSL = zone.top;
         var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
         var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -471,7 +482,7 @@ function getSignal(candles, opts) {
     if (age < 2 || age > BR_MAX_AGE) continue;
 
     // Current candle retests the broken zone from above
-    if (sc.low <= zone.top + 5 && sc.low >= zone.bottom - 5 && sc.close > zone.top && rsi > RSI_CE_MIN && emaTrendUp) {
+    if (sc.low <= zone.top + 5 && sc.low >= zone.bottom - 5 && sc.close > zone.top + ZONE_BOUNCE_MIN && rsi > RSI_CE_MIN && emaTrendUp) {
       var rawSL = zone.bottom;
       var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
       var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -506,7 +517,7 @@ function getSignal(candles, opts) {
     var age = candles.length - 1 - breakIdx;
     if (age < 2 || age > BR_MAX_AGE) continue;
 
-    if (sc.high >= zone.bottom - 5 && sc.high <= zone.top + 5 && sc.close < zone.bottom && rsi < RSI_PE_MAX && emaTrendDown) {
+    if (sc.high >= zone.bottom - 5 && sc.high <= zone.top + 5 && sc.close < zone.bottom - ZONE_BOUNCE_MIN && rsi < RSI_PE_MAX && emaTrendDown) {
       var rawSL = zone.top;
       var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
       var sl = parseFloat((sc.close + slPts).toFixed(2));
