@@ -286,10 +286,10 @@ function getSignal(candles, opts) {
 
   var RSI_PERIOD    = parseInt(cfg("PA_RSI_PERIOD", "14"), 10);
   var RSI_CE_MIN    = parseFloat(cfg("PA_RSI_CE_MIN", "45"));
-  var RSI_CE_MAX    = parseFloat(cfg("PA_RSI_CE_MAX", "70"));
+  var RSI_CE_MAX    = parseFloat(cfg("PA_RSI_CE_MAX", "85"));
   var RSI_PE_MAX    = parseFloat(cfg("PA_RSI_PE_MAX", "55"));
-  var RSI_PE_MIN    = parseFloat(cfg("PA_RSI_PE_MIN", "30"));
-  var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "true") === "true";
+  var RSI_PE_MIN    = parseFloat(cfg("PA_RSI_PE_MIN", "15"));
+  var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "false") === "true";
   var ADX_MIN       = parseFloat(cfg("PA_ADX_MIN", "20"));
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
   var PIN_WICK_RATIO = parseFloat(cfg("PA_PIN_WICK_RATIO", "2"));

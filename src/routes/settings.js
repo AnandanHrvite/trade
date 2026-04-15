@@ -136,11 +136,11 @@ const SETTINGS_SCHEMA = [
       // ── RSI (confluence filter) ──
       { key: "PA_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
       { key: "PA_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (confluence)", default: "45" },
-      { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 85, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought)", default: "70" },
+      { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought)", default: "85" },
       { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
-      { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold)", default: "30" },
+      { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold)", default: "15" },
       // ── ADX chop filter ──
-      { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
+      { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "false" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
       // ── Pattern parameters ──
       { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size for engulfing/BOS patterns", default: "5" },
@@ -149,9 +149,9 @@ const SETTINGS_SCHEMA = [
       { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows", default: "30" },
       { key: "PA_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Price must be within this many pts of S/R level", default: "15" },
       // ── Trail profit ──
-      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "800" },
-      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "75" },
-      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 1500:65,3000:70,5000:80,10000:90)", default: "1500:65,3000:70,5000:80,10000:90" },
+      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
+      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
+      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
       // ── Risk management ──
       { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on signal candle SL distance", default: "25" },
       { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
