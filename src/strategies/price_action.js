@@ -298,6 +298,7 @@ function getSignal(candles, opts) {
   var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
+  var CHART_PATTERNS_ENABLED = cfg("PA_CHART_PATTERNS_ENABLED", "false") === "true"; // Double Top/Bottom, Triangles
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -384,7 +385,7 @@ function getSignal(candles, opts) {
   // If we had a pending inside bar, check if this candle breaks out
   if (_insideBarPending) {
     var mother = _insideBarPending;
-    if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+    if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN) {
       // Bullish breakout
       var rawSL = mother.motherCandle.low;
       var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
@@ -399,7 +400,7 @@ function getSignal(candles, opts) {
         reason: "CE: Inside Bar Breakout above " + mother.triggerHigh.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
       });
     }
-    if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+    if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX) {
       // Bearish breakout
       var rawSL = mother.motherCandle.high;
       var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
@@ -434,7 +435,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
-  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -449,7 +450,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
-  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -464,7 +465,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
-  if (isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -479,7 +480,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
-  if (isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -495,7 +496,7 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 5: BREAK OF STRUCTURE ──────────────────────────────────────────
   var bos = checkBOS(sc, swings.swingHighs, swings.swingLows);
-  if (bos.bullish && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  if (bos.bullish && rsi > RSI_CE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.min(sc.low, prev.low);
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -508,7 +509,7 @@ function getSignal(candles, opts) {
       reason: "CE: BOS above swing high " + bos.level.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
-  if (bos.bearish && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  if (bos.bearish && rsi < RSI_PE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.max(sc.high, prev.high);
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -523,8 +524,13 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 6: DOUBLE TOP (Bearish reversal) ────────────────────────────────
-  var dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-  if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  var dblTop = { detected: false };
+  var dblBot = { detected: false };
+  var ascTri = { detected: false };
+  var descTri = { detected: false };
+  if (CHART_PATTERNS_ENABLED) {
+  dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
+  if (dblTop.detected && rsi < RSI_PE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblTop.topLevel;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -539,8 +545,8 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 7: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
-  var dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-  if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
+  if (dblBot.detected && rsi > RSI_CE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblBot.bottomLevel;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -555,8 +561,8 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 8: ASCENDING TRIANGLE (Bullish breakout) ──────────────────────
-  var ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+  if (ascTri.detected && rsi > RSI_CE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = ascTri.risingLow;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -571,8 +577,8 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 9: DESCENDING TRIANGLE (Bearish breakout) ─────────────────────
-  var descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+  if (descTri.detected && rsi < RSI_PE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = descTri.fallingHigh;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -585,21 +591,14 @@ function getSignal(candles, opts) {
       reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
+  } // end CHART_PATTERNS_ENABLED
 
   // ── No signal — build reason ───────────────────────────────────────────────
   var parts = [];
   if (isBullishEngulfing(prev, sc, MIN_BODY) && !supportCheck.near) parts.push("Bull Engulf but no support");
-  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi >= RSI_CE_MAX) parts.push("Bull Engulf but RSI " + rsi.toFixed(0) + " >= " + RSI_CE_MAX + " (overbought)");
   if (isBearishEngulfing(prev, sc, MIN_BODY) && !resistanceCheck.near) parts.push("Bear Engulf but no resistance");
-  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi <= RSI_PE_MIN) parts.push("Bear Engulf but RSI " + rsi.toFixed(0) + " <= " + RSI_PE_MIN + " (oversold)");
   if (isHammer(sc, PIN_WICK_RATIO) && !supportCheck.near) parts.push("Hammer but no support");
   if (isShootingStar(sc, PIN_WICK_RATIO) && !resistanceCheck.near) parts.push("Shooting Star but no resistance");
-  if (bos.bullish && rsi >= RSI_CE_MAX) parts.push("BOS bullish but RSI " + rsi.toFixed(0) + " >= " + RSI_CE_MAX + " (overbought)");
-  if (bos.bearish && rsi <= RSI_PE_MIN) parts.push("BOS bearish but RSI " + rsi.toFixed(0) + " <= " + RSI_PE_MIN + " (oversold)");
-  if (dblTop.detected && (rsi >= RSI_PE_MAX || rsi <= RSI_PE_MIN)) parts.push("Double Top but RSI " + rsi.toFixed(0) + " out of range");
-  if (dblBot.detected && (rsi <= RSI_CE_MIN || rsi >= RSI_CE_MAX)) parts.push("Double Bottom but RSI " + rsi.toFixed(0) + " out of range");
-  if (ascTri.detected && (rsi <= RSI_CE_MIN || rsi >= RSI_CE_MAX)) parts.push("Asc Triangle but RSI " + rsi.toFixed(0) + " out of range");
-  if (descTri.detected && (rsi >= RSI_PE_MAX || rsi <= RSI_PE_MIN)) parts.push("Desc Triangle but RSI " + rsi.toFixed(0) + " out of range");
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
   return base;
