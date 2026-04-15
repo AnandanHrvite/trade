@@ -136,6 +136,7 @@ const SETTINGS_SCHEMA = [
       // ── RSI (confluence filter) ──
       { key: "PA_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
       { key: "PA_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (confluence)", default: "45" },
+      { key: "PA_RSI_CAPS_ENABLED", label: "RSI Caps", type: "toggle", effect: EFFECT.SESSION, desc: "Block CE when RSI overbought / PE when RSI oversold", default: "false" },
       { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought)", default: "85" },
       { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
       { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold)", default: "15" },
