@@ -250,23 +250,30 @@ function tradesTable(trades) {
   const rows = trades.map(t => {
     const sideCls = t.side === "CE" ? "side-ce" : "side-pe";
     const pnlCls2 = pnlClass(t.pnl);
+    const entryDate = t.entryTime ? t.entryTime.split(', ')[0] : '—';
+    const entryTimeOnly = t.entryTime ? (t.entryTime.split(', ')[1] || '—') : '—';
+    const exitTimeOnly = t.exitTime ? (t.exitTime.split(', ')[1] || '—') : '—';
+    const entryReasonShort = (t.entryReason||'—').substring(0,25) + ((t.entryReason||'').length>25?'…':'');
+    const exitReasonShort = (t.exitReason||'—').substring(0,25) + ((t.exitReason||'').length>25?'…':'');
     return `<tr class="trade-row">
       <td class="${sideCls}">${t.side}</td>
-      <td>${t.entryTime || "—"}</td>
-      <td>${t.exitTime  || "—"}</td>
+      <td style="font-size:0.8rem;">${entryDate}</td>
       <td>${inr(t.entryPrice)}</td>
+      <td style="font-size:0.8rem;">${entryTimeOnly}</td>
       <td>${inr(t.exitPrice)}</td>
+      <td style="font-size:0.8rem;">${exitTimeOnly}</td>
       <td>${t.stopLoss && t.stopLoss !== "N/A" ? inr(parseFloat(t.stopLoss)) : "—"}</td>
       <td class="${pnlCls2}">${inr(t.pnl)}</td>
-      <td style="color:var(--muted);font-size:0.75rem;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t.exitReason || "—"}</td>
+      <td style="color:var(--muted);font-size:0.75rem;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.entryReason||''}">${entryReasonShort}</td>
+      <td style="color:var(--muted);font-size:0.75rem;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.exitReason||''}">${exitReasonShort}</td>
     </tr>`;
   }).join("");
   return `
   <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Side</th><th>Entry Time</th><th>Exit Time</th>
-        <th>Entry ₹</th><th>Exit ₹</th><th>SL ₹</th><th>PnL ₹</th><th>Exit Reason</th>
+        <th>Side</th><th>Date</th><th>Entry ₹</th><th>Entry Time</th>
+        <th>Exit ₹</th><th>Exit Time</th><th>SL ₹</th><th>PnL ₹</th><th>Entry Reason</th><th>Exit Reason</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>

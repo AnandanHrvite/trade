@@ -1401,14 +1401,16 @@ ${state.sessionTrades.length > 0 ? `
     <table style="width:100%;border-collapse:collapse;">
       <thead><tr style="background:#0a0f1c;">
         <th onclick="spSort('side')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Strike / Expiry</th>
-        <th onclick="spSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Entry Time</th>
+        <th onclick="spSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
         <th onclick="spSort('exit')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry (NIFTY / Option)</th>
-        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit (NIFTY / Option)</th>
-        <th onclick="spSort('pnl')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Net P&amp;L</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
+        <th onclick="spSort('pnl')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL</th>
+        <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
         <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-        <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">View</th>
+        <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
       </tr></thead>
       <tbody id="spBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
     </table>
@@ -1592,6 +1594,8 @@ function spApplySort() {
   spRender();
 }
 var spFmt = function(n) { return n != null ? '\\u20b9' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\\u2014'; };
+function spFmtDate(dt){ if(!dt) return '\\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\\u2014'; }
+function spFmtTime(dt){ if(!dt) return '\\u2014'; var p=dt.split(', '); return p[1]||'\\u2014'; }
 
 function spRender() {
   var start = (spPage-1)*spPP, slice = spFiltered.slice(start, start+spPP);
@@ -1601,22 +1605,22 @@ function spRender() {
   var body = document.getElementById('spBody');
   if (!body) return;
   if (slice.length === 0) {
-    body.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>';
+    body.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>';
   } else {
     body.innerHTML = slice.map(function(t, i) {
       var sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
       var pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
-      var short = t.reason.length > 35 ? t.reason.slice(0,35)+'\\u2026' : t.reason;
-      var optDiff = (t.eOpt != null && t.xOpt != null) ? parseFloat((t.xOpt - t.eOpt).toFixed(2)) : null;
-      var dc  = optDiff == null ? '#4a6080' : optDiff >= 0 ? '#10b981' : '#ef4444';
+      var short = t.reason.length > 25 ? t.reason.slice(0,25)+'\\u2026' : t.reason;
       return '<tr style="border-top:1px solid #1a2236;vertical-align:top;">' +
         '<td style="padding:8px 12px;color:' + sc + ';font-weight:800;">' + (t.side||'\\u2014') + '</td>' +
-        '<td style="padding:8px 12px;"><div style="font-size:0.95rem;font-weight:800;color:#fff;">' + (t.strike||'\\u2014') + '</div><div style="font-size:0.68rem;color:#f59e0b;margin-top:2px;">' + (t.expiry||'\\u2014') + '</div></td>' +
-        '<td style="padding:8px 12px;font-size:0.75rem;">' + (t.entry||'\\u2014') + '</td>' +
-        '<td style="padding:8px 12px;font-size:0.75rem;">' + (t.exit||'\\u2014') + '</td>' +
-        '<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">' + spFmt(t.eSpot) + '</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">' + (t.eOpt!=null?spFmt(t.eOpt):'\\u2014') + '</div>' + (t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+spFmt(t.eSl)+'</div>':'') + '</td>' +
-        '<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">' + spFmt(t.xSpot) + '</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">' + (t.xOpt!=null?spFmt(t.xOpt):'\\u2014') + '</div>' + (optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\\u25b2 +':'\\u25bc ')+optDiff+' pts</div>':'') + '</td>' +
-        '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div><div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after charges</div></td>' +
+        '<td style="padding:8px 12px;font-size:0.75rem;">' + spFmtDate(t.entry) + '</td>' +
+        '<td style="padding:8px 12px;font-weight:700;">' + spFmt(t.eSpot) + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.75rem;">' + spFmtTime(t.entry) + '</td>' +
+        '<td style="padding:8px 12px;font-weight:700;">' + spFmt(t.xSpot) + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.75rem;">' + spFmtTime(t.exit) + '</td>' +
+        '<td style="padding:8px 12px;color:#f59e0b;">' + (t.eSl?spFmt(t.eSl):'\\u2014') + '</td>' +
+        '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div></td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + (t.entryReason||'') + '">' + (t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\\u2026':t.entryReason):'\\u2014') + '</td>' +
         '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + t.reason + '">' + (short||'\\u2014') + '</td>' +
         '<td style="padding:6px 8px;text-align:center;"><button data-idx="' + i + '" class="sp-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">View</button></td>' +
         '</tr>';
@@ -1712,9 +1716,9 @@ if (document.getElementById('spModal')) {
 
 // ── Copy Trade Log ──────────────────────────────────────────────────
 function copyTradeLog(btn){
-  var lines=['Side\\tStrike\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
   SP_ALL.forEach(function(t){
-    lines.push((t.side||'')+'\\t'+(t.strike||'')+'\\t'+(t.entry||'')+'\\t'+(t.exit||'')+'\\t'+(t.eSpot||'')+'\\t'+(t.xSpot||'')+'\\t'+(t.eOpt!=null?t.eOpt:'')+'\\t'+(t.xOpt!=null?t.xOpt:'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.reason||''));
+    lines.push((t.side||'')+'\\t'+spFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+spFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+spFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
 }
@@ -1984,22 +1988,25 @@ router.get("/history", (req, res) => {
 
         const tradeRows = trades.map(t => {
           const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
-          const entrySpot   = inr(t.spotAtEntry || t.entryPrice);
-          const exitSpot    = inr(t.spotAtExit  || t.exitPrice);
-          const entryOpt    = t.optionEntryLtp ? inr(t.optionEntryLtp) : "—";
-          const exitOpt     = t.optionExitLtp  ? inr(t.optionExitLtp)  : "—";
-          const pnlStr      = `<span style="font-weight:800;color:${pnlColor(t.pnl)};">${t.pnl >= 0 ? "+" : ""}${inr(t.pnl)}</span>`;
-          const reason      = (t.exitReason || "—").substring(0, 50);
+          const entrySpot = inr(t.spotAtEntry || t.entryPrice);
+          const exitSpot = inr(t.spotAtExit || t.exitPrice);
+          const pnlStr = `<span style="font-weight:800;color:${pnlColor(t.pnl)};">${t.pnl >= 0 ? "+" : ""}${inr(t.pnl)}</span>`;
+          const entryDate = t.entryTime ? t.entryTime.split(', ')[0] : '\u2014';
+          const entryTimeOnly = t.entryTime ? (t.entryTime.split(', ')[1] || '\u2014') : '\u2014';
+          const exitTimeOnly = t.exitTime ? (t.exitTime.split(', ')[1] || '\u2014') : '\u2014';
+          const entryReasonShort = (t.entryReason||'\u2014').substring(0,25) + ((t.entryReason||'').length>25?'\u2026':'');
+          const exitReasonShort = (t.exitReason||'\u2014').substring(0,25) + ((t.exitReason||'').length>25?'\u2026':'');
           return `<tr>
             <td><span class="badge ${badgeCls}">${t.side}</span></td>
-            <td style="color:#c8d8f0;">${t.entryTime || "—"}</td>
-            <td style="color:#c8d8f0;">${t.exitTime || "—"}</td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
             <td style="color:#c8d8f0;">${entrySpot}</td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${entryTimeOnly}</td>
             <td style="color:#c8d8f0;">${exitSpot}</td>
-            <td><span style="font-size:0.65rem;color:#60a5fa;">${entryOpt}</span></td>
-            <td><span style="font-size:0.65rem;color:#60a5fa;">${exitOpt}</span></td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${exitTimeOnly}</td>
+            <td style="color:#f59e0b;">${t.stopLoss ? inr(parseFloat(t.stopLoss)) : '\u2014'}</td>
             <td>${pnlStr}</td>
-            <td style="font-size:0.7rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${reason}</td>
+            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.entryReason||''}">${entryReasonShort}</td>
+            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.exitReason||''}">${exitReasonShort}</td>
           </tr>`;
         }).join("");
 
@@ -2025,8 +2032,7 @@ router.get("/history", (req, res) => {
           <div style="overflow-x:auto;">
             <div class="tbl-wrap"><table class="tbl">
               <thead><tr>
-                <th>Side</th><th>Entry Time</th><th>Exit Time</th>
-                <th>Entry (NIFTY)</th><th>Exit (NIFTY)</th><th>Option Entry</th><th>Option Exit</th><th>PnL</th><th>Reason</th>
+                <th>Side</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th>
               </tr></thead>
               <tbody>${tradeRows}</tbody>
             </table></div>
@@ -2296,9 +2302,12 @@ function copySessionLog(btn, idx) {
     showAlert({icon:'⚠️',title:'No Data',message:'No trades in this session to copy',btnClass:'modal-btn-primary'});
     return;
   }
-  var lines = ['Date\\tSide\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+  var lines = ['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
   session.trades.forEach(function(t) {
-    lines.push((session.date||'')+'\\t'+(t.side||'')+'\\t'+(t.entryTime||'')+'\\t'+(t.exitTime||'')+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+(t.optionEntryLtp||'')+'\\t'+(t.optionExitLtp||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.exitReason||''));
+    var eDate = t.entryTime ? t.entryTime.split(', ')[0] : '';
+    var eTime = t.entryTime ? (t.entryTime.split(', ')[1]||'') : '';
+    var xTime = t.exitTime ? (t.exitTime.split(', ')[1]||'') : '';
+    lines.push((t.side||'')+'\\t'+eDate+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+eTime+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+xTime+'\\t'+(t.stopLoss||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.exitReason||''));
   });
   doCopy(lines.join('\\n'), btn, 'Trade Log');
 }
@@ -2309,9 +2318,12 @@ function fmtAna(v){ return '\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-
 function fmtAnaShort(v){ return Math.abs(v)>=1000 ? '\\u20b9'+Math.round(v/1000)+'k' : '\\u20b9'+Math.round(v); }
 
 function copyTradeLog(btn){
-  var lines=['Date\\tSide\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
   ALL_TRADES_JSON.forEach(function(t){
-    lines.push((t.date||'')+'\\t'+(t.side||'')+'\\t'+(t.entryTime||'')+'\\t'+(t.exitTime||'')+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+(t.optionEntryLtp||'')+'\\t'+(t.optionExitLtp||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.exitReason||''));
+    var eDate = t.entryTime ? t.entryTime.split(', ')[0] : '';
+    var eTime = t.entryTime ? (t.entryTime.split(', ')[1]||'') : '';
+    var xTime = t.exitTime ? (t.exitTime.split(', ')[1]||'') : '';
+    lines.push((t.side||'')+'\\t'+eDate+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+eTime+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+xTime+'\\t'+(t.stopLoss||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.exitReason||''));
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
 }

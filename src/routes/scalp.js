@@ -1428,6 +1428,7 @@ router.get("/status", (req, res) => {
     pnlMode:    t.pnlMode || "",
     order:      t.orderId || "",
     reason:     t.exitReason || "",
+    entryReason: t.entryReason || "",
   })));
 
   // Build log JSON
@@ -1646,14 +1647,16 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
           <table class="trade-table">
             <thead><tr>
               <th onclick="scSort('side')">Side \u25b2\u25bc</th>
-              <th>Strike / Expiry</th>
-              <th onclick="scSort('entry')">Entry Time \u25bc</th>
+              <th onclick="scSort('entry')">Date \u25b2\u25bc</th>
+              <th>Entry</th>
+              <th>Entry Time</th>
+              <th>Exit</th>
               <th onclick="scSort('exit')">Exit Time \u25b2\u25bc</th>
-              <th>Entry (NIFTY / Option)</th>
-              <th>Exit (NIFTY / Option)</th>
-              <th onclick="scSort('pnl')">Net P&amp;L \u20b9 \u25b2\u25bc</th>
+              <th>SL</th>
+              <th onclick="scSort('pnl')">PnL \u20b9 \u25b2\u25bc</th>
+              <th>Entry Reason</th>
               <th>Exit Reason</th>
-              <th style="text-align:center;">View</th>
+              <th style="text-align:center;">Action</th>
             </tr></thead>
             <tbody id="scBody"></tbody>
           </table>
@@ -1801,6 +1804,10 @@ async function scManualEntry(side) {
 var INR = function(n) { return typeof n === 'number' ? '\u20b9' + n.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '\u2014'; };
 var PNL_COLOR = function(n) { return n >= 0 ? '#10b981' : '#ef4444'; };
 
+/* ── Date/Time helpers ── */
+function scFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+function scFmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
+
 /* ── Trades table (matching live trade page) ── */
 var SC_ALL = JSON.parse(document.getElementById('sc-trade-data').textContent);
 var scFiltered=[...SC_ALL],scSortCol='entry',scSortDir=-1,scPage=1,scPP=10;
@@ -1835,21 +1842,21 @@ function scRender(){
   var start=(scPage-1)*scPP,slice=scFiltered.slice(start,start+scPP);
   window._scSlice=slice;
   el.innerHTML=slice.length===0
-    ?'<tr><td colspan="9" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+    ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
     :slice.map(function(t,i){
       var sc=t.side==='CE'?'#10b981':'#ef4444';
       var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
       var short=t.reason.length>35?t.reason.slice(0,35)+'\u2026':t.reason;
-      var optDiff=(t.eOpt!=null&&t.xOpt!=null)?parseFloat((t.xOpt-t.eOpt).toFixed(2)):null;
-      var dc=optDiff==null?'#4a6080':optDiff>=0?'#10b981':'#ef4444';
       return '<tr style="border-top:1px solid #1a2236;vertical-align:top;">'
         +'<td style="padding:8px 12px;color:'+sc+';font-weight:800;">'+(t.side||'\u2014')+'</td>'
-        +'<td style="padding:8px 12px;"><div style="font-size:0.95rem;font-weight:800;color:#fff;">'+(t.strike||'\u2014')+'</div><div style="font-size:0.68rem;color:#f59e0b;margin-top:2px;">'+(t.expiry||'\u2014')+'</div></td>'
-        +'<td style="padding:8px 12px;font-size:0.75rem;">'+(t.entry||'\u2014')+'</td>'
-        +'<td style="padding:8px 12px;font-size:0.75rem;">'+(t.exit||'\u2014')+'</td>'
-        +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.eSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.eOpt!=null?INR(t.eOpt):'\u2014')+'</div>'+(t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+INR(t.eSl)+'</div>':'')+'</td>'
-        +'<td style="padding:8px 12px;"><div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div><div style="font-weight:700;">'+INR(t.xSpot)+'</div><div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div><div style="color:#60a5fa;font-weight:700;">'+(t.xOpt!=null?INR(t.xOpt):'\u2014')+'</div>'+(optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts</div>':'')+'</td>'
-        +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div>'+(t.order?'<div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">'+t.order+'</div>':'')+'<div style="font-size:0.63rem;color:#4a6080;">after charges</div></td>'
+        +'<td style="padding:8px 12px;font-size:0.75rem;">'+scFmtDate(t.entry)+'</td>'
+        +'<td style="padding:8px 12px;font-weight:700;">'+INR(t.eSpot)+'</td>'
+        +'<td style="padding:8px 12px;font-size:0.75rem;">'+scFmtTime(t.entry)+'</td>'
+        +'<td style="padding:8px 12px;font-weight:700;">'+INR(t.xSpot)+'</td>'
+        +'<td style="padding:8px 12px;font-size:0.75rem;">'+scFmtTime(t.exit)+'</td>'
+        +'<td style="padding:8px 12px;color:#f59e0b;">'+(t.eSl?INR(t.eSl):'\u2014')+'</td>'
+        +'<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:'+pc+';">'+(t.pnl!=null?(t.pnl>=0?'+':'')+INR(t.pnl):'\u2014')+'</div></td>'
+        +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+(t.entryReason||'')+'">'+(t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014')+'</td>'
         +'<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="'+t.reason+'">'+(short||'\u2014')+'</td>'
         +'<td style="padding:6px 8px;text-align:center;"><button data-idx="'+i+'" class="sc-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>'
         +'</tr>';

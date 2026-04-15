@@ -2479,14 +2479,16 @@ ${buildSidebar('live', tradeState.running, tradeState.running, {
           <table style="width:100%;border-collapse:collapse;">
             <thead><tr style="background:#0a0f1c;">
               <th onclick="ltSort('side')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side ▲▼</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Strike / Expiry</th>
-              <th onclick="ltSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Entry Time ▼</th>
+              <th onclick="ltSort('entry')" style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
               <th onclick="ltSort('exit')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time ▲▼</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry (NIFTY / Option)</th>
-              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit (NIFTY / Option)</th>
-              <th onclick="ltSort('pnl')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Net P&amp;L ₹ ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
+              <th onclick="ltSort('pnl')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL ₹ ▲▼</th>
+              <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
               <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-              <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">View</th>
+              <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
             </tr></thead>
             <tbody id="ltBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
           </table>
@@ -2529,7 +2531,10 @@ ${buildSidebar('live', tradeState.running, tradeState.running, {
       pnlMode:     t.pnlMode         || "",
       order:       t.orderId         || "",
       reason:      t.exitReason      || "",
+      entryReason: t.entryReason     || "",
     })))};
+    function ltFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+    function ltFmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
     let ltFiltered=[...LT_ALL],ltSortCol='entry',ltSortDir=-1,ltPage=1,ltPP=10;
     function ltFilter(){
       const side=document.getElementById('ltSide').value;
@@ -2564,42 +2569,23 @@ ${buildSidebar('live', tradeState.running, tradeState.running, {
       // Store slice globally for eye button access
       window._ltSlice = slice;
       el.innerHTML=slice.length===0
-        ?'<tr><td colspan="9" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+        ?'<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
         :slice.map((t,i)=>{
           const sc=t.side==='CE'?'#10b981':'#ef4444';
           const pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
           const short=t.reason.length>35?t.reason.slice(0,35)+'\u2026':t.reason;
-          const optDiff=(t.eOpt!=null&&t.xOpt!=null)?parseFloat((t.xOpt-t.eOpt).toFixed(2)):null;
-          const dc=optDiff==null?'#4a6080':optDiff>=0?'#10b981':'#ef4444';
           return \`<tr style="border-top:1px solid #1a2236;vertical-align:top;">
-            <td style="padding:8px 12px;color:\${sc};font-weight:800;">\${t.side||'—'}</td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.95rem;font-weight:800;color:#fff;">\${t.strike||'—'}</div>
-              <div style="font-size:0.68rem;color:#f59e0b;margin-top:2px;">\${t.expiry||'—'}</div>
-            </td>
-            <td style="padding:8px 12px;font-size:0.75rem;">\${t.entry||'—'}</td>
-            <td style="padding:8px 12px;font-size:0.75rem;">\${t.exit||'—'}</td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div>
-              <div style="font-weight:700;">\${ltFmt(t.eSpot)}</div>
-              <div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div>
-              <div style="color:#60a5fa;font-weight:700;">\${t.eOpt!=null?ltFmt(t.eOpt):'—'}</div>
-              \${t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+ltFmt(t.eSl)+'</div>':''}
-            </td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div>
-              <div style="font-weight:700;">\${ltFmt(t.xSpot)}</div>
-              <div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div>
-              <div style="color:#60a5fa;font-weight:700;">\${t.xOpt!=null?ltFmt(t.xOpt):'—'}</div>
-              \${optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'\u25b2 +':'\u25bc ')+optDiff+' pts</div>':''}
-            </td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ltFmt(t.pnl):'—'}</div>
-              <div style="font-size:0.63rem;color:#a78bfa;margin-top:2px;">\${t.order||''}</div>
-              <div style="font-size:0.63rem;color:#4a6080;">after charges</div>
-            </td>
-            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'—'}</td>
-            <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="lt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">👁</button></td>
+            <td style="padding:8px 12px;color:\${sc};font-weight:800;">\${t.side||'\u2014'}</td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ltFmtDate(t.entry)}</td>
+            <td style="padding:8px 12px;font-weight:700;">\${ltFmt(t.eSpot)}</td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ltFmtTime(t.entry)}</td>
+            <td style="padding:8px 12px;font-weight:700;">\${ltFmt(t.xSpot)}</td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ltFmtTime(t.exit)}</td>
+            <td style="padding:8px 12px;color:#f59e0b;">\${t.eSl?ltFmt(t.eSl):'\u2014'}</td>
+            <td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ltFmt(t.pnl):'\u2014'}</div></td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'\u2014'}</td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'\u2014'}</td>
+            <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="lt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\uD83D\uDC41</button></td>
           </tr>\`;
         }).join('');
       // Eye button click handlers

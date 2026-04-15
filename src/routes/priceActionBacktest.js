@@ -550,6 +550,7 @@ ${modalJS()}
       pnlMode:   t.pnlMode || null,
       held:      typeof t.candlesHeld === "number" ? t.candlesHeld : null,
       reason:    String(t.exitReason || ""),
+      entryReason: String(t.entryReason || ""),
       risk_pts:  (() => {
         const sl = (t.initialStopLoss && t.initialStopLoss !== "N/A") ? parseFloat(t.initialStopLoss)
                  : (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
@@ -904,16 +905,16 @@ ${buildSidebar('paBacktest', liveActive)}
     <table>
       <thead><tr>
         <th onclick="doSort('side')"   id="h-side">Side &#9660;</th>
-        <th onclick="doSort('entry')"  id="h-entry" class="sorted">Entry Time &#9660;</th>
-        <th onclick="doSort('exit')"   id="h-exit">Exit Time</th>
+        <th onclick="doSort('entry')"  id="h-entry" class="sorted">Date &#9660;</th>
         <th onclick="doSort('ePrice')" id="h-ePrice">Entry (pts)</th>
+        <th>Entry Time</th>
         <th onclick="doSort('xPrice')" id="h-xPrice">Exit (pts)</th>
-        <th onclick="doSort('sl')"     id="h-sl">SL (pts)</th>
+        <th onclick="doSort('exit')"   id="h-exit">Exit Time</th>
+        <th onclick="doSort('sl')"     id="h-sl">SL</th>
         <th onclick="doSort('pnl')"    id="h-pnl">PnL ${s.optionSim ? "(\u20b9 sim)" : "(pts)"}</th>
-        <th onclick="doSort('risk_pts')" id="h-risk">Risk (pts)</th>
-        <th onclick="doSort('rr')"     id="h-rr">R:R</th>
+        <th>Entry Reason</th>
         <th>Exit Reason</th>
-        <th style="text-align:center;">Details</th>
+        <th style="text-align:center;">Action</th>
       </tr></thead>
       <tbody id="tbody"></tbody>
     </table>
@@ -954,6 +955,8 @@ function fpts(n, spotPts){
   }
   return (n>=0?'+':'')+n.toFixed(2)+' pts';
 }
+function fmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+function fmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
 
 function doFilter(){
   var s=document.getElementById('fSearch').value.toLowerCase();
@@ -1010,17 +1013,18 @@ function render(){
     var sc=t.side==='CE'?'#10b981':'#ef4444';
     var pc=t.pnl==null?'#c8d8f0':t.pnl>=0?'#10b981':'#ef4444';
     var rrc=t.rr==null?'#4a6080':t.pnl>=0?'#10b981':'#ef4444';
-    var sr=t.reason.length>30?t.reason.substring(0,30)+'\u2026':t.reason;
+    var sr=t.reason.length>25?t.reason.substring(0,25)+'\u2026':t.reason;
+    var ser=t.entryReason?(t.entryReason.length>25?t.entryReason.substring(0,25)+'\u2026':t.entryReason):'\u2014';
     rows+='<tr>'
       +'<td style="color:'+sc+';font-weight:700;">'+t.side+'</td>'
-      +'<td>'+t.entry+'</td>'
-      +'<td>'+t.exit+'</td>'
+      +'<td style="font-size:0.75rem;">'+fmtDate(t.entry)+'</td>'
       +'<td>'+fmt(t.ePrice)+'</td>'
+      +'<td style="font-size:0.75rem;">'+fmtTime(t.entry)+'</td>'
       +'<td>'+fmt(t.xPrice)+'</td>'
+      +'<td style="font-size:0.75rem;">'+fmtTime(t.exit)+'</td>'
       +'<td style="color:#f59e0b;">'+(t.sl!=null?fmt(t.sl):'\u2014')+'</td>'
       +'<td style="color:'+pc+';font-weight:700;">'+fpts(t.pnl, t.spotPts)+'</td>'
-      +'<td style="color:#94a3b8;font-family:monospace;font-size:0.72rem;">'+(t.risk_pts!=null?'\u00b1'+t.risk_pts.toFixed(2)+' pts':'\u2014')+'</td>'
-      +'<td style="color:'+rrc+';font-weight:700;font-family:monospace;">'+(t.rr||'\u2014')+'</td>'
+      +'<td style="font-size:0.7rem;color:#4a6080;cursor:default;" data-ereason="'+(t.entryReason||'').replace(/"/g,'&quot;')+'">'+ser+'</td>'
       +'<td style="font-size:0.7rem;color:#4a6080;cursor:default;" data-reason="'+t.reason.replace(/"/g,'&quot;')+'">'+sr+'</td>'
       +'<td style="text-align:center;padding:6px 8px;"><button data-idx="'+i+'" class="bt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">\ud83d\udc41</button></td>'
       +'</tr>';
@@ -1037,6 +1041,19 @@ function render(){
     td.addEventListener('mouseenter',function(e){
       var tip=document.getElementById('tooltip');
       tip.textContent=td.getAttribute('data-reason');
+      tip.style.display='block';
+      moveTip(e);
+    });
+    td.addEventListener('mouseleave',function(){ document.getElementById('tooltip').style.display='none'; });
+    td.addEventListener('mousemove',moveTip);
+  });
+
+  Array.from(tbody.querySelectorAll('td[data-ereason]')).forEach(function(td){
+    td.addEventListener('mouseenter',function(e){
+      var val=td.getAttribute('data-ereason');
+      if(!val) return;
+      var tip=document.getElementById('tooltip');
+      tip.textContent=val;
       tip.style.display='block';
       moveTip(e);
     });
@@ -1163,9 +1180,9 @@ function copyDayView(btn){
 }
 
 function copyTradeLog(btn){
-  var lines=['Side\\tEntry Time\\tExit Time\\tEntry\\tExit\\tSL\\tPnL\\tRisk\\tR:R\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
   TRADES.forEach(function(t){
-    lines.push(t.side+'\\t'+t.entry+'\\t'+t.exit+'\\t'+fmt(t.ePrice)+'\\t'+fmt(t.xPrice)+'\\t'+(t.sl!=null?fmt(t.sl):'\\u2014')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'\\u2014')+'\\t'+(t.risk_pts!=null?t.risk_pts.toFixed(2):'\\u2014')+'\\t'+(t.rr||'\\u2014')+'\\t'+t.reason);
+    lines.push(t.side+'\\t'+fmtDate(t.entry)+'\\t'+fmt(t.ePrice)+'\\t'+fmtTime(t.entry)+'\\t'+fmt(t.xPrice)+'\\t'+fmtTime(t.exit)+'\\t'+(t.sl!=null?fmt(t.sl):'\u2014')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'\u2014')+'\\t'+(t.entryReason||'\u2014')+'\\t'+t.reason);
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
 }

@@ -2452,14 +2452,16 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
       <table style="width:100%;border-collapse:collapse;">
         <thead><tr style="background:#0a0f1c;">
           <th onclick="ptSort('side')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Side ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Strike / Expiry</th>
-          <th onclick="ptSort('entry')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Entry Time ▼</th>
+          <th onclick="ptSort('entry')"  style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Date ▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Time</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>
           <th onclick="ptSort('exit')"   style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Exit Time ▲▼</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry (NIFTY / Option)</th>
-          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit (NIFTY / Option)</th>
-          <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">Net P&amp;L ₹ ▲▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">SL</th>
+          <th onclick="ptSort('pnl')"    style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;cursor:pointer;">PnL ₹ ▲▼</th>
+          <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry Reason</th>
           <th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>
-          <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">View</th>
+          <th style="padding:9px 12px;text-align:center;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Action</th>
         <tbody id="ptBody" style="font-family:monospace;font-size:0.78rem;"></tbody>
       </table>
     </div>
@@ -2498,6 +2500,8 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
     entryReason:  t.entryReason    || "",
     reason:       t.exitReason     || "",
   }))).replace(/<\/script>/gi,"<\\/script>").replace(/`/g,"\\u0060").replace(/\$/g,"\\u0024")};
+  function ptFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+  function ptFmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
   let ptFiltered = [...PT_ALL], ptSortCol = 'entry', ptSortDir = -1, ptPage = 1, ptPP = 10;
   function ptFilter() {
     const side = document.getElementById('ptSide').value;
@@ -2533,7 +2537,7 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
     // Store slice globally for eye button access
     window._ptSlice = slice;
     document.getElementById('ptBody').innerHTML = slice.length === 0
-      ? '<tr><td colspan="9" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
+      ? '<tr><td colspan="11" style="text-align:center;padding:20px;color:#4a6080;">No trades match filters.</td></tr>'
       : slice.map((t, i) => {
           const sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
           const pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
@@ -2542,30 +2546,16 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
           const dc  = optDiff == null ? '#4a6080' : optDiff >= 0 ? '#10b981' : '#ef4444';
           return \`<tr style="border-top:1px solid #1a2236;vertical-align:top;">
             <td style="padding:8px 12px;color:\${sc};font-weight:800;">\${t.side||'—'}</td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.95rem;font-weight:800;color:#fff;">\${t.strike||'—'}</div>
-              <div style="font-size:0.68rem;color:#f59e0b;margin-top:2px;">\${t.expiry||'—'}</div>
-            </td>
-            <td style="padding:8px 12px;font-size:0.75rem;">\${t.entry||'—'}</td>
-            <td style="padding:8px 12px;font-size:0.75rem;">\${t.exit||'—'}</td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div>
-              <div style="font-weight:700;">\${ptFmt(t.eSpot)}</div>
-              <div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div>
-              <div style="color:#60a5fa;font-weight:700;">\${t.eOpt!=null?ptFmt(t.eOpt):'—'}</div>
-              \${t.eSl?'<div style="font-size:0.63rem;color:#f59e0b;margin-top:2px;">Init SL '+ptFmt(t.eSl)+'</div>':''}
-            </td>
-            <td style="padding:8px 12px;">
-              <div style="font-size:0.65rem;color:#4a6080;">NIFTY SPOT</div>
-              <div style="font-weight:700;">\${ptFmt(t.xSpot)}</div>
-              <div style="font-size:0.65rem;color:#4a6080;margin-top:3px;">OPTION PREM</div>
-              <div style="color:#60a5fa;font-weight:700;">\${t.xOpt!=null?ptFmt(t.xOpt):'—'}</div>
-              \${optDiff!=null?'<div style="font-size:0.63rem;color:'+dc+';margin-top:2px;">'+(optDiff>=0?'▲ +':'▼ ')+optDiff+' pts</div>':''}
-            </td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtDate(t.entry)}</td>
+            <td style="padding:8px 12px;font-weight:700;">\${ptFmt(t.eSpot)}</td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.entry)}</td>
+            <td style="padding:8px 12px;font-weight:700;">\${ptFmt(t.xSpot)}</td>
+            <td style="padding:8px 12px;font-size:0.75rem;">\${ptFmtTime(t.exit)}</td>
+            <td style="padding:8px 12px;color:#f59e0b;">\${t.eSl?ptFmt(t.eSl):'—'}</td>
             <td style="padding:8px 12px;">
               <div style="font-size:1rem;font-weight:800;color:\${pc};">\${t.pnl!=null?(t.pnl>=0?'+':'')+ptFmt(t.pnl):'—'}</div>
-              <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">after charges</div>
             </td>
+            <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.entryReason||''}">\${t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\u2026':t.entryReason):'—'}</td>
             <td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="\${t.reason}">\${short||'—'}</td>
             <td style="padding:6px 8px;text-align:center;"><button data-idx="\${i}" class="pt-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">👁</button></td>
           </tr>\`;
@@ -2661,9 +2651,9 @@ ${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.runn
 
   // ── Copy Trade Log ──────────────────────────────────────────────────
   function copyTradeLog(btn){
-    var lines=['Side\\tStrike\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+    var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
     PT_ALL.forEach(function(t){
-      lines.push((t.side||'')+'\\t'+(t.strike||'')+'\\t'+(t.entry||'')+'\\t'+(t.exit||'')+'\\t'+(t.eSpot||'')+'\\t'+(t.xSpot||'')+'\\t'+(t.eOpt!=null?t.eOpt:'')+'\\t'+(t.xOpt!=null?t.xOpt:'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.reason||''));
+      lines.push((t.side||'')+'\\t'+ptFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+ptFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+ptFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
     });
     doCopy(lines.join('\\n'),btn,'Trade Log');
   }
@@ -3044,21 +3034,25 @@ router.get("/history", (req, res) => {
         const tradeRows = trades.map(t => {
           const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
           const entrySpot   = inr(t.spotAtEntry || t.entryPrice);
-          const entryOpt    = t.optionEntryLtp  ? inr(t.optionEntryLtp)  : "—";
           const exitSpot    = inr(t.spotAtExit  || t.exitPrice);
-          const exitOpt     = t.optionExitLtp   ? inr(t.optionExitLtp)   : "—";
-          const strikeStr   = t.optionStrike ? `<div style="font-weight:700;color:#e0eaf8;">${t.optionStrike}</div><div style="font-size:0.6rem;color:#f59e0b;">${t.optionExpiry||""}</div>` : "—";
           const pnlStr      = `<span style="font-weight:800;color:${pnlColor(t.pnl)};">${t.pnl>=0?"+":""}${inr(t.pnl)}</span>`;
-          const reason      = (t.exitReason||"—").substring(0,50);
+          const entryDate = t.entryTime ? t.entryTime.split(', ')[0] : '—';
+          const entryTimeOnly = t.entryTime ? (t.entryTime.split(', ')[1] || '—') : '—';
+          const exitTimeOnly = t.exitTime ? (t.exitTime.split(', ')[1] || '—') : '—';
+          const entryReasonShort = (t.entryReason||'—').substring(0,25) + ((t.entryReason||'').length>25?'…':'');
+          const exitReasonShort = (t.exitReason||'—').substring(0,25) + ((t.exitReason||'').length>25?'…':'');
           return `<tr>
             <td><span class="badge ${badgeCls}">${t.side}</span></td>
-            <td>${strikeStr}</td>
-            <td style="color:#c8d8f0;">${t.entryTime||"—"}</td>
-            <td style="color:#c8d8f0;">${t.exitTime||"—"}</td>
-            <td><div style="color:#c8d8f0;">${entrySpot}</div><div style="font-size:0.65rem;color:#60a5fa;">${entryOpt}</div></td>
-            <td><div style="color:#c8d8f0;">${exitSpot}</div><div style="font-size:0.65rem;color:#60a5fa;">${exitOpt}</div></td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
+            <td style="color:#c8d8f0;">${entrySpot}</td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${entryTimeOnly}</td>
+            <td style="color:#c8d8f0;">${exitSpot}</td>
+            <td style="color:#c8d8f0;font-size:0.75rem;">${exitTimeOnly}</td>
+            <td style="color:#f59e0b;">${t.stopLoss ? inr(parseFloat(t.stopLoss)) : '—'}</td>
             <td>${pnlStr}</td>
-            <td style="font-size:0.7rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${reason}</td>
+            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.entryReason||''}">${entryReasonShort}</td>
+            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.exitReason||''}">${exitReasonShort}</td>
+            <td style="text-align:center;font-size:0.85rem;">👁</td>
           </tr>`;
         }).join("");
 
@@ -3086,8 +3080,7 @@ router.get("/history", (req, res) => {
           <div style="overflow-x:auto;">
             <div class="tbl-wrap"><table class="tbl">
               <thead><tr>
-                <th>Side</th><th>Strike</th><th>Entry Time</th><th>Exit Time</th>
-                <th>Entry NIFTY / Opt</th><th>Exit NIFTY / Opt</th><th>PnL</th><th>Reason</th>
+                <th>Side</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th>Action</th>
               </tr></thead>
               <tbody>${tradeRows}</tbody>
             </table>
@@ -3379,9 +3372,12 @@ function fmtAna(v){ return '₹'+Math.round(Math.abs(v)).toLocaleString('en-IN')
 function fmtAnaShort(v){ return Math.abs(v)>=1000 ? '₹'+Math.round(v/1000)+'k' : '₹'+Math.round(v); }
 
 function copyTradeLog(btn){
-  var lines=['Date\\tSide\\tEntry Time\\tExit Time\\tEntry NIFTY\\tExit NIFTY\\tOpt Entry\\tOpt Exit\\tPnL\\tExit Reason'];
+  var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
   ALL_TRADES_JSON.forEach(function(t){
-    lines.push((t.date||'')+'\\t'+(t.side||'')+'\\t'+(t.entryTime||'')+'\\t'+(t.exitTime||'')+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+(t.optionEntryLtp||'')+'\\t'+(t.optionExitLtp||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.exitReason||''));
+    var entryDate=t.entryTime?(t.entryTime.split(', ')[0]||''):'';
+    var entryTimeOnly=t.entryTime?(t.entryTime.split(', ')[1]||''):'';
+    var exitTimeOnly=t.exitTime?(t.exitTime.split(', ')[1]||''):'';
+    lines.push((t.side||'')+'\\t'+entryDate+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+entryTimeOnly+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+exitTimeOnly+'\\t'+(t.stopLoss||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.exitReason||''));
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
 }
