@@ -469,7 +469,7 @@ h2{color:#ef4444;margin-bottom:12px;font-size:1.1rem;}p{font-size:0.85rem;color:
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -501,7 +501,7 @@ ${buildSidebar('paBacktest', true)}
             Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
             Stop the live trade first, then run your backtest.
           </p>
-          <a href="/trade/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+          <a href="/swing-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
       </div></div>

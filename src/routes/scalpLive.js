@@ -3,16 +3,16 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
  * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
- * Can run IN PARALLEL with /trade (live Zerodha) or /paperTrade.
+ * Can run IN PARALLEL with /trade (live Zerodha) or /swing-paper.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
  * ORDER LAYER → Fyers (place_order / exit_position)
  *
  * Routes:
- *   GET /scalp/start   → Start scalp live trading
- *   GET /scalp/stop    → Stop & square off
- *   GET /scalp/status  → Live status page
- *   GET /scalp/exit    → Manual exit current position
+ *   GET /scalp-live/start   → Start scalp live trading
+ *   GET /scalp-live/stop    → Stop & square off
+ *   GET /scalp-live/status  → Live status page
+ *   GET /scalp-live/exit    → Manual exit current position
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -933,7 +933,7 @@ router.get("/start", async (req, res) => {
 
   const check = sharedSocketState.canStart("SCALP_LIVE");
   if (!check.allowed) {
-    return res.status(409).send(errorPage("Cannot Start", check.reason, "/scalp/status", "\u2190 Back"));
+    return res.status(409).send(errorPage("Cannot Start", check.reason, "/scalp-live/status", "\u2190 Back"));
   }
 
   if (!process.env.ACCESS_TOKEN) {
@@ -950,11 +950,11 @@ router.get("/start", async (req, res) => {
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) {
-    return res.status(400).send(errorPage("Trading Not Allowed", holiday.reason, "/scalp/status", "\u2190 Back"));
+    return res.status(400).send(errorPage("Trading Not Allowed", holiday.reason, "/scalp-live/status", "\u2190 Back"));
   }
 
   if (!isStartAllowed()) {
-    return res.status(400).send(errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp/status", "\u2190 Back"));
+    return res.status(400).send(errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-live/status", "\u2190 Back"));
   }
 
   // Expiry day check
@@ -1185,7 +1185,7 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   try {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const fyersOk    = !!process.env.ACCESS_TOKEN;
 
   const _vix         = getCachedVix();
@@ -1734,7 +1734,7 @@ function scToast(msg, color) {
 async function scHandleExit(btn) {
   if (btn) { btn.textContent = '\u23f3 Exiting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp/exit');
+    var res = await secretFetch('/scalp-live/exit');
     if (!res) { if (btn) { btn.textContent = '\uD83D\uDEAA Exit Position'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -1752,7 +1752,7 @@ async function scHandleExit(btn) {
 async function scHandleStart(btn) {
   if (btn) { btn.textContent = '\u23f3 Starting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp/start');
+    var res = await secretFetch('/scalp-live/start');
     if (!res) { if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -1770,7 +1770,7 @@ async function scHandleStart(btn) {
 async function scHandleStop(btn) {
   if (btn) { btn.textContent = '\u23f3 Stopping...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp/stop');
+    var res = await secretFetch('/scalp-live/stop');
     if (!res) { if (btn) { btn.textContent = '\u25a0 Stop'; btn.disabled = false; } return; }
     var data = await res.json();
     scToast('\u23f9 Scalp live trading stopped.', '#ef4444');
@@ -1783,7 +1783,7 @@ async function scHandleStop(btn) {
 async function scManualEntry(side) {
   if (!confirm('\u26a0\ufe0f SCALP LIVE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
   try {
-    var res = await secretFetch('/scalp/manualEntry', {
+    var res = await secretFetch('/scalp-live/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -1993,7 +1993,7 @@ logFilter();
   var _lastHasPosition = ${pos ? "true" : "false"};
 
   function fetchAndUpdate() {
-    fetch('/scalp/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/scalp-live/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
 
       // Position state change => reload
       var nowHasPos = !!d.position;

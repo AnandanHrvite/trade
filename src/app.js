@@ -223,13 +223,13 @@ const OPEN_PATHS = [
   "/logs/data",         // polling endpoint — read-only
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
-  "/trade/status",          // read-only status page
-  "/trade/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
-  "/paperTrade/status",     // read-only status page
-  "/paperTrade/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
-  "/paperTrade/history",    // read-only history
-  "/paperTrade/debug",      // read-only debug
-  "/paperTrade/client.js",  // static asset
+  "/swing-live/status",          // read-only status page
+  "/swing-live/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
+  "/swing-paper/status",     // read-only status page
+  "/swing-paper/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
+  "/swing-paper/history",    // read-only history
+  "/swing-paper/debug",      // read-only debug
+  "/swing-paper/client.js",  // static asset
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -247,8 +247,8 @@ const OPEN_PATHS = [
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
   // Scalp mode (read-only status/data)
-  "/scalp/status",
-  "/scalp/status/data",
+  "/scalp-live/status",
+  "/scalp-live/status/data",
   "/scalp-paper/status",
   "/scalp-paper/status/data",
   "/scalp-backtest",
@@ -262,8 +262,8 @@ const OPEN_PATHS = [
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
   // NOTE: /settings/save requires API_SECRET (write operation)
-  // NOTE: /trade/start, /trade/stop, /trade/exit are intentionally NOT here — they require API_SECRET
-  // NOTE: /paperTrade/start, /paperTrade/stop, /paperTrade/reset, /paperTrade/exit also require secret
+  // NOTE: /swing-live/start, /swing-live/stop, /swing-live/exit are intentionally NOT here — they require API_SECRET
+  // NOTE: /swing-paper/start, /swing-paper/stop, /swing-paper/reset, /swing-paper/exit also require secret
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
 app.use((req, res, next) => {
@@ -280,10 +280,10 @@ app.use((req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/auth",       require("./routes/auth"));
-app.use("/backtest",   require("./routes/backtest"));
+app.use("/swing-backtest",   require("./routes/swingBacktest"));
 app.use("/result",     require("./routes/result"));
-app.use("/paperTrade", require("./routes/paperTrade"));
-app.use("/trade",      require("./routes/trade"));
+app.use("/swing-paper", require("./routes/swingPaper"));
+app.use("/swing-live",      require("./routes/swingLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
@@ -291,14 +291,14 @@ app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
 app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance health monitor
 // ── Scalp mode routes (independent from main trade) ─────────────────────────
-app.use("/scalp",          require("./routes/scalp"));          // ← scalp live (Fyers orders)
+app.use("/scalp-live",          require("./routes/scalpLive"));          // ← scalp live (Fyers orders)
 app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
 app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
 app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
 // ── Price Action mode routes (5-min, independent from main & scalp) ─────────
-app.use("/pa-live",        require("./routes/priceActionLive"));      // ← PA live (Fyers orders)
-app.use("/pa-paper",       require("./routes/priceActionPaper"));     // ← PA paper trade
-app.use("/pa-backtest",    require("./routes/priceActionBacktest"));  // ← PA backtest
+app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders)
+app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
+app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 
 // ── Holiday Management API ────────────────────────────────────────────────────
@@ -387,9 +387,9 @@ app.get("/", (req, res) => {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
   const zerodhaConf = !!process.env.ZERODHA_API_KEY;
-  const liveEnabled = process.env.LIVE_TRADE_ENABLED === "true";
+  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
   const liveReady   = liveEnabled && fyersOk && zerodhaOk;
-  const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
   const scalpMode   = sharedSocketState.getScalpMode();
   const scalpEnabled = process.env.SCALP_ENABLED === "true";
   const scalpModeOn  = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -761,7 +761,7 @@ ${buildSidebar('dashboard', liveActive)}
         <span id="paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
         <span id="paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
-      <a href="/paperTrade/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
+      <a href="/swing-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
     </div>
     <div id="paper-status-body" style="padding:14px 18px 16px;">
       <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
@@ -776,7 +776,7 @@ ${buildSidebar('dashboard', liveActive)}
         <span id="live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
         <span id="live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
-      <a href="/trade/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
+      <a href="/swing-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
     </div>
     <div id="live-status-body" style="padding:14px 18px 16px;">
       <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
@@ -818,7 +818,7 @@ ${buildSidebar('dashboard', liveActive)}
         <span id="scalp-live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
         <span id="scalp-live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
-      <a href="/scalp/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
+      <a href="/scalp-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
     </div>
     <div id="scalp-live-status-body" style="padding:14px 18px 16px;">
       <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
@@ -964,14 +964,14 @@ function renderScalpLiveStatus(d){
 ` : ''}
 async function pollDashboardStatus(){
   try {
-    var pr = await fetch('/paperTrade/status/data',{cache:'no-store'});
+    var pr = await fetch('/swing-paper/status/data',{cache:'no-store'});
     if(pr.ok){ var pd=await pr.json(); renderPaperStatus(pd); }
     else { renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'}); }
   } catch(e){
     renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'});
   }
   try {
-    var lr = await fetch('/trade/status/data',{cache:'no-store'});
+    var lr = await fetch('/swing-live/status/data',{cache:'no-store'});
     if(lr.ok){ var ld=await lr.json(); renderLiveStatus(ld); }
     else { renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0}); }
   } catch(e){
@@ -985,7 +985,7 @@ async function pollDashboardStatus(){
   } catch(e){ renderScalpPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
   // Scalp Live status
   try {
-    var sr = await fetch('/scalp/status/data',{cache:'no-store'});
+    var sr = await fetch('/scalp-live/status/data',{cache:'no-store'});
     if(sr.ok){ var sd=await sr.json(); renderScalpLiveStatus(sd); }
     else { renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
   } catch(e){ renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
@@ -1010,7 +1010,7 @@ pollDashboardStatus();
 async function startBothPaper(btn){
   btn.disabled=true; btn.textContent='⏳ Starting Paper + Scalp Paper...';
   try {
-    var r1 = await secretFetch('/paperTrade/start');
+    var r1 = await secretFetch('/swing-paper/start');
     await r1.json().catch(function(){});
     var r2 = await secretFetch('/scalp-paper/start');
     await r2.json().catch(function(){});
@@ -1022,9 +1022,9 @@ async function startBothLive(btn){
   if(!confirm('Start BOTH Live Trade + Scalp Live? Real orders will be placed.')) return;
   btn.disabled=true; btn.textContent='⏳ Starting Live + Scalp Live...';
   try {
-    var r1 = await secretFetch('/trade/start');
+    var r1 = await secretFetch('/swing-live/start');
     await r1.json().catch(function(){});
-    var r2 = await secretFetch('/scalp/start');
+    var r2 = await secretFetch('/scalp-live/start');
     await r2.json().catch(function(){});
   } catch(e){ alert('Error: '+e.message); }
   setTimeout(function(){ location.reload(); }, 1000);
@@ -1271,7 +1271,7 @@ server.listen(PORT, HOST, () => {
   console.log(`   Lot Size         : ${instrumentConfig.getLotQty()}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
-  console.log(`   Live Trading     : ${process.env.LIVE_TRADE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
+  console.log(`   Live Trading     : ${process.env.SWING_LIVE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
   console.log(`   Scalp Mode       : ${(process.env.SCALP_MODE_ENABLED || "true") === "true" ? "✅ ENABLED" : "🔒 disabled"} | SCALP_ENABLED: ${process.env.SCALP_ENABLED === "true" ? "✅" : "❌"}`);
   console.log(`   VIX Filter       : ${process.env.VIX_FILTER_ENABLED !== "false" ? `✅ max=${process.env.VIX_MAX_ENTRY || "20"} strong=${process.env.VIX_STRONG_ONLY || "16"}` : "🔒 disabled"}`);
   console.log(`   Hard SL          : ${process.env.HARD_SL_ENABLED === "true" ? `✅ delta=${process.env.HARD_SL_DELTA || "0.5"}` : "🔒 disabled"}`);
@@ -1379,7 +1379,7 @@ async function gracefulShutdown(signal) {
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}`);
 
     // Only send alarming Telegram for LIVE modes; paper modes are harmless
-    const hasLive = activeModes.some(m => m === "LIVE_TRADE" || m === "SCALP_LIVE");
+    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE");
     if (hasLive) {
       sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes active: ${modeList} — check broker dashboard for open positions!`);
     } else {

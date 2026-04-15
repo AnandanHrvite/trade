@@ -28,7 +28,7 @@ function buildNav(active, liveActive) {
 
 
 router.get("/", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
@@ -49,7 +49,7 @@ router.get("/", async (req, res) => {
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
       </head><body>
 <div class="app-shell">
-${buildSidebar('backtest', true)}
+${buildSidebar('swingBacktest', true)}
 <div class="main-content">
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
         <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
@@ -59,7 +59,7 @@ ${buildSidebar('backtest', true)}
             Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
             Stop the live trade first, then run your backtest.
           </p>
-          <a href="/trade/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+          <a href="/swing-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
       </div></div></body></html>`);
@@ -247,7 +247,7 @@ ${buildSidebar('backtest', true)}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('backtest', liveActive)}
+${buildSidebar('swingBacktest', liveActive)}
 <div class="main-content">
 
 <div class="page">
@@ -270,7 +270,7 @@ ${buildSidebar('backtest', liveActive)}
         <option value="15" selected>15-min</option>
       </select>
     </div>
-    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
   <!-- Quick date presets -->
@@ -1464,7 +1464,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
         <div><label>FROM</label><input id="f" type="date" value="${from}"></div>
         <div><label>TO</label><input id="t" type="date" value="${to}"></div>
         <div><label>CANDLE</label><select id="r">${resOptions}</select></div>
-        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
       </div>
     </div>
   </div>

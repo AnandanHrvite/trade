@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
  * Runs on 5-min candles with the price action strategy.
- * Can run IN PARALLEL with /trade (live Zerodha) or /paperTrade.
+ * Can run IN PARALLEL with /trade (live Zerodha) or /swing-paper.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
  * ORDER LAYER → Fyers (place_order / exit_position)
@@ -1178,7 +1178,7 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   try {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const fyersOk    = !!process.env.ACCESS_TOKEN;
 
   const _vix         = getCachedVix();

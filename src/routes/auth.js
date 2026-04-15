@@ -172,7 +172,7 @@ router.get("/status/all", (req, res) => {
   res.json({
     fyers:     { loggedIn: fyersOk,   message: fyersOk   ? "Logged in" : "Not logged in" },
     zerodha:   { loggedIn: zerodhaOk, configured: !!process.env.ZERODHA_API_KEY, message: zerodhaOk ? "Logged in" : "Not logged in" },
-    liveReady: fyersOk && zerodhaOk && process.env.LIVE_TRADE_ENABLED === "true",
+    liveReady: fyersOk && zerodhaOk && process.env.SWING_LIVE_ENABLED === "true",
   });
 });
 

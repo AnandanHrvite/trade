@@ -4,8 +4,8 @@
  * Renders the sidebar nav (same design as Live Trade page) for ALL pages.
  * Used by: Dashboard, Backtest, Paper Trade, Live Trade, Logs
  *
- * @param {string}  activePage  - 'dashboard' | 'backtest' | 'paper' | 'live' | 'logs'
- * @param {boolean} liveActive  - true when LIVE_TRADE socket is running
+ * @param {string}  activePage  - 'dashboard' | 'swingBacktest' | 'swingPaper' | 'swingLive' | 'logs'
+ * @param {boolean} liveActive  - true when SWING_LIVE socket is running
  * @param {boolean} isRunning   - true when THIS page's trade/session is running
  * @param {object}  opts        - { showStopBtn, showStartBtn, showExitBtn, stopLabel, startLabel }
  */
@@ -39,7 +39,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
-  const tradingKeys = ['backtest', 'paper', 'simulate', 'history', 'compare', 'tracker', 'live'];
+  const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
   const paKeys      = ['paBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive'];
 
@@ -56,16 +56,16 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ]
     },
     {
-      header: 'TRADE', collapsible: true, collapsed: !isTradingOpen,
-      groupId: 'nav-trade',
+      header: 'SWING', collapsible: true, collapsed: !isTradingOpen,
+      groupId: 'nav-swing',
       items: [
-        { key: 'backtest',  href: '/backtest',           icon: '🔍', label: 'Backtest'  },
-        { key: 'paper',     href: '/paperTrade/status',  icon: '📋', label: 'Paper'     },
-        { key: 'simulate',  href: '/paperTrade/simulate', icon: '🎮', label: 'Simulate'  },
-        { key: 'history',   href: '/paperTrade/history', icon: '📊', label: 'History'   },
-        { key: 'compare',   href: '/compare/trading',    icon: '⚖',  label: 'Compare'   },
-        { key: 'tracker',   href: '/tracker/status',     icon: '🎯', label: 'Tracker'   },
-        { key: 'live',      href: '/trade/status',       icon: '●',  label: 'Live'      },
+        { key: 'swingBacktest',  href: '/swing-backtest',        icon: '🔍', label: 'Backtest'  },
+        { key: 'swingPaper',     href: '/swing-paper/status',    icon: '📋', label: 'Paper'     },
+        { key: 'swingSim',       href: '/swing-paper/simulate',  icon: '🎮', label: 'Simulate'  },
+        { key: 'swingHistory',   href: '/swing-paper/history',   icon: '📊', label: 'History'   },
+        { key: 'swingCompare',   href: '/compare/trading',     icon: '⚖',  label: 'Compare'   },
+        { key: 'swingTracker',   href: '/tracker/status',      icon: '🎯', label: 'Tracker'   },
+        { key: 'swingLive',      href: '/swing-live/status',     icon: '●',  label: 'Live'      },
       ]
     },
     ...(scalpModeOn ? [{
@@ -77,7 +77,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
         { key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate'  },
         { key: 'scalpHistory',  href: '/scalp-paper/history', icon: '📊', label: 'History'   },
         { key: 'scalpCompare', href: '/compare/scalping',    icon: '⚖',  label: 'Compare'   },
-        { key: 'scalpLive',     href: '/scalp/status',       icon: '⚡', label: 'Live'      },
+        { key: 'scalpLive',     href: '/scalp-live/status',       icon: '⚡', label: 'Live'      },
       ]
     }] : []),
     ...(paModeOn ? [{
@@ -106,7 +106,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // Block all backtest & paper (trading + scalping + PA) when ANY live mode is active
   const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE' || _paMode === 'PA_LIVE';
-  const blocked = anyLiveActive ? ['backtest', 'paper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
+  const blocked = anyLiveActive ? ['swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
 
   function renderItem(p) {
     const isActive   = p.key === activePage;
@@ -119,11 +119,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       </span>`;
     }
 
-    const liveBadge = p.key === 'live' && liveActive
+    const liveBadge = p.key === 'swingLive' && liveActive
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
-    const runningBadge = p.key === 'paper' && (_primaryMode === 'PAPER_TRADE' || isRunning)
+    const runningBadge = p.key === 'swingPaper' && (_primaryMode === 'SWING_PAPER' || isRunning)
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 

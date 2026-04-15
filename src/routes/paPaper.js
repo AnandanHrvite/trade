@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
  * Runs on 5-min candles with the price action strategy.
- * Can run IN PARALLEL with /trade (live) or /paperTrade (paper).
+ * Can run IN PARALLEL with /trade (live) or /swing-paper (paper).
  *
  * Routes:
  *   GET /pa-paper/start   → Start price action paper trading
@@ -997,7 +997,7 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
   const pos         = state.position;
   const data        = loadPAData();
 
@@ -1931,7 +1931,7 @@ function getPACapitalFromEnv() {
 
 router.get("/history", (req, res) => {
   const data = loadPAData();
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
   const allTrades = data.sessions.flatMap(s =>
     (s.trades || []).map(t => ({ ...t, date: s.date }))

@@ -102,7 +102,7 @@ router.get("/data", (_req, res) => {
 
 // ── Main UI page ────────────────────────────────────────────────────────────
 router.get("/", (_req, res) => {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
   res.send(`<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">

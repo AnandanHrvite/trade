@@ -4,18 +4,18 @@
  * Tracks which modes are currently using the socket.
  *
  * RULES:
- * - PAPER_TRADE and LIVE_TRADE are mutually exclusive (same 15-min strategy)
+ * - SWING_PAPER and SWING_LIVE are mutually exclusive (same 15-min strategy)
  * - SCALP_LIVE and SCALP_PAPER are mutually exclusive (same 3-min strategy)
- * - LIVE_TRADE + SCALP_LIVE can run in parallel (different brokers, different timeframes)
- * - PAPER_TRADE + SCALP_PAPER can run in parallel
+ * - SWING_LIVE + SCALP_LIVE can run in parallel (different brokers, different timeframes)
+ * - SWING_PAPER + SCALP_PAPER can run in parallel
  *
- * The primary mode (PAPER_TRADE | LIVE_TRADE) owns the socket start/stop.
+ * The primary mode (SWING_PAPER | SWING_LIVE) owns the socket start/stop.
  * Scalp modes piggyback on the socket via addCallback/removeCallback.
  * If no primary mode is running, scalp can start the socket itself.
  * ─────────────────────────────────────────────────────────────
  */
 
-// Primary mode: "PAPER_TRADE" | "LIVE_TRADE" | null
+// Primary mode: "SWING_PAPER" | "SWING_LIVE" | null
 let primaryMode = null;
 
 // Scalp mode: "SCALP_LIVE" | "SCALP_PAPER" | null
@@ -88,13 +88,13 @@ function isAnyActive() {
 /** Can the given mode start? Returns { allowed, reason } */
 function canStart(mode) {
   switch (mode) {
-    case "LIVE_TRADE":
-      if (primaryMode === "PAPER_TRADE") return { allowed: false, reason: "Paper Trade is running — stop it first" };
-      if (primaryMode === "LIVE_TRADE")  return { allowed: false, reason: "Live Trade is already running" };
+    case "SWING_LIVE":
+      if (primaryMode === "SWING_PAPER") return { allowed: false, reason: "Paper Trade is running — stop it first" };
+      if (primaryMode === "SWING_LIVE")  return { allowed: false, reason: "Live Trade is already running" };
       return { allowed: true };
-    case "PAPER_TRADE":
-      if (primaryMode === "LIVE_TRADE")  return { allowed: false, reason: "Live Trade is running — stop it first" };
-      if (primaryMode === "PAPER_TRADE") return { allowed: false, reason: "Paper Trade is already running" };
+    case "SWING_PAPER":
+      if (primaryMode === "SWING_LIVE")  return { allowed: false, reason: "Live Trade is running — stop it first" };
+      if (primaryMode === "SWING_PAPER") return { allowed: false, reason: "Paper Trade is already running" };
       return { allowed: true };
     case "SCALP_LIVE":
       if (scalpMode === "SCALP_PAPER") return { allowed: false, reason: "Scalp Paper is running — stop it first" };

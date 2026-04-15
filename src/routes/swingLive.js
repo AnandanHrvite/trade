@@ -8,10 +8,10 @@
  * Backtest & Paper Trade are UNAFFECTED — they never call this file.
  *
  * Routes:
- *   GET /trade/start   — Start live trading
- *   GET /trade/stop    — Stop & square off
- *   GET /trade/status  — Live status page
- *   GET /trade/exit    — Manual exit current position only (session continues)
+ *   GET /swing-live/start   — Start live trading
+ *   GET /swing-live/stop    — Stop & square off
+ *   GET /swing-live/status  — Live status page
+ *   GET /swing-live/exit    — Manual exit current position only (session continues)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -1588,9 +1588,9 @@ function onSpotTick(tick) {
 router.get("/start", async (req, res) => {
   if (!process.env.ACCESS_TOKEN)          return res.status(401).json({ success: false, error: "Fyers not authenticated. Visit /auth/login first." });
   if (!zerodha.isAuthenticated())         return res.status(401).json({ success: false, error: "Zerodha not authenticated. Visit /auth/zerodha/login first." });
-  if (process.env.LIVE_TRADE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set LIVE_TRADE_ENABLED=true in .env." });
+  if (process.env.SWING_LIVE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set SWING_LIVE_ENABLED=true in .env." });
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
-  if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /paperTrade/stop" });
+  if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /swing-paper/stop" });
   
   // ── NEW: Trading session validation (holidays + time check) ────────────────
   const tradingCheck = await isTradingAllowed();
@@ -1823,7 +1823,7 @@ router.get("/start", async (req, res) => {
 
   log(`📡 Subscribing to ${NIFTY_INDEX_SYMBOL} for live tick data...`);
   socketManager.start(NIFTY_INDEX_SYMBOL, onSpotTick, log);
-  sharedSocketState.setActive("LIVE_TRADE");
+  sharedSocketState.setActive("SWING_LIVE");
 
   res.json({
     success:     true,
@@ -1833,7 +1833,7 @@ router.get("/start", async (req, res) => {
     instrument:  instrumentConfig.INSTRUMENT,
     strategy:    { name: strategy.NAME },
     lotQty:      getLotQty(),
-    monitorAt:   "GET /trade/status",
+    monitorAt:   "GET /swing-live/status",
   });
 });
 
@@ -1888,19 +1888,19 @@ router.get("/exit", async (req, res) => {
 
   await squareOff(exitSpot, "Manual exit by user");
 
-  return res.redirect("/trade/status");
+  return res.redirect("/swing-live/status");
 });
 
 /**
- * POST /trade/manualEntry
+ * POST /swing-live/manualEntry
  * Manually enter a CE or PE trade at current spot. Places REAL order via Zerodha.
  * SL = current SAR (capped). Trail/breakeven apply normally after entry.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!tradeState.running) return res.status(400).json({ success: false, error: "Live trading is not running." });
   if (tradeState.position) return res.status(400).json({ success: false, error: "Already in a position." });
-  const liveEnabled = process.env.LIVE_TRADE_ENABLED === "true";
-  if (!liveEnabled) return res.status(400).json({ success: false, error: "LIVE_TRADE_ENABLED is false." });
+  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
+  if (!liveEnabled) return res.status(400).json({ success: false, error: "SWING_LIVE_ENABLED is false." });
 
   const { side } = req.body || {};
   if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
@@ -1976,7 +1976,7 @@ router.post("/manualEntry", async (req, res) => {
 });
 
 /**
- * GET /trade/status/data
+ * GET /swing-live/status/data
  * JSON-only AJAX endpoint — returns all dynamic live trade state.
  * Called every 2 s by client-side setInterval when trading is active.
  */
@@ -2101,7 +2101,7 @@ router.get("/status/data", (req, res) => {
 router.get("/status", (req, res) => {
   try {
   const strategy    = getActiveStrategy();
-  const liveEnabled = process.env.LIVE_TRADE_ENABLED === "true";
+  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
 
@@ -2359,7 +2359,7 @@ router.get("/status", (req, res) => {
 <body>
 <div class="app-shell">
 <!-- ── SIDEBAR ── -->
-${buildSidebar('live', tradeState.running, tradeState.running, {
+${buildSidebar('swingLive', tradeState.running, tradeState.running, {
   showExitBtn: !!pos,
   exitBtnJs: 'ltHandleExit(this)',
   showStopBtn: tradeState.running,
@@ -2757,7 +2757,7 @@ function ltShowToast(msg, color) {
 async function ltHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/trade/exit');
+    var res = await secretFetch('/swing-live/exit');
     if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -2775,7 +2775,7 @@ async function ltHandleExit(btn) {
 async function ltHandleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/trade/start');
+    var res = await secretFetch('/swing-live/start');
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -2793,7 +2793,7 @@ async function ltHandleStart(btn) {
 async function ltHandleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/trade/stop');
+    var res = await secretFetch('/swing-live/stop');
     if (!res) { if (btn) { btn.textContent = '■ Stop'; btn.disabled = false; } return; }
     var data = await res.json();
     ltShowToast('⏹ Live trading stopped.', '#ef4444');
@@ -2806,7 +2806,7 @@ async function ltHandleStop(btn) {
 async function manualEntry(side) {
   if (!confirm('⚠️ LIVE TRADE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
   try {
-    var res = await secretFetch('/trade/manualEntry', {
+    var res = await secretFetch('/swing-live/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -2840,7 +2840,7 @@ async function manualEntry(side) {
 
   async function fetchAndUpdate() {
     try {
-      const res = await fetch('/trade/status/data', { cache: 'no-store' });
+      const res = await fetch('/swing-live/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 

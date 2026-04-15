@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
  * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
- * Can run IN PARALLEL with /trade (live) or /paperTrade (paper).
+ * Can run IN PARALLEL with /trade (live) or /swing-paper (paper).
  *
  * Routes:
  *   GET /scalp-paper/start   → Start scalp paper trading
@@ -1004,7 +1004,7 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
   const pos         = state.position;
   const data        = loadScalpData();
 
@@ -1959,7 +1959,7 @@ function getScalpCapitalFromEnv() {
 
 router.get("/history", (req, res) => {
   const data = loadScalpData();
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
   const allTrades = data.sessions.flatMap(s =>
     (s.trades || []).map(t => ({ ...t, date: s.date }))

@@ -64,7 +64,7 @@ router.get("/", (req, res) => {
       ).join("\n      ")
     : '<p style="color:#4a6080;font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
 
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>

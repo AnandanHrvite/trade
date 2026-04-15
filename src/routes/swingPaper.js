@@ -1,15 +1,15 @@
 /**
- * PAPER TRADE — /paperTrade
+ * PAPER TRADE — /swing-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
  * NO real orders are placed. Everything is tracked in memory + saved to disk.
  *
  * Flow:
- *   /paperTrade/start  → connects to live socket, starts simulating trades
- *   /paperTrade/stop   → stops socket, saves final session summary
- *   /paperTrade/status → live view: position, PnL, capital, log
- *   /paperTrade/history → all past paper trade sessions
- *   /paperTrade/reset  → wipe paper trade history & reset capital
+ *   /swing-paper/start  → connects to live socket, starts simulating trades
+ *   /swing-paper/stop   → stops socket, saves final session summary
+ *   /swing-paper/status → live view: position, PnL, capital, log
+ *   /swing-paper/history → all past paper trade sessions
+ *   /swing-paper/reset  → wipe paper trade history & reset capital
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -95,7 +95,7 @@ function loadPaperData() {
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
     const initial = {
-      capital: parseFloat(process.env.PAPER_TRADE_CAPITAL || "100000"),
+      capital: parseFloat(process.env.SWING_PAPER_CAPITAL || "100000"),
       totalPnl: 0,
       sessions: [],
     };
@@ -107,7 +107,7 @@ function loadPaperData() {
     _paperDataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
   } catch (e) {
     console.error("[paperTrade] paper_trades.json corrupt — resetting:", e.message);
-    _paperDataCache = { capital: parseFloat(process.env.PAPER_TRADE_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    _paperDataCache = { capital: parseFloat(process.env.SWING_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_paperDataCache, null, 2));
   }
   return _paperDataCache;
@@ -292,7 +292,7 @@ function scheduleAutoStop(stopFn) {
 }
 
 function getCapitalFromEnv() {
-  return parseFloat(process.env.PAPER_TRADE_CAPITAL || "100000");
+  return parseFloat(process.env.SWING_PAPER_CAPITAL || "100000");
 }
 
 // ── Option LTP via REST polling ──────────────────────────────────────────────
@@ -1452,7 +1452,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * GET /paperTrade/start
+ * GET /swing-paper/start
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
@@ -1470,7 +1470,7 @@ router.get("/start", async (req, res) => {
   if (sharedSocketState.isActive()) {
     return res.status(400).json({
       success: false,
-      error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /trade/stop`,
+      error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /swing-live/stop`,
     });
   }
 
@@ -1681,7 +1681,7 @@ router.get("/start", async (req, res) => {
 
   // Start the socket manager — single socket, spot-only to begin
   socketManager.start(subscribeSymbol, onTick, log);
-  sharedSocketState.setActive("PAPER_TRADE");
+  sharedSocketState.setActive("SWING_PAPER");
 
   return res.json({
     success:     true,
@@ -1690,12 +1690,12 @@ router.get("/start", async (req, res) => {
     instrument:  instrumentConfig.INSTRUMENT,
     lotQty:      getLotQty(),
     capital:     data.capital,
-    monitorAt:   "GET /paperTrade/status",
+    monitorAt:   "GET /swing-paper/status",
   });
 });
 
 /**
- * GET /paperTrade/stop
+ * GET /swing-paper/stop
  * Stops the session, squares off virtual position, saves summary to disk
  */
 router.get("/stop", async (req, res) => {
@@ -1728,12 +1728,12 @@ router.get("/stop", async (req, res) => {
     success:  true,
     message:  "Paper trading stopped. Session saved.",
     session,
-    viewHistory: "GET /paperTrade/history",
+    viewHistory: "GET /swing-paper/history",
   });
 });
 
 /**
- * GET /paperTrade/exit
+ * GET /swing-paper/exit
  * Manually exit the current open position without stopping the session.
  * Paper trading continues — just closes the current trade at current market price.
  */
@@ -1767,7 +1767,7 @@ router.get("/exit", (req, res) => {
 });
 
 /**
- * POST /paperTrade/manualEntry
+ * POST /swing-paper/manualEntry
  * Manually enter a CE or PE trade at current spot price.
  * SL = current SAR value (capped at MAX_SAR_DISTANCE). Trail/breakeven apply normally.
  */
@@ -1835,7 +1835,7 @@ router.post("/manualEntry", async (req, res) => {
 });
 
 /**
- * GET /paperTrade/status
+ * GET /swing-paper/status
  * Live view — current position, session PnL, capital, recent log
  */
 
@@ -1920,7 +1920,7 @@ function _getCachedTradesForPoll() {
 }
 
 /**
- * GET /paperTrade/status/data
+ * GET /swing-paper/status/data
  * JSON-only endpoint for AJAX polling — returns all dynamic state without HTML.
  * Called every 2 s by the client-side setInterval when trading is active.
  */
@@ -2316,7 +2316,7 @@ ${modalCSS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('paper', sharedSocketState.getMode()==='LIVE_TRADE', ptState.running, {
+${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState.running, {
   showExitBtn:  !!ptState.position,
   showStopBtn:  ptState.running,
   showStartBtn: !ptState.running,
@@ -2738,10 +2738,10 @@ logFilter();
 <script>
 ${modalJS()}
 </script>
-<script src="/paperTrade/client.js"></script>
+<script src="/swing-paper/client.js"></script>
 <script>
 // ── AJAX live refresh — replaces meta http-equiv="refresh" ──────────────────
-// Polls /paperTrade/status/data every 2 s when trading is active.
+// Polls /swing-paper/status/data every 2 s when trading is active.
 // Updates only the dynamic parts of the DOM without a full-page reload,
 // preserving scroll position, filter state, and sort state.
 
@@ -2771,7 +2771,7 @@ ${modalJS()}
 
   async function fetchAndUpdate() {
     try {
-      const res = await fetch('/paperTrade/status/data', { cache: 'no-store' });
+      const res = await fetch('/swing-paper/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3000,7 +3000,7 @@ ${modalJS()}
 });
 
 /**
- * GET /paperTrade/history
+ * GET /swing-paper/history
  * All past paper trade sessions with summary stats
  */
 router.get("/history", (req, res) => {
@@ -3204,7 +3204,7 @@ router.get("/history", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})}
+${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false, {})}
 <div class="main-content">
   <div class="top-bar">
     <div>
@@ -3218,7 +3218,7 @@ ${buildSidebar('history', sharedSocketState.getMode()==='LIVE_TRADE', false, {})
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
       <button class="export-btn" onclick="exportPDF()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.2);">📄 Export PDF</button>
       <button class="export-btn reset-btn" onclick="resetHistory()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);">🗑️ Reset All</button>
-      <a href="/paperTrade/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
+      <a href="/swing-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
   </div>
 
@@ -3358,7 +3358,7 @@ async function resetHistory() {
   });
   if (!ok) return;
   try {
-    var r = await secretFetch('/paperTrade/reset');
+    var r = await secretFetch('/swing-paper/reset');
     if (!r) return;
     var d;
     try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
@@ -3737,7 +3737,7 @@ function renderAnalytics(){
 });
 
 /**
- * GET /paperTrade/reset
+ * GET /swing-paper/reset
  * Wipe all paper trade history and reset capital to .env default
  */
 router.get("/reset", (req, res) => {
@@ -3760,7 +3760,7 @@ router.get("/reset", (req, res) => {
 });
 
 /**
- * GET /paperTrade/debug
+ * GET /swing-paper/debug
  * Returns current state info to help diagnose why Start/Reset isn't working
  */
 router.get("/debug", (req, res) => {
@@ -3783,7 +3783,7 @@ router.get("/debug", (req, res) => {
 
 
 /**
- * GET /paperTrade/client.js
+ * GET /swing-paper/client.js
  * Serves the paper trade UI JavaScript as a static file.
  * Keeping it separate prevents ANY data injection from breaking the buttons.
  */
@@ -3793,7 +3793,7 @@ router.get("/client.js", (req, res) => {
   res.send(`async function handleStart(btn) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/paperTrade/start');
+    const res = await secretFetch('/swing-paper/start');
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (non-JSON response)' }; }
@@ -3812,7 +3812,7 @@ router.get("/client.js", (req, res) => {
 async function handleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/paperTrade/stop');
+    const res = await secretFetch('/swing-paper/stop');
     if (!res) { if (btn) { btn.textContent = '⏹ Stop'; btn.disabled = false; } return; }
     showToast('⏹ Paper trading stopped.', '#ef4444');
     setTimeout(() => location.reload(), 1000);
@@ -3830,7 +3830,7 @@ async function ptHandleReset(btn) {
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/paperTrade/reset');
+    const res = await secretFetch('/swing-paper/reset');
     if (!res) { if (btn) { btn.textContent = '🔄 Reset'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
@@ -3872,7 +3872,7 @@ function ptExportCSV() {
 async function ptHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/paperTrade/exit');
+    const res = await secretFetch('/swing-paper/exit');
     if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     const data = await res.json();
     if (!data.success) {
@@ -3897,7 +3897,7 @@ function showToast(msg, color) {
 async function manualEntry(side) {
   if (!confirm('Manual ' + side + ' entry at current spot?')) return;
   try {
-    const res = await secretFetch('/paperTrade/manualEntry', {
+    const res = await secretFetch('/swing-paper/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -3926,7 +3926,7 @@ async function manualEntry(side) {
 // ── Simulation mode routes ─────────────────────────────────────────────────
 
 router.get("/simulate", (req, res) => {
-  if (ptState.running) return res.redirect("/paperTrade/status");
+  if (ptState.running) return res.redirect("/swing-paper/status");
 
   const scenarios = tickSimulator.getScenarios();
   const cards = Object.entries(scenarios).map(([key, s]) => `
@@ -3962,7 +3962,7 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 </style>
 </head><body>
 <div class="app-shell">
-${buildSidebar('paperTrade', false)}
+${buildSidebar('swingPaper', false)}
 <div class="main-content">
   <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Paper Trade</h1>
   <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:4px;">Run <strong>${strategy.NAME}</strong> against fake ticks — no broker login needed. Works after market hours.</p>
@@ -4043,7 +4043,7 @@ function startSim(key) {
 function submitSim() {
   const btn = document.getElementById('startBtn');
   btn.disabled = true; btn.textContent = 'Starting...';
-  _post('/paperTrade/simulate/start', {
+  _post('/swing-paper/simulate/start', {
     mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
@@ -4055,7 +4055,7 @@ function submitReplay() {
   const date = document.getElementById('replayDate').value;
   if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
   btn.disabled = true; btn.textContent = 'Fetching candles...';
-  _post('/paperTrade/simulate/start', {
+  _post('/swing-paper/simulate/start', {
     mode: 'historical', date: date,
     speed: parseInt(document.getElementById('replaySpeed').value) || 10,
   }, btn, 'Replay Selected Date');
@@ -4063,7 +4063,7 @@ function submitReplay() {
 function _post(url, body, btn, resetLabel) {
   fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(r=>r.json()).then(d=>{
-      if(d.success){ window.location.href='/paperTrade/status'; }
+      if(d.success){ window.location.href='/swing-paper/status'; }
       else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
     }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }

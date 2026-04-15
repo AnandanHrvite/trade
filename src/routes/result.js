@@ -6,11 +6,11 @@ const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── Shared HTML shell ─────────────────────────────────────────────────────────
 function shell(title, body) {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const disabledLink = (label) =>
     `<span title="Disabled — Live trade is running" style="font-size:0.78rem;font-weight:500;color:#2a3446;padding:6px 12px;border-radius:6px;border:1px solid transparent;cursor:not-allowed;opacity:0.38;white-space:nowrap;">🔒 ${label}</span>`;
-  const btLink = liveActive ? disabledLink("🔍 Backtest") : `<a class="nav-link" href="/backtest">🔍 Backtest</a>`;
-  const ptLink = liveActive ? disabledLink("📋 Paper")    : `<a class="nav-link" href="/paperTrade/status">📋 Paper</a>`;
+  const btLink = liveActive ? disabledLink("🔍 Backtest") : `<a class="nav-link" href="/swing-backtest">🔍 Backtest</a>`;
+  const ptLink = liveActive ? disabledLink("📋 Paper")    : `<a class="nav-link" href="/swing-paper/status">📋 Paper</a>`;
   const liveBanner = liveActive
     ? `<span style="display:flex;align-items:center;gap:5px;font-size:0.68rem;font-weight:700;color:#ef4444;background:#2d0a0a;border:1px solid #7f1d1d;padding:3px 10px;border-radius:5px;white-space:nowrap;"><span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;animation:ltpulse 1.2s infinite;"></span>LIVE ACTIVE</span><style>@keyframes ltpulse{0%,100%{opacity:1}50%{opacity:.25}}</style>`
     : "";
@@ -189,7 +189,7 @@ function shell(title, body) {
     <a href="/result">My Result</a>
     <a href="/result/all">All Results</a>
     ${ptLink}
-    <a href="/trade/status">🔴 Live</a>
+    <a href="/swing-live/status">🔴 Live</a>
     <a href="/logs">📜 Logs</a>
     <a href="/settings">⚙ Settings</a>
     ${liveBanner}
@@ -291,7 +291,7 @@ router.get("/", (req, res) => {
         <div class="emoji">📭</div>
         <h3>No backtest result yet for ${ACTIVE}</h3>
         <p>Run the backtest first to see results here.</p>
-        <a class="btn" href="/backtest">Run Backtest →</a>
+        <a class="btn" href="/swing-backtest">Run Backtest →</a>
       </div>`));
   }
 
@@ -333,7 +333,7 @@ router.get("/all", (req, res) => {
         <div class="emoji">📭</div>
         <h3>No backtest results found</h3>
         <p>Run backtest for each strategy to see results here.</p>
-        <a class="btn" href="/backtest">Run Backtest →</a>
+        <a class="btn" href="/swing-backtest">Run Backtest →</a>
       </div>`));
   }
 

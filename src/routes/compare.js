@@ -158,7 +158,7 @@ function pageCSS() {
 
 // ── Build comparison page ───────────────────────────────────────────────────
 function buildComparePage(mode, paperSummary, backtestResult, activePage) {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const title = mode === "scalping" ? "Scalp: Paper vs Backtest" : "Trading: Paper vs Backtest";
   const bt = backtestResult ? backtestResult.summary : null;
 

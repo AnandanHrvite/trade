@@ -45,7 +45,7 @@ const SETTINGS_SCHEMA = [
     section: "TRADING STRATEGY (15-min) — Zerodha",
     icon: "📊",
     fields: [
-      { key: "LIVE_TRADE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "SWING_LIVE_ENABLED", label: "Live Trade", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "09:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
@@ -186,7 +186,7 @@ const SETTINGS_SCHEMA = [
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place SL-M order at exchange on every entry. Protects against bot crash/disconnect. Options only.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta for converting spot SL to option premium trigger price", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
-      { key: "PAPER_TRADE_CAPITAL", label: "Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT },
+      { key: "SWING_PAPER_CAPITAL", label: "Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT },
       { key: "SCALP_PAPER_CAPITAL", label: "Scalp Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for scalp paper trading", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
@@ -271,11 +271,11 @@ function parseEnvFile() {
 // ── Classify which settings take effect immediately vs need restart ──────────
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
-  "LIVE_TRADE_ENABLED", "TRADE_EXPIRY_DAY_ONLY", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
+  "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
-  "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "PAPER_TRADE_CAPITAL",
+  "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "SWING_PAPER_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_TRADE_ENTRY", "TG_TRADE_EXIT", "TG_TRADE_SIGNALS",
   "TG_SCALP_ENTRY", "TG_SCALP_EXIT",
@@ -448,7 +448,7 @@ router.get("/", (req, res) => {
   // App Secret gate — if API_SECRET is set, require it to access settings
   const appSecret = process.env.API_SECRET;
   if (appSecret && req.query.secret !== appSecret) {
-    const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+    const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
     return res.send(`<!DOCTYPE html><html><head><title>Settings - Auth</title>
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;display:flex;min-height:100vh;}
@@ -482,7 +482,7 @@ router.get("/", (req, res) => {
       </script></body></html>`);
   }
 
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const envData    = parseEnvFile();
 
   // ── Determine which fields should be frozen (disabled but values kept) ──

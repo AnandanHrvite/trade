@@ -32,7 +32,7 @@ router.post("/clear", (req, res) => {
 
 // ── UI page ─────────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "LIVE_TRADE";
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>

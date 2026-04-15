@@ -309,7 +309,7 @@ router.get("/status", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar("tracker", sharedSocketState.getMode()==="LIVE_TRADE", !!pos, {
+${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos, {
   showExitBtn: !!pos, exitBtnJs: "handleExit(this)", exitLabel: "🛑 Stop Tracking",
   statusLabel: pos ? "TRACKING" : tracker.status === "sl_hit" ? "SL HIT" : "IDLE",
 })}
