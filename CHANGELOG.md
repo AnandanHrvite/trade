@@ -4,6 +4,63 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.1.0 — Background Backtests, Mode Rename, and Backtest Scaling (2026-04-16)
+
+### Mode Rename: Swing / Scalp / Price Action
+
+- **All trading modes renamed** for consistency: "Live Trade" → Swing Live, "Paper Trade" → Swing Paper, "Backtest" → Swing Backtest
+- Route prefixes updated: `/trade` → `/swing-live`, `/paperTrade` → `/swing-paper`, `/backtest` → `/swing-backtest`, `/scalp` → `/scalp-live`
+- Settings page section headers updated to SWING / SCALP / PRICE ACTION
+- Route files renamed: `trade.js` → `swingLive.js`, `paperTrade.js` → `swingPaper.js`, `backtest.js` → `swingBacktest.js`, `scalp.js` → `scalpLive.js`, `priceActionLive.js` → `paLive.js`, `priceActionPaper.js` → `paPaper.js`, `priceActionBacktest.js` → `paBacktest.js`
+
+### Background Backtests with Progress Bar
+
+- Backtests now run in the background — browser no longer hangs on long runs
+- Real-time progress bar with phase labels (Fetching, Computing, Rendering)
+- One backtest at a time to protect server resources (`backtestJobManager.js`)
+- Smart monthly caching — fetches candle data month-by-month with rate-limit delay + retry
+- Progress page preserves from/to/resolution params across redirects
+
+### Backtest Scaling & Performance
+
+- **Optimized backtest engine** for 100K+ candle runs (large date ranges)
+- **Split by Years checkbox** on all backtest pages — run each year separately with combined summary
+- **Split by Months checkbox** on all backtest pages — granular month-by-month breakdown
+- Queued split tabs instead of crashing server with concurrent backtests
+- Random delay on queue page reload to prevent thundering herd
+- Embedded trades capped to 2000 per page for browser performance
+- Smaller yield batch size for backtest rendering
+
+### Entry Signal & Analytics
+
+- **Entry Reason Breakdown** analytics panel on backtest pages — shows distribution of entry signals
+- **Entry Signal** field added to trade modals across all modes
+- `entryReason` data tracked in scalp/PA backtest and live trade engines
+
+### UI & Quality of Life
+
+- **DD/MM/YYYY date format** across all pages (previously mixed formats)
+- **HH:MM:SS time format** in date/time columns
+- Per-session copy trade log on all history pages
+- Eye icon summary modals now shown on all settings sections
+
+### Code Quality
+
+- **Shared trade utilities** extracted to `tradeUtils.js` — stateless pure helpers used across all trade routes
+- **Production hardening**: graceful shutdown handler, shared `errorPage` template, PA mode tracking
+- Backtest behavior aligned with paper/live across all 3 modes
+
+### Bug Fixes
+
+- Fix candles shim for HTML rendering in background job result path
+- Fix rate-limit delay + retry for monthly cache API fetches
+- Fix missing `fmtAna` function in PA and scalp backtest analytics
+- Fix eye icon only showing on first two settings sections
+- Fix trailing params and ADX/RSI caps that degraded PA backtest PnL
+- Fix RSI caps removed from pattern checks; chart patterns disabled by default
+
+---
+
 ## v4.0.0 — Price Action Strategy, Simulation Engine, and Full Platform Upgrade (2026-04-15)
 
 ### New Strategy: Price Action (5-min)

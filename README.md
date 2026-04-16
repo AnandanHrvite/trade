@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with 3 independent strategies, dual-broker architecture (Fyers + Zerodha), backtesting, paper trading, simulation, and a full web dashboard.
+NIFTY options algorithmic trading bot with 3 independent strategies (Swing, Scalp, Price Action), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, simulation, and a full web dashboard.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ Fyers WebSocket (NIFTY50 spot ticks — single connection)
         |
    ┌────┼──────────────────────────────────┐
    |    |                                  |
- Main Mode (15-min)   Scalp Mode (5-min)   Price Action (5-min)
+ Swing (15-min)       Scalp (5-min)        Price Action (5-min)
    |                       |                    |
  ┌─┴─┐                 ┌──┴──┐              ┌──┴──┐
  |   |                 |     |              |     |
@@ -26,10 +26,10 @@ All three modes run **in parallel** on the same WebSocket — different candle r
 
 | Mode | Strategy | Timeframe | Broker | Route Prefix |
 |------|----------|-----------|--------|-------------|
-| **Live Trade** | SAR + EMA9 + RSI | 15-min | Zerodha | `/trade` |
-| **Paper Trade** | SAR + EMA9 + RSI | 15-min | Simulated | `/paperTrade` |
-| **Backtest** | SAR + EMA9 + RSI | 15-min | Historical | `/backtest` |
-| **Scalp Live** | BB + RSI + PSAR | 5-min | Fyers | `/scalp` |
+| **Swing Live** | SAR + EMA9 + RSI | 15-min | Zerodha | `/swing-live` |
+| **Swing Paper** | SAR + EMA9 + RSI | 15-min | Simulated | `/swing-paper` |
+| **Swing Backtest** | SAR + EMA9 + RSI | 15-min | Historical | `/swing-backtest` |
+| **Scalp Live** | BB + RSI + PSAR | 5-min | Fyers | `/scalp-live` |
 | **Scalp Paper** | BB + RSI + PSAR | 5-min | Simulated | `/scalp-paper` |
 | **Scalp Backtest** | BB + RSI + PSAR | 5-min | Historical | `/scalp-backtest` |
 | **PA Live** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
@@ -40,33 +40,33 @@ All three modes run **in parallel** on the same WebSocket — different candle r
 
 ### Parallel Compatibility
 
-| | Live Trade | Paper Trade | Scalp Live | Scalp Paper | PA Live | PA Paper |
+| | Swing Live | Swing Paper | Scalp Live | Scalp Paper | PA Live | PA Paper |
 |---|---|---|---|---|---|---|
-| **Live Trade** | — | cannot | can | can | can | can |
-| **Paper Trade** | cannot | — | can | can | can | can |
+| **Swing Live** | — | cannot | can | can | can | can |
+| **Swing Paper** | cannot | — | can | can | can | can |
 | **Scalp Live** | can | can | — | cannot | can | can |
 | **Scalp Paper** | can | can | cannot | — | can | can |
 | **PA Live** | can | can | can | can | — | cannot |
 | **PA Paper** | can | can | can | can | cannot | — |
 
-Backtests always run independently.
+Backtests run in the background (one at a time) and never block live/paper modes.
 
 ## Strategies
 
-### Strategy 1: SAR + EMA9 + RSI (15-min)
+### Strategy 1: Swing — SAR + EMA9 + RSI (15-min)
 - **Entry**: EMA9 OHLC4 touch + SAR positioning + RSI momentum + ADX trend + EMA slope
 - **Filters**: ADX chop filter (skip low-ADX), RSI overbought/oversold caps, VIX regime, EMA30 trend gate (optional), body >= 10pt, SAR gap >= 55pt
 - **Exit**: Tiered trailing SL (T1/T2/T3) + 50% candle rule + opposite signal + EOD
 - **Logic 3 override**: Captures lagging-SAR CE entries that classic logic misses
 
-### Strategy 2: Scalp BB + RSI + PSAR (5-min)
+### Strategy 2: Scalp — BB + RSI + PSAR (5-min)
 - **Entry**: Close beyond Bollinger Band + RSI confirmation (> 55 for CE, < 45 for PE)
 - **Filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle), activity filter
 - **SL**: Previous candle low/high (capped between min/max pts)
 - **Exit**: Initial SL + tiered trailing profit % of peak + PSAR trailing (only tightens) + PSAR flip
 - **Trail tiers**: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 
-### Strategy 3: Price Action Patterns (5-min)
+### Strategy 3: Price Action — Patterns + S/R Zones (5-min)
 - **Patterns**: Bullish/Bearish Engulfing, Pin Bar, Inside Bar Breakout, Break of Structure, Double Top/Bottom, Ascending/Descending Triangle
 - **S/R Zones**: Dynamic from swing highs/lows (last 30 candles, zone = swing ±10pts)
 - **RSI confluence**: CE requires RSI > 45, PE requires RSI < 55
@@ -133,13 +133,13 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 ## Key .env Settings
 
-### Main Strategy (15-min, Zerodha)
+### Swing Strategy (15-min, Zerodha)
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TRADE_RESOLUTION` | `15` | Candle size in minutes |
 | `MAX_DAILY_LOSS` | `3000` | Daily kill-switch in INR |
 | `MAX_DAILY_TRADES` | `10` | Daily entry cap |
-| `LIVE_TRADE_ENABLED` | `false` | Must be `true` for Zerodha orders |
+| `SWING_LIVE_ENABLED` | `false` | Must be `true` for Zerodha orders |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `EMA30_FILTER` | `false` | Medium-term trend gate |
 | `ENTRY_START_TIME` | `09:30` | Earliest entry time (IST) |
@@ -185,24 +185,24 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 ## Routes
 
-### Trading
+### Swing
 | URL | Description |
 |-----|-------------|
 | `/` | Dashboard |
-| `/backtest` | Run backtest (15-min SAR+EMA9+RSI) |
-| `/paperTrade/status` | Paper trade live view |
-| `/paperTrade/history` | Past paper sessions |
-| `/paperTrade/simulate` | Market scenario simulator |
-| `/trade/status` | Live trade status |
+| `/swing-backtest` | Run backtest (15-min SAR+EMA9+RSI) |
+| `/swing-paper/status` | Paper trade live view |
+| `/swing-paper/history` | Past paper sessions |
+| `/swing-paper/simulate` | Market scenario simulator |
+| `/swing-live/status` | Live trade status |
 | `/tracker/status` | Manual trade tracker |
 
-### Scalping
+### Scalp
 | URL | Description |
 |-----|-------------|
 | `/scalp-backtest` | Scalp backtest (5-min BB+RSI+PSAR) |
 | `/scalp-paper/status` | Scalp paper trade |
 | `/scalp-paper/simulate` | Scalp simulator |
-| `/scalp/status` | Scalp live trade |
+| `/scalp-live/status` | Scalp live trade |
 
 ### Price Action
 | URL | Description |
@@ -240,7 +240,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 src/
   app.js                              # Express server, dashboard, route registration
   strategies/
-    strategy1_sar_ema_rsi.js          # Main 15-min strategy (SAR + EMA9 + RSI)
+    strategy1_sar_ema_rsi.js          # Swing 15-min strategy (SAR + EMA9 + RSI)
     scalp_bb_cpr.js                   # Scalp 5-min strategy (BB + RSI + PSAR)
     price_action.js                   # Price action 5-min strategy (patterns + S/R)
     scalp_ema9_rsi.js                 # Scalp V1 (EMA9 cross, legacy)
@@ -254,15 +254,15 @@ src/
     fyersBroker.js                    # Fyers order placement (scalp + PA)
     logger.js                         # Console interceptor + in-memory log store
   routes/
-    trade.js                          # Live trade (15-min, Zerodha)
-    paperTrade.js                     # Paper trade (15-min, simulated)
-    scalp.js                          # Scalp live (5-min, Fyers)
+    swingLive.js                      # Swing live trade (15-min, Zerodha)
+    swingPaper.js                     # Swing paper trade (15-min, simulated)
+    swingBacktest.js                  # Swing backtest (15-min)
+    scalpLive.js                      # Scalp live (5-min, Fyers)
     scalpPaper.js                     # Scalp paper (5-min, simulated)
     scalpBacktest.js                  # Scalp backtest
-    priceActionLive.js                # PA live (5-min, Fyers)
-    priceActionPaper.js               # PA paper (5-min, simulated)
-    priceActionBacktest.js            # PA backtest
-    backtest.js                       # Main backtest (15-min)
+    paLive.js                         # PA live (5-min, Fyers)
+    paPaper.js                        # PA paper (5-min, simulated)
+    paBacktest.js                     # PA backtest
     manualTracker.js                  # Manual position tracker + SL trailer
     compare.js                        # Paper vs Backtest comparison pages
     settings.js                       # Settings UI + save endpoint
@@ -278,8 +278,10 @@ src/
     sharedSocketState.js              # Mode coexistence manager
     sharedNav.js                      # Sidebar navigation component
     positionPersist.js                # Crash recovery — position save/load
+    backtestJobManager.js             # Background backtest job queue (1-at-a-time)
     backtestCache.js                  # Disk cache for historical candles
     candleCache.js                    # Live candle cache
+    tradeUtils.js                     # Shared pure helpers for all trade routes
     charges.js                        # Brokerage + tax calculator
     nseHolidays.js                    # NSE holiday + expiry API
     notify.js                         # Telegram notifications
