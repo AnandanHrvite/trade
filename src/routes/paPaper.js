@@ -1342,7 +1342,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
 ${posHtml}
 </div>
 
-<!-- NIFTY Chart -->
+${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 <div style="margin-bottom:18px;">
   <div class="section-title">NIFTY ${PA_RES}-Min Chart</div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
@@ -1351,7 +1351,7 @@ ${posHtml}
       <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
-</div>
+</div>` : ""}
 
 <!-- Session trades table -->
 ${state.sessionTrades.length > 0 ? `
@@ -1692,7 +1692,7 @@ function doCopy(text,btn,label){
 <script>
 // ── NIFTY Chart (Lightweight Charts) ─────────────────────────────────────
 (function() {
-  if (typeof LightweightCharts === 'undefined') return;
+  if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
   var container = document.getElementById('nifty-chart');
   if (!container) return;
   var chart = LightweightCharts.createChart(container, {

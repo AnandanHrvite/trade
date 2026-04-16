@@ -2501,7 +2501,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
     </div>
   </div>`}
 
-  <!-- ── NIFTY Chart (Lightweight Charts) ────────────────────────────────── -->
+  ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div style="margin-bottom:24px;">
     <div class="section-title">NIFTY ${getTradeResolution()}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
@@ -2514,7 +2514,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <span style="color:#3b82f6;">-- Entry Price</span>
       </div>
     </div>
-  </div>
+  </div>` : ""}
 
   <div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
@@ -2883,7 +2883,7 @@ async function manualEntry(side) {
 <script>
 // ── NIFTY Chart (Lightweight Charts by TradingView) ─────────────────────────
 (function() {
-  if (typeof LightweightCharts === 'undefined') { console.warn('[Chart] lightweight-charts not loaded'); return; }
+  if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
   const container = document.getElementById('nifty-chart');
   if (!container) return;
 

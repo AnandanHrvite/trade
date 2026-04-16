@@ -172,6 +172,7 @@ const SETTINGS_SCHEMA = [
     section: "COMMON — Instrument & Backtest",
     icon: "📈",
     fields: [
+      { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show candlestick chart with entry/exit markers on status pages", default: "true" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Trading candle timeframe (5-min or 15-min)", default: "15" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time — execution gate start (HH:MM IST)", default: "09:15" },
       { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop time — EOD square off + engine shutdown (HH:MM IST)", default: "15:30" },
