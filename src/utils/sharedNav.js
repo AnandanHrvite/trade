@@ -1180,4 +1180,39 @@ async function secretFetch(url, opts) {
 `;
 }
 
-module.exports = { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS };
+/**
+ * Styled error page — shared across all trade route files.
+ * @param {string} title — error title
+ * @param {string} message — error description
+ * @param {string} linkHref — back-link URL
+ * @param {string} linkText — back-link label
+ * @param {string} sidebarKey — active sidebar page key (e.g. 'scalpLive')
+ */
+function errorPage(title, message, linkHref, linkText, sidebarKey) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${title}</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+${sidebarCSS()}
+*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
+.main-content{flex:1;padding:40px 32px;margin-left:220px;display:flex;align-items:center;justify-content:center;}
+@media(max-width:900px){.main-content{margin-left:0;}}
+.err-box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;}
+.err-icon{font-size:2.5rem;margin-bottom:16px;}
+.err-title{color:#ef4444;margin-bottom:12px;font-size:1.1rem;font-weight:700;}
+.err-msg{font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;}
+.err-link{background:#1e40af;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;display:inline-block;}
+.err-link:hover{background:#2563eb;}
+</style></head><body>
+<div class="app-shell">
+${buildSidebar(sidebarKey || 'dashboard', false)}
+<div class="main-content">
+<div class="err-box">
+<div class="err-icon">\u{1F6AB}</div>
+<h2 class="err-title">${title}</h2>
+<p class="err-msg">${message}</p>
+${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a>` : ''}
+</div></div></div></body></html>`;
+}
+
+module.exports = { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage };

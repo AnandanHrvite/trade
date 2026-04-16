@@ -1356,6 +1356,7 @@ async function reconcileOrphanedPositions() {
 
 // ── Graceful Shutdown — square off positions on SIGTERM/SIGINT ───────────────
 // When PM2 or Docker sends SIGTERM, attempt to exit open positions before dying.
+// Calls stopSession() on each active mode to trigger squareOff for live modes.
 let _shutdownInProgress = false;
 
 async function gracefulShutdown(signal) {
@@ -1368,6 +1369,7 @@ async function gracefulShutdown(signal) {
     const activeModes = [];
     if (sharedSocketState.getMode())      activeModes.push(sharedSocketState.getMode());
     if (sharedSocketState.getScalpMode()) activeModes.push(sharedSocketState.getScalpMode());
+    if (sharedSocketState.getPAMode())    activeModes.push(sharedSocketState.getPAMode());
 
     if (activeModes.length === 0) {
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
@@ -1376,21 +1378,42 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}`);
+    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE");
+    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
 
-    // Only send alarming Telegram for LIVE modes; paper modes are harmless
-    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE");
-    if (hasLive) {
-      sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes active: ${modeList} — check broker dashboard for open positions!`);
-    } else {
-      sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`);
+    // Call stopSession() on each active route — this triggers squareOff for live modes
+    const routeMap = {
+      "SCALP_LIVE":  require("./routes/scalpLive"),
+      "SCALP_PAPER": require("./routes/scalpPaper"),
+      "PA_LIVE":     require("./routes/paLive"),
+      "PA_PAPER":    require("./routes/paPaper"),
+    };
+    for (const mode of activeModes) {
+      const route = routeMap[mode];
+      if (route && typeof route.stopSession === "function") {
+        try {
+          console.log(`🔄 [SHUTDOWN] Stopping ${mode}...`);
+          route.stopSession();
+        } catch (err) {
+          console.error(`⚠️ [SHUTDOWN] Error stopping ${mode}: ${err.message}`);
+        }
+      }
     }
 
-    console.log("🔄 [SHUTDOWN] Waiting 3s for alerts to flush...");
+    // Send Telegram alert
+    if (hasLive) {
+      sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.`).catch(() => {});
+    } else {
+      sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`).catch(() => {});
+    }
+
+    // Wait for squareOff orders to complete before exiting
+    const waitMs = hasLive ? 8000 : 3000;
+    console.log(`🔄 [SHUTDOWN] Waiting ${waitMs / 1000}s for exits to complete...`);
     setTimeout(() => {
       console.log("👋 [SHUTDOWN] Exiting.");
       process.exit(0);
-    }, 3000);
+    }, waitMs);
   } catch (err) {
     console.error(`[SHUTDOWN] Error during graceful exit: ${err.message}`);
     process.exit(1);
