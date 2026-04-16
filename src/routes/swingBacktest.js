@@ -191,7 +191,11 @@ ${buildSidebar('swingBacktest', true)}
       })(),
     }));
     // Escape </script> in JSON to prevent early tag termination
-    const tradesJSON = JSON.stringify(tradesData).replace(/<\/script>/gi, "<\\/script>");
+    // Cap embedded trades for browser performance — summary stats use full array
+    const MAX_EMBEDDED_TRADES = 2000;
+    const tradesTruncated = tradesData.length > MAX_EMBEDDED_TRADES;
+    const tradesForPage = tradesTruncated ? tradesData.slice(0, MAX_EMBEDDED_TRADES) : tradesData;
+    const tradesJSON = JSON.stringify(tradesForPage).replace(/<\/script>/gi, "<\\/script>");
 
     res.setHeader("Content-Type", "text/html");
     return res.send(`<!DOCTYPE html>
@@ -538,6 +542,7 @@ ${buildSidebar('swingBacktest', liveActive)}
   </div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
+${tradesTruncated ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:0.72rem;color:#b8a040;text-align:center;">Showing latest ${MAX_EMBEDDED_TRADES.toLocaleString()} of ${tradesData.length.toLocaleString()} trades for browser performance. Summary stats reflect ALL trades.</div>` : ''}
 <script>
 ${modalJS()}
 var TRADES = JSON.parse(document.getElementById('trades-data').textContent);
