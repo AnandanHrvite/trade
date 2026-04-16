@@ -214,15 +214,17 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 2.0</span>
+      <span>Version 3.0</span>
       <span>April 2026</span>
-      <span>8 Patterns | ADX Filter | Swing Trail SL</span>
+      <span>8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery</span>
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
       <div class="pillar">S/R Zones</div>
       <div class="pillar">8 Patterns</div>
-      <div class="pillar">Swing Trailing SL</div>
+      <div class="pillar">Candle Trail SL</div>
+      <div class="pillar">VIX Regime Filter</div>
+      <div class="pillar">Crash Recovery</div>
     </div>
   </div>
 </header>
@@ -238,8 +240,11 @@ td.pe { color: var(--red); }
     <a href="#adx">ADX Filter</a>
     <a href="#sl">Stop Loss</a>
     <a href="#trail">Trailing SL</a>
+    <a href="#candletrail">Candle Trail</a>
     <a href="#exit">Exit Logic</a>
+    <a href="#vixfilter">VIX Filter</a>
     <a href="#rsi">RSI Filter</a>
+    <a href="#persist">Crash Recovery</a>
     <a href="#flowchart">Signal Flow</a>
     <a href="#compare">Comparison</a>
     <a href="#risk">Risk Mgmt</a>
@@ -279,8 +284,8 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="card">
-      <h3>4 Key Pillars</h3>
-      <div class="grid-4 mt-2">
+      <h3>6 Key Pillars</h3>
+      <div class="grid-3 mt-2">
         <div style="text-align:center; padding: 16px;">
           <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F56F;</div>
           <div class="fw-700" style="color:#fff;">5-Min Candle</div>
@@ -297,9 +302,19 @@ td.pe { color: var(--red); }
           <div class="fs-sm text-muted mt-1">Engulfing, Pin Bar, Inside Bar, BOS, Double Top/Bottom, Triangles</div>
         </div>
         <div style="text-align:center; padding: 16px;">
-          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F6E1;</div>
-          <div class="fw-700" style="color:#fff;">Swing Trail SL</div>
-          <div class="fs-sm text-muted mt-1">Tighten only, never widen</div>
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F4CF;</div>
+          <div class="fw-700" style="color:#fff;">Candle Trail SL <span class="badge-new">NEW</span></div>
+          <div class="fs-sm text-muted mt-1">N-bar low/high trail — exits on candle structure break</div>
+        </div>
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F321;</div>
+          <div class="fw-700" style="color:#fff;">VIX Regime Filter <span class="badge-new">NEW</span></div>
+          <div class="fs-sm text-muted mt-1">3-tier India VIX gate — normal / elevated / high</div>
+        </div>
+        <div style="text-align:center; padding: 16px;">
+          <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F4BE;</div>
+          <div class="fw-700" style="color:#fff;">Crash Recovery <span class="badge-new">NEW</span></div>
+          <div class="fs-sm text-muted mt-1">Position persistence survives restarts &amp; OOM kills</div>
         </div>
       </div>
     </div>
@@ -460,7 +475,7 @@ td.pe { color: var(--red); }
           <li>Previous candle is <strong class="text-red">RED</strong>, current candle is <strong class="text-green">GREEN</strong></li>
           <li>Current body <strong>fully engulfs</strong> previous body: <code>curr.open &lt;= prev.close</code> AND <code>curr.close &gt;= prev.open</code></li>
           <li>Low within <strong>15pts</strong> of a swing low (support zone)</li>
-          <li>RSI &gt; 45 and &lt; 70 (not overbought) | Body size &ge; 5 pts</li>
+          <li>RSI &gt; 45 (upper cap only when <code>PA_RSI_CAPS_ENABLED=true</code>, default 85) | Body size &ge; 5 pts</li>
           <li><strong>SL = Signal candle LOW</strong></li>
         </ul>
       </div>
@@ -503,7 +518,7 @@ td.pe { color: var(--red); }
           <li>Previous candle is <strong class="text-green">GREEN</strong>, current candle is <strong class="text-red">RED</strong></li>
           <li>Current body <strong>fully engulfs</strong> previous body: <code>curr.open &gt;= prev.close</code> AND <code>curr.close &lt;= prev.open</code></li>
           <li>High within <strong>15pts</strong> of a swing high (resistance zone)</li>
-          <li>RSI &lt; 55 and &gt; 30 (not oversold) | Body size &ge; 5 pts</li>
+          <li>RSI &lt; 55 (lower cap only when <code>PA_RSI_CAPS_ENABLED=true</code>, default 15) | Body size &ge; 5 pts</li>
           <li><strong>SL = Signal candle HIGH</strong></li>
         </ul>
       </div>
@@ -551,7 +566,7 @@ td.pe { color: var(--red); }
           <li>Lower wick &ge; <strong>2x body size</strong> (<code>PA_PIN_WICK_RATIO = 2</code>)</li>
           <li>Upper wick &le; 0.5x body (small upper shadow)</li>
           <li>Low within <strong>support zone</strong> (+/- 15pts of swing low)</li>
-          <li>RSI &gt; 45 and &lt; 70 | Body &ge; 2 pts</li>
+          <li>RSI &gt; 45 (cap at 85 if RSI Caps enabled) | Body &ge; 2 pts</li>
           <li><strong>SL = Pin bar LOW</strong> (wick tip)</li>
         </ul>
       </div>
@@ -599,7 +614,7 @@ td.pe { color: var(--red); }
           <li>Upper wick &ge; <strong>2x body size</strong> (<code>PA_PIN_WICK_RATIO = 2</code>)</li>
           <li>Lower wick &le; 0.5x body (small lower shadow)</li>
           <li>High within <strong>resistance zone</strong> (+/- 15pts of swing high)</li>
-          <li>RSI &lt; 55 and &gt; 30 | Body &ge; 2 pts</li>
+          <li>RSI &lt; 55 (floor at 15 if RSI Caps enabled) | Body &ge; 2 pts</li>
           <li><strong>SL = Pin bar HIGH</strong> (wick tip)</li>
         </ul>
       </div>
@@ -643,8 +658,8 @@ td.pe { color: var(--red); }
       <div class="pattern-rules">
         <ul>
           <li>Inside bar: <strong>entire range</strong> within mother candle range (<code>curr.high &lt;= prev.high &amp;&amp; curr.low &gt;= prev.low</code>)</li>
-          <li><strong>CE:</strong> Breakout candle closes <strong>ABOVE</strong> mother high | RSI &gt; 45 and &lt; 70</li>
-          <li><strong>PE:</strong> Breakout candle closes <strong>BELOW</strong> mother low | RSI &lt; 55 and &gt; 30</li>
+          <li><strong>CE:</strong> Breakout candle closes <strong>ABOVE</strong> mother high | RSI &gt; 45</li>
+          <li><strong>PE:</strong> Breakout candle closes <strong>BELOW</strong> mother low | RSI &lt; 55</li>
           <li><strong>SL:</strong> Mother candle low (CE) / Mother candle high (PE)</li>
           <li>Does <strong>NOT</strong> require S/R confluence (works anywhere)</li>
           <li>Pending state tracked for max <strong>3 candles</strong>, resets if ADX &lt; 20</li>
@@ -695,8 +710,8 @@ td.pe { color: var(--red); }
       </div>
       <div class="pattern-rules">
         <ul>
-          <li><strong>Bullish BOS:</strong> Close <strong>ABOVE</strong> last swing high, opened <strong>AT or BELOW</strong> that swing high | RSI &gt; 45 and &lt; 70 | Body &ge; 5 pts</li>
-          <li><strong>Bearish BOS:</strong> Close <strong>BELOW</strong> last swing low, opened <strong>AT or ABOVE</strong> that swing low | RSI &lt; 55 and &gt; 30 | Body &ge; 5 pts</li>
+          <li><strong>Bullish BOS:</strong> Close <strong>ABOVE</strong> last swing high, opened <strong>AT or BELOW</strong> that swing high | RSI &gt; 45 | Body &ge; 5 pts</li>
+          <li><strong>Bearish BOS:</strong> Close <strong>BELOW</strong> last swing low, opened <strong>AT or ABOVE</strong> that swing low | RSI &lt; 55 | Body &ge; 5 pts</li>
           <li><strong>SL:</strong> Recent swing low (bullish) / Recent swing high (bearish) — uses <code>min(sc.low, prev.low)</code> or <code>max(sc.high, prev.high)</code></li>
           <li>Does NOT require S/R zone confluence</li>
         </ul>
@@ -810,7 +825,7 @@ td.pe { color: var(--red); }
           <li><strong>Double Top:</strong> Two swing highs within <code>PA_CHART_PATTERN_TOL = 12</code> pts of each other, at least <strong>5 candles apart</strong></li>
           <li>Close breaks <strong>below neckline</strong> (lowest low between the two peaks), open was at/above neckline</li>
           <li><strong>Double Bottom:</strong> Two swing lows within 12pts, close breaks <strong>above neckline</strong> (highest high between troughs)</li>
-          <li>RSI confirmation required: PE (Double Top) RSI &lt; 55 &amp; &gt; 30 | CE (Double Bottom) RSI &gt; 45 &amp; &lt; 70</li>
+          <li>RSI confirmation required: PE (Double Top) RSI &lt; 55 | CE (Double Bottom) RSI &gt; 45</li>
           <li>Body &ge; 5 pts | <strong>SL:</strong> Above double top level / Below double bottom level</li>
         </ul>
       </div>
@@ -936,9 +951,9 @@ td.pe { color: var(--red); }
       <div class="pattern-rules">
         <ul>
           <li><strong>Ascending Triangle:</strong> Two swing highs within <code>PA_CHART_PATTERN_TOL = 12</code> pts (flat resistance) + Second swing low <strong>higher</strong> than first (rising lows)</li>
-          <li>CE breakout: Close above resistance, open was at/below resistance | RSI &gt; 45 &amp; &lt; 70</li>
+          <li>CE breakout: Close above resistance, open was at/below resistance | RSI &gt; 45</li>
           <li><strong>Descending Triangle:</strong> Two swing lows within 12pts (flat support) + Second swing high <strong>lower</strong> than first (falling highs)</li>
-          <li>PE breakdown: Close below support, open was at/above support | RSI &lt; 55 &amp; &gt; 30</li>
+          <li>PE breakdown: Close below support, open was at/above support | RSI &lt; 55</li>
           <li><strong>SL:</strong> Rising swing low (ascending) / Falling swing high (descending) | Body &ge; 5 pts</li>
         </ul>
       </div>
@@ -1196,6 +1211,92 @@ td.pe { color: var(--red); }
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6b. CANDLE TRAIL                                                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="candletrail">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">6b</span> Candle Trail — N-Bar Structure Exit <span class="badge-new">NEW</span></h2>
+      <p>An additional trailing mechanism that tracks the lowest low (CE) or highest high (PE) of the last N candles. Runs in parallel with the swing-based trailing SL and profit-lock floor.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>How It Works</h3>
+        <ul>
+          <li>Enabled by default: <code>PA_CANDLE_TRAIL_ENABLED = true</code></li>
+          <li>Lookback: <code>PA_CANDLE_TRAIL_BARS = 2</code> (configurable 1-5)</li>
+          <li>Activates only after position has been held for <strong>N+1 candles</strong> AND peak PnL reaches <code>PA_TRAIL_START</code></li>
+          <li>Recalculates on every candle close — level only tightens, never widens</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Trail Logic per Side</h3>
+        <ul>
+          <li><strong>CE trade:</strong> Trail level = <strong>lowest low</strong> of last N bars. Exit if NIFTY spot drops below this level</li>
+          <li><strong>PE trade:</strong> Trail level = <strong>highest high</strong> of last N bars. Exit if NIFTY spot rises above this level</li>
+          <li>Checked on every tick, just like SL hit</li>
+          <li>Works alongside profit-lock trailing — whichever triggers first wins</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="chart-box mt-2">
+      <div class="chart-title">CE Trade — Candle Trail Tracks 2-Bar Lowest Low</div>
+      <div class="chart-area tall" style="justify-content: center; position: relative;">
+        <div class="sl-line" style="bottom: 45px; border-color: var(--amber); opacity: 0.6;"></div>
+        <span class="sl-tag" style="bottom: 49px; color: var(--amber);">Candle Trail = min(C3.low, C4.low)</span>
+        <div class="sl-line" style="bottom: 65px; border-color: var(--green); opacity: 0.8;"></div>
+        <span class="sl-tag" style="bottom: 69px; color: var(--green);">Candle Trail = min(C4.low, C5.low) (tightened)</span>
+
+        <div class="candle" style="position: relative;">
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="body green" style="height: 30px;"></div>
+          <div class="wick green" style="height: 20px;"></div>
+          <div class="label">Entry</div>
+          <div class="entry-arrow up" style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%);"></div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="body green" style="height: 26px;"></div>
+          <div class="wick green" style="height: 10px;"></div>
+          <div class="label">C2</div>
+        </div>
+        <div class="candle" style="margin-top: 10px;">
+          <div class="wick green" style="height: 6px;"></div>
+          <div class="body green" style="height: 20px;"></div>
+          <div class="wick green" style="height: 16px;"></div>
+          <div class="label">C3</div>
+        </div>
+        <div class="candle" style="margin-top: 6px;">
+          <div class="wick red" style="height: 6px;"></div>
+          <div class="body red" style="height: 14px;"></div>
+          <div class="wick red" style="height: 18px;"></div>
+          <div class="label">C4</div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 4px;"></div>
+          <div class="body green" style="height: 36px;"></div>
+          <div class="wick green" style="height: 8px;"></div>
+          <div class="label">C5</div>
+        </div>
+        <div class="candle">
+          <div class="wick green" style="height: 6px;"></div>
+          <div class="body green" style="height: 40px;"></div>
+          <div class="wick green" style="height: 4px;"></div>
+          <div class="label">C6</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tip-box mt-2">
+      <div class="tip-title">Candle Trail vs Swing Trail</div>
+      <p class="fs-sm"><strong>Swing Trail</strong> uses swing structure (pivot lows/highs) and updates less frequently — best for capturing large moves. <strong>Candle Trail</strong> uses raw N-bar extremes and updates every candle — faster to react, tighter stops. Both run in parallel; the one that triggers first closes the position.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 7. EXIT LOGIC                                                           -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section id="exit">
@@ -1233,16 +1334,25 @@ td.pe { color: var(--red); }
       </div>
       <!-- Priority 3 -->
       <div style="display: flex; flex-direction: column; align-items: center;">
-        <div style="background: var(--teal); color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">3</div>
+        <div style="background: var(--blue); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">3</div>
+        <div style="width: 2px; flex: 1; background: var(--border);"></div>
+      </div>
+      <div class="card" style="margin-bottom: 12px;">
+        <h3>Candle Trail Exit <span class="text-muted fw-600" style="font-size: 0.8rem;">(every tick)</span> <span class="badge-new">NEW</span></h3>
+        <p class="fs-sm text-muted">N-bar lowest low (CE) / highest high (PE) trail. Activates after peak PnL reaches trail start. Checked every tick.</p>
+      </div>
+      <!-- Priority 4 -->
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <div style="background: var(--teal); color: #000; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">4</div>
         <div style="width: 2px; flex: 1; background: var(--border);"></div>
       </div>
       <div class="card" style="margin-bottom: 12px;">
         <h3>Swing Trail SL Update <span class="text-muted fw-600" style="font-size: 0.8rem;">(candle close)</span></h3>
         <p class="fs-sm text-muted">At each candle close, tighten SL to the latest swing point. Only tightens — never widens.</p>
       </div>
-      <!-- Priority 4 -->
+      <!-- Priority 5 -->
       <div style="display: flex; flex-direction: column; align-items: center;">
-        <div style="background: var(--text3); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">4</div>
+        <div style="background: var(--text3); color: #fff; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem;">5</div>
       </div>
       <div class="card">
         <h3>EOD Square-off <span class="text-muted fw-600" style="font-size: 0.8rem;">(3:20 PM IST)</span></h3>
@@ -1265,19 +1375,19 @@ td.pe { color: var(--red); }
     <div class="grid-2">
       <div class="card" style="border-left: 4px solid var(--green);">
         <h3 class="text-green">CE Entry — RSI Gate</h3>
-        <div style="font-size: 1.8rem; font-weight: 800; color: var(--green); margin: 10px 0;">45 &lt; RSI &lt; 70</div>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--green); margin: 10px 0;">RSI &gt; 45</div>
         <ul class="fs-sm">
           <li><strong>RSI &gt; 45:</strong> Not deeply bearish — momentum supports upward move</li>
-          <li><strong>RSI &lt; 70:</strong> Not overbought — room to run</li>
+          <li>No upper cap by default. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to add cap at <code>PA_RSI_CE_MAX=85</code></li>
           <li>RSI 46 is perfectly fine for CE — the pattern IS the signal</li>
         </ul>
       </div>
       <div class="card" style="border-left: 4px solid var(--red);">
         <h3 class="text-red">PE Entry — RSI Gate</h3>
-        <div style="font-size: 1.8rem; font-weight: 800; color: var(--red); margin: 10px 0;">30 &lt; RSI &lt; 55</div>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--red); margin: 10px 0;">RSI &lt; 55</div>
         <ul class="fs-sm">
           <li><strong>RSI &lt; 55:</strong> Not deeply bullish — momentum supports downward move</li>
-          <li><strong>RSI &gt; 30:</strong> Not oversold — room to fall</li>
+          <li>No lower floor by default. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to add floor at <code>PA_RSI_PE_MIN=15</code></li>
           <li>RSI 54 is fine for PE — the pattern provides the conviction</li>
         </ul>
       </div>
@@ -1286,6 +1396,98 @@ td.pe { color: var(--red); }
     <div class="tip-box mt-2">
       <div class="tip-title">Key Insight</div>
       <p class="fs-sm">RSI acts as a <strong>veto</strong>, not a trigger. A perfect bullish engulfing at support with RSI = 75 is blocked (overbought). A mediocre pattern with RSI = 50 passes. The pattern provides the trade thesis; RSI prevents counter-momentum trades.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8b. VIX REGIME FILTER                                                   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="vixfilter">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">8b</span> India VIX Regime Filter <span class="badge-new">NEW</span></h2>
+      <p>Three-tier market regime classification using India VIX. Blocks entries in high-volatility environments where trend-following patterns whipsaw.</p>
+    </div>
+
+    <div class="chart-box">
+      <div class="chart-title">VIX Three-Tier Regime Gate</div>
+      <div style="display: flex; align-items: center; gap: 16px; padding: 20px 0; justify-content: center; flex-wrap: wrap;">
+        <div style="text-align: center; padding: 20px 24px; background: var(--green-bg); border: 1px solid rgba(34,197,94,0.3); border-radius: var(--radius-sm); flex: 1; min-width: 180px;">
+          <div style="font-size: 1.6rem; font-weight: 800; color: var(--green);">NORMAL</div>
+          <div style="font-size: 1.2rem; font-weight: 700; color: var(--green); margin: 6px 0;">VIX &le; 16</div>
+          <div style="color: var(--text2); font-size: 0.85rem;">All signals allowed</div>
+          <div style="color: var(--text3); font-size: 0.75rem; margin-top: 4px;">STRONG + MARGINAL patterns fire</div>
+        </div>
+        <div style="font-size: 1.4rem; color: var(--text3);">&#x2192;</div>
+        <div style="text-align: center; padding: 20px 24px; background: var(--amber-bg); border: 1px solid rgba(245,158,11,0.3); border-radius: var(--radius-sm); flex: 1; min-width: 180px;">
+          <div style="font-size: 1.6rem; font-weight: 800; color: var(--amber);">ELEVATED</div>
+          <div style="font-size: 1.2rem; font-weight: 700; color: var(--amber); margin: 6px 0;">16 &lt; VIX &le; 20</div>
+          <div style="color: var(--text2); font-size: 0.85rem;">STRONG signals only</div>
+          <div style="color: var(--text3); font-size: 0.75rem; margin-top: 4px;">MARGINAL (Pin Bars) blocked</div>
+        </div>
+        <div style="font-size: 1.4rem; color: var(--text3);">&#x2192;</div>
+        <div style="text-align: center; padding: 20px 24px; background: var(--red-bg); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-sm); flex: 1; min-width: 180px;">
+          <div style="font-size: 1.6rem; font-weight: 800; color: var(--red);">HIGH</div>
+          <div style="font-size: 1.2rem; font-weight: 700; color: var(--red); margin: 6px 0;">VIX &gt; 20</div>
+          <div style="color: var(--text2); font-size: 0.85rem;">ALL entries blocked</div>
+          <div style="color: var(--text3); font-size: 0.75rem; margin-top: 4px;">Choppy / panic — sit out entirely</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid-2 mt-2">
+      <div class="card">
+        <h3>Configuration</h3>
+        <ul>
+          <li>Enable: <code>PA_VIX_ENABLED = true</code> (default: <strong>false</strong>)</li>
+          <li>Strong-only threshold: <code>VIX_STRONG_ONLY = 16</code></li>
+          <li>Max entry threshold: <code>VIX_MAX_ENTRY = 20</code></li>
+          <li>Failure mode: <code>VIX_FAIL_MODE = closed</code> (block if VIX unavailable; set to <code>open</code> to allow)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Implementation Details</h3>
+        <ul>
+          <li><strong>Live/Paper:</strong> Polls Fyers REST API for <code>NSE:INDIAVIX-INDEX</code> LTP, cached for 60 seconds</li>
+          <li><strong>Backtest:</strong> Uses pre-fetched historical VIX candles with binary-search lookup by timestamp</li>
+          <li>Regime transitions are logged (<code>NORMAL &rarr; ELEVATED</code>, etc.)</li>
+          <li>Stale cache returned on API failure — graceful degradation</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8c. POSITION PERSISTENCE (CRASH RECOVERY)                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="persist">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">8c</span> Position Persistence — Crash Recovery <span class="badge-new">NEW</span></h2>
+      <p>Active positions are persisted to disk so they survive PM2 restarts, OOM kills, and unexpected crashes.</p>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <h3>How It Works</h3>
+        <ul>
+          <li>State saved to <code>~/trading-data/.active_pa_position.json</code></li>
+          <li>Atomic writes via <strong>tmp + rename</strong> — no corrupted files on crash</li>
+          <li>Saves: side, symbol, qty, entry price, SL, best price, order ID, option details</li>
+          <li>Cleared automatically when position closes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Stale Position Guard</h3>
+        <ul>
+          <li>Each save records the current <strong>IST date</strong></li>
+          <li>On boot, if the saved date is <strong>not today</strong>, the file is <strong>discarded</strong> — stale positions from yesterday are invalid for intraday</li>
+          <li>Prevents phantom recovery of expired positions</li>
+          <li>All three modes have independent persist files (Trade, Scalp, PA)</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
@@ -1489,16 +1691,17 @@ td.pe { color: var(--red); }
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="config-card"><span class="key">PA_RSI_PERIOD</span><span class="val">14</span></div>
         <div class="config-card"><span class="key">PA_RSI_CE_MIN</span><span class="val">45</span></div>
-        <div class="config-card"><span class="key">PA_RSI_CE_MAX</span><span class="val">70</span></div>
-        <div class="config-card"><span class="key">PA_RSI_PE_MIN</span><span class="val">30</span></div>
         <div class="config-card"><span class="key">PA_RSI_PE_MAX</span><span class="val">55</span></div>
+        <div class="config-card"><span class="key">PA_RSI_CAPS_ENABLED</span><span class="val">false</span></div>
+        <div class="config-card"><span class="key">PA_RSI_CE_MAX</span><span class="val">85 (when caps on)</span></div>
+        <div class="config-card"><span class="key">PA_RSI_PE_MIN</span><span class="val">15 (when caps on)</span></div>
       </div>
     </div>
 
     <div class="card">
-      <h3 class="mb-2">ADX Trend Filter <span class="badge-new">NEW</span></h3>
+      <h3 class="mb-2">ADX Trend Filter</h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        <div class="config-card"><span class="key">PA_ADX_ENABLED</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_ADX_ENABLED</span><span class="val">false</span></div>
         <div class="config-card"><span class="key">PA_ADX_MIN</span><span class="val">20</span></div>
       </div>
     </div>
@@ -1510,6 +1713,7 @@ td.pe { color: var(--red); }
         <div class="config-card"><span class="key">PA_PIN_WICK_RATIO</span><span class="val">2</span></div>
         <div class="config-card"><span class="key">PA_SR_LOOKBACK</span><span class="val">30</span></div>
         <div class="config-card"><span class="key">PA_SR_ZONE_PTS</span><span class="val">15</span></div>
+        <div class="config-card"><span class="key">PA_CHART_PATTERNS_ENABLED</span><span class="val">false</span></div>
         <div class="config-card"><span class="key">PA_CHART_PATTERN_TOL</span><span class="val">12</span></div>
       </div>
     </div>
@@ -1535,9 +1739,20 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="card">
-      <h3 class="mb-2">VIX Filter</h3>
+      <h3 class="mb-2">Candle Trail <span class="badge-new">NEW</span></h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_CANDLE_TRAIL_ENABLED</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_CANDLE_TRAIL_BARS</span><span class="val">2</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">VIX Regime Filter <span class="badge-new">NEW</span></h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="config-card"><span class="key">PA_VIX_ENABLED</span><span class="val">false</span></div>
+        <div class="config-card"><span class="key">VIX_STRONG_ONLY</span><span class="val">16</span></div>
+        <div class="config-card"><span class="key">VIX_MAX_ENTRY</span><span class="val">20</span></div>
+        <div class="config-card"><span class="key">VIX_FAIL_MODE</span><span class="val">closed</span></div>
       </div>
     </div>
   </div>
@@ -1607,10 +1822,12 @@ td.pe { color: var(--red); }
     <div class="tip-box mt-2">
       <div class="tip-title">Important Reminders</div>
       <ul class="fs-sm">
-        <li>The ADX filter is a <strong>market regime gate</strong>, not a directional signal. ADX = 25 says "the market is moving" — not which direction.</li>
+        <li>The ADX filter is a <strong>market regime gate</strong>, not a directional signal. ADX = 25 says "the market is moving" — not which direction. Disabled by default (<code>PA_ADX_ENABLED=false</code>).</li>
         <li>Inside Bar is the only pattern that does NOT need S/R AND works in ranging conditions (before ADX filter was added).</li>
-        <li>Double Top/Bottom and Triangles require <strong>at least 2 swing points each</strong> — they need history to form. Don't expect them in the first 30 minutes.</li>
-        <li>All patterns share the same RSI gates and SL clamping logic — consistency across the entire strategy.</li>
+        <li>Double Top/Bottom and Triangles are <strong>disabled by default</strong> (<code>PA_CHART_PATTERNS_ENABLED=false</code>). Enable them explicitly after backtesting.</li>
+        <li>RSI upper/lower caps are <strong>off by default</strong>. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to block CE at RSI &gt; 85 and PE at RSI &lt; 15.</li>
+        <li><strong>Candle Trail</strong> and <strong>Swing Trail</strong> run in parallel — whichever exit triggers first wins. Candle Trail is faster (N-bar extremes); Swing Trail is structural.</li>
+        <li>VIX filter has a <strong>fail-closed</strong> default — if VIX data is unavailable, entries are blocked. Set <code>VIX_FAIL_MODE=open</code> to reverse this.</li>
       </ul>
     </div>
   </div>
@@ -1621,8 +1838,8 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v2.0 | Generated April 2026</p>
-    <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Swing Trailing SL | RSI Confluence</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v3.0 | Updated April 2026</p>
+    <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>
 
