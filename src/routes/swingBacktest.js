@@ -313,7 +313,8 @@ ${buildSidebar('swingBacktest', liveActive)}
         <option value="15" selected>15-min</option>
       </select>
     </div>
-    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+    <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
+    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open('/swing-backtest?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else{window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
   <!-- Quick date presets -->
@@ -1508,7 +1509,8 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
         <div><label>FROM</label><input id="f" type="date" value="${from}"></div>
         <div><label>TO</label><input id="t" type="date" value="${to}"></div>
         <div><label>CANDLE</label><select id="r">${resOptions}</select></div>
-        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;})()">🔄 Run Again</button>
+        <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
+        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open('/swing-backtest?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else{window.location='/swing-backtest?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
       </div>
     </div>
   </div>
