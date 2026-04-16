@@ -260,15 +260,18 @@ function buildQueuePage(basePath, title) {
     const BASE = "${basePath}";
     const started = Date.now();
     function fmtTime(ms){var s=Math.floor(ms/1000);if(s<60)return s+"s";var m=Math.floor(s/60);return m+"m "+(s%60)+"s";}
+    var mySlot=Math.floor(Math.random()*10000);
     async function poll(){
       try{
         var r=await fetch(BASE+"/idle");
         var d=await r.json();
         if(d.idle){
-          // Remove jobId param and reload — this tab will create its own job
-          var url=new URL(window.location.href);
-          url.searchParams.delete("jobId");
-          window.location.href=url.toString();
+          // Random delay so queued tabs don't all reload at once
+          setTimeout(function(){
+            var url=new URL(window.location.href);
+            url.searchParams.delete("jobId");
+            window.location.href=url.toString();
+          }, mySlot);
           return;
         }
       }catch(e){}
