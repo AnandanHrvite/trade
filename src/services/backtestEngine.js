@@ -123,7 +123,7 @@ function getISTHHMM(unixSec) {
  *   - getDynamicTrailGap() added — same tier logic as paper/live
  *   - initialStopLoss + trailActivatePts stored on position (matches paper/live)
  */
-function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
+async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress) {
   const trades    = [];
   let position    = null;
   const LOT_SIZE  = getLotQty();
@@ -249,6 +249,15 @@ function runBacktest(candles, strategy, capital, vixCandles, expiryDates) {
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
   for (let i = 30; i < candles.length; i++) {
+    // Yield event loop every 200 candles — keeps server responsive during long backtests
+    if ((i - 30) % 200 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (onProgress) {
+        const done = i - 30, total = candles.length - 30;
+        onProgress({ phase: 'Running backtest…', current: done, total, pct: Math.min(99, 5 + Math.round((done / total) * 94)) });
+      }
+    }
+
     const candle     = candles[i];
     const prevCandle = candles[i - 1];
 

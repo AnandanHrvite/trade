@@ -8,6 +8,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/shared
 const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
+const backtestJobs = require("../utils/backtestJobManager");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -26,6 +27,13 @@ function buildNav(active, liveActive) {
     return buildSidebar(active, liveActive);
 }
 
+
+// ── Job status endpoint (polled by progress page) ────────────────────────────
+router.get("/status", (req, res) => {
+  const job = backtestJobs.getJob(req.query.jobId);
+  if (!job) return res.json({ status: "not_found" });
+  res.json({ status: job.status, progress: job.progress, elapsed: Date.now() - job.startedAt, error: job.error });
+});
 
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
@@ -73,45 +81,73 @@ ${buildSidebar('swingBacktest', true)}
 
   console.log(`\n Backtest: ${ACTIVE} | ${from} to ${to} | ${resolution}m`);
 
-  try {
-    const strategy = getActiveStrategy();
-    // Fetch NIFTY candles and VIX daily candles in parallel (with disk cache)
-    const [candles, vixCandles] = await Promise.all([
-      fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
-      vixFilter.VIX_ENABLED
-        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(err => {
-            console.warn(`[Backtest] VIX candle fetch failed: ${err.message} — VIX filter will be bypassed`);
-            return [];
-          })
-        : Promise.resolve([]),
-    ]);
+  // ── Background Job System ──────────────────────────────────────────────────
+  const jobId = req.query.jobId;
 
-    if (candles.length < 30) {
-      res.setHeader("Content-Type", "text/html");
-      return res.status(400).send(errorPage("Not Enough Data",
-        "Too few candles for the selected date range. Try a wider range (at least 1 month).",
-        from, to, resolution));
+  if (!jobId) {
+    // No jobId → start a new background backtest
+    const activeJob = backtestJobs.getActiveJob();
+    if (activeJob) {
+      return res.send(backtestJobs.buildProgressPage(activeJob.id, '/swing-backtest', 'Swing Backtest'));
     }
 
-    if (vixFilter.VIX_ENABLED) {
-      console.log(`   VIX candles loaded: ${vixCandles.length} days`);
-    }
+    const { id } = backtestJobs.createJob('swing');
 
-    // Pre-compute expiry dates if expiry-only mode is enabled
-    let expiryDates = null;
-    if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-      const uniqueDates = [...new Set(candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
-      const expirySet = new Set();
-      for (const d of uniqueDates) {
-        if (await isExpiryDate(d)) expirySet.add(d);
+    // Fire-and-forget — runs in background, server stays responsive
+    (async () => {
+      try {
+        backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
+        const strategy = getActiveStrategy();
+        const [_candles, _vixCandles] = await Promise.all([
+          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
+          vixFilter.VIX_ENABLED
+            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(err => {
+                console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);
+                return [];
+              })
+            : Promise.resolve([]),
+        ]);
+
+        if (_candles.length < 30) {
+          backtestJobs.failJob(id, 'Too few candles for the selected date range. Try a wider range (at least 1 month).');
+          return;
+        }
+
+        let _expiryDates = null;
+        if ((process.env.TRADE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+          const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+          const expirySet = new Set();
+          for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+          _expiryDates = expirySet;
+        }
+
+        backtestJobs.updateProgress(id, { phase: 'Running backtest engine…', pct: 5, current: 0, total: _candles.length - 30 });
+        const _result = await runBacktest(_candles, strategy, capital, _vixCandles, _expiryDates,
+          (p) => backtestJobs.updateProgress(id, p));
+        saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
+        backtestJobs.completeJob(id, _result);
+        console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
+      } catch (err) {
+        console.error('[Backtest Job Error]', err);
+        backtestJobs.failJob(id, err.message);
       }
-      expiryDates = expirySet;
-      console.log(`   📅 Expiry-only mode: ${expirySet.size} expiry days out of ${uniqueDates.length} trading days`);
-    }
+    })();
 
-    const result = runBacktest(candles, strategy, capital, vixCandles, expiryDates);
-    saveResult(ACTIVE, { ...result, params: { from, to, resolution, symbol, capital } });
+    return res.send(backtestJobs.buildProgressPage(id, '/swing-backtest', 'Swing Backtest'));
+  }
 
+  // ── Render results from completed job ──────────────────────────────────────
+  const job = backtestJobs.getJob(jobId);
+  if (!job) return res.redirect('/swing-backtest');
+  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/swing-backtest', 'Swing Backtest'));
+  if (job.status === 'error') {
+    const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error, liveActive);
+    res.setHeader("Content-Type", "text/html");
+    return res.status(200).send(errHtml);
+  }
+
+  try {
+    const result = job.result;
     const s = result.summary;
     // Newest first by default (reverse chronological)
     const trades = [...(result.trades || [])].reverse();

@@ -23,6 +23,7 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
+const backtestJobs = require("../utils/backtestJobManager");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -58,7 +59,7 @@ function buildDailyOHLC(candles) {
 }
 
 // ── Price Action Backtest Engine ─────────────────────────────────────────────────────
-function runPABacktest(candles, capital, vixCandles, expiryDates) {
+async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgress) {
   const trades   = [];
   let position   = null;
   let pendingSignal = null; // queued signal — enters on next candle's open
@@ -154,6 +155,15 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   const _btEndMin   = (() => { const v = process.env.PA_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
 
   for (let i = 30; i < candles.length; i++) {
+    // Yield event loop every 200 candles — keeps server responsive during long backtests
+    if ((i - 30) % 200 === 0) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (onProgress) {
+        const done = i - 30, total = candles.length - 30;
+        onProgress({ phase: 'Running PA backtest…', current: done, total, pct: Math.min(99, 5 + Math.round((done / total) * 94)) });
+      }
+    }
+
     const candle = candles[i];
     const candleDate = getISTDateStr(candle.time);
     const candleMin  = getISTHHMM(candle.time);
@@ -505,6 +515,13 @@ h2{color:#ef4444;margin-bottom:12px;font-size:1.1rem;}p{font-size:0.85rem;color:
 </head><body><div class="box"><h2>${title}</h2><p>${message}</p><br><a href="/" style="color:#3b82f6;">← Back</a></div></body></html>`;
 }
 
+// ── Job status endpoint (polled by progress page) ────────────────────────────
+router.get("/status", (req, res) => {
+  const job = backtestJobs.getJob(req.query.jobId);
+  if (!job) return res.json({ status: "not_found" });
+  res.json({ status: job.status, progress: job.progress, elapsed: Date.now() - job.startedAt, error: job.error });
+});
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
@@ -555,33 +572,65 @@ ${modalJS()}
 
   console.log(`\n🔍 Price Action Backtest: ${from} to ${to} | ${resolution}m`);
 
-  try {
-    const [candles, vixCandles] = await Promise.all([
-      fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
-      process.env.PA_VIX_ENABLED === "true"
-        ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
-        : Promise.resolve([]),
-    ]);
+  // ── Background Job System ──────────────────────────────────────────────────
+  const jobId = req.query.jobId;
 
-    if (candles.length < 15) {
-      return res.status(400).send(errorPage("Not Enough Data", "Too few candles. Try a wider date range."));
+  if (!jobId) {
+    const activeJob = backtestJobs.getActiveJob();
+    if (activeJob) {
+      return res.send(backtestJobs.buildProgressPage(activeJob.id, '/pa-backtest', 'PA Backtest'));
     }
 
-    // Pre-compute expiry dates if expiry-only mode is enabled
-    let expiryDates = null;
-    if ((process.env.PA_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
-      const uniqueDates = [...new Set(candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
-      const expirySet = new Set();
-      for (const d of uniqueDates) {
-        if (await isExpiryDate(d)) expirySet.add(d);
+    const { id } = backtestJobs.createJob('pa');
+
+    (async () => {
+      try {
+        backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
+        const [_candles, _vixCandles] = await Promise.all([
+          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
+          process.env.PA_VIX_ENABLED === "true"
+            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
+            : Promise.resolve([]),
+        ]);
+
+        if (_candles.length < 15) {
+          backtestJobs.failJob(id, 'Too few candles. Try a wider date range.');
+          return;
+        }
+
+        let _expiryDates = null;
+        if ((process.env.PA_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+          const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
+          const expirySet = new Set();
+          for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
+          _expiryDates = expirySet;
+        }
+
+        backtestJobs.updateProgress(id, { phase: 'Running PA backtest…', pct: 5, current: 0, total: _candles.length - 30 });
+        const _result = await runPABacktest(_candles, capital, _vixCandles, _expiryDates,
+          (p) => backtestJobs.updateProgress(id, p));
+        saveResult("PA_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+        backtestJobs.completeJob(id, _result);
+        console.log(`\n ✅ PA backtest job ${id} complete — ${_result.trades.length} trades`);
+      } catch (err) {
+        console.error('[PA Backtest Job Error]', err);
+        backtestJobs.failJob(id, err.message);
       }
-      expiryDates = expirySet;
-      console.log(`   📅 PA expiry-only mode: ${expirySet.size} expiry days out of ${uniqueDates.length} trading days`);
-    }
+    })();
 
-    const result = runPABacktest(candles, capital, vixCandles, expiryDates);
-    saveResult("PA_BACKTEST", { ...result, params: { from, to, resolution, symbol, capital } });
+    return res.send(backtestJobs.buildProgressPage(id, '/pa-backtest', 'PA Backtest'));
+  }
 
+  // ── Render results from completed job ──────────────────────────────────────
+  const job = backtestJobs.getJob(jobId);
+  if (!job) return res.redirect('/pa-backtest');
+  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/pa-backtest', 'PA Backtest'));
+  if (job.status === 'error') {
+    return res.status(500).send(errorPage("Backtest Failed", job.error));
+  }
+
+  try {
+    const result = job.result;
     const s = result.summary;
     const trades = [...(result.trades || [])].reverse();
 
