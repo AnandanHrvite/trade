@@ -246,18 +246,11 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING — candle trail with profit-lock floor
-      //    Once peak PnL >= PA_TRAIL_START, use prev candle high/low as trail level.
-      //    But never exit below the profit-lock floor (tiered % of peak).
-      //    This lets winners ride trends while protecting from total giveback.
+      // 2. TRAILING — candle trail (prev candle H/L) once in profit
+      //    Activates after peakPnl >= PA_TRAIL_START. Candle trail is the primary
+      //    exit — lets winners ride trends. Profit-lock is only a fallback before
+      //    the candle trail level is established.
       if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
-        // Compute profit-lock floor (always active as safety net)
-        let _pct = PA_TRAIL_PCT;
-        for (const tier of PA_TRAIL_TIERS) {
-          if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-        }
-        const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
-
         // Update candle trail level (prev candle high/low, tighten only)
         if (position.candlesHeld >= 2 && i > 0) {
           const prevCandle = candles[i - 1];
@@ -274,23 +267,23 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
           }
         }
 
-        // Check candle trail breach
+        // Primary: candle trail breach — exit at the trail level
         if (position.candleTrailLevel) {
           const candleBreached = (position.side === "CE" && candle.low <= position.candleTrailLevel)
                               || (position.side === "PE" && candle.high >= position.candleTrailLevel);
           if (candleBreached) {
-            const candleExitPrice = parseFloat((position.candleTrailLevel + SLIPPAGE_PTS * (position.side === "CE" ? -1 : 1)).toFixed(2));
-            const candleExitPnl = _runPnl(candleExitPrice);
-            // Only exit via candle trail if PnL stays above profit-lock floor
-            if (candleExitPnl >= trailFloor) {
-              exitPrice  = candleExitPrice;
-              exitReason = `Candle Trail (prev ${position.side === "CE" ? "low" : "high"} ${position.candleTrailLevel} | floor ₹${trailFloor})`;
-            }
+            exitPrice  = parseFloat((position.candleTrailLevel + SLIPPAGE_PTS * (position.side === "CE" ? -1 : 1)).toFixed(2));
+            exitReason = `Candle Trail (prev ${position.side === "CE" ? "low" : "high"} ${position.candleTrailLevel})`;
           }
         }
 
-        // Fallback: profit-lock floor breach (safety net)
-        if (!exitReason) {
+        // Fallback: profit-lock floor (only when candle trail not yet set)
+        if (!exitReason && !position.candleTrailLevel) {
+          let _pct = PA_TRAIL_PCT;
+          for (const tier of PA_TRAIL_TIERS) {
+            if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+          }
+          const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
           const curPnl = _runPnl(candle.close);
           if (curPnl <= trailFloor) {
             exitPrice  = _exitPriceForPnl(trailFloor);

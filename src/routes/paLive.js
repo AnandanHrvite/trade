@@ -561,28 +561,29 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING — candle trail with profit-lock floor
+    // 2. TRAILING — candle trail (prev candle H/L) once in profit
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
-      let _pct = _PA_TRAIL_PCT;
-      for (const tier of _PA_TRAIL_TIERS) {
-        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-      }
-      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-
-      // Check candle trail breach (level is updated on candle close)
+      // Primary: candle trail breach (level is updated on candle close)
       if (pos.candleTrailLevel) {
         const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
                             || (pos.side === "PE" && price >= pos.candleTrailLevel);
-        if (candleBreached && curPnl >= trailFloor) {
-          squareOff(price, `Candle Trail (prev ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel} | floor ₹${trailFloor})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        if (candleBreached) {
+          squareOff(price, `Candle Trail (prev ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
           return;
         }
       }
 
-      // Fallback: profit-lock floor breach
-      if (curPnl <= trailFloor) {
-        squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
-        return;
+      // Fallback: profit-lock floor (only when candle trail not yet set)
+      if (!pos.candleTrailLevel) {
+        let _pct = _PA_TRAIL_PCT;
+        for (const tier of _PA_TRAIL_TIERS) {
+          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+        }
+        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+        if (curPnl <= trailFloor) {
+          squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+          return;
+        }
       }
     }
 
