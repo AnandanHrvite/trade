@@ -131,7 +131,7 @@ app.post("/login", (req, res) => {
     // Successful login — clear rate limit counter for this IP
     delete _loginAttempts[ip];
     const token = crypto.createHash("sha256").update(secret).digest("hex");
-    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
     return res.redirect("/");
   }
 
@@ -200,7 +200,7 @@ app.use((req, res, next) => {
   const expectedToken = crypto.createHash("sha256").update(secret).digest("hex");
   if (cookies[LOGIN_COOKIE] === expectedToken) {
     // Sliding expiry — refresh cookie on every request to reset the 15-min timer
-    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${LOGIN_MAX_AGE}`);
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
     return next();
   }
   // Not authenticated — redirect HTML pages, block API calls
