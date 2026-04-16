@@ -1054,49 +1054,239 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">13</span> Operating Modes</h2>
 
+<div class="highlight">
+  <p>The Scalp strategy runs in three modes. All share the <strong>same BB+RSI signal logic, PSAR trailing, and profit lock tiers</strong> but differ in data source, order execution, and persistence.</p>
+</div>
+
+<!-- ── Mode Architecture SVG ── -->
+<div style="background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px 16px; margin:14px 0;">
+  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">Scalp Mode Architecture &mdash; Data Flow</div>
+  <svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+    <defs>
+      <marker id="sArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
+      <marker id="sArrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b82f6"/></marker>
+      <marker id="sArrP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+    </defs>
+
+    <text x="10" y="68" fill="#10b981" font-size="12" font-weight="700">LIVE</text>
+    <text x="10" y="168" fill="#3b82f6" font-size="12" font-weight="700">PAPER</text>
+    <text x="10" y="278" fill="#7c3aed" font-size="12" font-weight="700">BACKTEST</text>
+
+    <!-- LIVE -->
+    <rect x="65" y="40" width="125" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="128" y="60" fill="#10b981" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+    <text x="128" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">Real-time NIFTY ticks</text>
+    <line x1="190" y1="65" x2="225" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#sArrG)"/>
+
+    <rect x="230" y="40" width="135" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="298" y="60" fill="#10b981" font-size="10" font-weight="600" text-anchor="middle">BB+RSI Engine</text>
+    <text x="298" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">3-min candles + PSAR</text>
+    <line x1="365" y1="65" x2="400" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#sArrG)"/>
+
+    <rect x="405" y="40" width="125" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="468" y="60" fill="#10b981" font-size="10" font-weight="600" text-anchor="middle">Fyers Orders</text>
+    <text x="468" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">REAL market orders</text>
+    <line x1="530" y1="65" x2="565" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#sArrG)"/>
+
+    <rect x="570" y="40" width="125" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="633" y="60" fill="#10b981" font-size="10" font-weight="600" text-anchor="middle">Telegram</text>
+    <text x="633" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">Entry/Exit alerts</text>
+
+    <!-- PAPER -->
+    <rect x="65" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="128" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+    <text x="128" y="176" fill="#8a85b0" font-size="8" text-anchor="middle">Real-time NIFTY ticks</text>
+    <line x1="190" y1="165" x2="225" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#sArrB)"/>
+
+    <rect x="230" y="140" width="135" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="298" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">BB+RSI Engine</text>
+    <text x="298" y="176" fill="#8a85b0" font-size="8" text-anchor="middle">Same logic as live</text>
+    <line x1="365" y1="165" x2="400" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#sArrB)"/>
+
+    <rect x="405" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="468" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Simulated Fills</text>
+    <text x="468" y="176" fill="#8a85b0" font-size="8" text-anchor="middle">No broker, in-memory</text>
+    <line x1="530" y1="165" x2="565" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#sArrB)"/>
+
+    <rect x="570" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="633" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Disk Persist</text>
+    <text x="633" y="176" fill="#8a85b0" font-size="8" text-anchor="middle">~/trading-data/</text>
+
+    <!-- BACKTEST -->
+    <rect x="65" y="250" width="125" height="50" rx="8" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="128" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Fyers History</text>
+    <text x="128" y="286" fill="#8a85b0" font-size="8" text-anchor="middle">Cached candle files</text>
+    <line x1="190" y1="275" x2="225" y2="275" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#sArrP)"/>
+
+    <rect x="230" y="250" width="135" height="50" rx="8" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="298" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">BB+RSI Engine</text>
+    <text x="298" y="286" fill="#8a85b0" font-size="8" text-anchor="middle">Same logic + Greeks</text>
+    <line x1="365" y1="275" x2="400" y2="275" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#sArrP)"/>
+
+    <rect x="405" y="250" width="125" height="50" rx="8" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="468" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Option Sim</text>
+    <text x="468" y="286" fill="#8a85b0" font-size="8" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
+    <line x1="530" y1="275" x2="565" y2="275" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#sArrP)"/>
+
+    <rect x="570" y="250" width="125" height="50" rx="8" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1.5"/>
+    <text x="633" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Result Store</text>
+    <text x="633" y="286" fill="#8a85b0" font-size="8" text-anchor="middle">JSON reports</text>
+
+    <!-- Shared engine bracket -->
+    <rect x="238" y="35" width="120" height="275" rx="0" fill="none" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,3" opacity="0.3"/>
+    <text x="298" y="325" fill="#fbbf24" font-size="8" text-anchor="middle" opacity="0.6">SHARED BB+RSI ENGINE</text>
+  </svg>
+</div>
+
+<!-- ── Scalp Trade Lifecycle Flowchart ── -->
+<div style="background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px 16px; margin:14px 0;">
+  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">Scalp Trade Lifecycle &mdash; Applies to All Modes</div>
+  <svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+    <!-- Start -->
+    <rect x="250" y="10" width="200" height="36" rx="18" fill="#7c3aed" stroke="none"/>
+    <text x="350" y="33" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">Market Open 9:15 AM</text>
+    <line x1="350" y1="46" x2="350" y2="66" stroke="#8a85b0" stroke-width="1.5"/>
+
+    <!-- Warmup -->
+    <rect x="225" y="66" width="250" height="36" rx="8" fill="rgba(124,58,237,0.1)" stroke="#7c3aed" stroke-width="1"/>
+    <text x="350" y="89" fill="#ccc8e8" font-size="10" text-anchor="middle">Load 30+ candles (BB/RSI/PSAR warm-up)</text>
+    <line x1="350" y1="102" x2="350" y2="122" stroke="#8a85b0" stroke-width="1.5"/>
+
+    <!-- Candle close -->
+    <rect x="225" y="122" width="250" height="36" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1"/>
+    <text x="350" y="145" fill="#ccc8e8" font-size="10" text-anchor="middle">Every 3-min candle close</text>
+    <line x1="350" y1="158" x2="350" y2="178" stroke="#8a85b0" stroke-width="1.5"/>
+
+    <!-- Decision: In Position? -->
+    <rect x="235" y="178" width="230" height="40" rx="8" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.5"/>
+    <text x="350" y="203" fill="#fbbf24" font-size="11" font-weight="700" text-anchor="middle">In Position?</text>
+
+    <!-- YES branch (left) -->
+    <line x1="235" y1="198" x2="120" y2="198" stroke="#10b981" stroke-width="1.5"/>
+    <line x1="120" y1="198" x2="120" y2="228" stroke="#10b981" stroke-width="1.5"/>
+    <text x="175" y="192" fill="#10b981" font-size="9" font-weight="700">YES</text>
+
+    <rect x="20" y="228" width="200" height="80" rx="8" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1"/>
+    <text x="120" y="248" fill="#10b981" font-size="9" font-weight="600" text-anchor="middle">Check Exits:</text>
+    <text x="120" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">1. PSAR SL hit?</text>
+    <text x="120" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">2. Trailing Profit Lock?</text>
+    <text x="120" y="292" fill="#ccc8e8" font-size="8" text-anchor="middle">3. SAR Flip? | 4. EOD 3:20?</text>
+    <line x1="120" y1="308" x2="120" y2="332" stroke="#10b981" stroke-width="1.5"/>
+
+    <rect x="45" y="332" width="150" height="32" rx="8" fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="120" y="353" fill="#ef4444" font-size="10" font-weight="700" text-anchor="middle">EXIT (if trigger)</text>
+
+    <!-- NO branch (right) -->
+    <line x1="465" y1="198" x2="580" y2="198" stroke="#ef4444" stroke-width="1.5"/>
+    <line x1="580" y1="198" x2="580" y2="228" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="525" y="192" fill="#ef4444" font-size="9" font-weight="700">NO</text>
+
+    <rect x="480" y="228" width="200" height="68" rx="8" fill="rgba(59,130,246,0.08)" stroke="#3b82f6" stroke-width="1"/>
+    <text x="580" y="248" fill="#3b82f6" font-size="9" font-weight="600" text-anchor="middle">Pre-Entry Checks:</text>
+    <text x="580" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">Hours, Loss Limit, Trade Cap</text>
+    <text x="580" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">SL Pause, BB Squeeze, VIX</text>
+    <line x1="580" y1="296" x2="580" y2="316" stroke="#3b82f6" stroke-width="1.5"/>
+
+    <rect x="480" y="316" width="200" height="36" rx="8" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1"/>
+    <text x="580" y="339" fill="#fbbf24" font-size="10" font-weight="600" text-anchor="middle">BB + RSI Signal?</text>
+    <line x1="580" y1="352" x2="580" y2="372" stroke="#fbbf24" stroke-width="1.5"/>
+
+    <rect x="480" y="372" width="200" height="36" rx="8" fill="rgba(124,58,237,0.08)" stroke="#7c3aed" stroke-width="1"/>
+    <text x="580" y="395" fill="#ccc8e8" font-size="10" text-anchor="middle">Calculate SL (PSAR/Prev Candle)</text>
+    <line x1="580" y1="408" x2="580" y2="428" stroke="#7c3aed" stroke-width="1.5"/>
+
+    <rect x="505" y="428" width="150" height="34" rx="8" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.5"/>
+    <text x="580" y="450" fill="#10b981" font-size="10" font-weight="700" text-anchor="middle">ENTER (ATM CE/PE)</text>
+  </svg>
+</div>
+
+<!-- ── Detailed Mode Cards ── -->
 <div class="cols" style="flex-wrap:wrap;">
   <div class="card card-green">
     <h4 class="green">Live Trading</h4>
-    <p><code>scalp.js</code></p>
+    <p><code>scalpLive.js</code> &mdash; Route: <code>/scalp</code></p>
     <ul>
-      <li>Real orders via Fyers API</li>
-      <li>WebSocket price ticks</li>
-      <li>1-sec option LTP polling</li>
-      <li>Full risk management active</li>
+      <li>Real orders via <strong>Fyers API</strong> (not Zerodha)</li>
+      <li>WebSocket price ticks &rarr; 3-min candle builder</li>
+      <li>1-sec option LTP polling for trail/exit</li>
+      <li>Full risk management: daily loss, trade cap, SL pause</li>
+      <li>Telegram alerts on entry/exit</li>
     </ul>
+    <table style="margin-top:10px;">
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td><code>SCALP_ENABLED</code></td><td><code>true</code> (to activate)</td></tr>
+      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code> (minutes)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
+    </table>
   </div>
   <div class="card card-blue">
     <h4 class="blue">Paper Trading</h4>
-    <p><code>scalpPaper.js</code></p>
+    <p><code>scalpPaper.js</code> &mdash; Route: <code>/scalp-paper</code></p>
     <ul>
-      <li>Simulated order fills</li>
-      <li>Same strategy logic as live</li>
-      <li>Real-time candle data</li>
-      <li>Configurable capital</li>
+      <li>Simulated order fills at market price</li>
+      <li><strong>Same strategy logic</strong> as live (identical code path)</li>
+      <li>Real-time candle data from Fyers WebSocket</li>
+      <li>Configurable starting capital</li>
+      <li>Position saved to disk (survives restarts)</li>
     </ul>
+    <table style="margin-top:10px;">
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code> (minutes)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+    </table>
   </div>
 </div>
 <div class="cols" style="flex-wrap:wrap;">
   <div class="card card-yellow">
     <h4 style="color:var(--yellow);">Backtesting</h4>
-    <p><code>scalpBacktest.js</code></p>
+    <p><code>scalpBacktest.js</code> &mdash; Route: <code>/scalp-backtest</code></p>
     <ul>
-      <li>Historical candle data replay</li>
-      <li>Delta (0.55) / Theta (10pts/day) simulation</li>
-      <li>Configurable slippage</li>
-      <li>Multi-day batch runs</li>
+      <li>Historical candle data replay from Fyers API (cached to disk)</li>
+      <li>Option simulation: Delta (0.55) / Theta (10pts/day) / Gamma</li>
+      <li>Configurable slippage per trade</li>
+      <li>Multi-day batch runs with split-by-month/year</li>
+      <li>Full charges simulation (STT, GST, exchange fees)</li>
     </ul>
+    <table style="margin-top:10px;">
+      <tr><th>Setting</th><th>Value</th></tr>
+      <tr><td><code>BACKTEST_FROM</code></td><td><code>2026-01-01</code></td></tr>
+      <tr><td><code>BACKTEST_TO</code></td><td><code>2026-03-28</code></td></tr>
+      <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td></tr>
+      <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td></tr>
+      <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td></tr>
+    </table>
   </div>
   <div class="card card-purple">
     <h4 class="purple">Settings UI</h4>
-    <p><code>settings.js</code> (web-based)</p>
+    <p><code>settings.js</code> &mdash; Route: <code>/settings</code></p>
     <ul>
-      <li>All parameters adjustable live</li>
-      <li>Changes apply immediately</li>
-      <li>Grouped by category</li>
-      <li>Effect indicators (instant/session)</li>
+      <li>All parameters adjustable live via web UI</li>
+      <li>Changes apply immediately (Instant) or on session restart</li>
+      <li>Grouped by strategy: Swing, Scalp, PA, Backtest</li>
+      <li>Effect type indicators on each setting</li>
+      <li>Min/max validation enforced</li>
     </ul>
   </div>
+</div>
+
+<!-- ── Mode Comparison Table ── -->
+<div class="card card-purple" style="margin-top:14px;">
+  <h4 class="purple">Mode Comparison at a Glance</h4>
+  <table>
+    <thead><tr><th>Feature</th><th style="color:var(--green);">Live</th><th style="color:var(--cyan);">Paper</th><th style="color:var(--yellow);">Backtest</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket</td><td>Fyers WebSocket</td><td>Fyers History API</td></tr>
+      <tr><td><strong>Order Execution</strong></td><td>Fyers (real money)</td><td>Simulated in-memory</td><td>Simulated + Greeks</td></tr>
+      <tr><td><strong>Option Premium</strong></td><td>Live LTP quotes</td><td>Live LTP quotes</td><td>&delta;=0.55, &theta;=10/day</td></tr>
+      <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>SCALP_PAPER_CAPITAL</td><td>BACKTEST_CAPITAL</td></tr>
+      <tr><td><strong>Charges</strong></td><td>Real broker</td><td>Estimated</td><td>Full simulation</td></tr>
+      <tr><td><strong>VIX Filter</strong></td><td>Live polling</td><td>Live polling</td><td>Historical candles</td></tr>
+      <tr><td><strong>Persistence</strong></td><td>Disk (crash safe)</td><td>Disk (restart safe)</td><td>N/A</td></tr>
+      <tr><td><strong>Telegram</strong></td><td>Yes</td><td>Optional</td><td>No</td></tr>
+    </tbody>
+  </table>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->

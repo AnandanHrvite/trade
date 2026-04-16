@@ -497,6 +497,7 @@
   <h2>&#9776; Table of Contents</h2>
   <ol>
     <li><a href="#architecture">System Architecture Overview</a></li>
+    <li><a href="#modes">Trading Modes &mdash; Backtest, Paper, Live</a></li>
     <li><a href="#fyers">Fyers API Registration</a></li>
     <li><a href="#zerodha">Zerodha Kite Connect Registration</a></li>
     <li><a href="#ssl">SSL Certificate Setup</a></li>
@@ -587,6 +588,187 @@
       </tr>
     </tbody>
   </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 1b. TRADING MODES OVERVIEW                                 -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section purple" id="modes">
+  <h2><span class="section-icon icon-purple">&#9654;</span> Trading Modes &mdash; Backtest, Paper, Live</h2>
+
+  <p>Each of the three strategies (Swing, Scalp, Price Action) runs in <strong>three execution modes</strong>. The strategy logic is shared across all modes &mdash; only data source and order execution differ.</p>
+
+  <!-- ── Grand Overview SVG ── -->
+  <div style="margin:20px 0; padding:24px 16px; background:linear-gradient(135deg,rgba(13,17,23,0.8),rgba(28,35,51,0.5)); border:1px solid var(--border); border-radius:var(--radius);">
+    <svg viewBox="0 0 800 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:-apple-system,system-ui,sans-serif;">
+      <defs>
+        <marker id="setupArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
+        <marker id="setupArrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
+        <marker id="setupArrP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#bc8cff"/></marker>
+      </defs>
+
+      <!-- Title -->
+      <text x="400" y="22" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle" letter-spacing="1.5" style="text-transform:uppercase;">3 Strategies &times; 3 Modes = 9 Execution Paths</text>
+
+      <!-- Column Headers -->
+      <text x="140" y="58" fill="#58a6ff" font-size="12" font-weight="700" text-anchor="middle">DATA SOURCE</text>
+      <text x="330" y="58" fill="#d29922" font-size="12" font-weight="700" text-anchor="middle">STRATEGY ENGINE</text>
+      <text x="530" y="58" fill="#3fb950" font-size="12" font-weight="700" text-anchor="middle">EXECUTION</text>
+      <text x="700" y="58" fill="#39d2c0" font-size="12" font-weight="700" text-anchor="middle">OUTPUT</text>
+
+      <!-- LIVE ROW -->
+      <rect x="10" y="75" width="780" height="90" rx="8" fill="rgba(63,185,80,0.04)" stroke="rgba(63,185,80,0.15)" stroke-width="1"/>
+      <text x="25" y="95" fill="#3fb950" font-size="13" font-weight="800">LIVE</text>
+
+      <rect x="60" y="100" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
+      <text x="138" y="120" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+      <text x="138" y="137" fill="#6e7681" font-size="8" text-anchor="middle">Real-time 1-sec ticks</text>
+
+      <line x1="215" y1="124" x2="245" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
+
+      <rect x="250" y="90" width="155" height="62" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
+      <text x="328" y="110" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Swing: SAR+EMA+RSI</text>
+      <text x="328" y="126" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Scalp: BB+RSI+PSAR</text>
+      <text x="328" y="142" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">PA: 8 Patterns+S/R</text>
+
+      <line x1="405" y1="124" x2="435" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
+
+      <rect x="440" y="90" width="155" height="62" rx="8" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.25)" stroke-width="1"/>
+      <text x="518" y="110" fill="#3fb950" font-size="10" font-weight="600" text-anchor="middle">Swing: Zerodha Kite</text>
+      <text x="518" y="126" fill="#3fb950" font-size="10" font-weight="600" text-anchor="middle">Scalp: Fyers Orders</text>
+      <text x="518" y="142" fill="#3fb950" font-size="10" font-weight="600" text-anchor="middle">PA: Fyers Orders</text>
+
+      <line x1="595" y1="124" x2="625" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
+
+      <rect x="630" y="100" width="145" height="48" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
+      <text x="703" y="120" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Telegram Alerts</text>
+      <text x="703" y="137" fill="#6e7681" font-size="8" text-anchor="middle">Entry/Exit/Signals</text>
+
+      <!-- PAPER ROW -->
+      <rect x="10" y="180" width="780" height="90" rx="8" fill="rgba(88,166,255,0.04)" stroke="rgba(88,166,255,0.15)" stroke-width="1"/>
+      <text x="25" y="200" fill="#58a6ff" font-size="13" font-weight="800">PAPER</text>
+
+      <rect x="60" y="205" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
+      <text x="138" y="225" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+      <text x="138" y="242" fill="#6e7681" font-size="8" text-anchor="middle">Same real-time data</text>
+
+      <line x1="215" y1="229" x2="245" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
+
+      <rect x="250" y="200" width="155" height="55" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
+      <text x="328" y="220" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Same strategy logic</text>
+      <text x="328" y="240" fill="#6e7681" font-size="9" text-anchor="middle">Identical code path</text>
+
+      <line x1="405" y1="229" x2="435" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
+
+      <rect x="440" y="205" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
+      <text x="518" y="225" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Simulated Fills</text>
+      <text x="518" y="242" fill="#6e7681" font-size="8" text-anchor="middle">In-memory, no broker</text>
+
+      <line x1="595" y1="229" x2="625" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
+
+      <rect x="630" y="205" width="145" height="48" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
+      <text x="703" y="225" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Disk Persistence</text>
+      <text x="703" y="242" fill="#6e7681" font-size="8" text-anchor="middle">~/trading-data/</text>
+
+      <!-- BACKTEST ROW -->
+      <rect x="10" y="285" width="780" height="90" rx="8" fill="rgba(188,140,255,0.04)" stroke="rgba(188,140,255,0.15)" stroke-width="1"/>
+      <text x="25" y="305" fill="#bc8cff" font-size="13" font-weight="800">BACKTEST</text>
+
+      <rect x="60" y="310" width="155" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
+      <text x="138" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Fyers History API</text>
+      <text x="138" y="347" fill="#6e7681" font-size="8" text-anchor="middle">Cached candle files</text>
+
+      <line x1="215" y1="334" x2="245" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
+
+      <rect x="250" y="305" width="155" height="55" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
+      <text x="328" y="325" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Same strategy logic</text>
+      <text x="328" y="345" fill="#6e7681" font-size="9" text-anchor="middle">+ Option Greeks sim</text>
+
+      <line x1="405" y1="334" x2="435" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
+
+      <rect x="440" y="310" width="155" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
+      <text x="518" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Option Sim + Charges</text>
+      <text x="518" y="347" fill="#6e7681" font-size="8" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
+
+      <line x1="595" y1="334" x2="625" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
+
+      <rect x="630" y="310" width="145" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
+      <text x="703" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Result Store</text>
+      <text x="703" y="347" fill="#6e7681" font-size="8" text-anchor="middle">JSON reports &amp; charts</text>
+
+      <!-- Footer -->
+      <text x="400" y="400" fill="#6e7681" font-size="9" text-anchor="middle">Strategy engine is shared &mdash; all modes run identical signal &amp; exit logic</text>
+    </svg>
+  </div>
+
+  <!-- ── Routes Table ── -->
+  <h3>Routes by Strategy &amp; Mode</h3>
+  <table>
+    <thead>
+      <tr><th>Strategy</th><th>Live Route</th><th>Paper Route</th><th>Backtest Route</th><th>Broker</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Swing</strong> (SAR+EMA+RSI, 15-min)</td>
+        <td><code>/swing</code></td>
+        <td><code>/swing-paper</code></td>
+        <td><code>/swing-backtest</code></td>
+        <td>Zerodha Kite</td>
+      </tr>
+      <tr>
+        <td><strong>Scalp</strong> (BB+RSI+PSAR, 3-min)</td>
+        <td><code>/scalp</code></td>
+        <td><code>/scalp-paper</code></td>
+        <td><code>/scalp-backtest</code></td>
+        <td>Fyers</td>
+      </tr>
+      <tr>
+        <td><strong>Price Action</strong> (8 Patterns, 5-min)</td>
+        <td><code>/pa</code></td>
+        <td><code>/pa-paper</code></td>
+        <td><code>/pa-backtest</code></td>
+        <td>Fyers</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- ── Daily Workflow Flowchart ── -->
+  <h3>Recommended Daily Workflow</h3>
+  <div style="margin:16px 0; padding:20px 16px; background:linear-gradient(135deg,rgba(13,17,23,0.8),rgba(28,35,51,0.5)); border:1px solid var(--border); border-radius:var(--radius);">
+    <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:-apple-system,system-ui,sans-serif;">
+      <!-- Step 1 -->
+      <rect x="250" y="10" width="200" height="36" rx="18" fill="#58a6ff" stroke="none"/>
+      <text x="350" y="33" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">Before Market (8:30 AM)</text>
+      <line x1="350" y1="46" x2="350" y2="62" stroke="#6e7681" stroke-width="1.5"/>
+
+      <rect x="180" y="62" width="340" height="36" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
+      <text x="350" y="85" fill="#e6edf3" font-size="10" text-anchor="middle">Visit /auth/status/all &mdash; check Fyers + Zerodha tokens</text>
+      <line x1="350" y1="98" x2="350" y2="114" stroke="#6e7681" stroke-width="1.5"/>
+
+      <!-- Step 2 -->
+      <rect x="180" y="114" width="340" height="36" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
+      <text x="350" y="137" fill="#e6edf3" font-size="10" text-anchor="middle">If expired: /auth/login (Fyers) + /auth/zerodha/login</text>
+      <line x1="350" y1="150" x2="350" y2="166" stroke="#6e7681" stroke-width="1.5"/>
+
+      <!-- Step 3 -->
+      <rect x="180" y="166" width="340" height="36" rx="8" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.25)" stroke-width="1"/>
+      <text x="350" y="189" fill="#e6edf3" font-size="10" text-anchor="middle">Review /settings &mdash; verify strategy params for today</text>
+      <line x1="350" y1="202" x2="350" y2="218" stroke="#6e7681" stroke-width="1.5"/>
+
+      <!-- Step 4 -->
+      <rect x="250" y="218" width="200" height="36" rx="18" fill="#3fb950" stroke="none"/>
+      <text x="350" y="241" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">Market Open (9:15 AM)</text>
+      <line x1="350" y1="254" x2="350" y2="270" stroke="#6e7681" stroke-width="1.5"/>
+
+      <!-- Step 5 -->
+      <rect x="140" y="270" width="420" height="36" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
+      <text x="350" y="293" fill="#e6edf3" font-size="10" text-anchor="middle">Strategies auto-start &mdash; monitor via /logs or Telegram alerts</text>
+    </svg>
+  </div>
+
+  <div class="note note-info">
+    <strong>Progression path:</strong> Always start with <strong>Backtest</strong> (validate strategy on historical data) &rarr; <strong>Paper</strong> (validate with real-time data, no risk) &rarr; <strong>Live</strong> (real money, real orders).
+  </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->

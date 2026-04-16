@@ -249,6 +249,7 @@ td.pe { color: var(--red); }
     <a href="#compare">Comparison</a>
     <a href="#risk">Risk Mgmt</a>
     <a href="#config">Config</a>
+    <a href="#modes">Modes</a>
     <a href="#tips">Tips</a>
   </div>
 </nav>
@@ -1759,12 +1760,298 @@ td.pe { color: var(--red); }
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 13. PRACTICAL TIPS                                                      -->
+<!-- 13. OPERATING MODES                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="modes">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">13</span> Operating Modes &mdash; Backtest, Paper, Live</h2>
+      <p>The Price Action strategy runs in three modes. All share the <strong>same 8-pattern detection, S/R logic, RSI filter, candle trail, and profit lock tiers</strong>.</p>
+    </div>
+
+    <!-- ── Mode Architecture SVG ── -->
+    <div class="chart-box">
+      <div class="chart-title">PA Mode Architecture &mdash; Data Flow Comparison</div>
+      <svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+        <defs>
+          <marker id="paArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#22c55e"/></marker>
+          <marker id="paArrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b82f6"/></marker>
+          <marker id="paArrP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+        </defs>
+
+        <text x="10" y="68" fill="#22c55e" font-size="12" font-weight="700">LIVE</text>
+        <text x="10" y="168" fill="#3b82f6" font-size="12" font-weight="700">PAPER</text>
+        <text x="10" y="278" fill="#a78bfa" font-size="12" font-weight="700">BACKTEST</text>
+
+        <!-- LIVE row -->
+        <rect x="65" y="40" width="125" height="50" rx="8" fill="rgba(34,197,94,0.1)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="128" y="60" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+        <text x="128" y="76" fill="#94a3b8" font-size="8" text-anchor="middle">Real-time NIFTY ticks</text>
+        <line x1="190" y1="65" x2="225" y2="65" stroke="#22c55e" stroke-width="1.5" marker-end="url(#paArrG)"/>
+
+        <rect x="230" y="40" width="135" height="50" rx="8" fill="rgba(34,197,94,0.1)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="298" y="60" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">PA Engine</text>
+        <text x="298" y="76" fill="#94a3b8" font-size="8" text-anchor="middle">8 Patterns + S/R + RSI</text>
+        <line x1="365" y1="65" x2="400" y2="65" stroke="#22c55e" stroke-width="1.5" marker-end="url(#paArrG)"/>
+
+        <rect x="405" y="40" width="125" height="50" rx="8" fill="rgba(34,197,94,0.1)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="468" y="60" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">Fyers Orders</text>
+        <text x="468" y="76" fill="#94a3b8" font-size="8" text-anchor="middle">REAL market orders</text>
+        <line x1="530" y1="65" x2="565" y2="65" stroke="#22c55e" stroke-width="1.5" marker-end="url(#paArrG)"/>
+
+        <rect x="570" y="40" width="125" height="50" rx="8" fill="rgba(34,197,94,0.1)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="633" y="60" fill="#22c55e" font-size="10" font-weight="600" text-anchor="middle">Telegram</text>
+        <text x="633" y="76" fill="#94a3b8" font-size="8" text-anchor="middle">Entry/Exit alerts</text>
+
+        <!-- PAPER row -->
+        <rect x="65" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="128" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+        <text x="128" y="176" fill="#94a3b8" font-size="8" text-anchor="middle">Real-time NIFTY ticks</text>
+        <line x1="190" y1="165" x2="225" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#paArrB)"/>
+
+        <rect x="230" y="140" width="135" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="298" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">PA Engine</text>
+        <text x="298" y="176" fill="#94a3b8" font-size="8" text-anchor="middle">Same logic as live</text>
+        <line x1="365" y1="165" x2="400" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#paArrB)"/>
+
+        <rect x="405" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="468" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Simulated Fills</text>
+        <text x="468" y="176" fill="#94a3b8" font-size="8" text-anchor="middle">No broker, in-memory</text>
+        <line x1="530" y1="165" x2="565" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#paArrB)"/>
+
+        <rect x="570" y="140" width="125" height="50" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="633" y="160" fill="#60a5fa" font-size="10" font-weight="600" text-anchor="middle">Disk Persist</text>
+        <text x="633" y="176" fill="#94a3b8" font-size="8" text-anchor="middle">~/trading-data/</text>
+
+        <!-- BACKTEST row -->
+        <rect x="65" y="250" width="125" height="50" rx="8" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="128" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Fyers History</text>
+        <text x="128" y="286" fill="#94a3b8" font-size="8" text-anchor="middle">Cached candle files</text>
+        <line x1="190" y1="275" x2="225" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#paArrP)"/>
+
+        <rect x="230" y="250" width="135" height="50" rx="8" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="298" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">PA Engine</text>
+        <text x="298" y="286" fill="#94a3b8" font-size="8" text-anchor="middle">Same logic + Greeks</text>
+        <line x1="365" y1="275" x2="400" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#paArrP)"/>
+
+        <rect x="405" y="250" width="125" height="50" rx="8" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="468" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Option Sim</text>
+        <text x="468" y="286" fill="#94a3b8" font-size="8" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
+        <line x1="530" y1="275" x2="565" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#paArrP)"/>
+
+        <rect x="570" y="250" width="125" height="50" rx="8" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="633" y="270" fill="#a78bfa" font-size="10" font-weight="600" text-anchor="middle">Result Store</text>
+        <text x="633" y="286" fill="#94a3b8" font-size="8" text-anchor="middle">JSON reports</text>
+
+        <!-- Shared engine bracket -->
+        <rect x="238" y="35" width="120" height="275" rx="0" fill="none" stroke="#f59e0b" stroke-width="1" stroke-dasharray="4,3" opacity="0.3"/>
+        <text x="298" y="325" fill="#f59e0b" font-size="8" text-anchor="middle" opacity="0.6">SHARED PA ENGINE</text>
+      </svg>
+    </div>
+
+    <!-- ── PA Signal Flowchart ── -->
+    <div class="chart-box mt-3">
+      <div class="chart-title">Price Action Signal Flowchart &mdash; Applies to All Modes</div>
+      <svg viewBox="0 0 700 520" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+        <!-- Start -->
+        <rect x="250" y="10" width="200" height="36" rx="18" fill="#0d9488" stroke="none"/>
+        <text x="350" y="33" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">5-Min Candle Close</text>
+        <line x1="350" y1="46" x2="350" y2="66" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- S/R Check -->
+        <rect x="220" y="66" width="260" height="36" rx="8" fill="rgba(45,212,191,0.1)" stroke="#2dd4bf" stroke-width="1"/>
+        <text x="350" y="89" fill="#e2e8f0" font-size="10" text-anchor="middle">Detect Swing Highs/Lows &rarr; Build S/R Zones</text>
+        <line x1="350" y1="102" x2="350" y2="122" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- Pattern Scan -->
+        <rect x="200" y="122" width="300" height="40" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="350" y="140" fill="#3b82f6" font-size="10" font-weight="600" text-anchor="middle">Scan 8 Patterns</text>
+        <text x="350" y="154" fill="#94a3b8" font-size="8" text-anchor="middle">Engulfing, Pin Bar, Inside Bar, BOS, Dbl Top/Bot, Triangles</text>
+        <line x1="350" y1="162" x2="350" y2="182" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- Pattern Found? -->
+        <rect x="240" y="182" width="220" height="36" rx="8" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="350" y="205" fill="#f59e0b" font-size="11" font-weight="700" text-anchor="middle">Pattern Found?</text>
+
+        <!-- NO -->
+        <line x1="460" y1="200" x2="560" y2="200" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="510" y="194" fill="#ef4444" font-size="9" font-weight="700">NO</text>
+        <rect x="560" y="186" width="100" height="28" rx="6" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1"/>
+        <text x="610" y="205" fill="#ef4444" font-size="9" text-anchor="middle">Skip candle</text>
+
+        <!-- YES -->
+        <line x1="350" y1="218" x2="350" y2="242" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="360" y="234" fill="#22c55e" font-size="9" font-weight="700">YES</text>
+
+        <!-- RSI Filter -->
+        <rect x="220" y="242" width="260" height="36" rx="8" fill="rgba(45,212,191,0.1)" stroke="#2dd4bf" stroke-width="1"/>
+        <text x="350" y="265" fill="#e2e8f0" font-size="10" text-anchor="middle">RSI Filter: CE &gt; 45, PE &lt; 55 (caps optional)</text>
+        <line x1="350" y1="278" x2="350" y2="298" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- ADX -->
+        <rect x="220" y="298" width="260" height="36" rx="8" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="350" y="321" fill="#e2e8f0" font-size="10" text-anchor="middle">ADX Filter: ADX &ge; 20 (if enabled)</text>
+        <line x1="350" y1="334" x2="350" y2="354" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- VIX -->
+        <rect x="220" y="354" width="260" height="36" rx="8" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1"/>
+        <text x="350" y="377" fill="#e2e8f0" font-size="10" text-anchor="middle">VIX Filter: &le;16 all, 16-20 strong only, &gt;20 block</text>
+        <line x1="350" y1="390" x2="350" y2="410" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- Pre-entry checks -->
+        <rect x="200" y="410" width="300" height="36" rx="8" fill="rgba(59,130,246,0.08)" stroke="#3b82f6" stroke-width="1"/>
+        <text x="350" y="433" fill="#e2e8f0" font-size="10" text-anchor="middle">Hours, Daily Loss, Trade Cap, SL Pause, No Open Pos</text>
+        <line x1="350" y1="446" x2="350" y2="466" stroke="#64748b" stroke-width="1.5"/>
+
+        <!-- Entry -->
+        <rect x="260" y="466" width="180" height="36" rx="8" fill="rgba(34,197,94,0.15)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="350" y="489" fill="#22c55e" font-size="11" font-weight="700" text-anchor="middle">ENTER ATM CE / PE</text>
+      </svg>
+    </div>
+
+    <!-- ── Mode Detail Cards ── -->
+    <div class="grid-2 mt-3">
+      <div class="card" style="border-top:3px solid var(--green);">
+        <h3 style="color:var(--green);">Live Trading</h3>
+        <p><code>paLive.js</code> &mdash; Route: <code>/pa</code></p>
+        <ul>
+          <li>Real orders via <strong>Fyers API</strong></li>
+          <li>WebSocket ticks &rarr; 5-min candle builder</li>
+          <li>1-sec option LTP polling for trail/exit</li>
+          <li>Full risk management active</li>
+          <li>Telegram entry/exit alerts</li>
+          <li>Position crash recovery from disk</li>
+        </ul>
+        <div class="table-wrap mt-2">
+          <table>
+            <tr><th>Setting</th><th>Value</th></tr>
+            <tr><td><code>PA_MODE_ENABLED</code></td><td><code>true</code></td></tr>
+            <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
+            <tr><td><code>PA_ENTRY_START</code></td><td><code>09:20</code></td></tr>
+            <tr><td><code>PA_ENTRY_END</code></td><td><code>14:30</code></td></tr>
+            <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+            <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="border-top:3px solid var(--blue);">
+        <h3 style="color:var(--blue);">Paper Trading</h3>
+        <p><code>paPaper.js</code> &mdash; Route: <code>/pa-paper</code></p>
+        <ul>
+          <li>Simulated fills at market price</li>
+          <li><strong>Same strategy logic</strong> as live (identical code)</li>
+          <li>Real-time candle data from WebSocket</li>
+          <li>Configurable starting capital</li>
+          <li>Position saved to disk (survives restarts)</li>
+          <li>Real option LTP for premium tracking</li>
+        </ul>
+        <div class="table-wrap mt-2">
+          <table>
+            <tr><th>Setting</th><th>Value</th></tr>
+            <tr><td><code>PA_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
+            <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
+            <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-2" style="border-top:3px solid var(--purple);">
+      <h3 style="color:var(--purple);">Backtesting</h3>
+      <p><code>paBacktest.js</code> + <code>backtestEngine.js</code> &mdash; Route: <code>/pa-backtest</code></p>
+      <div class="grid-2 mt-2">
+        <div>
+          <ul>
+            <li>Historical candle replay from Fyers API (cached to disk)</li>
+            <li>Option simulation: &delta;=0.55, &theta;=10 pts/day</li>
+            <li>Configurable slippage per trade</li>
+            <li>Multi-day batch runs with split-by-month/year</li>
+            <li>Full charges simulation (STT, GST, exchange fees)</li>
+          </ul>
+        </div>
+        <div>
+          <div class="table-wrap">
+            <table>
+              <tr><th>Setting</th><th>Value</th></tr>
+              <tr><td><code>BACKTEST_FROM</code></td><td><code>2026-01-01</code></td></tr>
+              <tr><td><code>BACKTEST_TO</code></td><td><code>2026-03-28</code></td></tr>
+              <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code></td></tr>
+              <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td></tr>
+              <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td></tr>
+              <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Mode Comparison Table ── -->
+    <div class="card mt-3">
+      <h3>Mode Comparison at a Glance</h3>
+      <div class="table-wrap mt-2">
+        <table>
+          <thead><tr><th>Feature</th><th class="text-green">Live</th><th style="color:var(--blue);">Paper</th><th style="color:var(--purple);">Backtest</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket</td><td>Fyers WebSocket</td><td>Fyers History API</td></tr>
+            <tr><td><strong>Order Execution</strong></td><td>Fyers (real money)</td><td>In-memory (simulated)</td><td>Simulated + Greeks</td></tr>
+            <tr><td><strong>Option Premium</strong></td><td>Live LTP quotes</td><td>Live LTP quotes</td><td>&delta;=0.55, &theta;=10/day</td></tr>
+            <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>PA_PAPER_CAPITAL</td><td>BACKTEST_CAPITAL</td></tr>
+            <tr><td><strong>Charges</strong></td><td>Real broker</td><td>Estimated</td><td>Full simulation</td></tr>
+            <tr><td><strong>VIX Filter</strong></td><td>Live polling (60s)</td><td>Live polling (60s)</td><td>Historical candles</td></tr>
+            <tr><td><strong>Persistence</strong></td><td>Disk (crash safe)</td><td>Disk (restart safe)</td><td>N/A</td></tr>
+            <tr><td><strong>Candle Trail</strong></td><td>Real-time</td><td>Real-time</td><td>Simulated</td></tr>
+            <tr><td><strong>Telegram</strong></td><td>Yes</td><td>Optional</td><td>No</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── Option Simulation Diagram ── -->
+    <div class="chart-box mt-3">
+      <div class="chart-title">Backtest Option Price Simulation Formula</div>
+      <svg viewBox="0 0 700 160" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+        <defs><marker id="paArrY" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#f59e0b"/></marker></defs>
+        <rect x="10" y="20" width="130" height="55" rx="8" fill="rgba(34,197,94,0.1)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="75" y="42" fill="#22c55e" font-size="11" font-weight="600" text-anchor="middle">NIFTY Move</text>
+        <text x="75" y="60" fill="#94a3b8" font-size="9" text-anchor="middle">e.g. +30 pts</text>
+        <line x1="140" y1="47" x2="175" y2="47" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#paArrY)"/>
+        <text x="157" y="42" fill="#f59e0b" font-size="9" text-anchor="middle">&times;</text>
+
+        <rect x="180" y="20" width="100" height="55" rx="8" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5"/>
+        <text x="230" y="42" fill="#f59e0b" font-size="11" font-weight="600" text-anchor="middle">Delta</text>
+        <text x="230" y="60" fill="#94a3b8" font-size="9" text-anchor="middle">0.55</text>
+        <line x1="280" y1="47" x2="315" y2="47" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#paArrY)"/>
+        <text x="298" y="42" fill="#f59e0b" font-size="9" text-anchor="middle">=</text>
+
+        <rect x="320" y="20" width="120" height="55" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+        <text x="380" y="42" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Premium</text>
+        <text x="380" y="60" fill="#94a3b8" font-size="9" text-anchor="middle">+16.5 pts</text>
+        <line x1="440" y1="47" x2="475" y2="47" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#paArrY)"/>
+        <text x="458" y="42" fill="#ef4444" font-size="9" text-anchor="middle">&minus;&theta;</text>
+
+        <rect x="480" y="20" width="120" height="55" rx="8" fill="rgba(239,68,68,0.1)" stroke="#ef4444" stroke-width="1.5"/>
+        <text x="540" y="42" fill="#ef4444" font-size="11" font-weight="600" text-anchor="middle">After Theta</text>
+        <text x="540" y="60" fill="#94a3b8" font-size="9" text-anchor="middle">+16.5 &minus; 0.17 = +16.3</text>
+
+        <rect x="610" y="20" width="80" height="55" rx="8" fill="rgba(34,197,94,0.12)" stroke="#22c55e" stroke-width="1.5"/>
+        <text x="650" y="42" fill="#22c55e" font-size="10" font-weight="700" text-anchor="middle">Lot PnL</text>
+        <text x="650" y="60" fill="#22c55e" font-size="9" text-anchor="middle">&#8377;1,223</text>
+        <line x1="600" y1="47" x2="610" y2="47" stroke="#22c55e" stroke-width="1.5"/>
+
+        <text x="350" y="105" fill="#94a3b8" font-size="9" text-anchor="middle">PnL = (NIFTY Move &times; &delta;) &minus; (&theta; &times; candles &divide; candles_per_day) &minus; Slippage &minus; Charges</text>
+        <text x="350" y="125" fill="#64748b" font-size="8" text-anchor="middle">&theta; decay = 10 pts/day &divide; 75 candles = 0.13 pts/candle for 5-min | Lot PnL = 16.3 &times; 75 = &#8377;1,223</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 14. PRACTICAL TIPS                                                      -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section id="tips">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">13</span> Practical Tips</h2>
+      <h2><span class="num">14</span> Practical Tips</h2>
       <p>Recommendations for deploying and tuning the Price Action strategy.</p>
     </div>
 

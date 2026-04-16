@@ -574,6 +574,94 @@
 <div class="section" id="s3">
   <h2>03 &mdash; Trading Modes</h2>
 
+  <p>The Swing strategy runs in three distinct modes. All three share the <strong>same signal logic</strong> (9 Gate Pipeline, 3-Tier Trailing SL, VIX Filter) but differ in data source, order execution, and persistence.</p>
+
+  <!-- ── Mode Architecture SVG ── -->
+  <div class="chart-container" style="padding:24px 16px;">
+    <div class="chart-title">Mode Architecture &mdash; Data Flow Comparison</div>
+    <svg viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+      <!-- Background grid -->
+      <defs>
+        <linearGradient id="liveGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#26a69a" stop-opacity="0.15"/><stop offset="100%" stop-color="#26a69a" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0.03"/></linearGradient>
+        <linearGradient id="btGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a78bfa" stop-opacity="0.15"/><stop offset="100%" stop-color="#a78bfa" stop-opacity="0.03"/></linearGradient>
+        <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#26a69a"/></marker>
+        <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b82f6"/></marker>
+        <marker id="arrowP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
+      </defs>
+
+      <!-- Row labels -->
+      <text x="10" y="68" fill="#26a69a" font-size="13" font-weight="700">LIVE</text>
+      <text x="10" y="168" fill="#3b82f6" font-size="13" font-weight="700">PAPER</text>
+      <text x="10" y="278" fill="#a78bfa" font-size="13" font-weight="700">BACKTEST</text>
+
+      <!-- LIVE row -->
+      <rect x="70" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
+      <text x="135" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+      <text x="135" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">Real-time NIFTY ticks</text>
+      <line x1="200" y1="65" x2="240" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+      <rect x="245" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
+      <text x="310" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
+      <text x="310" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">9 Gates + Signal Logic</text>
+      <line x1="375" y1="65" x2="415" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+      <rect x="420" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
+      <text x="485" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Zerodha Kite API</text>
+      <text x="485" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">REAL orders placed</text>
+      <line x1="550" y1="65" x2="590" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
+
+      <rect x="595" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
+      <text x="660" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Telegram Alerts</text>
+      <text x="660" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">Entry / Exit / Signals</text>
+
+      <!-- PAPER row -->
+      <rect x="70" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="135" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
+      <text x="135" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">Real-time NIFTY ticks</text>
+      <line x1="200" y1="165" x2="240" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+      <rect x="245" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="310" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
+      <text x="310" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">Same 9 Gates + Logic</text>
+      <line x1="375" y1="165" x2="415" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+      <rect x="420" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="485" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Simulated Fills</text>
+      <text x="485" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">No broker, in-memory</text>
+      <line x1="550" y1="165" x2="590" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
+
+      <rect x="595" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="660" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Disk Persistence</text>
+      <text x="660" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">~/trading-data/</text>
+
+      <!-- BACKTEST row -->
+      <rect x="70" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="135" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Fyers History API</text>
+      <text x="135" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">Cached candle files</text>
+      <line x1="200" y1="275" x2="240" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
+
+      <rect x="245" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="310" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
+      <text x="310" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">Same 9 Gates + Logic</text>
+      <line x1="375" y1="275" x2="415" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
+
+      <rect x="420" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="485" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Option Sim</text>
+      <text x="485" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
+      <line x1="550" y1="275" x2="590" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
+
+      <rect x="595" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="660" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Result Store</text>
+      <text x="660" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">JSON reports &amp; charts</text>
+
+      <!-- Shared engine bracket -->
+      <rect x="255" y="35" width="110" height="275" rx="0" fill="none" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,3" opacity="0.35"/>
+      <text x="310" y="325" fill="#fbbf24" font-size="9" text-anchor="middle" opacity="0.7">SHARED STRATEGY ENGINE</text>
+    </svg>
+  </div>
+
+  <!-- ── Mode detail cards ── -->
   <div class="logic-cards">
     <div class="logic-card" style="border-top: 3px solid var(--green);">
       <div class="lc-num" style="color: var(--green2);">Mode 1</div>
@@ -589,6 +677,153 @@
       <div class="lc-num" style="color: var(--purple2);">Mode 3</div>
       <div class="lc-title">Backtesting</div>
       <div class="lc-desc">Historical Fyers candles replayed tick-by-tick (1-min candle replay). Option premium simulation: delta 0.55, theta decay 10 pts/day. Validates strategy across years of data.</div>
+    </div>
+  </div>
+
+  <!-- ── Live Trading Detail ── -->
+  <h3 class="green">Live Trading &mdash; How It Works</h3>
+  <div class="card green-border">
+    <p><strong>File:</strong> <code>swingLive.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers WebSocket &nbsp;|&nbsp; <strong>Orders:</strong> Zerodha Kite Connect</p>
+    <table>
+      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
+      <tr><td>1. Connect</td><td>WebSocket subscribes to <code>NSE:NIFTY50-INDEX</code> for 1-second ticks</td><td><code>EC2_IP</code></td></tr>
+      <tr><td>2. Build candles</td><td>Ticks aggregated into 15-min OHLC candles in real-time</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
+      <tr><td>3. Evaluate</td><td>On each candle close, run 9 Gate Pipeline to check for signal</td><td>All signal filters</td></tr>
+      <tr><td>4. Place order</td><td>ATM CE/PE option order sent to Zerodha with market order type</td><td><code>SWING_LIVE_ENABLED=true</code></td></tr>
+      <tr><td>5. Monitor</td><td>Option LTP polled every 1 second via Fyers quote API</td><td><code>LTP_STALE_THRESHOLD_SEC=15</code></td></tr>
+      <tr><td>6. Trail &amp; Exit</td><td>3-Tier trailing SL, breakeven logic, SAR flip, daily loss limit</td><td><code>TRAIL_TIER*</code>, <code>BREAKEVEN_PTS</code></td></tr>
+      <tr><td>7. Alert</td><td>Telegram notification sent on entry, exit, and signal detection</td><td><code>TG_TRADE_ENTRY</code>, <code>TG_TRADE_EXIT</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ── Paper Trading Detail ── -->
+  <h3 class="blue">Paper Trading &mdash; How It Works</h3>
+  <div class="card blue-border">
+    <p><strong>File:</strong> <code>swingPaper.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers WebSocket (real) &nbsp;|&nbsp; <strong>Orders:</strong> Simulated in-memory</p>
+    <table>
+      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
+      <tr><td>1. Connect</td><td>Same WebSocket feed as live &mdash; identical real-time data</td><td>&mdash;</td></tr>
+      <tr><td>2. Build candles</td><td>15-min candles built identically from ticks</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
+      <tr><td>3. Evaluate</td><td>Same 9 Gate Pipeline, same signal logic as live</td><td>All signal filters</td></tr>
+      <tr><td>4. Simulate fill</td><td>Order "filled" instantly at current price with simulated slippage</td><td><code>SWING_PAPER_CAPITAL=100000</code></td></tr>
+      <tr><td>5. Track PnL</td><td>Option premium tracked using Fyers quote API (real premium data)</td><td>&mdash;</td></tr>
+      <tr><td>6. Trail &amp; Exit</td><td>Same trailing, breakeven, daily loss limit as live</td><td>Same settings as live</td></tr>
+      <tr><td>7. Persist</td><td>Position saved to <code>~/trading-data/</code> &mdash; survives server restarts</td><td>&mdash;</td></tr>
+    </table>
+    <div class="note success" style="margin-top:12px;">
+      <strong>Paper = Live minus the broker.</strong> Every signal, exit condition, and risk check runs through the exact same code path. The only difference is the order goes to an in-memory array instead of Zerodha.
+    </div>
+  </div>
+
+  <!-- ── Backtest Detail ── -->
+  <h3 class="purple">Backtesting &mdash; How It Works</h3>
+  <div class="card purple-border">
+    <p><strong>File:</strong> <code>swingBacktest.js</code> + <code>backtestEngine.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers Historical API (cached) &nbsp;|&nbsp; <strong>Orders:</strong> Simulated with option Greeks</p>
+    <table>
+      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
+      <tr><td>1. Fetch candles</td><td>Download historical 1-min candles from Fyers for date range, cache to disk</td><td><code>BACKTEST_FROM</code>, <code>BACKTEST_TO</code></td></tr>
+      <tr><td>2. Aggregate</td><td>1-min candles aggregated to 15-min OHLC (same logic as live)</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
+      <tr><td>3. Replay</td><td>Walk through each 15-min candle sequentially, evaluating signals</td><td>&mdash;</td></tr>
+      <tr><td>4. Option sim</td><td>NIFTY spot move &times; delta = option premium P&amp;L, minus theta decay</td><td><code>BACKTEST_DELTA=0.55</code>, <code>BACKTEST_THETA_DAY=10</code></td></tr>
+      <tr><td>5. Apply charges</td><td>STT, exchange txn, SEBI, GST, stamp duty, broker flat fee all deducted</td><td><code>STT_OPT_SELL_PCT</code>, <code>BROKER_FLAT_PER_ORDER</code></td></tr>
+      <tr><td>6. Generate report</td><td>Win rate, net PnL, drawdown, trade log &mdash; stored in result store</td><td><code>BACKTEST_CAPITAL=100000</code></td></tr>
+    </table>
+  </div>
+
+  <!-- ── Option Simulation Diagram ── -->
+  <div class="chart-container" style="padding:20px 16px;">
+    <div class="chart-title">Backtest Option Price Simulation</div>
+    <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
+      <defs>
+        <marker id="arrowY" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker>
+      </defs>
+      <!-- NIFTY Move box -->
+      <rect x="20" y="30" width="150" height="70" rx="10" fill="rgba(38,166,154,0.1)" stroke="#26a69a" stroke-width="1.5"/>
+      <text x="95" y="55" fill="#4dd0c4" font-size="12" font-weight="700" text-anchor="middle">NIFTY Spot Move</text>
+      <text x="95" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">e.g. +40 points</text>
+
+      <line x1="170" y1="65" x2="210" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
+      <text x="190" y="58" fill="#fbbf24" font-size="8" text-anchor="middle">&times;</text>
+
+      <!-- Delta box -->
+      <rect x="215" y="30" width="110" height="70" rx="10" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.5"/>
+      <text x="270" y="55" fill="#fcd34d" font-size="12" font-weight="700" text-anchor="middle">Delta</text>
+      <text x="270" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">0.55</text>
+
+      <line x1="325" y1="65" x2="360" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
+      <text x="342" y="58" fill="#fbbf24" font-size="8" text-anchor="middle">=</text>
+
+      <!-- Premium Move box -->
+      <rect x="365" y="30" width="130" height="70" rx="10" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
+      <text x="430" y="55" fill="#60a5fa" font-size="12" font-weight="700" text-anchor="middle">Premium Move</text>
+      <text x="430" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">+22 pts (40 &times; 0.55)</text>
+
+      <line x1="495" y1="65" x2="530" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
+      <text x="512" y="58" fill="#ef5350" font-size="8" text-anchor="middle">&minus;&theta;</text>
+
+      <!-- Theta Decay box -->
+      <rect x="535" y="30" width="130" height="70" rx="10" fill="rgba(239,83,80,0.1)" stroke="#ef5350" stroke-width="1.5"/>
+      <text x="600" y="55" fill="#ff7875" font-size="12" font-weight="700" text-anchor="middle">After Theta</text>
+      <text x="600" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">+22 &minus; 0.67 = +21.3 pts</text>
+
+      <!-- Formula footer -->
+      <text x="350" y="135" fill="#7a94b8" font-size="10" text-anchor="middle">Option PnL = (NIFTY Move &times; &delta;) &minus; (&theta; &times; candles &divide; candles_per_day) &minus; Slippage &minus; Charges</text>
+      <text x="350" y="155" fill="#5a7499" font-size="9" text-anchor="middle">&theta; decay = 10 pts/day &divide; 25 candles = 0.4 pts/candle for 15-min | Gamma adjustment optional</text>
+      <text x="350" y="175" fill="#5a7499" font-size="9" text-anchor="middle">Lot PnL = Premium Move &times; Lot Size (75) &times; Lots (1) = 21.3 &times; 75 = &#8377;1,598</text>
+    </svg>
+  </div>
+
+  <!-- ── Mode Comparison Table ── -->
+  <h3>Mode Comparison at a Glance</h3>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>Feature</th><th style="color:var(--green2);">Live</th><th style="color:var(--accent2);">Paper</th><th style="color:var(--purple2);">Backtest</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket (real-time)</td><td>Fyers WebSocket (real-time)</td><td>Fyers Historical API (cached)</td></tr>
+        <tr><td><strong>Order Execution</strong></td><td>Zerodha Kite (real money)</td><td>In-memory (simulated)</td><td>In-memory (simulated + Greeks)</td></tr>
+        <tr><td><strong>Option Premium</strong></td><td>Live LTP from Fyers quotes</td><td>Live LTP from Fyers quotes</td><td>Simulated: &delta;=0.55, &theta;=10/day</td></tr>
+        <tr><td><strong>Capital Tracking</strong></td><td>Zerodha account balance</td><td><code>SWING_PAPER_CAPITAL</code> (&#8377;1L)</td><td><code>BACKTEST_CAPITAL</code> (&#8377;1L)</td></tr>
+        <tr><td><strong>Charges Deducted</strong></td><td>Real broker charges</td><td>Estimated (STT, GST, etc.)</td><td>Full simulation (STT, GST, etc.)</td></tr>
+        <tr><td><strong>Slippage</strong></td><td>Real market slippage</td><td>None (instant fill)</td><td><code>BACKTEST_SLIPPAGE_PTS</code></td></tr>
+        <tr><td><strong>VIX Filter</strong></td><td>Live VIX polling (60s cache)</td><td>Live VIX polling (60s cache)</td><td>Historical VIX candles</td></tr>
+        <tr><td><strong>Position Persistence</strong></td><td>Disk (crash recovery)</td><td>Disk (survives restarts)</td><td>N/A (single run)</td></tr>
+        <tr><td><strong>Telegram Alerts</strong></td><td>Yes</td><td>Optional</td><td>No</td></tr>
+        <tr><td><strong>Route</strong></td><td><code>/swing</code></td><td><code>/swing-paper</code></td><td><code>/swing-backtest</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Settings per Mode ── -->
+  <h3>Key Settings by Mode</h3>
+  <div class="logic-cards">
+    <div class="logic-card" style="border-top: 3px solid var(--green);">
+      <div class="lc-num" style="color: var(--green2);">Live Settings</div>
+      <div class="lc-condition">SWING_LIVE_ENABLED=true</div>
+      <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
+      <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
+      <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
+      <div class="lc-condition">MAX_DAILY_TRADES=20</div>
+      <div class="lc-condition">HARD_SL_ENABLED=false</div>
+    </div>
+    <div class="logic-card" style="border-top: 3px solid var(--accent);">
+      <div class="lc-num" style="color: var(--accent2);">Paper Settings</div>
+      <div class="lc-condition">SWING_PAPER_CAPITAL=100000</div>
+      <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
+      <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
+      <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
+      <div class="lc-condition">MAX_DAILY_TRADES=20</div>
+      <div class="lc-condition">(Uses same signal filters)</div>
+    </div>
+    <div class="logic-card" style="border-top: 3px solid var(--purple);">
+      <div class="lc-num" style="color: var(--purple2);">Backtest Settings</div>
+      <div class="lc-condition">BACKTEST_FROM=2026-01-01</div>
+      <div class="lc-condition">BACKTEST_TO=2026-03-28</div>
+      <div class="lc-condition">BACKTEST_CAPITAL=100000</div>
+      <div class="lc-condition">BACKTEST_DELTA=0.55</div>
+      <div class="lc-condition">BACKTEST_THETA_DAY=10</div>
+      <div class="lc-condition">BACKTEST_SLIPPAGE_PTS=0</div>
     </div>
   </div>
 </div>
