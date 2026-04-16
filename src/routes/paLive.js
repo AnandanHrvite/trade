@@ -561,8 +561,19 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    // 2. TRAILING — candle trail (2-candle) + profit-lock floor (parallel)
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
+      // a) Candle trail breach (level updated on candle close)
+      if (pos.candleTrailLevel) {
+        const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
+                            || (pos.side === "PE" && price >= pos.candleTrailLevel);
+        if (candleBreached) {
+          squareOff(price, `Candle Trail (2-bar ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+          return;
+        }
+      }
+
+      // b) Profit-lock floor (safety net)
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
@@ -606,6 +617,24 @@ async function onCandleClose(bar) {
         if (trailResult.source) state.position.slSource = trailResult.source;
         savePAPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
         updatePAHardSL(trailResult.sl);
+      }
+    }
+
+    // Update candle trail level (lowest low / highest high of last 2 candles, tighten only)
+    if (state.position.peakPnl >= _PA_TRAIL_START && window.length >= 2) {
+      const prev1 = window[window.length - 1], prev2 = window[window.length - 2];
+      if (state.position.side === "CE") {
+        const newLevel = Math.min(prev1.low, prev2.low);
+        if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
+          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (2-bar low)`);
+          state.position.candleTrailLevel = newLevel;
+        }
+      } else {
+        const newLevel = Math.max(prev1.high, prev2.high);
+        if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
+          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (2-bar high)`);
+          state.position.candleTrailLevel = newLevel;
+        }
       }
     }
 
