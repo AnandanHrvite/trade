@@ -424,13 +424,25 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    // 2. TRAILING — candle trail with profit-lock floor
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
       }
       const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+
+      // Check candle trail breach (level is updated on candle close)
+      if (pos.candleTrailLevel) {
+        const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
+                            || (pos.side === "PE" && price >= pos.candleTrailLevel);
+        if (candleBreached && curPnl >= trailFloor) {
+          simulateSell(price, `Candle Trail (prev ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel} | floor ₹${trailFloor})`, price);
+          return;
+        }
+      }
+
+      // Fallback: profit-lock floor breach
       if (curPnl <= trailFloor) {
         simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
         return;
@@ -467,6 +479,26 @@ async function onCandleClose(bar) {
         log(`📐 [PA-PAPER] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
         state.position.stopLoss = trailResult.sl;
         if (trailResult.source) state.position.slSource = trailResult.source;
+      }
+    }
+
+    // Update candle trail level (prev candle high/low, tighten only) — only after profit threshold
+    if (state.position.peakPnl >= _PA_TRAIL_START && state.position.candlesHeld >= 2) {
+      const closedCandle = bar;
+      if (state.position.side === "CE") {
+        const newLevel = closedCandle.low;
+        if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-PAPER] Candle Trail: ${old} → ${newLevel} (prev candle low)`);
+        }
+      } else {
+        const newLevel = closedCandle.high;
+        if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-PAPER] Candle Trail: ${old} → ${newLevel} (prev candle high)`);
+        }
       }
     }
 
