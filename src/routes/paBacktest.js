@@ -522,6 +522,11 @@ router.get("/status", (req, res) => {
   res.json({ status: job.status, progress: job.progress, elapsed: Date.now() - job.startedAt, error: job.error });
 });
 
+// ── Idle check endpoint (polled by queue page) ──────────────────────────────
+router.get("/idle", (req, res) => {
+  res.json({ idle: backtestJobs.isIdle() });
+});
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
@@ -578,7 +583,7 @@ ${modalJS()}
   if (!jobId) {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) {
-      return res.send(backtestJobs.buildProgressPage(activeJob.id, '/pa-backtest', 'PA Backtest'));
+      return res.send(backtestJobs.buildQueuePage('/pa-backtest', 'PA Backtest'));
     }
 
     const { id } = backtestJobs.createJob('pa');

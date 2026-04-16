@@ -90,6 +90,12 @@ function getActiveJob() {
   return (job && job.status === "running") ? job : null;
 }
 
+function isIdle() {
+  if (!activeJobId) return true;
+  const job = jobs.get(activeJobId);
+  return !job || job.status !== "running";
+}
+
 /**
  * Build a dark-themed progress page with animated progress bar.
  * Polls /status every 1.5s and auto-redirects when done.
@@ -217,6 +223,64 @@ function buildProgressPage(jobId, basePath, title) {
 </html>`;
 }
 
+/**
+ * Build a queue/waiting page that polls until the server is idle,
+ * then auto-reloads to start its own backtest job.
+ */
+function buildQueuePage(basePath, title) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>${title || "Backtest"} — Queued</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;align-items:center;justify-content:center;}
+    .card{background:#0d1320;border:1px solid #1a2540;border-radius:16px;padding:48px 56px;max-width:560px;width:90%;text-align:center;}
+    h2{color:#e0e8f0;font-size:1.2rem;margin-bottom:8px;}
+    .phase{color:#6b8db5;font-size:0.85rem;margin-bottom:24px;}
+    .spinner{display:inline-block;width:18px;height:18px;border:2px solid #1a2540;border-top-color:#f59e0b;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle;margin-right:8px;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .warn{background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:12px 16px;margin-top:20px;font-size:0.72rem;color:#b8a040;line-height:1.5;}
+    .elapsed{color:#3a5070;font-size:0.68rem;margin-top:12px;}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2><span class="spinner"></span> Queued — Waiting</h2>
+    <div class="phase">Another backtest is running. This tab will start automatically when it finishes.</div>
+    <div class="elapsed" id="elapsed">Waiting: 0s</div>
+    <div class="warn">
+      ⏳ Split mode opens multiple tabs. Each runs one at a time to protect server resources.<br>
+      This page auto-starts — <b>do not close it</b>.
+    </div>
+  </div>
+  <script>
+    const BASE = "${basePath}";
+    const started = Date.now();
+    function fmtTime(ms){var s=Math.floor(ms/1000);if(s<60)return s+"s";var m=Math.floor(s/60);return m+"m "+(s%60)+"s";}
+    async function poll(){
+      try{
+        var r=await fetch(BASE+"/idle");
+        var d=await r.json();
+        if(d.idle){
+          // Remove jobId param and reload — this tab will create its own job
+          var url=new URL(window.location.href);
+          url.searchParams.delete("jobId");
+          window.location.href=url.toString();
+          return;
+        }
+      }catch(e){}
+      document.getElementById("elapsed").textContent="Waiting: "+fmtTime(Date.now()-started);
+      setTimeout(poll,2000);
+    }
+    poll();
+  </script>
+</body>
+</html>`;
+}
+
 module.exports = {
   createJob,
   updateProgress,
@@ -224,5 +288,7 @@ module.exports = {
   failJob,
   getJob,
   getActiveJob,
+  isIdle,
   buildProgressPage,
+  buildQueuePage,
 };

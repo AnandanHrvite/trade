@@ -35,6 +35,11 @@ router.get("/status", (req, res) => {
   res.json({ status: job.status, progress: job.progress, elapsed: Date.now() - job.startedAt, error: job.error });
 });
 
+// ── Idle check endpoint (polled by queue page) ──────────────────────────────
+router.get("/idle", (req, res) => {
+  res.json({ idle: backtestJobs.isIdle() });
+});
+
 router.get("/", async (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const now = new Date();
@@ -88,7 +93,7 @@ ${buildSidebar('swingBacktest', true)}
     // No jobId → start a new background backtest
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) {
-      return res.send(backtestJobs.buildProgressPage(activeJob.id, '/swing-backtest', 'Swing Backtest'));
+      return res.send(backtestJobs.buildQueuePage('/swing-backtest', 'Swing Backtest'));
     }
 
     const { id } = backtestJobs.createJob('swing');
