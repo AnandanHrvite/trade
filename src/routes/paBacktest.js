@@ -155,8 +155,8 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const _btEndMin   = (() => { const v = process.env.PA_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
 
   for (let i = 30; i < candles.length; i++) {
-    // Yield event loop every 200 candles — keeps server responsive during long backtests
-    if ((i - 30) % 200 === 0) {
+    // Yield event loop every 100 candles — keeps server responsive during long backtests
+    if ((i - 30) % 100 === 0) {
       await new Promise(resolve => setImmediate(resolve));
       if (onProgress) {
         const done = i - 30, total = candles.length - 30;
@@ -586,8 +586,9 @@ ${modalJS()}
     (async () => {
       try {
         backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
+        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
         const [_candles, _vixCandles] = await Promise.all([
-          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
+          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
           process.env.PA_VIX_ENABLED === "true"
             ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
             : Promise.resolve([]),

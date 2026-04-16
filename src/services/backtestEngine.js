@@ -8,7 +8,7 @@ const { buildVixLookup, checkBacktestVix, VIX_SYMBOL } = vixFilter;
 const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { getCharges } = require("../utils/charges");
-const { fetchCandlesWithCache } = require("../utils/backtestCache");
+const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/backtestCache");
 
 
 function maxDaysForResolution(resolution) {
@@ -249,8 +249,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
   for (let i = 30; i < candles.length; i++) {
-    // Yield event loop every 200 candles — keeps server responsive during long backtests
-    if ((i - 30) % 200 === 0) {
+    // Yield event loop every 100 candles — keeps server responsive during long backtests
+    if ((i - 30) % 100 === 0) {
       await new Promise(resolve => setImmediate(resolve));
       if (onProgress) {
         const done = i - 30, total = candles.length - 30;
@@ -808,8 +808,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
  * Cached wrapper — uses disk cache for historical ranges, skips cache for today.
  * Drop-in replacement for fetchCandles in backtest routes.
  */
-async function fetchCandlesCachedBT(symbol, resolution, from, to, skipCache = false) {
-  return fetchCandlesWithCache(symbol, resolution, from, to, fetchCandles, skipCache);
+async function fetchCandlesCachedBT(symbol, resolution, from, to, skipCache = false, onProgress) {
+  return fetchCandlesSmartCache(symbol, resolution, from, to, fetchCandles, skipCache, onProgress);
 }
 
 module.exports = { fetchCandles, fetchCandlesCachedBT, runBacktest };

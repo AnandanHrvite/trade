@@ -98,8 +98,9 @@ ${buildSidebar('swingBacktest', true)}
       try {
         backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
         const strategy = getActiveStrategy();
+        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
         const [_candles, _vixCandles] = await Promise.all([
-          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache),
+          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
           vixFilter.VIX_ENABLED
             ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(err => {
                 console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);

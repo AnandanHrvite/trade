@@ -163,4 +163,94 @@ function clearAllCache() {
 // Prune on first load
 pruneOldCacheFiles();
 
-module.exports = { fetchCandlesWithCache, getCacheStats, clearAllCache, CACHE_DIR };
+/**
+ * Split a date range into full calendar months for granular caching.
+ * Each month gets its own cache file → reusable across ANY backtest that
+ * overlaps that month. First run caches each month; subsequent runs are instant.
+ *
+ * e.g. "2023-03-15" → "2025-12-31" produces:
+ *   2023-03: 2023-03-01 → 2023-03-31
+ *   2023-04: 2023-04-01 → 2023-04-30
+ *   ...
+ *   2025-12: 2025-12-01 → 2025-12-31
+ */
+function splitIntoMonths(from, to) {
+  const segments = [];
+  const [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+
+  let y = fy, m = fm;
+  while (y < ty || (y === ty && m <= tm)) {
+    const lastDay = new Date(y, m, 0).getDate(); // day 0 of next month = last day of current
+    const mFrom = `${y}-${String(m).padStart(2, '0')}-01`;
+    const mTo   = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    segments.push({ from: mFrom, to: mTo });
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return segments;
+}
+
+/**
+ * fetchCandlesSmartCache — monthly-granular caching for intraday data.
+ *
+ * For daily/weekly/monthly resolution, falls back to single-call cache
+ * (one API call covers years). For intraday, splits into calendar months
+ * so each month is cached independently and reusable across backtests.
+ *
+ * @param {string}   symbol
+ * @param {string}   resolution
+ * @param {string}   from         - "YYYY-MM-DD"
+ * @param {string}   to           - "YYYY-MM-DD"
+ * @param {Function} rawFetcher   - fetchCandles(symbol, res, from, to)
+ * @param {boolean}  [skipCache]
+ * @param {Function} [onProgress] - called with { phase, pct } during fetch
+ */
+async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, skipCache = false, onProgress) {
+  // Daily/weekly/monthly: single-call cache (one API call covers years)
+  if (["D", "W", "M"].includes(String(resolution))) {
+    return fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, skipCache);
+  }
+
+  const today = todayIST();
+  const months = splitIntoMonths(from, to);
+  const allCandles = [];
+  let cachedCount = 0, fetchedCount = 0;
+
+  for (let i = 0; i < months.length; i++) {
+    const { from: mFrom, to: mTo } = months[i];
+    const touchesToday = mTo >= today;
+
+    // Try cache for fully historical months
+    if (!skipCache && !touchesToday) {
+      const cached = await loadFromCache(symbol, resolution, mFrom, mTo);
+      if (cached) {
+        allCandles.push(...cached);
+        cachedCount++;
+        if (onProgress) onProgress({ phase: `Cached ${cachedCount} months, fetching ${fetchedCount}… (${i + 1}/${months.length})`, pct: Math.round(((i + 1) / months.length) * 4) });
+        continue;
+      }
+    }
+
+    // Cache miss — fetch from API
+    if (onProgress) onProgress({ phase: `Fetching ${mFrom} → ${mTo}… (${i + 1}/${months.length} months)`, pct: Math.round(((i + 1) / months.length) * 4) });
+    const candles = await rawFetcher(symbol, resolution, mFrom, mTo);
+    fetchedCount++;
+    allCandles.push(...candles);
+
+    // Cache historical months
+    if (candles.length > 0 && !touchesToday) {
+      saveToCache(symbol, resolution, mFrom, mTo, candles);
+    }
+  }
+
+  console.log(`[backtestCache] Smart cache: ${cachedCount} months cached, ${fetchedCount} months fetched, ${allCandles.length} total candles`);
+
+  // Deduplicate and sort
+  const seen = new Set();
+  return allCandles
+    .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
+    .sort((a, b) => a.time - b.time);
+}
+
+module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, CACHE_DIR };
