@@ -291,8 +291,8 @@ let tradeState = {
 function istNow() {
   const ist = new Date(Date.now() + 19800000);
   const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
-  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
-  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
+  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1, yyyy = ist.getUTCFullYear();
+  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm}/${yyyy}, ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
 function log(msg) {
@@ -2534,7 +2534,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
       reason:      t.exitReason      || "",
       entryReason: t.entryReason     || "",
     })))};
-    function ltFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+    function ltFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length>=2) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+(d[2]?'/'+d[2]:''); return p[0]||'\u2014'; }
     function ltFmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
     let ltFiltered=[...LT_ALL],ltSortCol='entry',ltSortDir=-1,ltPage=1,ltPP=10;
     function ltFilter(){

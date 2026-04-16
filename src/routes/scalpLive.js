@@ -26,8 +26,9 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
+const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, parseTrailTiers, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
@@ -47,64 +48,20 @@ const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "350");
 const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
 // Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
-const _SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
-  .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
-  .sort((a, b) => b.peak - a.peak);
+const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
 let _prevPrevDayOHLC = null;
 
-const _STOP_MINS = (() => {
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
-const _ENTRY_STOP_MINS = (() => {
-  const raw = process.env.SCALP_ENTRY_END || "14:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
+const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
 
-function getISTMinutes() {
-  const istSec = Math.floor(Date.now() / 1000) + 19800;
-  return Math.floor(istSec / 60) % 1440;
-}
-
-// Fast IST time string from unix ms — avoids toLocaleTimeString/ICU
-function fastISTTime(unixMs) {
-  const ist = new Date(unixMs + 19800000);
-  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
-  return `${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
-}
-
-// Return last N items in reverse order — avoids spread+reverse on full array
-function reverseSlice(arr, n) {
-  const len = arr.length;
-  const count = Math.min(n, len);
-  const out = new Array(count);
-  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
-  return out;
-}
-
-// Map trades in reverse without intermediate arrays
-function mapTradesReversed(trades) {
-  const len = trades.length;
-  const out = new Array(len);
-  for (let i = 0; i < len; i++) {
-    const t = trades[len - 1 - i];
-    out[i] = {
-      side: t.side || "", symbol: t.symbol || "", strike: t.optionStrike || "",
-      expiry: t.optionExpiry || "", entry: t.entryTime || "", exit: t.exitTime || "",
-      eSpot: t.spotAtEntry || t.entryPrice || 0, eOpt: t.optionEntryLtp || null,
-      eSl: t.stopLoss || t.initialStopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
-      xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
-      pnlMode: t.pnlMode || "", order: t.orderId || "", reason: t.exitReason || "",
-    };
-  }
-  return out;
-}
+const getISTMinutes = _getISTMinutesReal;
+const fastISTTime   = _fastISTTime;
+const reverseSlice  = _reverseSlice;
+const mapTradesReversed = _mapTradesReversed;
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const _HOME    = require("os").homedir();
@@ -167,13 +124,7 @@ let state = {
   _entryPending:  false,
 };
 
-// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
-function istNow() {
-  const ist = new Date(Date.now() + 19800000);
-  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
-  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
-  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
-}
+function istNow() { return formatISTTimestamp(Date.now()); }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
@@ -182,17 +133,9 @@ function log(msg) {
   if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
-// Pure integer math — avoids Date object allocation on every tick
-function getBucketStart(unixMs) {
-  const resMs = SCALP_RES * 60_000;
-  return Math.floor(unixMs / resMs) * resMs;
-}
+function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, SCALP_RES); }
 
-const _SCALP_START_MINS = (() => {
-  const raw = process.env.SCALP_ENTRY_START || "09:21";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
+const _SCALP_START_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -431,11 +374,23 @@ async function squareOff(exitPrice, reason) {
   // Cancel Hard SL-M order before placing market exit (prevents double-exit)
   await cancelScalpHardSL();
 
-  const result = await placeOrder(symbol, exitOrderSide, qty);
+  // Retry exit order up to 3 times — a stuck open position can lose real money
+  const MAX_EXIT_RETRIES = 3;
+  let result = null;
+  for (let attempt = 1; attempt <= MAX_EXIT_RETRIES; attempt++) {
+    result = await placeOrder(symbol, exitOrderSide, qty);
+    if (result.success) break;
+    if (result.reason === "duplicate_guard") break;  // another exit already in flight
+    if (attempt < MAX_EXIT_RETRIES) {
+      log(`⚠️ [SCALP-LIVE] Exit attempt ${attempt}/${MAX_EXIT_RETRIES} failed — retrying in 2s...`);
+      await sleep(2000);
+    }
+  }
 
-  if (!result.success) {
-    if (result.reason !== "duplicate_guard") {
-      log(`🚨 [SCALP-LIVE] EXIT ORDER FAILED — check Fyers dashboard!`);
+  if (!result || !result.success) {
+    if (result && result.reason !== "duplicate_guard") {
+      log(`🚨 [SCALP-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
+      sendTelegram(`🚨 SCALP EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
     }
     _squareOffInFlight = false;
     return;
@@ -884,12 +839,8 @@ let _autoStopTimer = null;
 
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  const stopH = Math.floor(_STOP_MINS / 60);
-  const stopM = _STOP_MINS % 60;
-  const now   = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const stopAt = new Date(now);
-  stopAt.setHours(stopH, stopM, 0, 0);
-  const ms = stopAt - now;
+  const nowMins = getISTMinutes();
+  const ms = (_STOP_MINS - nowMins) * 60 * 1000;
   if (ms <= 0) return;
   _autoStopTimer = setTimeout(() => {
     if (!state.running) return;
@@ -898,32 +849,9 @@ function scheduleAutoStop(stopFn) {
   log(`⏰ [SCALP-LIVE] Auto-stop in ${Math.round(ms / 60000)} min`);
 }
 
-// ── Styled error page ─────────────────────────────────────────────────────────
-function errorPage(title, message, linkHref, linkText) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
-<style>
-${sidebarCSS()}
-*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-.main-content{flex:1;padding:40px 32px;margin-left:220px;display:flex;align-items:center;justify-content:center;}
-@media(max-width:900px){.main-content{margin-left:0;}}
-.err-box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;}
-.err-icon{font-size:2.5rem;margin-bottom:16px;}
-.err-title{color:#ef4444;margin-bottom:12px;font-size:1.1rem;font-weight:700;}
-.err-msg{font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;}
-.err-link{background:#1e40af;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;display:inline-block;}
-.err-link:hover{background:#2563eb;}
-</style></head><body>
-<div class="app-shell">
-${buildSidebar('scalpLive', false)}
-<div class="main-content">
-<div class="err-box">
-<div class="err-icon">🚫</div>
-<h2 class="err-title">${title}</h2>
-<p class="err-msg">${message}</p>
-${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a>` : ''}
-</div></div></div></body></html>`;
+// errorPage imported from sharedNav (shared across all route files)
+function _errorPage(title, message, linkHref, linkText) {
+  return errorPage(title, message, linkHref, linkText, 'scalpLive');
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -933,28 +861,28 @@ router.get("/start", async (req, res) => {
 
   const check = sharedSocketState.canStart("SCALP_LIVE");
   if (!check.allowed) {
-    return res.status(409).send(errorPage("Cannot Start", check.reason, "/scalp-live/status", "\u2190 Back"));
+    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/scalp-live/status", "\u2190 Back"));
   }
 
   if (!process.env.ACCESS_TOKEN) {
-    return res.status(401).send(errorPage("Not Authenticated", "Fyers not logged in. Login first.", "/auth", "Login with Fyers"));
+    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not logged in. Login first.", "/auth", "Login with Fyers"));
   }
 
   if (!fyersBroker.isAuthenticated()) {
-    return res.status(401).send(errorPage("Not Authenticated", "Fyers not authenticated for orders. Login first.", "/auth", "Login with Fyers"));
+    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not authenticated for orders. Login first.", "/auth", "Login with Fyers"));
   }
 
   if (process.env.SCALP_ENABLED !== "true") {
-    return res.status(400).send(errorPage("Scalp Disabled", "SCALP_ENABLED is not true. Enable it in Settings first.", "/settings", "Open Settings"));
+    return res.status(400).send(_errorPage("Scalp Disabled", "SCALP_ENABLED is not true. Enable it in Settings first.", "/settings", "Open Settings"));
   }
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) {
-    return res.status(400).send(errorPage("Trading Not Allowed", holiday.reason, "/scalp-live/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/scalp-live/status", "\u2190 Back"));
   }
 
   if (!isStartAllowed()) {
-    return res.status(400).send(errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-live/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-live/status", "\u2190 Back"));
   }
 
   // Expiry day check
@@ -1806,7 +1734,7 @@ var INR = function(n) { return typeof n === 'number' ? '\u20b9' + n.toLocaleStri
 var PNL_COLOR = function(n) { return n >= 0 ? '#10b981' : '#ef4444'; };
 
 /* ── Date/Time helpers ── */
-function scFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+function scFmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length>=2) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+(d[2]?'/'+d[2]:''); return p[0]||'\u2014'; }
 function scFmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
 
 /* ── Trades table (matching live trade page) ── */
@@ -2208,4 +2136,6 @@ logFilter();
   }
 });
 
+// Export router (Express) + stopSession (for graceful shutdown from app.js)
+router.stopSession = stopSession;
 module.exports = router;

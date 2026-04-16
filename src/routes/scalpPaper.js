@@ -22,8 +22,9 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
+const { reverseSlice, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
@@ -41,29 +42,18 @@ const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "200
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "350");
 const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
-const _SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
-  .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
-  .sort((a, b) => b.peak - a.peak);
+const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
 let _prevPrevDayOHLC = null;  // for Inside Value CPR check
 
-const _STOP_MINS = (() => {
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
-const _ENTRY_STOP_MINS = (() => {
-  const raw = process.env.SCALP_ENTRY_END || "14:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
+const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
 
 function getISTMinutes() {
   if (state._simMode) return _SCALP_START_MINS + 5; // always "in market hours" during simulation
-  const istSec = Math.floor(Date.now() / 1000) + 19800;
-  return Math.floor(istSec / 60) % 1440;
+  return _getISTMinutesReal();
 }
 
 // ── Persistence ──────────────────────────────────────────────────────────────
@@ -123,13 +113,7 @@ function simNow() {
   return state._simMode ? _simClockMs : Date.now();
 }
 
-// Fast IST timestamp — avoids expensive toLocaleString/ICU on every log call
-function istNow() {
-  const ist = new Date(simNow() + 19800000);
-  const h = ist.getUTCHours(), m = ist.getUTCMinutes(), s = ist.getUTCSeconds();
-  const dd = ist.getUTCDate(), mm = ist.getUTCMonth() + 1;
-  return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm} ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
-}
+function istNow() { return formatISTTimestamp(simNow()); }
 
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
@@ -138,26 +122,9 @@ function log(msg) {
   if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
-// Pure integer math — avoids Date object allocation on every tick
-function getBucketStart(unixMs) {
-  const resMs = SCALP_RES * 60_000;
-  return Math.floor(unixMs / resMs) * resMs;
-}
+function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, SCALP_RES); }
 
-const _SCALP_START_MINS = (() => {
-  const raw = process.env.SCALP_ENTRY_START || "09:21";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
-
-// Return last N items in reverse order — avoids spread+reverse on full array
-function reverseSlice(arr, n) {
-  const len = arr.length;
-  const count = Math.min(n, len);
-  const out = new Array(count);
-  for (let i = 0; i < count; i++) out[i] = arr[len - 1 - i];
-  return out;
-}
+const _SCALP_START_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -222,28 +189,7 @@ function stopOptionPolling() {
   _optionPollTimer = null;
 }
 
-// ── Parse option details from symbol ────────────────────────────────────────
-const MONTH_NAMES = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
-const MONTH_CODE_MAP = { "1":0,"2":1,"3":2,"4":3,"5":4,"6":5,"7":6,"8":7,"9":8,"O":9,"N":10,"D":11 };
-
-function parseOptionDetails(symbol) {
-  try {
-    const mA = symbol.match(/NSE:NIFTY(\d{2})([1-9OND])(\d{2})(\d+)(CE|PE)$/);
-    if (mA) {
-      const monthIdx = MONTH_CODE_MAP[mA[2]];
-      return { expiry: `${mA[3]} ${MONTH_NAMES[monthIdx]} 20${mA[1]}`, strike: parseInt(mA[4], 10), optionType: mA[5] };
-    }
-    const mC = symbol.match(/NSE:NIFTY(\d{2})([A-Z]{3})(\d+)(CE|PE)$/);
-    if (mC && parseInt(mC[3], 10) >= 10000) {
-      return { expiry: `${mC[2]} 20${mC[1]}`, strike: parseInt(mC[3], 10), optionType: mC[4] };
-    }
-    const mB = symbol.match(/NSE:NIFTY(\d{2}[A-Z]{3}\d{2})(\d+)(CE|PE)$/);
-    if (mB) {
-      const raw = mB[1]; return { expiry: `${raw.slice(5,7)} ${raw.slice(2,5)} 20${raw.slice(0,2)}`, strike: parseInt(mB[2], 10), optionType: mB[3] };
-    }
-  } catch (_) {}
-  return null;
-}
+// parseOptionDetails imported from tradeUtils
 
 // ── Simulated Buy/Sell ──────────────────────────────────────────────────────
 
@@ -673,46 +619,19 @@ let _autoStopTimer = null;
 
 function scheduleAutoStop(stopFn) {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  const stopH = Math.floor(_STOP_MINS / 60);
-  const stopM = _STOP_MINS % 60;
-  const now   = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-  const stopAt = new Date(now);
-  stopAt.setHours(stopH, stopM, 0, 0);
-  const ms = stopAt - now;
+  const nowMins = getISTMinutes();
+  const ms = (_STOP_MINS - nowMins) * 60 * 1000;
   if (ms <= 0) return;
   _autoStopTimer = setTimeout(() => {
     if (!state.running) return;
-    stopFn("⏰ [SCALP-PAPER] Auto-stop: " + stopH + ":" + String(stopM).padStart(2, "0") + " reached");
+    stopFn("⏰ [SCALP-PAPER] Auto-stop reached");
   }, ms);
   log(`⏰ [SCALP-PAPER] Auto-stop in ${Math.round(ms / 60000)} min`);
 }
 
-// ── Styled error page ─────────────────────────────────────────────────────────
-function errorPage(title, message, linkHref, linkText) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title}</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
-<style>
-${sidebarCSS()}
-*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
-.main-content{flex:1;padding:40px 32px;margin-left:220px;display:flex;align-items:center;justify-content:center;}
-@media(max-width:900px){.main-content{margin-left:0;}}
-.err-box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;}
-.err-icon{font-size:2.5rem;margin-bottom:16px;}
-.err-title{color:#ef4444;margin-bottom:12px;font-size:1.1rem;font-weight:700;}
-.err-msg{font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;}
-.err-link{background:#1e40af;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;display:inline-block;}
-.err-link:hover{background:#2563eb;}
-</style></head><body>
-<div class="app-shell">
-${buildSidebar('scalpPaper', false)}
-<div class="main-content">
-<div class="err-box">
-<div class="err-icon">🚫</div>
-<h2 class="err-title">${title}</h2>
-<p class="err-msg">${message}</p>
-${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a>` : ''}
-</div></div></div></body></html>`;
+// errorPage imported from sharedNav (shared across all route files)
+function _errorPage(title, message, linkHref, linkText) {
+  return errorPage(title, message, linkHref, linkText, 'scalpPaper');
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -722,20 +641,20 @@ router.get("/start", async (req, res) => {
 
   const check = sharedSocketState.canStart("SCALP_PAPER");
   if (!check.allowed) {
-    return res.status(409).send(errorPage("Cannot Start", check.reason, "/scalp-paper/status", "\u2190 Back"));
+    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/scalp-paper/status", "\u2190 Back"));
   }
 
   if (!process.env.ACCESS_TOKEN) {
-    return res.status(401).send(errorPage("Not Authenticated", "Fyers not logged in. Login first.", "/auth", "Login with Fyers"));
+    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not logged in. Login first.", "/auth", "Login with Fyers"));
   }
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) {
-    return res.status(400).send(errorPage("Trading Not Allowed", holiday.reason, "/scalp-paper/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/scalp-paper/status", "\u2190 Back"));
   }
 
   if (!isStartAllowed()) {
-    return res.status(400).send(errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-paper/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-paper/status", "\u2190 Back"));
   }
 
   // Expiry day check
@@ -1594,7 +1513,7 @@ function spApplySort() {
   spRender();
 }
 var spFmt = function(n) { return n != null ? '\\u20b9' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\\u2014'; };
-function spFmtDate(dt){ if(!dt) return '\\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\\u2014'; }
+function spFmtDate(dt){ if(!dt) return '\\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length>=2) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+(d[2]?'/'+d[2]:''); return p[0]||'\\u2014'; }
 function spFmtTime(dt){ if(!dt) return '\\u2014'; var p=dt.split(', '); return p[1]||'\\u2014'; }
 
 function spRender() {
@@ -3044,4 +2963,5 @@ router.post("/simulate/start", async (req, res) => {
   }
 });
 
+router.stopSession = stopSession;
 module.exports = router;
