@@ -235,14 +235,31 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
 
     if (!monthCandles) {
       // Cache miss — fetch from API
+      // Rate-limit: sleep 350ms between API calls to avoid Fyers "request limit reached"
+      if (fetchedCount > 0) await new Promise(r => setTimeout(r, 350));
       if (onProgress) onProgress({ phase: `Fetching ${mFrom} → ${mTo}… (${i + 1}/${months.length} months)`, pct: Math.round(((i + 1) / months.length) * 4) });
-      monthCandles = await rawFetcher(symbol, resolution, mFrom, mTo);
+
+      // Retry up to 2 times on rate-limit errors
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          monthCandles = await rawFetcher(symbol, resolution, mFrom, mTo);
+          break;
+        } catch (err) {
+          if (attempt < 2 && (err.message || "").toLowerCase().includes("limit")) {
+            console.warn(`[backtestCache] Rate limited on ${mFrom}, waiting 2s before retry…`);
+            await new Promise(r => setTimeout(r, 2000));
+          } else {
+            throw err;
+          }
+        }
+      }
       fetchedCount++;
 
       // Cache historical months
-      if (monthCandles.length > 0 && !touchesToday) {
+      if (monthCandles && monthCandles.length > 0 && !touchesToday) {
         saveToCache(symbol, resolution, mFrom, mTo, monthCandles);
       }
+      monthCandles = monthCandles || [];
     }
 
     // Deduplicate per-month (cheaper than full-array pass at end)
