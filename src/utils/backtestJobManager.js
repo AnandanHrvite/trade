@@ -145,6 +145,13 @@ function buildProgressPage(jobId, basePath, title) {
     const BASE   = "${basePath}";
     const started = Date.now();
 
+    // Preserve original query params (from, to, resolution) when redirecting
+    function buildRedirectURL(extra) {
+      const url = new URL(window.location.href);
+      if (extra) Object.entries(extra).forEach(([k, v]) => url.searchParams.set(k, v));
+      return url.toString();
+    }
+
     function fmtTime(ms) {
       const s = Math.floor(ms / 1000);
       if (s < 60) return s + "s";
@@ -161,7 +168,7 @@ function buildProgressPage(jobId, basePath, title) {
           document.getElementById("phase").textContent = "Complete! Loading results…";
           document.getElementById("pct").textContent = "100%";
           document.getElementById("bar").style.width = "100%";
-          window.location.href = BASE + "?jobId=" + JOB_ID;
+          window.location.href = buildRedirectURL({ jobId: JOB_ID });
           return;
         }
 
@@ -175,7 +182,10 @@ function buildProgressPage(jobId, basePath, title) {
         }
 
         if (d.status === "not_found") {
-          window.location.href = BASE;
+          // Job lost (server restarted) — re-trigger with same params
+          var retryUrl = new URL(window.location.href);
+          retryUrl.searchParams.delete("jobId");
+          window.location.href = retryUrl.toString();
           return;
         }
 
