@@ -124,6 +124,7 @@ ${buildSidebar('swingBacktest', true)}
         backtestJobs.updateProgress(id, { phase: 'Running backtest engine…', pct: 5, current: 0, total: _candles.length - 30 });
         const _result = await runBacktest(_candles, strategy, capital, _vixCandles, _expiryDates,
           (p) => backtestJobs.updateProgress(id, p));
+        _result.candleCount = _candles.length;
         saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);
         console.log(`\n ✅ Backtest job ${id} complete — ${_result.trades.length} trades`);
@@ -148,6 +149,7 @@ ${buildSidebar('swingBacktest', true)}
 
   try {
     const result = job.result;
+    const candles = { length: result.candleCount || 0 };
     const s = result.summary;
     // Newest first by default (reverse chronological)
     const trades = [...(result.trades || [])].reverse();

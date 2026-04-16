@@ -599,6 +599,7 @@ ${modalJS()}
         backtestJobs.updateProgress(id, { phase: 'Running scalp backtest…', pct: 5, current: 0, total: _candles.length - 30 });
         const _result = await runScalpBacktest(_candles, capital, _vixCandles, _expiryDates,
           (p) => backtestJobs.updateProgress(id, p));
+        _result.candleCount = _candles.length;
         saveResult("SCALP_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);
         console.log(`\n ✅ Scalp backtest job ${id} complete — ${_result.trades.length} trades`);
@@ -621,6 +622,7 @@ ${modalJS()}
 
   try {
     const result = job.result;
+    const candles = { length: result.candleCount || 0 };
     const s = result.summary;
     const trades = [...(result.trades || [])].reverse();
 
