@@ -283,6 +283,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryReason: state.position.reason || "",
     entryTime, exitTime: istNow(),
     pnl: netPnl, pnlMode, exitReason: reason,
+    entryBarTime: state.position.entryBarTime || (state.currentBar ? state.currentBar.time : null),
+    exitBarTime:  state.currentBar ? state.currentBar.time : null,
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
@@ -812,6 +814,22 @@ router.post("/manualEntry", async (req, res) => {
   }
 });
 
+// ── Chart data for Lightweight Charts widget ────────────────────────────────
+router.get("/status/chart-data", (req, res) => {
+  try {
+    const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    const markers = [];
+    for (const t of state.sessionTrades) {
+      if (t.entryPrice && t.entryBarTime) markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.entryPrice.toFixed(0) });
+      if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
+    }
+    const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
+    const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
+    return res.json({ candles, markers, stopLoss, entryPrice });
+  } catch (err) { return res.status(500).json({ error: err.message }); }
+});
+
 // ── Status data (AJAX poll) ─────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
@@ -1153,6 +1171,7 @@ router.get("/status", (req, res) => {
 <title>Scalp Paper \u2014 ${scalpStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 ${sidebarCSS()}
 ${modalCSS()}
@@ -1297,6 +1316,17 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <!-- Position card -->
 <div id="ajax-position-section" style="margin-bottom:18px;">
 ${posHtml}
+</div>
+
+<!-- NIFTY Chart -->
+<div style="margin-bottom:18px;">
+  <div class="section-title">NIFTY ${SCALP_RES}-Min Chart</div>
+  <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
+    <div id="nifty-chart" style="width:100%;height:100%;"></div>
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+    </div>
+  </div>
 </div>
 
 <!-- Session trades table -->
@@ -1654,6 +1684,45 @@ function doCopy(text,btn,label){
     document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
   }
 }
+</script>
+<script>
+// ── NIFTY Chart (Lightweight Charts) ─────────────────────────────────────
+(function() {
+  if (typeof LightweightCharts === 'undefined') return;
+  var container = document.getElementById('nifty-chart');
+  if (!container) return;
+  var chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout: { background: { type: 'solid', color: '#0a0f1c' }, textColor: '#4a6080', fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" },
+    grid: { vertLines: { color: '#111827' }, horzLines: { color: '#111827' } },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
+    timeScale: { borderColor: '#1a2236', timeVisible: true, secondsVisible: false,
+      tickMarkFormatter: function(t) { var d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+    },
+  });
+  var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  var slLine = null, entryLine = null, _lcc = 0;
+  async function fetchChart() {
+    try {
+      var res = await fetch('/scalp-paper/status/chart-data', { cache: 'no-store' });
+      if (!res.ok) return; var d = await res.json();
+      if (!d.candles || !d.candles.length) return;
+      if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
+        cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
+      } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
+      _lcc = d.candles.length;
+      if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
+      if (slLine) { cs.removePriceLine(slLine); slLine = null; }
+      if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
+      if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
+      if (d.entryPrice) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+    } catch(e) { console.warn('[Chart]', e.message); }
+  }
+  fetchChart();
+  if (${state.running}) setInterval(fetchChart, 4000);
+  window.addEventListener('resize', function() { chart.applyOptions({ width: container.clientWidth }); });
+})();
 </script>
 <script>
 // ── AJAX live refresh ────────────────────────────────────────────────────
