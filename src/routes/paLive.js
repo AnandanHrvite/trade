@@ -34,6 +34,7 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { savePAPosition, clearPAPosition } = require("../utils/positionPersist");
+const { ADX } = require("technicalindicators");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "PA_LIVE";
@@ -605,15 +606,44 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
+    // 2. TRAILING — mode-aware: auto (ADX), profit_lock, candle, both
+    const _trailMode = process.env.PA_TRAIL_MODE || "auto";
+    let _useCandleTrail = false;
+    let _useProfitLock  = false;
+
+    if (_trailMode === "candle")       { _useCandleTrail = true; }
+    else if (_trailMode === "profit_lock") { _useProfitLock = true; }
+    else if (_trailMode === "both")    { _useCandleTrail = true; _useProfitLock = true; }
+    else /* auto */ {
+      const _adxThresh = parseFloat(process.env.PA_TRAIL_ADX_THRESHOLD || "25");
+      if (pos._liveADX != null && pos._liveADX >= _adxThresh) {
+        _useCandleTrail = true;
+      } else {
+        _useProfitLock = true;
+      }
+    }
+
+    // 2a. CANDLE TRAIL — exit when price breaches the candle trail level (set at candle close)
+    if (_useCandleTrail && pos.candleTrailLevel) {
+      if (pos.side === "CE" && price <= pos.candleTrailLevel) {
+        squareOff(price, `Candle Trail (prev low ${pos.candleTrailLevel} | ADX=${pos._liveADX || '?'})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      }
+      if (pos.side === "PE" && price >= pos.candleTrailLevel) {
+        squareOff(price, `Candle Trail (prev high ${pos.candleTrailLevel} | ADX=${pos._liveADX || '?'})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        return;
+      }
+    }
+
+    // 2b. TRAILING PROFIT LOCK — tiered % of peak: keep more as profit grows
+    if (_useProfitLock && _PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
       }
       const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
       if (curPnl <= trailFloor) {
-        squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+        squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)} | ADX=${pos._liveADX || '?'})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
         return;
       }
     }
@@ -650,6 +680,43 @@ async function onCandleClose(bar) {
         if (trailResult.source) state.position.slSource = trailResult.source;
         savePAPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
         updatePAHardSL(trailResult.sl);
+      }
+    }
+
+    // Compute live ADX for auto trail mode
+    if (window.length >= 20) {
+      const _highs = window.map(c => c.high);
+      const _lows = window.map(c => c.low);
+      const _closes = window.map(c => c.close);
+      const _adxArr = ADX.calculate({ period: 14, high: _highs, low: _lows, close: _closes });
+      if (_adxArr.length > 0) {
+        const _newAdx = parseFloat(_adxArr[_adxArr.length - 1].adx.toFixed(1));
+        if (state.position._liveADX !== _newAdx) {
+          log(`📊 [PA-LIVE] ADX: ${state.position._liveADX || 'n/a'} → ${_newAdx} (${_newAdx >= parseFloat(process.env.PA_TRAIL_ADX_THRESHOLD || "25") ? 'TRENDING → candle trail' : 'CHOPPY → profit lock'})`);
+          state.position._liveADX = _newAdx;
+        }
+      }
+    }
+
+    // Update candle trail level — use just-closed candle's high/low (only tighten)
+    const _trailMode = process.env.PA_TRAIL_MODE || "auto";
+    const _candleTrailActive = _trailMode === "candle" || _trailMode === "both" || _trailMode === "auto";
+    if (_candleTrailActive && state.position.candlesHeld >= 1) {
+      const closedCandle = bar;
+      if (state.position.side === "CE") {
+        const newLevel = closedCandle.low;
+        if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-LIVE] Candle Trail: ${old} → ${newLevel} (prev candle low)`);
+        }
+      } else {
+        const newLevel = closedCandle.high;
+        if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-LIVE] Candle Trail: ${old} → ${newLevel} (prev candle high)`);
+        }
       }
     }
 
@@ -1526,7 +1593,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Live Trade</div>
-    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail ${_PA_TRAIL_PCT}%+ tiered from \u20b9${_PA_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail: ${(process.env.PA_TRAIL_MODE || 'auto').toUpperCase()}${(process.env.PA_TRAIL_MODE || 'auto') === 'auto' ? ` (ADX\u2265${process.env.PA_TRAIL_ADX_THRESHOLD || '25'}\u2192candle, <\u2192lock)` : ''} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

@@ -30,6 +30,7 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tickSimulator = require("../services/tickSimulator");
+const { ADX } = require("technicalindicators");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "PA_PAPER";
@@ -308,11 +309,13 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     rawPnl  = (exitOptionLtp - optionEntryLtp) * qty;
     pnlMode = `option: ₹${optionEntryLtp} → ₹${exitOptionLtp}`;
   } else if (state._simMode) {
-    // Sim mode: no real option LTP — use delta approximation like backtest
+    // Sim mode: no real option LTP — use gamma-adjusted delta approximation like backtest
     const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+    const GAMMA = parseFloat(process.env.BACKTEST_GAMMA || "0.002");
     const spotMove = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1);
-    rawPnl  = spotMove * DELTA * qty;
-    pnlMode = `sim delta(${DELTA})`;
+    const optPremPts = DELTA * spotMove + 0.5 * GAMMA * spotMove * spotMove;
+    rawPnl  = optPremPts * qty;
+    pnlMode = `sim delta(${DELTA})+gamma(${GAMMA})`;
   } else {
     rawPnl  = (exitPrice - entryPrice) * (side === "CE" ? 1 : -1) * qty;
     pnlMode = "spot proxy";
@@ -447,12 +450,14 @@ function onTick(tick) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      // Sim mode: use delta approximation (same as simulateSell) for consistent trailing
+      // Sim mode: use gamma-adjusted delta approximation (same as simulateSell) for consistent trailing
       if (state._simMode) {
         const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+        const GAMMA = parseFloat(process.env.BACKTEST_GAMMA || "0.002");
         const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+        const optPremPts = DELTA * spotMove + 0.5 * GAMMA * spotMove * spotMove;
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
-        return spotMove * DELTA * _q - _c;
+        return optPremPts * _q - _c;
       }
       const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;
@@ -477,15 +482,44 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
+    // 2. TRAILING — mode-aware: auto (ADX), profit_lock, candle, both
+    const _trailMode = process.env.PA_TRAIL_MODE || "auto";
+    let _useCandleTrail = false;
+    let _useProfitLock  = false;
+
+    if (_trailMode === "candle")       { _useCandleTrail = true; }
+    else if (_trailMode === "profit_lock") { _useProfitLock = true; }
+    else if (_trailMode === "both")    { _useCandleTrail = true; _useProfitLock = true; }
+    else /* auto */ {
+      const _adxThresh = parseFloat(process.env.PA_TRAIL_ADX_THRESHOLD || "25");
+      if (pos._liveADX != null && pos._liveADX >= _adxThresh) {
+        _useCandleTrail = true;  // trending → ride with candle trail
+      } else {
+        _useProfitLock = true;   // choppy → protect with profit lock
+      }
+    }
+
+    // 2a. CANDLE TRAIL — exit when price breaches the candle trail level (set at candle close)
+    if (_useCandleTrail && pos.candleTrailLevel) {
+      if (pos.side === "CE" && price <= pos.candleTrailLevel) {
+        simulateSell(price, `Candle Trail (prev low ${pos.candleTrailLevel} | ADX=${pos._liveADX || '?'})`, price);
+        return;
+      }
+      if (pos.side === "PE" && price >= pos.candleTrailLevel) {
+        simulateSell(price, `Candle Trail (prev high ${pos.candleTrailLevel} | ADX=${pos._liveADX || '?'})`, price);
+        return;
+      }
+    }
+
+    // 2b. TRAILING PROFIT LOCK — tiered % of peak: keep more as profit grows
+    if (_useProfitLock && _PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
       let _pct = _PA_TRAIL_PCT;
       for (const tier of _PA_TRAIL_TIERS) {
         if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
       }
       const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
       if (curPnl <= trailFloor) {
-        simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
+        simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)} | ADX=${pos._liveADX || '?'})`, price);
         return;
       }
     }
@@ -520,6 +554,45 @@ async function onCandleClose(bar) {
         log(`📐 [PA-PAPER] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
         state.position.stopLoss = trailResult.sl;
         if (trailResult.source) state.position.slSource = trailResult.source;
+      }
+    }
+
+    // Compute live ADX for auto trail mode
+    if (window.length >= 20) {
+      const _highs = window.map(c => c.high);
+      const _lows = window.map(c => c.low);
+      const _closes = window.map(c => c.close);
+      const _adxArr = ADX.calculate({ period: 14, high: _highs, low: _lows, close: _closes });
+      if (_adxArr.length > 0) {
+        const _newAdx = parseFloat(_adxArr[_adxArr.length - 1].adx.toFixed(1));
+        if (state.position._liveADX !== _newAdx) {
+          log(`📊 [PA-PAPER] ADX: ${state.position._liveADX || 'n/a'} → ${_newAdx} (${_newAdx >= parseFloat(process.env.PA_TRAIL_ADX_THRESHOLD || "25") ? 'TRENDING → candle trail' : 'CHOPPY → profit lock'})`);
+          state.position._liveADX = _newAdx;
+        }
+      }
+    }
+
+    // Update candle trail level — use just-closed candle's high/low (only tighten)
+    const _trailMode = process.env.PA_TRAIL_MODE || "auto";
+    const _candleTrailActive = _trailMode === "candle" || _trailMode === "both" || _trailMode === "auto";
+    if (_candleTrailActive && state.position.candlesHeld >= 1) {
+      const closedCandle = bar;
+      if (state.position.side === "CE") {
+        // For CE: trail to prev candle low (only move UP = tighten)
+        const newLevel = closedCandle.low;
+        if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-PAPER] Candle Trail: ${old} → ${newLevel} (prev candle low)`);
+        }
+      } else {
+        // For PE: trail to prev candle high (only move DOWN = tighten)
+        const newLevel = closedCandle.high;
+        if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
+          const old = state.position.candleTrailLevel || 'none';
+          state.position.candleTrailLevel = newLevel;
+          log(`📐 [PA-PAPER] Candle Trail: ${old} → ${newLevel} (prev candle high)`);
+        }
       }
     }
 
@@ -1288,7 +1361,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail ${_PA_TRAIL_PCT}%+ tiered from \u20b9${_PA_TRAIL_START} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail: ${(process.env.PA_TRAIL_MODE || 'auto').toUpperCase()}${(process.env.PA_TRAIL_MODE || 'auto') === 'auto' ? ` (ADX\u2265${process.env.PA_TRAIL_ADX_THRESHOLD || '25'}\u2192candle, <\u2192lock)` : ''} \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

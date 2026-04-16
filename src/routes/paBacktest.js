@@ -23,6 +23,7 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
+const { ADX } = require("technicalindicators");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -71,6 +72,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   const isFutures   = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const GAMMA       = isFutures ? 0   : parseFloat(process.env.BACKTEST_GAMMA || "0.002");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
   const PA_RES   = parseInt(process.env.PA_RESOLUTION || "5", 10);
   const CANDLES_PER_DAY = Math.round(390 / PA_RES); // 6.5h trading day
@@ -89,6 +91,10 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   const PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
     .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
     .sort((a, b) => b.peak - a.peak);
+
+  // Trail mode: auto (ADX-based), profit_lock, candle, both
+  const PA_TRAIL_MODE       = process.env.PA_TRAIL_MODE || "auto";
+  const PA_TRAIL_ADX_THRESH = parseFloat(process.env.PA_TRAIL_ADX_THRESHOLD || "25");
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -127,7 +133,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   console.log(`🔍 PRICE ACTION BACKTEST — ${paStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | Swing trailing SL | Price Action entry`);
   console.log(`   MaxTrades: ${PA_MAX_TRADES}/day | MaxLoss: ₹${PA_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Trail: ${PA_TRAIL_MODE.toUpperCase()} mode${PA_TRAIL_MODE === 'auto' ? ` (ADX≥${PA_TRAIL_ADX_THRESH}→candle, <→lock)` : ''} | Lock: ₹${PA_TRAIL_START} start, ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -189,6 +195,8 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         target:         null,
         candlesHeld:    0,
         peakPnl:        0,
+        candleTrailLevel: null,
+        _liveADX:       null,
       };
       pendingSignal = null;
     } else if (pendingSignal && (position || isEOD)) {
@@ -209,7 +217,9 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         const pts = (spotExit - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         if (OPTION_SIM) {
           const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
-          return (pts * DELTA * LOT_SIZE) - thetaCost - _estCharges;
+          // Gamma-adjusted: ΔP = delta * Δs + 0.5 * gamma * Δs² (long option convexity)
+          const optPremPts = DELTA * pts + 0.5 * GAMMA * pts * pts;
+          return (optPremPts * LOT_SIZE) - thetaCost - _estCharges;
         }
         return pts - _estCharges / LOT_SIZE;
       };
@@ -217,7 +227,16 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
       // ── Helper: estimate exit price for a target PNL ₹ amount ──
       const _exitPriceForPnl = (targetPnl) => {
         const _needed = targetPnl + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + _estCharges : _estCharges / LOT_SIZE);
-        const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
+        let _pts;
+        if (OPTION_SIM && GAMMA > 0) {
+          // Solve: 0.5*gamma*pts² + delta*pts = _needed/LOT_SIZE (quadratic)
+          const target = _needed / LOT_SIZE;
+          const a = 0.5 * GAMMA, b = DELTA, c = -target;
+          const disc = b * b - 4 * a * c;
+          _pts = disc >= 0 ? (-b + Math.sqrt(disc)) / (2 * a) : target / DELTA;
+        } else {
+          _pts = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
+        }
         return parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
       };
 
@@ -245,18 +264,73 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
-        let _pct = PA_TRAIL_PCT;
-        for (const tier of PA_TRAIL_TIERS) {
-          if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+      // 2. TRAILING — mode-aware: auto (ADX), profit_lock, candle, both
+      if (!exitReason) {
+        // Compute ADX from candle window (update every candle)
+        if (window.length >= 20) {
+          const _highs = window.map(c => c.high);
+          const _lows = window.map(c => c.low);
+          const _closes = window.map(c => c.close);
+          const _adxArr = ADX.calculate({ period: 14, high: _highs, low: _lows, close: _closes });
+          if (_adxArr.length > 0) {
+            position._liveADX = parseFloat(_adxArr[_adxArr.length - 1].adx.toFixed(1));
+          }
         }
-        const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
 
-        const curPnl = _runPnl(candle.close);
-        if (curPnl <= trailFloor) {
-          exitPrice  = _exitPriceForPnl(trailFloor);
-          exitReason = `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
+        // Determine which trail mode to use
+        let _useCandleTrail = false;
+        let _useProfitLock  = false;
+        if (PA_TRAIL_MODE === "candle")          { _useCandleTrail = true; }
+        else if (PA_TRAIL_MODE === "profit_lock") { _useProfitLock = true; }
+        else if (PA_TRAIL_MODE === "both")        { _useCandleTrail = true; _useProfitLock = true; }
+        else /* auto */ {
+          if (position._liveADX != null && position._liveADX >= PA_TRAIL_ADX_THRESH) {
+            _useCandleTrail = true;
+          } else {
+            _useProfitLock = true;
+          }
+        }
+
+        // Update candle trail level (prev candle high/low, tighten only)
+        if ((_useCandleTrail || PA_TRAIL_MODE === "auto") && position.candlesHeld >= 2 && i > 0) {
+          const prevCandle = candles[i - 1];
+          if (position.side === "CE") {
+            const newLevel = prevCandle.low;
+            if (!position.candleTrailLevel || newLevel > position.candleTrailLevel) {
+              position.candleTrailLevel = newLevel;
+            }
+          } else {
+            const newLevel = prevCandle.high;
+            if (!position.candleTrailLevel || newLevel < position.candleTrailLevel) {
+              position.candleTrailLevel = newLevel;
+            }
+          }
+        }
+
+        // 2a. CANDLE TRAIL — check if current candle breaches the trail level
+        if (_useCandleTrail && position.candleTrailLevel) {
+          if (position.side === "CE" && candle.low <= position.candleTrailLevel) {
+            exitPrice  = parseFloat((position.candleTrailLevel - SLIPPAGE_PTS).toFixed(2));
+            exitReason = `Candle Trail (prev low ${position.candleTrailLevel} | ADX=${position._liveADX || '?'})`;
+          }
+          if (position.side === "PE" && candle.high >= position.candleTrailLevel) {
+            exitPrice  = parseFloat((position.candleTrailLevel + SLIPPAGE_PTS).toFixed(2));
+            exitReason = `Candle Trail (prev high ${position.candleTrailLevel} | ADX=${position._liveADX || '?'})`;
+          }
+        }
+
+        // 2b. TRAILING PROFIT LOCK — tiered % of peak
+        if (!exitReason && _useProfitLock && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
+          let _pct = PA_TRAIL_PCT;
+          for (const tier of PA_TRAIL_TIERS) {
+            if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+          }
+          const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
+          const curPnl = _runPnl(candle.close);
+          if (curPnl <= trailFloor) {
+            exitPrice  = _exitPriceForPnl(trailFloor);
+            exitReason = `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)} | ADX=${position._liveADX || '?'})`;
+          }
         }
       }
 
@@ -279,11 +353,13 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         let pnl;
         if (OPTION_SIM) {
           const thetaCost = (THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY;
-          const netPremPts = spotPnlPts * DELTA - thetaCost / LOT_SIZE;
+          // Gamma-adjusted premium change: ΔP = delta * Δs + 0.5 * gamma * Δs²
+          const optPremPts = DELTA * spotPnlPts + 0.5 * GAMMA * spotPnlPts * spotPnlPts;
+          const netPremPts = optPremPts - thetaCost / LOT_SIZE;
           const estEntry   = 200;
           const estExit    = Math.max(1, estEntry + netPremPts);
           const _chg = getCharges({ broker: "fyers", isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
-          pnl = parseFloat(((spotPnlPts * DELTA * LOT_SIZE) - thetaCost - _chg).toFixed(2));
+          pnl = parseFloat(((optPremPts * LOT_SIZE) - thetaCost - _chg).toFixed(2));
         } else {
           const _chg = getCharges({ broker: "fyers", isFutures, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
           pnl = parseFloat((spotPnlPts - _chg / LOT_SIZE).toFixed(2));
@@ -429,6 +505,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
     maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
     optionSim:   OPTION_SIM,
     delta:       DELTA,
+    gamma:       GAMMA,
     thetaPerDay: THETA_DAY,
     finalCapital: parseFloat((capital + totalPnl).toFixed(2)),
     vixEnabled:  process.env.PA_VIX_ENABLED === "true",
@@ -767,7 +844,7 @@ ${buildSidebar('paBacktest', liveActive)}
   <div class="stat-grid">
     <div class="sc blue"><div class="sc-label">Total Trades</div><div class="sc-val">${s.totalTrades}</div><div class="sc-sub">${s.wins}W \u00b7 ${s.losses}L</div></div>
     <div class="sc green"><div class="sc-label">Max Profit</div><div class="sc-val" style="color:#10b981;">${fmtPnl(s.maxProfit, s)}</div><div class="sc-sub">Best single trade</div></div>
-    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${fmtPnl(s.totalPnl, s)}</div><div class="sc-sub">${s.optionSim ? `Option sim: \u03b4=${s.delta} \u03b8=\u20b9${s.thetaPerDay}/day` : "Raw NIFTY index pts"}</div></div>
+    <div class="sc ${(s.totalPnl||0)>=0?"green":"red"}"><div class="sc-label">Total PnL</div><div class="sc-val" style="color:${pnlColor(s.totalPnl)};">${fmtPnl(s.totalPnl, s)}</div><div class="sc-sub">${s.optionSim ? `Option sim: \u03b4=${s.delta} \u03b3=${s.gamma} \u03b8=\u20b9${s.thetaPerDay}/day` : "Raw NIFTY index pts"}</div></div>
     <div class="sc red"><div class="sc-label">Max Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.maxDrawdown, s)}</div><div class="sc-sub">Worst peak-to-trough</div></div>
     <div class="sc red"><div class="sc-label">Total Drawdown</div><div class="sc-val" style="color:#ef4444;">${fmtPnl(s.totalDrawdown, s)}</div><div class="sc-sub">Sum of all losses</div></div>
     <div class="sc purple"><div class="sc-label">Risk/Reward</div><div class="sc-val">${s.riskReward||"\u2014"}</div><div class="sc-sub">1 : avg win \u00f7 avg loss</div></div>
