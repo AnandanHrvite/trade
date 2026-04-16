@@ -83,12 +83,14 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
 
-  // PNL-based trailing profit (tiered % of peak)
+  // Trailing profit config
   const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "350");
   const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "65");
   const PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
     .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
     .sort((a, b) => b.peak - a.peak);
+  const PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false"; // default true
+  const PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -246,35 +248,31 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING — candle trail (2-candle lookback) + profit-lock floor
-      //    Both active in parallel. Whichever fires first exits.
-      //    Candle trail: lowest low / highest high of last 2 completed candles
+      // 2. TRAILING — candle trail + profit-lock floor (parallel, whichever fires first)
       if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
-        // Update candle trail level from last 2 completed candles (tighten only)
-        if (position.candlesHeld >= 3 && i >= 2) {
-          const prev1 = candles[i - 1], prev2 = candles[i - 2];
+        // a) Candle trail: lowest low / highest high of last N candles
+        if (PA_CANDLE_TRAIL && position.candlesHeld >= (PA_CANDLE_TRAIL_BARS + 1) && i >= PA_CANDLE_TRAIL_BARS) {
+          // Compute trail level from last N completed candles
           if (position.side === "CE") {
-            // CE: trail to lowest low of last 2 candles (moves UP only = tighten)
-            const newLevel = Math.min(prev1.low, prev2.low);
-            if (!position.candleTrailLevel || newLevel > position.candleTrailLevel) {
-              position.candleTrailLevel = newLevel;
+            let minLow = candles[i - 1].low;
+            for (let b = 2; b <= PA_CANDLE_TRAIL_BARS; b++) minLow = Math.min(minLow, candles[i - b].low);
+            if (!position.candleTrailLevel || minLow > position.candleTrailLevel) {
+              position.candleTrailLevel = minLow;
             }
           } else {
-            // PE: trail to highest high of last 2 candles (moves DOWN only = tighten)
-            const newLevel = Math.max(prev1.high, prev2.high);
-            if (!position.candleTrailLevel || newLevel < position.candleTrailLevel) {
-              position.candleTrailLevel = newLevel;
+            let maxHigh = candles[i - 1].high;
+            for (let b = 2; b <= PA_CANDLE_TRAIL_BARS; b++) maxHigh = Math.max(maxHigh, candles[i - b].high);
+            if (!position.candleTrailLevel || maxHigh < position.candleTrailLevel) {
+              position.candleTrailLevel = maxHigh;
             }
           }
-        }
 
-        // a) Candle trail breach
-        if (position.candleTrailLevel) {
+          // Check breach
           const candleBreached = (position.side === "CE" && candle.low <= position.candleTrailLevel)
                               || (position.side === "PE" && candle.high >= position.candleTrailLevel);
           if (candleBreached) {
             exitPrice  = parseFloat((position.candleTrailLevel + SLIPPAGE_PTS * (position.side === "CE" ? -1 : 1)).toFixed(2));
-            exitReason = `Candle Trail (2-bar ${position.side === "CE" ? "low" : "high"} ${position.candleTrailLevel})`;
+            exitReason = `Candle Trail (${PA_CANDLE_TRAIL_BARS}-bar ${position.side === "CE" ? "low" : "high"} ${position.candleTrailLevel})`;
           }
         }
 

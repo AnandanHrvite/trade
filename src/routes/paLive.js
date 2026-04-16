@@ -50,6 +50,8 @@ const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
 // Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
+const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
 const _PA_OPT_STOP_PCT        = parseFloat(process.env.PA_OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
@@ -561,14 +563,14 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING — candle trail (2-candle) + profit-lock floor (parallel)
+    // 2. TRAILING — candle trail + profit-lock floor (parallel, whichever fires first)
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
       // a) Candle trail breach (level updated on candle close)
-      if (pos.candleTrailLevel) {
+      if (_PA_CANDLE_TRAIL && pos.candleTrailLevel) {
         const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
                             || (pos.side === "PE" && price >= pos.candleTrailLevel);
         if (candleBreached) {
-          squareOff(price, `Candle Trail (2-bar ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
+          squareOff(price, `Candle Trail (${_PA_CANDLE_TRAIL_BARS}-bar ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
           return;
         }
       }
@@ -620,19 +622,19 @@ async function onCandleClose(bar) {
       }
     }
 
-    // Update candle trail level (lowest low / highest high of last 2 candles, tighten only)
-    if (state.position.peakPnl >= _PA_TRAIL_START && window.length >= 2) {
-      const prev1 = window[window.length - 1], prev2 = window[window.length - 2];
+    // Update candle trail level (lowest low / highest high of last N candles, tighten only)
+    if (_PA_CANDLE_TRAIL && state.position.peakPnl >= _PA_TRAIL_START && window.length >= _PA_CANDLE_TRAIL_BARS) {
+      const bars = window.slice(-_PA_CANDLE_TRAIL_BARS);
       if (state.position.side === "CE") {
-        const newLevel = Math.min(prev1.low, prev2.low);
+        const newLevel = Math.min(...bars.map(b => b.low));
         if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
-          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (2-bar low)`);
+          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (${_PA_CANDLE_TRAIL_BARS}-bar low)`);
           state.position.candleTrailLevel = newLevel;
         }
       } else {
-        const newLevel = Math.max(prev1.high, prev2.high);
+        const newLevel = Math.max(...bars.map(b => b.high));
         if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
-          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (2-bar high)`);
+          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (${_PA_CANDLE_TRAIL_BARS}-bar high)`);
           state.position.candleTrailLevel = newLevel;
         }
       }

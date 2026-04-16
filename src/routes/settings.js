@@ -152,9 +152,9 @@ const SETTINGS_SCHEMA = [
       { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows", default: "30" },
       { key: "PA_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Price must be within this many pts of S/R level", default: "15" },
       // ── Trail profit ──
-      { key: "PA_TRAIL_MODE", label: "Trail Mode", type: "select", options: ["auto", "profit_lock", "candle", "both"], effect: EFFECT.SESSION, desc: "auto = ADX detects trend/chop; profit_lock = %-of-peak; candle = prev candle H/L; both = candle + profit lock", default: "auto" },
-      { key: "PA_TRAIL_ADX_THRESHOLD", label: "Trail ADX Threshold", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "ADX >= this = trending (candle trail), below = choppy (profit lock). Used in auto mode", default: "25" },
-      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
+      { key: "PA_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Use prev N-candle H/L as trail exit (runs parallel with profit-lock floor)", default: "true" },
+      { key: "PA_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Number of candles to look back for trail level (e.g. 2 = lowest low / highest high of last 2 bars)", default: "2" },
+      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing (candle + profit-lock) after this much peak profit", default: "350" },
       { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
       { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
       // ── Risk management ──
