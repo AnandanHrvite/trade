@@ -215,42 +215,47 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
   const today = todayIST();
   const months = splitIntoMonths(from, to);
   const allCandles = [];
+  const seen = new Set(); // deduplicate as we go — avoids full-array pass at end
   let cachedCount = 0, fetchedCount = 0;
 
   for (let i = 0; i < months.length; i++) {
     const { from: mFrom, to: mTo } = months[i];
     const touchesToday = mTo >= today;
 
+    let monthCandles = null;
+
     // Try cache for fully historical months
     if (!skipCache && !touchesToday) {
-      const cached = await loadFromCache(symbol, resolution, mFrom, mTo);
-      if (cached) {
-        allCandles.push(...cached);
+      monthCandles = await loadFromCache(symbol, resolution, mFrom, mTo);
+      if (monthCandles) {
         cachedCount++;
         if (onProgress) onProgress({ phase: `Cached ${cachedCount} months, fetching ${fetchedCount}… (${i + 1}/${months.length})`, pct: Math.round(((i + 1) / months.length) * 4) });
-        continue;
       }
     }
 
-    // Cache miss — fetch from API
-    if (onProgress) onProgress({ phase: `Fetching ${mFrom} → ${mTo}… (${i + 1}/${months.length} months)`, pct: Math.round(((i + 1) / months.length) * 4) });
-    const candles = await rawFetcher(symbol, resolution, mFrom, mTo);
-    fetchedCount++;
-    allCandles.push(...candles);
+    if (!monthCandles) {
+      // Cache miss — fetch from API
+      if (onProgress) onProgress({ phase: `Fetching ${mFrom} → ${mTo}… (${i + 1}/${months.length} months)`, pct: Math.round(((i + 1) / months.length) * 4) });
+      monthCandles = await rawFetcher(symbol, resolution, mFrom, mTo);
+      fetchedCount++;
 
-    // Cache historical months
-    if (candles.length > 0 && !touchesToday) {
-      saveToCache(symbol, resolution, mFrom, mTo, candles);
+      // Cache historical months
+      if (monthCandles.length > 0 && !touchesToday) {
+        saveToCache(symbol, resolution, mFrom, mTo, monthCandles);
+      }
+    }
+
+    // Deduplicate per-month (cheaper than full-array pass at end)
+    for (const c of monthCandles) {
+      if (!seen.has(c.time)) { seen.add(c.time); allCandles.push(c); }
     }
   }
 
   console.log(`[backtestCache] Smart cache: ${cachedCount} months cached, ${fetchedCount} months fetched, ${allCandles.length} total candles`);
 
-  // Deduplicate and sort
-  const seen = new Set();
-  return allCandles
-    .filter(c => { if (seen.has(c.time)) return false; seen.add(c.time); return true; })
-    .sort((a, b) => a.time - b.time);
+  // Months are fetched in order, so sort is only needed if there's overlap
+  allCandles.sort((a, b) => a.time - b.time);
+  return allCandles;
 }
 
 module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, CACHE_DIR };

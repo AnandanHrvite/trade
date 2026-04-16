@@ -17,6 +17,8 @@ function maxDaysForResolution(resolution) {
   return 100;
 }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+/** Round to N decimals without string allocation (avoids parseFloat(x.toFixed(2))) */
+function quantize(val, decimals) { const f = 10 ** decimals; return Math.round(val * f) / f; }
 
 async function fetchChunk(symbol, resolution, from, to) {
   const params = { symbol, resolution: String(resolution), date_format: "1", range_from: from, range_to: to, cont_flag: "1" };
@@ -197,6 +199,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Reset strategy module-level state if it has a reset hook
   if (typeof strategy.reset === "function") strategy.reset();
 
+  // ── Performance: suppress per-candle/per-trade logging for large backtests ──
+  // console.log I/O is the #1 bottleneck for 100K+ candle runs.
+  // Keep summary logs, suppress per-trade noise unless BACKTEST_DEBUG=true.
+  const _verbose = candles.length < 5000 || process.env.BACKTEST_DEBUG === "true";
+
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
@@ -281,16 +288,14 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _consecutiveLosses  = 0;
         _consecPauseUntilTs = 0;
         _slHitCandleTime    = null;
-        // Count trades for previous day for the daily log
-        const dayTrades = trades.filter(t => getISTDateStr(t.exitTs) === prevCandleDate);
-        if (dayTrades.length > 0) {
-          const dayPnl = dayTrades.reduce((s, t) => s + t.pnl, 0);
-          const dayW   = dayTrades.filter(t => t.pnl > 0).length;
-          console.log(`
-  📅 DAY CLOSE [${prevCandleDate}]: ${dayTrades.length} trades | ${dayW}W/${dayTrades.length - dayW}L | PnL=${dayPnl.toFixed(1)}pts`);
+        if (_verbose) {
+          // Count trades for previous day for the daily log
+          // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
+          if (_dailyTradeCount > 0) {
+            console.log(`\n  📅 DAY CLOSE [${prevCandleDate}]: ${_dailyTradeCount} trades | PnL=${_dailyPnl.toFixed(1)}pts`);
+          }
+          console.log(`\n  ──── NEW DAY: ${candleDate} ────`);
         }
-        console.log(`
-  ──── NEW DAY: ${candleDate} ────`);
       }
     }
     const nextCandle = candles[i + 1] || null;
@@ -334,7 +339,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         ? (oldSL === null || signalSL > oldSL)
         : (oldSL === null || signalSL < oldSL);
       if (tighten) {
-        console.log(`  📐 SAR-SL tightened: ${oldSL} → ${signalSL} (${position.side})`);
+        if (_verbose) console.log(`  📐 SAR-SL tightened: ${oldSL} → ${signalSL} (${position.side})`);
         position.stopLoss = signalSL;
       }
     }
@@ -352,9 +357,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
-          const trailSL          = parseFloat((position.bestPrice - dynamicGap).toFixed(2));
+          const trailSL          = quantize(position.bestPrice - dynamicGap, 2);
           if (trailSL > position.stopLoss) {
-            console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
+            if (_verbose) console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
             position.stopLoss = trailSL;
           }
         }
@@ -365,9 +370,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
         if (moveInFavour >= activatePts) {
           const dynamicGap       = getDynamicTrailGap(moveInFavour);
-          const trailSL          = parseFloat((position.bestPrice + dynamicGap).toFixed(2));
+          const trailSL          = quantize(position.bestPrice + dynamicGap, 2);
           if (trailSL < position.stopLoss) {
-            console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
+            if (_verbose) console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
             position.stopLoss = trailSL;
           }
         }
@@ -394,13 +399,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (position.side === "CE") {
         const ceMove = (position.bestPrice || candle.close) - position.entryPrice;
         if (ceMove >= BREAKEVEN_THRESHOLD && position.stopLoss < position.entryPrice) {
-          console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+          if (_verbose) console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
           position.stopLoss = position.entryPrice;
         }
       } else {
         const peMove = position.entryPrice - (position.bestPrice || candle.close);
         if (peMove >= BREAKEVEN_THRESHOLD && position.stopLoss > position.entryPrice) {
-          console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+          if (_verbose) console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
           position.stopLoss = position.entryPrice;
         }
       }
@@ -438,26 +443,26 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         // Apply slippage: exit is worse (lower for CE sell, higher for PE sell)
         if (SLIPPAGE_PTS > 0) {
           exitPrice = position.side === "CE"
-            ? parseFloat((exitPrice - SLIPPAGE_PTS).toFixed(2))
-            : parseFloat((exitPrice + SLIPPAGE_PTS).toFixed(2));
+            ? quantize(exitPrice - SLIPPAGE_PTS, 2)
+            : quantize(exitPrice + SLIPPAGE_PTS, 2);
         }
         // ── PnL Calculation — realistic option simulation ─────────────────────
         // spotPnlPts: NIFTY index point move in our favour
-        const spotPnlPts = parseFloat(((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+        const spotPnlPts = quantize((exitPrice - position.entryPrice) * (position.side === "CE" ? 1 : -1), 2);
 
         let pnlRupees;
         let pnlMode;
         if (isFutures) {
           // Futures: direct point × lot size − charges (no delta/theta)
           const _chg = getCharges({ isFutures: true, exitPremium: exitPrice, entryPremium: position.entryPrice, qty: LOT_SIZE });
-          pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - _chg).toFixed(2));
+          pnlRupees = quantize((spotPnlPts * LOT_SIZE) - _chg, 2);
           pnlMode   = `futures (${spotPnlPts}pt × ${LOT_SIZE}qty − ₹${_chg.toFixed(0)} charges)`;
         } else if (OPTION_SIM) {
           // Option premium change ≈ spotPnlPts × delta
           const premiumMovePts = spotPnlPts * DELTA;
           // Theta decay: proportional to candles held
           const candlesHeld    = position.candlesHeld || 1;
-          const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
+          const thetaDecay     = quantize((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld, 2);
           // Net option PnL per unit
           const netPremiumPts  = premiumMovePts - thetaDecay;
           // Estimate option premium for charges calc (rough: entry ~200, exit = entry + move)
@@ -465,7 +470,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           const estExitPrem  = Math.max(1, estEntryPrem + netPremiumPts);
           const _chg = getCharges({ isFutures: false, exitPremium: estExitPrem, entryPremium: estEntryPrem, qty: LOT_SIZE });
           // Total rupees = net premium pts × lot size − charges
-          pnlRupees = parseFloat(((netPremiumPts * LOT_SIZE) - _chg).toFixed(2));
+          pnlRupees = quantize((netPremiumPts * LOT_SIZE) - _chg, 2);
           pnlMode   = `opt_sim (spot=${spotPnlPts}pt × δ${DELTA}=${premiumMovePts.toFixed(1)}pt − θ${thetaDecay}pt) × ${LOT_SIZE}lots − ₹${_chg.toFixed(0)} charges`;
         } else {
           // Legacy mode: raw index points (no delta/theta/lot/charges)
@@ -493,11 +498,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           signalStrength:  position.signalStrength || "MARGINAL",
           indicators:      position.indicators,
         });
-        const exitIcon = pnlRupees > 0 ? "✅" : "❌";
-        const pnlLabel = OPTION_SIM ? `₹${pnlRupees}` : `${spotPnlPts}pts`;
-        console.log(`  🚪 EXIT ${position.side} @ ${exitPrice}  PnL=${pnlRupees >= 0 ? "+" : ""}${pnlLabel} ${exitIcon}  reason=${exitReason}`);
-        if (OPTION_SIM) console.log(`     [${pnlMode}]`);
-        console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice} | entryPrevMid=${position.entryPrevMid}`);
+        if (_verbose) {
+          const exitIcon = pnlRupees > 0 ? "✅" : "❌";
+          const pnlLabel = OPTION_SIM ? `₹${pnlRupees}` : `${spotPnlPts}pts`;
+          console.log(`  🚪 EXIT ${position.side} @ ${exitPrice}  PnL=${pnlRupees >= 0 ? "+" : ""}${pnlLabel} ${exitIcon}  reason=${exitReason}`);
+          if (OPTION_SIM) console.log(`     [${pnlMode}]`);
+          console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice} | entryPrevMid=${position.entryPrevMid}`);
+        }
 
         // ── 50%-rule exit → set pause for 2 candles ────────────────────────
         // 50% rule firing = price reversed immediately = choppy market.
@@ -505,7 +512,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         if (exitReason.toLowerCase().includes('50% rule')) {
           const pauseSecs = 2 * candleResolutionMins * 60;
           _fiftyPctPauseUntilTs = candle.time + pauseSecs;
-          console.log(`  ⏸ 50%-rule pause set: no entry until ${toIST(_fiftyPctPauseUntilTs)}`);
+          if (_verbose) console.log(`  ⏸ 50%-rule pause set: no entry until ${toIST(_fiftyPctPauseUntilTs)}`);
         }
 
         // ── Risk controls ─────────────────────────────────────────────────────
@@ -570,7 +577,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // This gives ~40% more room vs the old fixed 50% mid.
       const _prevRange = prevCandle.high - prevCandle.low;
       const _prevRatio = side === "CE" ? 0.35 : 0.65;
-      const entryPrevMid = parseFloat((prevCandle.low + _prevRange * _prevRatio).toFixed(2));
+      const entryPrevMid = quantize(prevCandle.low + _prevRange * _prevRatio, 2);
       const strength = signalStrength || "MARGINAL";
 
       // ── VIX filter: block entry in high-volatility regimes ──────────────────
@@ -578,9 +585,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       const _btVixCheck = checkBacktestVix(_btVix, strength);
       if (!_btVixCheck.allowed) {
         _vixBlockCount++;
-        if (_vixBlockCount <= 5) {
+        if (_verbose && _vixBlockCount <= 5) {
           console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} [${strength}] at ${toIST(candle.time)}`);
-        } else if (_vixBlockCount === 6) {
+        } else if (_verbose && _vixBlockCount === 6) {
           console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
         }
         _cachedPrevSL = signalSL ?? null;
@@ -591,16 +598,16 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       let entryPrice = candle.close;
       if (strength === "STRONG" && indicators.ema9 != null) {
         if (side === "CE") {
-          entryPrice = parseFloat(Math.min(candle.close, indicators.ema9).toFixed(2));
+          entryPrice = quantize(Math.min(candle.close, indicators.ema9), 2);
         } else {
-          entryPrice = parseFloat(Math.max(candle.close, indicators.ema9).toFixed(2));
+          entryPrice = quantize(Math.max(candle.close, indicators.ema9), 2);
         }
       }
       // Apply slippage: entry is worse (higher for CE buy, lower for PE buy)
       if (SLIPPAGE_PTS > 0) {
         entryPrice = side === "CE"
-          ? parseFloat((entryPrice + SLIPPAGE_PTS).toFixed(2))
-          : parseFloat((entryPrice - SLIPPAGE_PTS).toFixed(2));
+          ? quantize(entryPrice + SLIPPAGE_PTS, 2)
+          : quantize(entryPrice - SLIPPAGE_PTS, 2);
       }
 
       // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
@@ -628,9 +635,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       const priceNote = strength === "STRONG"
         ? `(EMA9=${indicators.ema9} < close=${candle.close} → entered at EMA9 touch)`
         : `(MARGINAL → close confirmation)`;
-      console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL=${prevSignalSL}  entryPrevMid=${entryPrevMid}  [${strength}]`);
-      console.log(`     ${priceNote}`);
-      console.log(`     Reason: ${reason}`);
+      if (_verbose) {
+        console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL=${prevSignalSL}  entryPrevMid=${entryPrevMid}  [${strength}]`);
+        console.log(`     ${priceNote}`);
+        console.log(`     Reason: ${reason}`);
+      }
     }
 
     // Cache current SL for next iteration's prevSignalSL (avoids redundant getSignal call)
@@ -644,24 +653,24 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     let _finalExit = lastCandle.close;
     if (SLIPPAGE_PTS > 0) {
       _finalExit = position.side === "CE"
-        ? parseFloat((_finalExit - SLIPPAGE_PTS).toFixed(2))
-        : parseFloat((_finalExit + SLIPPAGE_PTS).toFixed(2));
+        ? quantize(_finalExit - SLIPPAGE_PTS, 2)
+        : quantize(_finalExit + SLIPPAGE_PTS, 2);
     }
-    const spotPnlPts = parseFloat(((_finalExit - position.entryPrice) * (position.side === "CE" ? 1 : -1)).toFixed(2));
+    const spotPnlPts = quantize((_finalExit - position.entryPrice) * (position.side === "CE" ? 1 : -1), 2);
     let pnlRupees, pnlMode;
     if (isFutures) {
       const _chgEod = getCharges({ isFutures: true, exitPremium: lastCandle.close, entryPremium: position.entryPrice, qty: LOT_SIZE });
-      pnlRupees = parseFloat(((spotPnlPts * LOT_SIZE) - _chgEod).toFixed(2));
+      pnlRupees = quantize((spotPnlPts * LOT_SIZE) - _chgEod, 2);
       pnlMode   = `futures`;
     } else if (OPTION_SIM) {
       const premiumMovePts = spotPnlPts * DELTA;
       const candlesHeld    = position.candlesHeld || 1;
-      const thetaDecay     = parseFloat(((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld).toFixed(2));
+      const thetaDecay     = quantize((THETA_PER_DAY / CANDLES_PER_DAY) * candlesHeld, 2);
       const netPremPts     = premiumMovePts - thetaDecay;
       const estEntry       = 200;
       const estExit        = Math.max(1, estEntry + netPremPts);
       const _chgEod = getCharges({ isFutures: false, exitPremium: estExit, entryPremium: estEntry, qty: LOT_SIZE });
-      pnlRupees = parseFloat(((netPremPts * LOT_SIZE) - _chgEod).toFixed(2));
+      pnlRupees = quantize((netPremPts * LOT_SIZE) - _chgEod, 2);
       pnlMode   = `opt_sim`;
     } else {
       pnlRupees = spotPnlPts;

@@ -64,6 +64,9 @@ function completeJob(id, result) {
     job.progress = { phase: "Done", pct: 100 };
     job.completedAt = Date.now();
     if (activeJobId === id) activeJobId = null;
+    // Cleanup old jobs to prevent memory leak (each job holds full trade array)
+    const all = [...jobs.entries()].sort((a, b) => b[1].startedAt - a[1].startedAt);
+    for (const [oldId] of all.slice(3)) jobs.delete(oldId);
   }
 }
 

@@ -131,6 +131,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   // Build daily OHLC for CPR calculation
   const dailyOHLC = buildDailyOHLC(candles);
   const sortedDates = Object.keys(dailyOHLC).sort();
+  // Pre-build date→index map — avoids O(n) indexOf on every candle
+  const _dateIdx = {};
+  for (let d = 0; d < sortedDates.length; d++) _dateIdx[sortedDates[d]] = d;
 
   // Debug: show CPR for each day
   const narrowPct = parseFloat(process.env.SCALP_CPR_NARROW_PCT || "0.5");
@@ -193,7 +196,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     const isEOD = candleMin >= 920; // 3:20 PM
 
     // Get prev day OHLC for CPR
-    const dateIdx = sortedDates.indexOf(candleDate);
+    const dateIdx = _dateIdx[candleDate] ?? -1;
     const prevDayOHLC     = dateIdx > 0 ? dailyOHLC[sortedDates[dateIdx - 1]] : null;
     const prevPrevDayOHLC = dateIdx > 1 ? dailyOHLC[sortedDates[dateIdx - 2]] : null;
 
