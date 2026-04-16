@@ -3025,6 +3025,7 @@ router.get("/history", (req, res) => {
        </div>`
     : data.sessions.slice().reverse().map((s, idx) => {
         const sIdx = data.sessions.length - idx;
+        const actualIdx = data.sessions.length - 1 - idx;
         const trades = s.trades || [];
         const sessionWins = trades.filter(t => t.pnl > 0).length;
         const sessionLosses = trades.filter(t => t.pnl < 0).length;
@@ -3085,6 +3086,9 @@ router.get("/history", (req, res) => {
               <tbody>${tradeRows}</tbody>
             </table>
           </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
+          <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-top:0.5px solid #0e1e36;">
+            <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
+          </div>
         </div>`;
       }).join("");
 
@@ -3318,9 +3322,11 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
 
 <script>${modalJS()}</script>
 <script id="trades-data" type="application/json">${JSON.stringify(allTrades)}</script>
+<script id="sessions-data" type="application/json">${JSON.stringify(data.sessions)}</script>
 <script>
 // Flatten all trades for CSV export
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
+var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
@@ -3371,6 +3377,22 @@ async function resetHistory() {
 var INR_FMT = function(n){ return typeof n==='number' ? '₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; };
 function fmtAna(v){ return '₹'+Math.round(Math.abs(v)).toLocaleString('en-IN'); }
 function fmtAnaShort(v){ return Math.abs(v)>=1000 ? '₹'+Math.round(v/1000)+'k' : '₹'+Math.round(v); }
+
+function copySessionLog(btn, idx) {
+  var session = ALL_SESSIONS_JSON[idx];
+  if (!session || !session.trades || !session.trades.length) {
+    showAlert({icon:'⚠️',title:'No Data',message:'No trades in this session to copy',btnClass:'modal-btn-primary'});
+    return;
+  }
+  var lines = ['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];
+  session.trades.forEach(function(t) {
+    var eDate = t.entryTime ? t.entryTime.split(', ')[0] : '';
+    var eTime = t.entryTime ? (t.entryTime.split(', ')[1]||'') : '';
+    var xTime = t.exitTime ? (t.exitTime.split(', ')[1]||'') : '';
+    lines.push((t.side||'')+'\\t'+eDate+'\\t'+(t.spotAtEntry||t.entryPrice||'')+'\\t'+eTime+'\\t'+(t.spotAtExit||t.exitPrice||'')+'\\t'+xTime+'\\t'+(t.stopLoss||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.exitReason||''));
+  });
+  doCopy(lines.join('\\n'), btn, 'Trade Log');
+}
 
 function copyTradeLog(btn){
   var lines=['Side\\tDate\\tEntry\\tEntry Time\\tExit\\tExit Time\\tSL\\tPnL\\tEntry Reason\\tExit Reason'];

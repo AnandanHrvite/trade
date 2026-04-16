@@ -2,14 +2,14 @@
  * Convert unix timestamp (seconds) to readable date string
  */
 function toDateString(unixSec) {
-  return new Date(unixSec * 1000).toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const ist = new Date(unixSec * 1000 + 19800000);
+  const dd = String(ist.getUTCDate()).padStart(2, '0');
+  const mm = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const yyyy = ist.getUTCFullYear();
+  const h = String(ist.getUTCHours()).padStart(2, '0');
+  const m = String(ist.getUTCMinutes()).padStart(2, '0');
+  const s = String(ist.getUTCSeconds()).padStart(2, '0');
+  return `${dd}/${mm}/${yyyy}, ${h}:${m}:${s}`;
 }
 
 /**

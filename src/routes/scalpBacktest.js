@@ -115,7 +115,14 @@ function runScalpBacktest(candles, capital, vixCandles, expiryDates) {
     return v;
   }
   function toIST(unixSec) {
-    return new Date(unixSec * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    const ist = new Date(unixSec * 1000 + 19800000);
+    const dd = String(ist.getUTCDate()).padStart(2, '0');
+    const mm = String(ist.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = ist.getUTCFullYear();
+    const h = String(ist.getUTCHours()).padStart(2, '0');
+    const m = String(ist.getUTCMinutes()).padStart(2, '0');
+    const s = String(ist.getUTCSeconds()).padStart(2, '0');
+    return `${dd}/${mm}/${yyyy}, ${h}:${m}:${s}`;
   }
 
   if (typeof scalpStrategy.reset === "function") scalpStrategy.reset();
@@ -993,7 +1000,7 @@ function fpts(n, spotPts){
   }
   return (n>=0?'+':'')+n.toFixed(2)+' pts';
 }
-function fmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+' '+d[1].padStart(2,'0')+' '+d[2]; return p[0]||'\u2014'; }
+function fmtDate(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+'/'+d[2]; return p[0]||'\u2014'; }
 function fmtTime(dt){ if(!dt) return '\u2014'; var p=dt.split(', '); return p[1]||'\u2014'; }
 
 function doFilter(){
