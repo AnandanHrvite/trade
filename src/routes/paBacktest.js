@@ -246,10 +246,11 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING — candle trail (prev candle H/L) once in profit
-      //    Activates after peakPnl >= PA_TRAIL_START. Candle trail is the primary
-      //    exit — lets winners ride trends. Profit-lock is only a fallback before
-      //    the candle trail level is established.
+      // 2. TRAILING — candle trail + profit-lock floor (both active in parallel)
+      //    Once peakPnl >= PA_TRAIL_START, BOTH checks run every tick:
+      //    a) Candle trail: exit when price breaches prev candle H/L (ride trends)
+      //    b) Profit-lock floor: exit when PnL drops below tiered % of peak (prevent giveback)
+      //    Whichever triggers first exits the trade.
       if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
         // Update candle trail level (prev candle high/low, tighten only)
         if (position.candlesHeld >= 2 && i > 0) {
@@ -267,7 +268,7 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
           }
         }
 
-        // Primary: candle trail breach — exit at the trail level
+        // a) Candle trail: exit when price breaches prev candle H/L
         if (position.candleTrailLevel) {
           const candleBreached = (position.side === "CE" && candle.low <= position.candleTrailLevel)
                               || (position.side === "PE" && candle.high >= position.candleTrailLevel);
@@ -277,8 +278,8 @@ function runPABacktest(candles, capital, vixCandles, expiryDates) {
           }
         }
 
-        // Fallback: profit-lock floor (only when candle trail not yet set)
-        if (!exitReason && !position.candleTrailLevel) {
+        // b) Profit-lock floor: exit when PnL drops below tiered % of peak
+        if (!exitReason) {
           let _pct = PA_TRAIL_PCT;
           for (const tier of PA_TRAIL_TIERS) {
             if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }

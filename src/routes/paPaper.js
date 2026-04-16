@@ -424,9 +424,9 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING — candle trail (prev candle H/L) once in profit
+    // 2. TRAILING — candle trail + profit-lock floor (both active in parallel)
     if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
-      // Primary: candle trail breach (level is updated on candle close)
+      // a) Candle trail: exit when price breaches prev candle H/L
       if (pos.candleTrailLevel) {
         const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
                             || (pos.side === "PE" && price >= pos.candleTrailLevel);
@@ -436,17 +436,15 @@ function onTick(tick) {
         }
       }
 
-      // Fallback: profit-lock floor (only when candle trail not yet set)
-      if (!pos.candleTrailLevel) {
-        let _pct = _PA_TRAIL_PCT;
-        for (const tier of _PA_TRAIL_TIERS) {
-          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-        }
-        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-        if (curPnl <= trailFloor) {
-          simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
-          return;
-        }
+      // b) Profit-lock floor: exit when PnL drops below tiered % of peak
+      let _pct = _PA_TRAIL_PCT;
+      for (const tier of _PA_TRAIL_TIERS) {
+        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+      }
+      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+      if (curPnl <= trailFloor) {
+        simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
+        return;
       }
     }
 
