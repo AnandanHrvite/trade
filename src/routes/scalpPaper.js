@@ -982,6 +982,8 @@ router.get("/status/data", (req, res) => {
       qty:          t.qty            || 0,
       entry:        t.entryTime      || "",
       exit:         t.exitTime       || "",
+      entryBarTime: t.entryBarTime   || null,
+      exitBarTime:  t.exitBarTime    || null,
       eSpot:        t.spotAtEntry    || t.entryPrice || 0,
       eOpt:         t.optionEntryLtp || null,
       eSl:          t.stopLoss       || null,
@@ -1203,6 +1205,8 @@ router.get("/status", (req, res) => {
     qty:          t.qty            || 0,
     entry:        t.entryTime      || "",
     exit:         t.exitTime       || "",
+    entryBarTime: t.entryBarTime   || null,
+    exitBarTime:  t.exitBarTime    || null,
     eSpot:        t.spotAtEntry    || t.entryPrice || 0,
     eOpt:         t.optionEntryLtp || null,
     eSl:          t.stopLoss       || t.initialStopLoss || null,
@@ -1379,6 +1383,7 @@ ${posHtml}
 ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 <div style="margin-bottom:18px;">
   <div class="section-title">NIFTY ${SCALP_RES}-Min Chart</div>
+  <div id="sp-sel-banner" style="display:none;align-items:center;gap:10px;background:#0a1e3d;border:1px solid #1d3b6e;border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:0.72rem;"></div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
@@ -1618,7 +1623,10 @@ function spRender() {
       var sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
       var pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
       var short = t.reason.length > 25 ? t.reason.slice(0,25)+'\\u2026' : t.reason;
-      return '<tr style="border-top:1px solid #1a2236;vertical-align:top;">' +
+      var isSel = (window._spSelEt != null && t.entryBarTime === window._spSelEt);
+      var rowBg = isSel ? 'background:#0a1e3d;' : '';
+      var clickable = t.entryBarTime != null;
+      return '<tr class="sp-row' + (isSel?' sp-row-sel':'') + '" data-idx="' + i + '" data-et="' + (t.entryBarTime||'') + '" data-xt="' + (t.exitBarTime||'') + '" style="border-top:1px solid #1a2236;vertical-align:top;' + (clickable?'cursor:pointer;':'') + rowBg + '" title="' + (clickable?'Click to focus chart on this trade':'') + '">' +
         '<td style="padding:8px 12px;color:' + sc + ';font-weight:800;">' + (t.side||'\\u2014') + '</td>' +
         '<td style="padding:8px 12px;font-size:0.75rem;">' + spFmtDate(t.entry) + '</td>' +
         '<td style="padding:8px 12px;font-weight:700;">' + spFmt(t.eSpot) + '</td>' +
@@ -1633,9 +1641,16 @@ function spRender() {
         '</tr>';
     }).join('');
     Array.from(document.querySelectorAll('.sp-eye-btn')).forEach(function(btn){
-      btn.addEventListener('click',function(){ showSPModal(window._spSlice[parseInt(this.getAttribute('data-idx'))]); });
+      btn.addEventListener('click',function(ev){ ev.stopPropagation(); showSPModal(window._spSlice[parseInt(this.getAttribute('data-idx'))]); });
       btn.addEventListener('mouseover',function(){ this.style.borderColor='#3b82f6';this.style.background='#0a1e3d'; });
       btn.addEventListener('mouseout', function(){ this.style.borderColor='#1a2236';this.style.background='none'; });
+    });
+    Array.from(document.querySelectorAll('.sp-row')).forEach(function(row){
+      row.addEventListener('click', function(){
+        var et = parseInt(this.getAttribute('data-et')); var xt = parseInt(this.getAttribute('data-xt'));
+        if (!et) return;
+        if (typeof spSelectTrade === 'function') spSelectTrade(et, isNaN(xt) ? null : xt);
+      });
     });
   }
   var total = Math.ceil(spFiltered.length / spPP);
@@ -1763,7 +1778,7 @@ function doCopy(text,btn,label){
   var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var slLine = null, entryLine = null, _lcc = 0;
+  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
   async function fetchChart() {
     try {
       var res = await fetch('/scalp-paper/status/chart-data', { cache: 'no-store' });
@@ -1775,17 +1790,71 @@ function doCopy(text,btn,label){
       _lcc = d.candles.length;
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
-      if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
+      var selEt = window._spSelEt || null;
+      var allMarkers = (d.markers || []).slice();
+      var markers = allMarkers;
+      if (selEt) {
+        var sel = (window._spSelectedTrade || {});
+        var selXt = sel.xt || selEt;
+        markers = allMarkers.filter(function(m) {
+          if (m.shape === 'arrowUp')   return m.time === selEt;
+          if (m.shape === 'arrowDown') return m.time === selXt;
+          return true;
+        });
+      }
+      if (markers.length) { var s = markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
-      if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
+      if (d.stopLoss && !selEt) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
-      if (d.entryPrice) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+      if (d.entryPrice && !selEt) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+      if (selSlLine) { cs.removePriceLine(selSlLine); selSlLine = null; }
+      if (selEntryLine) { cs.removePriceLine(selEntryLine); selEntryLine = null; }
+      if (selEt && window._spSelectedTrade) {
+        var st = window._spSelectedTrade;
+        if (st.eSpot) selEntryLine = cs.createPriceLine({ price: st.eSpot, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
+        if (st.eSl)   selSlLine    = cs.createPriceLine({ price: st.eSl,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' });
+      }
     } catch(e) { console.warn('[Chart]', e.message); }
   }
+  window._scFetchChart = fetchChart;
+  window._scChart = chart;
   fetchChart();
   if (${state.running}) setInterval(fetchChart, 4000);
   window.addEventListener('resize', function() { chart.applyOptions({ width: container.clientWidth }); });
 })();
+
+// ── Click-to-focus a trade on the chart ───────────────────────────────────
+function spSelectTrade(et, xt) {
+  if (!et) return;
+  if (window._spSelEt === et) { spClearSelection(); return; }
+  window._spSelEt = et;
+  var trade = (window.SP_ALL || []).find(function(t){ return t.entryBarTime === et; });
+  window._spSelectedTrade = trade ? { et: et, xt: xt || trade.exitBarTime || et, eSpot: trade.eSpot, eSl: trade.eSl } : { et: et, xt: xt || et };
+  if (typeof spRender === 'function') spRender();
+  spUpdateBanner();
+  if (window._scFetchChart) window._scFetchChart();
+  if (window._scChart) {
+    var pad = 20 * 60;
+    try { window._scChart.timeScale().setVisibleRange({ from: et - pad, to: (xt || et) + pad }); } catch(_) {}
+  }
+}
+function spClearSelection() {
+  window._spSelEt = null; window._spSelectedTrade = null;
+  if (typeof spRender === 'function') spRender();
+  spUpdateBanner();
+  if (window._scFetchChart) window._scFetchChart();
+  if (window._scChart) { try { window._scChart.timeScale().fitContent(); } catch(_) {} }
+}
+function spUpdateBanner() {
+  var el = document.getElementById('sp-sel-banner'); if (!el) return;
+  if (window._spSelEt && window._spSelectedTrade) {
+    var t = window._spSelectedTrade;
+    var d = new Date(t.et * 1000);
+    var hh = ('0'+d.getHours()).slice(-2), mm = ('0'+d.getMinutes()).slice(-2);
+    el.style.display = 'flex';
+    el.innerHTML = '<span style="color:#4a9cf5;">\\u25b6 Focused on trade entered at ' + hh + ':' + mm + '</span>&nbsp;&nbsp;<button onclick="spClearSelection()" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:2px 10px;border-radius:5px;font-size:0.68rem;cursor:pointer;font-family:inherit;">Show All Trades</button>';
+  } else { el.style.display = 'none'; el.innerHTML = ''; }
+}
 </script>
 <script>
 // ── AJAX live refresh ────────────────────────────────────────────────────
