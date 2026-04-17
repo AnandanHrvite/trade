@@ -195,41 +195,61 @@ function generateVShape(base, count, recovery) {
 function r2(n) { return parseFloat(n.toFixed(2)); }
 
 // ── Tick interpolation within a candle ──────────────────────────────────────
-// Generates ~20 ticks per candle following a realistic O→H→L→C or O→L→H→C path
+// Random-walk-with-anchors: ticks zigzag noisily inside [low, high],
+// guaranteed to start at open, touch the candle's high & low, end at close.
+// Mimics real intra-candle price action instead of a smooth O→H→L→C arc.
 
 function interpolateTicks(candle, ticksPerCandle = 20) {
   const { open, high, low, close } = candle;
-  const ticks = [];
-  const range = high - low;
+  const range = Math.max(0.01, high - low);
 
-  // Determine path: if close > open (bullish), go O → L → H → C
-  //                 if close < open (bearish), go O → H → L → C
+  if (ticksPerCandle < 4) {
+    return [open, high, low, close].slice(0, ticksPerCandle).map(r2);
+  }
+
+  // Bullish candles tend to dip first then rally; bearish do the opposite.
   const bullish = close >= open;
-  const path = bullish
-    ? [open, low, high, close]
-    : [open, high, low, close];
+  const firstAnchorPrice  = bullish ? low  : high;
+  const secondAnchorPrice = bullish ? high : low;
 
-  // Distribute ticks across path segments (3 segments, ~ticksPerCandle total)
-  const segs = [
-    Math.floor(ticksPerCandle * 0.25),
-    Math.floor(ticksPerCandle * 0.45),
-    ticksPerCandle - Math.floor(ticksPerCandle * 0.25) - Math.floor(ticksPerCandle * 0.45),
-  ];
+  // Place the two extreme-anchors randomly inside the sequence (not at endpoints).
+  const inner = ticksPerCandle - 2;
+  const halfA = Math.floor(inner / 2);
+  const halfB = inner - halfA;
+  let a1 = 1 + Math.floor(Math.random() * halfA);
+  let a2 = 1 + halfA + Math.floor(Math.random() * halfB);
+  if (a2 <= a1) a2 = Math.min(ticksPerCandle - 2, a1 + 1);
 
-  // Noise proportional to candle range — larger candles get more volatile ticks
-  const noiseScale = Math.max(0.3, range * 0.08);
+  const waypoints = {
+    0: open,
+    [a1]: firstAnchorPrice,
+    [a2]: secondAnchorPrice,
+    [ticksPerCandle - 1]: close,
+  };
+  const wpKeys = Object.keys(waypoints).map(Number).sort((a, b) => a - b);
 
-  for (let s = 0; s < 3; s++) {
-    const from = path[s], to = path[s + 1];
-    const n = segs[s];
-    for (let i = 0; i < n; i++) {
-      const t = (i + 1) / n;
-      // Noise scaled to candle range + random walk component
-      const noise = rand(-noiseScale, noiseScale);
-      const price = from + (to - from) * t + noise;
-      // Clamp within candle range
-      ticks.push(r2(Math.min(high, Math.max(low, price))));
+  // Noise dominates drift so the walk genuinely wiggles instead of crawling.
+  const noiseScale = Math.max(0.5, range * 0.20);
+
+  const ticks = [r2(open)];
+  let prev = open;
+
+  for (let i = 1; i < ticksPerCandle; i++) {
+    if (waypoints[i] !== undefined) {
+      prev = waypoints[i];
+      ticks.push(r2(prev));
+      continue;
     }
+    const nextIdx   = wpKeys.find(k => k > i);
+    const nextPrice = waypoints[nextIdx];
+    const stepsLeft = nextIdx - i + 1;
+    const drift     = (nextPrice - prev) / stepsLeft;
+    let next = prev + drift + rand(-noiseScale, noiseScale);
+    // Bounce off the candle's high/low instead of clamping flat.
+    if (next > high) next = high - Math.random() * noiseScale * 0.3;
+    if (next < low)  next = low  + Math.random() * noiseScale * 0.3;
+    ticks.push(r2(next));
+    prev = next;
   }
 
   return ticks;
