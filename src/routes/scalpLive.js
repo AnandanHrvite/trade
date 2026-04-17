@@ -148,6 +148,7 @@ function isStartAllowed() {
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 let _optionPollTimer = null;
+let _rateLimitBackoff = 0; // 0 = normal 500ms; >0 triggers 2s wait & warn-once
 
 async function fetchOptionLtp(symbol) {
   try {
@@ -155,10 +156,24 @@ async function fetchOptionLtp(symbol) {
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
-      if (ltp && ltp > 0) return parseFloat(ltp);
+      if (ltp && ltp > 0) {
+        if (_rateLimitBackoff > 0) {
+          log(`✅ [SCALP-LIVE] Rate limit cleared — polling resumed`);
+          _rateLimitBackoff = 0;
+        }
+        return parseFloat(ltp);
+      }
     }
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] fetchOptionLtp error for ${symbol}: ${err.message}`);
+    const msg = err.message || "";
+    if (/limit|throttle|429/i.test(msg)) {
+      if (_rateLimitBackoff === 0) {
+        log(`⚠️ [SCALP-LIVE] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
+      }
+      _rateLimitBackoff = Math.min(_rateLimitBackoff + 1, 10);
+    } else {
+      log(`⚠️ [SCALP-LIVE] fetchOptionLtp error for ${symbol}: ${msg}`);
+    }
   }
   return null;
 }
@@ -167,6 +182,7 @@ function startOptionPolling(symbol) {
   stopOptionPolling();
   function scheduleNext() {
     if (!_optionPollTimer) return;
+    const delay = _rateLimitBackoff > 0 ? 2000 : 500;
     _optionPollTimer = setTimeout(async () => {
       if (!state.position || !state.optionSymbol) { stopOptionPolling(); return; }
       const ltp = await fetchOptionLtp(symbol);
@@ -195,7 +211,7 @@ function startOptionPolling(symbol) {
         }
       }
       scheduleNext();
-    }, 500); // 500ms for live scalp — reduce trail lock slippage
+    }, delay);
   }
   fetchOptionLtp(symbol).then(ltp => {
     if (ltp && state.position) {
@@ -535,9 +551,20 @@ function onTick(tick) {
     // Running PNL helper (₹)
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
-      if (!isFut && pos.optionEntryLtp && state.optionLtp) {
+      const _staleMs = parseInt(process.env.LTP_STALE_FALLBACK_SEC || "5", 10) * 1000;
+      const _optionLtpFresh = !!(state.optionLtp && state.optionLtpUpdatedAt && (Date.now() - state.optionLtpUpdatedAt) < _staleMs);
+      if (!isFut && pos.optionEntryLtp && _optionLtpFresh) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
+      }
+      // Spot-proxy fallback: option LTP stale/missing → estimate premium via delta
+      // Keeps trail-stop logic responsive when REST polling is rate-limited.
+      if (!isFut && pos.optionEntryLtp) {
+        const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+        const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+        const approxPremium = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA);
+        const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: approxPremium, entryPremium: pos.optionEntryLtp, qty: _q });
+        return (approxPremium - pos.optionEntryLtp) * _q - _c;
       }
       const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
       return (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1) * _q - _c;

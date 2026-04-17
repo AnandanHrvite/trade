@@ -98,6 +98,7 @@ let state = {
   lastTickTime:   null,
   lastTickPrice:  null,
   optionLtp:      null,
+  optionLtpUpdatedAt: null,
   optionSymbol:   null,
   _slPauseUntil:  null,
   _dailyLossHit:  false,
@@ -137,6 +138,7 @@ function isStartAllowed() {
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 let _optionPollTimer = null;
+let _rateLimitBackoff = 0; // 0 = normal 500ms; >0 triggers 2s wait & warn-once
 
 async function fetchOptionLtp(symbol) {
   try {
@@ -144,13 +146,27 @@ async function fetchOptionLtp(symbol) {
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
-      if (ltp && ltp > 0) return parseFloat(ltp);
+      if (ltp && ltp > 0) {
+        if (_rateLimitBackoff > 0) {
+          log(`✅ [SCALP-PAPER] Rate limit cleared — polling resumed`);
+          _rateLimitBackoff = 0;
+        }
+        return parseFloat(ltp);
+      }
       log(`⚠️ [SCALP-PAPER] fetchOptionLtp no LTP in response for ${symbol}: ${JSON.stringify(v).slice(0, 200)}`);
     } else {
       log(`⚠️ [SCALP-PAPER] fetchOptionLtp bad response for ${symbol}: s=${response?.s}, d.length=${response?.d?.length}`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-PAPER] fetchOptionLtp error for ${symbol}: ${err.message}`);
+    const msg = err.message || "";
+    if (/limit|throttle|429/i.test(msg)) {
+      if (_rateLimitBackoff === 0) {
+        log(`⚠️ [SCALP-PAPER] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
+      }
+      _rateLimitBackoff = Math.min(_rateLimitBackoff + 1, 10);
+    } else {
+      log(`⚠️ [SCALP-PAPER] fetchOptionLtp error for ${symbol}: ${msg}`);
+    }
   }
   return null;
 }
@@ -159,11 +175,13 @@ function startOptionPolling(symbol) {
   stopOptionPolling();
   function scheduleNext() {
     if (!_optionPollTimer) return;
+    const delay = _rateLimitBackoff > 0 ? 2000 : 500;
     _optionPollTimer = setTimeout(async () => {
       if (!state.position || !state.optionSymbol) { stopOptionPolling(); return; }
       const ltp = await fetchOptionLtp(symbol);
       if (ltp && state.position) {
         state.optionLtp = ltp;
+        state.optionLtpUpdatedAt = Date.now();
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
@@ -171,11 +189,12 @@ function startOptionPolling(symbol) {
         }
       }
       scheduleNext();
-    }, 500); // 500ms for scalp — reduce trail lock slippage
+    }, delay);
   }
   fetchOptionLtp(symbol).then(ltp => {
     if (ltp && state.position) {
       state.optionLtp = ltp;
+      state.optionLtpUpdatedAt = Date.now();
       state.position.optionCurrentLtp = ltp;
       if (!state.position.optionEntryLtp) state.position.optionEntryLtp = ltp;
     }
@@ -294,6 +313,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   stopOptionPolling();
   state.optionSymbol = null;
   state.optionLtp    = null;
+  state.optionLtpUpdatedAt = null;
 
   // SL pause — escalate after consecutive SLs
   if (reason.includes("SL")) {
@@ -391,14 +411,21 @@ function onTick(tick) {
     // Running PNL helper (₹) — must match simulateSell logic for consistent trailing
     const _tickPnl = (spotPrice) => {
       const _q = pos.qty || getLotQty();
-      if (!isFut && pos.optionEntryLtp && state.optionLtp) {
+      const _staleMs = parseInt(process.env.LTP_STALE_FALLBACK_SEC || "5", 10) * 1000;
+      const _optionLtpFresh = !!(state.optionLtp && state.optionLtpUpdatedAt && (Date.now() - state.optionLtpUpdatedAt) < _staleMs);
+      if (!isFut && pos.optionEntryLtp && _optionLtpFresh) {
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: state.optionLtp, entryPremium: pos.optionEntryLtp, qty: _q });
         return (state.optionLtp - pos.optionEntryLtp) * _q - _c;
       }
-      // Sim mode: use delta approximation (same as simulateSell) for consistent trailing
-      if (state._simMode) {
+      // Sim mode OR stale option LTP: delta-based spot-proxy keeps trail responsive
+      if (state._simMode || (!isFut && pos.optionEntryLtp)) {
         const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
         const spotMove = (spotPrice - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+        if (!isFut && pos.optionEntryLtp && !state._simMode) {
+          const approxPremium = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA);
+          const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: approxPremium, entryPremium: pos.optionEntryLtp, qty: _q });
+          return (approxPremium - pos.optionEntryLtp) * _q - _c;
+        }
         const _c = getCharges({ broker: "fyers", isFutures: isFut, exitPremium: spotPrice, entryPremium: pos.entryPrice, qty: _q });
         return spotMove * DELTA * _q - _c;
       }

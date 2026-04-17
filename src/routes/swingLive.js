@@ -346,19 +346,25 @@ const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 // Option LTP — REST polling every 3s (same fix as paperTrade)
 // ─────────────────────────────────────────────────────────────────────────────
 
+let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
+
 async function fetchOptionLtp(symbol) {
   try {
     // Fyers v3: pass symbol string directly (not wrapped in object)
     const response = await fyers.getQuotes([symbol]);
 
-    // Debug log once per session so we can verify field names
-    // Fyers getQuotes confirmed working — debug log removed after field validation
-
     if (response.s === "ok" && response.d && response.d.length > 0) {
       const v = response.d[0].v || response.d[0];
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price
                || v.ask_price || v.bid_price || v.close_price || v.prev_close_price;
-      if (ltp && ltp > 0) return parseFloat(ltp);
+      if (ltp && ltp > 0) {
+        if (_rateLimitSkipCycles > 0 || fetchOptionLtp._rlActive) {
+          log(`✅ [LIVE] Rate limit cleared — polling resumed`);
+          _rateLimitSkipCycles = 0;
+          fetchOptionLtp._rlActive = false;
+        }
+        return parseFloat(ltp);
+      }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
     } else {
       if (!fetchOptionLtp._errLogged) {
@@ -368,7 +374,16 @@ async function fetchOptionLtp(symbol) {
       }
     }
   } catch (err) {
-    log(`[DEBUG] fetchOptionLtp exception: ${err.message}`);
+    const msg = err.message || "";
+    if (/limit|throttle|429/i.test(msg)) {
+      if (!fetchOptionLtp._rlActive) {
+        log(`⚠️ [LIVE] Rate limit hit — skipping 2 poll cycles`);
+        fetchOptionLtp._rlActive = true;
+      }
+      _rateLimitSkipCycles = 2;
+    } else {
+      log(`[DEBUG] fetchOptionLtp exception: ${msg}`);
+    }
   }
   return null;
 }
@@ -450,6 +465,7 @@ function startOptionPolling(symbol) {
   _optionPollTimer = setInterval(async () => {
     try {
       if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }
+      if (_rateLimitSkipCycles > 0) { _rateLimitSkipCycles--; return; }
       const ltp = await fetchOptionLtp(symbol);
       if (!ltp) {
         // ── LTP staleness alert — warn if no successful fetch for 15+ seconds ──

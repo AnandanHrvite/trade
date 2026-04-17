@@ -348,6 +348,7 @@ function getCachedSymbol(side, currentSpot) {
 
 let _optionPollTimer = null;
 let _optionPollBusy  = false; // guard: prevents overlapping getQuotes calls if network is slow
+let _rateLimitSkipCycles = 0; // skip N poll cycles after a rate-limit hit
 
 async function fetchOptionLtp(symbol) {
   try {
@@ -359,7 +360,14 @@ async function fetchOptionLtp(symbol) {
       // Try every known Fyers LTP field name
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price
                || v.ask_price || v.bid_price || v.close_price || v.prev_close_price;
-      if (ltp && ltp > 0) return parseFloat(ltp);
+      if (ltp && ltp > 0) {
+        if (fetchOptionLtp._rlActive) {
+          log(`✅ [PAPER] Rate limit cleared — polling resumed`);
+          fetchOptionLtp._rlActive = false;
+          _rateLimitSkipCycles = 0;
+        }
+        return parseFloat(ltp);
+      }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
     } else {
       if (!fetchOptionLtp._errLogged) {
@@ -369,7 +377,16 @@ async function fetchOptionLtp(symbol) {
       }
     }
   } catch (err) {
-    log(`[DEBUG] fetchOptionLtp exception: ${err.message}`);
+    const msg = err.message || "";
+    if (/limit|throttle|429/i.test(msg)) {
+      if (!fetchOptionLtp._rlActive) {
+        log(`⚠️ [PAPER] Rate limit hit — skipping 2 poll cycles`);
+        fetchOptionLtp._rlActive = true;
+      }
+      _rateLimitSkipCycles = 2;
+    } else {
+      log(`[DEBUG] fetchOptionLtp exception: ${msg}`);
+    }
   }
   return null;
 }
@@ -377,6 +394,7 @@ async function fetchOptionLtp(symbol) {
 // ── Option LTP poll tick — shared logic used by immediate fetch + recurring loop ──
 async function _optionPollTick(symbol) {
   if (_optionPollBusy) return; // skip if previous call still in flight
+  if (_rateLimitSkipCycles > 0) { _rateLimitSkipCycles--; return; }
   _optionPollBusy = true;
   try {
     if (!ptState.position || !ptState.optionSymbol) { stopOptionPolling(); return; }
