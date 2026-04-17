@@ -1812,7 +1812,7 @@ function doCopy(text,btn,label){
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
-      if (savedLogical && !window._spSelEt) {
+      if (savedLogical) {
         try { chart.timeScale().setVisibleLogicalRange(savedLogical); } catch(_) {}
       }
       var selEt = window._spSelEt || null;
