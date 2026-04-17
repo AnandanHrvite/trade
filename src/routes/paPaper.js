@@ -871,9 +871,47 @@ router.get("/status/chart-data", (req, res) => {
   try {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
-    const markers = [];
+
+    // Swing highs/lows — the structural pivots PA uses for BOS/S-R
+    const SR_LOOKBACK = parseInt(process.env.PA_SR_LOOKBACK || "30", 10);
+    const MAX_SWINGS  = 6; // cap for visual clarity
+    const swingMarkers = [];
+    if (candles.length >= 3) {
+      try {
+        const sw = paStrategy.findSwingPoints(candles, SR_LOOKBACK);
+        const recentHighs = sw.swingHighs.slice(-MAX_SWINGS);
+        const recentLows  = sw.swingLows.slice(-MAX_SWINGS);
+        for (const h of recentHighs) swingMarkers.push({ time: h.time, position: 'aboveBar', color: '#64748b', shape: 'circle', text: 'SH ' + h.price.toFixed(0) });
+        for (const l of recentLows)  swingMarkers.push({ time: l.time, position: 'belowBar', color: '#64748b', shape: 'circle', text: 'SL ' + l.price.toFixed(0) });
+      } catch (_) { /* ignore swing calc errors */ }
+    }
+
+    // Shorten entryReason for marker text ("CE: BOS above 22450 | RSI=62 | SL=..." → "CE BOS @22450 R62")
+    const shortPAReason = (r) => {
+      if (!r) return "";
+      const side = /^CE/i.test(r) ? "CE" : /^PE/i.test(r) ? "PE" : "";
+      let pattern = "";
+      if (/BOS/i.test(r))                 pattern = "BOS";
+      else if (/Bullish Engulfing/i.test(r)) pattern = "BullEng";
+      else if (/Bearish Engulfing/i.test(r)) pattern = "BearEng";
+      else if (/Hammer/i.test(r))         pattern = "Pin";
+      else if (/Shooting Star/i.test(r))  pattern = "PinBr";
+      else if (/Inside Bar/i.test(r))     pattern = "InsideBr";
+      else if (/Double Top/i.test(r))     pattern = "DblTop";
+      else if (/Double Bottom/i.test(r))  pattern = "DblBot";
+      else if (/Ascending Triangle/i.test(r))  pattern = "AscTri";
+      else if (/Descending Triangle/i.test(r)) pattern = "DescTri";
+      const lvl = /(above|below|at support|at resistance|break)\s+(\d+)/i.exec(r);
+      const rsi = /RSI\s*[=:]?\s*(\d+)/i.exec(r);
+      return [side, pattern, lvl ? "@" + lvl[2] : "", rsi ? "R" + rsi[1] : ""].filter(Boolean).join(" ");
+    };
+
+    const markers = [...swingMarkers];
     for (const t of state.sessionTrades) {
-      if (t.entryPrice && t.entryBarTime) markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.entryPrice.toFixed(0) });
+      if (t.entryPrice && t.entryBarTime) {
+        const lbl = shortPAReason(t.entryReason || "") || (t.side + " @ " + t.entryPrice.toFixed(0));
+        markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: lbl });
+      }
       if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
@@ -1375,7 +1413,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#64748b;">● Swing H/L</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
 </div>` : ""}

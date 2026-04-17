@@ -18,6 +18,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
+const { BollingerBands } = require("technicalindicators");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -846,14 +847,44 @@ router.get("/status/chart-data", (req, res) => {
   try {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+
+    // BB overlay (same params as the strategy) — aligned with candles
+    const BB_PERIOD = parseInt(process.env.SCALP_BB_PERIOD || "20", 10);
+    const BB_STDDEV = parseFloat(process.env.SCALP_BB_STDDEV || "1");
+    let bbUpper = [], bbMiddle = [], bbLower = [];
+    if (candles.length >= BB_PERIOD) {
+      const closes = candles.map(c => c.close);
+      const bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+      const offset = candles.length - bbArr.length;
+      for (let i = 0; i < bbArr.length; i++) {
+        const t = candles[i + offset].time;
+        bbUpper.push({ time: t, value: parseFloat(bbArr[i].upper.toFixed(2)) });
+        bbMiddle.push({ time: t, value: parseFloat(bbArr[i].middle.toFixed(2)) });
+        bbLower.push({ time: t, value: parseFloat(bbArr[i].lower.toFixed(2)) });
+      }
+    }
+
+    const shortReason = (r) => {
+      if (!r) return "";
+      // Extract trigger compactly: "CE: BB↑ RSI 58" style
+      const m = /RSI\s*[=:]?\s*(\d+)/i.exec(r);
+      const rsiTxt = m ? " RSI " + m[1] : "";
+      const side = /^CE/i.test(r) ? "CE BB↑" : /^PE/i.test(r) ? "PE BB↓" : "";
+      return side + rsiTxt;
+    };
+
     const markers = [];
     for (const t of state.sessionTrades) {
-      if (t.entryPrice && t.entryBarTime) markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.entryPrice.toFixed(0) });
+      if (t.entryPrice && t.entryBarTime) {
+        const reasonTxt = shortReason(t.entryReason || "");
+        const lbl = reasonTxt || (t.side + " @ " + t.entryPrice.toFixed(0));
+        markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: lbl });
+      }
       if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice });
+    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1351,7 +1382,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
 </div>` : ""}
@@ -1729,6 +1760,9 @@ function doCopy(text,btn,label){
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var slLine = null, entryLine = null, _lcc = 0;
   async function fetchChart() {
     try {
@@ -1739,6 +1773,8 @@ function doCopy(text,btn,label){
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
+      if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
+      else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
       if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
       if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
