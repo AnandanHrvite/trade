@@ -1648,11 +1648,24 @@ function spRender() {
         '<td style="padding:8px 12px;"><div style="font-size:1rem;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+spFmt(t.pnl):'\\u2014') + '</div></td>' +
         '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + (t.entryReason||'') + '">' + (t.entryReason?(t.entryReason.length>25?t.entryReason.slice(0,25)+'\\u2026':t.entryReason):'\\u2014') + '</td>' +
         '<td style="padding:8px 12px;font-size:0.7rem;color:#4a6080;" title="' + t.reason + '">' + (short||'\\u2014') + '</td>' +
-        '<td style="padding:6px 8px;text-align:center;"><button data-idx="' + i + '" class="sp-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">View</button></td>' +
+        '<td style="padding:6px 8px;text-align:center;white-space:nowrap;">' +
+          '<button data-et="' + (t.entryBarTime||'') + '" data-xt="' + (t.exitBarTime||'') + '" class="sp-chart-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;margin-right:4px;" title="Focus chart on this trade">\u{1F4C8}</button>' +
+          '<button data-idx="' + i + '" class="sp-eye-btn" style="background:none;border:1px solid #1a2236;border-radius:6px;cursor:pointer;padding:4px 8px;color:#4a9cf5;font-size:0.85rem;" title="View full details">View</button>' +
+        '</td>' +
         '</tr>';
     }).join('');
     Array.from(document.querySelectorAll('.sp-eye-btn')).forEach(function(btn){
       btn.addEventListener('click',function(ev){ ev.stopPropagation(); showSPModal(window._spSlice[parseInt(this.getAttribute('data-idx'))]); });
+      btn.addEventListener('mouseover',function(){ this.style.borderColor='#3b82f6';this.style.background='#0a1e3d'; });
+      btn.addEventListener('mouseout', function(){ this.style.borderColor='#1a2236';this.style.background='none'; });
+    });
+    Array.from(document.querySelectorAll('.sp-chart-btn')).forEach(function(btn){
+      btn.addEventListener('click',function(ev){
+        ev.stopPropagation();
+        var et = parseInt(this.getAttribute('data-et')); var xt = parseInt(this.getAttribute('data-xt'));
+        if (!et) return;
+        if (typeof spSelectTrade === 'function') spSelectTrade(et, isNaN(xt) ? null : xt);
+      });
       btn.addEventListener('mouseover',function(){ this.style.borderColor='#3b82f6';this.style.background='#0a1e3d'; });
       btn.addEventListener('mouseout', function(){ this.style.borderColor='#1a2236';this.style.background='none'; });
     });
@@ -1704,8 +1717,8 @@ function showSPModal(t){
   var contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">Option Contract</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
-    + cell('Symbol', t.symbol || '\\u2014', '#a0f0c0')
-    + cell('Strike', t.strike || '\\u2014', '#fff')
+    + cell('Symbol', t.symbol || '\\u2014', '#c8d8f0')
+    + cell('Strike', t.strike || '\\u2014', '#e0eaf8')
     + cell('Expiry', t.expiry || '\\u2014', '#f59e0b')
     + cell('Option Type', t.optionType || t.side || '\\u2014', sc)
     + cell('Qty / Lots', t.qty ? t.qty + ' qty' : '\\u2014', '#c8d8f0')
@@ -1716,18 +1729,18 @@ function showSPModal(t){
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">Entry</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + cell('Entry Time', t.entry || '\\u2014', '#c8d8f0')
-    + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#fff', 'Index price at entry')
+    + cell('NIFTY Spot @ Entry', fmt(t.eSpot), '#e0eaf8', 'Index price at entry')
     + cell('Option LTP @ Entry', fmt(t.eOpt), '#60a5fa', 'Option premium paid')
     + cell('Initial Stop Loss', fmt(t.eSl), '#f59e0b', 'NIFTY spot SL level')
     + cell('SL Distance', (t.eSl && t.eSpot) ? Math.abs(t.eSpot - t.eSl).toFixed(2) + ' pts' : '\\u2014', '#f59e0b', 'pts from entry to SL')
-    + cell('Entry Signal', t.entryReason || '\\u2014', '#a0b8d0')
+    + cell('Entry Signal', t.entryReason || '\\u2014', '#c8d8f0')
     + '</div></div>';
 
   var exitHtml = '<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">Exit</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + cell('Exit Time', t.exit || '\\u2014', '#c8d8f0')
-    + cell('NIFTY Spot @ Exit', fmt(t.xSpot), '#fff', 'Index price at exit')
+    + cell('NIFTY Spot @ Exit', fmt(t.xSpot), '#e0eaf8', 'Index price at exit')
     + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
     + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
     + cell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc, 'Exit prem - Entry prem')
@@ -1787,15 +1800,21 @@ function doCopy(text,btn,label){
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
+  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false });
   async function fetchChart() {
     try {
       var res = await fetch('/pa-paper/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return; var d = await res.json();
       if (!d.candles || !d.candles.length) return;
+      // Preserve user's current zoom/pan across refreshes
+      var savedLogical = (_lcc > 0) ? chart.timeScale().getVisibleLogicalRange() : null;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
+      if (savedLogical && !window._spSelEt) {
+        try { chart.timeScale().setVisibleLogicalRange(savedLogical); } catch(_) {}
+      }
       var selEt = window._spSelEt || null;
       var allMarkers = (d.markers || []).slice();
       var markers = allMarkers;
@@ -2412,8 +2431,8 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
   var contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">Option Contract</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
-    + histCell('Symbol', t.symbol || '\\u2014', '#a0f0c0')
-    + histCell('Strike', t.optionStrike || '\\u2014', '#fff')
+    + histCell('Symbol', t.symbol || '\\u2014', '#c8d8f0')
+    + histCell('Strike', t.optionStrike || '\\u2014', '#e0eaf8')
     + histCell('Expiry', t.optionExpiry || '\\u2014', '#f59e0b')
     + histCell('Option Type', t.optionType || t.side || '\\u2014', sc)
     + histCell('Qty', t.qty ? t.qty + ' qty' : '\\u2014', '#c8d8f0')
@@ -2423,17 +2442,17 @@ function showHistoryTradeModal(sessionIdx, tradeIdx){
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">Entry</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Entry Time', t.entryTime || '\\u2014', '#c8d8f0')
-    + histCell('NIFTY Spot @ Entry', histFmt(eSpot), '#fff')
+    + histCell('NIFTY Spot @ Entry', histFmt(eSpot), '#e0eaf8')
     + histCell('Option LTP @ Entry', histFmt(t.optionEntryLtp), '#60a5fa')
     + histCell('Initial Stop Loss', histFmt(eSl), '#f59e0b', 'NIFTY spot SL level')
     + histCell('SL Distance', (eSl && eSpot) ? Math.abs(eSpot - eSl).toFixed(2) + ' pts' : '\\u2014', '#f59e0b')
-    + histCell('Entry Signal', t.entryReason || '\\u2014', '#a0b8d0')
+    + histCell('Entry Signal', t.entryReason || '\\u2014', '#c8d8f0')
     + '</div></div>';
   var exitHtml = '<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
     + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">Exit</div>'
     + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
     + histCell('Exit Time', t.exitTime || '\\u2014', '#c8d8f0')
-    + histCell('NIFTY Spot @ Exit', histFmt(xSpot), '#fff')
+    + histCell('NIFTY Spot @ Exit', histFmt(xSpot), '#e0eaf8')
     + histCell('Option LTP @ Exit', histFmt(t.optionExitLtp), '#60a5fa')
     + histCell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
     + histCell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc)
