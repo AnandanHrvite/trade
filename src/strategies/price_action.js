@@ -79,18 +79,6 @@ function findSwingPoints(candles, lookback) {
   return { swingHighs, swingLows };
 }
 
-// ── Recent high-low range (for BOS chop filter) ──────────────────────────────
-// Returns the high-low range of the last N candles (excluding the signal candle itself).
-function recentRange(candles, lookback) {
-  if (candles.length < lookback + 1) return null;
-  var hi = -Infinity, lo = Infinity;
-  for (var i = candles.length - 1 - lookback; i < candles.length - 1; i++) {
-    if (candles[i].high > hi) hi = candles[i].high;
-    if (candles[i].low  < lo) lo = candles[i].low;
-  }
-  return hi - lo;
-}
-
 // ── Check if price is near a S/R zone ────────────────────────────────────────
 function isNearSupport(price, swingLows, zonePts) {
   for (var i = swingLows.length - 1; i >= 0; i--) {
@@ -312,12 +300,6 @@ function getSignal(candles, opts) {
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
   var CHART_PATTERNS_ENABLED = cfg("PA_CHART_PATTERNS_ENABLED", "false") === "true"; // Double Top/Bottom, Triangles
-  // BOS-specific quality gates (always-on, independent of global RSI caps)
-  var BOS_RSI_CE_MAX    = parseFloat(cfg("PA_BOS_RSI_CE_MAX", "65"));
-  var BOS_RSI_PE_MIN    = parseFloat(cfg("PA_BOS_RSI_PE_MIN", "35"));
-  var BOS_RANGE_ON      = cfg("PA_BOS_RANGE_FILTER_ENABLED", "true") === "true";
-  var BOS_RANGE_LOOKBACK = parseInt(cfg("PA_BOS_RANGE_LOOKBACK", "8"), 10);
-  var BOS_RANGE_MIN_PTS = parseFloat(cfg("PA_BOS_RANGE_MIN_PTS", "35"));
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -515,10 +497,7 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 5: BREAK OF STRUCTURE ──────────────────────────────────────────
   var bos = checkBOS(sc, swings.swingHighs, swings.swingLows);
-  // BOS chop guard: require recent bar range to exceed MIN_PTS — blocks BOS in tight range
-  var bosRange = BOS_RANGE_ON ? recentRange(candles, BOS_RANGE_LOOKBACK) : null;
-  var bosRangeOk = !BOS_RANGE_ON || (bosRange !== null && bosRange >= BOS_RANGE_MIN_PTS);
-  if (bos.bullish && rsi > RSI_CE_MIN && rsi < BOS_RSI_CE_MAX && candleBody(sc) >= MIN_BODY && bosRangeOk) {
+  if (bos.bullish && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.min(sc.low, prev.low);
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -531,7 +510,7 @@ function getSignal(candles, opts) {
       reason: "CE: BOS above swing high " + bos.level.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
-  if (bos.bearish && rsi < RSI_PE_MAX && rsi > BOS_RSI_PE_MIN && candleBody(sc) >= MIN_BODY && bosRangeOk) {
+  if (bos.bearish && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.max(sc.high, prev.high);
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
