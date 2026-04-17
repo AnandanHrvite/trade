@@ -85,9 +85,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
 
   // Trailing profit config
-  const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "350");
-  const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "65");
-  const PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
+  const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "500");
+  const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "75");
+  const PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:70,1000:78,2000:82,3000:86,5000:90")
     .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
     .sort((a, b) => b.peak - a.peak);
   const PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false"; // default true

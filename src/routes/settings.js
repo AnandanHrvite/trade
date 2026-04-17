@@ -154,9 +154,15 @@ const SETTINGS_SCHEMA = [
       // ── Trail profit ──
       { key: "PA_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Use prev N-candle H/L as trail exit (runs parallel with profit-lock floor)", default: "true" },
       { key: "PA_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Number of candles to look back for trail level (e.g. 2 = lowest low / highest high of last 2 bars)", default: "2" },
-      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing (candle + profit-lock) after this much peak profit", default: "350" },
-      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
-      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
+      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing (candle + profit-lock) after this much peak profit", default: "500" },
+      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "75" },
+      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:70,1000:78,2000:82,3000:86,5000:90)", default: "500:70,1000:78,2000:82,3000:86,5000:90" },
+      // ── BOS quality gates (always-on, independent of global RSI caps) ──
+      { key: "PA_BOS_RSI_CE_MAX", label: "BOS RSI CE Max", type: "number", min: 55, max: 85, step: 1, effect: EFFECT.SESSION, desc: "Block BOS CE entries when RSI above this (avoids buying tops)", default: "65" },
+      { key: "PA_BOS_RSI_PE_MIN", label: "BOS RSI PE Min", type: "number", min: 15, max: 45, step: 1, effect: EFFECT.SESSION, desc: "Block BOS PE entries when RSI below this (avoids selling bottoms)", default: "35" },
+      { key: "PA_BOS_RANGE_FILTER_ENABLED", label: "BOS Range Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require recent bar range to exceed threshold before allowing BOS entries (blocks BOS in chop)", default: "true" },
+      { key: "PA_BOS_RANGE_LOOKBACK", label: "BOS Range Lookback (candles)", type: "number", min: 4, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Bars to measure recent high-low range for BOS chop filter", default: "8" },
+      { key: "PA_BOS_RANGE_MIN_PTS", label: "BOS Range Min (pts)", type: "number", min: 15, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Min high-low range over lookback bars to allow BOS; below this = chop, BOS blocked", default: "35" },
       // ── Risk management ──
       { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on signal candle SL distance", default: "25" },
       { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },

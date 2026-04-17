@@ -45,11 +45,10 @@ const PA_RES            = parseInt(process.env.PA_RESOLUTION || "5", 10);
 const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
 const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
-const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
+const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "500");
+const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "75");
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
-// Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
-const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:70,1000:78,2000:82,3000:86,5000:90");
 const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
 const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
 const _PA_OPT_STOP_PCT        = parseFloat(process.env.PA_OPT_STOP_PCT || "0.15");
