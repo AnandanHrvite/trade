@@ -774,12 +774,53 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
 // ── On each completed candle ──────────────────────────────────────────
 
-async function onCandleClose(candle) {
-  ptState.candles.push(candle);
+async function onCandleClose(_tickCandle) {
+  // Push tick-built candle immediately (before any await) so intra-candle entry
+  // code in onTick — which reads ptState.candles every tick — sees the newly
+  // closed bar without a 500ms gap while the auth fetch is in flight.
+  ptState.candles.push(_tickCandle);
+  if (ptState.candles.length > 200) ptState.candles.shift();
+
+  // Fetch authoritative OHLC from Fyers history API (live only) so the strategy
+  // window contains exchange-finalized candles identical to what sim replays.
+  // Sim mode already feeds exact OHLC via tick reconstruction — skip the fetch.
+  let candle = _tickCandle;
+  if (!ptState._simMode) {
+    try {
+      const { fetchCandles } = require("../services/backtestEngine");
+      const istDate = new Date(_tickCandle.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const histCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, String(TRADE_RES), istDate, istDate);
+      const match = histCandles && histCandles.find(c => c.time === _tickCandle.time);
+      if (match) {
+        candle = {
+          time:   _tickCandle.time,
+          open:   match.open,
+          high:   match.high,
+          low:    match.low,
+          close:  match.close,
+          volume: match.volume || _tickCandle.volume || 0,
+        };
+        // Upgrade the already-pushed tick-built entry to authoritative OHLC
+        const lastIdx = ptState.candles.length - 1;
+        if (lastIdx >= 0 && ptState.candles[lastIdx].time === candle.time) {
+          ptState.candles[lastIdx] = { ...candle };
+        }
+        if (match.high !== _tickCandle.high || match.low !== _tickCandle.low || match.open !== _tickCandle.open || match.close !== _tickCandle.close) {
+          const hhmm = new Date(_tickCandle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+          log(`📊 [PAPER] Auth candle ${hhmm}: tick O=${_tickCandle.open} H=${_tickCandle.high} L=${_tickCandle.low} C=${_tickCandle.close} → hist O=${match.open} H=${match.high} L=${match.low} C=${match.close}`);
+        }
+      } else {
+        const hhmm = new Date(_tickCandle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+        log(`⚠️ [PAPER] Auth candle not yet in history for ${hhmm} — using tick-built bar`);
+      }
+    } catch (e) {
+      log(`⚠️ [PAPER] Auth candle fetch failed (${e.message}) — using tick-built bar`);
+    }
+  }
+
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
   ptState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
-  if (ptState.candles.length > 200) ptState.candles.shift();
 
   const strategy = getActiveStrategy();
   const { signal, reason, stopLoss, signalStrength, ...indicators } = strategy.getSignal(ptState.candles);

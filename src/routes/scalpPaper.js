@@ -375,17 +375,12 @@ function onTick(tick) {
   const bucketMs  = getBucketStart(tickMs);
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
-    // Close previous bar
+    // Close previous bar — fetch authoritative OHLC from history API (live only),
+    // then push auth candle to window + evaluate signal. Keeps paper ≡ sim by
+    // guaranteeing the strategy sees exchange-finalized OHLC, not tick-approximated.
     if (state.currentBar) {
-      // If last candle has same time (preloaded overlap), replace instead of duplicate push
-      const lastC = state.candles.length ? state.candles[state.candles.length - 1] : null;
-      if (lastC && lastC.time === state.currentBar.time) {
-        state.candles[state.candles.length - 1] = { ...state.currentBar };
-      } else {
-        state.candles.push({ ...state.currentBar });
-      }
-      if (state.candles.length > 200) state.candles.shift();
-      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [SCALP-PAPER] onCandleClose error: ${e.message}`));
+      const closedBar = { ...state.currentBar };
+      closeAndEvaluate(closedBar).catch(e => console.error(`🚨 [SCALP-PAPER] closeAndEvaluate error: ${e.message}`));
     }
     // Start new bar — if last preloaded candle covers same bucket, merge with it
     const bucketTimeSec = Math.floor(bucketMs / 1000);
@@ -475,6 +470,55 @@ function onTick(tick) {
       }
     }
   }
+}
+
+// ── closeAndEvaluate — fetch authoritative candle, then run onCandleClose ──
+// In LIVE mode we replace the tick-built bar with the Fyers history-API bar so
+// the strategy window contains exchange-finalized OHLC (identical to what sim
+// sees). In sim mode the tick stream already reproduces exact OHLC, so we skip
+// the fetch and use the bar as-is.
+
+async function closeAndEvaluate(closedBar) {
+  let authBar = closedBar;
+
+  if (!state._simMode) {
+    try {
+      const { fetchCandles } = require("../services/backtestEngine");
+      const istDate = new Date(closedBar.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      const histCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, String(SCALP_RES), istDate, istDate);
+      const match = histCandles && histCandles.find(c => c.time === closedBar.time);
+      if (match) {
+        authBar = {
+          time:   closedBar.time,
+          open:   match.open,
+          high:   match.high,
+          low:    match.low,
+          close:  match.close,
+          volume: match.volume || closedBar.volume || 0,
+        };
+        if (match.high !== closedBar.high || match.low !== closedBar.low || match.open !== closedBar.open || match.close !== closedBar.close) {
+          const hhmm = new Date(closedBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+          log(`📊 [SCALP-PAPER] Auth candle ${hhmm}: tick O=${closedBar.open} H=${closedBar.high} L=${closedBar.low} C=${closedBar.close} → hist O=${match.open} H=${match.high} L=${match.low} C=${match.close}`);
+        }
+      } else {
+        const hhmm = new Date(closedBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+        log(`⚠️ [SCALP-PAPER] Auth candle not yet in history for ${hhmm} — using tick-built bar`);
+      }
+    } catch (e) {
+      log(`⚠️ [SCALP-PAPER] Auth candle fetch failed (${e.message}) — using tick-built bar`);
+    }
+  }
+
+  // Push or replace last candle with authoritative data
+  const lastC = state.candles.length ? state.candles[state.candles.length - 1] : null;
+  if (lastC && lastC.time === authBar.time) {
+    state.candles[state.candles.length - 1] = { ...authBar };
+  } else {
+    state.candles.push({ ...authBar });
+  }
+  if (state.candles.length > 200) state.candles.shift();
+
+  await onCandleClose(authBar);
 }
 
 // ── onCandleClose — evaluate signal on 3-min bar close ──────────────────────
