@@ -484,9 +484,9 @@
   <h1>Application Setup &amp; Configuration Guide</h1>
   <p class="subtitle">Palani Andawar Trading System &mdash; Complete Registration &amp; Secrets Reference</p>
   <div class="meta">
-    <span><span class="badge badge-blue">v2.0</span></span>
-    <span>Generated: April 2026</span>
-    <span>NIFTY Options Algo Trading</span>
+    <span><span class="badge badge-blue">v4.2.0</span></span>
+    <span>Generated: 2026-04-20</span>
+    <span>NIFTY Options Algo Trading &mdash; Swing + Scalp + Price Action</span>
   </div>
 </header>
 
@@ -496,6 +496,7 @@
 <nav class="toc">
   <h2>&#9776; Table of Contents</h2>
   <ol>
+    <li><a href="#whatsnew">What's New in v4.2.0</a></li>
     <li><a href="#architecture">System Architecture Overview</a></li>
     <li><a href="#modes">Trading Modes &mdash; Backtest, Paper, Live</a></li>
     <li><a href="#fyers">Fyers API Registration</a></li>
@@ -510,6 +511,24 @@
 </nav>
 
 <div class="container">
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 0. WHAT'S NEW IN v4.2.0                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section blue" id="whatsnew">
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.2.0 (2026-04-20)</h2>
+  <p>Key infrastructure and UI upgrades added since v4.1.0. Setup steps below reflect the current system.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
+    <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (Swing / Scalp / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
+    <li><strong>Dashboard Start-All buttons</strong> launch every enabled mode (Swing + Scalp + PA) with one click.</li>
+    <li><strong>Telegram restructured</strong>: 17 per-mode toggles (<code>TG_{SWING|SCALP|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}</code>) + master <code>TG_ENABLED</code> gate + consolidated 15:30 IST day report (<code>TG_DAYREPORT_CONSOLIDATED</code>).</li>
+    <li><strong>Settings UI</strong>: bulk paste config (KEY=VALUE pairs), one-click server restart, frozen dependent fields (VIX / Scalp section auto-disable when their master toggle is off).</li>
+    <li><strong>Scalp V4 quality filters</strong> exposed in Settings UI: <code>SCALP_REQUIRE_APPROACH</code>, <code>SCALP_MIN_BODY_RATIO</code>, <code>SCALP_TRAIL_GRACE_SECS</code>.</li>
+    <li><strong>Login cookie</strong> now uses <code>SameSite=Lax</code> (was Strict) to fix mobile OAuth redirect loop during broker login.</li>
+    <li><strong>New persistent file</strong>: <code>~/trading-data/historical_pnl.json</code> holds one-time P&amp;L baselines per broker.</li>
+  </ul>
+</section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- 1. SYSTEM ARCHITECTURE                                     -->
@@ -1022,20 +1041,22 @@
     <li>Set both values in your <code>.env</code> file.</li>
   </ol>
 
-  <h3>Notification Toggles</h3>
+  <h3>Notification Toggles (v4.2.0 — 17 per-mode + master gate)</h3>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>TG_TRADE_ENTRY</code></td><td><code>true</code></td><td>Strategy 1 trade entry alerts</td></tr>
-      <tr><td><code>TG_TRADE_EXIT</code></td><td><code>true</code></td><td>Strategy 1 trade exit alerts</td></tr>
-      <tr><td><code>TG_TRADE_SIGNALS</code></td><td><code>true</code></td><td>Strategy 1 signal detection alerts</td></tr>
-      <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Scalp trade entry alerts</td></tr>
-      <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Scalp trade exit alerts</td></tr>
+      <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, no alerts sent regardless of below</td></tr>
+      <tr><td><code>TG_SWING_STARTED</code> / <code>TG_SCALP_STARTED</code> / <code>TG_PA_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per mode</td></tr>
+      <tr><td><code>TG_SWING_ENTRY</code> / <code>TG_SCALP_ENTRY</code> / <code>TG_PA_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per mode</td></tr>
+      <tr><td><code>TG_SWING_EXIT</code> / <code>TG_SCALP_EXIT</code> / <code>TG_PA_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per mode</td></tr>
+      <tr><td><code>TG_SWING_SIGNALS</code> / <code>TG_SCALP_SIGNALS</code> / <code>TG_PA_SIGNALS</code></td><td><code>true</code>/<code>false</code>/<code>false</code></td><td>Candle-close skip/signal reasoning per mode</td></tr>
+      <tr><td><code>TG_SWING_DAYREPORT</code> / <code>TG_SCALP_DAYREPORT</code> / <code>TG_PA_DAYREPORT</code></td><td><code>true</code></td><td>Per-mode day summary on session stop</td></tr>
+      <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined EOD summary across all modes at 15:30 IST (weekdays only)</td></tr>
     </tbody>
   </table>
 
   <div class="note note-success">
-    <strong>Tip:</strong> Leave <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> blank to disable all Telegram notifications without changing individual toggle values.
+    <strong>Tip:</strong> Leave <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> blank to disable all Telegram notifications without changing individual toggle values. Or set <code>TG_ENABLED=false</code> as a master switch that preserves per-mode config.
   </div>
 </section>
 
@@ -1327,11 +1348,13 @@
     <tbody>
       <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td><em>(blank)</em></td><td>Bot token from @BotFather</td></tr>
       <tr><td><code>TELEGRAM_CHAT_ID</code></td><td><em>(blank)</em></td><td>Your Telegram chat ID</td></tr>
-      <tr><td><code>TG_TRADE_ENTRY</code></td><td><code>true</code></td><td>Strategy 1 entry alerts</td></tr>
-      <tr><td><code>TG_TRADE_EXIT</code></td><td><code>true</code></td><td>Strategy 1 exit alerts</td></tr>
-      <tr><td><code>TG_TRADE_SIGNALS</code></td><td><code>true</code></td><td>Strategy 1 signal alerts</td></tr>
-      <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Scalp entry alerts</td></tr>
-      <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Scalp exit alerts</td></tr>
+      <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, mutes all alerts</td></tr>
+      <tr><td><code>TG_{SWING,SCALP,PA}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per mode</td></tr>
+      <tr><td><code>TG_{SWING,SCALP,PA}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per mode</td></tr>
+      <tr><td><code>TG_{SWING,SCALP,PA}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per mode</td></tr>
+      <tr><td><code>TG_{SWING,SCALP,PA}_SIGNALS</code></td><td><code>true/false/false</code></td><td>Candle-close skip/signal reasoning per mode</td></tr>
+      <tr><td><code>TG_{SWING,SCALP,PA}_DAYREPORT</code></td><td><code>true</code></td><td>Per-mode day summary on session stop</td></tr>
+      <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined day report at 15:30 IST across all modes</td></tr>
     </tbody>
   </table>
 
@@ -1460,7 +1483,7 @@
 <!-- FOOTER                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <footer class="page-footer">
-  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v2.0 &nbsp;|&nbsp; April 2026
+  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.2.0 &nbsp;|&nbsp; 2026-04-20
 </footer>
 
 </body>

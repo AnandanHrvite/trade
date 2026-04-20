@@ -370,9 +370,30 @@
 <div class="cover">
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
-  <div class="sub">SCALP_BB_RSI_V4 &mdash; 3-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.0 &bull; 3-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail</div>
-  <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Dynamic SL</div>
+  <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
+  <div class="version">Version 4.2.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; Approach + Body Filters</div>
+  <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0. WHAT'S NEW IN v4.2.0                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">00</span> What's New in v4.2.0 (2026-04-20)</h2>
+<div class="card card-purple">
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
+      <ul style="padding-left:20px; margin-top:6px;">
+        <li><code>SCALP_REQUIRE_APPROACH</code> &mdash; reject first-touch breakouts where prev candle was on opposite half of BB. CE blocked if <code>prev.close &lt; BB.middle</code>; PE blocked if <code>prev.close &gt; BB.middle</code>.</li>
+        <li><code>SCALP_MIN_BODY_RATIO</code> &mdash; require entry candle body to be at least N% of range. <code>0.5</code> rejects doji / long-wick breakouts signaling exhaustion.</li>
+      </ul>
+    </li>
+    <li><strong>Trail grace period</strong> (<code>SCALP_TRAIL_GRACE_SECS</code>) &mdash; suppress trail-exit for first N seconds after entry so a first-tick spike + tiny pullback doesn't kill the trade. Initial SL remains active.</li>
+    <li><strong>Live NIFTY candlestick chart with BB overlay</strong> on scalp paper / live pages. Click a trade row to focus chart on that trade; zoom preserved across refresh.</li>
+    <li><strong>History page</strong> &mdash; per-session delete + view modal (full trade breakdown without leaving the list).</li>
+    <li><strong>Telegram</strong> &mdash; dedicated scalp toggles: <code>TG_SCALP_STARTED / ENTRY / EXIT / SIGNALS / DAYREPORT</code>, all gated by master <code>TG_ENABLED</code>. Consolidated 15:30 IST day report covers scalp alongside Swing and PA.</li>
+    <li><strong>Rate-limit backoff</strong> on option LTP polling + spot-proxy trail fallback when broker throttles; trailing doesn't freeze during throttle windows.</li>
+    <li><strong>Default scalp resolution locked to 5-min</strong> (previously 3-min in older builds).</li>
+  </ul>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -381,13 +402,14 @@
 <h2><span class="sec-num">01</span> Strategy Overview</h2>
 
 <div class="highlight">
-  <strong>SCALP_BB_RSI_V4</strong> is a 3-minute timeframe scalping strategy for NIFTY index options (CE/PE).
+  <strong>SCALP_BB_RSI_V4</strong> is a 5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
   It identifies short-term momentum breakouts using Bollinger Bands and RSI, with Parabolic SAR providing dynamic trailing stop-loss management.
+  V4.2 adds opt-in quality filters (approach + body strength) and a trail grace period.
 </div>
 
 <div class="metrics">
   <div class="metric purple">
-    <div class="val">3 min</div>
+    <div class="val">5 min</div>
     <div class="lbl">Candle Timeframe</div>
   </div>
   <div class="metric green">
@@ -399,7 +421,7 @@
     <div class="lbl">Trailing SL</div>
   </div>
   <div class="metric red">
-    <div class="val">50 pts</div>
+    <div class="val">25 pts</div>
     <div class="lbl">Max SL Cap</div>
   </div>
 </div>
@@ -594,7 +616,7 @@
 <h2><span class="sec-num">03</span> How BB + RSI Signal Works</h2>
 
 <div class="highlight">
-  <p>Both conditions must be met simultaneously on the same 3-minute candle close:</p>
+  <p>Both conditions must be met simultaneously on the same 5-minute candle close:</p>
   <ul>
     <li><strong>BUY CE:</strong> Candle Close &ge; Upper BB <em>AND</em> RSI &gt; 55</li>
     <li><strong>BUY PE:</strong> Candle Close &le; Lower BB <em>AND</em> RSI &lt; 45</li>
@@ -1008,7 +1030,7 @@
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-box process">Load 30+ candles (BB/RSI/PSAR warm-up)</div>
   <div class="flow-arrow">&#8595;</div>
-  <div class="flow-box process">Every 3-min candle close</div>
+  <div class="flow-box process">Every 5-min candle close</div>
   <div class="flow-arrow">&#8595;</div>
   <div class="flow-box decision">In Position?</div>
 
@@ -1080,7 +1102,7 @@
 
     <rect x="230" y="40" width="135" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
     <text x="298" y="60" fill="#10b981" font-size="10" font-weight="600" text-anchor="middle">BB+RSI Engine</text>
-    <text x="298" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">3-min candles + PSAR</text>
+    <text x="298" y="76" fill="#8a85b0" font-size="8" text-anchor="middle">5-min candles + PSAR</text>
     <line x1="365" y1="65" x2="400" y2="65" stroke="#10b981" stroke-width="1.5" marker-end="url(#sArrG)"/>
 
     <rect x="405" y="40" width="125" height="50" rx="8" fill="rgba(16,185,129,0.1)" stroke="#10b981" stroke-width="1.5"/>
@@ -1154,7 +1176,7 @@
 
     <!-- Candle close -->
     <rect x="225" y="122" width="250" height="36" rx="8" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1"/>
-    <text x="350" y="145" fill="#ccc8e8" font-size="10" text-anchor="middle">Every 3-min candle close</text>
+    <text x="350" y="145" fill="#ccc8e8" font-size="10" text-anchor="middle">Every 5-min candle close</text>
     <line x1="350" y1="158" x2="350" y2="178" stroke="#8a85b0" stroke-width="1.5"/>
 
     <!-- Decision: In Position? -->
@@ -1207,7 +1229,7 @@
     <p><code>scalpLive.js</code> &mdash; Route: <code>/scalp</code></p>
     <ul>
       <li>Real orders via <strong>Fyers API</strong> (not Zerodha)</li>
-      <li>WebSocket price ticks &rarr; 3-min candle builder</li>
+      <li>WebSocket price ticks &rarr; 5-min candle builder</li>
       <li>1-sec option LTP polling for trail/exit</li>
       <li>Full risk management: daily loss, trade cap, SL pause</li>
       <li>Telegram alerts on entry/exit</li>
@@ -1408,8 +1430,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.0 &bull; Generated April 2026<br/>
-    NIFTY Options Scalping Strategy Guide &bull; 3-Minute Bollinger Band + RSI + PSAR
+    SCALP_BB_RSI_V4 &mdash; Version 4.2.0 &bull; Generated 2026-04-20<br/>
+    NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters
   </p>
 </div>
 

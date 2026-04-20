@@ -4,6 +4,93 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.2.0 — Live Charts, Consolidation, P&L History, Telegram Restructure (2026-04-20)
+
+### Live NIFTY Candlestick Charts
+
+- **Chart on status pages** — live candlestick chart rendered on all paper + live status pages (Swing / Scalp / PA), with real-time updates as candles close
+- **Entry-logic overlays**: Bollinger Bands on scalp charts, swing highs/lows on PA charts — makes it visual *why* the engine took (or skipped) a signal
+- **Entry/exit markers** on every session chart (arrows + strike + P&L)
+- **Click trade row → focus chart on that trade only** (zooms to entry–exit window). Click again or the reset icon to restore full session view
+- **Chart zoom preserved across refresh**, even when focused on a trade — no more losing context every 10 seconds
+- **Light-theme modal contrast** fixed for chart trade-detail popups
+- **`CHART_ENABLED` toggle** in Settings to show/hide the chart globally
+
+### Consolidation Page — Cross-Mode Trade History
+
+- **`/consolidation`** — unified view flattening every trade across Swing + Scalp + PA paper sessions
+- **Roll-ups**: Daily / Monthly / Yearly P&L with per-mode breakdowns and equity curve
+- **Filters**: mode, side (CE/PE), date range, symbol search
+- **Bulk copy** (daily / weekly / monthly) + per-trade copy buttons
+- Driven by the three `*_paper_trades.json` files — no extra persistence layer
+
+### P&L History — Broker-Wise with FY Roll-up
+
+- **`/pnl-history`** — consolidated realised P&L per broker (Kite + Fyers)
+- **One-time past baseline** per broker (stored in `historical_pnl.json`) — set it once and forget; never FY-split, captures everything before the bot started
+- **Live-bot overlay** — auto-computed from `live_trades.json` / `scalp_live_trades.json` / `pa_live_trades.json`, grouped by Indian FY (Apr–Mar)
+- **Grand total** per broker + across brokers (baseline + live)
+- Live totals update automatically as trades close — no manual reconciliation
+
+### Telegram — 17 Toggles + Master Gate + Consolidated EOD
+
+- **Master gate `TG_ENABLED`** — single switch to mute all alerts without losing per-mode config
+- **17 per-mode toggles**: `TG_{SWING|SCALP|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}` + `TG_DAYREPORT_CONSOLIDATED`
+- **Signal-skip alerts** per mode explain why a trade was/wasn't taken on candle close (when flat)
+- **Consolidated EOD report** at 15:30 IST — one combined Telegram message across Swing/Scalp/PA covering trades, wins/losses, win rate, net P&L (weekdays only, scheduled idempotently)
+- **Per-mode day report on session stop** preserved as a separate toggle
+
+### Settings UI — Bulk Paste + Restart
+
+- **Bulk Update section** — paste `KEY=VALUE` pairs (or `KEY: VALUE`, quoted, `#` comments), previews keys to update, then applies all + restarts server with one button
+- Sensitive keys (SECRET/TOKEN/ACCESS) are auto-ignored from bulk paste
+- **Restart Server button** — graceful `process.exit(0)` via `POST /settings/restart`, leverages PM2/nodemon auto-restart. Active sessions stop cleanly before exit
+- **Frozen (disabled) rows** for dependent fields — VIX params freeze when VIX filter off, entire scalp section freezes when scalp mode off
+
+### Scalp V4 — Quality Filters + Trail Grace
+
+- **Approach filter** (`SCALP_REQUIRE_APPROACH`) — block entry if prev candle was on opposite half of BB (first-touch breakouts often fade; require the market to be *approaching* the band)
+- **Body-strength filter** (`SCALP_MIN_BODY_RATIO`) — require entry candle body to be at least N% of its range (rejects doji / long-wick breakouts signaling exhaustion)
+- **Trail grace period** (`SCALP_TRAIL_GRACE_SECS`) — suppress trail-exit for first N seconds after entry so a first-tick spike + tiny pullback doesn't kill the trade; initial SL still active throughout
+- Both V4 filters are env-toggleable and **exposed in Settings UI** (disabled by default to preserve prior behavior)
+
+### Dashboard — Start-All + PA Panels
+
+- **Start-All Paper** / **Start-All Live** buttons — kick off every enabled mode (Swing + Scalp + PA) in one click, sequentially with per-mode confirmation
+- **PA paper / live panels** on dashboard alongside Swing + Scalp (previously only Swing + Scalp were surfaced)
+- Pickups hidden modes — if `SCALP_MODE_ENABLED=false` or `PA_MODE_ENABLED=false`, those panels and Start-All endpoints are excluded
+
+### Session History — View Modal + Delete Session
+
+- **View modal** on PA/Scalp history pages — full-session trade breakdown without leaving the list
+- **Delete Session** button per session (Swing + Scalp + PA) — removes one session from history with confirmation
+- Per-session copy trade log preserved
+
+### Simulator Fidelity
+
+- **Historical replay warmup bumped 30 → 300 candles** (swing/PA) — indicators reach steady state before the first replay candle, eliminating cold-start signal anomalies
+- **Zigzag intra-candle ticks** — ticks now noisily zig-zag inside each candle instead of tracing a smooth O→H→L→C arc; slippage, wicks, and SL hits simulate far more realistically
+
+### Price Action — BOS Tightening (reverted)
+
+- Experimental BOS tightening (RSI caps + range filter + higher trail floors) was rolled back after backtest regression. Current PA logic = profit-lock + candle trail as the primary exit stack.
+
+### Auth & Mobile
+
+- **Login cookie uses `SameSite=Lax`** (was `Strict`) to fix mobile OAuth redirect loop during Fyers/Zerodha login flow
+
+### Option LTP Polling
+
+- **Rate-limit backoff** when broker throttles LTP requests — bot paces itself back instead of hammering
+- **Spot-proxy trail fallback** — if option LTP goes stale mid-trade, trail logic falls back to a spot-proxy estimate so trailing doesn't freeze during a throttle window
+
+### Docs
+
+- **Backtest/Paper/Live mode documentation** with SVG diagrams + flowcharts describing the exact signal → entry → exit pipeline and where each mode diverges
+- **Price Action guide v3.0** — candle trail, VIX regime, crash recovery sections added
+
+---
+
 ## v4.1.0 — Background Backtests, Mode Rename, and Backtest Scaling (2026-04-16)
 
 ### Mode Rename: Swing / Scalp / Price Action

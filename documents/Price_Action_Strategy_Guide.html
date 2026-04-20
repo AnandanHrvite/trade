@@ -214,9 +214,9 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 3.0</span>
-      <span>April 2026</span>
-      <span>8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery</span>
+      <span>Version 4.2.0</span>
+      <span>2026-04-20</span>
+      <span>8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
@@ -225,6 +225,7 @@ td.pe { color: var(--red); }
       <div class="pillar">Candle Trail SL</div>
       <div class="pillar">VIX Regime Filter</div>
       <div class="pillar">Crash Recovery</div>
+      <div class="pillar">Live Chart + Swing Overlay</div>
     </div>
   </div>
 </header>
@@ -234,6 +235,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
+    <a href="#whatsnew">What's New (v4.2.0)</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
     <a href="#patterns">8 Patterns</a>
@@ -253,6 +255,32 @@ td.pe { color: var(--red); }
     <a href="#tips">Tips</a>
   </div>
 </nav>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0. WHAT'S NEW IN v4.2.0                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="whatsnew">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">0</span> What's New in v4.2.0 (2026-04-20)</h2>
+      <p>UI / infrastructure upgrades on top of v4.1 PA signal logic. The 8 patterns, S/R detection, RSI confluence, and candle-trail exit are unchanged.</p>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong>Live NIFTY candlestick chart</strong> with swing-high/low overlay on <code>/pa-paper/status</code> and <code>/pa-live/status</code>. Toggleable via <code>CHART_ENABLED</code>.</li>
+        <li><strong>Click trade row → focus chart</strong> on that trade's entry–exit window. Zoom preserved across auto-refresh.</li>
+        <li><strong>Per-session delete + view modal</strong> on <code>/pa-paper/history</code>.</li>
+        <li><strong>PA panels on dashboard</strong> alongside Swing + Scalp, with Start-All Paper / Live buttons.</li>
+        <li><strong>Telegram</strong> &mdash; dedicated PA toggles (<code>TG_PA_STARTED / ENTRY / EXIT / SIGNALS / DAYREPORT</code>) gated by master <code>TG_ENABLED</code>. Consolidated 15:30 IST day report covers PA alongside Swing and Scalp.</li>
+        <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; PA trades aggregated with Swing + Scalp for unified daily/monthly/yearly P&amp;L roll-ups.</li>
+        <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) &mdash; PA live P&amp;L surfaces under Fyers broker totals.</li>
+        <li><strong>Configurable RSI caps</strong> (<code>PA_RSI_CAPS_ENABLED</code>) to block overbought CE / oversold PE entries.</li>
+        <li><strong>Candle trail with profit-lock floor</strong> &mdash; both run in parallel; whichever fires first exits. Configurable via <code>PA_CANDLE_TRAIL_ENABLED</code> + <code>PA_CANDLE_TRAIL_BARS</code>.</li>
+        <li><strong>Simulator fidelity</strong> &mdash; historical replay warmup bumped 30 → 300 candles for proper indicator warm-up.</li>
+      </ul>
+    </div>
+  </div>
+</section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 1. STRATEGY OVERVIEW                                                    -->
@@ -2125,7 +2153,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v3.0 | Updated April 2026</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.2.0 | Updated 2026-04-20</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>

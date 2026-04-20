@@ -426,16 +426,18 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>TRADING LOGIC</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v3.0</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.2.0</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> April 2026 &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-04-20 &nbsp;|&nbsp;
     <strong>Timeframe:</strong> 15-minute &nbsp;|&nbsp;
-    <strong>Instrument:</strong> NIFTY 50 Options
+    <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
+    <strong>Route:</strong> <code>/swing-*</code>
   </div>
 
   <div class="toc">
     <div class="toc-title">Contents</div>
+    <a href="#whatsnew"><span class="num">00</span> What's New in v4.2.0</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -456,6 +458,28 @@
     <a href="#s18"><span class="num">18</span> Holiday &amp; Expiry Handling</a>
     <a href="#s19"><span class="num">19</span> Scaling Guide</a>
     <a href="#s20"><span class="num">20</span> Complete Configuration Reference</a>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0. WHAT'S NEW IN v4.2.0                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break" id="whatsnew">
+  <h2>00 &mdash; What's New in v4.2.0 (2026-04-20)</h2>
+  <p>UI / infrastructure upgrades on top of the stable v4.1 signal logic. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override are unchanged.</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
+      <li><strong>Click trade row → focus chart</strong> on that trade's entry–exit window. Zoom preserved across auto-refresh.</li>
+      <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; aggregates Swing + Scalp + PA paper trades into one timeline with daily/monthly/yearly roll-ups and cross-mode filters.</li>
+      <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) &mdash; one-time past P&amp;L baseline per broker (Kite / Fyers) plus auto-computed live-bot P&amp;L grouped by Indian FY. Swing live P&amp;L surfaces under Kite.</li>
+      <li><strong>Telegram restructure</strong> &mdash; 17 per-mode toggles (<code>TG_SWING_*</code>, <code>TG_SCALP_*</code>, <code>TG_PA_*</code>) plus a master <code>TG_ENABLED</code> gate and a consolidated <code>TG_DAYREPORT_CONSOLIDATED</code> at 15:30 IST.</li>
+      <li><strong>Dashboard Start-All</strong> &mdash; Start-All Paper / Start-All Live buttons kick off every enabled mode with one click.</li>
+      <li><strong>Per-session delete + view modal</strong> on <code>/swing-paper/history</code>.</li>
+      <li><strong>Settings: bulk paste</strong> (<code>KEY=VALUE</code> pairs) and one-click server restart.</li>
+      <li><strong>Simulator fidelity</strong> &mdash; historical replay warmup increased from 30 → 300 candles (indicators reach steady state before first replay signal). Intra-candle ticks zig-zag noisily instead of smooth O→H→L→C.</li>
+      <li><strong>Login cookie SameSite=Lax</strong> to fix mobile OAuth redirect loop during broker login flow.</li>
+    </ul>
   </div>
 </div>
 
@@ -692,7 +716,7 @@
       <tr><td>4. Place order</td><td>ATM CE/PE option order sent to Zerodha with market order type</td><td><code>SWING_LIVE_ENABLED=true</code></td></tr>
       <tr><td>5. Monitor</td><td>Option LTP polled every 1 second via Fyers quote API</td><td><code>LTP_STALE_THRESHOLD_SEC=15</code></td></tr>
       <tr><td>6. Trail &amp; Exit</td><td>3-Tier trailing SL, breakeven logic, SAR flip, daily loss limit</td><td><code>TRAIL_TIER*</code>, <code>BREAKEVEN_PTS</code></td></tr>
-      <tr><td>7. Alert</td><td>Telegram notification sent on entry, exit, and signal detection</td><td><code>TG_TRADE_ENTRY</code>, <code>TG_TRADE_EXIT</code></td></tr>
+      <tr><td>7. Alert</td><td>Telegram notification sent on entry, exit, and signal detection (gated by master <code>TG_ENABLED</code>)</td><td><code>TG_SWING_ENTRY</code>, <code>TG_SWING_EXIT</code></td></tr>
     </table>
   </div>
 
@@ -790,7 +814,7 @@
         <tr><td><strong>VIX Filter</strong></td><td>Live VIX polling (60s cache)</td><td>Live VIX polling (60s cache)</td><td>Historical VIX candles</td></tr>
         <tr><td><strong>Position Persistence</strong></td><td>Disk (crash recovery)</td><td>Disk (survives restarts)</td><td>N/A (single run)</td></tr>
         <tr><td><strong>Telegram Alerts</strong></td><td>Yes</td><td>Optional</td><td>No</td></tr>
-        <tr><td><strong>Route</strong></td><td><code>/swing</code></td><td><code>/swing-paper</code></td><td><code>/swing-backtest</code></td></tr>
+        <tr><td><strong>Route</strong></td><td><code>/swing-live</code></td><td><code>/swing-paper</code></td><td><code>/swing-backtest</code></td></tr>
       </tbody>
     </table>
   </div>
@@ -1965,9 +1989,10 @@
       <table>
         <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
-          <tr><td><code>VIX_MAX</code></td><td>20</td><td>Maximum VIX for any entry</td></tr>
+          <tr><td><code>VIX_FILTER_ENABLED</code></td><td>true</td><td>Master Swing VIX filter toggle</td></tr>
+          <tr><td><code>VIX_MAX_ENTRY</code></td><td>20</td><td>Maximum VIX for any entry</td></tr>
           <tr><td><code>VIX_STRONG_ONLY</code></td><td>16</td><td>Above this VIX, only STRONG signals allowed</td></tr>
-          <tr><td><code>VIX_CACHE_SEC</code></td><td>60</td><td>VIX quote cache duration (seconds)</td></tr>
+          <tr><td><code>VIX_FAIL_MODE</code></td><td>closed</td><td>When VIX unavailable: closed = block (safe), open = allow</td></tr>
         </tbody>
       </table>
     </div>
@@ -1977,8 +2002,8 @@
 <!-- ── Footer ──────────────────────────────────────────────────────────── -->
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
-  <div style="font-weight:600;margin-bottom:4px;">TRADING LOGIC &mdash; Complete Strategy Reference v3.0</div>
-  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated April 2026</div>
+  <div style="font-weight:600;margin-bottom:4px;">TRADING LOGIC &mdash; Complete Strategy Reference v4.2.0</div>
+  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-20</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 
