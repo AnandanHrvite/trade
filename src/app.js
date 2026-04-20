@@ -393,6 +393,9 @@ app.get("/", (req, res) => {
   const scalpMode   = sharedSocketState.getScalpMode();
   const scalpEnabled = process.env.SCALP_ENABLED === "true";
   const scalpModeOn  = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const paMode      = sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null;
+  const paEnabled   = (process.env.PA_ENABLED || 'true').toLowerCase() === 'true';
+  const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
   // ── Token expiry warning ─────────────────────────────────────────────────
@@ -526,8 +529,8 @@ app.get("/", (req, res) => {
     @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
     /* ── iPhone 15 (393px) ── */
     @media (max-width:768px) {
-      #trade-row, #scalp-row { flex-wrap:wrap; }
-      #trade-row .card, #scalp-row .card { flex:none; width:100%; }
+      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #scalp-row .card, #pa-row .card { flex:none; width:100%; }
     }
 
     /* ── TRADE STATUS PANELS ── */
@@ -546,7 +549,7 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
-    #trade-row, #scalp-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
+    #trade-row, #scalp-row, #pa-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
     @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
     /* cfg-grid removed — config shown as strip in broker card */
@@ -609,9 +612,9 @@ app.get("/", (req, res) => {
       .ts-grid     { grid-template-columns:1fr 1fr; }
       /* 3-col action row stacks to 1 col on mobile */
       .action-3col { grid-template-columns:1fr !important; }
-      /* trade-row + scalp-row: stack vertically */
-      #trade-row, #scalp-row { flex-wrap:wrap; }
-      #trade-row .card, #scalp-row .card { width:100%; flex:none; }
+      /* trade-row + scalp-row + pa-row: stack vertically */
+      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #scalp-row .card, #pa-row .card { width:100%; flex:none; }
       /* top-bar: hide meta on mobile */
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
@@ -632,7 +635,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
-      ${!liveActive && (!scalpModeOn || !scalpMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
+      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -828,13 +832,56 @@ ${buildSidebar('dashboard', liveActive)}
   </div><!-- end scalp-row -->
   ` : ''}
 
+  <!-- ④B PRICE ACTION TRADING -->
+  ${paModeOn ? `
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:8px;">
+    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Price Action Trading</span>
+    <div style="flex:1;height:1px;background:#0e1e36;"></div>
+    <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${paEnabled ? '#0d3018' : '#1a1a2e'};color:${paEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${paEnabled ? '#166534' : '#252550'};">${paEnabled ? 'ENABLED' : 'DISABLED'}</span>
+    <a href="/pa-backtest" style="font-size:0.68rem;color:#a78bfa;text-decoration:none;padding:3px 10px;border-radius:5px;border:1px solid #3a1a6a;background:#0e081a;white-space:nowrap;">Backtest →</a>
+  </div>
+  <div id="pa-row">
+
+  <div class="card" id="pa-paper-status-card" style="flex:1;min-width:0;">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">📐</span>
+        <span class="card-hdr-title">PA Paper</span>
+        <span id="pa-paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
+        <span id="pa-paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
+      </div>
+      <a href="/pa-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
+    </div>
+    <div id="pa-paper-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
+    </div>
+  </div>
+
+  <div class="card" id="pa-live-status-card" style="flex:1;min-width:0;">
+    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="card-hdr-icon">🔴</span>
+        <span class="card-hdr-title">PA Live</span>
+        <span id="pa-live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
+        <span id="pa-live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
+      </div>
+      <a href="/pa-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
+    </div>
+    <div id="pa-live-status-body" style="padding:14px 18px 16px;">
+      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
+    </div>
+  </div>
+
+  </div><!-- end pa-row -->
+  ` : ''}
+
   <!-- ⑤ QUICK ACTION BUTTONS -->
   <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
-    <button id="btn-both-paper" onclick="startBothPaper(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #166534;background:linear-gradient(135deg,#0a1f10,#0d3018);color:#4ade80;border-radius:8px;cursor:pointer;transition:all 0.2s;">
-      ▶ START BOTH PAPER TEST
+    <button id="btn-all-paper" onclick="startAllPaper(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #166534;background:linear-gradient(135deg,#0a1f10,#0d3018);color:#4ade80;border-radius:8px;cursor:pointer;transition:all 0.2s;">
+      ▶ START ALL PAPER TRADES
     </button>
-    <button id="btn-both-live" onclick="startBothLive(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #7f1d1d;background:linear-gradient(135deg,#1a0505,#2d0a0a);color:#ef4444;border-radius:8px;cursor:pointer;transition:all 0.2s;">
-      ▶ START BOTH LIVE TRADE
+    <button id="btn-all-live" onclick="startAllLive(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #7f1d1d;background:linear-gradient(135deg,#1a0505,#2d0a0a);color:#ef4444;border-radius:8px;cursor:pointer;transition:all 0.2s;">
+      ▶ START ALL LIVE TRADES
     </button>
   </div>
 
@@ -906,6 +953,66 @@ function renderLiveStatus(d){
     +posHtml;
 }
 
+${paModeOn ? `
+function renderPAPaperStatus(d){
+  var rb=document.getElementById('pa-paper-run-badge'), sb=document.getElementById('pa-paper-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var _u=(d.unrealisedPnl!=null)?d.unrealisedPnl:d.unrealised;
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(_u);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:_u);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry Spot <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
+      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">Unrealised <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  var capital=d.capital!=null?'\\u20b9'+parseFloat(d.capital).toFixed(0):'—';
+  document.getElementById('pa-paper-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Unrealised PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Price Action</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Capital</div><div class="ts-val">'+capital+'</div><div class="ts-sub">Simulated</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Total PnL (all-time)</div><div class="ts-val '+fmtPnl(d.totalPnl).cls+'">'+fmtPnl(d.totalPnl).txt+'</div><div class="ts-sub">From saved data</div></div>'
+    +'</div>'
+    +posHtml;
+}
+
+function renderPALiveStatus(d){
+  var rb=document.getElementById('pa-live-run-badge'), sb=document.getElementById('pa-live-stop-badge');
+  if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
+  var _u=(d.unrealisedPnl!=null)?d.unrealisedPnl:d.unrealised;
+  var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(_u);
+  var posHtml='';
+  if(d.position){
+    var p=d.position, pp=fmtPnl(p.optPremiumPnl!=null?p.optPremiumPnl:_u);
+    posHtml='<div class="ts-pos-bar">'
+      +'<span class="ts-pos-item"><strong>'+p.side+'</strong> &nbsp;'+p.symbol+'</span>'
+      +'<span class="ts-pos-item">Entry <strong>\\u20b9'+(p.entryPrice||'—')+'</strong></span>'
+      +(p.optionEntryLtp?'<span class="ts-pos-item">Opt Entry <strong>\\u20b9'+p.optionEntryLtp+'</strong></span>':'')
+      +(p.optionCurrentLtp?'<span class="ts-pos-item">Opt LTP <strong>\\u20b9'+p.optionCurrentLtp+'</strong></span>':'')
+      +'<span class="ts-pos-item '+(pp.cls==='pos'?'pnl-pos':pp.cls==='neg'?'pnl-neg':'')+'">P&L <strong>'+pp.txt+'</strong></span>'
+      +(p.stopLoss?'<span class="ts-pos-item">SL <strong>\\u20b9'+p.stopLoss+'</strong></span>':'')
+      +'</div>';
+  } else if(d.running){
+    posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
+  }
+  document.getElementById('pa-live-status-body').innerHTML=
+    '<div class="ts-grid">'
+    +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">Ticks / Candles</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Price Action</div></div>'
+    +'</div>'
+    +posHtml;
+}
+` : ''}
 ${scalpModeOn ? `
 function renderScalpPaperStatus(d){
   var rb=document.getElementById('scalp-paper-run-badge'), sb=document.getElementById('scalp-paper-stop-badge');
@@ -989,45 +1096,67 @@ async function pollDashboardStatus(){
     if(sr.ok){ var sd=await sr.json(); renderScalpLiveStatus(sd); }
     else { renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
   } catch(e){ renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
+  // PA Paper status
+  ${paModeOn ? `try {
+    var pp = await fetch('/pa-paper/status/data',{cache:'no-store'});
+    if(pp.ok){ var ppd=await pp.json(); renderPAPaperStatus(ppd); }
+    else { renderPAPaperStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  } catch(e){ renderPAPaperStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  // PA Live status
+  try {
+    var plr = await fetch('/pa-live/status/data',{cache:'no-store'});
+    if(plr.ok){ var pld=await plr.json(); renderPALiveStatus(pld); }
+    else { renderPALiveStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
+  } catch(e){ renderPALiveStatus({running:false,sessionPnl:0,unrealised:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
   // Toggle quick-action buttons based on running state
-  var bPaper=document.getElementById('btn-both-paper'), bLive=document.getElementById('btn-both-live');
+  var bPaper=document.getElementById('btn-all-paper'), bLive=document.getElementById('btn-all-live');
+  function _isOn(id){ var el=document.getElementById(id); return !!(el && el.style.display!=='none'); }
   if(bPaper){
-    var paperOn=document.getElementById('paper-run-badge')&&document.getElementById('paper-run-badge').style.display!=='none';
-    var spOn=document.getElementById('scalp-paper-run-badge')&&document.getElementById('scalp-paper-run-badge').style.display!=='none';
-    if(paperOn&&spOn){ bPaper.disabled=true; bPaper.textContent='✓ BOTH PAPER RUNNING'; bPaper.style.borderColor='#166534'; bPaper.style.opacity='0.6'; }
-    else { bPaper.disabled=false; bPaper.textContent='▶ START BOTH PAPER TEST'; bPaper.style.opacity='1'; }
+    var allOn = _isOn('paper-run-badge')
+      && (${scalpModeOn ? "_isOn('scalp-paper-run-badge')" : "true"})
+      && (${paModeOn ? "_isOn('pa-paper-run-badge')" : "true"});
+    if(allOn){ bPaper.disabled=true; bPaper.textContent='✓ ALL PAPER RUNNING'; bPaper.style.borderColor='#166534'; bPaper.style.opacity='0.6'; }
+    else { bPaper.disabled=false; bPaper.textContent='▶ START ALL PAPER TRADES'; bPaper.style.opacity='1'; }
   }
   if(bLive){
-    var liveOn=document.getElementById('live-run-badge')&&document.getElementById('live-run-badge').style.display!=='none';
-    var slOn=document.getElementById('scalp-live-run-badge')&&document.getElementById('scalp-live-run-badge').style.display!=='none';
-    if(liveOn&&slOn){ bLive.disabled=true; bLive.textContent='✓ BOTH LIVE RUNNING'; bLive.style.borderColor='#7f1d1d'; bLive.style.opacity='0.6'; }
-    else { bLive.disabled=false; bLive.textContent='▶ START BOTH LIVE TRADE'; bLive.style.opacity='1'; }
+    var allLiveOn = _isOn('live-run-badge')
+      && (${scalpModeOn ? "_isOn('scalp-live-run-badge')" : "true"})
+      && (${paModeOn ? "_isOn('pa-live-run-badge')" : "true"});
+    if(allLiveOn){ bLive.disabled=true; bLive.textContent='✓ ALL LIVE RUNNING'; bLive.style.borderColor='#7f1d1d'; bLive.style.opacity='0.6'; }
+    else { bLive.disabled=false; bLive.textContent='▶ START ALL LIVE TRADES'; bLive.style.opacity='1'; }
   }
 }
 pollDashboardStatus();
 
-// ── Quick Action: Start Both Paper / Both Live ──────────────────────────────
-async function startBothPaper(btn){
-  btn.disabled=true; btn.textContent='⏳ Starting Paper + Scalp Paper...';
-  try {
-    var r1 = await secretFetch('/swing-paper/start');
-    await r1.json().catch(function(){});
-    var r2 = await secretFetch('/scalp-paper/start');
-    await r2.json().catch(function(){});
-  } catch(e){ alert('Error: '+e.message); }
-  setTimeout(function(){ location.reload(); }, 1000);
+// ── Quick Action: Start All Paper / All Live ────────────────────────────────
+var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}];
+var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}];
+
+async function _startAll(endpoints){
+  for (var i=0;i<endpoints.length;i++){
+    try {
+      var r = await secretFetch(endpoints[i]);
+      if(r) await r.json().catch(function(){});
+    } catch(e) { /* continue with next */ }
+  }
 }
 
-async function startBothLive(btn){
-  if(!confirm('Start BOTH Live Trade + Scalp Live? Real orders will be placed.')) return;
-  btn.disabled=true; btn.textContent='⏳ Starting Live + Scalp Live...';
-  try {
-    var r1 = await secretFetch('/swing-live/start');
-    await r1.json().catch(function(){});
-    var r2 = await secretFetch('/scalp-live/start');
-    await r2.json().catch(function(){});
-  } catch(e){ alert('Error: '+e.message); }
-  setTimeout(function(){ location.reload(); }, 1000);
+async function startAllPaper(btn){
+  btn.disabled=true; btn.textContent='⏳ Starting all paper trades...';
+  await _startAll(PAPER_ENDPOINTS);
+  setTimeout(function(){ location.reload(); }, 1200);
+}
+
+async function startAllLive(btn){
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Start ALL Live Trades',
+    message: 'Start Swing Live'+(${scalpModeOn ? "' + Scalp Live'" : "''"})+(${paModeOn ? "' + PA Live'" : "''"})+'?\\nReal orders will be placed on broker accounts.',
+    confirmText: 'Start All', confirmClass: 'modal-btn-danger'
+  });
+  if(!ok) return;
+  btn.disabled=true; btn.textContent='⏳ Starting all live trades...';
+  await _startAll(LIVE_ENDPOINTS);
+  setTimeout(function(){ location.reload(); }, 1200);
 }
 
 // ── Candle cache info ─────────────────────────────────────────────────────────
