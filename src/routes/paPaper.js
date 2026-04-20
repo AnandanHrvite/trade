@@ -28,7 +28,7 @@ const { reverseSlice, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, get
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
-const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
+const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tickSimulator = require("../services/tickSimulator");
 
@@ -569,6 +569,16 @@ async function onCandleClose(bar) {
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
     log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
+    if (!state._simMode) {
+      const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+      notifySignal({
+        mode: "PA-PAPER",
+        signal: "SKIP",
+        reason: result.reason ? String(result.reason).slice(0, 200) : "—",
+        spot: lastBar.close,
+        time: _barIST,
+      });
+    }
     return;
   }
 
@@ -757,6 +767,20 @@ router.get("/start", async (req, res) => {
 
   if (typeof paStrategy.reset === "function") paStrategy.reset();
   log(`🟢 [PA-PAPER] Session started — ${PA_RES}-min candles`);
+
+  notifyStarted({
+    mode: "PA-PAPER",
+    text: [
+      `📄 PRICE ACTION PAPER — STARTED`,
+      ``,
+      `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+      `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+      ``,
+      `Strategy  : ${paStrategy.NAME || "Price Action"}`,
+      `Resolution: ${PA_RES}-min candles`,
+    ].join("\n"),
+  });
+
   res.redirect("/pa-paper/status");
 });
 
@@ -815,6 +839,13 @@ function stopSession() {
   }
 
   log("🔴 [PA-PAPER] Session stopped");
+
+  notifyDayReport({
+    mode: "PA-PAPER",
+    sessionTrades: state.sessionTrades,
+    sessionPnl:    state.sessionPnl,
+    sessionStart:  state.sessionStart,
+  });
 }
 
 router.get("/stop", (req, res) => {

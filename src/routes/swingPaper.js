@@ -301,7 +301,7 @@ function getCapitalFromEnv() {
 // This avoids ALL Fyers singleton reconnect issues permanently.
 
 const fyers = require('../config/fyers');
-const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require('../utils/notify');
+const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require('../utils/notify');
 const NIFTY_INDEX_SYMBOL = 'NSE:NIFTY50-INDEX';
 
 // ── Pre-fetch option symbols in background after each candle close ──────────
@@ -802,15 +802,16 @@ async function onCandleClose(candle) {
   log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   // Telegram: candle close signal update (only when flat — no position open; skip in sim mode)
-  if (!ptState._simMode && !ptState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
+  if (!ptState._simMode && !ptState.position && signal !== null) {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
-    const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
-    const _shortReason = reason ? reason.slice(0, 120) : "—";
-    sendTelegram([
-      `${_signalEmoji} [PAPER] ${_candleIST} — ${signal}`,
-      `Spot: ₹${candle.close}`,
-      `${_shortReason}`,
-    ].join("\n"));
+    notifySignal({
+      mode: "PAPER",
+      signal,
+      reason: reason ? reason.slice(0, 200) : "—",
+      strength: signalStrength,
+      spot: candle.close,
+      time: _candleIST,
+    });
   }
   if (ptState.position) {
     const _p    = ptState.position;
@@ -1388,13 +1389,15 @@ function saveSession() {
 function generatePaperDailyReport(trades, sessionPnl) {
   try {
     if (!trades || trades.length === 0) {
-      sendTelegram([
-        `📄 PAPER TRADE — DAILY REPORT`,
-        `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`,
-        ``,
-        `No trades taken today.`,
-        `Session PnL: ₹0`,
-      ].join("\n"));
+      if (canSend("TG_SWING_DAYREPORT")) {
+        sendTelegram([
+          `📄 SWING PAPER — DAY REPORT`,
+          `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" })}`,
+          ``,
+          `No trades taken today.`,
+          `Session PnL: ₹0`,
+        ].join("\n"));
+      }
       return;
     }
 
@@ -1447,21 +1450,23 @@ function generatePaperDailyReport(trades, sessionPnl) {
       .map(([label, g]) => `  ${label}: ${g.count}x WR${((g.wins/g.count)*100).toFixed(0)}% ₹${g.pnl.toFixed(0)}`)
       .join("\n");
 
-    sendTelegram([
-      `📄 PAPER TRADE — DAILY REPORT`,
-      `📅 ${dateStr}`,
-      ``,
-      `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
-      `Win Rate : ${winRate}%`,
-      `Session  : ${pnlEmoji} ₹${sessionPnl}`,
-      `Avg Win  : ₹${avgWin}  |  Avg Loss: ₹${avgLoss}`,
-      ``,
-      `Exit Breakdown:`,
-      exitBreakdown,
-      ``,
-      `Best : ₹${best.pnl} — ${best.side} ${best.exitReason}`,
-      `Worst: ₹${worst.pnl} — ${worst.side} ${worst.exitReason}`,
-    ].join("\n"));
+    if (canSend("TG_SWING_DAYREPORT")) {
+      sendTelegram([
+        `📄 SWING PAPER — DAY REPORT`,
+        `📅 ${dateStr}`,
+        ``,
+        `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
+        `Win Rate : ${winRate}%`,
+        `Session  : ${pnlEmoji} ₹${sessionPnl}`,
+        `Avg Win  : ₹${avgWin}  |  Avg Loss: ₹${avgLoss}`,
+        ``,
+        `Exit Breakdown:`,
+        exitBreakdown,
+        ``,
+        `Best : ₹${best.pnl} — ${best.side} ${best.exitReason}`,
+        `Worst: ₹${worst.pnl} — ${worst.side} ${worst.exitReason}`,
+      ].join("\n"));
+    }
 
   } catch (err) {
     log(`⚠️ [PAPER] Daily report error: ${err.message}`);
@@ -1608,22 +1613,25 @@ router.get("/start", async (req, res) => {
   } catch (_) {}
 
   const _ptAllOk = _ptChecks.fyers.ok && _ptChecks.symbol.ok;
-  sendTelegram([
-    `${_ptAllOk ? "✅" : "⚠️"} PAPER TRADE STARTED`,
-    ``,
-    `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
-    `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
-    ``,
-    `Strategy  : ${ACTIVE}`,
-    `Instrument: ${instrumentConfig.INSTRUMENT}`,
-    `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
-    `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
-    `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
-    ``,
-    `Pre-Market Checklist:`,
-    `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
-    `${_ptChecks.symbol.ok ? "✅" : "⚠️"} Symbols : ${_ptChecks.symbol.msg || "not checked"}`,
-  ].join("\n"));
+  notifyStarted({
+    mode: "PAPER",
+    text: [
+      `${_ptAllOk ? "✅" : "⚠️"} SWING PAPER — STARTED`,
+      ``,
+      `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+      `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+      ``,
+      `Strategy  : ${ACTIVE}`,
+      `Instrument: ${instrumentConfig.INSTRUMENT}`,
+      `Capital   : ₹${data.capital.toLocaleString("en-IN")}`,
+      `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
+      `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
+      ``,
+      `Pre-Market Checklist:`,
+      `${_ptChecks.fyers.ok  ? "✅" : "❌"} Fyers   : ${_ptChecks.fyers.msg}`,
+      `${_ptChecks.symbol.ok ? "✅" : "⚠️"} Symbols : ${_ptChecks.symbol.msg || "not checked"}`,
+    ].join("\n"),
+  });
 
   // ── PRE-LOAD today's historical candles so strategy fires immediately ────────
   // Without this, EMA (needs 25 candles) / RSI (needs 16) won't fire for hours

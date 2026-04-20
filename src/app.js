@@ -15,6 +15,7 @@ const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram } = require("./utils/notify");
+const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(express.json());
@@ -302,6 +303,7 @@ app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper tra
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",  require("./routes/consolidation")); // ← unified cross-mode trade history + analytics
+app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
@@ -1417,6 +1419,9 @@ server.listen(PORT, HOST, () => {
   // Checks both brokers for orphaned positions that survived a crash/restart.
   // Alert-only — does NOT auto-close (too risky without user confirmation).
   reconcileOrphanedPositions();
+
+  // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
+  consolidatedEodReporter.start();
 });
 
 // ── Position Reconciliation — detect orphaned positions after crash ──────────

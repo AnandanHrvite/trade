@@ -73,7 +73,7 @@ function getISTMinutes() {
   return Math.floor(istSec/60) % 1440;
 }
 const sharedSocketState = require("../utils/sharedSocketState");
-const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
+const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { fetchCandles } = require("../services/backtestEngine");
 const { fetchCandlesCached } = require("../utils/candleCache");
 // ── Live session persistence ──────────────────────────────────────────────────
@@ -190,14 +190,14 @@ function generateDailyReport(trades, sessionPnl) {
     log(`${"═".repeat(54)}\n`);
 
     // Telegram report
-    if (isConfigured()) {
+    if (canSend("TG_SWING_DAYREPORT")) {
       const exitBreakdown = Object.entries(exitGroups)
         .sort((a, b) => b[1].count - a[1].count)
         .map(([label, g]) => `  ${label}: ${g.count}x (WR${((g.wins/g.count)*100).toFixed(0)}% PnL ₹${g.pnl.toFixed(0)})`)
         .join("\n");
 
       const telegramLines = [
-        `⚡ LIVE TRADE — DAILY REPORT`,
+        `⚡ SWING LIVE — DAY REPORT`,
         `📅 ${dateStr}`,
         ``,
         `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
@@ -982,15 +982,15 @@ async function onCandleClose(candle) {
 
   // Telegram: candle close signal update (only when flat — no position open)
   // Tells you exactly why a trade was/wasn't taken every 15 min candle
-  if (!tradeState.position && signal !== null && process.env.TG_TRADE_SIGNALS !== "false" && process.env.TG_TRADE_SIGNALS !== "0") {
+  if (!tradeState.position && signal !== null) {
     const _candleIST = new Date(candle.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
-    const _signalEmoji = signal === "BUY_CE" ? "📈" : signal === "BUY_PE" ? "📉" : "⏸";
-    const _shortReason = reason ? reason.slice(0, 120) : "—";
-    sendTelegram([
-      `${_signalEmoji} [LIVE] ${_candleIST} — ${signal}`,
-      `Spot: ₹${candle.close}`,
-      `${_shortReason}`,
-    ].join("\n"));
+    notifySignal({
+      mode: "LIVE",
+      signal,
+      reason: reason ? reason.slice(0, 200) : "—",
+      spot: candle.close,
+      time: _candleIST,
+    });
   }
 
   // ── entryPrevMid is FIXED at entry time — never update it here ──────────────
@@ -1760,23 +1760,26 @@ router.get("/start", async (req, res) => {
 
   // ── Telegram: Session Started + Checklist results (one combined message) ─────
   const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
-  sendTelegram([
-    `${_allOk ? "✅" : "⚠️"} LIVE TRADE STARTED`,
-    ``,
-    `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
-    `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
-    ``,
-    `Strategy  : ${ACTIVE}`,
-    `Instrument: ${instrumentConfig.INSTRUMENT}`,
-    `Lot Qty   : ${getLotQty()}`,
-    `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
-    `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
-    ``,
-    `Pre-Market Checklist:`,
-    `${_checks.fyers.ok   ? "✅" : "❌"} Fyers   : ${_checks.fyers.msg}`,
-    `${_checks.symbol.ok  ? "✅" : "⚠️"} Symbols : ${_checks.symbol.msg || "not checked"}`,
-    `${_checks.zerodha.ok ? "✅" : "❌"} Zerodha : ${_checks.zerodha.msg}`,
-  ].join("\n"));
+  notifyStarted({
+    mode: "LIVE",
+    text: [
+      `${_allOk ? "✅" : "⚠️"} SWING LIVE — STARTED`,
+      ``,
+      `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+      `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+      ``,
+      `Strategy  : ${ACTIVE}`,
+      `Instrument: ${instrumentConfig.INSTRUMENT}`,
+      `Lot Qty   : ${getLotQty()}`,
+      `Window    : ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`,
+      `Max Loss  : ₹${_MAX_DAILY_LOSS} | Max Trades: ${_MAX_DAILY_TRADES}`,
+      ``,
+      `Pre-Market Checklist:`,
+      `${_checks.fyers.ok   ? "✅" : "❌"} Fyers   : ${_checks.fyers.msg}`,
+      `${_checks.symbol.ok  ? "✅" : "⚠️"} Symbols : ${_checks.symbol.msg || "not checked"}`,
+      `${_checks.zerodha.ok ? "✅" : "❌"} Zerodha : ${_checks.zerodha.msg}`,
+    ].join("\n"),
+  });
 
   // Pre-load candles (same as paperTrade)
   try {
@@ -1864,7 +1867,22 @@ router.get("/stop", async (req, res) => {
     await squareOff(tradeState.currentBar.close, "Manual stop");
   }
 
+  const _hadTradesForReport = tradeState.sessionTrades && tradeState.sessionTrades.length > 0;
+  const _sessionTradesSnap  = tradeState.sessionTrades ? tradeState.sessionTrades.slice() : [];
+  const _sessionPnlSnap     = tradeState.sessionPnl;
+  const _sessionStartSnap   = tradeState.sessionStart;
+
   saveLiveSession();
+  // Zero-trade case: rich report is skipped (saveLiveSession returns early).
+  // Emit a basic day report so TG_SWING_DAYREPORT subscribers still get closure.
+  if (!_hadTradesForReport) {
+    notifyDayReport({
+      mode: "LIVE",
+      sessionTrades: _sessionTradesSnap,
+      sessionPnl:    _sessionPnlSnap,
+      sessionStart:  _sessionStartSnap,
+    });
+  }
   stopOptionPolling();
   // Only stop socket if no scalp mode is piggybacking
   if (!sharedSocketState.isScalpActive()) {

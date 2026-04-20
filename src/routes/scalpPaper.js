@@ -29,7 +29,7 @@ const { reverseSlice, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, get
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
-const { notifyEntry, notifyExit, sendTelegram, isConfigured } = require("../utils/notify");
+const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tickSimulator = require("../services/tickSimulator");
 
@@ -554,6 +554,16 @@ async function onCandleClose(bar) {
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
     log(`⏭️ [SCALP-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    if (!state._simMode) {
+      const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
+      notifySignal({
+        mode: "SCALP-PAPER",
+        signal: "SKIP",
+        reason: result.reason ? String(result.reason).slice(0, 200) : "—",
+        spot: lastBar.close,
+        time: _barIST,
+      });
+    }
     return;
   }
 
@@ -743,6 +753,22 @@ router.get("/start", async (req, res) => {
   });
 
   log(`🟢 [SCALP-PAPER] Session started — ${SCALP_RES}-min candles`);
+
+  notifyStarted({
+    mode: "SCALP-PAPER",
+    text: [
+      `📄 SCALP PAPER — STARTED`,
+      ``,
+      `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
+      `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
+      ``,
+      `Strategy  : ${scalpStrategy.NAME || "Scalp"}`,
+      `Resolution: ${SCALP_RES}-min candles`,
+      `Window    : ${process.env.SCALP_ENTRY_START || "09:20"} → ${process.env.SCALP_ENTRY_END || "15:10"} IST`,
+      _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
+    ].filter(l => l !== null).join("\n"),
+  });
+
   res.redirect("/scalp-paper/status");
 });
 
@@ -801,6 +827,13 @@ function stopSession() {
   }
 
   log("🔴 [SCALP-PAPER] Session stopped");
+
+  notifyDayReport({
+    mode: "SCALP-PAPER",
+    sessionTrades: state.sessionTrades,
+    sessionPnl:    state.sessionPnl,
+    sessionStart:  state.sessionStart,
+  });
 }
 
 router.get("/stop", (req, res) => {

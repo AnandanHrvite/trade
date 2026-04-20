@@ -217,11 +217,29 @@ const SETTINGS_SCHEMA = [
     icon: "📱",
     fields: [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
-      { key: "TG_TRADE_ENTRY", label: "Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a 15-min strategy trade is entered", default: "true" },
-      { key: "TG_TRADE_EXIT", label: "Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a 15-min strategy trade is exited", default: "true" },
-      { key: "TG_TRADE_SIGNALS", label: "Trade Signals (Skip)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send candle-close signal updates when flat (why trade was/wasn't taken)", default: "true" },
-      { key: "TG_SCALP_ENTRY", label: "Scalp Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is entered", default: "true" },
-      { key: "TG_SCALP_EXIT", label: "Scalp Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Send notification when a scalp trade is exited", default: "true" },
+      { key: "TG_ENABLED", label: "Telegram Alerts (Master)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch — when OFF, no Telegram alerts are sent regardless of the toggles below", default: "true" },
+
+      { key: "TG_SWING_STARTED", label: "Swing — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Swing (15-min) paper/live session is started", default: "true" },
+      { key: "TG_SCALP_STARTED", label: "Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Scalp paper/live session is started", default: "true" },
+      { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action paper/live session is started", default: "true" },
+
+      { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (15-min) trade entry (paper + live)", default: "true" },
+      { key: "TG_SCALP_ENTRY", label: "Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade entry (paper + live)", default: "true" },
+      { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade entry (paper + live)", default: "true" },
+
+      { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (15-min) trade exit (paper + live)", default: "true" },
+      { key: "TG_SCALP_EXIT", label: "Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade exit (paper + live)", default: "true" },
+      { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade exit (paper + live)", default: "true" },
+
+      { key: "TG_SWING_SIGNALS", label: "Swing — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Swing trade was/wasn't taken)", default: "true" },
+      { key: "TG_SCALP_SIGNALS", label: "Scalp — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Scalp trade was/wasn't taken)", default: "false" },
+      { key: "TG_PA_SIGNALS",    label: "Price Action — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a PA trade was/wasn't taken)", default: "false" },
+
+      { key: "TG_SWING_DAYREPORT", label: "Swing — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Swing day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_SCALP_DAYREPORT", label: "Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Scalp day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send PA day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+
+      { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary across all modes at 15:30 IST", default: "true" },
     ],
   },
   {
@@ -285,8 +303,13 @@ const IMMEDIATE_KEYS = new Set([
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_GAMMA", "BACKTEST_THETA_DAY", "SWING_PAPER_CAPITAL",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
-  "TG_TRADE_ENTRY", "TG_TRADE_EXIT", "TG_TRADE_SIGNALS",
-  "TG_SCALP_ENTRY", "TG_SCALP_EXIT",
+  "TG_ENABLED",
+  "TG_SWING_STARTED", "TG_SCALP_STARTED", "TG_PA_STARTED",
+  "TG_SWING_ENTRY",   "TG_SCALP_ENTRY",   "TG_PA_ENTRY",
+  "TG_SWING_EXIT",    "TG_SCALP_EXIT",    "TG_PA_EXIT",
+  "TG_SWING_SIGNALS", "TG_SCALP_SIGNALS", "TG_PA_SIGNALS",
+  "TG_SWING_DAYREPORT", "TG_SCALP_DAYREPORT", "TG_PA_DAYREPORT",
+  "TG_DAYREPORT_CONSOLIDATED",
   "NIFTY_SPOT_FALLBACK", "SCALP_PAPER_CAPITAL", "CACHE_MAX_DAYS",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
