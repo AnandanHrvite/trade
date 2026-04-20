@@ -44,6 +44,9 @@ const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2",
 const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "350");
 const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
 const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+// Trail grace: suppress trail-exits in the first N seconds after entry
+// (prevents first-tick spike → tiny pullback from killing trades immediately)
+const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -224,6 +227,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     entryPrice:       price,
     spotAtEntry:      spotAtEntry || price,
     entryTime:        istNow(),
+    entryTimeMs:      simNow(),
     reason,
     stopLoss,
     initialStopLoss:  stopLoss,
@@ -454,15 +458,21 @@ function onTick(tick) {
     }
 
     // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    //    Grace period: skip trail-exit in first N secs (prevents first-tick spike kills)
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      let _pct = _SCALP_TRAIL_PCT;
-      for (const tier of _SCALP_TRAIL_TIERS) {
-        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-      }
-      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-      if (curPnl <= trailFloor) {
-        simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
-        return;
+      const _ageSecs = pos.entryTimeMs ? (simNow() - pos.entryTimeMs) / 1000 : Infinity;
+      if (_SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS) {
+        // Trail suppressed during grace window — SL still active above
+      } else {
+        let _pct = _SCALP_TRAIL_PCT;
+        for (const tier of _SCALP_TRAIL_TIERS) {
+          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+        }
+        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+        if (curPnl <= trailFloor) {
+          simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
+          return;
+        }
       }
     }
 

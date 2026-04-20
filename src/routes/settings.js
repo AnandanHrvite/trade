@@ -107,6 +107,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much profit", default: "350" },
       { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.SESSION, desc: "Base: exit when profit drops below X% of peak", default: "65" },
       { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
+      { key: "SCALP_TRAIL_GRACE_SECS", label: "Trail Grace (secs)", type: "number", min: 0, max: 300, step: 10, effect: EFFECT.SESSION, desc: "Suppress trail-exit in first N seconds after entry (prevents first-tick spike + tiny pullback from killing trades). SL still active. Set 0 to disable.", default: "0" },
       // ── Risk management (Prev Candle SL) ──
       { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on prev candle SL distance", default: "25" },
       { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on prev candle SL (prevents too-tight SL on tiny candles)", default: "8" },
@@ -310,7 +311,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_PE_THRESHOLD",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
-  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS",
+  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS", "SCALP_TRAIL_GRACE_SECS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
