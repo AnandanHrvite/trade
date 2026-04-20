@@ -4455,7 +4455,7 @@ router.post("/simulate/start", async (req, res) => {
         return res.json({ success: false, error: `No candles found for ${date} — holiday or weekend?` });
       }
 
-      const warmup = warmupCandles.slice(-30);
+      const warmup = warmupCandles.slice(-300);
       log(`📦 [SIM] Date: ${date} | ${warmup.length} warmup + ${sessionCandles.length} session candles (${TRADE_RES}-min) | Speed: ${speed}x`);
 
       const result = tickSimulator.startFromCandles({
