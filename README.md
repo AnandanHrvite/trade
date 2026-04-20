@@ -149,8 +149,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TRADE_RESOLUTION` | `15` | Candle size in minutes |
-| `MAX_DAILY_LOSS` | `3000` | Daily kill-switch in INR |
-| `MAX_DAILY_TRADES` | `10` | Daily entry cap |
+| `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
+| `MAX_DAILY_TRADES` | `20` | Daily entry cap |
 | `SWING_LIVE_ENABLED` | `false` | Must be `true` for Zerodha orders |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `EMA30_FILTER` | `true` | Medium-term trend gate |

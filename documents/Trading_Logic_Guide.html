@@ -793,7 +793,7 @@
       <!-- Formula footer -->
       <text x="350" y="135" fill="#7a94b8" font-size="10" text-anchor="middle">Option PnL = (NIFTY Move &times; &delta;) &minus; (&theta; &times; candles &divide; candles_per_day) &minus; Slippage &minus; Charges</text>
       <text x="350" y="155" fill="#5a7499" font-size="9" text-anchor="middle">&theta; decay = 10 pts/day &divide; 25 candles = 0.4 pts/candle for 15-min | Gamma adjustment optional</text>
-      <text x="350" y="175" fill="#5a7499" font-size="9" text-anchor="middle">Lot PnL = Premium Move &times; Lot Size (75) &times; Lots (1) = 21.3 &times; 75 = &#8377;1,598</text>
+      <text x="350" y="175" fill="#5a7499" font-size="9" text-anchor="middle">Lot PnL = Premium Move &times; Lot Size (65) &times; Lots (1) = 21.3 &times; 65 = &#8377;1,385</text>
     </svg>
   </div>
 
@@ -1698,9 +1698,9 @@
   <div class="card">
     <h3>Position Size Calculation</h3>
     <div style="background:var(--bg3);border-radius:8px;padding:14px 18px;margin:10px 0;font-family:monospace;font-size:0.9rem;">
-      lotQty = NIFTY_LOT_SIZE &times; LOT_MULTIPLIER = <strong style="color:var(--accent2);">75 &times; 1 = 75 units</strong>
+      lotQty = NIFTY_LOT_SIZE &times; LOT_MULTIPLIER = <strong style="color:var(--accent2);">65 &times; 1 = 65 units</strong>
     </div>
-    <p style="font-size:0.85rem;color:var(--text2);">One lot of NIFTY options = 75 units. The LOT_MULTIPLIER scales position size for scaling up.</p>
+    <p style="font-size:0.85rem;color:var(--text2);">One lot of NIFTY options = 65 units (exchange-set default). The LOT_MULTIPLIER scales position size for scaling up.</p>
   </div>
 
   <div class="card">
@@ -1978,7 +1978,7 @@
           <tr><td><code>TRADE_ENTRY_START</code></td><td>09:30</td><td>Earliest entry time (IST)</td></tr>
           <tr><td><code>TRADE_ENTRY_END</code></td><td>14:00</td><td>Latest entry time (IST)</td></tr>
           <tr><td><code>TRADE_RESOLUTION</code></td><td>15</td><td>Candle timeframe (minutes)</td></tr>
-          <tr><td><code>NIFTY_LOT_SIZE</code></td><td>75</td><td>NIFTY lot size</td></tr>
+          <tr><td><code>NIFTY_LOT_SIZE</code></td><td>65</td><td>NIFTY lot size (exchange-set; override only if contract-size changes)</td></tr>
           <tr><td><code>LOT_MULTIPLIER</code></td><td>1</td><td>Number of lots per trade</td></tr>
         </tbody>
       </table>
