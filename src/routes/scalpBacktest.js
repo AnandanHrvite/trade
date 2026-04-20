@@ -819,10 +819,18 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <button class="preset-btn" onclick="setPreset('last6')">Last 6 months</button>
     <button class="preset-btn" onclick="setPreset('thisYear')">This year</button>
     <button class="preset-btn" onclick="setPreset('lastYear')">Last year</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:0 0 6px;flex-wrap:wrap;align-items:center;">
+    <button class="preset-btn" onclick="setPreset('last2y')">Last 2 yr</button>
     <button class="preset-btn" onclick="setPreset('last3y')">Last 3 yr</button>
     <button class="preset-btn" onclick="setPreset('last4y')">Last 4 yr</button>
     <button class="preset-btn" onclick="setPreset('last5y')">Last 5 yr</button>
     <button class="preset-btn" onclick="setPreset('last6y')">Last 6 yr</button>
+    <button class="preset-btn" onclick="setPreset('last7y')">Last 7 yr</button>
+    <button class="preset-btn" onclick="setPreset('last8y')">Last 8 yr</button>
+  </div>
+  <div style="display:flex;gap:6px;margin:0 0 6px;flex-wrap:wrap;align-items:center;">
+    ${(() => { const cy=new Date().getFullYear(); return Array.from({length:8},(_,i)=>cy-i).map(yr=>`<button class="preset-btn" onclick="setPreset('y${yr}')">${yr}</button>`).join('\n    '); })()}
   </div>
   <div style="display:flex;gap:6px;margin:0 0 12px;flex-wrap:wrap;align-items:center;">
     <span style="font-size:0.6rem;color:#94a3b8;font-family:'IBM Plex Mono',monospace;">${new Date().getFullYear()}</span>
@@ -838,6 +846,7 @@ ${buildSidebar('scalpBacktest', liveActive)}
     var lastWeekFri=new Date(lastWeekMon); lastWeekFri.setDate(lastWeekFri.getDate()+4);
     var monthMap={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
     if(monthMap.hasOwnProperty(p)){var mi=monthMap[p];var endD=fmt(new Date(y,mi+1,0));document.getElementById('f').value=fmt(new Date(y,mi,1));document.getElementById('t').value=mi<m?endD:(mi===m?today:endD);return;}
+    if(/^y\d{4}$/.test(p)){var yr=parseInt(p.slice(1));document.getElementById('f').value=yr+'-01-01';document.getElementById('t').value=(yr===y)?today:(yr+'-12-31');return;}
     var presets={
       thisWeek: [fmt(monday), today],
       lastWeek: [fmt(lastWeekMon), fmt(lastWeekFri)],
@@ -847,10 +856,13 @@ ${buildSidebar('scalpBacktest', liveActive)}
       last6: [fmt(new Date(y,m-5,1)), today],
       thisYear: [fmt(new Date(y,0,1)), today],
       lastYear: [fmt(new Date(y-1,0,1)), fmt(new Date(y-1,11,31))],
+      last2y: [fmt(new Date(y-2,0,1)), today],
       last3y: [fmt(new Date(y-3,0,1)), today],
       last4y: [fmt(new Date(y-4,0,1)), today],
       last5y: [fmt(new Date(y-5,0,1)), today],
-      last6y: [fmt(new Date(y-6,0,1)), today]
+      last6y: [fmt(new Date(y-6,0,1)), today],
+      last7y: [fmt(new Date(y-7,0,1)), today],
+      last8y: [fmt(new Date(y-8,0,1)), today]
     };
     document.getElementById('f').value=presets[p][0];
     document.getElementById('t').value=presets[p][1];
