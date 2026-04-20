@@ -53,6 +53,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: null, collapsible: false,
       items: [
         { key: 'dashboard',     href: '/',              icon: '⌂',  label: 'Dashboard' },
+        { key: 'allBacktest',   href: '/all-backtest',  icon: '⏺',  label: 'All Backtest' },
         { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Consolidation' },
         { key: 'pnlHistory',    href: '/pnl-history',   icon: '💰', label: 'P&L History' },
       ]
@@ -108,7 +109,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // Block all backtest & paper (trading + scalping + PA) when ANY live mode is active
   const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE' || _paMode === 'PA_LIVE';
-  const blocked = anyLiveActive ? ['swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
+  const blocked = anyLiveActive ? ['allBacktest', 'swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
 
   function renderItem(p) {
     const isActive   = p.key === activePage;
