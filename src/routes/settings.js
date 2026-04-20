@@ -119,6 +119,9 @@ const SETTINGS_SCHEMA = [
       // ── BB Squeeze filter ──
       { key: "SCALP_BB_SQUEEZE_FILTER", label: "BB Squeeze Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when BB bands are narrow (consolidation = false breakouts)", default: "true" },
       { key: "SCALP_BB_MIN_WIDTH_PCT", label: "BB Min Width (%)", type: "number", min: 0.05, max: 0.5, step: 0.01, effect: EFFECT.SESSION, desc: "Min BB width as % of price (0.15 = skip if BB width < 36pts on NIFTY 24000)", default: "0.15" },
+      // ── V4 Quality filters ──
+      { key: "SCALP_REQUIRE_APPROACH", label: "Require Approach", type: "toggle", effect: EFFECT.SESSION, desc: "Block entry if prev candle was on opposite half of BB (CE: prev close < BB middle = first-touch breakout, likely fades)", default: "false" },
+      { key: "SCALP_MIN_BODY_RATIO", label: "Min Body Ratio", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Min entry candle body as % of range (0.5 = skip doji/wick breakouts where body < 50% of high-low). Set 0 to disable.", default: "0" },
       // ── Activity filter ──
       { key: "SCALP_ACTIVITY_FILTER", label: "Activity Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when candle range is below average (low activity = false BB breakouts)", default: "false" },
       { key: "SCALP_ACTIVITY_FILTER_RATIO", label: "Activity Ratio", type: "number", min: 0.2, max: 1.0, step: 0.1, effect: EFFECT.SESSION, desc: "Min candle range vs 20-bar avg (0.5 = skip if range < 50% of avg)", default: "0.5" },
@@ -311,6 +314,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS", "SCALP_SL_PAUSE_CANDLES",
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
+  "SCALP_REQUIRE_APPROACH", "SCALP_MIN_BODY_RATIO",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────
