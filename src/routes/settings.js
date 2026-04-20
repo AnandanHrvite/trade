@@ -1018,6 +1018,43 @@ router.get("/", (req, res) => {
     .btn-restart:hover { background: rgba(239,68,68,0.15); border-color: var(--red); }
     .btn-restart:disabled { opacity: 0.4; cursor: not-allowed; }
 
+    /* ── Bulk paste section ──────────────────────────────── */
+    .bulk-section { padding: 18px 20px 20px; }
+    .bulk-section textarea {
+      width: 100%; min-height: 220px; resize: vertical;
+      background: var(--input-bg, #0a1528); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 14px; font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.78rem; line-height: 1.55; letter-spacing: 0.2px;
+    }
+    .bulk-section textarea:focus { outline: none; border-color: var(--accent); }
+    .bulk-section .bulk-hint {
+      font-size: 0.68rem; color: var(--muted); margin: 4px 0 10px; line-height: 1.5;
+    }
+    .bulk-section .bulk-actions {
+      display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap;
+    }
+    .btn-bulk-update {
+      background: rgba(245,158,11,0.10); color: #f59e0b; border: 1px solid #92400e;
+      padding: 10px 22px; border-radius: 8px; font-weight: 700; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit; transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn-bulk-update:hover { background: rgba(245,158,11,0.18); border-color: #f59e0b; }
+    .btn-bulk-update:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-bulk-clear {
+      background: transparent; color: var(--muted); border: 1px solid var(--border);
+      padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 0.82rem;
+      cursor: pointer; font-family: inherit;
+    }
+    .btn-bulk-clear:hover { color: var(--red); border-color: var(--red); }
+    .bulk-preview {
+      margin-top: 10px; padding: 10px 14px; background: rgba(59,130,246,0.06);
+      border: 1px solid rgba(59,130,246,0.15); border-radius: 8px;
+      font-size: 0.72rem; color: #93c5fd; display: none;
+    }
+    .bulk-preview.visible { display: block; }
+
     /* ── Mobile ──────────────────────────────────────────── */
     @media (max-width:640px) {
       .page { padding: 16px 14px 40px; }
@@ -1068,6 +1105,32 @@ router.get("/", (req, res) => {
       </div>
 
       ${sectionsHtml}
+
+      <!-- Bulk paste config -->
+      <div class="settings-section" data-section="bulk-paste">
+        <div class="section-title" onclick="toggleSection(this)">
+          <span class="section-chevron">▶</span>
+          📋 Bulk Update (Paste Config)
+          <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">paste → save → restart</span>
+        </div>
+        <div class="section-card">
+          <div class="bulk-section">
+            <div class="bulk-hint">
+              Paste <strong>KEY=VALUE</strong> pairs (one per line), then click <strong>Update &amp; Restart</strong>.
+              Supports <code>KEY=VALUE</code>, <code>KEY: VALUE</code>, quoted values, and <code>#</code> comment lines.
+              Sensitive keys (SECRET/TOKEN/ACCESS) are ignored. Applies all values and restarts the server.
+            </div>
+            <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;SCALP_RSI_PE_THRESHOLD=45&#10;SCALP_TRAIL_START=350&#10;VIX_MAX_ENTRY=25"></textarea>
+            <div class="bulk-preview" id="bulkPreview"></div>
+            <div class="bulk-actions">
+              <button class="btn-bulk-clear" onclick="clearBulkPaste()">Clear</button>
+              <button class="btn-bulk-update" id="bulkUpdateBtn" onclick="bulkUpdateAndRestart()">
+                <span>🚀</span> Update &amp; Restart
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- Restart Server -->
       <div class="settings-section">
@@ -1324,6 +1387,155 @@ function showToast(msg, type) {
   window._toastTimer = setTimeout(function() {
     el.classList.remove('show');
   }, 4000);
+}
+
+// ── Bulk paste: parse KEY=VALUE pairs from textarea ──────────────────────
+function parseBulkPaste(text) {
+  var out = {};
+  var skipped = [];
+  if (!text) return { updates: out, skipped: skipped };
+  var lines = text.split(/\\r?\\n/);
+  for (var i = 0; i < lines.length; i++) {
+    var raw = lines[i];
+    var line = raw.trim();
+    if (!line || line.charAt(0) === '#') continue;
+    // Strip "export " prefix if present
+    if (line.toLowerCase().indexOf('export ') === 0) line = line.slice(7).trim();
+    // Support KEY=VALUE or KEY: VALUE
+    var eq = line.indexOf('=');
+    var colon = line.indexOf(':');
+    var sep = -1;
+    if (eq !== -1 && (colon === -1 || eq < colon)) sep = eq;
+    else if (colon !== -1) sep = colon;
+    if (sep === -1) { skipped.push(raw); continue; }
+    var key = line.slice(0, sep).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
+    var val = line.slice(sep + 1).trim();
+    // Strip trailing inline comment (only when not inside quotes)
+    if (val.charAt(0) !== '"' && val.charAt(0) !== "'") {
+      var hash = val.indexOf(' #');
+      if (hash !== -1) val = val.slice(0, hash).trim();
+    }
+    // Strip surrounding quotes
+    if ((val.charAt(0) === '"' && val.charAt(val.length-1) === '"') ||
+        (val.charAt(0) === "'" && val.charAt(val.length-1) === "'")) {
+      val = val.slice(1, -1);
+    }
+    if (!key) { skipped.push(raw); continue; }
+    // Skip sensitive keys (server also strips them, but warn user)
+    if (key.indexOf('SECRET') >= 0 || key.indexOf('TOKEN') >= 0 || key.indexOf('ACCESS') >= 0) {
+      skipped.push(key + ' (sensitive — ignored)');
+      continue;
+    }
+    out[key] = val;
+  }
+  return { updates: out, skipped: skipped };
+}
+
+function previewBulkPaste() {
+  var box = document.getElementById('bulkPasteBox');
+  var pv  = document.getElementById('bulkPreview');
+  if (!box || !pv) return;
+  var parsed = parseBulkPaste(box.value);
+  var count = Object.keys(parsed.updates).length;
+  if (count === 0 && parsed.skipped.length === 0) {
+    pv.classList.remove('visible');
+    pv.textContent = '';
+    return;
+  }
+  var msg = count + ' valid key' + (count === 1 ? '' : 's') + ' parsed';
+  if (parsed.skipped.length) msg += ' · ' + parsed.skipped.length + ' line' + (parsed.skipped.length === 1 ? '' : 's') + ' skipped';
+  pv.textContent = msg;
+  pv.classList.add('visible');
+}
+
+function clearBulkPaste() {
+  var box = document.getElementById('bulkPasteBox');
+  if (box) box.value = '';
+  previewBulkPaste();
+}
+
+async function bulkUpdateAndRestart() {
+  var box = document.getElementById('bulkPasteBox');
+  var btn = document.getElementById('bulkUpdateBtn');
+  if (!box) return;
+  var parsed = parseBulkPaste(box.value);
+  var updates = parsed.updates;
+  var keys = Object.keys(updates);
+  if (keys.length === 0) {
+    showToast('No valid KEY=VALUE pairs found', 'error');
+    return;
+  }
+
+  var previewList = keys.slice(0, 8).map(function(k){ return k + '=' + updates[k]; }).join('\\n');
+  if (keys.length > 8) previewList += '\\n...and ' + (keys.length - 8) + ' more';
+
+  var ok = await showConfirm({
+    icon: '🚀',
+    title: 'Bulk Update & Restart',
+    message: 'Apply ' + keys.length + ' setting' + (keys.length > 1 ? 's' : '') + ' and restart the server?\\n\\n' + previewList + '\\n\\nActive trading sessions will stop. Page will reload.',
+    confirmText: 'Update & Restart',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span>⏳</span> Saving...';
+
+  try {
+    var res = await secretFetch('/settings/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: updates }),
+    });
+    if (!res) { btn.disabled = false; btn.innerHTML = '<span>🚀</span> Update & Restart'; return; }
+    var data = await res.json();
+    if (!data.success) {
+      showToast('Save failed: ' + (data.error || 'unknown'), 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀</span> Update & Restart';
+      return;
+    }
+    if (!data.fileSaved) {
+      showToast('⚠️ .env write failed: ' + (data.fileError || 'unknown') + ' — not restarting', 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀</span> Update & Restart';
+      return;
+    }
+
+    showToast(data.updatedCount + ' setting(s) saved — restarting server...', 'info');
+    btn.innerHTML = '<span>⏳</span> Restarting...';
+
+    secretFetch('/settings/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(function(){}); // server dies mid-request
+
+    // Poll until server back
+    var attempts = 0;
+    var poller = setInterval(function() {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(poller);
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀</span> Update & Restart';
+        showToast('Server did not come back — check manually', 'error');
+        return;
+      }
+      fetch('/settings/data', { method: 'GET' })
+        .then(function(r) {
+          if (r.ok) {
+            clearInterval(poller);
+            showToast('Server restarted — reloading...', 'success');
+            setTimeout(function(){ window.location.reload(); }, 500);
+          }
+        })
+        .catch(function(){});
+    }, 1000);
+  } catch (err) {
+    showToast('Update failed: ' + (err.message || err), 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<span>🚀</span> Update & Restart';
+  }
 }
 
 // ── .env viewer ─────────────────────────────────────────────────────────
