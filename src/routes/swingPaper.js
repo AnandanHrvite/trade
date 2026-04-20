@@ -3301,6 +3301,7 @@ router.get("/history", (req, res) => {
           </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
           <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-top:0.5px solid #0e1e36;">
             <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
+            <button class="export-btn reset-btn" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
           </div>
         </div>`;
       }).join("");
@@ -3584,6 +3585,25 @@ async function resetHistory() {
     if (d.success) { showToast('✅ ' + d.message, '#10b981'); setTimeout(function(){ location.reload(); }, 1200); }
     else { showToast('❌ ' + (d.error || 'Reset failed'), '#ef4444'); }
   } catch(e) { showToast('❌ Reset request failed: ' + e.message, '#ef4444'); }
+}
+
+async function deleteSession(idx, label) {
+  var ok = await showConfirm({
+    icon: '🗑️',
+    title: 'Delete ' + label + '?',
+    message: 'This will permanently delete this session and all its trades. Capital and P&L will be recalculated. This cannot be undone.',
+    confirmText: 'Yes, Delete',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  try {
+    var r = await secretFetch('/swing-paper/session/' + idx, { method: 'DELETE' });
+    if (!r) return;
+    var d;
+    try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
+    if (d.success) { showToast('✅ ' + (d.message || 'Session deleted'), '#10b981'); setTimeout(function(){ location.reload(); }, 900); }
+    else { showToast('❌ ' + (d.error || 'Delete failed'), '#ef4444'); }
+  } catch(e) { showToast('❌ Delete request failed: ' + e.message, '#ef4444'); }
 }
 
 // ── Copy & Analytics Functions ────────────────────────────────────────────
@@ -3991,6 +4011,42 @@ router.get("/reset", (req, res) => {
   return res.json({
     success: true,
     message: `Paper trade history cleared. Capital reset to ₹${freshCapital.toLocaleString("en-IN")}`,
+  });
+});
+
+/**
+ * DELETE /swing-paper/session/:index
+ * Delete a single session by its 0-based index in the sessions array
+ */
+router.delete("/session/:index", (req, res) => {
+  if (ptState.running) {
+    return res.status(400).json({
+      success: false,
+      error: "Stop paper trading first before deleting a session.",
+    });
+  }
+
+  const data = loadPaperData();
+  const idx = parseInt(req.params.index, 10);
+
+  if (isNaN(idx) || idx < 0 || idx >= data.sessions.length) {
+    return res.status(400).json({ success: false, error: "Invalid session index." });
+  }
+
+  const removed = data.sessions.splice(idx, 1)[0];
+  const removedPnl = (removed && (removed.sessionPnl != null ? removed.sessionPnl : removed.pnl)) || 0;
+  data.totalPnl = data.sessions.reduce(
+    (sum, s) => sum + (s.sessionPnl != null ? s.sessionPnl : (s.pnl || 0)),
+    0
+  );
+  data.capital = getCapitalFromEnv() + data.totalPnl;
+  savePaperData(data);
+
+  log(`🗑️ Deleted swing paper session ${idx + 1} (${removed?.date || "unknown date"}, PnL: ${removedPnl})`);
+
+  return res.json({
+    success: true,
+    message: "Session deleted successfully.",
   });
 });
 
