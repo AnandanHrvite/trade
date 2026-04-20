@@ -7,10 +7,12 @@
 
 const express = require("express");
 const os      = require("os");
-const { execSync } = require("child_process");
+const { execSync, exec } = require("child_process");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
+const backtestCache = require("../utils/backtestCache");
+const backtestJobs  = require("../utils/backtestJobManager");
 
 // ── CPU snapshot helper ─────────────────────────────────────────────────────
 let _prevCpus = os.cpus();
@@ -145,6 +147,27 @@ canvas { width:100%!important; height:220px!important; }
 .proc-item .pi-label { font-size:0.56rem; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; }
 .proc-item .pi-val   { font-size:0.9rem; font-weight:600; color:#c0d8b0; font-family:'IBM Plex Mono',monospace; }
 
+/* ── action bar ── */
+.action-bar { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:14px 18px; margin-bottom:22px; }
+.action-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:10px; }
+.action-buttons { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px; }
+.action-note { font-size:0.68rem; color:#2a3a20; font-style:italic; }
+.act-btn { font-family:'IBM Plex Mono',monospace; font-size:0.72rem; font-weight:600; padding:7px 14px; border-radius:6px; cursor:pointer; border:0.5px solid transparent; transition:all 0.12s; background:transparent; }
+.act-btn:hover { transform:translateY(-1px); filter:brightness(1.15); }
+.act-btn:active { transform:translateY(0); }
+.act-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+.act-blue   { background:rgba(59,130,246,0.08);  color:#60a5fa; border-color:rgba(59,130,246,0.3); }
+.act-amber  { background:rgba(245,158,11,0.08);  color:#fbbf24; border-color:rgba(245,158,11,0.3); }
+.act-purple { background:rgba(139,92,246,0.08);  color:#a78bfa; border-color:rgba(139,92,246,0.3); }
+.act-red    { background:rgba(239,68,68,0.08);   color:#f87171; border-color:rgba(239,68,68,0.3); }
+:root[data-theme="light"] .action-bar { background:#ffffff; border-color:#e0e4ea; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+:root[data-theme="light"] .action-title { color:#64748b; }
+:root[data-theme="light"] .action-note { color:#94a3b8; }
+:root[data-theme="light"] .act-blue   { color:#2563eb; border-color:#bfdbfe; background:#eff6ff; }
+:root[data-theme="light"] .act-amber  { color:#b45309; border-color:#fde68a; background:#fffbeb; }
+:root[data-theme="light"] .act-purple { color:#6d28d9; border-color:#ddd6fe; background:#f5f3ff; }
+:root[data-theme="light"] .act-red    { color:#b91c1c; border-color:#fecaca; background:#fef2f2; }
+
 /* ── progress bar ── */
 .bar-track { height:6px; background:#0a120a; border-radius:4px; overflow:hidden; margin-top:6px; }
 .bar-fill  { height:100%; border-radius:4px; transition:width 0.4s; }
@@ -176,6 +199,19 @@ ${buildSidebar("monitor", liveActive)}
 
 <div class="page-title">Instance Monitor</div>
 <div class="page-sub" id="sysInfo">Loading system info…</div>
+
+<!-- ── Maintenance action bar ── -->
+<div class="action-bar">
+  <div class="action-title">Reduce Resource Usage</div>
+  <div class="action-buttons">
+    <button class="act-btn act-blue"   onclick="doAction('gc','Force Node.js garbage collection?')"              title="Trigger V8 garbage collection — reclaims heap held by finished backtests">♻ Force GC</button>
+    <button class="act-btn act-amber"  onclick="doAction('prune-cache','Prune backtest cache files older than 90 days?')" title="Delete cached candle files older than 90 days">🧹 Prune Cache (90d)</button>
+    <button class="act-btn act-amber"  onclick="doAction('clear-cache-all','Delete ALL backtest cache files? Next backtest will refetch from Fyers API.')" title="Delete every cached candle file — backtests will refetch from API">🗑 Clear All Cache</button>
+    <button class="act-btn act-purple" onclick="doAction('clear-jobs','Clear finished backtest jobs from memory?')" title="Drop stored backtest trade arrays from memory">📦 Clear Finished Jobs</button>
+    <button class="act-btn act-red"    onclick="doAction('restart','Restart the Node.js process? Any running backtest will be killed.')" title="Restart the bot via PM2 — blocked when LIVE mode is active">⟳ Restart Node</button>
+  </div>
+  <div class="action-note">Tip: most memory growth comes from backtest trade arrays. Force GC + Clear Finished Jobs is the safest combo.</div>
+</div>
 
 <!-- ── Top stat cards ── -->
 <div class="stat-row">
@@ -310,6 +346,30 @@ function fmtUptime(sec) {
   return (d > 0 ? d + 'd ' : '') + h + 'h ' + m + 'm ' + s + 's';
 }
 
+async function doAction(action, confirmMsg) {
+  if (!window.confirm(confirmMsg)) return;
+  const buttons = document.querySelectorAll('.act-btn');
+  buttons.forEach(b => b.disabled = true);
+  try {
+    const r = await fetch('/monitor/action/' + action, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      if (typeof window.showToast === 'function') window.showToast(d.message || 'Done', 'success');
+      else alert(d.message || 'Done');
+      // Refresh stats immediately so the user sees the effect
+      setTimeout(poll, 300);
+    } else {
+      if (typeof window.showToast === 'function') window.showToast(d.error || 'Action failed', 'error');
+      else alert('Error: ' + (d.error || 'Action failed'));
+    }
+  } catch (e) {
+    if (typeof window.showToast === 'function') window.showToast('Request failed: ' + e.message, 'error');
+    else alert('Request failed: ' + e.message);
+  } finally {
+    buttons.forEach(b => b.disabled = false);
+  }
+}
+
 async function poll() {
   try {
     const r = await fetch('/monitor/data');
@@ -366,6 +426,86 @@ setInterval(poll, 2000);
 ${toastJS()}
 <\/script>
 </body></html>`);
+});
+
+// ── Action endpoints ────────────────────────────────────────────────────────
+// Let the user reclaim memory without SSHing into the box.
+function isAnyLiveActive() {
+  const s = sharedSocketState;
+  return (s.getMode && s.getMode() === "SWING_LIVE")
+      || (s.getScalpMode && s.getScalpMode() === "SCALP_LIVE")
+      || (s.getPAMode && s.getPAMode() === "PA_LIVE");
+}
+
+router.post("/action/gc", (_req, res) => {
+  const before = process.memoryUsage();
+  if (typeof global.gc !== "function") {
+    return res.status(400).json({ ok: false, error: "global.gc unavailable. Start Node with --expose-gc (see ecosystem.config.js)." });
+  }
+  try {
+    global.gc();
+    const after = process.memoryUsage();
+    const freedMB = +((before.heapUsed - after.heapUsed) / 1048576).toFixed(1);
+    res.json({
+      ok: true,
+      message: `GC freed ${freedMB} MB`,
+      before: { heapUsed: +(before.heapUsed/1048576).toFixed(1), rss: +(before.rss/1048576).toFixed(1) },
+      after:  { heapUsed: +(after.heapUsed/1048576).toFixed(1),  rss: +(after.rss/1048576).toFixed(1)  },
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/action/prune-cache", (_req, res) => {
+  try {
+    const before = backtestCache.getCacheStats();
+    // Force prune by calling the exposed function (reuses internal 90-day cutoff)
+    if (typeof backtestCache.pruneOldCacheFiles === "function") {
+      backtestCache.pruneOldCacheFiles();
+    }
+    const after = backtestCache.getCacheStats();
+    const freedMB = +(parseFloat(before.sizeMB) - parseFloat(after.sizeMB)).toFixed(2);
+    res.json({ ok: true, message: `Pruned backtest cache: ${freedMB} MB freed (${before.files}→${after.files} files)`, before, after });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/action/clear-cache-all", (_req, res) => {
+  try {
+    const removed = backtestCache.clearAllCache();
+    res.json({ ok: true, message: `Cleared all ${removed} cached backtest files` });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/action/clear-jobs", (_req, res) => {
+  try {
+    // Keep only the active running job; drop everything else from memory
+    let removed = 0;
+    if (typeof backtestJobs._purgeInactive === "function") {
+      removed = backtestJobs._purgeInactive();
+    }
+    res.json({ ok: true, message: `Cleared ${removed} finished backtest jobs from memory` });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+router.post("/action/restart", (_req, res) => {
+  if (isAnyLiveActive()) {
+    return res.status(409).json({ ok: false, error: "Cannot restart: a LIVE trading mode is active. Stop it first to avoid losing an open position." });
+  }
+  // PM2 will relaunch the process; respond first so the client gets a success toast.
+  res.json({ ok: true, message: "Restart triggered. Page will reconnect in ~5 seconds." });
+  setTimeout(() => {
+    exec("pm2 restart trading-bot", (err) => {
+      // Fallback: if PM2 not found, just exit (PM2/systemd restarts us).
+      if (err) process.exit(0);
+    });
+  }, 300);
 });
 
 module.exports = router;

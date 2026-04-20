@@ -284,6 +284,15 @@ function buildQueuePage(basePath, title) {
 </html>`;
 }
 
+/** Drop all finished/failed jobs — frees any large trade arrays still in memory. */
+function _purgeInactive() {
+  let removed = 0;
+  for (const [id, job] of jobs) {
+    if (job.status !== "running") { jobs.delete(id); removed++; }
+  }
+  return removed;
+}
+
 module.exports = {
   createJob,
   updateProgress,
@@ -294,4 +303,5 @@ module.exports = {
   isIdle,
   buildProgressPage,
   buildQueuePage,
+  _purgeInactive,
 };

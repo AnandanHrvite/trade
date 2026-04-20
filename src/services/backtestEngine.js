@@ -31,7 +31,9 @@ async function fetchChunk(symbol, resolution, from, to) {
 
 async function fetchCandles(symbol, resolution, from, to) {
   const maxDays = maxDaysForResolution(resolution);
-  const allCandles = [];
+  // Stream dedupe as we fetch — avoids a second O(n) pass + a duplicate array copy
+  const seen = new Set();
+  const unique = [];
   let cursor = new Date(from);
   const endDate = new Date(to);
   while (cursor <= endDate) {
@@ -39,15 +41,16 @@ async function fetchCandles(symbol, resolution, from, to) {
     chunkEnd.setDate(chunkEnd.getDate() + maxDays - 1);
     if (chunkEnd > endDate) chunkEnd.setTime(endDate.getTime());
     const candles = await fetchChunk(symbol, resolution, cursor.toISOString().split("T")[0], chunkEnd.toISOString().split("T")[0]);
-    allCandles.push(...candles);
+    for (const c of candles) {
+      if (!seen.has(c.time)) { seen.add(c.time); unique.push(c); }
+    }
     cursor = new Date(chunkEnd);
     cursor.setDate(cursor.getDate() + 1);
     if (cursor <= endDate) await sleep(300);
   }
-  const seen = new Set();
-  const unique = allCandles.filter((c) => { if (seen.has(c.time)) return false; seen.add(c.time); return true; });
   unique.sort((a, b) => a.time - b.time);
   console.log(`   ✅ Total candles fetched: ${unique.length}`);
+  if (global.gc) global.gc();
   return unique;
 }
 
@@ -264,6 +267,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         onProgress({ phase: 'Running backtest…', current: done, total, pct: Math.min(99, 5 + Math.round((done / total) * 94)) });
       }
     }
+    // Low-RAM mode: trigger GC every ~2000 candles so short-lived indicator
+    // objects get reclaimed before they pile up. Requires node --expose-gc.
+    if (global.gc && (i - 30) % 2000 === 0 && i > 30) global.gc();
 
     const candle     = candles[i];
     const prevCandle = candles[i - 1];
@@ -309,7 +315,14 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // ── Get signal from current window (entry candle included) ────────────────
     // window already contains candles[0..i] — no slice needed.
     // silent=true: backtest runs 1000+ candles — suppress per-candle strategy console.log spam
-    const { signal, reason, stopLoss: signalSL, signalStrength, ...indicators } = strategy.getSignal(window, { silent: true });
+    // Only destructure fields we actually use — skip `...indicators` rest-spread
+    // which allocates a new object every candle (hot path: 500K+ calls).
+    const _sig = strategy.getSignal(window, { silent: true });
+    const signal = _sig.signal;
+    const reason = _sig.reason;
+    const signalSL = _sig.stopLoss;
+    const signalStrength = _sig.signalStrength;
+    const ema9 = _sig.ema9;
 
     // Debug: log first few signal evaluations so 0-trade runs are diagnosable
     if (_dbgSignalCount < 5) {
@@ -496,7 +509,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           exitReason,
           entryReason:     position.entryReason,
           signalStrength:  position.signalStrength || "MARGINAL",
-          indicators:      position.indicators,
+          // indicators field omitted — not read by any route, frees ~50B/trade × 1000s of trades
         });
         if (_verbose) {
           const exitIcon = pnlRupees > 0 ? "✅" : "❌";
@@ -596,11 +609,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
       // ── Entry price: STRONG vs MARGINAL ──────────────────────────────────────
       let entryPrice = candle.close;
-      if (strength === "STRONG" && indicators.ema9 != null) {
+      if (strength === "STRONG" && ema9 != null) {
         if (side === "CE") {
-          entryPrice = quantize(Math.min(candle.close, indicators.ema9), 2);
+          entryPrice = quantize(Math.min(candle.close, ema9), 2);
         } else {
-          entryPrice = quantize(Math.max(candle.close, indicators.ema9), 2);
+          entryPrice = quantize(Math.max(candle.close, ema9), 2);
         }
       }
       // Apply slippage: entry is worse (higher for CE buy, lower for PE buy)
@@ -629,11 +642,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         bestPrice:       null,
         entryPrevMid,
         signalStrength:  strength,
-        indicators,
         candlesHeld:     0,
       };
       const priceNote = strength === "STRONG"
-        ? `(EMA9=${indicators.ema9} < close=${candle.close} → entered at EMA9 touch)`
+        ? `(EMA9=${ema9} < close=${candle.close} → entered at EMA9 touch)`
         : `(MARGINAL → close confirmation)`;
       if (_verbose) {
         console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL=${prevSignalSL}  entryPrevMid=${entryPrevMid}  [${strength}]`);
@@ -693,7 +705,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       pnlMode,
       exitReason:  "EOD square-off (run end)",
       entryReason: position.entryReason,
-      indicators:  position.indicators,
     });
     if (typeof strategy.onTradeClosed === "function") strategy.onTradeClosed();
   }

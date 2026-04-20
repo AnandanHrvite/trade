@@ -55,14 +55,14 @@ async function loadFromCache(symbol, resolution, from, to) {
   }
 }
 
-/** Save candles to cache atomically. */
-function saveToCache(symbol, resolution, from, to, candles) {
+/** Save candles to cache atomically (async — doesn't block event loop). */
+async function saveToCache(symbol, resolution, from, to, candles) {
   try {
     ensureDir();
     const p   = cacheFilePath(symbol, resolution, from, to);
     const tmp = p + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(candles));
-    fs.renameSync(tmp, p);
+    await fs.promises.writeFile(tmp, JSON.stringify(candles));
+    await fs.promises.rename(tmp, p);
   } catch (e) {
     console.warn("[backtestCache] Save failed:", e.message);
   }
@@ -98,7 +98,7 @@ async function fetchCandlesWithCache(symbol, resolution, from, to, rawFetcher, s
 
   // Only cache if we got data and range is fully historical
   if (candles.length > 0 && !rangeTouchesToday) {
-    saveToCache(symbol, resolution, from, to, candles);
+    await saveToCache(symbol, resolution, from, to, candles);
     console.log(`[backtestCache] 💾 Cached: ${symbol} ${resolution} ${from}→${to} (${candles.length} candles)`);
   }
 
@@ -255,9 +255,9 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
       }
       fetchedCount++;
 
-      // Cache historical months
+      // Cache historical months (fire-and-forget write — don't block the loop)
       if (monthCandles && monthCandles.length > 0 && !touchesToday) {
-        saveToCache(symbol, resolution, mFrom, mTo, monthCandles);
+        saveToCache(symbol, resolution, mFrom, mTo, monthCandles).catch(() => {});
       }
       monthCandles = monthCandles || [];
     }
@@ -266,6 +266,10 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
     for (const c of monthCandles) {
       if (!seen.has(c.time)) { seen.add(c.time); allCandles.push(c); }
     }
+    // Release the per-month array to GC as we move on
+    monthCandles = null;
+    // Periodically trigger GC to reclaim short-lived JSON.parse strings on tight RAM
+    if (global.gc && (i % 6) === 5) global.gc();
   }
 
   console.log(`[backtestCache] Smart cache: ${cachedCount} months cached, ${fetchedCount} months fetched, ${allCandles.length} total candles`);
@@ -275,4 +279,4 @@ async function fetchCandlesSmartCache(symbol, resolution, from, to, rawFetcher, 
   return allCandles;
 }
 
-module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, CACHE_DIR };
+module.exports = { fetchCandlesWithCache, fetchCandlesSmartCache, getCacheStats, clearAllCache, pruneOldCacheFiles, CACHE_DIR };
