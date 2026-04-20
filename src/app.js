@@ -258,6 +258,7 @@ const OPEN_PATHS = [
   "/pa-paper/status",
   "/pa-paper/status/data",
   "/pa-backtest",
+  "/consolidation",       // read-only cross-mode trade history + analytics
   "/health",              // health check — must be open for uptime monitors / PM2 probes
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
@@ -300,6 +301,7 @@ app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fye
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
+app.use("/consolidation",  require("./routes/consolidation")); // ← unified cross-mode trade history + analytics
 
 // ── Holiday Management API ────────────────────────────────────────────────────
 const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");

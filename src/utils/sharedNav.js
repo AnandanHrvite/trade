@@ -52,7 +52,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: null, collapsible: false,
       items: [
-        { key: 'dashboard', href: '/',  icon: '⌂',  label: 'Dashboard' },
+        { key: 'dashboard',     href: '/',              icon: '⌂',  label: 'Dashboard' },
+        { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Consolidation' },
       ]
     },
     {
