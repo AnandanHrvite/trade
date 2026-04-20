@@ -54,6 +54,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'dashboard',     href: '/',              icon: '⌂',  label: 'Dashboard' },
         { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Consolidation' },
+        { key: 'pnlHistory',    href: '/pnl-history',   icon: '💰', label: 'P&L History' },
       ]
     },
     {
