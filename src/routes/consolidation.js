@@ -130,9 +130,25 @@ router.get("/", (req, res) => {
 
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
+    .tbl th.sortable{cursor:pointer;user-select:none;}
+    .tbl th.sortable:hover{color:#4a9cf5;}
+    .tbl th.sortable::after{content:'⇅';margin-left:4px;opacity:0.35;font-size:0.7rem;}
+    .tbl th.sorted-asc::after{content:'↑';opacity:1;color:#3b82f6;}
+    .tbl th.sorted-desc::after{content:'↓';opacity:1;color:#3b82f6;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;vertical-align:middle;}
     .tbl tr:hover td{background:rgba(59,130,246,0.04);}
     .tbl-wrap{overflow-x:auto;max-height:560px;overflow-y:auto;border:0.5px solid #0e1e36;border-radius:10px;}
+
+    .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
+    .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
+    .pager select:focus{border-color:#3b82f6;}
+    .pager-info{margin:0 4px;color:#4a6080;}
+    .pager-btn{padding:3px 8px;font-size:0.72rem;line-height:1;min-width:26px;}
+    .pager-btn:disabled{opacity:0.35;cursor:not-allowed;}
+    :root[data-theme="light"] .pager label{color:#64748b!important;}
+    :root[data-theme="light"] .pager select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .pager,:root[data-theme="light"] .pager-info{color:#64748b!important;}
     .badge{display:inline-block;padding:2px 7px;border-radius:4px;font-size:0.6rem;font-weight:700;}
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
@@ -263,27 +279,75 @@ router.get("/", (req, res) => {
         <h3>Daily Roll-up</h3>
         <div class="tbl-wrap" style="max-height:300px;">
           <table class="tbl" id="dailyTbl">
-            <thead><tr><th>Date</th><th>Trades</th><th>P&amp;L</th><th></th></tr></thead>
+            <thead><tr>
+              <th class="sortable" data-key="key">Date</th>
+              <th class="sortable" data-key="count">Trades</th>
+              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th></th>
+            </tr></thead>
             <tbody></tbody>
           </table>
+        </div>
+        <div class="pager" data-for="dailyTbl">
+          <label>Rows</label>
+          <select class="pager-size">
+            <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+          </select>
+          <span class="pager-info"></span>
+          <button class="btn pager-btn" data-action="first" title="First">«</button>
+          <button class="btn pager-btn" data-action="prev"  title="Prev">‹</button>
+          <button class="btn pager-btn" data-action="next"  title="Next">›</button>
+          <button class="btn pager-btn" data-action="last"  title="Last">»</button>
         </div>
       </div>
       <div class="panel">
         <h3>Monthly Roll-up</h3>
         <div class="tbl-wrap" style="max-height:300px;">
           <table class="tbl" id="monthlyTbl">
-            <thead><tr><th>Month</th><th>Trades</th><th>P&amp;L</th><th></th></tr></thead>
+            <thead><tr>
+              <th class="sortable" data-key="key">Month</th>
+              <th class="sortable" data-key="count">Trades</th>
+              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th></th>
+            </tr></thead>
             <tbody></tbody>
           </table>
+        </div>
+        <div class="pager" data-for="monthlyTbl">
+          <label>Rows</label>
+          <select class="pager-size">
+            <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+          </select>
+          <span class="pager-info"></span>
+          <button class="btn pager-btn" data-action="first" title="First">«</button>
+          <button class="btn pager-btn" data-action="prev"  title="Prev">‹</button>
+          <button class="btn pager-btn" data-action="next"  title="Next">›</button>
+          <button class="btn pager-btn" data-action="last"  title="Last">»</button>
         </div>
       </div>
       <div class="panel">
         <h3>Yearly Roll-up</h3>
         <div class="tbl-wrap" style="max-height:300px;">
           <table class="tbl" id="yearlyTbl">
-            <thead><tr><th>Year</th><th>Trades</th><th>P&amp;L</th><th></th></tr></thead>
+            <thead><tr>
+              <th class="sortable" data-key="key">Year</th>
+              <th class="sortable" data-key="count">Trades</th>
+              <th class="sortable" data-key="pnl">P&amp;L</th>
+              <th></th>
+            </tr></thead>
             <tbody></tbody>
           </table>
+        </div>
+        <div class="pager" data-for="yearlyTbl">
+          <label>Rows</label>
+          <select class="pager-size">
+            <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+          </select>
+          <span class="pager-info"></span>
+          <button class="btn pager-btn" data-action="first" title="First">«</button>
+          <button class="btn pager-btn" data-action="prev"  title="Prev">‹</button>
+          <button class="btn pager-btn" data-action="next"  title="Next">›</button>
+          <button class="btn pager-btn" data-action="last"  title="Last">»</button>
         </div>
       </div>
     </div>
@@ -293,12 +357,33 @@ router.get("/", (req, res) => {
       <div class="tbl-wrap">
         <table class="tbl" id="tradesTbl">
           <thead><tr>
-            <th>#</th><th>Mode</th><th>Date</th><th>Side</th><th>Symbol</th><th>Qty</th>
-            <th>Entry</th><th>Exit</th><th>Entry Time</th><th>Exit Time</th>
-            <th>P&amp;L</th><th>Exit Reason</th><th>Copy</th>
+            <th>#</th>
+            <th class="sortable" data-key="mode">Mode</th>
+            <th class="sortable" data-key="date">Date</th>
+            <th class="sortable" data-key="side">Side</th>
+            <th class="sortable" data-key="symbol">Symbol</th>
+            <th class="sortable" data-key="qty">Qty</th>
+            <th class="sortable" data-key="entryPrice">Entry</th>
+            <th class="sortable" data-key="exitPrice">Exit</th>
+            <th class="sortable" data-key="entryTime">Entry Time</th>
+            <th class="sortable" data-key="exitTime">Exit Time</th>
+            <th class="sortable" data-key="pnl">P&amp;L</th>
+            <th class="sortable" data-key="exitReason">Exit Reason</th>
+            <th>Copy</th>
           </tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+      <div class="pager" data-for="tradesTbl">
+        <label>Rows</label>
+        <select class="pager-size">
+          <option value="10">10</option><option value="25" selected>25</option><option value="50">50</option><option value="100">100</option><option value="0">All</option>
+        </select>
+        <span class="pager-info"></span>
+        <button class="btn pager-btn" data-action="first" title="First">«</button>
+        <button class="btn pager-btn" data-action="prev"  title="Prev">‹</button>
+        <button class="btn pager-btn" data-action="next"  title="Next">›</button>
+        <button class="btn pager-btn" data-action="last"  title="Last">»</button>
       </div>
       <div id="emptyState" class="empty" style="display:none;">No trades match your filters.</div>
     </div>
@@ -376,33 +461,127 @@ function rollup(trades, keyFn){
   return Array.from(out.values()).sort((a, b) => b.key.localeCompare(a.key));
 }
 
+// ── Sort + pagination state ──────────────────────────────────────────────────
+const TBL_STATE = {
+  dailyTbl:   { sortKey: 'key',  sortDir: 'desc', page: 1, pageSize: 10, totalPages: 1 },
+  monthlyTbl: { sortKey: 'key',  sortDir: 'desc', page: 1, pageSize: 10, totalPages: 1 },
+  yearlyTbl:  { sortKey: 'key',  sortDir: 'desc', page: 1, pageSize: 10, totalPages: 1 },
+  tradesTbl:  { sortKey: 'date', sortDir: 'desc', page: 1, pageSize: 25, totalPages: 1 },
+};
+
+// Rendered (sorted + sliced) arrays kept so copy buttons can map local index → row
+const _rendered = { dailyTbl: [], monthlyTbl: [], yearlyTbl: [], tradesTbl: [] };
+
+// Time-time like "HH:MM, DD/MM/YYYY" → numeric (ms) for sorting
+function timeStrToNum(s){
+  const d = parseEntryTime(s);
+  return d ? d.getTime() : -Infinity;
+}
+
+function sortValue(row, key){
+  if (key === 'entryTime' || key === 'exitTime') return timeStrToNum(row[key]);
+  return row[key];
+}
+
+function cmpVals(a, b, dir){
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  let r;
+  if (typeof a === 'number' && typeof b === 'number') r = a - b;
+  else r = String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+  return dir === 'asc' ? r : -r;
+}
+
+function sortRows(rows, key, dir){
+  return rows.slice().sort((a, b) => cmpVals(sortValue(a, key), sortValue(b, key), dir));
+}
+
+function paginate(rows, page, pageSize){
+  if (!pageSize) return { slice: rows, page: 1, totalPages: 1 };
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const p = Math.min(Math.max(1, page), totalPages);
+  const start = (p - 1) * pageSize;
+  return { slice: rows.slice(start, start + pageSize), page: p, totalPages };
+}
+
+function updatePagerUI(tableId, total, shown, page, totalPages){
+  const pager = document.querySelector(\`.pager[data-for="\${tableId}"]\`);
+  if (!pager) return;
+  const info = pager.querySelector('.pager-info');
+  const st = TBL_STATE[tableId];
+  st.totalPages = totalPages;
+  if (!total){
+    info.textContent = '0 of 0';
+  } else if (!st.pageSize){
+    info.textContent = \`All \${total}\`;
+  } else {
+    const start = (page - 1) * st.pageSize + 1;
+    const end = Math.min(total, start + shown - 1);
+    info.textContent = \`\${start}–\${end} of \${total} · pg \${page}/\${totalPages}\`;
+  }
+  pager.querySelector('[data-action="first"]').disabled = (page <= 1);
+  pager.querySelector('[data-action="prev"]').disabled  = (page <= 1);
+  pager.querySelector('[data-action="next"]').disabled  = (page >= totalPages);
+  pager.querySelector('[data-action="last"]').disabled  = (page >= totalPages);
+}
+
+function updateSortIndicators(tableId){
+  const st = TBL_STATE[tableId];
+  const ths = document.querySelectorAll(\`#\${tableId} thead th.sortable\`);
+  ths.forEach(th => {
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    if (th.dataset.key === st.sortKey){
+      th.classList.add(st.sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc');
+    }
+  });
+}
+
 function renderRollupTable(id, rows){
   const tb = document.querySelector('#' + id + ' tbody');
+  updateSortIndicators(id);
   if (!rows.length){
     tb.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+    _rendered[id] = [];
+    updatePagerUI(id, 0, 0, 1, 1);
     return;
   }
-  tb.innerHTML = rows.map((r, i) => \`
+  const st = TBL_STATE[id];
+  const sorted = sortRows(rows, st.sortKey, st.sortDir);
+  const pg = paginate(sorted, st.page, st.pageSize);
+  st.page = pg.page;
+  _rendered[id] = pg.slice;
+  tb.innerHTML = pg.slice.map((r, i) => \`
     <tr>
       <td style="font-weight:600;">\${r.key}</td>
       <td>\${r.count}</td>
       <td style="color:\${pnlColor(r.pnl)};font-weight:700;">\${r.pnl >= 0 ? '+' : ''}\${fmtINR(r.pnl)}</td>
       <td><button class="btn" onclick="copyBucket('\${id}', \${i})">📋</button></td>
     </tr>\`).join('');
+  updatePagerUI(id, sorted.length, pg.slice.length, pg.page, pg.totalPages);
 }
 
 function renderTradesTable(rows){
   const tb = document.querySelector('#tradesTbl tbody');
   const empty = document.getElementById('emptyState');
+  updateSortIndicators('tradesTbl');
   if (!rows.length){
     tb.innerHTML = '';
     empty.style.display = 'block';
+    _rendered.tradesTbl = [];
+    updatePagerUI('tradesTbl', 0, 0, 1, 1);
     return;
   }
   empty.style.display = 'none';
-  tb.innerHTML = rows.map((t, i) => \`
+  const st = TBL_STATE.tradesTbl;
+  const sorted = sortRows(rows, st.sortKey, st.sortDir);
+  const pg = paginate(sorted, st.page, st.pageSize);
+  st.page = pg.page;
+  _rendered.tradesTbl = pg.slice;
+  const startNo = st.pageSize ? (pg.page - 1) * st.pageSize : 0;
+  tb.innerHTML = pg.slice.map((t, i) => \`
     <tr>
-      <td>\${i + 1}</td>
+      <td>\${startNo + i + 1}</td>
       <td><span class="badge-mode badge-\${t.mode}">\${t.mode}</span></td>
       <td>\${t.date || '—'}</td>
       <td><span class="badge \${t.side === 'CE' ? 'badge-ce' : 'badge-pe'}">\${t.side || '—'}</span></td>
@@ -416,6 +595,7 @@ function renderTradesTable(rows){
       <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.65rem;" title="\${esc(t.exitReason)}">\${esc(t.exitReason) || '—'}</td>
       <td><button class="btn" onclick="copyOne(\${i})">📋</button></td>
     </tr>\`).join('');
+  updatePagerUI('tradesTbl', sorted.length, pg.slice.length, pg.page, pg.totalPages);
 }
 
 function esc(s){
@@ -475,16 +655,13 @@ let _lastFiltered = [];
 let _lastRollups  = { daily: [], weekly: [], monthly: [], yearly: [] };
 
 function copyOne(idx){
-  const t = _lastFiltered[idx];
+  const t = _rendered.tradesTbl[idx];
   if (!t) return;
   copyText(tradesToText([t], '# Trade'), event.target);
 }
 
 function copyBucket(tableId, idx){
-  let list;
-  if (tableId === 'dailyTbl')   list = _lastRollups.daily[idx];
-  if (tableId === 'monthlyTbl') list = _lastRollups.monthly[idx];
-  if (tableId === 'yearlyTbl')  list = _lastRollups.yearly[idx];
+  const list = _rendered[tableId] && _rendered[tableId][idx];
   if (!list) return;
   const header = \`# \${list.key} (\${list.count} trades)\`;
   copyText(tradesToText(list.trades, header), event.target);
@@ -567,6 +744,9 @@ function applyFilters(){
   _lastRollups.monthly = rollup(rows, monthKey);
   _lastRollups.yearly  = rollup(rows, yearKey);
 
+  // Reset page on filter change
+  ['dailyTbl','monthlyTbl','yearlyTbl','tradesTbl'].forEach(id => { TBL_STATE[id].page = 1; });
+
   renderRollupTable('dailyTbl',   _lastRollups.daily);
   renderRollupTable('monthlyTbl', _lastRollups.monthly);
   renderRollupTable('yearlyTbl',  _lastRollups.yearly);
@@ -583,6 +763,50 @@ function resetFilters(){
   applyFilters();
 }
 
+// Re-render a single table using cached data (used by sort / pagination handlers)
+function rerender(tableId){
+  if (tableId === 'tradesTbl')   return renderTradesTable(_lastFiltered);
+  if (tableId === 'dailyTbl')    return renderRollupTable('dailyTbl',   _lastRollups.daily);
+  if (tableId === 'monthlyTbl')  return renderRollupTable('monthlyTbl', _lastRollups.monthly);
+  if (tableId === 'yearlyTbl')   return renderRollupTable('yearlyTbl',  _lastRollups.yearly);
+}
+
+// Wire sort + pager handlers once
+function wireTableControls(){
+  ['dailyTbl','monthlyTbl','yearlyTbl','tradesTbl'].forEach(id => {
+    document.querySelectorAll(\`#\${id} thead th.sortable\`).forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        const st = TBL_STATE[id];
+        if (st.sortKey === key) st.sortDir = (st.sortDir === 'asc') ? 'desc' : 'asc';
+        else { st.sortKey = key; st.sortDir = 'asc'; }
+        st.page = 1;
+        rerender(id);
+      });
+    });
+
+    const pager = document.querySelector(\`.pager[data-for="\${id}"]\`);
+    if (!pager) return;
+    pager.querySelector('.pager-size').addEventListener('change', e => {
+      TBL_STATE[id].pageSize = parseInt(e.target.value, 10) || 0;
+      TBL_STATE[id].page = 1;
+      rerender(id);
+    });
+    pager.querySelectorAll('.pager-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const st = TBL_STATE[id];
+        const a = btn.dataset.action;
+        if (a === 'first') st.page = 1;
+        if (a === 'prev')  st.page = Math.max(1, st.page - 1);
+        if (a === 'next')  st.page = Math.min(st.totalPages, st.page + 1);
+        if (a === 'last')  st.page = st.totalPages;
+        rerender(id);
+      });
+    });
+  });
+}
+
+wireTableControls();
 applyFilters();
 </script>
 </body>
