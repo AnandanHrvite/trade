@@ -186,11 +186,31 @@ function getSignal(candles, opts) {
   var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "25"));
   var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
 
-  // Previous candle for SL
+  // Previous candle for SL + quality filters
   var prevCandle = candles[candles.length - 2];
+
+  // ── V4 QUALITY FILTERS (env-toggleable) ──────────────────────────────────
+  // A. Approach filter — prev candle must already be on the trade-side half
+  //    Rejects "first-touch" breakouts where prev candle was deep on opposite side
+  var requireApproach = cfg("SCALP_REQUIRE_APPROACH", "false") === "true";
+
+  // B. Body strength filter — entry candle body must be >= N% of its range
+  //    Rejects doji/long-wick breakouts that signal exhaustion
+  var minBodyRatio = parseFloat(cfg("SCALP_MIN_BODY_RATIO", "0"));
+  var scRange = sc.high - sc.low;
+  var scBody  = Math.abs(sc.close - sc.open);
+  var bodyRatio = scRange > 0 ? scBody / scRange : 0;
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
+    if (requireApproach && prevCandle.close < bb.middle) {
+      base.reason = "CE blocked: prev candle below BB middle (no approach) [prev.close=" + prevCandle.close + " < mid=" + bb.middle.toFixed(1) + "]";
+      return base;
+    }
+    if (minBodyRatio > 0 && bodyRatio < minBodyRatio) {
+      base.reason = "CE blocked: weak entry candle body " + (bodyRatio * 100).toFixed(0) + "% < " + (minBodyRatio * 100).toFixed(0) + "% of range";
+      return base;
+    }
     var rawSL = prevCandle.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -207,6 +227,14 @@ function getSignal(candles, opts) {
 
   // PE (Short): price at/below BB lower + RSI < 45
   if (sc.close <= bb.lower && rsi < RSI_PE) {
+    if (requireApproach && prevCandle.close > bb.middle) {
+      base.reason = "PE blocked: prev candle above BB middle (no approach) [prev.close=" + prevCandle.close + " > mid=" + bb.middle.toFixed(1) + "]";
+      return base;
+    }
+    if (minBodyRatio > 0 && bodyRatio < minBodyRatio) {
+      base.reason = "PE blocked: weak entry candle body " + (bodyRatio * 100).toFixed(0) + "% < " + (minBodyRatio * 100).toFixed(0) + "% of range";
+      return base;
+    }
     var rawSL = prevCandle.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
