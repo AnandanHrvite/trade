@@ -134,6 +134,11 @@ router.get("/", (req, res) => {
                            padding:3px 10px; font-size:0.7rem; font-weight:600; cursor:pointer;
                            font-family:'IBM Plex Mono',monospace; transition:all 0.15s; opacity:0.6; }
     .guide-link .del-btn:hover { background:rgba(239,68,68,0.15); opacity:1; }
+
+    /* ── Light theme overrides ── */
+    :root[data-theme="light"] .guide-link { background:#ffffff !important; border-color:#e0e4ea !important; color:#059669 !important; }
+    :root[data-theme="light"] .guide-link:hover { background:#f8fafc !important; border-color:#2563eb !important; color:#2563eb !important; }
+    :root[data-theme="light"] .guide-link span[style*="color:#4a6080"] { color:#94a3b8 !important; }
   </style>
 </head>
 <body>

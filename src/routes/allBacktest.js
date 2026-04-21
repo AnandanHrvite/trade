@@ -205,6 +205,20 @@ router.get("/", (req, res) => {
   .progress-line .bar{height:100%;background:linear-gradient(90deg,#3b82f6,#10b981);width:0;transition:width 0.6s ease;}
   .panel.running .progress-line{display:block;}
 
+  /* ── Light theme overrides ── */
+  :root[data-theme="light"] .crumb{background:#ffffff !important;border-bottom-color:#e0e4ea !important;}
+  :root[data-theme="light"] .crumb > span[style*="color:#1e2a40"]{color:#94a3b8 !important;}
+  :root[data-theme="light"] .run-btn{background:#2563eb !important;color:#ffffff !important;border-color:#2563eb !important;}
+  :root[data-theme="light"] .run-btn:hover{background:#1d4ed8 !important;color:#ffffff !important;}
+  :root[data-theme="light"] .btn-run{background:#eff6ff !important;border-color:#bfdbfe !important;color:#2563eb !important;}
+  :root[data-theme="light"] .btn-run:hover{background:#dbeafe !important;border-color:#3b82f6 !important;}
+  :root[data-theme="light"] .empty-state{background:#f8fafc !important;border-color:#cbd5e1 !important;color:#94a3b8 !important;}
+  :root[data-theme="light"] .meta-range{color:#64748b !important;}
+  :root[data-theme="light"] .meta-dot{color:#cbd5e1 !important;}
+  :root[data-theme="light"] .meta-ago{color:#94a3b8 !important;}
+  :root[data-theme="light"] .sc-label{color:#64748b !important;}
+  :root[data-theme="light"] .progress-line{background:#e2e8f0 !important;}
+
   ${sidebarCSS()}
   ${modalCSS()}
 </style>
