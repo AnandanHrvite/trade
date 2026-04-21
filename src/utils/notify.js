@@ -62,14 +62,25 @@ function canSend(toggleKey) {
  * Send a plain text message to Telegram.
  * Uses MarkdownV2 — special chars are escaped automatically.
  * Does NOT check any toggle — caller is responsible for gating.
+ *
+ * Returns a Promise that never rejects (errors are logged). Many call sites
+ * use `sendTelegram(...).catch(...)`; returning a real Promise is what keeps
+ * those safe — calling .catch() on a non-Promise used to throw TypeError
+ * and crash the process (notably inside gracefulShutdown).
  */
 function sendTelegram(text) {
-  if (!isConfigured()) return;
+  if (!isConfigured()) return Promise.resolve();
 
   const token  = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
 
-  const escaped = text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+  let escaped;
+  try {
+    escaped = String(text).replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+  } catch (e) {
+    console.error(`[NOTIFY] Telegram format failed: ${e.message}`);
+    return Promise.resolve();
+  }
 
   const body = JSON.stringify({
     chat_id:    chatId,
@@ -87,16 +98,21 @@ function sendTelegram(text) {
     },
   };
 
-  const req = https.request(options, (res) => {
-    if (res.statusCode !== 200) {
-      let raw = "";
-      res.on("data", d => { raw += d; });
-      res.on("end",  () => { console.error(`[NOTIFY] Telegram error ${res.statusCode}: ${raw.slice(0, 200)}`); });
-    }
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      if (res.statusCode !== 200) {
+        let raw = "";
+        res.on("data", d => { raw += d; });
+        res.on("end",  () => { console.error(`[NOTIFY] Telegram error ${res.statusCode}: ${raw.slice(0, 200)}`); resolve(); });
+      } else {
+        res.resume();
+        res.on("end", resolve);
+      }
+    });
+    req.on("error", (e) => { console.error(`[NOTIFY] Telegram send failed: ${e.message}`); resolve(); });
+    req.write(body);
+    req.end();
   });
-  req.on("error", (e) => console.error(`[NOTIFY] Telegram send failed: ${e.message}`));
-  req.write(body);
-  req.end();
 }
 
 /**

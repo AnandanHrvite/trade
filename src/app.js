@@ -1592,12 +1592,15 @@ async function gracefulShutdown(signal) {
       }
     }
 
-    // Send Telegram alert
-    if (hasLive) {
-      sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.`).catch(() => {});
-    } else {
-      sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`).catch(() => {});
-    }
+    // Send Telegram alert. sendTelegram is fire-and-forget (no promise) —
+    // wrap the call itself in try/catch instead of a non-existent .catch().
+    try {
+      if (hasLive) {
+        sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.`);
+      } else {
+        sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`);
+      }
+    } catch (_) {}
 
     // Wait for squareOff orders to complete before exiting
     const waitMs = hasLive ? 8000 : 3000;
