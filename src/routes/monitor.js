@@ -502,8 +502,10 @@ router.post("/action/restart", (_req, res) => {
   res.json({ ok: true, message: "Restart triggered. Page will reconnect in ~5 seconds." });
   setTimeout(() => {
     exec("pm2 restart trading-bot", (err) => {
-      // Fallback: if PM2 not found, just exit (PM2/systemd restarts us).
-      if (err) process.exit(0);
+      // If pm2 isn't on PATH, log loudly instead of silently calling
+      // process.exit(0) — a silent exit here would look identical to the
+      // "no-log crash" we're trying to diagnose.
+      if (err) console.error(`[MONITOR] pm2 restart failed: ${err.message}. Not exiting — restart manually via SSH.`);
     });
   }, 300);
 });

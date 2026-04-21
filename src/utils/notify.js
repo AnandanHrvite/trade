@@ -25,6 +25,7 @@
  */
 
 const https = require("https");
+const { spawnSync } = require("child_process");
 
 function isConfigured() {
   return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
@@ -96,6 +97,30 @@ function sendTelegram(text) {
   req.on("error", (e) => console.error(`[NOTIFY] Telegram send failed: ${e.message}`));
   req.write(body);
   req.end();
+}
+
+/**
+ * Synchronous send via curl — blocks until HTTP completes.
+ * Use from process-death handlers (uncaughtException, exit) where an async
+ * https.request would be abandoned before the packet goes out. Requires `curl`
+ * on PATH, which is standard on Linux servers. Bypasses toggles — crash
+ * alerts should never be silenced.
+ */
+function sendTelegramSync(text) {
+  if (!isConfigured()) return;
+  const token  = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const escaped = text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+  const body = JSON.stringify({ chat_id: chatId, text: escaped, parse_mode: "MarkdownV2" });
+  try {
+    spawnSync("curl", [
+      "-s", "-m", "4",
+      "-X", "POST",
+      "-H", "Content-Type: application/json",
+      "-d", body,
+      `https://api.telegram.org/bot${token}/sendMessage`,
+    ], { timeout: 5000, stdio: "ignore" });
+  } catch (_) { /* best-effort — never throw from a crash handler */ }
 }
 
 /**
@@ -325,6 +350,7 @@ function notifyConsolidatedDayReport({ byMode }) {
 module.exports = {
   isConfigured,
   sendTelegram,
+  sendTelegramSync,
   sendIfMaster,
   canSend,
   modeGroup,

@@ -14,7 +14,7 @@ const sharedSocketState = require("./utils/sharedSocketState");
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
-const { sendTelegram } = require("./utils/notify");
+const { sendTelegram, sendTelegramSync } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
@@ -1323,15 +1323,51 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: err.message, stack: process.env.NODE_ENV === "development" ? err.stack : undefined });
 });
 
+// ── Crash marker + Telegram alerts ──────────────────────────────────────────
+// A crash with no logs is hard to diagnose remotely, so we:
+//   1) write a marker file synchronously in the death handler with the reason
+//   2) sync-send a Telegram (via curl) before the process is reaped
+//   3) on next startup, if the marker exists, send a "recovered from crash"
+//      telegram — belt-and-suspenders in case step 2 didn't flush in time
+const path = require("path");
+const os   = require("os");
+const CRASH_MARKER = path.join(os.homedir(), "trading-data", "last_crash.json");
+
+function writeCrashMarker(kind, err) {
+  try {
+    fs.mkdirSync(path.dirname(CRASH_MARKER), { recursive: true });
+    fs.writeFileSync(CRASH_MARKER, JSON.stringify({
+      kind,
+      message: (err && err.message) ? err.message : String(err || ""),
+      stack:   (err && err.stack)   ? err.stack   : null,
+      at:      new Date().toISOString(),
+      pid:     process.pid,
+      uptime:  Math.floor(process.uptime()),
+    }, null, 2));
+  } catch (_) { /* best-effort */ }
+}
+
+function truncate(s, n) { return (s && s.length > n) ? s.slice(0, n) + "…" : (s || ""); }
+
 process.on("unhandledRejection", (reason, promise) => {
-  const msg = reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason);
-  console.error(`[UnhandledRejection] ${msg}`);
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  console.error(`[UnhandledRejection] ${err.message}\n${err.stack || ""}`);
+  writeCrashMarker("unhandledRejection", err);
+  try { sendTelegramSync(`🚨 UNHANDLED REJECTION\n${truncate(err.message, 300)}\n\nStack:\n${truncate(err.stack || "(no stack)", 600)}`); } catch (_) {}
 });
 
 process.on("uncaughtException", (err) => {
-  console.error(`[UncaughtException] ${err.message}\n${err.stack}`);
-  // Send Telegram alert for critical crashes
-  try { sendTelegram(`🚨 UNCAUGHT EXCEPTION: ${err.message}`); } catch (_) {}
+  console.error(`[UncaughtException] ${err.message}\n${err.stack || ""}`);
+  writeCrashMarker("uncaughtException", err);
+  try { sendTelegramSync(`🚨 UNCAUGHT EXCEPTION\n${truncate(err.message, 300)}\n\nStack:\n${truncate(err.stack || "(no stack)", 600)}`); } catch (_) {}
+});
+
+// Abnormal exit (non-zero, non-signal). SIGTERM/SIGINT are handled by gracefulShutdown.
+process.on("exit", (code) => {
+  if (code !== 0) {
+    writeCrashMarker("exit", new Error(`process exit code=${code}`));
+    try { sendTelegramSync(`⚠️ PROCESS EXIT\ncode=${code} uptime=${Math.floor(process.uptime())}s`); } catch (_) {}
+  }
 });
 
 // ── EOD Token Auto-Clear Scheduler ──────────────────────────────────────────
@@ -1415,6 +1451,25 @@ server.listen(PORT, HOST, () => {
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);
+
+  // ── Crash recovery alert ───────────────────────────────────────────────────
+  // If last process wrote a crash marker, the sync send from the death handler
+  // may or may not have flushed. Send a recovery telegram now with the reason,
+  // then delete the marker so we don't re-alert on clean restarts.
+  try {
+    if (fs.existsSync(CRASH_MARKER)) {
+      const c = JSON.parse(fs.readFileSync(CRASH_MARKER, "utf-8"));
+      const ago = c.at ? ` at ${new Date(c.at).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST` : "";
+      sendTelegram(
+        `♻️ BOT RESTARTED after crash\n` +
+        `Kind    : ${c.kind || "?"}${ago}\n` +
+        `Uptime  : ${c.uptime || 0}s before crash\n` +
+        `Message : ${truncate(c.message || "(none)", 280)}\n\n` +
+        `Stack:\n${truncate(c.stack || "(none)", 600)}`
+      );
+      fs.unlinkSync(CRASH_MARKER);
+    }
+  } catch (_) { /* best-effort */ }
 
   // ── Startup position reconciliation (crash recovery) ───────────────────────
   // Checks both brokers for orphaned positions that survived a crash/restart.
