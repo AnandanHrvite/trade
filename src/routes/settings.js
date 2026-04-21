@@ -990,6 +990,17 @@ router.get("/", (req, res) => {
     .toast.error   { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
     .toast.info    { background: #0a1e3d; color: #60a5fa; border: 1px solid #1d3b6e; }
 
+    /* ── Quick-links bar (always visible, not collapsible) ── */
+    .quick-links-bar {
+      display:flex; flex-wrap:wrap; align-items:center; gap:10px;
+      padding:12px 16px; margin-bottom:16px;
+      background: var(--surface); border:1px solid var(--border); border-radius:10px;
+    }
+    .quick-links-label {
+      font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px;
+      color: var(--muted); margin-right:4px;
+    }
+
     /* ── Quick-link pill (replaces the removed sidebar items) ── */
     .quick-link-pill {
       display:inline-flex; align-items:center; gap:6px;
@@ -1129,17 +1140,12 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
-      <!-- Quick links (moved from sidebar) -->
-      <div class="settings-section" data-section="quick-links" style="margin-bottom:16px;">
-        <div class="section-title" style="cursor:default;">
-          <span style="width:10px;"></span>
-          🔗 Quick Links
-        </div>
-        <div class="section-card" style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;">
-          <a href="/pnl-history" class="quick-link-pill">💰 P&amp;L History</a>
-          <a href="/monitor"     class="quick-link-pill">📈 Monitor</a>
-          <a href="/docs"        class="quick-link-pill">📄 Docs</a>
-        </div>
+      <!-- Quick links (moved from sidebar) — always-visible, not collapsible -->
+      <div class="quick-links-bar">
+        <span class="quick-links-label">🔗 Quick Links</span>
+        <a href="/pnl-history" class="quick-link-pill">💰 P&amp;L History</a>
+        <a href="/monitor"     class="quick-link-pill">📈 Monitor</a>
+        <a href="/docs"        class="quick-link-pill">📄 Docs</a>
       </div>
 
       ${sectionsHtml}

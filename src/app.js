@@ -538,6 +538,140 @@ app.get("/", (req, res) => {
       #trade-row .card, #scalp-row .card, #pa-row .card { flex:none; width:100%; }
     }
 
+    /* ── BROKER CONNECTIONS — compact single-line rows ── */
+    .brokers { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+    .brk-row {
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      padding:10px 14px; border-radius:10px;
+      border:1px solid #1a2236; background:#0d1320;
+    }
+    .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
+    .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
+    .brk-row.bad  { border-color:#3a0f1c; background:#100408; }
+    .brk-row.muted { border-color:#1e1e36; background:#0a0a12; }
+    .brk-dot {
+      width:8px; height:8px; border-radius:50%;
+      background:#4a5878; flex-shrink:0;
+    }
+    .brk-row.ok .brk-dot  { background:#10b981; }
+    .brk-row.ok.blue .brk-dot { background:#3b82f6; }
+    .brk-row.bad .brk-dot { background:#ef4444; }
+    .brk-dot.pulse { animation:pulse 1.5s infinite; }
+    .brk-name { font-size:0.92rem; font-weight:700; color:#e0eaf8; letter-spacing:-0.2px; }
+    .brk-role { font-size:0.66rem; color:#4a6080; flex:1 0 auto; }
+    .brk-status {
+      font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+      padding:3px 9px; border-radius:20px; border:1px solid;
+      background:#0e0e1e; border-color:#2a2a48; color:#4a5878;
+    }
+    .brk-row.ok .brk-status  { background:#071e0f; border-color:#0e4020; color:#34d399; }
+    .brk-row.ok.blue .brk-status { background:#07112e; border-color:#0e2860; color:#60a5fa; }
+    .brk-row.bad .brk-status { background:#1c0610; border-color:#500e20; color:#f87171; }
+    .brk-action {
+      font-size:0.74rem; font-weight:600; text-decoration:none;
+      padding:6px 12px; border-radius:6px; white-space:nowrap;
+      transition:filter 0.15s;
+    }
+    .brk-action.re-login { color:#4a6080; }
+    .brk-action.re-login:hover { color:#60a5fa; }
+    .brk-action.login { color:#fff; border:1px solid; }
+    .brk-action.login.fyers   { background:#0d3a18; border-color:#1a6030; }
+    .brk-action.login.zerodha { background:#1a4a8a; border-color:#2a6aaa; }
+    .brk-action.login:hover { filter:brightness(1.15); }
+    .brk-action.muted-hint {
+      font-size:0.66rem; color:#4a5878; font-style:italic;
+      border:1px dashed #252550; padding:4px 10px; border-radius:6px;
+    }
+    .brk-expiry {
+      font-size:0.7rem; line-height:1.4;
+      padding:7px 12px; border-radius:7px; border:1px solid;
+    }
+    .brk-expiry.expired  { background:#2d1600; border-color:#c05621; color:#f6ad55; }
+    .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
+    .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:#4a7090; }
+
+    /* Compact utility strip (Hard Reset / NSE Holidays / Cache info) */
+    .util-strip {
+      display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+      padding:8px 12px; border-radius:10px;
+      border:1px solid #1a2236; background:#0a0f18;
+      margin-bottom:12px;
+    }
+    .util-btn {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:6px 12px; border-radius:6px; cursor:pointer;
+      background:#150608; border:1px solid #5a1010; color:#f87171;
+      font-size:0.72rem; font-weight:600; font-family:inherit;
+      transition:filter 0.15s;
+    }
+    .util-btn:hover { filter:brightness(1.2); }
+    .util-btn:nth-child(2) { background:#0a0f14; border-color:#1a4a8a; color:#60a5fa; }
+    .util-info { font-size:0.7rem; color:#4a6080; margin-left:auto; }
+
+    /* Mobile */
+    @media (max-width:640px) {
+      .brk-role { display:none; }
+      .util-strip { flex-direction:column; align-items:stretch; }
+      .util-btn { justify-content:center; width:100%; }
+      .util-info { margin:4px 0 0; text-align:center; }
+    }
+
+    /* Light theme */
+    :root[data-theme="light"] .brk-row { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .brk-row.ok   { background:#f0fdf4; border-color:#bbf7d0; }
+    :root[data-theme="light"] .brk-row.ok.blue { background:#eff6ff; border-color:#bfdbfe; }
+    :root[data-theme="light"] .brk-row.bad  { background:#fef2f2; border-color:#fecaca; }
+    :root[data-theme="light"] .brk-row.muted { background:#f8fafc; border-color:#e2e8f0; }
+    :root[data-theme="light"] .brk-name { color:#1e293b; }
+    :root[data-theme="light"] .brk-role { color:#94a3b8; }
+    :root[data-theme="light"] .brk-status { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
+    :root[data-theme="light"] .brk-row.ok .brk-status { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .brk-row.ok.blue .brk-status { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
+    :root[data-theme="light"] .brk-row.bad .brk-status { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .util-strip { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .util-btn { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .util-btn:nth-child(2) { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    :root[data-theme="light"] .util-info { color:#64748b; }
+
+    /* ── PER-MODULE START ROWS (new compact design) ── */
+    .mod-row {
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:10px 14px; border:1px solid #1a2236; background:#0d1320;
+      border-radius:10px; margin-bottom:8px;
+    }
+    .mod-label {
+      font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.6px;
+      color:#4a6080; min-width:110px;
+    }
+    .mod-btn {
+      flex:1; min-width:140px;
+      padding:9px 14px; font-size:0.78rem; font-weight:700; letter-spacing:0.5px;
+      border-radius:7px; cursor:pointer; font-family:inherit;
+      transition:filter 0.15s, transform 0.08s;
+    }
+    .mod-btn:hover:not(:disabled) { filter:brightness(1.15); }
+    .mod-btn:active:not(:disabled){ transform:translateY(1px); }
+    .mod-btn:disabled { opacity:0.6; cursor:not-allowed; }
+    .mod-btn.paper { background:#0d3018; color:#4ade80; border:1px solid #166534; }
+    .mod-btn.live  { background:#2d0a0a; color:#ef4444; border:1px solid #7f1d1d; }
+    .mod-open {
+      font-size:0.68rem; color:#60a5fa; text-decoration:none;
+      padding:6px 10px; border-radius:5px; border:1px solid #1a3a6a;
+      background:#080e1a; white-space:nowrap;
+    }
+    .mod-open:hover { filter:brightness(1.2); }
+    @media (max-width:640px) {
+      .mod-row { flex-direction:column; align-items:stretch; gap:8px; }
+      .mod-label { min-width:0; }
+      .mod-btn { width:100%; flex:none; }
+      .mod-open { text-align:center; }
+    }
+    :root[data-theme="light"] .mod-row { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .mod-label { color:#64748b; }
+    :root[data-theme="light"] .mod-btn.paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .mod-btn.live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .mod-open { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
     .ts-cell { padding:12px 16px; border-right:1px solid #1a2236; }
@@ -647,203 +781,64 @@ ${buildSidebar('dashboard', liveActive)}
 
 <div class="page">
 
-  <!-- ① BROKER CONNECTIONS — redesigned -->
-  <div class="card">
-    <div class="card-hdr">
-      <span class="card-hdr-icon">🔌</span>
-      <span class="card-hdr-title">Broker Connections</span>
+  <!-- ① BROKER CONNECTIONS — compact single-line rows -->
+  <div class="brokers">
+    <div class="brk-row ${fyersOk ? 'ok' : 'bad'}">
+      <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
+      <span class="brk-name">Fyers</span>
+      <span class="brk-role">Market Data · WS · REST</span>
+      <span class="brk-status">${fyersOk ? 'Connected' : 'Disconnected'}</span>
+      ${fyersOk
+        ? `<a href="/auth/login" class="brk-action re-login">re-login →</a>`
+        : `<a href="/auth/login" class="brk-action login fyers">🔐 Login with Fyers</a>`}
     </div>
-    <div class="card-body">
-      <div class="broker-grid">
-
-        <!-- Fyers Card -->
-        <div class="broker-card ${fyersOk ? 'connected-green' : 'error-state'}">
-          <div class="broker-card-top">
-            <div class="broker-identity">
-              <div class="broker-logo fyers-logo">📊</div>
-              <div class="broker-name-wrap">
-                <div class="broker-name">Fyers</div>
-                <div class="broker-role">Market Data · Websocket · REST</div>
-              </div>
-            </div>
-            <div class="broker-status-pill ${fyersOk ? 'ok-green' : 'err'}">
-              <span class="broker-status-dot ${fyersOk ? 'pulse' : ''}"></span>
-              ${fyersOk ? 'Connected' : 'Disconnected'}
-            </div>
-          </div>
-          <div class="broker-meta">
-            <span class="tag">WebSocket</span><span class="tag">REST Quotes</span><span class="tag">Historical</span>
-            <br/>Used by: Backtest · Paper Trade · Live Trade
-          </div>
-          <div class="broker-action">
-            ${fyersOk
-              ? `<div class="broker-connected-bar green">
-                  <span>✅ Token active</span>
-                  <a href="/auth/login" class="relogin-link">re-login →</a>
-                 </div>`
-              : `<a href="/auth/login" class="broker-login-btn fyers-btn">🔐 Login with Fyers</a>`
-            }
-          </div>
-        </div>
-
-        <!-- Zerodha Card -->
-        <div class="broker-card ${zerodhaOk ? 'connected-blue' : zerodhaConf ? 'error-state' : 'no-config'}">
-          <div class="broker-card-top">
-            <div class="broker-identity">
-              <div class="broker-logo zerodha-logo">
-                <span style="width:16px;height:16px;background:#7c3aed;border-radius:50%;display:inline-block;"></span>
-              </div>
-              <div class="broker-name-wrap">
-                <div class="broker-name">Zerodha</div>
-                <div class="broker-role">Order Execution · Live Trade</div>
-              </div>
-            </div>
-            <div class="broker-status-pill ${zerodhaOk ? 'ok-blue' : zerodhaConf ? 'err' : 'grey'}">
-              <span class="broker-status-dot ${zerodhaOk ? 'pulse' : ''}"></span>
-              ${zerodhaOk ? 'Connected' : zerodhaConf ? 'Disconnected' : 'Not Configured'}
-            </div>
-          </div>
-          <div class="broker-meta">
-            <span class="tag">Orders API</span><span class="tag">Free Personal</span>
-            <br/>Used by: Live Trade only
-          </div>
-          <div class="broker-action">
-            ${zerodhaOk
-              ? `<div class="broker-connected-bar blue">
-                  <span>✅ Token active</span>
-                  <a href="/auth/zerodha/login" class="relogin-link">re-login →</a>
-                 </div>
-                 ${zerodhaExpiryHtml ? `<div class="broker-expiry-warn ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}`
-              : zerodhaConf
-                ? `<a href="/auth/zerodha/login" class="broker-login-btn zerodha-btn">🔐 Login with Zerodha</a>`
-                : `<div class="broker-no-config">Add <code>ZERODHA_API_KEY</code> &amp; <code>ZERODHA_API_SECRET</code> to .env</div>`
-            }
-          </div>
-        </div>
-
-      </div>
-
-      <div class="broker-divider"></div>
-      <div class="action-3col" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;">
-
-        <div style="padding:12px 16px;border-right:1px solid #1a2236;">
-          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">⚠️ Socket / Tokens</div>
-          <div style="font-size:0.7rem;color:#4a6080;margin-bottom:8px;line-height:1.4;">Stuck or bad state? Clears all tokens &amp; restarts process (PM2 revives).</div>
-          <button onclick="hardReset()" class="hard-reset-btn" style="width:100%;justify-content:center;">🔄 Hard Reset</button>
-        </div>
-
-        <div style="padding:12px 16px;border-right:1px solid #1a2236;">
-          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">📅 NSE Holidays</div>
-          <div style="font-size:0.7rem;color:#4a6080;margin-bottom:8px;line-height:1.4;">Auto-fetched daily. Click to force-refresh from NSE API immediately.</div>
-          <button onclick="refreshHolidays()" class="hard-reset-btn" style="background:#0a0f14;border-color:#1a4a8a;color:#60a5fa;width:100%;justify-content:center;" id="holiday-refresh-btn">📅 Refresh Holidays</button>
-        </div>
-
-        <div style="padding:12px 16px;">
-          <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:6px;">📦 Candle Cache</div>
-          <div style="font-size:0.7rem;color:#4a6080;line-height:1.4;" id="cache-info-txt">checking...</div>
-        </div>
-
-      </div>
+    <div class="brk-row ${zerodhaOk ? 'ok blue' : zerodhaConf ? 'bad' : 'muted'}">
+      <span class="brk-dot ${zerodhaOk ? 'pulse' : ''}"></span>
+      <span class="brk-name">Zerodha</span>
+      <span class="brk-role">Orders · Live Trade</span>
+      <span class="brk-status">${zerodhaOk ? 'Connected' : zerodhaConf ? 'Disconnected' : 'Not Configured'}</span>
+      ${zerodhaOk
+        ? `<a href="/auth/zerodha/login" class="brk-action re-login">re-login →</a>`
+        : zerodhaConf
+          ? `<a href="/auth/zerodha/login" class="brk-action login zerodha">🔐 Login with Zerodha</a>`
+          : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
+    ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>
 
-  <!-- ③ SWING / POSITIONAL TRADING -->
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Swing / Positional Trading</span>
-    <div style="flex:1;height:1px;background:#0e1e36;"></div>
-  </div>
-  <div id="trade-row">
-
-  <div class="card" id="paper-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">📋</span>
-        <span class="card-hdr-title">Paper Trade</span>
-      </div>
-      <a href="/swing-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
+  <!-- ① b — Compact utility strip -->
+  <div class="util-strip">
+    <button onclick="hardReset()" class="util-btn" title="Clears all tokens and restarts — use when tokens look stuck">🔄 Hard Reset</button>
+    <button onclick="refreshHolidays()" id="holiday-refresh-btn" class="util-btn" title="Force-refresh NSE holidays cache">📅 Refresh Holidays</button>
+    <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
   </div>
 
-  <div class="card" id="live-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">🔴</span>
-        <span class="card-hdr-title">Live Trade</span>
-      </div>
-      <a href="/swing-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
+  <!-- ③ PER-MODULE START BUTTONS -->
+  <div class="mod-row">
+    <span class="mod-label">SWING</span>
+    <button class="mod-btn paper" onclick="startOne('/swing-paper/start','/swing-paper/status',this)">▶ Start Paper</button>
+    <button class="mod-btn live"  onclick="startOne('/swing-live/start','/swing-live/status',this)">▶ Start Live</button>
+    <a class="mod-open" href="/swing-backtest">Backtest →</a>
   </div>
-
-  </div><!-- end trade-row -->
-
-  <!-- ④ SCALP TRADING -->
   ${scalpModeOn ? `
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:8px;">
-    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Scalp Trading</span>
-    <div style="flex:1;height:1px;background:#0e1e36;"></div>
-    <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${scalpEnabled ? '#0d3018' : '#1a1a2e'};color:${scalpEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${scalpEnabled ? '#166534' : '#252550'};">${scalpEnabled ? 'ENABLED' : 'DISABLED'}</span>
-    <a href="/scalp-backtest" style="font-size:0.68rem;color:#60a5fa;text-decoration:none;padding:3px 10px;border-radius:5px;border:1px solid #1a3a6a;background:#080e1a;white-space:nowrap;">Backtest →</a>
+  <div class="mod-row">
+    <span class="mod-label">SCALP</span>
+    <button class="mod-btn paper" onclick="startOne('/scalp-paper/start','/scalp-paper/status',this)">▶ Start Paper</button>
+    <button class="mod-btn live"  onclick="startOne('/scalp-live/start','/scalp-live/status',this)">▶ Start Live</button>
+    <a class="mod-open" href="/scalp-backtest">Backtest →</a>
   </div>
-  <div id="scalp-row">
-
-  <div class="card" id="scalp-paper-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">📋</span>
-        <span class="card-hdr-title">Scalp Paper</span>
-      </div>
-      <a href="/scalp-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
-  </div>
-
-  <div class="card" id="scalp-live-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">🔴</span>
-        <span class="card-hdr-title">Scalp Live</span>
-      </div>
-      <a href="/scalp-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
-  </div>
-
-  </div><!-- end scalp-row -->
   ` : ''}
-
-  <!-- ④B PRICE ACTION TRADING -->
   ${paModeOn ? `
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;margin-top:8px;">
-    <span style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#4a6080;">Price Action Trading</span>
-    <div style="flex:1;height:1px;background:#0e1e36;"></div>
-    <span style="font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:${paEnabled ? '#0d3018' : '#1a1a2e'};color:${paEnabled ? '#4ade80' : '#3a5070'};border:1px solid ${paEnabled ? '#166534' : '#252550'};">${paEnabled ? 'ENABLED' : 'DISABLED'}</span>
-    <a href="/pa-backtest" style="font-size:0.68rem;color:#a78bfa;text-decoration:none;padding:3px 10px;border-radius:5px;border:1px solid #3a1a6a;background:#0e081a;white-space:nowrap;">Backtest →</a>
+  <div class="mod-row">
+    <span class="mod-label">PRICE ACTION</span>
+    <button class="mod-btn paper" onclick="startOne('/pa-paper/start','/pa-paper/status',this)">▶ Start Paper</button>
+    <button class="mod-btn live"  onclick="startOne('/pa-live/start','/pa-live/status',this)">▶ Start Live</button>
+    <a class="mod-open" href="/pa-backtest">Backtest →</a>
   </div>
-  <div id="pa-row">
-
-  <div class="card" id="pa-paper-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">📐</span>
-        <span class="card-hdr-title">PA Paper</span>
-      </div>
-      <a href="/pa-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
-  </div>
-
-  <div class="card" id="pa-live-status-card" style="flex:1;min-width:0;">
-    <div class="card-hdr" style="display:flex;align-items:center;justify-content:space-between;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span class="card-hdr-icon">🔴</span>
-        <span class="card-hdr-title">PA Live</span>
-      </div>
-      <a href="/pa-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
-  </div>
-
-  </div><!-- end pa-row -->
   ` : ''}
 
-  <!-- ⑤ QUICK ACTION BUTTONS -->
-  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:4px;">
+  <!-- ④ COMMON START-ALL BUTTONS -->
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;">
     <button id="btn-all-paper" onclick="startAllPaper(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #166534;background:linear-gradient(135deg,#0a1f10,#0d3018);color:#4ade80;border-radius:8px;cursor:pointer;transition:all 0.2s;">
       ▶ START ALL PAPER TRADES
     </button>
@@ -1108,6 +1103,18 @@ async function _startAll(endpoints){
   }
 }
 
+// Individual per-module start button: hit the start endpoint, then navigate to that module's page
+async function startOne(startUrl, openUrl, btn){
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Starting...';
+  try {
+    var r = await secretFetch(startUrl);
+    if(r) await r.json().catch(function(){});
+  } catch(e) { /* ignore */ }
+  // Always navigate to the module page so the user can see the running session
+  window.location.href = openUrl;
+}
+
 async function startAllPaper(btn){
   btn.disabled=true; btn.textContent='⏳ Starting all paper trades...';
   await _startAll(PAPER_ENDPOINTS);
@@ -1136,10 +1143,10 @@ async function loadCacheInfo(){
     if (!el) return;
     if (d.cache) {
       el.style.color = '#10b981';
-      el.innerHTML = d.cache.candles + ' candles<br><span style="color:#3a5070;">' + d.cache.from + ' → ' + d.cache.to + ' · ' + d.cache.sizeKB + ' KB</span>';
+      el.textContent = '📦 ' + d.cache.candles + ' candles · ' + d.cache.from + ' → ' + d.cache.to + ' · ' + d.cache.sizeKB + ' KB';
     } else {
       el.style.color = '#4a6080';
-      el.textContent = 'No cache yet — will be built on first Paper/Live/Tracker start';
+      el.textContent = '📦 No cache yet — built on first session start';
     }
   } catch(_){}
 }
