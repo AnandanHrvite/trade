@@ -342,33 +342,40 @@ const SESSION_RESTART_KEYS = new Set([
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────
-function updateEnvFile(updates) {
+function updateEnvFile(updates, deletes) {
+  const deleteSet = new Set(deletes || []);
+
   // Step 1: Always update process.env in-memory first (this never fails)
   Object.entries(updates).forEach(([k, v]) => {
     process.env[k] = v;
   });
+  deleteSet.forEach(k => { delete process.env[k]; });
 
   // Step 2: Try to persist to .env file on disk
   let fileSaved = false;
   let fileError = null;
+  let deletedCount = 0;
   try {
     let content = fs.readFileSync(ENV_PATH, "utf-8");
     const lines = content.split("\n");
     const updatedKeys = new Set();
 
-    // Update existing keys in-place
-    const newLines = lines.map(line => {
+    // Update existing keys in-place; drop lines matching deletes
+    const newLines = [];
+    for (const line of lines) {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) return line;
+      if (!trimmed || trimmed.startsWith("#")) { newLines.push(line); continue; }
       const eqIdx = trimmed.indexOf("=");
-      if (eqIdx === -1) return line;
+      if (eqIdx === -1) { newLines.push(line); continue; }
       const key = trimmed.slice(0, eqIdx).trim();
+      if (deleteSet.has(key)) { deletedCount++; continue; }
       if (key in updates) {
         updatedKeys.add(key);
-        return `${key}=${updates[key]}`;
+        newLines.push(`${key}=${updates[key]}`);
+        continue;
       }
-      return line;
-    });
+      newLines.push(line);
+    }
 
     // Append any NEW keys that didn't exist in the file
     const newKeys = Object.keys(updates).filter(k => !updatedKeys.has(k));
@@ -394,6 +401,7 @@ function updateEnvFile(updates) {
   return {
     success: true,
     updatedCount: Object.keys(updates).length,
+    deletedCount,
     fileSaved,
     fileError,
     needsRestart: needsRestart.length > 0 ? needsRestart : null,
@@ -412,49 +420,65 @@ router.get("/data", (req, res) => {
 
 // ── POST /settings/save — Save updated values ──────────────────────────────
 router.post("/save", (req, res) => {
-  const { updates } = req.body;
-  if (!updates || typeof updates !== "object") {
-    return res.status(400).json({ success: false, error: "Missing updates object" });
+  const { updates, deletes } = req.body;
+  if ((!updates || typeof updates !== "object") && !Array.isArray(deletes)) {
+    return res.status(400).json({ success: false, error: "Missing updates or deletes" });
   }
+
+  const safeUpdates = updates && typeof updates === "object" ? { ...updates } : {};
 
   // Block writes to sensitive keys via UI
   for (const k of HIDDEN_KEYS) {
-    if (k in updates) {
-      delete updates[k];
-    }
+    if (k in safeUpdates) delete safeUpdates[k];
   }
 
-  // Validate — no empty keys
+  // Normalize + validate deletes (uppercase, strip invalid chars, block sensitive)
+  const hiddenSet = new Set(HIDDEN_KEYS);
+  const deleteKeys = [];
+  if (Array.isArray(deletes)) {
+    for (const raw of deletes) {
+      const key = String(raw || "").trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
+      if (!key || hiddenSet.has(key)) continue;
+      deleteKeys.push(key);
+    }
+  }
+  const deleteSet = new Set(deleteKeys);
+
+  // Validate updates — no empty keys; delete wins if same key in both
   const cleaned = {};
-  Object.entries(updates).forEach(([k, v]) => {
+  Object.entries(safeUpdates).forEach(([k, v]) => {
     const key = k.trim().toUpperCase().replace(/[^A-Z0-9_]/g, "");
-    if (key) cleaned[key] = String(v).trim();
+    if (key && !deleteSet.has(key)) cleaned[key] = String(v).trim();
   });
 
-  if (Object.keys(cleaned).length === 0) {
-    return res.status(400).json({ success: false, error: "No valid updates" });
+  if (Object.keys(cleaned).length === 0 && deleteKeys.length === 0) {
+    return res.status(400).json({ success: false, error: "No valid updates or deletes" });
   }
 
   // ── Auto-fill missing defaults: when saving any key from a section,
   // also write all missing keys from that section with their defaults.
   // This ensures .env gets the full config on first save even if user
   // only changed one field (the rest show defaults but aren't in .env yet).
+  // Skip keys that are being explicitly deleted in the same request.
   const envOnDisk = parseEnvFile();
   for (const section of SETTINGS_SCHEMA) {
     const sectionKeys = section.fields.map(f => f.key);
     const anySaved = sectionKeys.some(k => k in cleaned);
     if (anySaved) {
       for (const f of section.fields) {
-        if (!(f.key in cleaned) && !(f.key in envOnDisk) && f.default !== undefined) {
+        if (!(f.key in cleaned) && !(f.key in envOnDisk) && !deleteSet.has(f.key) && f.default !== undefined) {
           cleaned[f.key] = f.default;
         }
       }
     }
   }
 
-  const result = updateEnvFile(cleaned);
+  const result = updateEnvFile(cleaned, deleteKeys);
   if (result.success) {
-    console.log(`[settings] Updated ${result.updatedCount} values:`, Object.keys(cleaned).join(", "),
+    const summary = [];
+    if (Object.keys(cleaned).length) summary.push(`updated ${Object.keys(cleaned).length}: ${Object.keys(cleaned).join(", ")}`);
+    if (deleteKeys.length) summary.push(`deleted ${deleteKeys.length}: ${deleteKeys.join(", ")}`);
+    console.log(`[settings] ${summary.join(" | ")}`,
       result.fileSaved ? `(persisted to ${ENV_PATH})` : `(IN-MEMORY ONLY — .env write failed: ${result.fileError}, path: ${ENV_PATH})`);
   }
   res.json({ ...result, envPath: ENV_PATH });
@@ -1116,11 +1140,11 @@ router.get("/", (req, res) => {
         <div class="section-card">
           <div class="bulk-section">
             <div class="bulk-hint">
-              Paste <strong>KEY=VALUE</strong> pairs (one per line), then click <strong>Update &amp; Restart</strong>.
+              Paste <strong>KEY=VALUE</strong> pairs (one per line) to add/update. Prefix a line with <strong>-</strong> (e.g. <code>-OLD_KEY</code>) to <strong>remove</strong> that key from .env.<br/>
               Supports <code>KEY=VALUE</code>, <code>KEY: VALUE</code>, quoted values, and <code>#</code> comment lines.
-              Sensitive keys (SECRET/TOKEN/ACCESS) are ignored. Applies all values and restarts the server.
+              Sensitive keys (SECRET/TOKEN/ACCESS) are ignored for both updates and deletes. Applies everything and restarts the server.
             </div>
-            <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;SCALP_RSI_PE_THRESHOLD=45&#10;SCALP_TRAIL_START=350&#10;VIX_MAX_ENTRY=25"></textarea>
+            <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;VIX_MAX_ENTRY=25&#10;&#10;# Delete dead keys with a leading dash:&#10;-SCALP_ADX_ENABLED&#10;-SCALP_RSI_CE_MIN"></textarea>
             <div class="bulk-preview" id="bulkPreview"></div>
             <div class="bulk-actions">
               <button class="btn-bulk-clear" onclick="clearBulkPaste()">Clear</button>
@@ -1390,10 +1414,12 @@ function showToast(msg, type) {
 }
 
 // ── Bulk paste: parse KEY=VALUE pairs from textarea ──────────────────────
+// Lines starting with "-" (e.g. "-PA_MIN_RR") mark that key for deletion.
 function parseBulkPaste(text) {
   var out = {};
+  var deletes = [];
   var skipped = [];
-  if (!text) return { updates: out, skipped: skipped };
+  if (!text) return { updates: out, deletes: deletes, skipped: skipped };
   var lines = text.split(/\\r?\\n/);
   for (var i = 0; i < lines.length; i++) {
     var raw = lines[i];
@@ -1401,6 +1427,19 @@ function parseBulkPaste(text) {
     if (!line || line.charAt(0) === '#') continue;
     // Strip "export " prefix if present
     if (line.toLowerCase().indexOf('export ') === 0) line = line.slice(7).trim();
+    // Deletion syntax: "-KEY" or "- KEY"  (no '=' sign needed)
+    if (line.charAt(0) === '-' && line.indexOf('=') === -1 && line.indexOf(':') === -1) {
+      var dkey = line.slice(1).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
+      if (!dkey) { skipped.push(raw); continue; }
+      if (dkey.indexOf('SECRET') >= 0 || dkey.indexOf('TOKEN') >= 0 || dkey.indexOf('ACCESS') >= 0) {
+        skipped.push(dkey + ' (sensitive — cannot delete)');
+        continue;
+      }
+      if (deletes.indexOf(dkey) === -1) deletes.push(dkey);
+      // If the same key appears as an update above, remove it — delete wins
+      if (dkey in out) delete out[dkey];
+      continue;
+    }
     // Support KEY=VALUE or KEY: VALUE
     var eq = line.indexOf('=');
     var colon = line.indexOf(':');
@@ -1426,9 +1465,12 @@ function parseBulkPaste(text) {
       skipped.push(key + ' (sensitive — ignored)');
       continue;
     }
+    // If this key was queued for deletion earlier, the later update wins
+    var didx = deletes.indexOf(key);
+    if (didx !== -1) deletes.splice(didx, 1);
     out[key] = val;
   }
-  return { updates: out, skipped: skipped };
+  return { updates: out, deletes: deletes, skipped: skipped };
 }
 
 function previewBulkPaste() {
@@ -1436,15 +1478,18 @@ function previewBulkPaste() {
   var pv  = document.getElementById('bulkPreview');
   if (!box || !pv) return;
   var parsed = parseBulkPaste(box.value);
-  var count = Object.keys(parsed.updates).length;
-  if (count === 0 && parsed.skipped.length === 0) {
+  var updCount = Object.keys(parsed.updates).length;
+  var delCount = parsed.deletes.length;
+  if (updCount === 0 && delCount === 0 && parsed.skipped.length === 0) {
     pv.classList.remove('visible');
     pv.textContent = '';
     return;
   }
-  var msg = count + ' valid key' + (count === 1 ? '' : 's') + ' parsed';
-  if (parsed.skipped.length) msg += ' · ' + parsed.skipped.length + ' line' + (parsed.skipped.length === 1 ? '' : 's') + ' skipped';
-  pv.textContent = msg;
+  var parts = [];
+  if (updCount) parts.push(updCount + ' update' + (updCount === 1 ? '' : 's'));
+  if (delCount) parts.push(delCount + ' delete' + (delCount === 1 ? '' : 's'));
+  if (parsed.skipped.length) parts.push(parsed.skipped.length + ' skipped');
+  pv.textContent = parts.join(' · ');
   pv.classList.add('visible');
 }
 
@@ -1460,19 +1505,28 @@ async function bulkUpdateAndRestart() {
   if (!box) return;
   var parsed = parseBulkPaste(box.value);
   var updates = parsed.updates;
+  var deletes = parsed.deletes || [];
   var keys = Object.keys(updates);
-  if (keys.length === 0) {
-    showToast('No valid KEY=VALUE pairs found', 'error');
+  if (keys.length === 0 && deletes.length === 0) {
+    showToast('No valid KEY=VALUE pairs or -KEY deletes found', 'error');
     return;
   }
 
-  var previewList = keys.slice(0, 8).map(function(k){ return k + '=' + updates[k]; }).join('\\n');
-  if (keys.length > 8) previewList += '\\n...and ' + (keys.length - 8) + ' more';
+  var previewParts = [];
+  keys.slice(0, 6).forEach(function(k){ previewParts.push(k + '=' + updates[k]); });
+  if (keys.length > 6) previewParts.push('...and ' + (keys.length - 6) + ' more update(s)');
+  deletes.slice(0, 6).forEach(function(k){ previewParts.push('− ' + k + '  (delete)'); });
+  if (deletes.length > 6) previewParts.push('...and ' + (deletes.length - 6) + ' more delete(s)');
+  var previewList = previewParts.join('\\n');
+
+  var msgHead = 'Apply ' + keys.length + ' update' + (keys.length === 1 ? '' : 's');
+  if (deletes.length) msgHead += ' and remove ' + deletes.length + ' key' + (deletes.length === 1 ? '' : 's');
+  msgHead += ' and restart the server?';
 
   var ok = await showConfirm({
     icon: '🚀',
     title: 'Bulk Update & Restart',
-    message: 'Apply ' + keys.length + ' setting' + (keys.length > 1 ? 's' : '') + ' and restart the server?\\n\\n' + previewList + '\\n\\nActive trading sessions will stop. Page will reload.',
+    message: msgHead + '\\n\\n' + previewList + '\\n\\nActive trading sessions will stop. Page will reload.',
     confirmText: 'Update & Restart',
     confirmClass: 'modal-btn-danger'
   });
@@ -1485,7 +1539,7 @@ async function bulkUpdateAndRestart() {
     var res = await secretFetch('/settings/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ updates: updates }),
+      body: JSON.stringify({ updates: updates, deletes: deletes }),
     });
     if (!res) { btn.disabled = false; btn.innerHTML = '<span>🚀</span> Update & Restart'; return; }
     var data = await res.json();
@@ -1502,7 +1556,10 @@ async function bulkUpdateAndRestart() {
       return;
     }
 
-    showToast(data.updatedCount + ' setting(s) saved — restarting server...', 'info');
+    var savedParts = [];
+    if (data.updatedCount) savedParts.push(data.updatedCount + ' updated');
+    if (data.deletedCount) savedParts.push(data.deletedCount + ' deleted');
+    showToast((savedParts.join(', ') || 'no changes') + ' — restarting server...', 'info');
     btn.innerHTML = '<span>⏳</span> Restarting...';
 
     secretFetch('/settings/restart', {
