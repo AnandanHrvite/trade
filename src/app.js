@@ -1151,19 +1151,71 @@ async function pollDashboardStatus(){
 var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}];
 var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}];
 
+function _escHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c];
+  });
+}
+
+function _prettyEndpoint(url){
+  var m = /\\/(\\w+)-(\\w+)\\/start/.exec(url);
+  if (!m) return url;
+  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action' }[m[1]] || m[1];
+  return mode + ' ' + (m[2] === 'paper' ? 'Paper' : 'Live');
+}
+
 async function _startAll(endpoints){
-  for (var i=0;i<endpoints.length;i++){
+  var results = { successes: [], failures: [] };
+  for (var i = 0; i < endpoints.length; i++){
+    var ep = endpoints[i];
     try {
-      var r = await secretFetch(endpoints[i]);
-      if(r) await r.json().catch(function(){});
-    } catch(e) { /* continue with next */ }
+      var r = await secretFetch(ep);
+      if (!r){ results.failures.push({ endpoint: ep, error: 'No response from server' }); continue; }
+      var body = null;
+      try { body = await r.json(); } catch(_) { /* non-JSON body */ }
+      if (r.ok && (!body || body.success !== false)){
+        results.successes.push({ endpoint: ep });
+      } else {
+        var msg = (body && (body.error || body.message)) || ('HTTP ' + r.status);
+        results.failures.push({ endpoint: ep, status: r.status, error: msg });
+      }
+    } catch(e){
+      results.failures.push({ endpoint: ep, error: (e && e.message) || 'Network error' });
+    }
   }
+  return results;
+}
+
+async function _handleStartAllResult(btn, origText, label, result){
+  if (result.failures.length === 0){
+    location.reload();
+    return;
+  }
+  var lines = result.failures.map(function(f){
+    return '• <strong>' + _escHtml(_prettyEndpoint(f.endpoint)) + '</strong>: ' + _escHtml(f.error);
+  }).join('<br>');
+  var succeeded = result.successes.length;
+  var total = succeeded + result.failures.length;
+  var header = succeeded > 0
+    ? ('Started ' + succeeded + '/' + total + '. The following could not start:')
+    : ('None could start — ' + result.failures.length + '/' + total + ' failed:');
+  await showAlert({
+    icon: succeeded > 0 ? '⚠️' : '❌',
+    title: 'Start ' + label + ' — Issues',
+    message: '<div style="text-align:left;">' + header + '<br><br>' + lines + '</div>',
+    btnText: 'OK',
+    btnClass: 'modal-btn-primary',
+  });
+  btn.disabled = false;
+  btn.textContent = origText;
+  if (succeeded > 0) location.reload();
 }
 
 async function startAllPaper(btn){
-  btn.disabled=true; btn.textContent='⏳ Starting all paper trades...';
-  await _startAll(PAPER_ENDPOINTS);
-  setTimeout(function(){ location.reload(); }, 1200);
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Starting all paper trades...';
+  var result = await _startAll(PAPER_ENDPOINTS);
+  await _handleStartAllResult(btn, orig, 'All Paper', result);
 }
 
 async function startAllLive(btn){
@@ -1173,9 +1225,10 @@ async function startAllLive(btn){
     confirmText: 'Start All', confirmClass: 'modal-btn-danger'
   });
   if(!ok) return;
-  btn.disabled=true; btn.textContent='⏳ Starting all live trades...';
-  await _startAll(LIVE_ENDPOINTS);
-  setTimeout(function(){ location.reload(); }, 1200);
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Starting all live trades...';
+  var result = await _startAll(LIVE_ENDPOINTS);
+  await _handleStartAllResult(btn, orig, 'All Live', result);
 }
 
 // ── Dashboard Cumulative P&L Charts (Paper + Live) ───────────────────────────
