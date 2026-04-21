@@ -108,7 +108,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
         { key: 'settings',  href: '/settings',   icon: '⚙',  label: 'Settings'   },
-        { key: 'loginLogs', href: '/login-logs', icon: '🔐', label: 'Login Logs' },
       ]
     },
   ];

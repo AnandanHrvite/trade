@@ -564,12 +564,6 @@ async function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [PA-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX check — per-module (PA_VIX_ENABLED + PA_VIX_MAX_ENTRY) — skip in sim mode
-  if (!state._simMode && process.env.PA_VIX_ENABLED === "true") {
-    const _vixCheck = await checkLiveVix("STRONG", { mode: "pa" });
-    if (!_vixCheck.allowed) { log(`⏭️ [PA-PAPER] SKIP: ${_vixCheck.reason}`); return; }
-  }
-
   const window = [...state.candles];
   if (window.length < 30) { log(`⏭️ [PA-PAPER] SKIP: warming up (${window.length}/30 candles)`); return; }
 
@@ -577,7 +571,7 @@ async function onCandleClose(bar) {
     silent: true,
     skipTimeCheck: state._simMode,
     // prevDayOHLC not needed
-    
+
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
@@ -593,6 +587,13 @@ async function onCandleClose(bar) {
       });
     }
     return;
+  }
+
+  // VIX — post-strategy check using pattern strength (skip in sim mode)
+  if (!state._simMode && process.env.PA_VIX_ENABLED === "true") {
+    const _strength = result.signalStrength || "MARGINAL";
+    const _vixCheck = await checkLiveVix(_strength, { mode: "pa" });
+    if (!_vixCheck.allowed) { log(`⏭️ [PA-PAPER] SKIP: ${_vixCheck.reason}`); return; }
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";

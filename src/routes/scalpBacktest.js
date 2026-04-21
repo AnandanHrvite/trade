@@ -23,6 +23,21 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
+
+// Derive signal strength for scalp: STRONG if RSI is clearly beyond threshold (+5), else MARGINAL.
+function _deriveScalpStrength(result) {
+  const rsi = typeof result.rsi === "number" ? result.rsi : null;
+  if (rsi === null) return "MARGINAL";
+  if (result.signal === "BUY_CE") {
+    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
+  }
+  if (result.signal === "BUY_PE") {
+    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
+  }
+  return "MARGINAL";
+}
 const backtestJobs = require("../utils/backtestJobManager");
 
 const inr = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
@@ -373,18 +388,20 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
 
-    // VIX check (scalp-specific threshold: SCALP_VIX_MAX_ENTRY)
-    if (process.env.SCALP_VIX_ENABLED === "true") {
-      const _btVix = lookupVix(candle.time);
-      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { mode: "scalp", force: true });
-      if (!vixCheck.allowed) continue;
-    }
-
     const result = scalpStrategy.getSignal(window, {
       silent: true,
       prevDayOHLC: prevDayOHLC,
       prevPrevDayOHLC: prevPrevDayOHLC,
     });
+
+    // VIX check — post-strategy with derived strength (scalp: SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
+    if (result.signal !== "NONE" && process.env.SCALP_VIX_ENABLED === "true") {
+      const _btVix = lookupVix(candle.time);
+      const _strength = _deriveScalpStrength(result);
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, _strength, { mode: "scalp", force: true });
+      if (!vixCheck.allowed) continue;
+    }
+
     if (result.signal === "NONE") {
       // Track rejection reasons while flat
       if (!position && result.reason) {

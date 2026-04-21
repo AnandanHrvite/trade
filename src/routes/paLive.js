@@ -703,19 +703,13 @@ async function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [PA-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX — per-module check (PA_VIX_ENABLED + PA_VIX_MAX_ENTRY)
-  if (process.env.PA_VIX_ENABLED === "true") {
-    const _vixCheck = await checkLiveVix("STRONG", { mode: "pa" });
-    if (!_vixCheck.allowed) { log(`⏭️ [PA-LIVE] SKIP: ${_vixCheck.reason}`); return; }
-  }
-
   const window = [...state.candles];
   if (window.length < 30) { log(`⏭️ [PA-LIVE] SKIP: warming up (${window.length}/30 candles)`); return; }
 
   const result = paStrategy.getSignal(window, {
     silent: false,
     // prevDayOHLC not needed
-    
+
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
@@ -729,6 +723,13 @@ async function onCandleClose(bar) {
       time: _barIST,
     });
     return;
+  }
+
+  // VIX — post-strategy check using pattern strength (PA_VIX_MAX_ENTRY + PA_VIX_STRONG_ONLY)
+  if (process.env.PA_VIX_ENABLED === "true") {
+    const _strength = result.signalStrength || "MARGINAL";
+    const _vixCheck = await checkLiveVix(_strength, { mode: "pa" });
+    if (!_vixCheck.allowed) { log(`⏭️ [PA-LIVE] SKIP: ${_vixCheck.reason}`); return; }
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";

@@ -90,6 +90,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (scope: Scalp only)", default: "false" },
       { key: "SCALP_VIX_MAX_ENTRY", label: "Scalp VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: block entries above this VIX", default: "20" },
+      { key: "SCALP_VIX_STRONG_ONLY", label: "Scalp VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: above this VIX allow only STRONG signals (RSI beyond threshold by +5)", default: "16" },
       { key: "SCALP_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new scalp entries (HH:MM IST)", default: "09:21" },
       { key: "SCALP_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new scalp entries after this time (HH:MM IST)", default: "14:30" },
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (5 min)", default: "5" },
@@ -136,6 +137,7 @@ const SETTINGS_SCHEMA = [
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high (scope: PA only)", default: "false" },
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PA only: block entries above this VIX", default: "20" },
+      { key: "PA_VIX_STRONG_ONLY", label: "PA VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "PA only: above this VIX allow only STRONG pattern signals (engulfing/BOS) — block MARGINAL (pin bars, etc.)", default: "16" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new PA entries (HH:MM IST)", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new PA entries after this time (HH:MM IST)", default: "14:30" },
       { key: "PA_RESOLUTION", label: "Candle (min)", type: "select", options: ["5", "3"], effect: EFFECT.SESSION, desc: "Price action candle resolution", default: "5" },
@@ -310,7 +312,7 @@ function parseEnvFile() {
 const IMMEDIATE_KEYS = new Set([
   "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
-  "SCALP_VIX_MAX_ENTRY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
+  "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY", "PA_VIX_STRONG_ONLY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
@@ -564,8 +566,8 @@ router.get("/", (req, res) => {
   function isFieldFrozen(key) {
     // Per-module VIX thresholds frozen when that module's VIX toggle is off
     if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
-    if (key === "SCALP_VIX_MAX_ENTRY" && !scalpVixEnabled) return true;
-    if (key === "PA_VIX_MAX_ENTRY"    && !paVixEnabled)    return true;
+    if ((key === "SCALP_VIX_MAX_ENTRY" || key === "SCALP_VIX_STRONG_ONLY") && !scalpVixEnabled) return true;
+    if ((key === "PA_VIX_MAX_ENTRY"    || key === "PA_VIX_STRONG_ONLY")    && !paVixEnabled)    return true;
     // Scalp section frozen when scalp mode is off (but not the master toggle itself)
     if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && !scalpModeOn) return true;
     return false;
@@ -581,8 +583,8 @@ router.get("/", (req, res) => {
     const frozen = isFieldFrozen(f.key);
     const dis = frozen ? "disabled" : "";
     let frozenGroup = "";
-    if (f.key === "SCALP_VIX_MAX_ENTRY") frozenGroup = "scalp-vix";
-    else if (f.key === "PA_VIX_MAX_ENTRY") frozenGroup = "pa-vix";
+    if (f.key === "SCALP_VIX_MAX_ENTRY" || f.key === "SCALP_VIX_STRONG_ONLY") frozenGroup = "scalp-vix";
+    else if (f.key === "PA_VIX_MAX_ENTRY" || f.key === "PA_VIX_STRONG_ONLY") frozenGroup = "pa-vix";
     else if (f.key.startsWith("SCALP_"))   frozenGroup = "scalp";
     else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";

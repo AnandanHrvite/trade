@@ -678,12 +678,6 @@ async function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [SCALP-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX — per-module check (SCALP_VIX_ENABLED + SCALP_VIX_MAX_ENTRY)
-  if (process.env.SCALP_VIX_ENABLED === "true") {
-    const _vixCheck = await checkLiveVix("STRONG", { mode: "scalp" });
-    if (!_vixCheck.allowed) { log(`⏭️ [SCALP-LIVE] SKIP: ${_vixCheck.reason}`); return; }
-  }
-
   const window = [...state.candles];
   if (window.length < 30) { log(`⏭️ [SCALP-LIVE] SKIP: warming up (${window.length}/30 candles)`); return; }
 
@@ -706,10 +700,33 @@ async function onCandleClose(bar) {
     return;
   }
 
+  // VIX — post-strategy check with derived strength (SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
+  if (process.env.SCALP_VIX_ENABLED === "true") {
+    const _strength = deriveScalpStrength(result);
+    const _vixCheck = await checkLiveVix(_strength, { mode: "scalp" });
+    if (!_vixCheck.allowed) { log(`⏭️ [SCALP-LIVE] SKIP: ${_vixCheck.reason}`); return; }
+  }
+
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
   const spot = bar.close;
 
   resolveAndEnter(side, spot, result);
+}
+
+// Derive signal strength for scalp: STRONG if RSI is clearly beyond its threshold (by +5),
+// else MARGINAL. Used to gate on SCALP_VIX_STRONG_ONLY in elevated-VIX regimes.
+function deriveScalpStrength(result) {
+  const rsi = typeof result.rsi === "number" ? result.rsi : null;
+  if (rsi === null) return "MARGINAL";
+  if (result.signal === "BUY_CE") {
+    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
+  }
+  if (result.signal === "BUY_PE") {
+    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
+  }
+  return "MARGINAL";
 }
 
 async function resolveAndEnter(side, spot, result) {

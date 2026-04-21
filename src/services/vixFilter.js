@@ -42,7 +42,8 @@ function getVixMaxEntry(mode = "swing") {
 }
 
 function getVixStrongOnly(mode = "swing") {
-  // Only swing distinguishes MARGINAL vs STRONG signals; scalp/PA always pass STRONG.
+  if (mode === "scalp") return parseFloat(process.env.SCALP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16");
+  if (mode === "pa")    return parseFloat(process.env.PA_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
   return parseFloat(process.env.VIX_STRONG_ONLY || "16");
 }
 
@@ -124,11 +125,11 @@ async function checkLiveVix(signalStrength, { mode = "swing" } = {}) {
     };
   }
 
-  if (mode === "swing" && vix > strongOnly && signalStrength !== "STRONG") {
+  if (vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} — elevated volatility, only STRONG signals allowed (got ${signalStrength})`,
+      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} (${mode}) — elevated volatility, only STRONG signals allowed (got ${signalStrength})`,
     };
   }
 
@@ -190,11 +191,11 @@ function checkBacktestVix(vix, signalStrength, { mode = "swing", force = false }
     };
   }
 
-  if (mode === "swing" && vix > strongOnly && signalStrength !== "STRONG") {
+  if (vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} — elevated volatility, only STRONG signals (got ${signalStrength})`,
+      reason: `VIX ${vix.toFixed(1)} > ${strongOnly} (${mode}) — elevated volatility, only STRONG signals (got ${signalStrength})`,
     };
   }
 

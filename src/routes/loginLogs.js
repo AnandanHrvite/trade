@@ -68,6 +68,13 @@ router.get("/", (req, res) => {
     /* ── Page body ─────────────────────────────────────────── */
     .page { padding:24px 28px 60px; max-width:1100px; }
 
+    /* ── Breadcrumb ─────────────────────────────────────────── */
+    .breadcrumb { display:flex; align-items:center; gap:6px; font-size:0.68rem; font-weight:600; margin-bottom:6px; }
+    .bc-link { color:var(--muted); text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
+    .bc-link:hover { color:var(--accent); background:var(--surface2); }
+    .bc-sep { color:var(--dim); font-size:0.75rem; }
+    .bc-current { color:var(--text2); padding:2px 6px; }
+
     /* ── Toolbar ──────────────────────────────────────────── */
     .toolbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
     .badge-count { display:flex; align-items:center; gap:5px; font-size:0.68rem; font-weight:700; padding:4px 12px; border-radius:5px; border:0.5px solid var(--border2); background:var(--surface); color:var(--muted); }
@@ -120,6 +127,13 @@ ${buildSidebar('loginLogs', liveActive)}
 
 <div class="top-bar">
   <div>
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/" class="bc-link">⌂ Dashboard</a>
+      <span class="bc-sep">›</span>
+      <a href="/settings" class="bc-link">⚙ Settings</a>
+      <span class="bc-sep">›</span>
+      <span class="bc-current">🔐 Login Logs</span>
+    </nav>
     <div class="top-bar-title">🔐 Failed Login Attempts</div>
     <div class="top-bar-meta">Only invalid login tries are logged — IP, password, location, browser</div>
   </div>
