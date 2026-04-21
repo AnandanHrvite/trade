@@ -636,53 +636,38 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .util-info { color:#64748b; }
 
     /* ── PER-MODULE START CARDS ── */
-    .mod-grid {
-      display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
-    }
-    .mod-card {
-      display:flex; flex-direction:column; gap:10px;
-      padding:16px; border:1px solid #1a2236; background:#0d1320;
-      border-radius:10px;
-    }
-    .mod-card-hdr {
-      display:flex; align-items:center; gap:8px;
-      padding-bottom:10px; border-bottom:1px solid #1a2236;
-    }
-    .mod-card-dot { width:8px; height:8px; border-radius:50%; background:#4a6080; flex-shrink:0; }
-    .mod-card.swing .mod-card-dot { background:#60a5fa; }
-    .mod-card.scalp .mod-card-dot { background:#fbbf24; }
-    .mod-card.pa    .mod-card-dot { background:#a78bfa; }
-    .mod-card-title {
-      font-size:0.66rem; font-weight:700; text-transform:uppercase;
-      letter-spacing:1.6px; color:#4a6080;
-    }
-    .mod-card-btns { display:flex; flex-direction:column; gap:8px; }
-    .mod-btn {
-      width:100%;
-      padding:10px 14px; font-size:0.78rem; font-weight:700; letter-spacing:0.5px;
-      border-radius:7px; cursor:pointer; font-family:inherit;
-      transition:filter 0.15s, transform 0.08s;
-    }
-    .mod-btn:hover:not(:disabled) { filter:brightness(1.15); }
-    .mod-btn:active:not(:disabled){ transform:translateY(1px); }
-    .mod-btn:disabled { opacity:0.6; cursor:not-allowed; }
-    .mod-btn.paper { background:#0d3018; color:#4ade80; border:1px solid #166534; }
-    .mod-btn.live  { background:#2d0a0a; color:#ef4444; border:1px solid #7f1d1d; }
-    .mod-card-ft {
-      margin-top:auto; text-align:center;
-      font-size:0.7rem; color:#60a5fa; text-decoration:none;
-      padding:8px; border-radius:6px; border:1px solid #1a3a6a;
-      background:#080e1a; transition:filter 0.15s;
-    }
-    .mod-card-ft:hover { filter:brightness(1.2); }
-    @media (max-width:900px) { .mod-grid { grid-template-columns:1fr 1fr; } }
-    @media (max-width:640px) { .mod-grid { grid-template-columns:1fr; } }
-    :root[data-theme="light"] .mod-card { background:#ffffff; border-color:#e0e4ea; }
-    :root[data-theme="light"] .mod-card-hdr { border-bottom-color:#e0e4ea; }
-    :root[data-theme="light"] .mod-card-title { color:#64748b; }
-    :root[data-theme="light"] .mod-btn.paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
-    :root[data-theme="light"] .mod-btn.live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .mod-card-ft { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
+    .mm-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:14px 16px; display:flex; flex-direction:column; }
+    .mm-hdr { display:flex; align-items:center; gap:10px; padding-bottom:8px; border-bottom:1px solid #1a2236; margin-bottom:10px; }
+    .mm-dot { width:8px; height:8px; border-radius:50%; background:#4a6080; flex-shrink:0; }
+    .mm-card.swing .mm-dot { background:#60a5fa; }
+    .mm-card.scalp .mm-dot { background:#fbbf24; }
+    .mm-card.pa    .mm-dot { background:#a78bfa; }
+    .mm-title { font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1.6px; color:#a0b0c8; }
+    .mm-toggle { margin-left:auto; display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:7px; padding:2px; }
+    .mm-tog-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.64rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; padding:4px 10px; border-radius:5px; cursor:pointer; transition:all 0.15s; }
+    .mm-tog-btn:hover:not(.active) { color:#a0b0c8; }
+    .mm-tog-btn.active { background:#0d1320; color:#e0eaf8; box-shadow:0 0 0 1px #1a3a6a inset; }
+    .mm-tog-btn.active[data-src="live"] { box-shadow:0 0 0 1px #7f1d1d inset; color:#fca5a5; }
+    .mm-stats { font-size:0.7rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:8px; }
+    .mm-stats .pnl-pos { color:#10b981; font-weight:700; }
+    .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
+    .mm-stats .pnl-flat { color:#4a6080; font-weight:700; }
+    .mm-wrap { position:relative; height:180px; }
+    .mm-empty { text-align:center; padding:50px 20px 20px; color:#4a6080; font-size:0.76rem; }
+    @media (max-width:900px) { .mm-grid { grid-template-columns:1fr 1fr; } }
+    @media (max-width:640px) { .mm-grid { grid-template-columns:1fr; } }
+    :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .mm-hdr { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .mm-title { color:#475569; }
+    :root[data-theme="light"] .mm-toggle { background:#f1f5f9; border-color:#e0e4ea; }
+    :root[data-theme="light"] .mm-tog-btn { color:#94a3b8; }
+    :root[data-theme="light"] .mm-tog-btn:hover:not(.active) { color:#475569; }
+    :root[data-theme="light"] .mm-tog-btn.active { background:#ffffff; color:#1e293b; box-shadow:0 0 0 1px #bfdbfe inset; }
+    :root[data-theme="light"] .mm-tog-btn.active[data-src="live"] { box-shadow:0 0 0 1px #fca5a5 inset; color:#dc2626; }
+    :root[data-theme="light"] .mm-stats { color:#94a3b8; }
+    :root[data-theme="light"] .mm-empty { color:#94a3b8; }
 
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
@@ -846,43 +831,49 @@ ${buildSidebar('dashboard', liveActive)}
     <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
   </div>
 
-  <!-- ③ PER-MODULE START CARDS -->
-  <div class="mod-grid">
-    <div class="mod-card swing">
-      <div class="mod-card-hdr">
-        <span class="mod-card-dot"></span>
-        <span class="mod-card-title">Swing</span>
+  <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Paper/Live toggle, all-time) -->
+  <div class="mm-grid">
+    <div class="mm-card swing" data-mode="SWING">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">Swing</span>
+        <div class="mm-toggle">
+          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
+          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
+        </div>
       </div>
-      <div class="mod-card-btns">
-        <button class="mod-btn paper" onclick="startOne('/swing-paper/start','/swing-paper/status',this)">▶ Start Paper</button>
-        <button class="mod-btn live"  onclick="startOne('/swing-live/start','/swing-live/status',this)">▶ Start Live</button>
-      </div>
-      <a class="mod-card-ft" href="/swing-backtest">Backtest →</a>
+      <div class="mm-stats" id="mm-stats-SWING">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-SWING"></canvas></div>
+      <div class="mm-empty" id="mm-empty-SWING" style="display:none;">No paper trades yet</div>
     </div>
     ${scalpModeOn ? `
-    <div class="mod-card scalp">
-      <div class="mod-card-hdr">
-        <span class="mod-card-dot"></span>
-        <span class="mod-card-title">Scalp</span>
+    <div class="mm-card scalp" data-mode="SCALP">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">Scalp</span>
+        <div class="mm-toggle">
+          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
+          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
+        </div>
       </div>
-      <div class="mod-card-btns">
-        <button class="mod-btn paper" onclick="startOne('/scalp-paper/start','/scalp-paper/status',this)">▶ Start Paper</button>
-        <button class="mod-btn live"  onclick="startOne('/scalp-live/start','/scalp-live/status',this)">▶ Start Live</button>
-      </div>
-      <a class="mod-card-ft" href="/scalp-backtest">Backtest →</a>
+      <div class="mm-stats" id="mm-stats-SCALP">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-SCALP"></canvas></div>
+      <div class="mm-empty" id="mm-empty-SCALP" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${paModeOn ? `
-    <div class="mod-card pa">
-      <div class="mod-card-hdr">
-        <span class="mod-card-dot"></span>
-        <span class="mod-card-title">Price Action</span>
+    <div class="mm-card pa" data-mode="PA">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">Price Action</span>
+        <div class="mm-toggle">
+          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
+          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
+        </div>
       </div>
-      <div class="mod-card-btns">
-        <button class="mod-btn paper" onclick="startOne('/pa-paper/start','/pa-paper/status',this)">▶ Start Paper</button>
-        <button class="mod-btn live"  onclick="startOne('/pa-live/start','/pa-live/status',this)">▶ Start Live</button>
-      </div>
-      <a class="mod-card-ft" href="/pa-backtest">Backtest →</a>
+      <div class="mm-stats" id="mm-stats-PA">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-PA"></canvas></div>
+      <div class="mm-empty" id="mm-empty-PA" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
   </div>
@@ -1181,18 +1172,6 @@ async function _startAll(endpoints){
   }
 }
 
-// Individual per-module start button: hit the start endpoint, then navigate to that module's page
-async function startOne(startUrl, openUrl, btn){
-  var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting...';
-  try {
-    var r = await secretFetch(startUrl);
-    if(r) await r.json().catch(function(){});
-  } catch(e) { /* ignore */ }
-  // Always navigate to the module page so the user can see the running session
-  window.location.href = openUrl;
-}
-
 async function startAllPaper(btn){
   btn.disabled=true; btn.textContent='⏳ Starting all paper trades...';
   await _startAll(PAPER_ENDPOINTS);
@@ -1308,6 +1287,52 @@ async function loadDashCumCharts(){
   } catch(_){ }
 }
 loadDashCumCharts();
+
+// ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
+var _mmData = { paper: null, live: null };
+var _mmCharts = {};
+var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper' };
+
+function _renderModuleChart(mode){
+  var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
+  if (!card) return;
+  var src = _mmToggle[mode];
+  var all = _mmData[src] || [];
+  var trades = all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; });
+  var color = src === 'live' ? '#ef4444' : '#3b82f6';
+  if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
+  var emptyEl = document.getElementById('mm-empty-' + mode);
+  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
+  _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades, color);
+  _updateChartStats('mm-stats-' + mode, trades);
+}
+
+async function loadModuleCharts(){
+  try {
+    var r1 = await fetch('/consolidation/data', { cache: 'no-store' });
+    if (r1.ok){ var d1 = await r1.json(); _mmData.paper = (d1 && d1.trades) || []; }
+  } catch(_){ _mmData.paper = []; }
+  try {
+    var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
+    if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
+  } catch(_){ _mmData.live = []; }
+  ['SWING','SCALP','PA'].forEach(_renderModuleChart);
+}
+
+document.addEventListener('click', function(e){
+  var btn = e.target.closest && e.target.closest('.mm-tog-btn');
+  if (!btn) return;
+  var card = btn.closest('.mm-card');
+  if (!card) return;
+  var mode = card.getAttribute('data-mode');
+  var src  = btn.getAttribute('data-src');
+  if (!mode || !src || _mmToggle[mode] === src) return;
+  _mmToggle[mode] = src;
+  card.querySelectorAll('.mm-tog-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+  _renderModuleChart(mode);
+});
+
+loadModuleCharts();
 
 // ── Candle cache info ─────────────────────────────────────────────────────────
 async function loadCacheInfo(){
