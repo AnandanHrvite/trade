@@ -541,14 +541,17 @@ app.get("/", (req, res) => {
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
-    .brokers { display:flex; flex-direction:column; gap:5px; margin-bottom:0; }
+    .brokers { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:0; }
+    .brokers > .brk-expiry { grid-column:1 / -1; }
     .brk-row {
-      display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
       padding:6px 12px; border-radius:9px;
       border:1px solid #1a2236; background:#0d1320;
+      min-width:0;
     }
     .brk-name { font-size:0.82rem !important; }
-    .brk-role { font-size:0.62rem !important; }
+    .brk-role { font-size:0.62rem !important; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    @media (max-width:720px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
     .brk-row.bad  { border-color:#3a0f1c; background:#100408; }
