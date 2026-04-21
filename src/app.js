@@ -436,7 +436,7 @@ app.get("/", (req, res) => {
     ${sidebarCSS()}
 
     /* ── PAGE WRAPPER ── */
-    .page { padding:28px 24px 48px; display:flex; flex-direction:column; gap:12px; }
+    .page { padding:14px 20px 16px; display:flex; flex-direction:column; gap:8px; }
 
     /* ── SECTION CARD ── */
     .card { background:#0d1320; border:1px solid #1a2236; border-radius:12px; overflow:hidden; }
@@ -541,12 +541,14 @@ app.get("/", (req, res) => {
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
-    .brokers { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+    .brokers { display:flex; flex-direction:column; gap:5px; margin-bottom:0; }
     .brk-row {
       display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-      padding:10px 14px; border-radius:10px;
+      padding:6px 12px; border-radius:9px;
       border:1px solid #1a2236; background:#0d1320;
     }
+    .brk-name { font-size:0.82rem !important; }
+    .brk-role { font-size:0.62rem !important; }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
     .brk-row.bad  { border-color:#3a0f1c; background:#100408; }
@@ -592,23 +594,26 @@ app.get("/", (req, res) => {
     .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
     .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:#4a7090; }
 
-    /* Compact utility strip (Hard Reset / NSE Holidays / Cache info) */
+    /* Compact utility strip (Start All / Hard Reset / NSE Holidays / Cache info) */
     .util-strip {
-      display:flex; flex-wrap:wrap; align-items:center; gap:8px;
-      padding:8px 12px; border-radius:10px;
+      display:flex; flex-wrap:wrap; align-items:center; gap:6px;
+      padding:6px 10px; border-radius:9px;
       border:1px solid #1a2236; background:#0a0f18;
-      margin-bottom:12px;
+      margin-bottom:0;
     }
     .util-btn {
       display:inline-flex; align-items:center; gap:6px;
-      padding:6px 12px; border-radius:6px; cursor:pointer;
-      background:#150608; border:1px solid #5a1010; color:#f87171;
-      font-size:0.72rem; font-weight:600; font-family:inherit;
-      transition:filter 0.15s;
+      padding:5px 11px; border-radius:6px; cursor:pointer;
+      background:#0f1520; border:1px solid #243049; color:#a0b0c8;
+      font-size:0.7rem; font-weight:600; font-family:inherit; letter-spacing:0.2px;
+      transition:filter 0.15s, transform 0.08s;
     }
-    .util-btn:hover { filter:brightness(1.2); }
-    .util-btn:nth-child(2) { background:#0a0f14; border-color:#1a4a8a; color:#60a5fa; }
-    .util-info { font-size:0.7rem; color:#4a6080; margin-left:auto; }
+    .util-btn:hover:not(:disabled) { filter:brightness(1.2); }
+    .util-btn:active:not(:disabled) { transform:translateY(1px); }
+    .util-btn:disabled { opacity:0.55; cursor:not-allowed; }
+    .util-btn.run-paper { background:#062016; border-color:#166534; color:#4ade80; font-weight:700; }
+    .util-btn.run-live  { background:#1f0808; border-color:#7f1d1d; color:#f87171; font-weight:700; }
+    .util-info { font-size:0.68rem; color:#4a6080; margin-left:auto; font-family:'IBM Plex Mono',monospace; }
 
     /* Mobile */
     @media (max-width:640px) {
@@ -631,31 +636,32 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .brk-row.ok.blue .brk-status { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
     :root[data-theme="light"] .brk-row.bad .brk-status { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
     :root[data-theme="light"] .util-strip { background:#ffffff; border-color:#e0e4ea; }
-    :root[data-theme="light"] .util-btn { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .util-btn:nth-child(2) { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    :root[data-theme="light"] .util-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
+    :root[data-theme="light"] .util-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .util-btn.run-live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
     :root[data-theme="light"] .util-info { color:#64748b; }
 
     /* ── PER-MODULE START CARDS ── */
     /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
-    .mm-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-    .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:14px 16px; display:flex; flex-direction:column; }
-    .mm-hdr { display:flex; align-items:center; gap:10px; padding-bottom:8px; border-bottom:1px solid #1a2236; margin-bottom:10px; }
-    .mm-dot { width:8px; height:8px; border-radius:50%; background:#4a6080; flex-shrink:0; }
+    .mm-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; display:flex; flex-direction:column; }
+    .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
+    .mm-dot { width:7px; height:7px; border-radius:50%; background:#4a6080; flex-shrink:0; }
     .mm-card.swing .mm-dot { background:#60a5fa; }
     .mm-card.scalp .mm-dot { background:#fbbf24; }
     .mm-card.pa    .mm-dot { background:#a78bfa; }
-    .mm-title { font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1.6px; color:#a0b0c8; }
-    .mm-toggle { margin-left:auto; display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:7px; padding:2px; }
-    .mm-tog-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.64rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; padding:4px 10px; border-radius:5px; cursor:pointer; transition:all 0.15s; }
+    .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
+    .mm-toggle { margin-left:auto; display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:6px; padding:2px; }
+    .mm-tog-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; padding:3px 8px; border-radius:4px; cursor:pointer; transition:all 0.15s; }
     .mm-tog-btn:hover:not(.active) { color:#a0b0c8; }
     .mm-tog-btn.active { background:#0d1320; color:#e0eaf8; box-shadow:0 0 0 1px #1a3a6a inset; }
     .mm-tog-btn.active[data-src="live"] { box-shadow:0 0 0 1px #7f1d1d inset; color:#fca5a5; }
-    .mm-stats { font-size:0.7rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:8px; }
+    .mm-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:4px; }
     .mm-stats .pnl-pos { color:#10b981; font-weight:700; }
     .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
     .mm-stats .pnl-flat { color:#4a6080; font-weight:700; }
-    .mm-wrap { position:relative; height:180px; }
-    .mm-empty { text-align:center; padding:50px 20px 20px; color:#4a6080; font-size:0.76rem; }
+    .mm-wrap { position:relative; height:130px; }
+    .mm-empty { text-align:center; padding:38px 20px 14px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .mm-grid { grid-template-columns:1fr 1fr; } }
     @media (max-width:640px) { .mm-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
@@ -741,19 +747,19 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .ts-flat-note { color:#94a3b8; }
 
     /* ── CUMULATIVE P&L CHART CARDS (Paper + Live) ── */
-    .dash-chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:4px; }
-    .dash-chart-card { background:#0d1320; border:1px solid #1a2236; border-radius:10px; padding:14px 16px; }
-    .dash-chart-hdr { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
-    .dash-chart-title { display:flex; align-items:center; gap:8px; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
-    .dash-chart-dot { width:8px; height:8px; border-radius:50%; display:inline-block; }
-    .dash-chart-stats { font-size:0.7rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-left:auto; }
+    .dash-chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .dash-chart-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; }
+    .dash-chart-hdr { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #1a2236; }
+    .dash-chart-title { display:flex; align-items:center; gap:8px; font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
+    .dash-chart-dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+    .dash-chart-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; }
     .dash-chart-stats .pnl-pos { color:#10b981; font-weight:700; }
     .dash-chart-stats .pnl-neg { color:#ef4444; font-weight:700; }
     .dash-chart-stats .pnl-flat { color:#4a6080; font-weight:700; }
-    .dash-chart-link { font-size:0.7rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 10px; border-radius:6px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; }
+    .dash-chart-link { font-size:0.66rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 9px; border-radius:5px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; margin-left:auto; }
     .dash-chart-link:hover { filter:brightness(1.25); }
-    .dash-chart-wrap { position:relative; height:200px; }
-    .dash-chart-empty { text-align:center; padding:60px 20px 20px; color:#4a6080; font-size:0.78rem; }
+    .dash-chart-wrap { position:relative; height:160px; }
+    .dash-chart-empty { text-align:center; padding:46px 20px 14px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .dash-chart-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .dash-chart-title { color:#475569; }
@@ -826,6 +832,8 @@ ${buildSidebar('dashboard', liveActive)}
 
   <!-- ① b — Compact utility strip -->
   <div class="util-strip">
+    <button id="btn-all-paper" class="util-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
+    <button id="btn-all-live"  class="util-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
     <button onclick="hardReset()" class="util-btn" title="Clears all tokens and restarts — use when tokens look stuck">🔄 Hard Reset</button>
     <button onclick="refreshHolidays()" id="holiday-refresh-btn" class="util-btn" title="Force-refresh NSE holidays cache">📅 Refresh Holidays</button>
     <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
@@ -878,42 +886,22 @@ ${buildSidebar('dashboard', liveActive)}
     ` : ''}
   </div>
 
-  <!-- ④ COMMON START-ALL BUTTONS -->
-  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;">
-    <button id="btn-all-paper" onclick="startAllPaper(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #166534;background:linear-gradient(135deg,#0a1f10,#0d3018);color:#4ade80;border-radius:8px;cursor:pointer;transition:all 0.2s;">
-      ▶ START ALL PAPER TRADES
-    </button>
-    <button id="btn-all-live" onclick="startAllLive(this)" style="flex:1;min-width:200px;padding:12px 20px;font-size:0.82rem;font-weight:700;letter-spacing:0.8px;border:1px solid #7f1d1d;background:linear-gradient(135deg,#1a0505,#2d0a0a);color:#ef4444;border-radius:8px;cursor:pointer;transition:all 0.2s;">
-      ▶ START ALL LIVE TRADES
-    </button>
-  </div>
-
-  <!-- ⑤ CUMULATIVE P&L CHARTS (Paper + Live) -->
-  <div class="dash-chart-grid">
-    <div class="dash-chart-card">
-      <div class="dash-chart-hdr">
-        <div class="dash-chart-title">
-          <span class="dash-chart-dot" style="background:#3b82f6;"></span>
-          <span>Paper · Cumulative P&amp;L</span>
-        </div>
-        <div class="dash-chart-stats" id="paper-chart-stats">—</div>
-        <a href="/consolidation" class="dash-chart-link">View →</a>
+  <!-- ⑤ CUMULATIVE P&L CHART (Paper/Live toggle, all-time) -->
+  <div class="dash-chart-card" id="dashCumCard" style="margin-top:4px;">
+    <div class="dash-chart-hdr">
+      <div class="dash-chart-title">
+        <span class="dash-chart-dot" id="dashCumDot" style="background:#3b82f6;"></span>
+        <span>Cumulative P&amp;L</span>
       </div>
-      <div class="dash-chart-wrap"><canvas id="dashPaperChart"></canvas></div>
-      <div id="dashPaperEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>
-    </div>
-    <div class="dash-chart-card">
-      <div class="dash-chart-hdr">
-        <div class="dash-chart-title">
-          <span class="dash-chart-dot" style="background:#ef4444;"></span>
-          <span>Live · Cumulative P&amp;L</span>
-        </div>
-        <div class="dash-chart-stats" id="live-chart-stats">—</div>
-        <a href="/live-consolidation" class="dash-chart-link">View →</a>
+      <div class="mm-toggle dc-toggle">
+        <button type="button" class="mm-tog-btn dc-tog-btn active" data-src="paper">Paper</button>
+        <button type="button" class="mm-tog-btn dc-tog-btn" data-src="live">Live</button>
       </div>
-      <div class="dash-chart-wrap"><canvas id="dashLiveChart"></canvas></div>
-      <div id="dashLiveEmpty" class="dash-chart-empty" style="display:none;">No live trades yet</div>
+      <div class="dash-chart-stats" id="dash-cum-stats">—</div>
+      <a href="/consolidation" id="dashCumLink" class="dash-chart-link">View →</a>
     </div>
+    <div class="dash-chart-wrap"><canvas id="dashCumChart"></canvas></div>
+    <div id="dashCumEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>
   </div>
 
 </div>
@@ -1261,31 +1249,48 @@ function _updateChartStats(elId, trades){
   el.innerHTML = trades.length + ' trades · ' + wins + 'W/' + losses + 'L · <span class="' + cls + '">' + (total >= 0 ? '+' : '') + _fmtINR(total) + '</span>';
 }
 
-var _paperChart = null, _liveChart = null;
+var _dcData = { paper: null, live: null };
+var _dcChart = null;
+var _dcToggle = 'paper';
+
+function _renderDashTotal(){
+  var src = _dcToggle;
+  var trades = _dcData[src] || [];
+  var color = src === 'live' ? '#ef4444' : '#3b82f6';
+  var dot = document.getElementById('dashCumDot');
+  if (dot) dot.style.background = color;
+  var link = document.getElementById('dashCumLink');
+  if (link) link.href = src === 'live' ? '/live-consolidation' : '/consolidation';
+  var emptyEl = document.getElementById('dashCumEmpty');
+  if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
+  if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
+  _dcChart = _renderDashCumChart('dashCumChart', 'dashCumEmpty', trades, color);
+  _updateChartStats('dash-cum-stats', trades);
+}
+
 async function loadDashCumCharts(){
-  // Paper
   try {
     var r = await fetch('/consolidation/data', { cache: 'no-store' });
-    if (r.ok){
-      var d = await r.json();
-      var trades = (d && d.trades) || [];
-      if (_paperChart) _paperChart.destroy();
-      _paperChart = _renderDashCumChart('dashPaperChart', 'dashPaperEmpty', trades, '#3b82f6');
-      _updateChartStats('paper-chart-stats', trades);
-    }
-  } catch(_){ }
-  // Live
+    if (r.ok){ var d = await r.json(); _dcData.paper = (d && d.trades) || []; }
+  } catch(_){ _dcData.paper = []; }
   try {
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
-    if (r2.ok){
-      var d2 = await r2.json();
-      var trades2 = (d2 && d2.trades) || [];
-      if (_liveChart) _liveChart.destroy();
-      _liveChart = _renderDashCumChart('dashLiveChart', 'dashLiveEmpty', trades2, '#ef4444');
-      _updateChartStats('live-chart-stats', trades2);
-    }
-  } catch(_){ }
+    if (r2.ok){ var d2 = await r2.json(); _dcData.live = (d2 && d2.trades) || []; }
+  } catch(_){ _dcData.live = []; }
+  _renderDashTotal();
 }
+
+document.addEventListener('click', function(e){
+  var btn = e.target.closest && e.target.closest('.dc-tog-btn');
+  if (!btn) return;
+  var src = btn.getAttribute('data-src');
+  if (!src || _dcToggle === src) return;
+  _dcToggle = src;
+  var card = btn.closest('.dash-chart-card');
+  if (card) card.querySelectorAll('.dc-tog-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+  _renderDashTotal();
+});
+
 loadDashCumCharts();
 
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
