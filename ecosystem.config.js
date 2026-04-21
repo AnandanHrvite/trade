@@ -3,11 +3,12 @@ module.exports = {
     {
       name: "trading-bot",
       script: "src/app.js",
-      // --expose-gc lets the backtest engine trigger GC manually between
-      // candle chunks. Heap/restart caps kept generous so paper/live modes
-      // aren't killed mid-session on a t3.micro.
-      node_args: "--expose-gc --max-old-space-size=768",
-      max_memory_restart: "800M",
+      // t3.micro = 956 MB usable. Pushed caps to the ceiling per user request
+      // so paper/live sessions aren't killed by pm2 under load. V8 heap is set
+      // just below the pm2 restart threshold so GC runs before pm2 kills us.
+      // --expose-gc lets the backtest engine trigger GC manually.
+      node_args: "--expose-gc --max-old-space-size=900",
+      max_memory_restart: "940M",
       watch: false,
       autorestart: true,
       restart_delay: 5000,

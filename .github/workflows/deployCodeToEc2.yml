@@ -44,10 +44,13 @@ jobs:
 
             npm install --omit=dev
 
-            # Start or reload
-            pm2 describe trading-bot > /dev/null 2>&1 \
-              && pm2 reload trading-bot \
-              || pm2 start src/app.js --name trading-bot
+            # Start or restart via ecosystem.config.js so the deploy ALWAYS
+            # picks up the latest memory/heap caps, node_args, and env vars.
+            # `pm2 reload trading-bot` (without the config file) reuses the
+            # daemon's cached config, so ecosystem.config.js changes never
+            # take effect until the process is deleted. Passing the config
+            # file forces pm2 to re-read it.
+            pm2 startOrRestart ecosystem.config.js --update-env
 
             pm2 save
 
