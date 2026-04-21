@@ -411,14 +411,39 @@ function runStrategy(panel, opts){
 
   setStatus(panel, 'running', 'running\u2026');
 
-  // Fire the trigger (don't wait for body — server returns the full progress
-  // page HTML, we just need the job to be created). Use no-cors equivalent to
-  // keep it lightweight.
-  var triggered = fetch(url, { cache: 'no-store' }).catch(function(){});
-
   return new Promise(function(resolve){
+    // Fire the trigger. Check response status — the server returns 401 when
+    // ACCESS_TOKEN is missing (not logged in with Fyers). Surface it instead
+    // of silently polling /idle, which would otherwise load stale results.
+    fetch(url, { cache: 'no-store' })
+      .then(function(r){
+        if(!r.ok){
+          var isAuth = (r.status === 401);
+          setStatus(panel, 'error', isAuth ? 'not authenticated' : ('HTTP ' + r.status));
+          showAlert({
+            icon: isAuth ? '🔒' : '⚠️',
+            title: isAuth ? 'Not authenticated' : ('Backtest failed (HTTP ' + r.status + ')'),
+            message: isAuth
+              ? 'You need to login with Fyers first before running a backtest.'
+              : 'The server rejected the backtest request. Check the server logs for details.',
+            btnClass: 'modal-btn-danger',
+            btnText: 'OK'
+          });
+          resolve({ ok: false, authError: isAuth });
+        }
+      })
+      .catch(function(){
+        setStatus(panel, 'error', 'network');
+        resolve({ ok: false, networkError: true });
+      });
+
     // Give the server a moment to register the job, then poll /idle
     setTimeout(function tick(){
+      // If the trigger fetch resolved with an error, bail out of the polling loop.
+      var st = panel.querySelector('[data-status]');
+      if(st && st.classList.contains('error')){
+        return;
+      }
       if(opts.cancelled && opts.cancelled()){
         setStatus(panel, 'idle', '');
         resolve({ cancelled: true });
@@ -486,12 +511,13 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
     { panel: document.querySelector('.panel[data-key="${PA_KEY}"]'),    resolution: paRes    }
   ].filter(function(j){ return j.panel; });
 
-  (function next(i){
-    if(i >= jobs.length || RUN_STATE.cancel){
+  (function next(i, authAborted){
+    if(i >= jobs.length || RUN_STATE.cancel || authAborted){
       RUN_STATE.active = false;
       document.getElementById('runAllBtn').disabled = false;
       document.getElementById('cancelBtn').style.display = 'none';
       document.getElementById('runAllStatus').textContent =
+        authAborted      ? 'Stopped — not authenticated. Login with Fyers and try again.' :
         RUN_STATE.cancel ? 'Cancelled (backtests may still finish in background).'
                          : 'All done.';
       // Mark any still-queued panels as idle
@@ -503,7 +529,7 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
     }
     var j = jobs[i];
     runStrategy(j.panel, { from: from, to: to, resolution: j.resolution, cancelled: function(){ return RUN_STATE.cancel; } })
-      .then(function(){ next(i + 1); });
+      .then(function(result){ next(i + 1, result && result.authError); });
   })(0);
 });
 
