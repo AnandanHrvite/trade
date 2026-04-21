@@ -549,17 +549,10 @@ async function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [SCALP-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX check — refresh on every candle close (cache TTL 60s) — skip in sim mode
+  // VIX check — per-module (SCALP_VIX_ENABLED + SCALP_VIX_MAX_ENTRY) — skip in sim mode
   if (!state._simMode && process.env.SCALP_VIX_ENABLED === "true") {
-    await fetchLiveVix({ force: false });
-    const vix = getCachedVix();
-    if (vix) {
-      const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
-      if (vix > vixMax) {
-        log(`⏭️ [SCALP-PAPER] SKIP: VIX ${vix.toFixed(1)} > max ${vixMax}`);
-        return;
-      }
-    }
+    const _vixCheck = await checkLiveVix("STRONG", { mode: "scalp" });
+    if (!_vixCheck.allowed) { log(`⏭️ [SCALP-PAPER] SKIP: ${_vixCheck.reason}`); return; }
   }
 
   const window = [...state.candles];
@@ -1079,11 +1072,11 @@ router.get("/status", (req, res) => {
   const pos         = state.position;
   const data        = loadScalpData();
 
-  // VIX details for top-bar display
+  // VIX details for top-bar display (scalp-specific threshold)
   const _vix          = getCachedVix();
   const _vixEnabled   = process.env.SCALP_VIX_ENABLED === "true";
-  const _vixMaxEntry  = vixFilter.VIX_MAX_ENTRY;
-  const _vixStrongOnly = vixFilter.VIX_STRONG_ONLY;
+  const _vixMaxEntry  = vixFilter.getVixMaxEntry("scalp");
+  const _vixStrongOnly = Infinity; // scalp does not use STRONG_ONLY — disable that branch in the badge
 
   // Unrealised PnL (minus charges to match exit P&L)
   const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
@@ -1379,6 +1372,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
     ${state.running
       ? `<button onclick="location='/scalp-paper/stop'" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
       : `<button onclick="location='/scalp-paper/start'" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start Scalp Paper</button>`}
+    <a href="/scalp-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
     <button onclick="spHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
