@@ -1,8 +1,8 @@
 /**
- * CONSOLIDATION — /consolidation
+ * LIVE CONSOLIDATION — /live-consolidation
  * ─────────────────────────────────────────────────────────────────────────────
- * Aggregated, cross-mode trade history + analytics (Swing / Scalp / Price Action).
- * Reads the three paper-trade JSON files, flattens every trade with its mode
+ * Aggregated, cross-mode LIVE trade history + analytics (Swing / Scalp / PA).
+ * Reads the three live-trade JSON files, flattens every trade with its mode
  * + date, and renders a single unified view with:
  *   • Daily / Monthly / Yearly P&L roll-ups
  *   • Filters (mode, side, date range, search)
@@ -20,9 +20,9 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
-  { mode: "SWING", file: path.join(DATA_DIR, "paper_trades.json"),       color: "#3b82f6" },
-  { mode: "SCALP", file: path.join(DATA_DIR, "scalp_paper_trades.json"), color: "#f59e0b" },
-  { mode: "PA",    file: path.join(DATA_DIR, "pa_paper_trades.json"),    color: "#a855f7" },
+  { mode: "SWING", file: path.join(DATA_DIR, "live_trades.json"),       color: "#3b82f6" },
+  { mode: "SCALP", file: path.join(DATA_DIR, "scalp_live_trades.json"), color: "#f59e0b" },
+  { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    color: "#a855f7" },
 ];
 
 function safeRead(p) {
@@ -68,7 +68,6 @@ function loadAllTrades() {
       }
     }
   }
-  // Sort oldest → newest so cumulative curves read left-to-right
   out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   return out;
 }
@@ -93,7 +92,7 @@ router.get("/", (req, res) => {
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   ${faviconLink()}
-  <title>ௐ Palani Andawar Thunai ॐ — Consolidation</title>
+  <title>ௐ Palani Andawar Thunai ॐ — Live Traded History</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
@@ -110,7 +109,7 @@ router.get("/", (req, res) => {
     @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
-    .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#3b82f6);}
+    .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#ef4444);}
     .sc-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;font-family:'IBM Plex Mono',monospace;}
     .sc-val{font-size:1.15rem;font-weight:700;font-family:'IBM Plex Mono',monospace;color:#e0eaf8;}
     .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
@@ -121,9 +120,9 @@ router.get("/", (req, res) => {
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:12px;flex-wrap:wrap;}
     .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
-    .tbar input:focus,.tbar select:focus{border-color:#3b82f6;}
-    .btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
-    .btn:hover{background:#0a1e3d;border-color:#3b82f6;}
+    .tbar input:focus,.tbar select:focus{border-color:#ef4444;}
+    .btn{background:#0d1320;border:1px solid #1a2236;color:#f87171;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
+    .btn:hover{background:#2d0a0a;border-color:#ef4444;}
     .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#10b981!important;}
     .btn.warn{border-color:rgba(239,68,68,0.3);color:#ef4444;}
     .btn.warn:hover{background:rgba(239,68,68,0.08);}
@@ -131,18 +130,18 @@ router.get("/", (req, res) => {
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
     .tbl th.sortable{cursor:pointer;user-select:none;}
-    .tbl th.sortable:hover{color:#4a9cf5;}
+    .tbl th.sortable:hover{color:#f87171;}
     .tbl th.sortable::after{content:'⇅';margin-left:4px;opacity:0.35;font-size:0.7rem;}
-    .tbl th.sorted-asc::after{content:'↑';opacity:1;color:#3b82f6;}
-    .tbl th.sorted-desc::after{content:'↓';opacity:1;color:#3b82f6;}
+    .tbl th.sorted-asc::after{content:'↑';opacity:1;color:#ef4444;}
+    .tbl th.sorted-desc::after{content:'↓';opacity:1;color:#ef4444;}
     .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;vertical-align:middle;}
-    .tbl tr:hover td{background:rgba(59,130,246,0.04);}
+    .tbl tr:hover td{background:rgba(239,68,68,0.04);}
     .tbl-wrap{overflow-x:auto;max-height:560px;overflow-y:auto;border:0.5px solid #0e1e36;border-radius:10px;}
 
     .pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
     .pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
     .pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
-    .pager select:focus{border-color:#3b82f6;}
+    .pager select:focus{border-color:#ef4444;}
     .pager-info{margin:0 4px;color:#4a6080;}
     .pager-btn{padding:3px 8px;font-size:0.72rem;line-height:1;min-width:26px;}
     .pager-btn:disabled{opacity:0.35;cursor:not-allowed;}
@@ -176,11 +175,11 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbar label{color:#64748b!important;}
     :root[data-theme="light"] .tbar input,.tbar select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
-    :root[data-theme="light"] .btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
+    :root[data-theme="light"] .btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#dc2626!important;}
+    :root[data-theme="light"] .btn:hover{background:#fef2f2!important;border-color:#ef4444!important;}
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
-    :root[data-theme="light"] .tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
+    :root[data-theme="light"] .tbl tr:hover td{background:rgba(239,68,68,0.05)!important;}
     :root[data-theme="light"] .tbl-wrap{border-color:#e0e4ea!important;}
     :root[data-theme="light"] .empty{color:#94a3b8!important;}
 
@@ -193,13 +192,13 @@ router.get("/", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-  ${buildSidebar('consolidation', false)}
+  ${buildSidebar('liveConsolidation', false)}
   <div class="main-content">
-    <h1 class="page-title">🧾 Consolidation</h1>
-    <div class="page-sub">Unified trade history across Swing, Scalp &amp; Price Action — with daily / monthly / yearly analytics.</div>
+    <h1 class="page-title">🔴 Live Traded History</h1>
+    <div class="page-sub">Unified LIVE trade history across Swing, Scalp &amp; Price Action — with daily / monthly / yearly analytics.</div>
 
     <div class="stat-grid">
-      <div class="sc" style="--accent:#10b981;">
+      <div class="sc" style="--accent:${totalPnl >= 0 ? '#10b981' : '#ef4444'};">
         <div class="sc-label">Total P&amp;L</div>
         <div class="sc-val" style="color:${totalPnl >= 0 ? '#10b981' : '#ef4444'};">${fmtINR(totalPnl)}</div>
         <div class="sc-sub">${total} trade${total !== 1 ? 's' : ''} · ${wins}W / ${losses}L · WR ${winRate}%</div>
@@ -385,7 +384,7 @@ router.get("/", (req, res) => {
         <button class="btn pager-btn" data-action="next"  title="Next">›</button>
         <button class="btn pager-btn" data-action="last"  title="Last">»</button>
       </div>
-      <div id="emptyState" class="empty" style="display:none;">No trades match your filters.</div>
+      <div id="emptyState" class="empty" style="display:none;">No live trades match your filters.</div>
     </div>
   </div>
 </div>
@@ -399,7 +398,6 @@ function fmtINR(n){
 }
 function pnlColor(n){ return (n >= 0) ? '#10b981' : '#ef4444'; }
 
-// Parse entry/exit times of the form "HH:MM, DD/MM/YYYY"
 function parseEntryTime(t){
   if (!t) return null;
   const m = String(t).match(/(\\d{1,2}):(\\d{2}),\\s*(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
@@ -433,7 +431,6 @@ function filterTrades(){
 }
 
 function weekKey(dateStr){
-  // ISO week: YYYY-Www (Monday-start). dateStr is "YYYY-MM-DD".
   if (!dateStr) return '';
   const d = new Date(dateStr + 'T00:00:00');
   if (isNaN(d)) return '';
@@ -444,8 +441,8 @@ function weekKey(dateStr){
   const weekNo = Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
   return tmp.getUTCFullYear() + '-W' + String(weekNo).padStart(2, '0');
 }
-function monthKey(d){ return (d || '').slice(0, 7);  } // YYYY-MM
-function yearKey(d) { return (d || '').slice(0, 4);  } // YYYY
+function monthKey(d){ return (d || '').slice(0, 7);  }
+function yearKey(d) { return (d || '').slice(0, 4);  }
 
 function rollup(trades, keyFn){
   const out = new Map();
@@ -461,7 +458,6 @@ function rollup(trades, keyFn){
   return Array.from(out.values()).sort((a, b) => b.key.localeCompare(a.key));
 }
 
-// ── Sort + pagination state ──────────────────────────────────────────────────
 const TBL_STATE = {
   dailyTbl:   { sortKey: 'key',  sortDir: 'desc', page: 1, pageSize: 10, totalPages: 1 },
   monthlyTbl: { sortKey: 'key',  sortDir: 'desc', page: 1, pageSize: 10, totalPages: 1 },
@@ -469,10 +465,8 @@ const TBL_STATE = {
   tradesTbl:  { sortKey: 'date', sortDir: 'desc', page: 1, pageSize: 25, totalPages: 1 },
 };
 
-// Rendered (sorted + sliced) arrays kept so copy buttons can map local index → row
 const _rendered = { dailyTbl: [], monthlyTbl: [], yearlyTbl: [], tradesTbl: [] };
 
-// Time-time like "HH:MM, DD/MM/YYYY" → numeric (ms) for sorting
 function timeStrToNum(s){
   const d = parseEntryTime(s);
   return d ? d.getTime() : -Infinity;
@@ -621,7 +615,7 @@ function tradesToText(list, header){
   const w = list.filter(t => t.pnl > 0).length;
   const l = list.filter(t => t.pnl < 0).length;
   const head = header ? header + '\\n' : '';
-  const summary = \`-- \${list.length} trades | \${w}W/\${l}L | Total P&L: \${totalPnl >= 0 ? '+' : ''}\${totalPnl.toFixed(2)} --\\n\`;
+  const summary = \`-- \${list.length} live trades | \${w}W/\${l}L | Total P&L: \${totalPnl >= 0 ? '+' : ''}\${totalPnl.toFixed(2)} --\\n\`;
   return head + summary + list.map(tradeToLine).join('\\n');
 }
 
@@ -657,18 +651,18 @@ let _lastRollups  = { daily: [], weekly: [], monthly: [], yearly: [] };
 function copyOne(idx){
   const t = _rendered.tradesTbl[idx];
   if (!t) return;
-  copyText(tradesToText([t], '# Trade'), event.target);
+  copyText(tradesToText([t], '# Live Trade'), event.target);
 }
 
 function copyBucket(tableId, idx){
   const list = _rendered[tableId] && _rendered[tableId][idx];
   if (!list) return;
-  const header = \`# \${list.key} (\${list.count} trades)\`;
+  const header = \`# \${list.key} (\${list.count} live trades)\`;
   copyText(tradesToText(list.trades, header), event.target);
 }
 
 function copyGroup(period){
-  if (!_lastFiltered.length){ alert('No trades to copy — filters are empty.'); return; }
+  if (!_lastFiltered.length){ alert('No live trades to copy — filters are empty.'); return; }
   let keyFn;
   if (period === 'daily')   keyFn = d => d;
   if (period === 'weekly')  keyFn = weekKey;
@@ -676,24 +670,24 @@ function copyGroup(period){
   if (period === 'yearly')  keyFn = yearKey;
   const buckets = rollup(_lastFiltered, keyFn);
   const chunks = buckets.map(b =>
-    tradesToText(b.trades, \`# \${b.key} (\${b.count} trades, P&L: \${b.pnl >= 0 ? '+' : ''}\${b.pnl.toFixed(2)})\`)
+    tradesToText(b.trades, \`# \${b.key} (\${b.count} live trades, P&L: \${b.pnl >= 0 ? '+' : ''}\${b.pnl.toFixed(2)})\`)
   );
   copyText(chunks.join('\\n\\n'), event.target);
 }
 
 function copyAll(){
-  if (!_lastFiltered.length){ alert('No trades to copy.'); return; }
-  copyText(tradesToText(_lastFiltered, '# All filtered trades'), event.target);
+  if (!_lastFiltered.length){ alert('No live trades to copy.'); return; }
+  copyText(tradesToText(_lastFiltered, '# All filtered live trades'), event.target);
 }
 
 function downloadCSV(){
-  if (!_lastFiltered.length){ alert('No trades to export.'); return; }
+  if (!_lastFiltered.length){ alert('No live trades to export.'); return; }
   const csv = tradesToCSV(_lastFiltered);
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'consolidation_' + new Date().toISOString().slice(0, 10) + '.csv';
+  a.download = 'live_consolidation_' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
@@ -702,7 +696,6 @@ let _cumChart = null;
 function renderCumChart(rows){
   const ctx = document.getElementById('cumChart');
   if (!ctx) return;
-  // Sort by (date, entryTime) ascending for a monotonic x-axis
   const sorted = rows.slice().sort((a, b) => {
     const da = (a.date || '') + ' ' + (a.entryTime || '');
     const db = (b.date || '') + ' ' + (b.entryTime || '');
@@ -722,7 +715,7 @@ function renderCumChart(rows){
   _cumChart = new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [{
-      data, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)',
+      data, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.12)',
       borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0,
     }]},
     options: {
@@ -744,7 +737,6 @@ function applyFilters(){
   _lastRollups.monthly = rollup(rows, monthKey);
   _lastRollups.yearly  = rollup(rows, yearKey);
 
-  // Reset page on filter change
   ['dailyTbl','monthlyTbl','yearlyTbl','tradesTbl'].forEach(id => { TBL_STATE[id].page = 1; });
 
   renderRollupTable('dailyTbl',   _lastRollups.daily);
@@ -763,7 +755,6 @@ function resetFilters(){
   applyFilters();
 }
 
-// Re-render a single table using cached data (used by sort / pagination handlers)
 function rerender(tableId){
   if (tableId === 'tradesTbl')   return renderTradesTable(_lastFiltered);
   if (tableId === 'dailyTbl')    return renderRollupTable('dailyTbl',   _lastRollups.daily);
@@ -771,7 +762,6 @@ function rerender(tableId){
   if (tableId === 'yearlyTbl')   return renderRollupTable('yearlyTbl',  _lastRollups.yearly);
 }
 
-// Wire sort + pager handlers once
 function wireTableControls(){
   ['dailyTbl','monthlyTbl','yearlyTbl','tradesTbl'].forEach(id => {
     document.querySelectorAll(\`#\${id} thead th.sortable\`).forEach(th => {
@@ -821,7 +811,6 @@ router.get("/data", (req, res) => {
   res.json({ success: true, trades });
 });
 
-// ── Helper used in the outer HTML template (server-side) ──────────────────────
 function fmtINR(n) {
   if (typeof n !== "number" || isNaN(n)) return "—";
   return "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

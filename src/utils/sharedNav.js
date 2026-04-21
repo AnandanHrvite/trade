@@ -83,9 +83,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: null, collapsible: false,
       items: [
-        { key: 'dashboard',     href: '/',              icon: '⌂',  label: 'Dashboard' },
-        { key: 'allBacktest',   href: '/all-backtest',  icon: '⏺',  label: 'Backtest' },
-        { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Paper Traded History' },
+        { key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' },
+        { key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' },
+        { key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' },
+        { key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' },
       ]
     },
     {
