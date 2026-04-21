@@ -633,19 +633,31 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .util-btn:nth-child(2) { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
     :root[data-theme="light"] .util-info { color:#64748b; }
 
-    /* ── PER-MODULE START ROWS (new compact design) ── */
-    .mod-row {
-      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-      padding:10px 14px; border:1px solid #1a2236; background:#0d1320;
-      border-radius:10px; margin-bottom:8px;
+    /* ── PER-MODULE START CARDS ── */
+    .mod-grid {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
     }
-    .mod-label {
-      font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.6px;
-      color:#4a6080; min-width:110px;
+    .mod-card {
+      display:flex; flex-direction:column; gap:10px;
+      padding:16px; border:1px solid #1a2236; background:#0d1320;
+      border-radius:10px;
     }
+    .mod-card-hdr {
+      display:flex; align-items:center; gap:8px;
+      padding-bottom:10px; border-bottom:1px solid #1a2236;
+    }
+    .mod-card-dot { width:8px; height:8px; border-radius:50%; background:#4a6080; flex-shrink:0; }
+    .mod-card.swing .mod-card-dot { background:#60a5fa; }
+    .mod-card.scalp .mod-card-dot { background:#fbbf24; }
+    .mod-card.pa    .mod-card-dot { background:#a78bfa; }
+    .mod-card-title {
+      font-size:0.66rem; font-weight:700; text-transform:uppercase;
+      letter-spacing:1.6px; color:#4a6080;
+    }
+    .mod-card-btns { display:flex; flex-direction:column; gap:8px; }
     .mod-btn {
-      flex:1; min-width:140px;
-      padding:9px 14px; font-size:0.78rem; font-weight:700; letter-spacing:0.5px;
+      width:100%;
+      padding:10px 14px; font-size:0.78rem; font-weight:700; letter-spacing:0.5px;
       border-radius:7px; cursor:pointer; font-family:inherit;
       transition:filter 0.15s, transform 0.08s;
     }
@@ -654,23 +666,21 @@ app.get("/", (req, res) => {
     .mod-btn:disabled { opacity:0.6; cursor:not-allowed; }
     .mod-btn.paper { background:#0d3018; color:#4ade80; border:1px solid #166534; }
     .mod-btn.live  { background:#2d0a0a; color:#ef4444; border:1px solid #7f1d1d; }
-    .mod-open {
-      font-size:0.68rem; color:#60a5fa; text-decoration:none;
-      padding:6px 10px; border-radius:5px; border:1px solid #1a3a6a;
-      background:#080e1a; white-space:nowrap;
+    .mod-card-ft {
+      margin-top:auto; text-align:center;
+      font-size:0.7rem; color:#60a5fa; text-decoration:none;
+      padding:8px; border-radius:6px; border:1px solid #1a3a6a;
+      background:#080e1a; transition:filter 0.15s;
     }
-    .mod-open:hover { filter:brightness(1.2); }
-    @media (max-width:640px) {
-      .mod-row { flex-direction:column; align-items:stretch; gap:8px; }
-      .mod-label { min-width:0; }
-      .mod-btn { width:100%; flex:none; }
-      .mod-open { text-align:center; }
-    }
-    :root[data-theme="light"] .mod-row { background:#ffffff; border-color:#e0e4ea; }
-    :root[data-theme="light"] .mod-label { color:#64748b; }
+    .mod-card-ft:hover { filter:brightness(1.2); }
+    @media (max-width:900px) { .mod-grid { grid-template-columns:1fr 1fr; } }
+    @media (max-width:640px) { .mod-grid { grid-template-columns:1fr; } }
+    :root[data-theme="light"] .mod-card { background:#ffffff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .mod-card-hdr { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .mod-card-title { color:#64748b; }
     :root[data-theme="light"] .mod-btn.paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
     :root[data-theme="light"] .mod-btn.live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
-    :root[data-theme="light"] .mod-open { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    :root[data-theme="light"] .mod-card-ft { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
 
     /* ── TRADE STATUS PANELS ── */
     .ts-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:0; }
@@ -813,29 +823,46 @@ ${buildSidebar('dashboard', liveActive)}
     <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
   </div>
 
-  <!-- ③ PER-MODULE START BUTTONS -->
-  <div class="mod-row">
-    <span class="mod-label">SWING</span>
-    <button class="mod-btn paper" onclick="startOne('/swing-paper/start','/swing-paper/status',this)">▶ Start Paper</button>
-    <button class="mod-btn live"  onclick="startOne('/swing-live/start','/swing-live/status',this)">▶ Start Live</button>
-    <a class="mod-open" href="/swing-backtest">Backtest →</a>
+  <!-- ③ PER-MODULE START CARDS -->
+  <div class="mod-grid">
+    <div class="mod-card swing">
+      <div class="mod-card-hdr">
+        <span class="mod-card-dot"></span>
+        <span class="mod-card-title">Swing</span>
+      </div>
+      <div class="mod-card-btns">
+        <button class="mod-btn paper" onclick="startOne('/swing-paper/start','/swing-paper/status',this)">▶ Start Paper</button>
+        <button class="mod-btn live"  onclick="startOne('/swing-live/start','/swing-live/status',this)">▶ Start Live</button>
+      </div>
+      <a class="mod-card-ft" href="/swing-backtest">Backtest →</a>
+    </div>
+    ${scalpModeOn ? `
+    <div class="mod-card scalp">
+      <div class="mod-card-hdr">
+        <span class="mod-card-dot"></span>
+        <span class="mod-card-title">Scalp</span>
+      </div>
+      <div class="mod-card-btns">
+        <button class="mod-btn paper" onclick="startOne('/scalp-paper/start','/scalp-paper/status',this)">▶ Start Paper</button>
+        <button class="mod-btn live"  onclick="startOne('/scalp-live/start','/scalp-live/status',this)">▶ Start Live</button>
+      </div>
+      <a class="mod-card-ft" href="/scalp-backtest">Backtest →</a>
+    </div>
+    ` : ''}
+    ${paModeOn ? `
+    <div class="mod-card pa">
+      <div class="mod-card-hdr">
+        <span class="mod-card-dot"></span>
+        <span class="mod-card-title">Price Action</span>
+      </div>
+      <div class="mod-card-btns">
+        <button class="mod-btn paper" onclick="startOne('/pa-paper/start','/pa-paper/status',this)">▶ Start Paper</button>
+        <button class="mod-btn live"  onclick="startOne('/pa-live/start','/pa-live/status',this)">▶ Start Live</button>
+      </div>
+      <a class="mod-card-ft" href="/pa-backtest">Backtest →</a>
+    </div>
+    ` : ''}
   </div>
-  ${scalpModeOn ? `
-  <div class="mod-row">
-    <span class="mod-label">SCALP</span>
-    <button class="mod-btn paper" onclick="startOne('/scalp-paper/start','/scalp-paper/status',this)">▶ Start Paper</button>
-    <button class="mod-btn live"  onclick="startOne('/scalp-live/start','/scalp-live/status',this)">▶ Start Live</button>
-    <a class="mod-open" href="/scalp-backtest">Backtest →</a>
-  </div>
-  ` : ''}
-  ${paModeOn ? `
-  <div class="mod-row">
-    <span class="mod-label">PRICE ACTION</span>
-    <button class="mod-btn paper" onclick="startOne('/pa-paper/start','/pa-paper/status',this)">▶ Start Paper</button>
-    <button class="mod-btn live"  onclick="startOne('/pa-live/start','/pa-live/status',this)">▶ Start Live</button>
-    <a class="mod-open" href="/pa-backtest">Backtest →</a>
-  </div>
-  ` : ''}
 
   <!-- ④ COMMON START-ALL BUTTONS -->
   <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;">
