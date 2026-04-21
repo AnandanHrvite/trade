@@ -15,6 +15,7 @@ const router = express.Router();
 const fs = require("fs");
 const path = require("path");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
+const sharedSocketState = require("../utils/sharedSocketState");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -75,6 +76,11 @@ function loadAllTrades() {
 router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
+  // Per-mode live-running state (used to disable reset buttons while a mode is live)
+  const swingLive = sharedSocketState.getMode()    === "SWING_LIVE";
+  const scalpLive = sharedSocketState.getScalpMode() === "SCALP_LIVE";
+  const paLive    = (sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null) === "PA_LIVE";
+
   const modeCounts = { SWING: 0, SCALP: 0, PA: 0 };
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
@@ -122,10 +128,15 @@ router.get("/", (req, res) => {
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
     .tbar input:focus,.tbar select:focus{border-color:#ef4444;}
     .btn{background:#0d1320;border:1px solid #1a2236;color:#f87171;padding:6px 12px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;transition:all 0.15s;}
-    .btn:hover{background:#2d0a0a;border-color:#ef4444;}
+    .btn:hover:not(:disabled){background:#2d0a0a;border-color:#ef4444;}
+    .btn:disabled{opacity:0.4;cursor:not-allowed;}
     .btn.copied{background:#064e3b!important;border-color:#10b981!important;color:#10b981!important;}
     .btn.warn{border-color:rgba(239,68,68,0.3);color:#ef4444;}
     .btn.warn:hover{background:rgba(239,68,68,0.08);}
+    .btn.danger{background:rgba(239,68,68,0.08);border-color:rgba(239,68,68,0.35);color:#f87171;}
+    .btn.danger:hover:not(:disabled){background:rgba(239,68,68,0.18);border-color:#ef4444;}
+    :root[data-theme="light"] .btn.danger{background:#fef2f2!important;border-color:#fca5a5!important;color:#dc2626!important;}
+    :root[data-theme="light"] .btn.danger:hover:not(:disabled){background:#fee2e2!important;border-color:#ef4444!important;}
 
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:left;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;position:sticky;top:0;}
@@ -267,6 +278,16 @@ router.get("/", (req, res) => {
       <button class="btn" onclick="downloadCSV()">⬇ CSV</button>
     </div>
 
+    <!-- Danger zone — wipe live trade history per mode -->
+    <div class="tbar" style="border-color:rgba(239,68,68,0.25);background:rgba(239,68,68,0.03);">
+      <label style="color:#f87171;">⚠ Reset Live History</label>
+      <button class="btn danger" onclick="resetLive('swing')" ${swingLive ? 'disabled title="Swing live is running — stop it first"' : ''}>🗑 Swing Live</button>
+      <button class="btn danger" onclick="resetLive('scalp')" ${scalpLive ? 'disabled title="Scalp live is running — stop it first"' : ''}>🗑 Scalp Live</button>
+      <button class="btn danger" onclick="resetLive('pa')"    ${paLive    ? 'disabled title="PA live is running — stop it first"'    : ''}>🗑 PA Live</button>
+      <button class="btn danger" onclick="resetLive('all')"   ${(swingLive || scalpLive || paLive) ? 'disabled title="Stop all live sessions first"' : ''} style="font-weight:700;">🗑 Reset ALL Live</button>
+      <span style="margin-left:auto;font-size:0.64rem;color:#4a6080;line-height:1.4;">Clears the stored trade log only · real broker orders are unaffected</span>
+    </div>
+
     <!-- Analytics -->
     <div class="panel">
       <h3>Cumulative P&amp;L</h3>
@@ -390,6 +411,8 @@ router.get("/", (req, res) => {
 </div>
 
 <script>
+${modalJS()}
+${toastJS()}
 const TRADES = ${JSON.stringify(trades)};
 
 function fmtINR(n){
@@ -794,6 +817,46 @@ function wireTableControls(){
       });
     });
   });
+}
+
+// ── Danger zone: wipe live trade history ────────────────────────────────────
+const _RESET_TARGETS = {
+  swing: { label: 'Swing Live',          url: '/swing-live/reset' },
+  scalp: { label: 'Scalp Live',          url: '/scalp-live/reset' },
+  pa:    { label: 'Price Action Live',   url: '/pa-live/reset'    },
+};
+
+async function resetLive(mode){
+  const all = (mode === 'all');
+  const targets = all ? ['swing','scalp','pa'] : [mode];
+  const label = all ? 'ALL Live modes (Swing + Scalp + PA)' : _RESET_TARGETS[mode].label;
+  const ok = await showConfirm({
+    icon: '⚠️',
+    title: 'Reset ' + label + ' History?',
+    message: 'This permanently deletes the stored trade log for ' + label + '.\\n\\nIt does NOT cancel or reverse any real broker orders that were already placed — only the local history file is cleared.\\n\\nThis cannot be undone.',
+    confirmText: 'Yes, Reset',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+
+  const failures = [];
+  for (const t of targets){
+    const url = _RESET_TARGETS[t].url;
+    try {
+      const r = await secretFetch(url, { method: 'POST' });
+      if (!r) return; // user cancelled secret prompt
+      let d; try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error' }; }
+      if (!d.success) failures.push(_RESET_TARGETS[t].label + ': ' + (d.error || 'unknown'));
+    } catch (e) {
+      failures.push(_RESET_TARGETS[t].label + ': ' + e.message);
+    }
+  }
+  if (failures.length){
+    await showAlert({ icon: '⚠️', title: 'Reset Failed', message: failures.join('\\n'), btnClass: 'modal-btn-danger' });
+    return;
+  }
+  showToast('✓ ' + label + ' history cleared', '#10b981');
+  setTimeout(() => location.reload(), 700);
 }
 
 wireTableControls();

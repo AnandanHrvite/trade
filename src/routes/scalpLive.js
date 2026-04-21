@@ -2304,6 +2304,28 @@ logFilter();
   }
 });
 
+/**
+ * POST /scalp-live/reset
+ * Wipe all scalp LIVE trade history (clears scalp_live_trades.json sessions).
+ * Refuses when a live session is running. Does NOT touch real broker orders.
+ */
+router.post("/reset", (req, res) => {
+  if (state.running) {
+    return res.status(400).json({
+      success: false,
+      error: "Stop scalp live trading first before resetting history.",
+    });
+  }
+  try {
+    ensureDir();
+    fs.writeFileSync(SL_FILE, JSON.stringify({ sessions: [] }, null, 2));
+    log("🔄 [SCALP-LIVE] Scalp live trade history cleared.");
+    return res.json({ success: true, message: "Scalp live trade history cleared." });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Export router (Express) + stopSession (for graceful shutdown from app.js)
 router.stopSession = stopSession;
 module.exports = router;

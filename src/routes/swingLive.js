@@ -3271,4 +3271,26 @@ async function manualEntry(side) {
   }
 });
 
+/**
+ * POST /swing-live/reset
+ * Wipe all swing LIVE trade history (clears live_trades.json sessions).
+ * Refuses when a live session is running. Does NOT touch real broker orders.
+ */
+router.post("/reset", (req, res) => {
+  if (tradeState.running) {
+    return res.status(400).json({
+      success: false,
+      error: "Stop swing live trading first before resetting history.",
+    });
+  }
+  try {
+    ensureLiveDir();
+    fs.writeFileSync(LT_FILE, JSON.stringify({ sessions: [] }, null, 2));
+    log("🔄 [LIVE] Swing live trade history cleared.");
+    return res.json({ success: true, message: "Swing live trade history cleared." });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
