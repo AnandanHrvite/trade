@@ -32,6 +32,7 @@ const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fast
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
+const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { savePAPosition, clearPAPosition } = require("../utils/positionPersist");
@@ -636,6 +637,25 @@ async function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
+    // ── Time-stop: flat trade after N candles = theta bleed risk ──
+    {
+      const _pos = state.position;
+      const _entryOpt = _pos.optionEntryLtp;
+      const _curOpt   = state.optionLtp || _pos.optionCurrentLtp;
+      let _pnlPts = null;
+      if (_entryOpt && _curOpt) {
+        _pnlPts = _curOpt - _entryOpt;
+      } else if (_pos.spotAtEntry) {
+        _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
+      }
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      if (_tsReason) {
+        log(`⏳ [PA-LIVE] ${_tsReason}`);
+        await squareOff(bar.close, _tsReason);
+        return;
+      }
+    }
+
     const window = [...state.candles];
 
     // Update trailing SL (swing-based, tighten only)
@@ -740,6 +760,16 @@ async function resolveAndEnter(side, spot, result) {
 
     const qty    = getLotQty();
     const symbol = optionInfo.symbol;
+
+    // ── Bid-ask spread guard before real order ──
+    {
+      const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+      const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+      if (!_sp.ok) {
+        log(`⏭️ [PA-LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+        return;
+      }
+    }
 
     // Place BUY order via Fyers
     const orderResult = await placeOrder(symbol, 1, qty);

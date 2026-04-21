@@ -23,6 +23,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/shared
 
 const socketManager     = require("../utils/socketManager");
 const fyers             = require("../config/fyers");
+const tradeGuards       = require("../utils/tradeGuards");
 const zerodha           = require("../services/zerodhaBroker");
 const { getActiveStrategy, ACTIVE } = require("../strategies");
 const instrumentConfig = require("../config/instrument");
@@ -997,6 +998,26 @@ async function onCandleClose(candle) {
   // Set once at position creation = mid of the last fully closed candle at entry.
   // The 50% rule reference must not roll forward as new candles close.
 
+  // ── Increment candles-held + time-stop check (flat trade = theta bleed) ───
+  if (tradeState.position) {
+    tradeState.position.candlesHeld = (tradeState.position.candlesHeld || 0) + 1;
+    const _pos = tradeState.position;
+    const _entryOpt = _pos.optionEntryLtp;
+    const _curOpt   = tradeState.optionLtp || _pos.optionCurrentLtp;
+    let _pnlPts = null;
+    if (_entryOpt && _curOpt) {
+      _pnlPts = _curOpt - _entryOpt;
+    } else if (_pos.spotAtEntry) {
+      _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
+    }
+    const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+    if (_tsReason) {
+      log(`⏳ [LIVE] ${_tsReason}`);
+      await squareOff(candle.close, _tsReason);
+      return;
+    }
+  }
+
   // ── Trailing SAR SL update (only tighten, never widen) ─────────────────────
   if (tradeState.position && stopLoss != null) {
     const pos     = tradeState.position;
@@ -1128,6 +1149,19 @@ async function onCandleClose(candle) {
       // Options: always BUY (we buy the CE or PE contract)
       // Futures: CE=LONG=BUY(1), PE=SHORT=SELL(-1)
       const orderSide = (INSTR === "NIFTY_FUTURES" && side === "PE") ? -1 : 1;
+
+      // ── Bid-ask spread guard before REAL money order (options only) ──
+      if (INSTR !== "NIFTY_FUTURES") {
+        const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+        if (!_sp.ok) {
+          log(`⏭️ [LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+          tradeState._entryPending = false;
+          clearTimeout(_ltEntryTimer);
+          return;
+        }
+      }
+
       const result = await placeMarketOrder(symbol, orderSide, getLotQty());
 
       if (!result.success) {
@@ -1175,6 +1209,7 @@ async function onCandleClose(candle) {
         initialStopLoss:   stopLoss || null,
         trailActivatePts:  _dynTrailActivate,
         bestPrice:         null,
+        candlesHeld:       0,
         orderId:           result.orderId || null,
         entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
         entryPrevMid,
@@ -1393,6 +1428,19 @@ function onSpotTick(tick) {
         }
 
         const orderSide = (INSTR === "NIFTY_FUTURES" && side === "PE") ? -1 : 1;
+
+        // ── Bid-ask spread guard before REAL money order (options only) ──
+        if (INSTR !== "NIFTY_FUTURES") {
+          const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+          if (!_sp.ok) {
+            log(`⏭️ [LIVE] SKIP intra-tick entry — spread too wide (${_sp.reason})`);
+            tradeState._entryPending = false;
+            clearTimeout(_ltIntraTimer);
+            return;
+          }
+        }
+
         const result = await placeMarketOrder(symbol, orderSide, getLotQty());
 
         if (!result.success) {
@@ -1436,6 +1484,7 @@ function onSpotTick(tick) {
           initialStopLoss:   stopLoss || null,
           trailActivatePts:  _dynTrailActivateIntra,
           bestPrice:         null,
+          candlesHeld:       0,
           orderId:           result.orderId || null,
           entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
           entryPrevMid,
@@ -1989,6 +2038,7 @@ router.post("/manualEntry", async (req, res) => {
       stopLoss, initialStopLoss: stopLoss,
       trailActivatePts: _TRAIL_ACTIVATE_PTS,
       bestPrice: null,
+      candlesHeld: 0,
       orderId: result.orderId || null,
       entryBarTime: tradeState.currentBar ? tradeState.currentBar.time : null,
       entryPrevMid: null,

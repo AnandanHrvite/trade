@@ -27,6 +27,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
+const tradeGuards = require("../utils/tradeGuards");
 const tickSimulator = require("../services/tickSimulator");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
@@ -569,6 +570,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry — for 50% rule
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
+    candlesHeld:       0,
     // Option metadata
     optionExpiry:      optDetails?.expiry     || null,
     optionStrike:      optDetails?.strike     || null,
@@ -814,6 +816,26 @@ async function onCandleClose(candle) {
     });
   }
   if (ptState.position) {
+    // Increment candles-held + time-stop check (flat trade = theta bleed)
+    ptState.position.candlesHeld = (ptState.position.candlesHeld || 0) + 1;
+    {
+      const _pos = ptState.position;
+      const _entryOpt = _pos.optionEntryLtp;
+      const _curOpt   = ptState.optionLtp || _pos.optionCurrentLtp;
+      let _pnlPts = null;
+      if (_entryOpt && _curOpt) {
+        _pnlPts = _curOpt - _entryOpt;
+      } else if (_pos.spotAtEntry) {
+        _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
+      }
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      if (_tsReason) {
+        log(`⏳ [PAPER] ${_tsReason}`);
+        simulateSell(candle.close, _tsReason, candle.close);
+        return;
+      }
+    }
+
     const _p    = ptState.position;
     const _est  = _p.side === "CE" ? (candle.close - _p.spotAtEntry).toFixed(1) : (_p.spotAtEntry - candle.close).toFixed(1);
     const _slGap = _p.side === "CE"
@@ -979,7 +1001,7 @@ async function onCandleClose(candle) {
       }
     }
 
-    symbolPromise.then(({ symbol, expiry, strike, invalid }) => {
+    symbolPromise.then(async ({ symbol, expiry, strike, invalid }) => {
       if (ptState.position) { ptState._entryPending = false; clearTimeout(_ptEntryTimer); return; } // already entered by tick
       if (INSTR === "NIFTY_FUTURES") {
         log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${candle.close} | ${reason}`);
@@ -995,6 +1017,19 @@ async function onCandleClose(candle) {
         clearTimeout(_ptEntryTimer);
         return;
       }
+
+      // ── Bid-ask spread guard (options only, live mode only) ──
+      if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
+        const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+        const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+        if (!_sp.ok) {
+          log(`⏭️ [PAPER] SKIP entry — spread too wide (${_sp.reason})`);
+          ptState._entryPending = false;
+          clearTimeout(_ptEntryTimer);
+          return;
+        }
+      }
+
       simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close);
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
@@ -1194,7 +1229,7 @@ function onTick(tick) {
         }
       }
 
-      symbolPromise.then(({ symbol, expiry, strike, invalid }) => {
+      symbolPromise.then(async ({ symbol, expiry, strike, invalid }) => {
         if (ptState.position) { ptState._entryPending = false; clearTimeout(_ptIntraTimer); return; } // already entered
         if (INSTR === "NIFTY_FUTURES") {
           log(`🎯 [PAPER] ENTRY ${side === "CE" ? "LONG" : "SHORT"} FUTURES @ ₹${ltp} | ${reason}`);
@@ -1210,6 +1245,19 @@ function onTick(tick) {
           clearTimeout(_ptIntraTimer);
           return;
         }
+
+        // ── Bid-ask spread guard (options only, live mode only) ──
+        if (!ptState._simMode && INSTR !== "NIFTY_FUTURES") {
+          const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+          const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+          if (!_sp.ok) {
+            log(`⏭️ [PAPER] SKIP intra-candle entry — spread too wide (${_sp.reason})`);
+            ptState._entryPending = false;
+            clearTimeout(_ptIntraTimer);
+            return;
+          }
+        }
+
         simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);

@@ -30,6 +30,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
+const tradeGuards = require("../utils/tradeGuards");
 const tickSimulator = require("../services/tickSimulator");
 
 
@@ -499,6 +500,25 @@ async function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
+    // ── Time-stop: flat trade after N candles = theta bleed risk ──
+    {
+      const _pos = state.position;
+      const _entryOpt = _pos.optionEntryLtp;
+      const _curOpt   = state.optionLtp || _pos.optionCurrentLtp;
+      let _pnlPts = null;
+      if (_entryOpt && _curOpt) {
+        _pnlPts = _curOpt - _entryOpt;
+      } else if (_pos.spotAtEntry) {
+        _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
+      }
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      if (_tsReason) {
+        log(`⏳ [PA-PAPER] ${_tsReason}`);
+        simulateSell(bar.close, _tsReason, bar.close);
+        return;
+      }
+    }
+
     // Use only completed candles (matches backtest logic)
     const window = [...state.candles];
 
@@ -611,6 +631,17 @@ async function resolveAndEnter(side, spot, result) {
     const rawGap = Math.abs(spot - result.stopLoss);
     const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
     const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
+
+    // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
+    if (!state._simMode) {
+      const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
+      const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
+      if (!_sp.ok) {
+        log(`⏭️ [PA-PAPER] SKIP entry — spread too wide (${_sp.reason})`);
+        return;
+      }
+    }
+
     simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource);
   } catch (err) {
     log(`⚠️ [PA-PAPER] Symbol resolution failed: ${err.message}`);
