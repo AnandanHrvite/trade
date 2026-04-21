@@ -380,10 +380,10 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     if (_dailyPnl <= -PA_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
 
-    // VIX check
+    // VIX check (PA-specific threshold: PA_VIX_MAX_ENTRY)
     if (process.env.PA_VIX_ENABLED === "true") {
       const _btVix = lookupVix(candle.time);
-      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { force: true });
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { mode: "pa", force: true });
       if (!vixCheck.allowed) continue;
     }
 

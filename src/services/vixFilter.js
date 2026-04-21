@@ -1,45 +1,67 @@
 /**
- * VIX FILTER — Market Regime Detection
+ * VIX FILTER — Market Regime Detection (per-module thresholds)
  * ─────────────────────────────────────────────────────────────────────────────
- * Uses India VIX to classify market conditions:
- *   VIX <= VIX_MAX_ENTRY (default 20) → trending market → allow entries
- *   VIX >  VIX_MAX_ENTRY              → choppy/panic   → block entries
- *   VIX >  VIX_STRONG_ONLY (default 16) → only STRONG signals allowed
+ * Each trading module (swing / scalp / pa) has its own VIX cutoff so you can
+ * tune them independently (e.g. scalp may tolerate higher VIX than swing).
+ *
+ * Per-module env vars:
+ *   Swing : VIX_FILTER_ENABLED, VIX_MAX_ENTRY,        VIX_STRONG_ONLY
+ *   Scalp : SCALP_VIX_ENABLED,  SCALP_VIX_MAX_ENTRY   (STRONG_ONLY not used)
+ *   PA    : PA_VIX_ENABLED,     PA_VIX_MAX_ENTRY      (STRONG_ONLY not used)
+ *
+ * Shared:
+ *   VIX_FAIL_MODE = closed|open — behaviour when VIX data is unavailable.
+ *
+ * New scalp/PA keys fall back to VIX_MAX_ENTRY when unset, so existing configs
+ * keep working without changes.
  *
  * Live/Paper: Polls Fyers REST API for NSE:INDIAVIX-INDEX LTP (cached 60s).
  * Backtest:   Looks up VIX from pre-fetched historical VIX candles by timestamp.
  *
  * Why VIX matters for this strategy:
- *   SAR/EMA9/RSI is a trend-following strategy. In high-VIX regimes:
- *   - Price whipsaws through EMA9 repeatedly → false entries
- *   - SAR flips every 1-2 candles → trailing SL hit before profit develops
- *   - 50% rule fires constantly → string of small losses
- *   VIX filter sits out these days entirely.
+ *   Trend-following gets whipsawed in high-VIX regimes — filter sits those days out.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const fyers = require("../config/fyers");
 
-// ── Config (read dynamically so settings toggle takes effect immediately) ────
-function getVixEnabled()    { return process.env.VIX_FILTER_ENABLED !== "false"; }
-function getVixMaxEntry()   { return parseFloat(process.env.VIX_MAX_ENTRY    || "20"); }
-function getVixStrongOnly() { return parseFloat(process.env.VIX_STRONG_ONLY || "16"); }
-
 const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 
-// ── Live VIX cache (60-second TTL) ──────────────────────────────────────────
+// ── Per-mode config readers (live — never cached, so toggles apply instantly) ─
+function getVixEnabled(mode = "swing") {
+  if (mode === "scalp") return process.env.SCALP_VIX_ENABLED === "true";
+  if (mode === "pa")    return process.env.PA_VIX_ENABLED    === "true";
+  // swing default: on unless explicitly disabled
+  return process.env.VIX_FILTER_ENABLED !== "false";
+}
+
+function getVixMaxEntry(mode = "swing") {
+  if (mode === "scalp") return parseFloat(process.env.SCALP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20");
+  if (mode === "pa")    return parseFloat(process.env.PA_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
+  return parseFloat(process.env.VIX_MAX_ENTRY || "20");
+}
+
+function getVixStrongOnly(mode = "swing") {
+  // Only swing distinguishes MARGINAL vs STRONG signals; scalp/PA always pass STRONG.
+  return parseFloat(process.env.VIX_STRONG_ONLY || "16");
+}
+
+function anyVixEnabled() {
+  return getVixEnabled("swing") || getVixEnabled("scalp") || getVixEnabled("pa");
+}
+
+// ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────
 let _cachedVix   = null;
 let _cachedVixTs = 0;
-let _lastRegime  = null; // track regime transitions: "NORMAL" | "ELEVATED" | "HIGH"
-const VIX_CACHE_TTL = 60_000; // 60 seconds
+let _lastRegime  = null; // "NORMAL" | "ELEVATED" | "HIGH" — uses swing thresholds for logging
+const VIX_CACHE_TTL = 60_000;
 
 /**
- * Fetch live VIX value from Fyers REST API.
- * Cached for 60 seconds — VIX doesn't change tick-to-tick.
- * Returns null if fetch fails (filter becomes permissive on failure).
+ * Fetch live VIX value from Fyers REST API. Cached 60s — shared across modes.
+ * Returns null if fetch fails (filter becomes permissive or closed per VIX_FAIL_MODE).
  */
 async function fetchLiveVix({ force = false } = {}) {
-  if (!force && !getVixEnabled()) return null;
+  if (!force && !anyVixEnabled()) return null;
 
   const now = Date.now();
   if (_cachedVix !== null && (now - _cachedVixTs) < VIX_CACHE_TTL) {
@@ -53,9 +75,8 @@ async function fetchLiveVix({ force = false } = {}) {
       if (typeof ltp === "number" && ltp > 0) {
         _cachedVix   = ltp;
         _cachedVixTs = now;
-        // Log regime transitions
-        const maxEntry   = getVixMaxEntry();
-        const strongOnly = getVixStrongOnly();
+        const maxEntry   = getVixMaxEntry("swing");
+        const strongOnly = getVixStrongOnly("swing");
         const newRegime = ltp > maxEntry ? "HIGH" : ltp > strongOnly ? "ELEVATED" : "NORMAL";
         if (_lastRegime && newRegime !== _lastRegime) {
           console.log(`🌡️ [VIX] Regime change: ${_lastRegime} → ${newRegime} (VIX ${ltp.toFixed(1)})`);
@@ -64,22 +85,23 @@ async function fetchLiveVix({ force = false } = {}) {
         return ltp;
       }
     }
-    // Non-ok but don't block trading
     console.warn(`[VIX] getQuotes returned unexpected: s=${response.s}`);
-    return _cachedVix; // return stale value if available
+    return _cachedVix;
   } catch (err) {
     console.warn(`[VIX] Fetch failed: ${err.message} — using cached or bypassing`);
-    return _cachedVix; // return stale value, or null (permissive)
+    return _cachedVix;
   }
 }
 
 /**
- * Check if entry is allowed based on current live VIX.
- * @param {string} signalStrength - "STRONG" or "MARGINAL"
+ * Check if entry is allowed based on current live VIX (for the given module).
+ * @param {string} signalStrength - "STRONG" or "MARGINAL" (swing only; scalp/PA pass "STRONG")
+ * @param {object} [opts]
+ * @param {"swing"|"scalp"|"pa"} [opts.mode="swing"]
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
-async function checkLiveVix(signalStrength) {
-  if (!getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
+async function checkLiveVix(signalStrength, { mode = "swing" } = {}) {
+  if (!getVixEnabled(mode)) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   const vix = await fetchLiveVix();
 
@@ -91,18 +113,18 @@ async function checkLiveVix(signalStrength) {
     return { allowed: false, vix: null, reason: "VIX unavailable — blocking entry (fail-closed)" };
   }
 
-  const maxEntry   = getVixMaxEntry();
-  const strongOnly = getVixStrongOnly();
+  const maxEntry   = getVixMaxEntry(mode);
+  const strongOnly = getVixStrongOnly(mode);
 
   if (vix > maxEntry) {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} — high volatility regime, all entries blocked`,
+      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} (${mode}) — high volatility, entry blocked`,
     };
   }
 
-  if (vix > strongOnly && signalStrength !== "STRONG") {
+  if (mode === "swing" && vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
@@ -119,31 +141,15 @@ async function checkLiveVix(signalStrength) {
 
 // ── Backtest VIX lookup ─────────────────────────────────────────────────────
 
-/**
- * Build a VIX lookup map from historical VIX candles.
- * Maps each VIX candle's timestamp → close price.
- * For backtest: called once with VIX candle array, returns a lookup function.
- *
- * @param {Array} vixCandles - Array of { time, open, high, low, close, volume }
- * @returns {function(unixSec): number|null} - Returns VIX close for nearest prior candle
- */
 function buildVixLookup(vixCandles) {
-  if (!vixCandles || vixCandles.length === 0) {
-    return () => null;
-  }
+  if (!vixCandles || vixCandles.length === 0) return () => null;
 
-  // Sort by time ascending (should already be, but ensure)
   const sorted = [...vixCandles].sort((a, b) => a.time - b.time);
   const times  = sorted.map(c => c.time);
   const closes = sorted.map(c => c.close);
 
-  /**
-   * Binary search for the nearest VIX candle at or before the given timestamp.
-   * VIX candles are daily — so for 15-min NIFTY candles, we find the same-day VIX.
-   */
   return function lookupVix(unixSec) {
-    if (unixSec < times[0]) return closes[0]; // before first VIX candle — use first available
-
+    if (unixSec < times[0]) return closes[0];
     let lo = 0, hi = times.length - 1;
     while (lo < hi) {
       const mid = (lo + hi + 1) >>> 1;
@@ -155,13 +161,15 @@ function buildVixLookup(vixCandles) {
 }
 
 /**
- * Check if entry is allowed based on backtest VIX value.
- * @param {number|null} vix - VIX value at this candle's timestamp
- * @param {string} signalStrength - "STRONG" or "MARGINAL"
- * @returns {{ allowed: boolean, vix: number|null, reason: string }}
+ * Check if entry is allowed based on backtest VIX value (for the given module).
+ * @param {number|null} vix
+ * @param {string} signalStrength
+ * @param {object} [opts]
+ * @param {"swing"|"scalp"|"pa"} [opts.mode="swing"]
+ * @param {boolean} [opts.force=false] — skip enabled check (used by scalp/PA backtests which gate outside)
  */
-function checkBacktestVix(vix, signalStrength, { force = false } = {}) {
-  if (!force && !getVixEnabled()) return { allowed: true, vix: null, reason: "VIX filter disabled" };
+function checkBacktestVix(vix, signalStrength, { mode = "swing", force = false } = {}) {
+  if (!force && !getVixEnabled(mode)) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
     const failMode = (process.env.VIX_FAIL_MODE || "closed").toLowerCase();
@@ -171,18 +179,18 @@ function checkBacktestVix(vix, signalStrength, { force = false } = {}) {
     return { allowed: false, vix: null, reason: "VIX data unavailable — blocking entry (fail-closed)" };
   }
 
-  const maxEntry   = getVixMaxEntry();
-  const strongOnly = getVixStrongOnly();
+  const maxEntry   = getVixMaxEntry(mode);
+  const strongOnly = getVixStrongOnly(mode);
 
   if (vix > maxEntry) {
     return {
       allowed: false,
       vix,
-      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} — high volatility regime, entry blocked`,
+      reason: `VIX ${vix.toFixed(1)} > ${maxEntry} (${mode}) — high volatility, entry blocked`,
     };
   }
 
-  if (vix > strongOnly && signalStrength !== "STRONG") {
+  if (mode === "swing" && vix > strongOnly && signalStrength !== "STRONG") {
     return {
       allowed: false,
       vix,
@@ -190,11 +198,7 @@ function checkBacktestVix(vix, signalStrength, { force = false } = {}) {
     };
   }
 
-  return {
-    allowed: true,
-    vix,
-    reason: `VIX ${vix.toFixed(1)} — normal regime`,
-  };
+  return { allowed: true, vix, reason: `VIX ${vix.toFixed(1)} — normal regime` };
 }
 
 /** Reset cached VIX (called on session stop) */
@@ -210,9 +214,15 @@ function getCachedVix() {
 }
 
 module.exports = {
-  get VIX_ENABLED()    { return getVixEnabled(); },
-  get VIX_MAX_ENTRY()  { return getVixMaxEntry(); },
-  get VIX_STRONG_ONLY(){ return getVixStrongOnly(); },
+  // Backwards-compatible getters (default to swing thresholds — used by existing status pages and backtest metadata)
+  get VIX_ENABLED()     { return getVixEnabled("swing"); },
+  get VIX_MAX_ENTRY()   { return getVixMaxEntry("swing"); },
+  get VIX_STRONG_ONLY() { return getVixStrongOnly("swing"); },
+  // Per-mode helpers
+  getVixEnabled,
+  getVixMaxEntry,
+  getVixStrongOnly,
+  anyVixEnabled,
   VIX_SYMBOL,
   fetchLiveVix,
   checkLiveVix,

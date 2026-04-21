@@ -703,14 +703,10 @@ async function onCandleClose(bar) {
   }
   if (state._expiryDayBlocked) { log(`⏭️ [PA-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
 
-  // VIX — refresh on every candle close (cache TTL 60s)
+  // VIX — per-module check (PA_VIX_ENABLED + PA_VIX_MAX_ENTRY)
   if (process.env.PA_VIX_ENABLED === "true") {
-    await fetchLiveVix({ force: false });
-    const vix = getCachedVix();
-    if (vix) {
-      const vixMax = parseFloat(process.env.VIX_MAX_ENTRY || "20");
-      if (vix > vixMax) { log(`⏭️ [PA-LIVE] SKIP: VIX ${vix.toFixed(1)} > max ${vixMax}`); return; }
-    }
+    const _vixCheck = await checkLiveVix("STRONG", { mode: "pa" });
+    if (!_vixCheck.allowed) { log(`⏭️ [PA-LIVE] SKIP: ${_vixCheck.reason}`); return; }
   }
 
   const window = [...state.candles];
@@ -1246,7 +1242,7 @@ router.get("/status", (req, res) => {
 
   const _vix         = getCachedVix();
   const _vixEnabled  = process.env.PA_VIX_ENABLED === "true";
-  const _vixMaxEntry = parseFloat(process.env.VIX_MAX_ENTRY || "20");
+  const _vixMaxEntry = vixFilter.getVixMaxEntry("pa");
 
   const pos = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";

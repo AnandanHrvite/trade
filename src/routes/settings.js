@@ -51,10 +51,9 @@ const SETTINGS_SCHEMA = [
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
       { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry", default: "weekly" },
-      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Swing entries when VIX is high (independent from scalp)" },
-      { key: "VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block ALL entries above this VIX" },
-      { key: "VIX_STRONG_ONLY", label: "VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Only STRONG signals above this VIX" },
-      { key: "VIX_FAIL_MODE", label: "VIX Unavailable", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "When VIX data missing: closed = block entries (safe), open = allow entries", default: "closed" },
+      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Swing entries when VIX is high (scope: Swing only)" },
+      { key: "VIX_MAX_ENTRY", label: "Swing VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: block entries above this VIX", default: "20" },
+      { key: "VIX_STRONG_ONLY", label: "Swing VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: above this VIX only STRONG signals allowed", default: "16" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum entries per day" },
       { key: "MAX_SAR_DISTANCE", label: "Max SL Distance (pts)", type: "number", min: 40, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Reject entries with SL > this (caps risk per trade)", default: "80" },
@@ -89,7 +88,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
       { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
-      { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (independent from trading)", default: "false" },
+      { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (scope: Scalp only)", default: "false" },
+      { key: "SCALP_VIX_MAX_ENTRY", label: "Scalp VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: block entries above this VIX", default: "20" },
       { key: "SCALP_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new scalp entries (HH:MM IST)", default: "09:21" },
       { key: "SCALP_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new scalp entries after this time (HH:MM IST)", default: "14:30" },
       { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (5 min)", default: "5" },
@@ -134,7 +134,8 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "PA_MODE_ENABLED", label: "Price Action Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide price action menus", default: "true" },
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
-      { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high", default: "false" },
+      { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high (scope: PA only)", default: "false" },
+      { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PA only: block entries above this VIX", default: "20" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new PA entries (HH:MM IST)", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new PA entries after this time (HH:MM IST)", default: "14:30" },
       { key: "PA_RESOLUTION", label: "Candle (min)", type: "select", options: ["5", "3"], effect: EFFECT.SESSION, desc: "Price action candle resolution", default: "5" },
@@ -177,6 +178,7 @@ const SETTINGS_SCHEMA = [
     icon: "📈",
     fields: [
       { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show candlestick chart with entry/exit markers on status pages", default: "true" },
+      { key: "VIX_FAIL_MODE", label: "VIX Unavailable (all modules)", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "Shared fallback for all VIX filters when VIX data is missing: closed = block entries (safe), open = allow entries", default: "closed" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Trading candle timeframe (5-min or 15-min)", default: "15" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time — execution gate start (HH:MM IST)", default: "09:15" },
       { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop time — EOD square off + engine shutdown (HH:MM IST)", default: "15:30" },
@@ -306,7 +308,9 @@ function parseEnvFile() {
 // ── Classify which settings take effect immediately vs need restart ──────────
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
-  "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY", "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY",
+  "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
+  "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
+  "SCALP_VIX_MAX_ENTRY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
@@ -552,12 +556,16 @@ router.get("/", (req, res) => {
   const envData    = parseEnvFile();
 
   // ── Determine which fields should be frozen (disabled but values kept) ──
-  const vixEnabled  = (envData["VIX_FILTER_ENABLED"] ?? process.env.VIX_FILTER_ENABLED ?? "true") === "true";
-  const scalpModeOn = (envData["SCALP_MODE_ENABLED"] ?? process.env.SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const vixEnabled      = (envData["VIX_FILTER_ENABLED"] ?? process.env.VIX_FILTER_ENABLED ?? "true") === "true";
+  const scalpVixEnabled = (envData["SCALP_VIX_ENABLED"]  ?? process.env.SCALP_VIX_ENABLED  ?? "false") === "true";
+  const paVixEnabled    = (envData["PA_VIX_ENABLED"]     ?? process.env.PA_VIX_ENABLED     ?? "false") === "true";
+  const scalpModeOn     = (envData["SCALP_MODE_ENABLED"] ?? process.env.SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
 
   function isFieldFrozen(key) {
-    // VIX params frozen when VIX filter is off
+    // Per-module VIX thresholds frozen when that module's VIX toggle is off
     if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
+    if (key === "SCALP_VIX_MAX_ENTRY" && !scalpVixEnabled) return true;
+    if (key === "PA_VIX_MAX_ENTRY"    && !paVixEnabled)    return true;
     // Scalp section frozen when scalp mode is off (but not the master toggle itself)
     if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && !scalpModeOn) return true;
     return false;
@@ -572,7 +580,11 @@ router.get("/", (req, res) => {
     const descHtml = descText ? `<div class="field-desc">${descText}</div>` : "";
     const frozen = isFieldFrozen(f.key);
     const dis = frozen ? "disabled" : "";
-    const frozenGroup = f.key.startsWith("SCALP_") ? "scalp" : (f.key.startsWith("VIX_") ? "vix" : "");
+    let frozenGroup = "";
+    if (f.key === "SCALP_VIX_MAX_ENTRY") frozenGroup = "scalp-vix";
+    else if (f.key === "PA_VIX_MAX_ENTRY") frozenGroup = "pa-vix";
+    else if (f.key.startsWith("SCALP_"))   frozenGroup = "scalp";
+    else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";
     const rowClass = frozen ? "setting-row frozen" : "setting-row";
 
@@ -1292,6 +1304,8 @@ function markDirty(el) {
   // Freeze/unfreeze dependent fields when parent toggle changes
   if (key === 'VIX_FILTER_ENABLED') toggleFreezeGroup('vix', !el.checked);
   if (key === 'SCALP_MODE_ENABLED') toggleFreezeGroup('scalp', !el.checked);
+  if (key === 'SCALP_VIX_ENABLED')  toggleFreezeGroup('scalp-vix', !el.checked);
+  if (key === 'PA_VIX_ENABLED')     toggleFreezeGroup('pa-vix', !el.checked);
   updateSaveBar();
 }
 
@@ -1320,10 +1334,14 @@ function discardChanges() {
   window._dirtyKeys.clear();
   updateSaveBar();
   // Restore freeze state from original toggle values
-  var vixOrig = window._originals['VIX_FILTER_ENABLED'];
-  var scalpOrig = window._originals['SCALP_MODE_ENABLED'];
-  toggleFreezeGroup('vix', vixOrig !== true && vixOrig !== 'true');
-  toggleFreezeGroup('scalp', scalpOrig !== true && scalpOrig !== 'true');
+  var vixOrig      = window._originals['VIX_FILTER_ENABLED'];
+  var scalpOrig    = window._originals['SCALP_MODE_ENABLED'];
+  var scalpVixOrig = window._originals['SCALP_VIX_ENABLED'];
+  var paVixOrig    = window._originals['PA_VIX_ENABLED'];
+  toggleFreezeGroup('vix',       vixOrig      !== true && vixOrig      !== 'true');
+  toggleFreezeGroup('scalp',     scalpOrig    !== true && scalpOrig    !== 'true');
+  toggleFreezeGroup('scalp-vix', scalpVixOrig !== true && scalpVixOrig !== 'true');
+  toggleFreezeGroup('pa-vix',    paVixOrig    !== true && paVixOrig    !== 'true');
   showToast('Changes discarded', 'info');
 }
 

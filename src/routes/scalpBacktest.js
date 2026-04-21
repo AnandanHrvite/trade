@@ -373,10 +373,10 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
     if (candle.time < _slPauseUntilTs) continue;
 
-    // VIX check
+    // VIX check (scalp-specific threshold: SCALP_VIX_MAX_ENTRY)
     if (process.env.SCALP_VIX_ENABLED === "true") {
       const _btVix = lookupVix(candle.time);
-      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { force: true });
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, "STRONG", { mode: "scalp", force: true });
       if (!vixCheck.allowed) continue;
     }
 
