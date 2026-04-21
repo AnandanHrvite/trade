@@ -1124,7 +1124,10 @@ router.get("/", (req, res) => {
         <div class="top-bar-title">Settings</div>
         <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px;">
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/monitor" style="padding:6px 14px;background:rgba(168,139,250,0.12);color:#a78bfa;border:1px solid rgba(168,139,250,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📈 MONITOR</a>
+        <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
+        <a href="/pnl-history" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">💰 P&amp;L HISTORY</a>
         <button onclick="showHealthModal()" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">HEALTH CHECK</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
       </div>
@@ -1140,14 +1143,6 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
-      <!-- Quick links (moved from sidebar) — always-visible, not collapsible -->
-      <div class="quick-links-bar">
-        <span class="quick-links-label">🔗 Quick Links</span>
-        <a href="/pnl-history" class="quick-link-pill">💰 P&amp;L History</a>
-        <a href="/monitor"     class="quick-link-pill">📈 Monitor</a>
-        <a href="/docs"        class="quick-link-pill">📄 Docs</a>
-      </div>
-
       ${sectionsHtml}
 
       <!-- Bulk paste config -->
