@@ -774,6 +774,21 @@ router.get("/", (req, res) => {
     .top-bar-title { font-size: 1.15rem; font-weight: 700; color: var(--text2); letter-spacing: -0.3px; }
     .top-bar-meta  { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
 
+    /* ── Breadcrumb ── */
+    .breadcrumb {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.68rem; font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .bc-link {
+      color: var(--muted); text-decoration: none;
+      padding: 2px 6px; border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .bc-link:hover { color: var(--accent); background: var(--surface2); }
+    .bc-sep { color: var(--dim); font-size: 0.75rem; }
+    .bc-current { color: var(--text2); padding: 2px 6px; }
+
     /* ── Page ─────────────────────────────────────────────── */
     .page { padding: 28px 28px 60px; max-width: 880px; }
 
@@ -1121,6 +1136,11 @@ router.get("/", (req, res) => {
   <div class="main-content">
     <div class="top-bar">
       <div>
+        <nav class="breadcrumb" aria-label="Breadcrumb">
+          <a href="/" class="bc-link">⌂ Dashboard</a>
+          <span class="bc-sep">›</span>
+          <span class="bc-current">⚙ Settings</span>
+        </nav>
         <div class="top-bar-title">Settings</div>
         <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
