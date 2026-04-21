@@ -744,14 +744,6 @@ ${buildSidebar('dashboard', liveActive)}
         </div>
 
       </div>
-      <div class="broker-divider"></div>
-      <div style="padding:10px 0 4px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-        <span style="font-size:0.58rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-right:4px;">Config</span>
-        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#60a5fa;">${ACTIVE} · ${activeStrategyName}</span>
-        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#a78bfa;">NIFTY OPTIONS · 65 qty/lot</span>
-        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid #0e1e36;border-radius:5px;padding:3px 10px;color:#f59e0b;">${process.env.TRADE_RESOLUTION || "15"}-min candles</span>
-        <span style="font-size:0.72rem;background:#050d1a;border:0.5px solid ${liveReady ? '#10b981' : liveEnabled ? '#f59e0b' : '#374151'};border-radius:5px;padding:3px 10px;color:${liveReady ? '#10b981' : liveEnabled ? '#f59e0b' : '#6b7280'};">${liveReady ? '⚡ Live Ready' : liveEnabled ? '⚠ Needs Login' : '🔒 Live Disabled'}</span>
-      </div>
     </div>
   </div>
 
@@ -767,13 +759,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">📋</span>
         <span class="card-hdr-title">Paper Trade</span>
-        <span id="paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
-        <span id="paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/swing-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
-    <div id="paper-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -782,13 +769,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">🔴</span>
         <span class="card-hdr-title">Live Trade</span>
-        <span id="live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
-        <span id="live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/swing-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
-    <div id="live-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -809,13 +791,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">📋</span>
         <span class="card-hdr-title">Scalp Paper</span>
-        <span id="scalp-paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
-        <span id="scalp-paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/scalp-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
-    <div id="scalp-paper-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -824,13 +801,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">🔴</span>
         <span class="card-hdr-title">Scalp Live</span>
-        <span id="scalp-live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
-        <span id="scalp-live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/scalp-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
-    <div id="scalp-live-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -852,13 +824,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">📐</span>
         <span class="card-hdr-title">PA Paper</span>
-        <span id="pa-paper-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#0d3018;color:#4ade80;border:1px solid #166534;">RUNNING</span>
-        <span id="pa-paper-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/pa-paper/status" style="font-size:0.72rem;color:#c89828;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a2a00;background:#120e00;white-space:nowrap;">Open Paper →</a>
-    </div>
-    <div id="pa-paper-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -867,13 +834,8 @@ ${buildSidebar('dashboard', liveActive)}
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="card-hdr-icon">🔴</span>
         <span class="card-hdr-title">PA Live</span>
-        <span id="pa-live-run-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#2d0a0a;color:#ef4444;border:1px solid #7f1d1d;animation:ltpulse 1.2s infinite;">LIVE</span>
-        <span id="pa-live-stop-badge" style="display:none;font-size:0.6rem;font-weight:700;letter-spacing:1.2px;padding:2px 8px;border-radius:4px;background:#1a1a2e;color:#3a5070;border:1px solid #252550;">IDLE</span>
       </div>
       <a href="/pa-live/status" style="font-size:0.72rem;color:#c84040;text-decoration:none;padding:5px 12px;border-radius:6px;border:1px solid #3a1010;background:#120608;white-space:nowrap;">Open Live →</a>
-    </div>
-    <div id="pa-live-status-body" style="padding:14px 18px 16px;">
-      <div style="color:#3a5070;font-size:0.75rem;">Loading…</div>
     </div>
   </div>
 
@@ -1131,7 +1093,7 @@ async function pollDashboardStatus(){
     else { bLive.disabled=false; bLive.textContent='▶ START ALL LIVE TRADES'; bLive.style.opacity='1'; }
   }
 }
-pollDashboardStatus();
+/* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
 var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}];
@@ -1224,7 +1186,7 @@ async function checkTradingStatus(){
 }
 checkTradingStatus();
 setInterval(checkTradingStatus, 60000); // Check every minute
-setInterval(pollDashboardStatus, 4000);
+/* setInterval(pollDashboardStatus, 4000); — disabled (no realtime data on dashboard) */
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function hardReset(){

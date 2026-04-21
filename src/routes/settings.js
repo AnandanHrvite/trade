@@ -264,6 +264,15 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "MENU VISIBILITY — Show / hide sidebar items",
+    icon: "👁",
+    fields: [
+      { key: "UI_SHOW_SIMULATE", label: "Show Simulate Menu", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_COMPARE",  label: "Show Compare Menu",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_TRACKER",  label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
+    ],
+  },
+  {
     section: "Security",
     icon: "🔒",
     fields: [
@@ -313,6 +322,7 @@ const IMMEDIATE_KEYS = new Set([
   "NIFTY_SPOT_FALLBACK", "SCALP_PAPER_CAPITAL", "CACHE_MAX_DAYS",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
+  "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // Strategy thresholds — read from process.env inside getSignal() on every candle
   "EMA30_FILTER",
   "RSI_CE_MIN", "RSI_PE_MAX", "ADX_MIN_TREND", "EMA_TOUCH_MAX", "EMA_SLOPE_MIN",
@@ -980,15 +990,17 @@ router.get("/", (req, res) => {
     .toast.error   { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
     .toast.info    { background: #0a1e3d; color: #60a5fa; border: 1px solid #1d3b6e; }
 
-    /* ── Info banner ─────────────────────────────────────── */
-    .info-banner {
-      display: flex; align-items: center; gap: 12px;
-      font-size: 0.72rem; color: #fcd34d; line-height: 1.6;
-      background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.15);
-      border-radius: 10px; padding: 14px 18px; margin-bottom: 24px;
+    /* ── Quick-link pill (replaces the removed sidebar items) ── */
+    .quick-link-pill {
+      display:inline-flex; align-items:center; gap:6px;
+      padding:8px 14px; border-radius:8px;
+      font-size:0.78rem; font-weight:600; text-decoration:none;
+      color: var(--text2);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      transition: border-color 0.15s, background 0.15s;
     }
-    .info-banner .banner-icon { font-size: 1.2rem; flex-shrink: 0; }
-    .info-banner strong { color: #fbbf24; }
+    .quick-link-pill:hover { border-color: var(--accent); background: var(--surface); }
 
     /* ── Effect badge with (i) tooltip ───────────────────── */
     .effect-badge {
@@ -1117,14 +1129,16 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
-      <div class="info-banner">
-        <span class="banner-icon">💡</span>
-        <div>
-          Each setting shows when it takes effect — hover the badge for details.<br/>
-          <span style="color:#10b981;">⚡ Instant</span> — active immediately &nbsp;
-          <span style="color:#f59e0b;">🔄 Session restart</span> — stop & start session &nbsp;
-          <span style="color:#3b82f6;">🔍 Next backtest</span> — on next run &nbsp;
-          <span style="color:#ef4444;">🖥️ Server restart</span> — use button below
+      <!-- Quick links (moved from sidebar) -->
+      <div class="settings-section" data-section="quick-links" style="margin-bottom:16px;">
+        <div class="section-title" style="cursor:default;">
+          <span style="width:10px;"></span>
+          🔗 Quick Links
+        </div>
+        <div class="section-card" style="padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;">
+          <a href="/pnl-history" class="quick-link-pill">💰 P&amp;L History</a>
+          <a href="/monitor"     class="quick-link-pill">📈 Monitor</a>
+          <a href="/docs"        class="quick-link-pill">📄 Docs</a>
         </div>
       </div>
 
@@ -1183,6 +1197,13 @@ router.get("/", (req, res) => {
 ${modalJS()}
 function toggleSection(titleEl) {
   var section = titleEl.parentElement;
+  var willOpen = !section.classList.contains('open');
+  // Accordion: close every other settings-section first
+  if (willOpen) {
+    document.querySelectorAll('.settings-section.open').forEach(function(s){
+      if (s !== section) s.classList.remove('open');
+    });
+  }
   section.classList.toggle('open');
 }
 

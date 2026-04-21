@@ -38,6 +38,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
+  // ── Per-module menu-visibility toggles (managed from Settings page) ──
+  const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
+  const showCompare  = (process.env.UI_SHOW_COMPARE  || 'false').toLowerCase() === 'true';
+  const showTracker  = (process.env.UI_SHOW_TRACKER  || 'false').toLowerCase() === 'true';
+
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
@@ -47,61 +52,62 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isScalpOpen   = scalpKeys.includes(activePage);
   const isPAOpen      = paKeys.includes(activePage);
 
+  // Build a swing items list with per-feature toggle
+  const swingItems = [
+    { key: 'swingBacktest', href: '/swing-backtest',       icon: '🔍', label: 'Backtest' },
+    { key: 'swingPaper',    href: '/swing-paper/status',   icon: '📋', label: 'Paper'    },
+    ...(showSim      ? [{ key: 'swingSim',     href: '/swing-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
+    ...(showCompare  ? [{ key: 'swingCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
+    ...(showTracker  ? [{ key: 'swingTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
+    { key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     },
+  ];
+
+  const scalpItems = [
+    { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest' },
+    { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'    },
+    ...(showSim     ? [{ key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
+    ...(showCompare ? [{ key: 'scalpCompare', href: '/compare/scalping',     icon: '⚖',  label: 'Compare'  }] : []),
+    { key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     },
+  ];
+
+  const paItems = [
+    { key: 'paBacktest', href: '/pa-backtest',       icon: '📐', label: 'Backtest' },
+    { key: 'paPaper',    href: '/pa-paper/status',   icon: '📐', label: 'Paper'    },
+    ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
+    ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
+    { key: 'paLive',     href: '/pa-live/status',    icon: '📐', label: 'Live'     },
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const sections = [
     {
       header: null, collapsible: false,
       items: [
         { key: 'dashboard',     href: '/',              icon: '⌂',  label: 'Dashboard' },
-        { key: 'allBacktest',   href: '/all-backtest',  icon: '⏺',  label: 'All Backtest' },
-        { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Consolidation' },
-        { key: 'pnlHistory',    href: '/pnl-history',   icon: '💰', label: 'P&L History' },
+        { key: 'allBacktest',   href: '/all-backtest',  icon: '⏺',  label: 'Backtest' },
+        { key: 'consolidation', href: '/consolidation', icon: '🧾', label: 'Paper Traded History' },
       ]
     },
     {
       header: 'SWING', collapsible: true, collapsed: !isTradingOpen,
       groupId: 'nav-swing',
-      items: [
-        { key: 'swingBacktest',  href: '/swing-backtest',        icon: '🔍', label: 'Backtest'  },
-        { key: 'swingPaper',     href: '/swing-paper/status',    icon: '📋', label: 'Paper'     },
-        { key: 'swingSim',       href: '/swing-paper/simulate',  icon: '🎮', label: 'Simulate'  },
-        { key: 'swingHistory',   href: '/swing-paper/history',   icon: '📊', label: 'History'   },
-        { key: 'swingCompare',   href: '/compare/trading',     icon: '⚖',  label: 'Compare'   },
-        { key: 'swingTracker',   href: '/tracker/status',      icon: '🎯', label: 'Tracker'   },
-        { key: 'swingLive',      href: '/swing-live/status',     icon: '●',  label: 'Live'      },
-      ]
+      items: swingItems,
     },
     ...(scalpModeOn ? [{
       header: 'SCALP', collapsible: true, collapsed: !isScalpOpen,
       groupId: 'nav-scalp',
-      items: [
-        { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest'  },
-        { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'     },
-        { key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate'  },
-        { key: 'scalpHistory',  href: '/scalp-paper/history', icon: '📊', label: 'History'   },
-        { key: 'scalpCompare', href: '/compare/scalping',    icon: '⚖',  label: 'Compare'   },
-        { key: 'scalpLive',     href: '/scalp-live/status',       icon: '⚡', label: 'Live'      },
-      ]
+      items: scalpItems,
     }] : []),
     ...(paModeOn ? [{
       header: 'PRICE ACTION', collapsible: true, collapsed: !isPAOpen,
       groupId: 'nav-pa',
-      items: [
-        { key: 'paBacktest', href: '/pa-backtest',       icon: '📐', label: 'Backtest'  },
-        { key: 'paPaper',    href: '/pa-paper/status',   icon: '📐', label: 'Paper'     },
-        { key: 'paSim',      href: '/pa-paper/simulate', icon: '🎮', label: 'Simulate'  },
-        { key: 'paHistory',  href: '/pa-paper/history',  icon: '📊', label: 'History'   },
-        { key: 'paCompare',  href: '/compare/priceaction', icon: '⚖', label: 'Compare'  },
-        { key: 'paLive',     href: '/pa-live/status',    icon: '📐', label: 'Live'      },
-      ]
+      items: paItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
       items: [
         { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
-        { key: 'monitor',   href: '/monitor',    icon: '📈', label: 'Monitor'    },
         { key: 'settings',  href: '/settings',   icon: '⚙',  label: 'Settings'   },
-        { key: 'docs',      href: '/docs',       icon: '📄', label: 'Docs'       },
         { key: 'loginLogs', href: '/login-logs', icon: '🔐', label: 'Login Logs' },
       ]
     },
@@ -236,21 +242,50 @@ function toggleNavGroup(gid){
   var el=document.getElementById(gid);
   var hdr=document.querySelector('[data-group="'+gid+'"]');
   if(!el) return;
-  var isCollapsed=el.classList.toggle('collapsed');
-  if(hdr) hdr.classList.toggle('collapsed',isCollapsed);
-  // Persist state in sessionStorage
-  try{sessionStorage.setItem('nav_'+gid,isCollapsed?'0':'1');}catch(e){}
+  var willOpen = el.classList.contains('collapsed'); // we're about to open it
+  // Accordion: close every other group first
+  document.querySelectorAll('.sb-group-items').forEach(function(g){
+    if(g.id === gid) return;
+    g.classList.add('collapsed');
+    var h=document.querySelector('[data-group="'+g.id+'"]');
+    if(h) h.classList.add('collapsed');
+    try{sessionStorage.setItem('nav_'+g.id,'0');}catch(e){}
+  });
+  // Toggle the clicked group
+  if(willOpen){
+    el.classList.remove('collapsed');
+    if(hdr) hdr.classList.remove('collapsed');
+    try{sessionStorage.setItem('nav_'+gid,'1');}catch(e){}
+    try{sessionStorage.setItem('nav_last_open',gid);}catch(e){}
+  } else {
+    el.classList.add('collapsed');
+    if(hdr) hdr.classList.add('collapsed');
+    try{sessionStorage.setItem('nav_'+gid,'0');}catch(e){}
+    try{sessionStorage.removeItem('nav_last_open');}catch(e){}
+  }
 }
-// Restore collapsed state from sessionStorage on load
+// Restore: only the "last open" group stays open; everything else collapses.
 (function(){
-  var groups=document.querySelectorAll('.sb-group-items');
-  groups.forEach(function(g){
-    var gid=g.id;
-    try{
-      var saved=sessionStorage.getItem('nav_'+gid);
-      if(saved==='1'){g.classList.remove('collapsed');var h=document.querySelector('[data-group="'+gid+'"]');if(h)h.classList.remove('collapsed');}
-      else if(saved==='0'){g.classList.add('collapsed');var h=document.querySelector('[data-group="'+gid+'"]');if(h)h.classList.add('collapsed');}
-    }catch(e){}
+  var lastOpen = null;
+  try{ lastOpen = sessionStorage.getItem('nav_last_open'); }catch(e){}
+  // If there is an "active" group (the one whose page is current), prefer it
+  var activeGroup = document.querySelector('.sb-group-items .sb-nav-item.active');
+  if(activeGroup){
+    var parent = activeGroup.closest('.sb-group-items');
+    if(parent) lastOpen = parent.id;
+  }
+  document.querySelectorAll('.sb-group-items').forEach(function(g){
+    var shouldOpen = (lastOpen && g.id === lastOpen);
+    var hdr = document.querySelector('[data-group="'+g.id+'"]');
+    if(shouldOpen){
+      g.classList.remove('collapsed');
+      if(hdr) hdr.classList.remove('collapsed');
+      try{sessionStorage.setItem('nav_'+g.id,'1');}catch(e){}
+    } else {
+      g.classList.add('collapsed');
+      if(hdr) hdr.classList.add('collapsed');
+      try{sessionStorage.setItem('nav_'+g.id,'0');}catch(e){}
+    }
   });
 })();
 
