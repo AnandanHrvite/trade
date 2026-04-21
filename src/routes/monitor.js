@@ -126,6 +126,17 @@ body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0
 .page-title { font-size:1.1rem; font-weight:700; color:#e0eaf8; margin-bottom:6px; }
 .page-sub   { font-size:0.72rem; color:#3a5070; margin-bottom:22px; }
 
+/* ── Breadcrumb ── */
+.breadcrumb { display:flex; align-items:center; gap:6px; font-size:0.68rem; font-weight:600; margin-bottom:6px; }
+.bc-link { color:#4a6080; text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
+.bc-link:hover { color:#3b82f6; background:#0f1624; }
+.bc-sep { color:#3a5070; font-size:0.75rem; }
+.bc-current { color:#e0eaf8; padding:2px 6px; }
+:root[data-theme="light"] .bc-link { color:#64748b; }
+:root[data-theme="light"] .bc-link:hover { color:#2563eb; background:#f1f5f9; }
+:root[data-theme="light"] .bc-sep { color:#94a3b8; }
+:root[data-theme="light"] .bc-current { color:#1e293b; }
+
 /* ── stat cards ── */
 .stat-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:22px; }
 .stat-card { background:#090f09; border:0.5px solid #162416; border-radius:8px; padding:16px 18px; }
@@ -197,6 +208,13 @@ canvas { width:100%!important; height:220px!important; }
 ${buildSidebar("monitor", liveActive)}
 <div class="main-content">
 
+<nav class="breadcrumb" aria-label="Breadcrumb">
+  <a href="/" class="bc-link">⌂ Dashboard</a>
+  <span class="bc-sep">›</span>
+  <a href="/settings" class="bc-link">⚙ Settings</a>
+  <span class="bc-sep">›</span>
+  <span class="bc-current">📈 Monitor</span>
+</nav>
 <div class="page-title">Instance Monitor</div>
 <div class="page-sub" id="sysInfo">Loading system info…</div>
 

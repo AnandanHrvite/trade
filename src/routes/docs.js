@@ -84,6 +84,17 @@ router.get("/", (req, res) => {
     .main { margin-left:160px; padding:20px 28px; min-height:100vh; }
     @media(max-width:768px){ .main{margin-left:0;padding:12px;} }
 
+    /* ── Breadcrumb ── */
+    .breadcrumb { display:flex; align-items:center; gap:6px; font-size:0.68rem; font-weight:600; margin-bottom:14px; }
+    .bc-link { color:#4a6080; text-decoration:none; padding:2px 6px; border-radius:4px; transition:color 0.15s, background 0.15s; }
+    .bc-link:hover { color:#3b82f6; background:#0f1624; }
+    .bc-sep { color:#3a5070; font-size:0.75rem; }
+    .bc-current { color:#e0eaf8; padding:2px 6px; }
+    :root[data-theme="light"] .bc-link { color:#64748b; }
+    :root[data-theme="light"] .bc-link:hover { color:#2563eb; background:#f1f5f9; }
+    :root[data-theme="light"] .bc-sep { color:#94a3b8; }
+    :root[data-theme="light"] .bc-current { color:#1e293b; }
+
     .tabs { display:flex; gap:0; margin-bottom:20px; }
     .tab { padding:10px 22px; background:#0d1117; border:1px solid #1a2640; color:#4a6080; cursor:pointer;
            font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px;
@@ -128,6 +139,13 @@ router.get("/", (req, res) => {
 <body>
 ${buildSidebar("docs", liveActive)}
 <div class="main">
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/" class="bc-link">⌂ Dashboard</a>
+    <span class="bc-sep">›</span>
+    <a href="/settings" class="bc-link">⚙ Settings</a>
+    <span class="bc-sep">›</span>
+    <span class="bc-current">📄 Docs</span>
+  </nav>
   <div class="tabs">
     <div class="tab active" onclick="showTab(this,'readme')">README</div>
     <div class="tab" onclick="showTab(this,'changelog')">CHANGELOG</div>

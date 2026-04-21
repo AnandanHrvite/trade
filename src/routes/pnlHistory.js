@@ -184,6 +184,16 @@ router.get("/", (req, res) => {
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    /* ── Breadcrumb ── */
+    .breadcrumb{display:flex;align-items:center;gap:6px;font-size:0.68rem;font-weight:600;margin-bottom:6px;}
+    .bc-link{color:#4a6080;text-decoration:none;padding:2px 6px;border-radius:4px;transition:color 0.15s,background 0.15s;}
+    .bc-link:hover{color:#3b82f6;background:#0f1624;}
+    .bc-sep{color:#3a5070;font-size:0.75rem;}
+    .bc-current{color:#e0eaf8;padding:2px 6px;}
+    :root[data-theme="light"] .bc-link{color:#64748b;}
+    :root[data-theme="light"] .bc-link:hover{color:#2563eb;background:#f1f5f9;}
+    :root[data-theme="light"] .bc-sep{color:#94a3b8;}
+    :root[data-theme="light"] .bc-current{color:#1e293b;}
 
     .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
@@ -260,6 +270,13 @@ router.get("/", (req, res) => {
 <div class="app-shell">
   ${buildSidebar('pnlHistory', false)}
   <div class="main-content">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="/" class="bc-link">⌂ Dashboard</a>
+      <span class="bc-sep">›</span>
+      <a href="/settings" class="bc-link">⚙ Settings</a>
+      <span class="bc-sep">›</span>
+      <span class="bc-current">💰 P&amp;L History</span>
+    </nav>
     <h1 class="page-title">💰 P&amp;L History</h1>
     <div class="page-sub">Past baseline (one-time, per broker) + live bot P&amp;L (auto, updates as trades close). All values in ₹.</div>
 
