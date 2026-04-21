@@ -25,6 +25,7 @@ const socketManager = require("../utils/socketManager"); // ← robust socket wr
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
+const tradeLogger = require("../utils/tradeLogger");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
@@ -531,7 +532,7 @@ function parseOptionDetails(symbol) {
   return null;
 }
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, isIntraCandle = false) {
+function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, isIntraCandle = false, entryMeta = {}) {
   // Guard: never overwrite an existing position (catches async race between candle-close
   // fallback and intra-tick entry both resolving at the same time)
   if (ptState.position) {
@@ -556,6 +557,13 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   const _initialSARgapPaper = stopLoss ? Math.abs((spotAtEntry || price) - stopLoss) : 0;
   const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
 
+  // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+  const _entryIstMin     = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
+  const _entryHourIST    = Math.floor(_entryIstMin / 60);
+  const _entryMinuteIST  = _entryIstMin % 60;
+  const _vixAtEntry      = getCachedVix();
+  const _signalStrength  = entryMeta.signalStrength || null;
+
   ptState.position = {
     side,
     symbol,
@@ -578,6 +586,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     // Option premium tracking
     optionEntryLtp:    ptState.optionLtp || null,  // premium at entry (if already subscribed)
     optionCurrentLtp:  ptState.optionLtp || null,  // updated on each option tick
+    // Data-collection fields — surfaced on the trade record in simulateSell()
+    signalStrength:    _signalStrength,
+    vixAtEntry:        _vixAtEntry,
+    entryHourIST:      _entryHourIST,
+    entryMinuteIST:    _entryMinuteIST,
   };
 
   // Set option symbol and start REST polling (no socket changes)
@@ -619,7 +632,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   if (!ptState.position) return;
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
-          optionEntryLtp, optionCurrentLtp } = ptState.position;
+          optionEntryLtp, optionCurrentLtp,
+          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = ptState.position;
 
   const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
@@ -653,6 +667,13 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   const charges = getCharges({ isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl  = parseFloat((rawPnl - charges).toFixed(2));
 
+  // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.
+  const _entryBarMs    = ptState.position.entryBarTime ? ptState.position.entryBarTime * 1000 : null;
+  const _exitBarMs     = ptState.currentBar ? ptState.currentBar.time * 1000 : null;
+  const _durationMs    = (_entryBarMs && _exitBarMs) ? (_exitBarMs - _entryBarMs) : null;
+  const _pnlPoints     = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
+  const _isManualEntry = typeof ptState.position.reason === "string" && /Manual/i.test(ptState.position.reason);
+
   const trade = {
     side,
     symbol,
@@ -669,16 +690,34 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnlMode,
     exitReason:       reason,
     entryReason:      ptState.position.reason,
-    stopLoss:         ptState.position.stopLoss,
+    stopLoss:         ptState.position.stopLoss,        // final SL at exit (may be trailed)
     optionExpiry:     ptState.position.optionExpiry || null,
     optionStrike:     ptState.position.optionStrike || null,
     optionType:       ptState.position.optionType   || side,
     // Bar timestamps for chart markers
     entryBarTime:     ptState.position.entryBarTime || (ptState.currentBar ? ptState.currentBar.time : null),
     exitBarTime:      ptState.currentBar ? ptState.currentBar.time : null,
+    // Data-collection fields (captured at entry — see simulateBuy)
+    signalStrength:   signalStrength   || null,
+    vixAtEntry:       vixAtEntry       != null ? vixAtEntry       : null,
+    entryHourIST:     entryHourIST     != null ? entryHourIST     : null,
+    entryMinuteIST:   entryMinuteIST   != null ? entryMinuteIST   : null,
+    // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
+    initialStopLoss:  ptState.position.initialStopLoss  || null,
+    trailActivatePts: ptState.position.trailActivatePts || null,
+    entryPrevMid:     ptState.position.entryPrevMid     || null,   // 50%-rule reference
+    bestPrice:        ptState.position.bestPrice        || null,   // peak favorable price during trade
+    candlesHeld:      ptState.position.candlesHeld      || 0,
+    durationMs:       _durationMs,
+    pnlPoints:        _pnlPoints,
+    charges:          charges,
+    isFutures:        isFutures,
+    isManual:         _isManualEntry,
+    instrument:       INSTR,
   };
 
   ptState.sessionTrades.push(trade);
+  tradeLogger.appendTradeLog("swing", trade); // crash-safe per-trade JSONL
   ptState.sessionPnl = parseFloat((ptState.sessionPnl + netPnl).toFixed(2));
   // Maintain O(1) counters so status endpoints don't need Array.filter on every poll
   if (netPnl > 0) { ptState._sessionWins++;   }
@@ -1030,7 +1069,7 @@ async function onCandleClose(candle) {
         }
       }
 
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close);
+      simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, { signalStrength: candleCloseStrength });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
     }).catch(err => {
@@ -1258,7 +1297,7 @@ function onTick(tick) {
           }
         }
 
-        simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true); // isIntraCandle=true
+        simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, { signalStrength }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
       }).catch(err => {
@@ -3491,6 +3530,7 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button class="copy-btn" onclick="copyTradeLog(this)">📋 Copy Trade Log</button>
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
+      <a href="/swing-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Crash-safe per-trade JSONL log — full field capture for offline analysis">⬇ JSONL</a>
       <button class="export-btn" onclick="exportPDF()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.2);">📄 Export PDF</button>
       <button class="export-btn reset-btn" onclick="resetHistory()" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);">🗑️ Reset All</button>
       <a href="/swing-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
@@ -4046,6 +4086,22 @@ function renderAnalytics(){
 
   res.setHeader("Content-Type", "text/html");
   return res.send(html);
+});
+
+/**
+ * GET /swing-paper/download/trades.jsonl
+ * Stream the crash-safe per-trade JSONL log as a file download.
+ */
+router.get("/download/trades.jsonl", (req, res) => {
+  const logPath = tradeLogger.filePathFor("swing");
+  const today   = new Date().toISOString().slice(0, 10);
+  const dlName  = `swing_paper_trades_log_${today}.jsonl`;
+  if (!fs.existsSync(logPath)) {
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
+    return res.send("");
+  }
+  res.download(logPath, dlName);
 });
 
 /**

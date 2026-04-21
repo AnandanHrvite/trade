@@ -28,6 +28,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const tradeLogger = require("../utils/tradeLogger");
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
@@ -217,10 +218,18 @@ function stopOptionPolling() {
 
 // ── Simulated Buy/Sell ──────────────────────────────────────────────────────
 
-function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource) {
+function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtEntry, slSource, entryMeta = {}) {
   if (state.position) return;
 
   const optDetails = parseOptionDetails(symbol);
+
+  // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+  const _entryIstMin    = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
+  const _entryHourIST   = Math.floor(_entryIstMin / 60);
+  const _entryMinuteIST = _entryIstMin % 60;
+  const _vixAtEntry     = getCachedVix();
+  const _signalStrength = entryMeta.signalStrength || null;
+
   state.position = {
     side,
     symbol,
@@ -244,6 +253,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     optionStrike:     optDetails?.strike     || null,
     optionExpiry:     optDetails?.expiry     || null,
     optionType:       optDetails?.optionType || side,
+    // Data-collection fields — surfaced on the trade record in simulateSell()
+    signalStrength:   _signalStrength,
+    vixAtEntry:       _vixAtEntry,
+    entryHourIST:     _entryHourIST,
+    entryMinuteIST:   _entryMinuteIST,
   };
 
   state.optionSymbol = symbol;
@@ -267,7 +281,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   if (!state.position) return;
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
-          optionEntryLtp, optionCurrentLtp } = state.position;
+          optionEntryLtp, optionCurrentLtp,
+          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOptionLtp = state.optionLtp || optionCurrentLtp;
 
@@ -295,7 +310,14 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   log(`${emoji} [SCALP-PAPER] Exit: ${reason} | PnL: ₹${netPnl}`);
 
-  state.sessionTrades.push({
+  // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.
+  const _entryMsScalp    = state.position.entryTimeMs || (state.position.entryBarTime ? state.position.entryBarTime * 1000 : null);
+  const _exitMsScalp     = simNow();
+  const _durationMsScalp = _entryMsScalp ? (_exitMsScalp - _entryMsScalp) : null;
+  const _pnlPointsScalp  = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
+  const _isManualScalp   = typeof state.position.reason === "string" && /Manual/i.test(state.position.reason);
+
+  const trade = {
     side, symbol, qty, entryPrice, exitPrice,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: spotAtExit || exitPrice,
@@ -310,7 +332,29 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     pnl: netPnl, pnlMode, exitReason: reason,
     entryBarTime: state.position.entryBarTime || (state.currentBar ? state.currentBar.time : null),
     exitBarTime:  state.currentBar ? state.currentBar.time : null,
-  });
+    // Data-collection fields (captured at entry — see simulateBuy)
+    signalStrength: signalStrength || null,
+    vixAtEntry:     vixAtEntry     != null ? vixAtEntry     : null,
+    entryHourIST:   entryHourIST   != null ? entryHourIST   : null,
+    entryMinuteIST: entryMinuteIST != null ? entryMinuteIST : null,
+    // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
+    initialStopLoss: state.position.initialStopLoss || null,
+    slSource:        state.position.slSource        || null,
+    target:          state.position.target          || null,
+    bestPrice:       state.position.bestPrice       || null,
+    candlesHeld:     state.position.candlesHeld     || 0,
+    peakPnl:         state.position.peakPnl         || 0,
+    entryTimeMs:     state.position.entryTimeMs     || null,
+    exitTimeMs:      _exitMsScalp,
+    durationMs:      _durationMsScalp,
+    pnlPoints:       _pnlPointsScalp,
+    charges:         charges,
+    isFutures:       isFutures,
+    isManual:        _isManualScalp,
+    instrument:      instrumentConfig.INSTRUMENT,
+  };
+  state.sessionTrades.push(trade);
+  tradeLogger.appendTradeLog("scalp", trade); // crash-safe per-trade JSONL
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) state._wins = (state._wins || 0) + 1;
@@ -637,7 +681,7 @@ async function resolveAndEnter(side, spot, result) {
       }
     }
 
-    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource);
+    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, { signalStrength: deriveScalpStrength(result) });
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
   }
@@ -2360,6 +2404,7 @@ ${buildSidebar('scalpHistory', liveActive)}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
+      <a href="/scalp-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Crash-safe per-trade JSONL log — full field capture for offline analysis">⬇ JSONL</a>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="/scalp-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
@@ -3001,6 +3046,22 @@ router.delete("/session/:index", (req, res) => {
     success: true,
     message: `Session deleted successfully.`,
   });
+});
+
+/**
+ * GET /scalp-paper/download/trades.jsonl
+ * Stream the crash-safe per-trade JSONL log as a file download.
+ */
+router.get("/download/trades.jsonl", (req, res) => {
+  const logPath = tradeLogger.filePathFor("scalp");
+  const today   = new Date().toISOString().slice(0, 10);
+  const dlName  = `scalp_paper_trades_log_${today}.jsonl`;
+  if (!fs.existsSync(logPath)) {
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
+    return res.send("");
+  }
+  res.download(logPath, dlName);
 });
 
 /**
