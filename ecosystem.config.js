@@ -3,11 +3,11 @@ module.exports = {
     {
       name: "trading-bot",
       script: "src/app.js",
-      // t3.micro = 1 GiB RAM (~956 MB usable). Heap + native overhead must fit
-      // in ~750 MB to leave ~250 MB for OS + disk cache. --expose-gc lets the
-      // backtest engine trigger GC manually between candle chunks.
-      node_args: "--expose-gc --max-old-space-size=640",
-      max_memory_restart: "720M",
+      // --expose-gc lets the backtest engine trigger GC manually between
+      // candle chunks. Heap/restart caps kept generous so paper/live modes
+      // aren't killed mid-session on a t3.micro.
+      node_args: "--expose-gc --max-old-space-size=768",
+      max_memory_restart: "800M",
       watch: false,
       autorestart: true,
       restart_delay: 5000,
