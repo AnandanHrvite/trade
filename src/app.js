@@ -1565,6 +1565,10 @@ async function gracefulShutdown(signal) {
 
     if (activeModes.length === 0) {
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
+      try {
+        const mu = process.memoryUsage();
+        sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal} (no active modes). RSS=${(mu.rss/1048576).toFixed(0)}MB heap=${(mu.heapUsed/1048576).toFixed(0)}MB uptime=${Math.floor(process.uptime())}s`);
+      } catch (_) {}
       process.exit(0);
       return;
     }
@@ -1592,13 +1596,19 @@ async function gracefulShutdown(signal) {
       }
     }
 
-    // Send Telegram alert. sendTelegram is fire-and-forget (no promise) —
-    // wrap the call itself in try/catch instead of a non-existent .catch().
+    // Send Telegram alert SYNCHRONOUSLY (curl-based) so the message is
+    // flushed before process.exit fires in 3-8s. An async https.request
+    // here gets abandoned on exit if the API round-trip is slow, which
+    // produces "silent restart" symptoms. Include memory stats so we can
+    // tell whether pm2 killed us for a memory cap.
     try {
+      const mu = process.memoryUsage();
+      const memLine = `RSS=${(mu.rss/1048576).toFixed(0)}MB heap=${(mu.heapUsed/1048576).toFixed(0)}/${(mu.heapTotal/1048576).toFixed(0)}MB ext=${(mu.external/1048576).toFixed(0)}MB`;
+      const uptime  = `uptime=${Math.floor(process.uptime())}s`;
       if (hasLive) {
-        sendTelegram(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.`);
+        sendTelegramSync(`🛑 SHUTDOWN: Bot received ${signal}. Live modes stopped: ${modeList} — squareOff triggered. Verify on broker dashboard.\n${memLine} ${uptime}`);
       } else {
-        sendTelegram(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).`);
+        sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal}. Paper modes stopped: ${modeList} (no real positions affected).\n${memLine} ${uptime}`);
       }
     } catch (_) {}
 
