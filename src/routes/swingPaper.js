@@ -30,6 +30,7 @@ const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = 
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
+const skipLogger = require("../utils/skipLogger");
 const tickSimulator = require("../services/tickSimulator");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
@@ -842,7 +843,21 @@ async function onCandleClose(candle) {
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
   log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
-  if (signal === "NONE" && !ptState.position) logNearMiss(indicators.filterAudit, "PAPER", log);
+  if (signal === "NONE" && !ptState.position) {
+    logNearMiss(indicators.filterAudit, "PAPER", log);
+    skipLogger.appendSkipLog("swing", {
+      gate: "strategy",
+      reason: reason || null,
+      spot: candle.close,
+      ema9: indicators.ema9 ?? null,
+      ema9Slope: indicators.ema9Slope ?? null,
+      rsi: indicators.rsi ?? null,
+      sar: indicators.sar ?? null,
+      sarTrend: indicators.sarTrend ?? null,
+      adx: indicators.adx ?? null,
+      audit: indicators.filterAudit || null,
+    });
+  }
 
   // Telegram: candle close signal update (only when flat — no position open; skip in sim mode)
   if (!ptState._simMode && !ptState.position && signal !== null) {
@@ -999,6 +1014,14 @@ async function onCandleClose(candle) {
     const _vixCheck = await checkLiveVix(candleCloseStrength);
     if (!_vixCheck.allowed) {
       log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
+      skipLogger.appendSkipLog("swing", {
+        gate: "vix",
+        reason: _vixCheck.reason || null,
+        spot: candle.close,
+        signalStrength: candleCloseStrength,
+        signal,
+        path: "candle-close",
+      });
       return;
     }
     // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
@@ -1065,6 +1088,16 @@ async function onCandleClose(candle) {
         const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
         if (!_sp.ok) {
           log(`⏭️ [PAPER] SKIP entry — spread too wide (${_sp.reason})`);
+          skipLogger.appendSkipLog("swing", {
+            gate: "spread",
+            reason: _sp.reason || null,
+            spot: candle.close,
+            side,
+            symbol,
+            bid: _q && _q.bid,
+            ask: _q && _q.ask,
+            path: "candle-close",
+          });
           ptState._entryPending = false;
           clearTimeout(_ptEntryTimer);
           return;
@@ -1243,6 +1276,15 @@ function onTick(tick) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
           ptState._vixBlockLoggedCandle = currentBarTime;
           log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+          skipLogger.appendSkipLog("swing", {
+            gate: "vix",
+            reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
+            spot: ltp,
+            vix: _vixIntraVal,
+            signalStrength,
+            signal,
+            path: "intra-candle",
+          });
         }
       } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
@@ -1293,6 +1335,16 @@ function onTick(tick) {
           const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
           if (!_sp.ok) {
             log(`⏭️ [PAPER] SKIP intra-candle entry — spread too wide (${_sp.reason})`);
+            skipLogger.appendSkipLog("swing", {
+              gate: "spread",
+              reason: _sp.reason || null,
+              spot: ltp,
+              side,
+              symbol,
+              bid: _q && _q.bid,
+              ask: _q && _q.ask,
+              path: "intra-candle",
+            });
             ptState._entryPending = false;
             clearTimeout(_ptIntraTimer);
             return;
@@ -3573,6 +3625,20 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
       </div>
     </div>
 
+    <!-- Daily Data Files (skip + trade JSONL per IST date) -->
+    <div id="dailyFilesWrap" style="margin-bottom:16px;">
+      <div class="tbar">
+        <span class="tbar-label">📁 Daily Data Files</span>
+        <span class="tbar-count" id="dailyFilesCnt"></span>
+        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle" style="margin-left:auto;">Hide</button>
+      </div>
+      <div id="dailyFilesBody" style="overflow-x:auto;">
+        <table class="tbl" style="width:100%;"><thead><tr>
+          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Download</th>
+        </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
+      </div>
+    </div>
+
     <!-- Day View (toggleable) -->
     <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
       <div class="tbar">
@@ -3640,6 +3706,39 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
 // Flatten all trades for CSV export
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
+
+// ── Daily Data Files (skip + trade JSONL) ───────────────────────────────────
+function _fmtBytes(n){ if (!n) return '—'; if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
+async function loadDailyFiles(){
+  try {
+    var res = await fetch('/swing-paper/download/daily-files', { cache: 'no-store' });
+    var d = await res.json();
+    var tbody = document.getElementById('dailyFilesRows');
+    document.getElementById('dailyFilesCnt').textContent = d.rows.length + ' day' + (d.rows.length===1?'':'s');
+    if (!d.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">No daily files yet — they\\'ll appear after the next paper session runs.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.rows.map(function(r){
+      var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
+      var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
+      var btns  = '';
+      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:6px;text-decoration:none;display:inline-block;" href="/swing-paper/download/skips/'+r.date+'" title="Download skip JSONL for '+r.date+'">⬇ Skips</a>';
+      if (r.tradesSize) btns += '<a class="export-btn" style="text-decoration:none;display:inline-block;" href="/swing-paper/download/trades/'+r.date+'" title="Download trade JSONL for '+r.date+'">⬇ Trades</a>';
+      if (!btns) btns = '<span style="color:#4a6080;">—</span>';
+      return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
+    }).join('');
+  } catch(e) {
+    var tbody2 = document.getElementById('dailyFilesRows');
+    if (tbody2) tbody2.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:12px;">Failed to load: '+(e&&e.message||e)+'</td></tr>';
+  }
+}
+function toggleDailyFiles(){
+  var b = document.getElementById('dailyFilesBody');
+  var t = document.getElementById('dailyFilesToggle');
+  if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
+}
+loadDailyFiles();
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
@@ -4104,6 +4203,39 @@ router.get("/download/trades.jsonl", (req, res) => {
     return res.send("");
   }
   res.download(logPath, dlName);
+});
+
+// ── Daily JSONL downloads (skips + trades) ───────────────────────────────────
+const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+router.get("/download/daily-files", (req, res) => {
+  const skips  = skipLogger.listDates("swing");
+  const trades = tradeLogger.listDailyDates("swing");
+  const byDate = new Map();
+  for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
+  for (const t of trades) {
+    const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 };
+    row.tradesSize = t.size;
+    byDate.set(t.date, row);
+  }
+  const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+  res.json({ rows });
+});
+
+router.get("/download/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("swing", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `swing_paper_skips_${date}.jsonl`);
+});
+
+router.get("/download/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("swing", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `swing_paper_trades_${date}.jsonl`);
 });
 
 /**

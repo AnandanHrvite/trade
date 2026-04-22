@@ -33,6 +33,7 @@ const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, s
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
+const skipLogger = require("../utils/skipLogger");
 const tickSimulator = require("../services/tickSimulator");
 
 
@@ -624,6 +625,16 @@ async function onCandleClose(bar) {
     const lastBar = window[window.length - 1];
     log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
     logNearMiss(result.filterAudit, "PA-PAPER", log);
+    skipLogger.appendSkipLog("pa", {
+      gate: "strategy",
+      reason: result.reason || null,
+      spot: lastBar.close,
+      pattern: result.pattern || null,
+      srLevel: result.srLevel || null,
+      rsi: result.rsi ?? null,
+      adx: result.adx ?? null,
+      audit: result.filterAudit || null,
+    });
     if (!state._simMode) {
       const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
       notifySignal({
@@ -641,7 +652,17 @@ async function onCandleClose(bar) {
   if (!state._simMode && process.env.PA_VIX_ENABLED === "true") {
     const _strength = result.signalStrength || "MARGINAL";
     const _vixCheck = await checkLiveVix(_strength, { mode: "pa" });
-    if (!_vixCheck.allowed) { log(`⏭️ [PA-PAPER] SKIP: ${_vixCheck.reason}`); return; }
+    if (!_vixCheck.allowed) {
+      log(`⏭️ [PA-PAPER] SKIP: ${_vixCheck.reason}`);
+      skipLogger.appendSkipLog("pa", {
+        gate: "vix",
+        reason: _vixCheck.reason || null,
+        spot: bar.close,
+        signalStrength: _strength,
+        side: result.signal === "BUY_CE" ? "CE" : "PE",
+      });
+      return;
+    }
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -680,6 +701,15 @@ async function resolveAndEnter(side, spot, result) {
       const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
       if (!_sp.ok) {
         log(`⏭️ [PA-PAPER] SKIP entry — spread too wide (${_sp.reason})`);
+        skipLogger.appendSkipLog("pa", {
+          gate: "spread",
+          reason: _sp.reason || null,
+          spot,
+          side,
+          symbol,
+          bid: _q && _q.bid,
+          ask: _q && _q.ask,
+        });
         return;
       }
     }
@@ -2453,6 +2483,20 @@ ${buildSidebar('paHistory', liveActive)}
       </div>
     </div>
 
+    <!-- Daily Data Files (skip + trade JSONL per IST date) -->
+    <div id="dailyFilesWrap" style="margin-bottom:16px;">
+      <div class="tbar">
+        <span class="tbar-label">📁 Daily Data Files</span>
+        <span class="tbar-count" id="dailyFilesCnt"></span>
+        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle" style="margin-left:auto;">Hide</button>
+      </div>
+      <div id="dailyFilesBody" style="overflow-x:auto;">
+        <table class="tbl" style="width:100%;"><thead><tr>
+          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Download</th>
+        </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
+      </div>
+    </div>
+
     <!-- Day View (toggleable) -->
     <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
       <div class="tbar">
@@ -2601,6 +2645,39 @@ if (document.getElementById('histModal')) {
   document.getElementById('histModal').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = document.getElementById('histModal'); if (m) m.style.display = 'none'; } });
 }
+
+// ── Daily Data Files (skip + trade JSONL) ───────────────────────────────────
+function _fmtBytes(n){ if (!n) return '—'; if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
+async function loadDailyFiles(){
+  try {
+    var res = await fetch('/pa-paper/download/daily-files', { cache: 'no-store' });
+    var d = await res.json();
+    var tbody = document.getElementById('dailyFilesRows');
+    document.getElementById('dailyFilesCnt').textContent = d.rows.length + ' day' + (d.rows.length===1?'':'s');
+    if (!d.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">No daily files yet — they\\'ll appear after the next paper session runs.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.rows.map(function(r){
+      var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
+      var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
+      var btns  = '';
+      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:6px;text-decoration:none;display:inline-block;" href="/pa-paper/download/skips/'+r.date+'" title="Download skip JSONL for '+r.date+'">⬇ Skips</a>';
+      if (r.tradesSize) btns += '<a class="export-btn" style="text-decoration:none;display:inline-block;" href="/pa-paper/download/trades/'+r.date+'" title="Download trade JSONL for '+r.date+'">⬇ Trades</a>';
+      if (!btns) btns = '<span style="color:#4a6080;">—</span>';
+      return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
+    }).join('');
+  } catch(e) {
+    var tbody2 = document.getElementById('dailyFilesRows');
+    if (tbody2) tbody2.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:12px;">Failed to load: '+(e&&e.message||e)+'</td></tr>';
+  }
+}
+function toggleDailyFiles(){
+  var b = document.getElementById('dailyFilesBody');
+  var t = document.getElementById('dailyFilesToggle');
+  if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
+}
+loadDailyFiles();
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
@@ -3076,6 +3153,43 @@ router.get("/download/trades.jsonl", (req, res) => {
     return res.send("");
   }
   res.download(logPath, dlName);
+});
+
+// ── Daily JSONL downloads (skips + trades) ───────────────────────────────────
+const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * GET /pa-paper/download/daily-files
+ * Returns the list of available daily files (skips + trades) for the UI.
+ */
+router.get("/download/daily-files", (req, res) => {
+  const skips  = skipLogger.listDates("pa");
+  const trades = tradeLogger.listDailyDates("pa");
+  const byDate = new Map();
+  for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
+  for (const t of trades) {
+    const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 };
+    row.tradesSize = t.size;
+    byDate.set(t.date, row);
+  }
+  const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+  res.json({ rows });
+});
+
+router.get("/download/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("pa", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `pa_paper_skips_${date}.jsonl`);
+});
+
+router.get("/download/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("pa", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.download(p, `pa_paper_trades_${date}.jsonl`);
 });
 
 /**
