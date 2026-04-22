@@ -648,7 +648,10 @@ async function onCandleClose(bar) {
       } else if (_pos.spotAtEntry) {
         _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
       }
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts, {
+        maxCandles: parseInt(process.env.PA_TIME_STOP_CANDLES || "3", 10),
+        flatPts:    parseFloat(process.env.PA_TIME_STOP_FLAT_PTS || "10"),
+      });
       if (_tsReason) {
         log(`⏳ [PA-LIVE] ${_tsReason}`);
         await squareOff(bar.close, _tsReason);

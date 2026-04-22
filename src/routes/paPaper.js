@@ -554,7 +554,10 @@ async function onCandleClose(bar) {
       } else if (_pos.spotAtEntry) {
         _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
       }
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts, {
+        maxCandles: parseInt(process.env.PA_TIME_STOP_CANDLES || "3", 10),
+        flatPts:    parseFloat(process.env.PA_TIME_STOP_FLAT_PTS || "10"),
+      });
       if (_tsReason) {
         log(`⏳ [PA-PAPER] ${_tsReason}`);
         simulateSell(bar.close, _tsReason, bar.close);
@@ -619,6 +622,7 @@ async function onCandleClose(bar) {
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
     log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
+    _logNearMiss(result.filterAudit, "PA-PAPER", log);
     if (!state._simMode) {
       const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
       notifySignal({
@@ -1437,6 +1441,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
       ? `<button onclick="location='/pa-paper/stop'" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
       : `<button onclick="location='/pa-paper/start'" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start Price Action Paper</button>`}
     <a href="/pa-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
+    <button onclick="ptHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
 
@@ -1879,6 +1884,32 @@ function doCopy(text,btn,label){
   } else {
     var ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
     document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);onOk();
+  }
+}
+
+async function ptHandleReset(btn) {
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Reset Price Action Paper Trade',
+    message: 'Reset ALL Price Action paper trade history?\\nThis wipes all sessions and restores starting capital.\\nCannot be undone.',
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/pa-paper/reset');
+    if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
+    var data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      showToast('❌ ' + (data.error || 'Reset failed'), '#ef4444');
+      if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      return;
+    }
+    showToast('✅ ' + data.message, '#10b981');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    showToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
   }
 }
 </script>

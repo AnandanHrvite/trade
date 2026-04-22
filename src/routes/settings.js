@@ -144,13 +144,14 @@ const SETTINGS_SCHEMA = [
       // ── RSI (confluence filter) ──
       { key: "PA_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
       { key: "PA_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (confluence)", default: "45" },
-      { key: "PA_RSI_CAPS_ENABLED", label: "RSI Caps", type: "toggle", effect: EFFECT.SESSION, desc: "Block CE when RSI overbought / PE when RSI oversold", default: "false" },
-      { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought)", default: "85" },
+      { key: "PA_RSI_CAPS_ENABLED", label: "RSI Caps", type: "toggle", effect: EFFECT.SESSION, desc: "Block CE when RSI overbought / PE when RSI oversold", default: "true" },
+      { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 55, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought — buying exhausted move)", default: "65" },
       { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
-      { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold)", default: "15" },
+      { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold — shorting exhausted move)", default: "25" },
       // ── ADX chop filter ──
-      { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "false" },
+      { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
+      { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (BOS/IB only)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for BOS & Inside Bar breakout entries (blocks fading-trend signals)", default: "true" },
       // ── Pattern parameters ──
       { key: "PA_CHART_PATTERNS_ENABLED", label: "Chart Patterns", type: "toggle", effect: EFFECT.SESSION, desc: "Enable Double Top/Bottom and Triangle pattern signals", default: "false" },
       { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size for engulfing/BOS patterns", default: "5" },
@@ -159,14 +160,17 @@ const SETTINGS_SCHEMA = [
       { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows", default: "30" },
       { key: "PA_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Price must be within this many pts of S/R level", default: "15" },
       // ── Trail profit ──
-      { key: "PA_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Use prev N-candle H/L as trail exit (runs parallel with profit-lock floor)", default: "true" },
-      { key: "PA_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Number of candles to look back for trail level (e.g. 2 = lowest low / highest high of last 2 bars)", default: "2" },
-      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing (candle + profit-lock) after this much peak profit", default: "350" },
-      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak", default: "65" },
-      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs (e.g. 500:55,1000:60,3000:70,5000:80,10000:90)", default: "500:55,1000:60,3000:70,5000:80,10000:90" },
+      { key: "PA_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.SESSION, desc: "Primary structure-based exit: exit on N-bar low (CE) / N-bar high (PE). Runs alongside profit-lock safety net.", default: "true" },
+      { key: "PA_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Bars to look back for trail level (3 = lowest low / highest high of last 3 bars)", default: "3" },
+      { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much peak profit. Set high enough to let winners breathe through noise.", default: "600" },
+      { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak (loose base pct — lets trade breathe until tiers bind)", default: "40" },
+      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — tighter locking as peak grows. Format: 1000:50,1500:60,2500:70,4000:80", default: "1000:50,1500:60,2500:70,4000:80" },
       // ── Risk management ──
-      { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "Hard cap on signal candle SL distance", default: "25" },
+      { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 8, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on SL distance after clamping. 12 pts × ~130 qty ≈ ₹1560 max loss per trade.", default: "12" },
+      { key: "PA_MAX_STRUCT_SL_PTS", label: "Max Structural SL (pts, BOS/IB)", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Skip BOS/IB setups when raw structural SL (swing or mother bar) exceeds this — thin structure = false breakout risk", default: "15" },
       { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
+      { key: "PA_TIME_STOP_CANDLES", label: "Time-Stop Candles", type: "number", min: 2, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Exit flat trades after this many candles (theta bleed guard)", default: "3" },
+      { key: "PA_TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |PnL| < this many points (trade has gone nowhere)", default: "10" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max PA entries per day", default: "30" },
       { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
@@ -1165,6 +1169,7 @@ router.get("/", (req, res) => {
         <a href="/login-logs" style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🔐 LOGIN LOGS</a>
         <button onclick="showHealthModal()" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">HEALTH CHECK</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
+        <button onclick="resetAndSaveAll()" title="Overwrite .env with current UI values for every field — syncs .env to match the settings page exactly" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">🔄 RESET &amp; SAVE</button>
       </div>
     </div>
 
@@ -1423,6 +1428,75 @@ function saveSettings() {
   .finally(function() {
     btn.disabled = false;
     btn.textContent = 'Save Changes';
+  });
+}
+
+async function resetAndSaveAll() {
+  var ok = await showConfirm({
+    icon: '🔄', title: 'Reset & Save .env',
+    message: 'This will overwrite your .env with the EXACT values currently shown in this settings page (every field, not just changes).\\n\\nUse this after code updates to sync .env with the latest defaults.\\n\\nContinue?',
+    confirmText: 'Reset & Save', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+
+  // Collect every field value regardless of dirty state
+  var updates = {};
+  document.querySelectorAll('[data-key]').forEach(function(el) {
+    var key = el.getAttribute('data-key');
+    if (!key) return;
+    if (el.type === 'checkbox') {
+      updates[key] = el.checked ? 'true' : 'false';
+    } else {
+      updates[key] = el.value;
+    }
+  });
+
+  if (Object.keys(updates).length === 0) {
+    showToast('No settings fields found', 'error');
+    return;
+  }
+
+  showToast('Writing ' + Object.keys(updates).length + ' fields to .env...', 'info');
+
+  secretFetch('/settings/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ updates: updates }),
+  })
+  .then(function(res) { return res ? res.json() : null; })
+  .then(function(data) {
+    if (!data) return;
+    if (data.success) {
+      // Refresh originals so dirty tracking resets
+      Object.keys(updates).forEach(function(key) {
+        var el = document.querySelector('[data-key="' + key + '"]');
+        if (el) {
+          if (el.type === 'checkbox') {
+            window._originals[key] = el.checked;
+          } else {
+            window._originals[key] = el.value;
+            el.classList.remove('dirty');
+          }
+        }
+      });
+      window._dirtyKeys.clear();
+      updateSaveBar();
+
+      var msg = 'Reset & Save complete — ' + (data.updatedCount || Object.keys(updates).length) + ' fields written';
+      if (!data.fileSaved) {
+        showToast(msg + ' ⚠️ NOT PERSISTED: ' + (data.fileError || 'unknown'), 'error');
+      } else if (data.needsRestart && data.needsRestart.length > 0) {
+        showToast(msg + '. Restart session to pick up: ' + data.needsRestart.join(', '), 'info');
+      } else {
+        showToast(msg + ' — .env now mirrors UI', 'success');
+      }
+    } else {
+      showToast('Reset & Save failed: ' + (data.error || 'unknown'), 'error');
+    }
+  })
+  .catch(function(err) {
+    var msg = err.name === 'AbortError' ? 'Request timed out' : err.message;
+    showToast('Reset & Save failed: ' + msg, 'error');
   });
 }
 

@@ -1,7 +1,7 @@
 /**
  * STRATEGY: PRICE ACTION (5-min candles)
  *
- * Pure price action patterns with RSI confluence filter.
+ * Pure price action patterns with RSI/ADX confluence filters.
  * No lagging indicators as primary signal — reads what price IS doing.
  *
  * PATTERNS DETECTED:
@@ -9,23 +9,32 @@
  *   2. Pin Bar (Hammer / Shooting Star) at S/R levels
  *   3. Inside Bar Breakout (consolidation → expansion)
  *   4. Break of Structure (BOS) — higher-high / lower-low confirmation
- *   5. Double Top / Double Bottom — two equal swing points + neckline break
- *   6. Ascending / Descending Triangle — flat S/R + converging trendline break
+ *   5. Double Top / Double Bottom — two equal swing points + neckline break (opt)
+ *   6. Ascending / Descending Triangle — flat S/R + converging trendline break (opt)
  *
  * SUPPORT/RESISTANCE:
  *   Dynamic S/R from recent swing highs/lows (lookback 30 candles)
- *   S/R zone = swing point +/- SR_ZONE_PTS (default 10pts)
+ *   S/R zone = swing point +/- SR_ZONE_PTS
  *
- * CONFLUENCE:
- *   RSI(14) as confirmation — not primary signal
- *   CE: RSI > 45 (not oversold = momentum supports up move)
- *   PE: RSI < 55 (not overbought = momentum supports down move)
+ * ENTRY CONFLUENCE & QUALITY GATES:
+ *   RSI(14): CE min/max, PE min/max — blocks entries at exhausted-move extremes
+ *   ADX level: blocks entries when market is ranging (PA_ADX_MIN)
+ *   ADX rising (BOS/IB only): require ADX[now] >= ADX[2 bars ago] — blocks
+ *     BOS and Inside Bar breakout entries when the trend is fading. Engulfing
+ *     and pin-bar reversal setups don't need this gate.
+ *   Structural SL cap (BOS/IB only): skip when raw swing/mother-bar distance
+ *     exceeds PA_MAX_STRUCT_SL_PTS. Thin structure → false breakout risk.
  *
  * EXIT:
- *   SL = signal candle wick (engulfing/pin bar) or inside bar boundary
- *   Trailing via swing structure
+ *   Hard SL: signal candle wick / mother bar / recent swing, clamped to
+ *     [PA_MIN_SL_PTS, PA_MAX_SL_PTS] to bound per-trade loss.
+ *   Trail: swing-structure tightening (only tighten) + candle-trail (N-bar
+ *     low/high, primary) + tiered profit-lock floor (safety net on large
+ *     winners). Activates once peak PnL >= PA_TRAIL_START.
+ *   Time-stop: exit flat trades after PA_TIME_STOP_CANDLES with |PnL| <
+ *     PA_TIME_STOP_FLAT_PTS points (theta bleed guard).
  *
- * Timeframe: 5-min | Window: 9:20 AM – 2:30 PM IST
+ * Timeframe: 5-min | Window: PA_ENTRY_START – PA_ENTRY_END IST
  */
 
 const { RSI, ADX } = require("technicalindicators");
@@ -296,8 +305,10 @@ function getSignal(candles, opts) {
   var PIN_WICK_RATIO = parseFloat(cfg("PA_PIN_WICK_RATIO", "2"));
   var SR_LOOKBACK   = parseInt(cfg("PA_SR_LOOKBACK", "30"), 10);
   var SR_ZONE_PTS   = parseFloat(cfg("PA_SR_ZONE_PTS", "15"));
-  var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
+  var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "12"));
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
+  var MAX_STRUCT_SL_PTS = parseFloat(cfg("PA_MAX_STRUCT_SL_PTS", "15")); // skip BOS/IB if raw structural SL > this
+  var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for BOS/IB
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
   var CHART_PATTERNS_ENABLED = cfg("PA_CHART_PATTERNS_ENABLED", "false") === "true"; // Double Top/Bottom, Triangles
 
@@ -345,16 +356,22 @@ function getSignal(candles, opts) {
 
   // ── ADX trend filter ──────────────────────────────────────────────────────
   var adxVal = null;
+  var adxPrev2 = null;
   var isTrending = true; // default pass if ADX disabled
+  var adxRising = true;  // default pass if ADX disabled or insufficient history
   if (ADX_ENABLED) {
     var highs  = candles.map(function(c) { return c.high; });
     var lows   = candles.map(function(c) { return c.low; });
     var adxCloses = candles.map(function(c) { return c.close; });
     var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: adxCloses });
     adxVal = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
+    // Slope check: current ADX vs. 2 bars ago (rising = trend firming, falling = trend dying)
+    adxPrev2 = adxArr.length >= 3 ? adxArr[adxArr.length - 3].adx : null;
     isTrending = adxVal === null ? true : adxVal >= ADX_MIN;
+    adxRising  = (adxVal !== null && adxPrev2 !== null) ? adxVal >= adxPrev2 : true;
   }
   base.adx = adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null;
+  base.adxRising = adxRising;
   base.isTrending = isTrending;
 
   // ── Swing points & S/R zones ───────────────────────────────────────────────
@@ -387,9 +404,20 @@ function getSignal(candles, opts) {
   if (_insideBarPending) {
     var mother = _insideBarPending;
     if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
-      // Bullish breakout
+      // Bullish breakout — quality gates: structural SL cap + ADX rising
       var rawSL = mother.motherCandle.low;
-      var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
+      var rawStructGap = sc.close - rawSL;
+      if (rawStructGap > MAX_STRUCT_SL_PTS) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
+        return base;
+      }
+      if (ADX_RISING_REQ && !adxRising) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+        return base;
+      }
+      var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
       var sl = parseFloat((sc.close - slPts).toFixed(2));
       _insideBarPending = null;
       if (!silent) console.log("[PA " + _ist + "] CE Inside Bar Breakout: close=" + sc.close + " > mother.high=" + mother.triggerHigh + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
@@ -402,9 +430,20 @@ function getSignal(candles, opts) {
       });
     }
     if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
-      // Bearish breakout
+      // Bearish breakout — quality gates: structural SL cap + ADX rising
       var rawSL = mother.motherCandle.high;
-      var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
+      var rawStructGap = rawSL - sc.close;
+      if (rawStructGap > MAX_STRUCT_SL_PTS) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
+        return base;
+      }
+      if (ADX_RISING_REQ && !adxRising) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+        return base;
+      }
+      var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
       var sl = parseFloat((sc.close + slPts).toFixed(2));
       _insideBarPending = null;
       if (!silent) console.log("[PA " + _ist + "] PE Inside Bar Breakout: close=" + sc.close + " < mother.low=" + mother.triggerLow + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
@@ -496,10 +535,21 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 5: BREAK OF STRUCTURE ──────────────────────────────────────────
+  // Quality gates: reject BOS when structure is thin (swing too far = false-break risk)
+  // or when the trend is fading (ADX not rising vs 2 bars ago).
   var bos = checkBOS(sc, swings.swingHighs, swings.swingLows);
   if (bos.bullish && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.min(sc.low, prev.low);
-    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
+    var rawStructGap = sc.close - rawSL;
+    if (rawStructGap > MAX_STRUCT_SL_PTS) {
+      base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
+      return base;
+    }
+    if (ADX_RISING_REQ && !adxRising) {
+      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+      return base;
+    }
+    var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] CE BOS above " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
     return Object.assign({}, base, {
@@ -512,7 +562,16 @@ function getSignal(candles, opts) {
   }
   if (bos.bearish && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.max(sc.high, prev.high);
-    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
+    var rawStructGap = rawSL - sc.close;
+    if (rawStructGap > MAX_STRUCT_SL_PTS) {
+      base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
+      return base;
+    }
+    if (ADX_RISING_REQ && !adxRising) {
+      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+      return base;
+    }
+    var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] PE BOS below " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
     return Object.assign({}, base, {
