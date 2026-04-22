@@ -616,6 +616,28 @@ app.get("/", (req, res) => {
     .util-btn:disabled { opacity:0.55; cursor:not-allowed; }
     .util-btn.run-paper { background:#062016; border-color:#166534; color:#4ade80; font-weight:700; }
     .util-btn.run-live  { background:#1f0808; border-color:#7f1d1d; color:#f87171; font-weight:700; }
+    /* Active running state — pulsing glow so the user can see the mode is live */
+    .util-btn.is-active-paper {
+      background:#052e1d !important; border-color:#22c55e !important; color:#86efac !important;
+      opacity:1 !important; cursor:default !important;
+      animation: pulse-paper 1.8s ease-in-out infinite;
+    }
+    .util-btn.is-active-live {
+      background:#2a0a0a !important; border-color:#ef4444 !important; color:#fca5a5 !important;
+      opacity:1 !important; cursor:default !important;
+      animation: pulse-live 1.8s ease-in-out infinite;
+    }
+    .util-btn.is-locked { opacity:0.35 !important; cursor:not-allowed !important; filter:grayscale(0.5); }
+    @keyframes pulse-paper {
+      0%,100% { box-shadow:0 0 0 0 rgba(34,197,94,0.55); }
+      50%     { box-shadow:0 0 0 6px rgba(34,197,94,0); }
+    }
+    @keyframes pulse-live {
+      0%,100% { box-shadow:0 0 0 0 rgba(239,68,68,0.55); }
+      50%     { box-shadow:0 0 0 6px rgba(239,68,68,0); }
+    }
+    :root[data-theme="light"] .util-btn.is-active-paper { background:#dcfce7 !important; border-color:#16a34a !important; color:#15803d !important; }
+    :root[data-theme="light"] .util-btn.is-active-live  { background:#fee2e2 !important; border-color:#dc2626 !important; color:#b91c1c !important; }
     .util-info { font-size:0.68rem; color:#4a6080; margin-left:auto; font-family:'IBM Plex Mono',monospace; }
 
     /* Mobile */
@@ -1233,6 +1255,67 @@ async function startAllLive(btn){
   var result = await _startAll(LIVE_ENDPOINTS);
   await _handleStartAllResult(btn, orig, 'All Live', result);
 }
+
+// ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
+var ALL_BTN_POLL = [
+  { url:'/swing-paper/status/data', kind:'paper' },
+  { url:'/swing-live/status/data',  kind:'live'  }
+  ${scalpModeOn ? ",{ url:'/scalp-paper/status/data', kind:'paper' },{ url:'/scalp-live/status/data', kind:'live' }" : ""}
+  ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
+];
+
+function _applyAllBtnState(paperOn, liveOn){
+  var bPaper = document.getElementById('btn-all-paper');
+  var bLive  = document.getElementById('btn-all-live');
+  if(!bPaper || !bLive) return;
+  bPaper.classList.remove('is-active-paper','is-locked');
+  bLive.classList.remove('is-active-live','is-locked');
+  if(paperOn){
+    bPaper.disabled = true;
+    bPaper.classList.add('is-active-paper');
+    bPaper.textContent = '● PAPER ACTIVE';
+    bPaper.title = 'Paper trading is running';
+    bLive.disabled = true;
+    bLive.classList.add('is-locked');
+    bLive.textContent = '🔒 Live locked';
+    bLive.title = 'Stop all paper trades before starting live';
+  } else if(liveOn){
+    bLive.disabled = true;
+    bLive.classList.add('is-active-live');
+    bLive.textContent = '● LIVE ACTIVE';
+    bLive.title = 'Live trading is running';
+    bPaper.disabled = true;
+    bPaper.classList.add('is-locked');
+    bPaper.textContent = '🔒 Paper locked';
+    bPaper.title = 'Stop all live trades before starting paper';
+  } else {
+    bPaper.disabled = false;
+    bPaper.textContent = '▶ All Paper';
+    bPaper.title = 'Start all paper modes';
+    bLive.disabled = false;
+    bLive.textContent = '▶ All Live';
+    bLive.title = 'Start all live modes';
+  }
+}
+
+async function pollAllBtnsStatus(){
+  if(!document.getElementById('btn-all-paper')) return;
+  try {
+    var results = await Promise.all(ALL_BTN_POLL.map(function(p){
+      return fetch(p.url,{cache:'no-store'})
+        .then(function(r){ return r.ok ? r.json() : {running:false}; })
+        .catch(function(){ return {running:false}; });
+    }));
+    var paperOn=false, liveOn=false;
+    for(var i=0;i<results.length;i++){
+      if(!results[i] || !results[i].running) continue;
+      if(ALL_BTN_POLL[i].kind==='paper') paperOn=true; else liveOn=true;
+    }
+    _applyAllBtnState(paperOn, liveOn);
+  } catch(_){}
+}
+pollAllBtnsStatus();
+setInterval(pollAllBtnsStatus, 5000);
 
 // ── Dashboard Cumulative P&L Charts (Paper + Live) ───────────────────────────
 function _fmtINR(n){
