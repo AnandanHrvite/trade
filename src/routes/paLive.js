@@ -1599,6 +1599,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
     ${_vixEnabled
       ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix.value > _vixMaxEntry ? '#ef4444' : '#10b981'};">\uD83C\uDF21\uFE0F VIX ${_vix != null ? _vix.value.toFixed(1) : 'n/a'}${_vix != null ? (_vix.value > _vixMaxEntry ? ' \u00b7 BLOCKED' : ' \u00b7 OK') : ''}</span>`
       : ''}
+    <button onclick="scHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
 
@@ -1846,6 +1847,31 @@ async function scHandleStop(btn) {
   } catch(e) {
     scToast('\u274c ' + e.message, '#ef4444');
     if (btn) { btn.textContent = '\u25a0 Stop'; btn.disabled = false; }
+  }
+}
+async function scHandleReset(btn) {
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Reset Price Action Live History',
+    message: 'Wipe ALL Price Action LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
+    confirmText: 'Reset History', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/pa-live/reset', { method: 'POST' });
+    if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
+    var data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      scToast('❌ ' + (data.error || 'Reset failed'), '#ef4444');
+      if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      return;
+    }
+    scToast('✅ ' + data.message, '#10b981');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    scToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
   }
 }
 async function scManualEntry(side) {

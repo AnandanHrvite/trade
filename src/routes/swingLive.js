@@ -2503,6 +2503,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
     <div class="top-bar-right">
       ${tradeState.running ? `<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>ACTIVE</span>` : `<span class="top-bar-badge">● STOPPED</span>`}
       ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">🌡️ VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' · BLOCKED' : _vix > _vixStrongOnly ? ' · STRONG ONLY' : ' · NORMAL') : ''}</span>` : ''}
+      <button onclick="ltHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
     </div>
   </div>
   <div class="broker-badges">
@@ -2941,6 +2942,31 @@ async function ltHandleStop(btn) {
   } catch(e) {
     ltShowToast('❌ ' + e.message, '#ef4444');
     if (btn) { btn.textContent = '■ Stop'; btn.disabled = false; }
+  }
+}
+async function ltHandleReset(btn) {
+  var ok = await showConfirm({
+    icon: '⚠️', title: 'Reset Swing Live History',
+    message: 'Wipe ALL swing LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
+    confirmText: 'Reset History', confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
+  if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
+  try {
+    var res = await secretFetch('/swing-live/reset', { method: 'POST' });
+    if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
+    var data;
+    try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+    if (!data.success) {
+      ltShowToast('❌ ' + (data.error || 'Reset failed'), '#ef4444');
+      if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      return;
+    }
+    ltShowToast('✅ ' + data.message, '#10b981');
+    setTimeout(function(){ location.reload(); }, 1200);
+  } catch(e) {
+    ltShowToast('❌ ' + e.message, '#ef4444');
+    if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
   }
 }
 async function manualEntry(side) {
