@@ -1902,15 +1902,14 @@ async function ptHandleReset(btn) {
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
     if (!data.success) {
-      showToast('❌ ' + (data.error || 'Reset failed'), '#ef4444');
       if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+      await showAlert({ icon: '❌', title: 'Reset Failed', message: data.error || 'Reset failed', btnClass: 'modal-btn-danger' });
       return;
     }
-    showToast('✅ ' + data.message, '#10b981');
-    setTimeout(function(){ location.reload(); }, 1200);
+    location.reload();
   } catch(e) {
-    showToast('❌ ' + e.message, '#ef4444');
     if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
+    await showAlert({ icon: '❌', title: 'Reset Failed', message: e.message, btnClass: 'modal-btn-danger' });
   }
 }
 </script>
