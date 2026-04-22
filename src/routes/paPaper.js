@@ -32,6 +32,7 @@ const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
+const { logNearMiss } = require("../utils/nearMissLog");
 const tickSimulator = require("../services/tickSimulator");
 
 
@@ -622,7 +623,7 @@ async function onCandleClose(bar) {
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
     log(`⏭️ [PA-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
-    _logNearMiss(result.filterAudit, "PA-PAPER", log);
+    logNearMiss(result.filterAudit, "PA-PAPER", log);
     if (!state._simMode) {
       const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
       notifySignal({

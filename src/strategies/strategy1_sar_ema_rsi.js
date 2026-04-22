@@ -401,6 +401,52 @@ function getSignal(candles, opts) {
   // ── EMA30 filter toggle (configurable via Settings) ─────────────────────
   var EMA30_FILTER = process.env.EMA30_FILTER !== "false"; // default ON
 
+  // ── Near-miss filter audit (additive-only logging) ───────────────────────
+  // Evaluate each entry filter independently (no short-circuit) so we can see
+  // "4 of 5 passed — missed: ADX" patterns even on blocked candles. Does NOT
+  // affect signal decisions — purely observational.
+  var _bodyAbs = Math.abs(signalCandle.close - signalCandle.open);
+  var _MIN_BODY_AUDIT  = parseFloat(process.env.MIN_CANDLE_BODY  || "10");
+  var _MIN_SAR_AUDIT   = parseFloat(process.env.MIN_SAR_DISTANCE || "45");
+  var _MAX_SAR_AUDIT   = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
+  var _sarGapCE_audit  = signalCandle.close - sarSL;
+  var _sarGapPE_audit  = sarSL - signalCandle.close;
+
+  // CE side — 7 filters (same order as gate sequence below)
+  var _ceChecks = [
+    { name: "EMA9 touch",   ok: emaTouchCE,                       detail: "low=" + signalCandle.low + " vs EMA9=" + ema9.toFixed(1) },
+    { name: "EMA9 slope",   ok: ema9SlopeUp,                      detail: ema9SlopeValue + "pt vs +" + EMA_SLOPE_MIN },
+    { name: "SAR bullish",  ok: (sarAlreadyBullish || sarJustFlippedBull || sarBearOverrideCE), detail: "trend=" + (currSAR.trend===1?"BULL":"BEAR") },
+    { name: "EMA30 trend",  ok: (!EMA30_FILTER || ema30 === null || signalCandle.close >= ema30), detail: "close=" + signalCandle.close + " vs EMA30=" + (ema30!==null?ema30.toFixed(1):"n/a") },
+    { name: "SAR gap",      ok: (sarBearOverrideCE || (_sarGapCE_audit >= _MIN_SAR_AUDIT && _sarGapCE_audit <= _MAX_SAR_AUDIT)), detail: _sarGapCE_audit.toFixed(1) + "pt vs [" + _MIN_SAR_AUDIT + "," + _MAX_SAR_AUDIT + "]" },
+    { name: "Body bullish", ok: (signalCandle.close > signalCandle.open && _bodyAbs >= _MIN_BODY_AUDIT), detail: "body=" + _bodyAbs.toFixed(1) + "pt " + (signalCandle.close > signalCandle.open ? "BULL" : "BEAR") + " vs >=" + _MIN_BODY_AUDIT },
+    { name: "ADX trending", ok: isTrending,                       detail: "ADX=" + (adxVal!==null?adxVal.toFixed(1):"n/a") + " vs >=" + ADX_MIN_TREND },
+    { name: "RSI bullish",  ok: rsi > RSI_CE_MIN,                 detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE_MIN },
+  ];
+
+  // PE side — 7 filters mirrored
+  var _peChecks = [
+    { name: "EMA9 touch",   ok: emaTouchPE,                       detail: "high=" + signalCandle.high + " vs EMA9=" + ema9.toFixed(1) },
+    { name: "EMA9 slope",   ok: ema9SlopeDown,                    detail: ema9SlopeValue + "pt vs -" + EMA_SLOPE_MIN },
+    { name: "SAR bearish",  ok: (sarAlreadyBearish || sarJustFlippedBear || sarBullOverridePE), detail: "trend=" + (currSAR.trend===1?"BULL":"BEAR") },
+    { name: "EMA30 trend",  ok: (!EMA30_FILTER || ema30 === null || signalCandle.close <= ema30), detail: "close=" + signalCandle.close + " vs EMA30=" + (ema30!==null?ema30.toFixed(1):"n/a") },
+    { name: "SAR gap",      ok: (sarBullOverridePE || (_sarGapPE_audit >= _MIN_SAR_AUDIT && _sarGapPE_audit <= _MAX_SAR_AUDIT)), detail: _sarGapPE_audit.toFixed(1) + "pt vs [" + _MIN_SAR_AUDIT + "," + _MAX_SAR_AUDIT + "]" },
+    { name: "Body bearish", ok: (signalCandle.close < signalCandle.open && _bodyAbs >= _MIN_BODY_AUDIT), detail: "body=" + _bodyAbs.toFixed(1) + "pt " + (signalCandle.close < signalCandle.open ? "BEAR" : "BULL") + " vs >=" + _MIN_BODY_AUDIT },
+    { name: "ADX trending", ok: isTrending,                       detail: "ADX=" + (adxVal!==null?adxVal.toFixed(1):"n/a") + " vs >=" + ADX_MIN_TREND },
+    { name: "RSI bearish",  ok: rsi < RSI_PE_MAX,                 detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE_MAX },
+  ];
+
+  function _auditSide(checks) {
+    var passed = [], failed = [];
+    for (var i = 0; i < checks.length; i++) {
+      if (checks[i].ok) passed.push(checks[i].name);
+      else              failed.push({ name: checks[i].name, detail: checks[i].detail });
+    }
+    return { passed: passed.length, total: checks.length, passedNames: passed, failed: failed };
+  }
+
+  base.filterAudit = { ce: _auditSide(_ceChecks), pe: _auditSide(_peChecks) };
+
   // ── BUY CE ──────────────────────────────────────────────────────────────────
   if (emaTouchCE && sarOkForCE) {
     // ── TREND FILTER (most impactful gate — skipped when EMA30_FILTER=false) ──

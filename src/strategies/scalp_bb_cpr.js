@@ -153,6 +153,49 @@ function getSignal(candles, opts) {
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 
+  // ── Near-miss filter audit (additive-only logging) ────────────────────────
+  // Attached to `base` early so it survives all subsequent early-return paths
+  // (squeeze, activity, approach, body). Does NOT affect signal decisions.
+  var _prevCandleAudit  = candles.length >= 2 ? candles[candles.length - 2] : null;
+  var _scRangeAudit     = sc.high - sc.low;
+  var _scBodyAudit      = Math.abs(sc.close - sc.open);
+  var _bodyRatioAudit   = _scRangeAudit > 0 ? _scBodyAudit / _scRangeAudit : 0;
+  var _bbWidthPctAudit  = bb.middle > 0 ? ((bb.upper - bb.lower) / bb.middle) * 100 : 0;
+  var _minWidthAudit    = parseFloat(cfg("SCALP_BB_MIN_WIDTH_PCT", "0.15"));
+  var _squeezeOn        = cfg("SCALP_BB_SQUEEZE_FILTER", "true") === "true";
+  var _approachOn       = cfg("SCALP_REQUIRE_APPROACH",  "false") === "true";
+  var _bodyMinRatioCfg  = parseFloat(cfg("SCALP_MIN_BODY_RATIO", "0"));
+  var _cePriceAudit     = sc.close >= bb.upper;
+  var _ceRsiAudit       = rsi > RSI_CE;
+  var _pePriceAudit     = sc.close <= bb.lower;
+  var _peRsiAudit       = rsi < RSI_PE;
+
+  var _ceAuditChecks = [
+    { name: "BB width",       ok: (!_squeezeOn || _bbWidthPctAudit >= _minWidthAudit), detail: _bbWidthPctAudit.toFixed(3) + "% vs >=" + _minWidthAudit + "%" },
+    { name: "BB upper touch", ok: _cePriceAudit, detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
+    { name: "RSI bullish",    ok: _ceRsiAudit,   detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE },
+    { name: "Approach",       ok: (!_approachOn || (_prevCandleAudit && _prevCandleAudit.close >= bb.middle)), detail: "prev.close=" + (_prevCandleAudit ? _prevCandleAudit.close : "n/a") + " vs mid=" + bb.middle.toFixed(1) },
+    { name: "Body ratio",     ok: (_bodyMinRatioCfg <= 0 || _bodyRatioAudit >= _bodyMinRatioCfg), detail: (_bodyRatioAudit*100).toFixed(0) + "% vs >=" + (_bodyMinRatioCfg*100).toFixed(0) + "%" },
+  ];
+  var _peAuditChecks = [
+    { name: "BB width",       ok: (!_squeezeOn || _bbWidthPctAudit >= _minWidthAudit), detail: _bbWidthPctAudit.toFixed(3) + "% vs >=" + _minWidthAudit + "%" },
+    { name: "BB lower touch", ok: _pePriceAudit, detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
+    { name: "RSI bearish",    ok: _peRsiAudit,   detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE },
+    { name: "Approach",       ok: (!_approachOn || (_prevCandleAudit && _prevCandleAudit.close <= bb.middle)), detail: "prev.close=" + (_prevCandleAudit ? _prevCandleAudit.close : "n/a") + " vs mid=" + bb.middle.toFixed(1) },
+    { name: "Body ratio",     ok: (_bodyMinRatioCfg <= 0 || _bodyRatioAudit >= _bodyMinRatioCfg), detail: (_bodyRatioAudit*100).toFixed(0) + "% vs >=" + (_bodyMinRatioCfg*100).toFixed(0) + "%" },
+  ];
+
+  function _auditSide(checks) {
+    var passed = [], failed = [];
+    for (var i = 0; i < checks.length; i++) {
+      if (checks[i].ok) passed.push(checks[i].name);
+      else              failed.push({ name: checks[i].name, detail: checks[i].detail });
+    }
+    return { passed: passed.length, total: checks.length, passedNames: passed, failed: failed };
+  }
+
+  base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
+
   // ── ACTIVITY FILTER (optional — disabled by default) ─────────────────────
   // NIFTY index has no real volume — uses candle range (high-low) as activity proxy.
   // Skips entries when current candle range is below threshold of recent average.

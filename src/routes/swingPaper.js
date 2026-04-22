@@ -29,6 +29,7 @@ const tradeLogger = require("../utils/tradeLogger");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
+const { logNearMiss } = require("../utils/nearMissLog");
 const tickSimulator = require("../services/tickSimulator");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
@@ -841,6 +842,7 @@ async function onCandleClose(candle) {
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
   log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
   log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  if (signal === "NONE" && !ptState.position) logNearMiss(indicators.filterAudit, "PAPER", log);
 
   // Telegram: candle close signal update (only when flat — no position open; skip in sim mode)
   if (!ptState._simMode && !ptState.position && signal !== null) {
