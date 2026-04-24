@@ -2488,7 +2488,8 @@ ${buildSidebar('paHistory', liveActive)}
       <div class="tbar">
         <span class="tbar-label">📁 Daily Data Files</span>
         <span class="tbar-count" id="dailyFilesCnt"></span>
-        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle" style="margin-left:auto;">Hide</button>
+        <button class="copy-btn" onclick="copyAllDailyFiles(this)" style="margin-left:auto;" title="Copy all skip + trade JSONL across all dates">📋 Copy All Data</button>
+        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Hide</button>
       </div>
       <div id="dailyFilesBody" style="overflow-x:auto;">
         <table class="tbl" style="width:100%;"><thead><tr>
@@ -2511,6 +2512,17 @@ ${buildSidebar('paHistory', liveActive)}
           </tr></thead>
           <tbody id="dayBody"></tbody>
         </table>
+      </div>
+      <div id="dwPager" style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;">
+        <label style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;">Rows</label>
+        <select id="dwPageSize" style="background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;">
+          <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+        </select>
+        <span id="dwPagerInfo" style="margin:0 4px;"></span>
+        <button class="copy-btn" id="dwFirst" style="padding:3px 8px;min-width:26px;" title="First">«</button>
+        <button class="copy-btn" id="dwPrev"  style="padding:3px 8px;min-width:26px;" title="Prev">‹</button>
+        <button class="copy-btn" id="dwNext"  style="padding:3px 8px;min-width:26px;" title="Next">›</button>
+        <button class="copy-btn" id="dwLast"  style="padding:3px 8px;min-width:26px;" title="Last">»</button>
       </div>
     </div>
 
@@ -2568,6 +2580,23 @@ ${buildSidebar('paHistory', liveActive)}
       <button onclick="document.getElementById('histModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
     </div>
     <div id="histm-body"></div>
+  </div>
+</div>
+
+<!-- JSONL Viewer Modal -->
+<div id="jsonlModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1320;border:1px solid #1d3b6e;border-radius:16px;padding:18px 20px;max-width:1400px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.9);">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+      <div>
+        <span id="jsonlm-title" style="color:#e0eaf8;font-size:0.85rem;font-weight:600;"></span>
+        <span id="jsonlm-meta" style="color:#4a6080;font-size:0.65rem;margin-left:8px;"></span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="copy-btn" onclick="copyJsonlViewed(this)" id="jsonlm-copy">📋 Copy</button>
+        <button onclick="document.getElementById('jsonlModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:0.75rem;cursor:pointer;padding:4px 12px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
+      </div>
+    </div>
+    <div id="jsonlm-body" style="flex:1;overflow:auto;"></div>
   </div>
 </div>
 
@@ -2662,10 +2691,8 @@ async function loadDailyFiles(){
       var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
       var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
       var btns  = '';
-      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:4px;text-decoration:none;display:inline-block;" href="/pa-paper/view/skips/'+r.date+'" target="_blank" rel="noopener" title="View skip JSONL for '+r.date+'">👁 Skips</a>';
-      if (r.tradesSize) btns += '<a class="export-btn" style="margin-right:8px;text-decoration:none;display:inline-block;" href="/pa-paper/view/trades/'+r.date+'" target="_blank" rel="noopener" title="View trade JSONL for '+r.date+'">👁 Trades</a>';
-      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:4px;text-decoration:none;display:inline-block;" href="/pa-paper/download/skips/'+r.date+'" title="Download skip JSONL for '+r.date+'">⬇ Skips</a>';
-      if (r.tradesSize) btns += '<a class="export-btn" style="text-decoration:none;display:inline-block;" href="/pa-paper/download/trades/'+r.date+'" title="Download trade JSONL for '+r.date+'">⬇ Trades</a>';
+      if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
+      if (r.tradesSize) btns += '<button class="export-btn" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
       if (!btns) btns = '<span style="color:#4a6080;">—</span>';
       return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
     }).join('');
@@ -2680,6 +2707,105 @@ function toggleDailyFiles(){
   if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
 }
 loadDailyFiles();
+
+// ── JSONL Table Viewer (modal) ────────────────────────────────────────────
+var _JSONL_ROUTE_PREFIX = '/pa-paper';
+var _JSONL_CURRENT_TEXT = '';
+function _jsonlEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function _renderJsonlTable(text){
+  var lines = text.split(/\\r?\\n/).filter(function(l){ return l.trim(); });
+  if (!lines.length) return { html: '<div style="padding:16px;color:#4a6080;text-align:center;">No data</div>', rows: 0, cols: 0 };
+  var rows = [];
+  var keys = [];
+  var seen = {};
+  for (var i=0; i<lines.length; i++){
+    try {
+      var o = JSON.parse(lines[i]);
+      rows.push(o);
+      for (var k in o) { if (!seen[k]) { seen[k] = 1; keys.push(k); } }
+    } catch(_){ }
+  }
+  var html = '<div style="overflow:auto;max-height:72vh;border:1px solid #1a2236;border-radius:8px;"><table class="tbl" style="width:100%;font-size:0.68rem;font-family:\\'IBM Plex Mono\\',monospace;">';
+  html += '<thead style="position:sticky;top:0;background:#07111f;z-index:1;"><tr>';
+  html += '<th style="padding:6px 8px;color:#4a6080;">#</th>';
+  for (var j=0; j<keys.length; j++) html += '<th style="padding:6px 8px;color:#4a9cf5;white-space:nowrap;">' + _jsonlEsc(keys[j]) + '</th>';
+  html += '</tr></thead><tbody>';
+  for (var r=0; r<rows.length; r++){
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;color:#3a5070;">' + (r+1) + '</td>';
+    for (var c=0; c<keys.length; c++){
+      var v = rows[r][keys[c]];
+      var disp = (v==null ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+      html += '<td style="padding:4px 8px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _jsonlEsc(disp) + '">' + _jsonlEsc(disp) + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  return { html: html, rows: rows.length, cols: keys.length };
+}
+async function viewJsonl(type, date){
+  var modal = document.getElementById('jsonlModal');
+  var body  = document.getElementById('jsonlm-body');
+  var title = document.getElementById('jsonlm-title');
+  var meta  = document.getElementById('jsonlm-meta');
+  title.textContent = (type === 'skips' ? 'Skip' : 'Trade') + ' JSONL — ' + date;
+  meta.textContent = 'Loading…';
+  body.innerHTML = '<div style="padding:24px;color:#4a6080;text-align:center;">Loading…</div>';
+  _JSONL_CURRENT_TEXT = '';
+  modal.style.display = 'flex';
+  try {
+    var res = await fetch(_JSONL_ROUTE_PREFIX + '/view/' + type + '/' + date, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var text = await res.text();
+    _JSONL_CURRENT_TEXT = text;
+    var rendered = _renderJsonlTable(text);
+    body.innerHTML = rendered.html;
+    meta.textContent = rendered.rows + ' row' + (rendered.rows===1?'':'s') + ' · ' + rendered.cols + ' column' + (rendered.cols===1?'':'s');
+  } catch(e) {
+    meta.textContent = '';
+    body.innerHTML = '<div style="padding:16px;color:#e94560;text-align:center;">Failed to load: ' + _jsonlEsc(e && e.message || e) + '</div>';
+  }
+}
+function copyJsonlViewed(btn){
+  if (!_JSONL_CURRENT_TEXT) { showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'Nothing to copy yet',btnClass:'modal-btn-primary'}); return; }
+  doCopy(_JSONL_CURRENT_TEXT, btn, 'JSONL');
+}
+async function copyAllDailyFiles(btn){
+  var orig = btn.innerHTML;
+  btn.innerHTML = '\\u23f3 Fetching…';
+  btn.disabled = true;
+  try {
+    var res = await fetch(_JSONL_ROUTE_PREFIX + '/download/daily-files', { cache: 'no-store' });
+    var d = await res.json();
+    if (!d.rows || !d.rows.length) {
+      btn.innerHTML = orig; btn.disabled = false;
+      showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'No daily files to copy',btnClass:'modal-btn-primary'});
+      return;
+    }
+    var parts = [];
+    for (var i=0; i<d.rows.length; i++){
+      var r = d.rows[i];
+      if (r.skipsSize){
+        var sres = await fetch(_JSONL_ROUTE_PREFIX + '/view/skips/' + r.date, { cache: 'no-store' });
+        if (sres.ok) { var st = await sres.text(); parts.push('# === SKIPS ' + r.date + ' ===\\n' + st.replace(/\\s+$/, '')); }
+      }
+      if (r.tradesSize){
+        var tres = await fetch(_JSONL_ROUTE_PREFIX + '/view/trades/' + r.date, { cache: 'no-store' });
+        if (tres.ok) { var tt = await tres.text(); parts.push('# === TRADES ' + r.date + ' ===\\n' + tt.replace(/\\s+$/, '')); }
+      }
+    }
+    var combined = parts.join('\\n\\n');
+    btn.innerHTML = orig; btn.disabled = false;
+    doCopy(combined, btn, 'All Data');
+  } catch(e) {
+    btn.innerHTML = orig; btn.disabled = false;
+    showAlert({icon:'\\u274c',title:'Copy Failed',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'});
+  }
+}
+if (document.getElementById('jsonlModal')) {
+  document.getElementById('jsonlModal').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = document.getElementById('jsonlModal'); if (m && m.style.display !== 'none') m.style.display = 'none'; } });
+}
 
 function exportAllCSV() {
   if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
@@ -2808,6 +2934,7 @@ function toggleDayWise(){
   if(dwVisible) buildDayView();
 }
 
+var dwPage = 1, dwPageSize = 10;
 function buildDayView(){
   var dayMap={};
   ALL_TRADES_JSON.forEach(function(t){
@@ -2818,22 +2945,54 @@ function buildDayView(){
     if(t.pnl > 0) dayMap[d].wins++; else if(t.pnl < 0) dayMap[d].losses++;
   });
   var days = Object.values(dayMap).sort(function(a,b){ return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
-  var cumPnl=0, rows='';
-  for(var i=0;i<days.length;i++){
-    var dy=days[i]; cumPnl+=dy.pnl;
+  var cumAll=0;
+  for(var k=0;k<days.length;k++){ cumAll+=days[k].pnl; days[k]._cum=cumAll; }
+  window._dayData = days;
+
+  var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
+  if(dwPage > totalPages) dwPage = totalPages;
+  if(dwPage < 1) dwPage = 1;
+  var start = dwPageSize === 0 ? 0 : (dwPage - 1) * dwPageSize;
+  var end = dwPageSize === 0 ? days.length : Math.min(start + dwPageSize, days.length);
+  var slice = days.slice(start, end);
+
+  var rows='';
+  for(var i=0;i<slice.length;i++){
+    var dy=slice[i];
     var pc=dy.pnl>=0?'#10b981':'#ef4444';
-    var cc=cumPnl>=0?'#10b981':'#ef4444';
+    var cc=dy._cum>=0?'#10b981':'#ef4444';
     var pbg=dy.pnl>=0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)';
-    var cbg=cumPnl>=0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)';
+    var cbg=dy._cum>=0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)';
     rows+='<tr><td style="color:#c8d8f0;">'+dy.date+'</td><td>'+dy.trades+'</td>'
       +'<td style="color:#10b981;">'+dy.wins+'</td><td style="color:#ef4444;">'+dy.losses+'</td>'
       +'<td style="color:'+pc+';font-weight:700;background:'+pbg+';">'+fmtAnaSigned(dy.pnl)+'</td>'
-      +'<td style="color:'+cc+';font-weight:700;background:'+cbg+';">'+fmtAnaSigned(cumPnl)+'</td></tr>';
+      +'<td style="color:'+cc+';font-weight:700;background:'+cbg+';">'+fmtAnaSigned(dy._cum)+'</td></tr>';
   }
   document.getElementById('dayBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
   document.getElementById('dayCntLabel').textContent = days.length+' days';
-  window._dayData = days;
+
+  var info=document.getElementById('dwPagerInfo');
+  if(info){
+    if(!days.length) info.textContent='0 of 0';
+    else if(dwPageSize===0) info.textContent='All '+days.length;
+    else info.textContent=(start+1)+'–'+end+' of '+days.length+' · pg '+dwPage+'/'+totalPages;
+  }
+  var fb=document.getElementById('dwFirst'), pb=document.getElementById('dwPrev'), nb=document.getElementById('dwNext'), lb=document.getElementById('dwLast');
+  if(fb) fb.disabled=dwPage<=1;
+  if(pb) pb.disabled=dwPage<=1;
+  if(nb) nb.disabled=dwPage>=totalPages;
+  if(lb) lb.disabled=dwPage>=totalPages;
 }
+
+(function wireDwPager(){
+  var ps=document.getElementById('dwPageSize');
+  if(ps) ps.addEventListener('change', function(e){ dwPageSize = parseInt(e.target.value,10)||0; dwPage = 1; buildDayView(); });
+  var b;
+  b=document.getElementById('dwFirst'); if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage=1; buildDayView(); } });
+  b=document.getElementById('dwPrev');  if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage--; buildDayView(); } });
+  b=document.getElementById('dwNext');  if(b) b.addEventListener('click', function(){ var d=window._dayData||[]; var tp=dwPageSize===0?1:Math.max(1,Math.ceil(d.length/dwPageSize)); if(dwPage<tp){ dwPage++; buildDayView(); } });
+  b=document.getElementById('dwLast');  if(b) b.addEventListener('click', function(){ var d=window._dayData||[]; var tp=dwPageSize===0?1:Math.max(1,Math.ceil(d.length/dwPageSize)); if(dwPage<tp){ dwPage=tp; buildDayView(); } });
+})();
 
 // ── Analytics Panel ───────────────────────────────────────────────────────
 var anaVisible = false;

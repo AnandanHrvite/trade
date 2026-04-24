@@ -415,6 +415,17 @@ ${buildSidebar('swingBacktest', liveActive)}
         <tbody id="dayBody"></tbody>
       </table>
     </div>
+    <div class="pag" style="margin-top:8px;">
+      <label style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Rows</label>
+      <select id="dwPageSize" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 6px;border-radius:5px;font-size:0.7rem;font-family:inherit;cursor:pointer;">
+        <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+      </select>
+      <span class="pag-info" id="dwPagerInfo"></span>
+      <button id="dwFirst" title="First">«</button>
+      <button id="dwPrev"  title="Prev">‹</button>
+      <button id="dwNext"  title="Next">›</button>
+      <button id="dwLast"  title="Last">»</button>
+    </div>
   </div>
 
   <!-- Analytics Panel -->
@@ -740,6 +751,7 @@ function doReset(){
 }
 
 // ── Day View ──
+var dwPage = 1, dwPageSize = 10;
 function buildDayView(){
   var dayMap={};
   TRADES.forEach(function(t){
@@ -752,25 +764,56 @@ function buildDayView(){
     }
   });
   var days=Object.values(dayMap).sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:0; });
-  var cumPnl=0, rows='';
-  for(var i=0;i<days.length;i++){
-    var dy=days[i];
-    cumPnl+=dy.pnl;
+  var cumAll=0;
+  for(var k=0;k<days.length;k++){ cumAll+=days[k].pnl; days[k]._cum=cumAll; }
+  window._dayData=days;
+
+  var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
+  if(dwPage > totalPages) dwPage = totalPages;
+  if(dwPage < 1) dwPage = 1;
+  var start = dwPageSize === 0 ? 0 : (dwPage - 1) * dwPageSize;
+  var end = dwPageSize === 0 ? days.length : Math.min(start + dwPageSize, days.length);
+  var slice = days.slice(start, end);
+
+  var rows='';
+  for(var i=0;i<slice.length;i++){
+    var dy=slice[i];
     var pc=dy.pnl>=0?'#10b981':'#ef4444';
-    var cc=cumPnl>=0?'#10b981':'#ef4444';
+    var cc=dy._cum>=0?'#10b981':'#ef4444';
     rows+='<tr>'
       +'<td>'+dy.date+'</td>'
       +'<td>'+dy.trades+'</td>'
       +'<td style="color:#10b981;">'+dy.wins+'</td>'
       +'<td style="color:#ef4444;">'+dy.losses+'</td>'
       +'<td style="color:'+pc+';font-weight:700;">'+fpts(dy.pnl)+'</td>'
-      +'<td style="color:'+cc+';font-weight:700;">'+fpts(cumPnl)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;">'+fpts(dy._cum)+'</td>'
       +'</tr>';
   }
   document.getElementById('dayBody').innerHTML=rows||'<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
   document.getElementById('dayCntLabel').textContent=days.length+' days';
-  window._dayData=days;
+
+  var info=document.getElementById('dwPagerInfo');
+  if(info){
+    if(!days.length) info.textContent='0 of 0';
+    else if(dwPageSize===0) info.textContent='All '+days.length;
+    else info.textContent=(start+1)+'–'+end+' of '+days.length+' · pg '+dwPage+'/'+totalPages;
+  }
+  var fb=document.getElementById('dwFirst'), pb=document.getElementById('dwPrev'), nb=document.getElementById('dwNext'), lb=document.getElementById('dwLast');
+  if(fb) fb.disabled=dwPage<=1;
+  if(pb) pb.disabled=dwPage<=1;
+  if(nb) nb.disabled=dwPage>=totalPages;
+  if(lb) lb.disabled=dwPage>=totalPages;
 }
+
+(function wireDwPager(){
+  var ps=document.getElementById('dwPageSize');
+  if(ps) ps.addEventListener('change', function(e){ dwPageSize = parseInt(e.target.value,10)||0; dwPage = 1; buildDayView(); });
+  var b;
+  b=document.getElementById('dwFirst'); if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage=1; buildDayView(); } });
+  b=document.getElementById('dwPrev');  if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage--; buildDayView(); } });
+  b=document.getElementById('dwNext');  if(b) b.addEventListener('click', function(){ var d=window._dayData||[]; var tp=dwPageSize===0?1:Math.max(1,Math.ceil(d.length/dwPageSize)); if(dwPage<tp){ dwPage++; buildDayView(); } });
+  b=document.getElementById('dwLast');  if(b) b.addEventListener('click', function(){ var d=window._dayData||[]; var tp=dwPageSize===0?1:Math.max(1,Math.ceil(d.length/dwPageSize)); if(dwPage<tp){ dwPage=tp; buildDayView(); } });
+})();
 
 function copyDayView(btn){
   var days=window._dayData||[];

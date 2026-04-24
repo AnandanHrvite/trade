@@ -917,6 +917,17 @@ ${buildSidebar('paBacktest', liveActive)}
         <tfoot id="dwFoot"></tfoot>
       </table>
     </div>
+    <div class="pag" style="margin-top:8px;">
+      <label style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Rows</label>
+      <select id="dwPageSize" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 6px;border-radius:5px;font-size:0.7rem;font-family:inherit;cursor:pointer;">
+        <option value="5">5</option><option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="0">All</option>
+      </select>
+      <span class="pag-info" id="dwPagerInfo"></span>
+      <button id="dwFirst" title="First">«</button>
+      <button id="dwPrev"  title="Prev">‹</button>
+      <button id="dwNext"  title="Next">›</button>
+      <button id="dwLast"  title="Last">»</button>
+    </div>
   </div>
 
   <!-- Analytics Panel -->
@@ -1246,6 +1257,7 @@ function toggleDayWise(){
   if(dwVisible) renderDayWise();
 }
 
+var dwPage = 1, dwPageSize = 10, dwDays = [];
 function renderDayWise(){
   var dayMap = {};
   filtered.forEach(function(t){
@@ -1258,25 +1270,34 @@ function renderDayWise(){
   });
   var days = Object.values(dayMap);
   days.sort(function(a,b){ return a.ts - b.ts; });
+  var cumAll = 0;
+  for(var k=0;k<days.length;k++){ cumAll += days[k].pnl; days[k]._cum = cumAll; }
+  dwDays = days;
 
-  var cum = 0, html = '';
-  for(var i=0;i<days.length;i++){
-    var d = days[i];
-    cum += d.pnl;
+  var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
+  if(dwPage > totalPages) dwPage = totalPages;
+  if(dwPage < 1) dwPage = 1;
+  var start = dwPageSize === 0 ? 0 : (dwPage - 1) * dwPageSize;
+  var end = dwPageSize === 0 ? days.length : Math.min(start + dwPageSize, days.length);
+  var slice = days.slice(start, end);
+
+  var html = '';
+  for(var i=0;i<slice.length;i++){
+    var d = slice[i];
     var dc = d.pnl >= 0 ? '#10b981' : '#ef4444';
-    var cc = cum >= 0 ? '#10b981' : '#ef4444';
+    var cc = d._cum >= 0 ? '#10b981' : '#ef4444';
     html += '<tr>'
       +'<td style="color:#c8d8f0;font-weight:600;">'+d.date+'</td>'
       +'<td>'+d.trades+'</td>'
       +'<td style="color:#10b981;">'+d.wins+'</td>'
       +'<td style="color:#ef4444;">'+d.losses+'</td>'
       +'<td style="color:'+dc+';font-weight:700;">'+fpts(parseFloat(d.pnl.toFixed(2)), null)+'</td>'
-      +'<td style="color:'+cc+';font-weight:700;">'+fpts(parseFloat(cum.toFixed(2)), null)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;">'+fpts(parseFloat(d._cum.toFixed(2)), null)+'</td>'
       +'</tr>';
   }
-  document.getElementById('dwBody').innerHTML = html;
+  document.getElementById('dwBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
 
-  var totalPnl = cum;
+  var totalPnl = cumAll;
   var tc = totalPnl >= 0 ? '#10b981' : '#ef4444';
   document.getElementById('dwFoot').innerHTML =
     '<tr><td style="color:#c8d8f0;">Total ('+days.length+' days)</td>'
@@ -1284,11 +1305,33 @@ function renderDayWise(){
     +'<td style="color:#10b981;">'+filtered.filter(function(t){return t.pnl>0}).length+'</td>'
     +'<td style="color:#ef4444;">'+filtered.filter(function(t){return t.pnl<0}).length+'</td>'
     +'<td colspan="2" style="color:'+tc+';font-weight:700;">Final: '+fpts(parseFloat(totalPnl.toFixed(2)), null)+'</td></tr>';
+
+  var info = document.getElementById('dwPagerInfo');
+  if(info){
+    if(!days.length) info.textContent = '0 of 0';
+    else if(dwPageSize === 0) info.textContent = 'All '+days.length;
+    else info.textContent = (start+1)+'–'+end+' of '+days.length+' · pg '+dwPage+'/'+totalPages;
+  }
+  var fb=document.getElementById('dwFirst'), pb=document.getElementById('dwPrev'), nb=document.getElementById('dwNext'), lb=document.getElementById('dwLast');
+  if(fb) fb.disabled = dwPage <= 1;
+  if(pb) pb.disabled = dwPage <= 1;
+  if(nb) nb.disabled = dwPage >= totalPages;
+  if(lb) lb.disabled = dwPage >= totalPages;
 }
 
-// Re-render day-wise when filters change
+(function wireDwPager(){
+  var ps=document.getElementById('dwPageSize');
+  if(ps) ps.addEventListener('change', function(e){ dwPageSize = parseInt(e.target.value,10)||0; dwPage = 1; if(dwVisible) renderDayWise(); });
+  var b;
+  b=document.getElementById('dwFirst'); if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage=1; renderDayWise(); } });
+  b=document.getElementById('dwPrev');  if(b) b.addEventListener('click', function(){ if(dwPage>1){ dwPage--; renderDayWise(); } });
+  b=document.getElementById('dwNext');  if(b) b.addEventListener('click', function(){ var tp=dwPageSize===0?1:Math.max(1,Math.ceil(dwDays.length/dwPageSize)); if(dwPage<tp){ dwPage++; renderDayWise(); } });
+  b=document.getElementById('dwLast');  if(b) b.addEventListener('click', function(){ var tp=dwPageSize===0?1:Math.max(1,Math.ceil(dwDays.length/dwPageSize)); if(dwPage<tp){ dwPage=tp; renderDayWise(); } });
+})();
+
+// Re-render day-wise when filters change (reset to page 1)
 var _origDoSort2 = doSort2;
-doSort2 = function(){ _origDoSort2(); if(dwVisible) renderDayWise(); };
+doSort2 = function(){ _origDoSort2(); if(dwVisible){ dwPage = 1; renderDayWise(); } };
 
 // ── Copy functions ──
 function copyDayView(btn){
