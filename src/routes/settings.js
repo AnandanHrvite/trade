@@ -1175,7 +1175,8 @@ router.get("/", (req, res) => {
         <a href="/login-logs" style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🔐 LOGIN LOGS</a>
         <button onclick="showHealthModal()" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">HEALTH CHECK</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
-        <button onclick="resetAndSaveAll()" title="Overwrite .env with current UI values for every field — syncs .env to match the settings page exactly" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">🔄 RESET &amp; SAVE</button>
+        <button onclick="showBulkModal()" title="Paste KEY=VALUE pairs to bulk update .env, then restart" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📋 BULK EDIT</button>
+        <button onclick="resetAndSaveAll()" title="Write every field on this page to .env (not just dirty ones). Useful after code updates that add new settings with defaults — flushes those defaults into .env. Does NOT change values shown on screen." style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">💾 SAVE ALL → .env</button>
       </div>
     </div>
 
@@ -1190,32 +1191,6 @@ router.get("/", (req, res) => {
 
     <div class="page">
       ${sectionsHtml}
-
-      <!-- Bulk paste config -->
-      <div class="settings-section" data-section="bulk-paste">
-        <div class="section-title" onclick="toggleSection(this)">
-          <span class="section-chevron">▶</span>
-          📋 Bulk Update (Paste Config)
-          <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">paste → save → restart</span>
-        </div>
-        <div class="section-card">
-          <div class="bulk-section">
-            <div class="bulk-hint">
-              Paste <strong>KEY=VALUE</strong> pairs (one per line) to add/update. Prefix a line with <strong>-</strong> (e.g. <code>-OLD_KEY</code>) to <strong>remove</strong> that key from .env.<br/>
-              Supports <code>KEY=VALUE</code>, <code>KEY: VALUE</code>, quoted values, and <code>#</code> comment lines.
-              Sensitive keys (SECRET/TOKEN/ACCESS) are ignored for both updates and deletes. Applies everything and restarts the server.
-            </div>
-            <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;VIX_MAX_ENTRY=25&#10;&#10;# Delete dead keys with a leading dash:&#10;-SCALP_ADX_ENABLED&#10;-SCALP_RSI_CE_MIN"></textarea>
-            <div class="bulk-preview" id="bulkPreview"></div>
-            <div class="bulk-actions">
-              <button class="btn-bulk-clear" onclick="clearBulkPaste()">Clear</button>
-              <button class="btn-bulk-update" id="bulkUpdateBtn" onclick="bulkUpdateAndRestart()">
-                <span>🚀</span> Update &amp; Restart
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Restart Server -->
       <div class="settings-section">
@@ -1439,9 +1414,9 @@ function saveSettings() {
 
 async function resetAndSaveAll() {
   var ok = await showConfirm({
-    icon: '🔄', title: 'Reset & Save .env',
-    message: 'This will overwrite your .env with the EXACT values currently shown in this settings page (every field, not just changes).\\n\\nUse this after code updates to sync .env with the latest defaults.\\n\\nContinue?',
-    confirmText: 'Reset & Save', confirmClass: 'modal-btn-danger'
+    icon: '💾', title: 'Save All Fields to .env',
+    message: 'This writes EVERY field on this page to .env (not just the ones you changed).\\n\\nUI values will not change. Use this after code updates so new defaults get persisted into .env.\\n\\nContinue?',
+    confirmText: 'Save All', confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
 
@@ -1488,7 +1463,7 @@ async function resetAndSaveAll() {
       window._dirtyKeys.clear();
       updateSaveBar();
 
-      var msg = 'Reset & Save complete — ' + (data.updatedCount || Object.keys(updates).length) + ' fields written';
+      var msg = 'Save All complete — ' + (data.updatedCount || Object.keys(updates).length) + ' fields written to .env';
       if (!data.fileSaved) {
         showToast(msg + ' ⚠️ NOT PERSISTED: ' + (data.fileError || 'unknown'), 'error');
       } else if (data.needsRestart && data.needsRestart.length > 0) {
@@ -1497,12 +1472,12 @@ async function resetAndSaveAll() {
         showToast(msg + ' — .env now mirrors UI', 'success');
       }
     } else {
-      showToast('Reset & Save failed: ' + (data.error || 'unknown'), 'error');
+      showToast('Save All failed: ' + (data.error || 'unknown'), 'error');
     }
   })
   .catch(function(err) {
     var msg = err.name === 'AbortError' ? 'Request timed out' : err.message;
-    showToast('Reset & Save failed: ' + msg, 'error');
+    showToast('Save All failed: ' + msg, 'error');
   });
 }
 
@@ -1740,6 +1715,11 @@ async function bulkUpdateAndRestart() {
 
 // ── .env viewer ─────────────────────────────────────────────────────────
 var _envData={};
+function showBulkModal(){
+  document.getElementById('bulkModal').style.display='block';
+  setTimeout(function(){ var t=document.getElementById('bulkPasteBox'); if(t) t.focus(); }, 50);
+}
+
 function showEnvModal(){
   document.getElementById('envModal').style.display='block';
   fetch('/settings/env').then(function(r){return r.json()}).then(function(data){
@@ -2018,6 +1998,30 @@ function copySectionSummary() {
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
       <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
+    </div>
+  </div>
+</div>
+<!-- Bulk Edit modal -->
+<div id="bulkModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:760px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#f59e0b;">📋 Bulk Edit .env <span style="font-size:0.65rem;color:var(--dim);font-weight:500;letter-spacing:0;margin-left:6px;">paste → save → restart</span></span>
+      <button onclick="document.getElementById('bulkModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div class="bulk-section" style="padding:18px 20px 20px;">
+      <div class="bulk-hint">
+        Paste <strong>KEY=VALUE</strong> pairs (one per line) to add/update. Prefix a line with <strong>-</strong> (e.g. <code>-OLD_KEY</code>) to <strong>remove</strong> that key from .env.<br/>
+        Supports <code>KEY=VALUE</code>, <code>KEY: VALUE</code>, quoted values, and <code>#</code> comment lines.
+        Sensitive keys (SECRET/TOKEN/ACCESS) are ignored for both updates and deletes. Applies everything and restarts the server.
+      </div>
+      <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;VIX_MAX_ENTRY=25&#10;&#10;# Delete dead keys with a leading dash:&#10;-SCALP_ADX_ENABLED&#10;-SCALP_RSI_CE_MIN"></textarea>
+      <div class="bulk-preview" id="bulkPreview"></div>
+      <div class="bulk-actions">
+        <button class="btn-bulk-clear" onclick="clearBulkPaste()">Clear</button>
+        <button class="btn-bulk-update" id="bulkUpdateBtn" onclick="bulkUpdateAndRestart()">
+          <span>🚀</span> Update &amp; Restart
+        </button>
+      </div>
     </div>
   </div>
 </div>
