@@ -718,19 +718,30 @@ function renderCumChart(rows){
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   const gridCol = isLight ? '#e0e4ea' : '#0e1e36';
   const tickCol = isLight ? '#64748b' : '#3a5070';
+  const GREEN = '#10b981', RED = '#ef4444', FLAT = '#4a6080';
+  const baseColor = cum > 0 ? GREEN : (cum < 0 ? RED : FLAT);
+  const baseFill  = cum > 0 ? 'rgba(16,185,129,0.14)' : (cum < 0 ? 'rgba(239,68,68,0.14)' : 'rgba(74,96,128,0.10)');
   if (_cumChart) _cumChart.destroy();
   _cumChart = new Chart(ctx, {
     type: 'line',
     data: { labels, datasets: [{
-      data, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.12)',
+      data, borderColor: baseColor, backgroundColor: baseFill,
       borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0,
+      segment: {
+        borderColor: function(ctx){
+          const y0 = ctx.p0.parsed.y, y1 = ctx.p1.parsed.y;
+          return ((y0 + y1) / 2) >= 0 ? GREEN : RED;
+        },
+      },
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: function(ctx){ return fmtINR(ctx.parsed.y); } } } },
       scales: {
-        x: { ticks: { color: tickCol, maxTicksLimit: 8, font: { size: 10 } }, grid: { color: gridCol } },
-        y: { ticks: { color: tickCol, font: { size: 10 } }, grid: { color: gridCol } },
+        x: { ticks: { display: false }, grid: { display: false } },
+        y: { ticks: { color: tickCol, font: { size: 10 }, callback: function(v){ return fmtINR(v); } }, grid: { color: gridCol } },
       },
     },
   });
