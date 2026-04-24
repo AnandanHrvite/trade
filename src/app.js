@@ -1340,7 +1340,12 @@ function _buildCumSeries(trades){
   return { labels: labels, data: data, total: cum };
 }
 
-function _renderDashCumChart(canvasId, emptyId, trades, color){
+var PNL_GREEN = '#10b981', PNL_RED = '#ef4444', PNL_FLAT = '#4a6080';
+var PNL_GREEN_FILL = 'rgba(16,185,129,0.14)', PNL_RED_FILL = 'rgba(239,68,68,0.14)', PNL_FLAT_FILL = 'rgba(74,96,128,0.10)';
+function _pnlColor(total){ return total > 0 ? PNL_GREEN : (total < 0 ? PNL_RED : PNL_FLAT); }
+function _pnlFill(total){ return total > 0 ? PNL_GREEN_FILL : (total < 0 ? PNL_RED_FILL : PNL_FLAT_FILL); }
+
+function _renderDashCumChart(canvasId, emptyId, trades){
   var canvas = document.getElementById(canvasId);
   var empty  = document.getElementById(emptyId);
   if (!canvas) return null;
@@ -1355,12 +1360,19 @@ function _renderDashCumChart(canvasId, emptyId, trades, color){
   var isLight = document.documentElement.getAttribute('data-theme') === 'light';
   var gridCol = isLight ? '#e0e4ea' : '#1a2236';
   var tickCol = isLight ? '#64748b' : '#3a5070';
-  var rgba = color === '#ef4444' ? 'rgba(239,68,68,0.12)' : 'rgba(59,130,246,0.12)';
+  var baseColor = _pnlColor(s.total);
+  var baseFill  = _pnlFill(s.total);
   return new Chart(canvas, {
     type: 'line',
     data: { labels: s.labels, datasets: [{
-      data: s.data, borderColor: color, backgroundColor: rgba,
+      data: s.data, borderColor: baseColor, backgroundColor: baseFill,
       borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0,
+      segment: {
+        borderColor: function(ctx){
+          var y0 = ctx.p0.parsed.y, y1 = ctx.p1.parsed.y;
+          return ((y0 + y1) / 2) >= 0 ? PNL_GREEN : PNL_RED;
+        },
+      },
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -1395,15 +1407,15 @@ var _dcToggle = 'paper';
 function _renderDashTotal(){
   var src = _dcToggle;
   var trades = _dcData[src] || [];
-  var color = src === 'live' ? '#ef4444' : '#3b82f6';
+  var total = trades.reduce(function(a,t){ return a + (t.pnl||0); }, 0);
   var dot = document.getElementById('dashCumDot');
-  if (dot) dot.style.background = color;
+  if (dot) dot.style.background = _pnlColor(total);
   var link = document.getElementById('dashCumLink');
   if (link) link.href = src === 'live' ? '/live-consolidation' : '/consolidation';
   var emptyEl = document.getElementById('dashCumEmpty');
   if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
   if (_dcChart) { _dcChart.destroy(); _dcChart = null; }
-  _dcChart = _renderDashCumChart('dashCumChart', 'dashCumEmpty', trades, color);
+  _dcChart = _renderDashCumChart('dashCumChart', 'dashCumEmpty', trades);
   _updateChartStats('dash-cum-stats', trades);
 }
 
@@ -1443,11 +1455,10 @@ function _renderModuleChart(mode){
   var src = _mmToggle[mode];
   var all = _mmData[src] || [];
   var trades = all.filter(function(t){ return (t.mode || '').toUpperCase() === mode; });
-  var color = src === 'live' ? '#ef4444' : '#3b82f6';
   if (_mmCharts[mode]) { _mmCharts[mode].destroy(); _mmCharts[mode] = null; }
   var emptyEl = document.getElementById('mm-empty-' + mode);
   if (emptyEl) emptyEl.textContent = 'No ' + src + ' trades yet';
-  _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades, color);
+  _mmCharts[mode] = _renderDashCumChart('mmChart-' + mode, 'mm-empty-' + mode, trades);
   _updateChartStats('mm-stats-' + mode, trades);
 }
 
