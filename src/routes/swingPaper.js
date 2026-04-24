@@ -3964,7 +3964,7 @@ function exportAllCSV() {
   });
   var csv = [header].concat(rows).map(function(r) {
     return r.map(function(v){ return '"' + String(v||'').replace(/"/g,'""')+'"'; }).join(',');
-  }).join('\n');
+  }).join('\\n');
   var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
   var a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
