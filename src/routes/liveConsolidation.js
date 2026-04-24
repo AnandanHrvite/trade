@@ -420,6 +420,7 @@ function fmtINR(n){
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function pnlColor(n){ return (n >= 0) ? '#10b981' : '#ef4444'; }
+function pnlRowBg(n){ return n > 0 ? 'rgba(16,185,129,0.07)' : (n < 0 ? 'rgba(239,68,68,0.07)' : 'transparent'); }
 
 function parseEntryTime(t){
   if (!t) return null;
@@ -569,7 +570,7 @@ function renderRollupTable(id, rows){
   st.page = pg.page;
   _rendered[id] = pg.slice;
   tb.innerHTML = pg.slice.map((r, i) => \`
-    <tr>
+    <tr style="background:\${pnlRowBg(r.pnl)};">
       <td style="font-weight:600;">\${r.key}</td>
       <td>\${r.count}</td>
       <td style="color:\${pnlColor(r.pnl)};font-weight:700;">\${r.pnl >= 0 ? '+' : ''}\${fmtINR(r.pnl)}</td>
@@ -597,7 +598,7 @@ function renderTradesTable(rows){
   _rendered.tradesTbl = pg.slice;
   const startNo = st.pageSize ? (pg.page - 1) * st.pageSize : 0;
   tb.innerHTML = pg.slice.map((t, i) => \`
-    <tr>
+    <tr style="background:\${pnlRowBg(t.pnl)};">
       <td>\${startNo + i + 1}</td>
       <td><span class="badge-mode badge-\${t.mode}">\${t.mode}</span></td>
       <td>\${t.date || '—'}</td>
