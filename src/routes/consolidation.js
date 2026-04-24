@@ -266,6 +266,32 @@ router.get("/", (req, res) => {
       <button class="btn" onclick="copyGroup('yearly')">📋 Yearly</button>
       <button class="btn" onclick="copyAll()">📋 All Trades</button>
       <button class="btn" onclick="downloadCSV()">⬇ CSV</button>
+      <button id="dvToggle" class="btn" onclick="toggleDayView()" style="margin-left:auto;" title="Day-wise P&L summary across all modes">👁 Day View</button>
+    </div>
+
+    <!-- Day View (toggleable) -->
+    <div class="panel" id="dayViewPanel" style="display:none;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <h3 style="margin:0;">Day View</h3>
+        <span id="dvCount" style="font-size:0.62rem;color:#4a6080;font-family:'IBM Plex Mono',monospace;"></span>
+        <button class="btn" onclick="copyDayView(event.target)" style="margin-left:auto;">📋 Copy Day View</button>
+      </div>
+      <div class="tbl-wrap" style="max-height:420px;">
+        <table class="tbl" id="dayViewTbl">
+          <thead><tr>
+            <th>Date</th>
+            <th>Trades</th>
+            <th>Swing</th>
+            <th>Scalp</th>
+            <th>PA</th>
+            <th>Wins</th>
+            <th>Losses</th>
+            <th>P&amp;L</th>
+            <th>Cumulative P&amp;L</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Analytics -->
@@ -764,10 +790,74 @@ function applyFilters(){
   renderRollupTable('yearlyTbl',  _lastRollups.yearly);
   renderTradesTable(rows);
   renderCumChart(rows);
+  if (_dvVisible) buildDayView();
 
   const totalPnl = rows.reduce((a, t) => a + (t.pnl || 0), 0);
   document.getElementById('fCount').innerHTML =
     \`<strong>\${rows.length}</strong> trades · Net: <span style="color:\${pnlColor(totalPnl)};font-weight:700;">\${totalPnl >= 0 ? '+' : ''}\${fmtINR(totalPnl)}</span>\`;
+}
+
+// ── Day View ─────────────────────────────────────────────────────────────────
+let _dvVisible = false;
+let _dvDays = [];
+
+function toggleDayView(){
+  _dvVisible = !_dvVisible;
+  document.getElementById('dayViewPanel').style.display = _dvVisible ? 'block' : 'none';
+  document.getElementById('dvToggle').classList.toggle('copied', _dvVisible);
+  if (_dvVisible) buildDayView();
+}
+
+function buildDayView(){
+  const map = new Map();
+  for (const t of _lastFiltered){
+    const d = t.date || 'Unknown';
+    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0 });
+    const b = map.get(d);
+    b.trades++;
+    b.pnl += (t.pnl || 0);
+    if (t.pnl > 0) b.wins++; else if (t.pnl < 0) b.losses++;
+    if (t.mode && b[t.mode] != null) b[t.mode]++;
+  }
+  const days = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+  _dvDays = days;
+  const tb = document.querySelector('#dayViewTbl tbody');
+  if (!days.length){
+    tb.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#4a6080;padding:18px;">No data</td></tr>';
+    document.getElementById('dvCount').textContent = '';
+    return;
+  }
+  let cum = 0;
+  tb.innerHTML = days.map(dy => {
+    cum += dy.pnl;
+    const pc = pnlColor(dy.pnl), cc = pnlColor(cum);
+    const pbg = dy.pnl > 0 ? 'rgba(16,185,129,0.12)' : (dy.pnl < 0 ? 'rgba(239,68,68,0.12)' : 'transparent');
+    const cbg = cum    > 0 ? 'rgba(16,185,129,0.12)' : (cum    < 0 ? 'rgba(239,68,68,0.12)' : 'transparent');
+    const modeCell = (n, cls) => n ? \`<span class="badge-mode badge-\${cls}">\${n}</span>\` : '<span style="color:#3a5070;">—</span>';
+    return \`<tr style="background:\${pnlRowBg(dy.pnl)};">
+      <td style="font-weight:600;">\${dy.date}</td>
+      <td>\${dy.trades}</td>
+      <td>\${modeCell(dy.SWING, 'SWING')}</td>
+      <td>\${modeCell(dy.SCALP, 'SCALP')}</td>
+      <td>\${modeCell(dy.PA, 'PA')}</td>
+      <td style="color:#10b981;">\${dy.wins}</td>
+      <td style="color:#ef4444;">\${dy.losses}</td>
+      <td style="color:\${pc};font-weight:700;background:\${pbg};">\${dy.pnl >= 0 ? '+' : ''}\${fmtINR(dy.pnl)}</td>
+      <td style="color:\${cc};font-weight:700;background:\${cbg};">\${cum    >= 0 ? '+' : ''}\${fmtINR(cum)}</td>
+    </tr>\`;
+  }).join('');
+  document.getElementById('dvCount').textContent = days.length + ' day' + (days.length === 1 ? '' : 's');
+}
+
+function copyDayView(btn){
+  if (!_dvDays.length){ alert('No data to copy.'); return; }
+  const lines = ['Date\\tTrades\\tSwing\\tScalp\\tPA\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
+  let cum = 0;
+  for (const dy of _dvDays){
+    cum += dy.pnl;
+    lines.push([dy.date, dy.trades, dy.SWING, dy.SCALP, dy.PA, dy.wins, dy.losses, dy.pnl.toFixed(2), cum.toFixed(2)].join('\\t'));
+  }
+  copyText(lines.join('\\n'), btn);
 }
 
 function resetFilters(){
