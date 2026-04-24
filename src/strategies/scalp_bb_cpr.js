@@ -67,7 +67,7 @@ function isInTradingWindow(unixSec) {
 // ── Indicator cache — avoid redundant recalculation on every tick ────────────
 // Cache key = last closed candle time + current candle OHLC (changes on each tick)
 // If the closed candles haven't changed AND current bar is same, reuse cached indicators.
-let _indicatorCache = { key: null, bb: null, rsi: null, sar: null };
+let _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null };
 
 function _makeIndicatorKey(candles) {
   if (candles.length < 2) return null;
@@ -114,12 +114,13 @@ function getSignal(candles, opts) {
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
   var cacheKey = _makeIndicatorKey(candles);
-  var bb, rsi, sar;
+  var bb, bbMiddles, rsi, sar;
 
   if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
-    bb  = _indicatorCache.bb;
-    rsi = _indicatorCache.rsi;
-    sar = _indicatorCache.sar;
+    bb        = _indicatorCache.bb;
+    bbMiddles = _indicatorCache.bbMiddles;
+    rsi       = _indicatorCache.rsi;
+    sar       = _indicatorCache.sar;
   } else {
     var closes = candles.map(function(c) { return c.close; });
     var highs  = candles.map(function(c) { return c.high; });
@@ -128,7 +129,8 @@ function getSignal(candles, opts) {
     // Bollinger Bands
     var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
     if (bbArr.length < 1) { base.reason = "BB warming up"; return base; }
-    bb = bbArr[bbArr.length - 1];
+    bb        = bbArr[bbArr.length - 1];
+    bbMiddles = bbArr.map(function(x) { return x.middle; });
 
     // RSI
     var rsiArr = RSI.calculate({ period: RSI_PERIOD, values: closes });
@@ -141,7 +143,7 @@ function getSignal(candles, opts) {
     sar = sarArr[sarArr.length - 1];
 
     // Cache for next tick with same window
-    _indicatorCache = { key: cacheKey, bb: bb, rsi: rsi, sar: sar };
+    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, sar: sar };
   }
 
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
@@ -224,6 +226,33 @@ function getSignal(candles, opts) {
     }
   }
 
+  // ── TREND FILTER (Option A) — momentum + BB middle slope ─────────────────
+  // Blocks entries when the larger trend doesn't agree with the trade direction.
+  // PE needs: close below N-candles-ago by >=MOM_PCT AND BB middle sloping down.
+  // CE needs: close above N-candles-ago by >=MOM_PCT AND BB middle sloping up.
+  var trendOn = cfg("SCALP_TREND_FILTER", "true") === "true";
+  var trendDirection = null;       // "UP" | "DOWN" | "FLAT"
+  var trendMomPct    = 0;
+  var trendSlopeDir  = null;       // "up" | "down" | "flat"
+  var trendMomMinPct = parseFloat(cfg("SCALP_TREND_MOMENTUM_PCT", "0.15"));
+  var trendMomLookback   = parseInt(cfg("SCALP_TREND_MOMENTUM_LOOKBACK",  "5"), 10);
+  var trendSlopeLookback = parseInt(cfg("SCALP_TREND_MID_SLOPE_LOOKBACK", "3"), 10);
+
+  if (trendOn && candles.length > trendMomLookback && bbMiddles && bbMiddles.length > trendSlopeLookback) {
+    var pastClose  = candles[candles.length - 1 - trendMomLookback].close;
+    trendMomPct    = pastClose > 0 ? ((sc.close - pastClose) / pastClose) * 100 : 0;
+
+    var bbMidNow   = bbMiddles[bbMiddles.length - 1];
+    var bbMidPast  = bbMiddles[bbMiddles.length - 1 - trendSlopeLookback];
+    trendSlopeDir  = bbMidNow > bbMidPast ? "up" : (bbMidNow < bbMidPast ? "down" : "flat");
+
+    var momUp   = trendMomPct >=  trendMomMinPct;
+    var momDown = trendMomPct <= -trendMomMinPct;
+    if (momUp   && trendSlopeDir === "up")   trendDirection = "UP";
+    else if (momDown && trendSlopeDir === "down") trendDirection = "DOWN";
+    else trendDirection = "FLAT";
+  }
+
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
   var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "25"));
@@ -246,6 +275,10 @@ function getSignal(candles, opts) {
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
+    if (trendOn && trendDirection !== "UP") {
+      base.reason = "CE blocked: no uptrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs >=" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
+      return base;
+    }
     if (requireApproach && prevCandle.close < bb.middle) {
       base.reason = "CE blocked: prev candle below BB middle (no approach) [prev.close=" + prevCandle.close + " < mid=" + bb.middle.toFixed(1) + "]";
       return base;
@@ -270,6 +303,10 @@ function getSignal(candles, opts) {
 
   // PE (Short): price at/below BB lower + RSI < 45
   if (sc.close <= bb.lower && rsi < RSI_PE) {
+    if (trendOn && trendDirection !== "DOWN") {
+      base.reason = "PE blocked: no downtrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs <=-" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
+      return base;
+    }
     if (requireApproach && prevCandle.close > bb.middle) {
       base.reason = "PE blocked: prev candle above BB middle (no approach) [prev.close=" + prevCandle.close + " > mid=" + bb.middle.toFixed(1) + "]";
       return base;
@@ -366,6 +403,6 @@ function isPSARFlip(candles, side) {
   }
 }
 
-function reset() { _indicatorCache = { key: null, bb: null, rsi: null, sar: null }; }
+function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
 module.exports = { NAME, DESCRIPTION, getSignal, updateTrailingSL, isPSARFlip, calcCPR, isNarrowCPR, reset };

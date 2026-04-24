@@ -124,6 +124,11 @@ const SETTINGS_SCHEMA = [
       // ── V4 Quality filters ──
       { key: "SCALP_REQUIRE_APPROACH", label: "Require Approach", type: "toggle", effect: EFFECT.SESSION, desc: "Block entry if prev candle was on opposite half of BB (CE: prev close < BB middle = first-touch breakout, likely fades)", default: "false" },
       { key: "SCALP_MIN_BODY_RATIO", label: "Min Body Ratio", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Min entry candle body as % of range (0.5 = skip doji/wick breakouts where body < 50% of high-low). Set 0 to disable.", default: "0" },
+      // ── Trend filter (regime guard) ──
+      { key: "SCALP_TREND_FILTER", label: "Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require larger trend to agree with trade direction. PE only when price falling AND BB middle sloping down; CE inverse. Blocks chop-zone entries.", default: "true" },
+      { key: "SCALP_TREND_MOMENTUM_LOOKBACK", label: "Trend Momentum Lookback (candles)", type: "number", min: 3, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many candles back to measure price momentum (5 = compare close vs close 25 min ago)", default: "5" },
+      { key: "SCALP_TREND_MOMENTUM_PCT", label: "Trend Momentum Min %", type: "number", min: 0.05, max: 1.0, step: 0.05, effect: EFFECT.SESSION, desc: "Min % change required over lookback to call it a trend (0.15 = ~36pts on NIFTY 24000). Lower = more entries, more chop.", default: "0.15" },
+      { key: "SCALP_TREND_MID_SLOPE_LOOKBACK", label: "BB Mid Slope Lookback (candles)", type: "number", min: 2, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Candles back to check BB middle band slope direction (3 = is mid line rising/falling over last 15 min)", default: "3" },
       // ── Activity filter ──
       { key: "SCALP_ACTIVITY_FILTER", label: "Activity Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when candle range is below average (low activity = false BB breakouts)", default: "false" },
       { key: "SCALP_ACTIVITY_FILTER_RATIO", label: "Activity Ratio", type: "number", min: 0.2, max: 1.0, step: 0.1, effect: EFFECT.SESSION, desc: "Min candle range vs 20-bar avg (0.5 = skip if range < 50% of avg)", default: "0.5" },
@@ -359,6 +364,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
   "SCALP_REQUIRE_APPROACH", "SCALP_MIN_BODY_RATIO",
+  "SCALP_TREND_FILTER", "SCALP_TREND_MOMENTUM_LOOKBACK", "SCALP_TREND_MOMENTUM_PCT", "SCALP_TREND_MID_SLOPE_LOOKBACK",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────
