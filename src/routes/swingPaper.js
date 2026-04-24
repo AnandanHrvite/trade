@@ -3634,7 +3634,7 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
       </div>
       <div id="dailyFilesBody" style="overflow-x:auto;">
         <table class="tbl" style="width:100%;"><thead><tr>
-          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Download</th>
+          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Actions</th>
         </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
       </div>
     </div>
@@ -3723,7 +3723,9 @@ async function loadDailyFiles(){
       var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
       var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
       var btns  = '';
-      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:6px;text-decoration:none;display:inline-block;" href="/swing-paper/download/skips/'+r.date+'" title="Download skip JSONL for '+r.date+'">⬇ Skips</a>';
+      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:4px;text-decoration:none;display:inline-block;" href="/swing-paper/view/skips/'+r.date+'" target="_blank" rel="noopener" title="View skip JSONL for '+r.date+'">👁 Skips</a>';
+      if (r.tradesSize) btns += '<a class="export-btn" style="margin-right:8px;text-decoration:none;display:inline-block;" href="/swing-paper/view/trades/'+r.date+'" target="_blank" rel="noopener" title="View trade JSONL for '+r.date+'">👁 Trades</a>';
+      if (r.skipsSize)  btns += '<a class="export-btn" style="margin-right:4px;text-decoration:none;display:inline-block;" href="/swing-paper/download/skips/'+r.date+'" title="Download skip JSONL for '+r.date+'">⬇ Skips</a>';
       if (r.tradesSize) btns += '<a class="export-btn" style="text-decoration:none;display:inline-block;" href="/swing-paper/download/trades/'+r.date+'" title="Download trade JSONL for '+r.date+'">⬇ Trades</a>';
       if (!btns) btns = '<span style="color:#4a6080;">—</span>';
       return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
@@ -3807,6 +3809,7 @@ async function deleteSession(idx, label) {
 // ── Copy & Analytics Functions ────────────────────────────────────────────
 var INR_FMT = function(n){ return typeof n==='number' ? '₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; };
 function fmtAna(v){ return '₹'+Math.round(Math.abs(v)).toLocaleString('en-IN'); }
+function fmtAnaSigned(v){ var n=v||0; var s=n>=0?'+':'-'; return s+'₹'+Math.round(Math.abs(n)).toLocaleString('en-IN'); }
 function fmtAnaShort(v){ return Math.abs(v)>=1000 ? '₹'+Math.round(v/1000)+'k' : '₹'+Math.round(v); }
 
 function copySessionLog(btn, idx) {
@@ -3887,8 +3890,8 @@ function buildDayView(){
     var cc=cumPnl>=0?'#10b981':'#ef4444';
     rows+='<tr><td style="color:#c8d8f0;">'+dy.date+'</td><td>'+dy.trades+'</td>'
       +'<td style="color:#10b981;">'+dy.wins+'</td><td style="color:#ef4444;">'+dy.losses+'</td>'
-      +'<td style="color:'+pc+';font-weight:700;">'+fmtAna(dy.pnl)+'</td>'
-      +'<td style="color:'+cc+';font-weight:700;">'+fmtAna(cumPnl)+'</td></tr>';
+      +'<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(dy.pnl)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;">'+fmtAnaSigned(cumPnl)+'</td></tr>';
   }
   document.getElementById('dayBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
   document.getElementById('dayCntLabel').textContent = days.length+' days';
@@ -4236,6 +4239,26 @@ router.get("/download/trades/:date", (req, res) => {
   const p = tradeLogger.dailyFilePathFor("swing", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.download(p, `swing_paper_trades_${date}.jsonl`);
+});
+
+router.get("/view/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("swing", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
+});
+
+router.get("/view/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("swing", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
 });
 
 /**
