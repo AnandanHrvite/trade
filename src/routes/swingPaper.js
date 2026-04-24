@@ -3435,6 +3435,10 @@ router.get("/history", (req, res) => {
                 ${avgLoss  ? `<span style="color:#ef4444;">Avg L: ₹${avgLoss}</span>`  : ""}
               </div>
             </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
+              <button class="export-btn reset-btn" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
+            </div>
             <div>
               <div class="session-pnl" style="color:${pnlColor(s.sessionPnl)};">${s.sessionPnl>=0?"+":""}${inr(s.sessionPnl)}</div>
               <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
@@ -3449,10 +3453,6 @@ router.get("/history", (req, res) => {
               <tbody>${tradeRows}</tbody>
             </table>
           </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
-          <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-top:0.5px solid #0e1e36;">
-            <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
-            <button class="export-btn reset-btn" style="background:rgba(239,68,68,0.08);color:#f87171;border-color:rgba(239,68,68,0.3);" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
-          </div>
         </div>`;
       }).join("");
 

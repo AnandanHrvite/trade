@@ -2333,6 +2333,10 @@ router.get("/history", (req, res) => {
                 <span>WR ${winRate}</span>
               </div>
             </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
+              <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
+            </div>
             <div>
               <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
               <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
@@ -2348,10 +2352,6 @@ router.get("/history", (req, res) => {
               <tbody>${tradeRows}</tbody>
             </table></div>
           </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
-          <div style="display:flex;align-items:center;gap:8px;padding:10px 20px;border-top:0.5px solid #0e1e36;">
-            <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
-            <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
-          </div>
           </div>
         </div>`;
       }).join("");
