@@ -3395,7 +3395,7 @@ router.get("/history", (req, res) => {
         const avgWin  = sessionWins   ? (trades.filter(t=>t.pnl>0).reduce((a,t)=>a+t.pnl,0)/sessionWins).toFixed(0)   : null;
         const avgLoss = sessionLosses ? (trades.filter(t=>t.pnl<0).reduce((a,t)=>a+t.pnl,0)/sessionLosses).toFixed(0) : null;
 
-        const tradeRows = trades.map(t => {
+        const tradeRows = trades.map((t, ti) => {
           const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
           const entrySpot   = inr(t.spotAtEntry || t.entryPrice);
           const exitSpot    = inr(t.spotAtExit  || t.exitPrice);
@@ -3416,7 +3416,7 @@ router.get("/history", (req, res) => {
             <td>${pnlStr}</td>
             <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.entryReason||''}">${entryReasonShort}</td>
             <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${t.exitReason||''}">${exitReasonShort}</td>
-            <td style="text-align:center;font-size:0.85rem;">👁</td>
+            <td style="text-align:center;padding:4px 8px;"><button onclick="event.stopPropagation();showHistoryTradeModal(${actualIdx}, ${ti})" class="copy-btn" style="padding:3px 10px;font-size:0.75rem;" title="View full details">\u{1F441} View</button></td>
           </tr>`;
         }).join("");
 
@@ -3711,6 +3711,20 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
 </div>
 </div>
 
+<!-- Trade Detail Modal -->
+<div id="histModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#0d1320;border:1px solid #1d3b6e;border-radius:16px;padding:24px 28px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,0.9);position:relative;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div>
+        <span id="histm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
+        <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">Swing Paper — Trade Details</span>
+      </div>
+      <button onclick="document.getElementById('histModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
+    </div>
+    <div id="histm-body"></div>
+  </div>
+</div>
+
 <!-- JSONL Viewer Modal -->
 <div id="jsonlModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
   <div style="background:#0d1320;border:1px solid #1d3b6e;border-radius:16px;padding:18px 20px;max-width:1400px;width:100%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,0.9);">
@@ -3735,6 +3749,74 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
 // Flatten all trades for CSV export
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
+
+// ── Trade Detail Modal (history) ──────────────────────────────────────────
+function histFmt(n){ return (n != null && n !== 0 && n !== '') ? '\\u20b9' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\\u2014'; }
+function histCell(label, val, color, sub){
+  return '<div style="background:#060910;border:1px solid #1a2236;border-radius:8px;padding:11px 13px;">'
+    + '<div style="font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:5px;">' + label + '</div>'
+    + '<div style="font-size:0.9rem;font-weight:700;color:' + (color||'#e0eaf8') + ';font-family:monospace;line-height:1.3;word-break:break-word;">' + (val||'\\u2014') + '</div>'
+    + (sub ? '<div style="font-size:0.62rem;color:#4a6080;margin-top:3px;">' + sub + '</div>' : '')
+    + '</div>';
+}
+function showHistoryTradeModal(sessionIdx, tradeIdx){
+  var session = ALL_SESSIONS_JSON[sessionIdx]; if (!session || !session.trades) return;
+  var t = session.trades[tradeIdx]; if (!t) return;
+  var eSpot = t.spotAtEntry || t.entryPrice || null;
+  var xSpot = t.spotAtExit  || t.exitPrice  || null;
+  var eSl   = t.stopLoss || t.initialStopLoss || null;
+  var pc  = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
+  var sc  = t.side === 'CE' ? '#10b981' : '#ef4444';
+  var optDiff = (t.optionEntryLtp != null && t.optionExitLtp != null) ? parseFloat((t.optionExitLtp - t.optionEntryLtp).toFixed(2)) : null;
+  var dc  = optDiff == null ? '#c8d8f0' : optDiff >= 0 ? '#10b981' : '#ef4444';
+  var pnlPts = (eSpot && xSpot && t.side) ? parseFloat(((t.side==='PE' ? eSpot - xSpot : xSpot - eSpot)).toFixed(2)) : null;
+  var badge = document.getElementById('histm-badge');
+  badge.textContent = (t.side || '\\u2014') + (t.optionStrike ? ' \\u00b7 ' + t.optionStrike : '') + (t.optionType ? ' ' + t.optionType : '');
+  badge.style.background = t.side === 'CE' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)';
+  badge.style.color = sc;
+  badge.style.border = '1px solid ' + (t.side === 'CE' ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)');
+
+  var contractHtml = '<div style="background:#06100e;border:1px solid #0d3020;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a6040;margin-bottom:8px;font-weight:700;">Option Contract</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    + histCell('Symbol', t.symbol || '\\u2014', '#c8d8f0')
+    + histCell('Strike', t.optionStrike || '\\u2014', '#e0eaf8')
+    + histCell('Expiry', t.optionExpiry || '\\u2014', '#f59e0b')
+    + histCell('Option Type', t.optionType || t.side || '\\u2014', sc)
+    + histCell('Qty', t.qty ? t.qty + ' qty' : '\\u2014', '#c8d8f0')
+    + histCell('PnL Mode', t.pnlMode || 'spot-diff', '#8b8bf0')
+    + '</div></div>';
+  var entryHtml = '<div style="background:#060c18;border:1px solid #0d2040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#1a4080;margin-bottom:8px;font-weight:700;">Entry</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    + histCell('Entry Time', t.entryTime || '\\u2014', '#c8d8f0')
+    + histCell('NIFTY Spot @ Entry', histFmt(eSpot), '#e0eaf8')
+    + histCell('Option LTP @ Entry', histFmt(t.optionEntryLtp), '#60a5fa')
+    + histCell('Initial Stop Loss', histFmt(eSl), '#f59e0b', 'NIFTY spot SL level')
+    + histCell('SL Distance', (eSl && eSpot) ? Math.abs(eSpot - eSl).toFixed(2) + ' pts' : '\\u2014', '#f59e0b')
+    + histCell('Entry Signal', t.entryReason || '\\u2014', '#c8d8f0')
+    + '</div></div>';
+  var exitHtml = '<div style="background:#0c0608;border:1px solid #3a0d12;border-radius:10px;padding:12px 14px;margin-bottom:10px;">'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#801a20;margin-bottom:8px;font-weight:700;">Exit</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">'
+    + histCell('Exit Time', t.exitTime || '\\u2014', '#c8d8f0')
+    + histCell('NIFTY Spot @ Exit', histFmt(xSpot), '#e0eaf8')
+    + histCell('Option LTP @ Exit', histFmt(t.optionExitLtp), '#60a5fa')
+    + histCell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
+    + histCell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc)
+    + histCell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + histFmt(t.pnl) : '\\u2014', pc, 'After STT + charges')
+    + '</div></div>';
+  var reasonHtml = '<div style="background:#060910;border:1px solid #1a2236;border-radius:10px;padding:12px 14px;">'
+    + '<div style="font-size:0.55rem;text-transform:uppercase;letter-spacing:1.5px;color:#3a5070;margin-bottom:6px;font-weight:700;">Exit Reason</div>'
+    + '<div style="font-size:0.82rem;color:#a0b8d0;line-height:1.6;font-family:monospace;word-break:break-word;">' + (t.exitReason || '\\u2014') + '</div>'
+    + '</div>';
+  document.getElementById('histm-body').innerHTML = contractHtml + entryHtml + exitHtml + reasonHtml;
+  document.getElementById('histModal').style.display = 'flex';
+}
+if (document.getElementById('histModal')) {
+  document.getElementById('histModal').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = document.getElementById('histModal'); if (m) m.style.display = 'none'; } });
+}
 
 // ── Daily Data Files (skip + trade JSONL) ───────────────────────────────────
 function _fmtBytes(n){ if (!n) return '—'; if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
