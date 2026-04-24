@@ -2811,10 +2811,12 @@ function buildDayView(){
     var dy=days[i]; cumPnl+=dy.pnl;
     var pc=dy.pnl>=0?'#10b981':'#ef4444';
     var cc=cumPnl>=0?'#10b981':'#ef4444';
+    var pbg=dy.pnl>=0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)';
+    var cbg=cumPnl>=0?'rgba(16,185,129,0.12)':'rgba(239,68,68,0.12)';
     rows+='<tr><td style="color:#c8d8f0;">'+dy.date+'</td><td>'+dy.trades+'</td>'
       +'<td style="color:#10b981;">'+dy.wins+'</td><td style="color:#ef4444;">'+dy.losses+'</td>'
-      +'<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(dy.pnl)+'</td>'
-      +'<td style="color:'+cc+';font-weight:700;">'+fmtAnaSigned(cumPnl)+'</td></tr>';
+      +'<td style="color:'+pc+';font-weight:700;background:'+pbg+';">'+fmtAnaSigned(dy.pnl)+'</td>'
+      +'<td style="color:'+cc+';font-weight:700;background:'+cbg+';">'+fmtAnaSigned(cumPnl)+'</td></tr>';
   }
   document.getElementById('dayBody').innerHTML = rows || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#4a6080;">No data.</td></tr>';
   document.getElementById('dayCntLabel').textContent = days.length+' days';
