@@ -1376,10 +1376,11 @@ function _renderDashCumChart(canvasId, emptyId, trades){
     }]},
     options: {
       responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
       plugins: { legend: { display: false },
         tooltip: { callbacks: { label: function(ctx){ return _fmtINR(ctx.parsed.y); } } } },
       scales: {
-        x: { ticks: { color: tickCol, maxTicksLimit: 6, font: { size: 9 } }, grid: { color: gridCol } },
+        x: { ticks: { display: false }, grid: { display: false } },
         y: { ticks: { color: tickCol, font: { size: 9 }, callback: function(v){ return _fmtINR(v); } }, grid: { color: gridCol } },
       },
     },
