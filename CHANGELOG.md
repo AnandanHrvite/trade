@@ -46,6 +46,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 - **PA time-stop** — flat exit after 3 candles / ±10 pts (overrides global 4 / 20).
 - **Goal**: cap loss/trade and let winners run via the existing tiered trail + candle-trail stack.
 
+### Price Action — Per-Pattern Toggles
+
+- **8 individual pattern flags** replace the single `PA_CHART_PATTERNS_ENABLED` switch:
+  - Core (default **on**): `PA_PATTERN_ENGULFING`, `PA_PATTERN_PINBAR`, `PA_PATTERN_BOS`, `PA_PATTERN_INSIDE_BAR`
+  - Chart (default **off**): `PA_PATTERN_DOUBLE_TOP`, `PA_PATTERN_DOUBLE_BOTTOM`, `PA_PATTERN_ASC_TRIANGLE`, `PA_PATTERN_DESC_TRIANGLE`
+- Each pattern is wired into the signal layer with its own conditional, so disabling one pattern at a time has zero effect on the others.
+- **Inside Bar pending state** is dropped if the toggle is flipped off mid-session (no stale carry-over).
+- All 8 toggles surfaced in **Settings → Price Action**.
+
 ### Per-Filter Near-Miss Audit
 
 - **`src/utils/nearMissLog.js`** — every candle that *almost* triggered a trade (missed by exactly one filter) is logged with the failing filter name + detail. Wired into PA, Swing, and Scalp paper modes.

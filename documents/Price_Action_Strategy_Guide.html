@@ -1770,8 +1770,22 @@ td.pe { color: var(--red); }
         <div class="config-card"><span class="key">PA_PIN_WICK_RATIO</span><span class="val">2</span></div>
         <div class="config-card"><span class="key">PA_SR_LOOKBACK</span><span class="val">30</span></div>
         <div class="config-card"><span class="key">PA_SR_ZONE_PTS</span><span class="val">15</span></div>
-        <div class="config-card"><span class="key">PA_CHART_PATTERNS_ENABLED</span><span class="val">false</span></div>
         <div class="config-card"><span class="key">PA_CHART_PATTERN_TOL</span><span class="val">12</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">Per-Pattern Toggles <span class="badge-new">v4.3.0</span></h3>
+      <p class="fs-sm text-muted mb-2">Each of the 8 patterns is now individually toggleable (replaces the single <code>PA_CHART_PATTERNS_ENABLED</code> flag). The 4 core patterns default <strong>on</strong>; the 4 chart patterns default <strong>off</strong>.</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">PA_PATTERN_ENGULFING</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_PINBAR</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_BOS</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_INSIDE_BAR</span><span class="val">true</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_DOUBLE_TOP</span><span class="val">false</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_DOUBLE_BOTTOM</span><span class="val">false</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_ASC_TRIANGLE</span><span class="val">false</span></div>
+        <div class="config-card"><span class="key">PA_PATTERN_DESC_TRIANGLE</span><span class="val">false</span></div>
       </div>
     </div>
 
@@ -2182,7 +2196,7 @@ td.pe { color: var(--red); }
       <ul class="fs-sm">
         <li>The ADX filter is a <strong>market regime gate</strong>, not a directional signal. ADX = 25 says "the market is moving" — not which direction. Disabled by default (<code>PA_ADX_ENABLED=false</code>).</li>
         <li>Inside Bar is the only pattern that does NOT need S/R AND works in ranging conditions (before ADX filter was added).</li>
-        <li>Double Top/Bottom and Triangles are <strong>disabled by default</strong> (<code>PA_CHART_PATTERNS_ENABLED=false</code>). Enable them explicitly after backtesting.</li>
+        <li>Each pattern is now individually toggleable (v4.3.0): the 4 core patterns (<code>PA_PATTERN_ENGULFING</code>, <code>PA_PATTERN_PINBAR</code>, <code>PA_PATTERN_BOS</code>, <code>PA_PATTERN_INSIDE_BAR</code>) default <strong>on</strong>; the 4 chart patterns (<code>PA_PATTERN_DOUBLE_TOP</code>, <code>PA_PATTERN_DOUBLE_BOTTOM</code>, <code>PA_PATTERN_ASC_TRIANGLE</code>, <code>PA_PATTERN_DESC_TRIANGLE</code>) default <strong>off</strong> — enable explicitly after backtesting.</li>
         <li>RSI upper/lower caps are <strong>off by default</strong>. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to block CE at RSI &gt; 85 and PE at RSI &lt; 15.</li>
         <li><strong>Candle Trail</strong> and <strong>Swing Trail</strong> run in parallel — whichever exit triggers first wins. Candle Trail is faster (N-bar extremes); Swing Trail is structural.</li>
         <li>VIX filter has a <strong>fail-closed</strong> default — if VIX data is unavailable, entries are blocked. Set <code>VIX_FAIL_MODE=open</code> to reverse this.</li>
