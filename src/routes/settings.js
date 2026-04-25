@@ -720,6 +720,28 @@ router.get("/", (req, res) => {
     sectionSummaries[idx] = rows;
   });
 
+  // Group consecutive PA_PATTERN_* fields into a 2-column grid wrapper
+  function renderSectionFields(fields) {
+    const out = [];
+    let group = [];
+    const flushGroup = () => {
+      if (group.length) {
+        out.push(`<div class="pattern-grid">${group.join("")}</div>`);
+        group = [];
+      }
+    };
+    for (const f of fields) {
+      if (f.key.startsWith("PA_PATTERN_")) {
+        group.push(renderField(f));
+      } else {
+        flushGroup();
+        out.push(renderField(f));
+      }
+    }
+    flushGroup();
+    return out.join("");
+  }
+
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
     const eyeBtn = `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`;
@@ -734,7 +756,7 @@ router.get("/", (req, res) => {
         ${eyeBtn}
       </div>
       <div class="section-card">
-        ${s.fields.map(renderField).join("")}
+        ${renderSectionFields(s.fields)}
       </div>
     </div>`;
   }).join("");
@@ -924,6 +946,21 @@ router.get("/", (req, res) => {
     }
     .toggle-switch input:checked + .toggle-slider { background: #064e3b; border-color: #065f46; }
     .toggle-switch input:checked + .toggle-slider::before { transform: translateX(22px); background: var(--green); box-shadow: 0 0 8px rgba(16,185,129,0.4); }
+
+    /* ── Pattern toggle grid (2-col, fills whitespace on PA section) ── */
+    .pattern-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--border);
+    }
+    .pattern-grid .setting-row {
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    .pattern-grid .setting-row:nth-child(2n) { border-right: none; }
+    /* Strip bottom border on the final row(s) — grid wrapper provides it */
+    .pattern-grid .setting-row:last-child { border-bottom: none; }
+    .pattern-grid .setting-row:nth-last-child(2):nth-child(odd) { border-bottom: none; }
 
     /* ── Frozen (disabled) rows ──────────────────────────── */
     .setting-row.frozen { opacity: 0.4; pointer-events: none; }
@@ -1154,6 +1191,8 @@ router.get("/", (req, res) => {
       .page { padding: 16px 14px 40px; }
       .top-bar { padding: 14px 14px 14px 50px; }
       .setting-row { padding: 12px 14px; flex-wrap: wrap; }
+      .pattern-grid { grid-template-columns: 1fr; }
+      .pattern-grid .setting-row { border-right: none; }
       input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { min-width: 120px; max-width: 100%; width: 100%; }
       .custom-row { flex-direction: column; align-items: stretch; }
       .custom-row input[type="text"] { min-width: 100%; }
