@@ -34,6 +34,29 @@ function formatISTTimestamp(unixMs) {
 }
 
 /**
+ * Format an ISO timestamp string (or any Date-parseable input) as
+ * "DD/MM/YYYY HH:MM" in IST. Returns "—" for null/empty/invalid inputs.
+ * If input is already in "DD/MM/YYYY[, ]HH:MM(:SS)" form, normalizes to "DD/MM/YYYY HH:MM".
+ */
+function fmtISTDateTime(s) {
+  if (s == null || s === "") return "—";
+  const v = String(s);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
+    const d = new Date(v);
+    if (isNaN(d)) return v;
+    return formatISTTimestamp(d.getTime()).replace(/, /, " ").slice(0, 16);
+  }
+  const m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})[,\s]+(\d{1,2}):(\d{2})/);
+  if (m) {
+    return `${m[1].padStart(2, "0")}/${m[2].padStart(2, "0")}/${m[3]} ${m[4].padStart(2, "0")}:${m[5]}`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    return `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}`;
+  }
+  return v;
+}
+
+/**
  * Current IST minutes since midnight (0–1439). Uses real wall-clock time.
  * For sim-mode override, paper files wrap this with their own function.
  */
@@ -152,6 +175,7 @@ function sleep(ms) {
 module.exports = {
   fastISTTime,
   formatISTTimestamp,
+  fmtISTDateTime,
   getISTMinutes,
   getBucketStart,
   reverseSlice,

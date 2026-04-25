@@ -296,6 +296,22 @@ function istNow() {
   return `${dd < 10 ? "0" : ""}${dd}/${mm < 10 ? "0" : ""}${mm}/${yyyy}, ${h < 10 ? "0" : ""}${h}:${m < 10 ? "0" : ""}${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
+// Display: trim seconds + comma from istNow() output to "DD/MM/YYYY HH:MM".
+// Accepts ISO strings too (converts to IST).
+function fmtT(s) {
+  if (!s) return "—";
+  const v = String(s);
+  if (/^\d{4}-\d{2}-\d{2}T/.test(v)) {
+    const d = new Date(v);
+    if (isNaN(d)) return v;
+    const ist = new Date(d.getTime() + 19800000);
+    const dd = String(ist.getUTCDate()).padStart(2, "0");
+    const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${ist.getUTCFullYear()} ${String(ist.getUTCHours()).padStart(2, "0")}:${String(ist.getUTCMinutes()).padStart(2, "0")}`;
+  }
+  return v.replace(", ", " ").slice(0, 16);
+}
+
 function log(msg) {
   const entry = `[${istNow()}] ${msg}`;
   console.log(entry);
@@ -2302,7 +2318,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#ef4444;text-transform:uppercase;letter-spacing:1px;">⚡ LIVE Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime}</span>
+          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtT(pos.entryTime)}</span>
         </div>
         <button onclick="ltHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -2367,7 +2383,7 @@ router.get("/status", (req, res) => {
             </div>
             <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">
               ${optEntryLtp
-                ? `captured at ${pos.optionEntryLtpTime || pos.entryTime}`
+                ? `captured at ${fmtT(pos.optionEntryLtpTime || pos.entryTime)}`
                 : `⏳ first REST poll in ~3s<br><span style='color:#c8d8f0;'>NIFTY entry: ${inr(pos.entryPrice)}</span>`}
             </div>
           </div>

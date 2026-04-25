@@ -24,7 +24,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { reverseSlice, formatISTTimestamp, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
+const { reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const tradeLogger = require("../utils/tradeLogger");
@@ -1234,7 +1234,7 @@ router.get("/status", (req, res) => {
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;animation:pulse 1.5s infinite;"></span>
           <span style="font-size:0.8rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1px;">Open Position</span>
-          <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime}</span>
+          <span style="font-size:0.72rem;color:#4a6080;">Since ${fmtISTDateTime(pos.entryTime)}</span>
         </div>
         <button onclick="spHandleExit(this)"
            style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;transition:background 0.15s;"
@@ -1526,7 +1526,7 @@ ${buildSidebar('paPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #2a4020;">
     <div class="sc-label">Session Start</div>
-    <div class="sc-val" style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart || "\u2014"}</div>
+    <div class="sc-val" style="font-size:0.85rem;color:#c8d8f0;">${fmtISTDateTime(state.sessionStart)}</div>
   </div>
 </div>
 

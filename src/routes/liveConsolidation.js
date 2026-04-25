@@ -422,6 +422,36 @@ function fmtINR(n){
 function pnlColor(n){ return (n >= 0) ? '#10b981' : '#ef4444'; }
 function pnlRowBg(n){ return n > 0 ? 'rgba(16,185,129,0.07)' : (n < 0 ? 'rgba(239,68,68,0.07)' : 'transparent'); }
 
+// Display formatter: convert any stored date/timestamp string into
+// a UI-friendly form ("DD/MM/YYYY HH:MM" in IST when time present, else "DD/MM/YYYY").
+// Pass-through for week/month/year rollup keys ("YYYY-Www", "YYYY-MM", "YYYY").
+function fmtDateTime(s){
+  if (s == null || s === '') return '—';
+  const v = String(s);
+  if (/^\\d{4}-\\d{2}-\\d{2}T/.test(v)){
+    const d = new Date(v);
+    if (isNaN(d)) return v;
+    const ist = new Date(d.getTime() + 19800000);
+    const dd = String(ist.getUTCDate()).padStart(2,'0');
+    const mm = String(ist.getUTCMonth()+1).padStart(2,'0');
+    const yyyy = ist.getUTCFullYear();
+    const hh = String(ist.getUTCHours()).padStart(2,'0');
+    const mi = String(ist.getUTCMinutes()).padStart(2,'0');
+    return dd + '/' + mm + '/' + yyyy + ' ' + hh + ':' + mi;
+  }
+  if (/^\\d{4}-\\d{2}-\\d{2}$/.test(v)){
+    return v.slice(8,10) + '/' + v.slice(5,7) + '/' + v.slice(0,4);
+  }
+  if (/^\\d{4}-\\d{2}$/.test(v)){
+    return v.slice(5,7) + '/' + v.slice(0,4);
+  }
+  const tm = v.match(/^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})[,\\s]+(\\d{1,2}):(\\d{2})/);
+  if (tm){
+    return \`\${tm[1].padStart(2,'0')}/\${tm[2].padStart(2,'0')}/\${tm[3]} \${tm[4].padStart(2,'0')}:\${tm[5]}\`;
+  }
+  return v;
+}
+
 function parseEntryTime(t){
   if (!t) return null;
   const m = String(t).match(/(\\d{1,2}):(\\d{2}),\\s*(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
@@ -571,7 +601,7 @@ function renderRollupTable(id, rows){
   _rendered[id] = pg.slice;
   tb.innerHTML = pg.slice.map((r, i) => \`
     <tr style="background:\${pnlRowBg(r.pnl)};">
-      <td style="font-weight:600;">\${r.key}</td>
+      <td style="font-weight:600;">\${fmtDateTime(r.key)}</td>
       <td>\${r.count}</td>
       <td style="color:\${pnlColor(r.pnl)};font-weight:700;">\${r.pnl >= 0 ? '+' : ''}\${fmtINR(r.pnl)}</td>
       <td><button class="btn" onclick="copyBucket('\${id}', \${i})">📋</button></td>
@@ -601,14 +631,14 @@ function renderTradesTable(rows){
     <tr style="background:\${pnlRowBg(t.pnl)};">
       <td>\${startNo + i + 1}</td>
       <td><span class="badge-mode badge-\${t.mode}">\${t.mode}</span></td>
-      <td>\${t.date || '—'}</td>
+      <td>\${fmtDateTime(t.date)}</td>
       <td><span class="badge \${t.side === 'CE' ? 'badge-ce' : 'badge-pe'}">\${t.side || '—'}</span></td>
       <td style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="\${esc(t.symbol)}">\${esc(t.symbol) || '—'}</td>
       <td>\${t.qty || '—'}</td>
       <td>\${fmtINR(t.entryPrice)}</td>
       <td>\${fmtINR(t.exitPrice)}</td>
-      <td style="font-size:0.65rem;">\${esc(t.entryTime) || '—'}</td>
-      <td style="font-size:0.65rem;">\${esc(t.exitTime) || '—'}</td>
+      <td style="font-size:0.65rem;">\${esc(fmtDateTime(t.entryTime))}</td>
+      <td style="font-size:0.65rem;">\${esc(fmtDateTime(t.exitTime))}</td>
       <td style="color:\${pnlColor(t.pnl)};font-weight:700;">\${t.pnl >= 0 ? '+' : ''}\${fmtINR(t.pnl)}</td>
       <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:0.65rem;" title="\${esc(t.exitReason)}">\${esc(t.exitReason) || '—'}</td>
       <td><button class="btn" onclick="copyOne(\${i})">📋</button></td>
@@ -729,7 +759,7 @@ function renderCumChart(rows){
   const labels = [], data = [];
   for (const t of sorted){
     cum += (t.pnl || 0);
-    labels.push((t.date || '') + (t.entryTime ? ' ' + t.entryTime.split(',')[0] : ''));
+    labels.push(fmtDateTime(t.entryTime || t.date));
     data.push(cum);
   }
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';

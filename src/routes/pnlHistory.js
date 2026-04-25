@@ -491,7 +491,14 @@ function fmtDate(iso) {
   if (!iso) return "—";
   try {
     const d = new Date(iso);
-    return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    if (isNaN(d)) return "—";
+    const ist = new Date(d.getTime() + 19800000);
+    const dd = String(ist.getUTCDate()).padStart(2, "0");
+    const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
+    const yyyy = ist.getUTCFullYear();
+    const hh = String(ist.getUTCHours()).padStart(2, "0");
+    const mi = String(ist.getUTCMinutes()).padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
   } catch (_) { return "—"; }
 }
 
