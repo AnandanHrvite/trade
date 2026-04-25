@@ -157,8 +157,16 @@ const SETTINGS_SCHEMA = [
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
       { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (BOS/IB only)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for BOS & Inside Bar breakout entries (blocks fading-trend signals)", default: "true" },
+      // ── Pattern toggles (per-signal) ──
+      { key: "PA_PATTERN_ENGULFING",     label: "Engulfing (CE/PE)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish/Bearish Engulfing at S/R — STRONG", default: "true" },
+      { key: "PA_PATTERN_PINBAR",        label: "Pin Bar (Hammer/Star)",    type: "toggle", effect: EFFECT.SESSION, desc: "Hammer at support / Shooting Star at resistance — MARGINAL", default: "true" },
+      { key: "PA_PATTERN_BOS",           label: "Break of Structure",       type: "toggle", effect: EFFECT.SESSION, desc: "Close above swing high (CE) / below swing low (PE) — STRONG", default: "true" },
+      { key: "PA_PATTERN_INSIDE_BAR",    label: "Inside Bar Breakout",      type: "toggle", effect: EFFECT.SESSION, desc: "Mother bar breakout (3-candle wait) — STRONG", default: "true" },
+      { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M)",           type: "toggle", effect: EFFECT.SESSION, desc: "Bearish reversal — neckline breakdown — STRONG", default: "false" },
+      { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish reversal — neckline breakout — STRONG", default: "false" },
+      { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle",       type: "toggle", effect: EFFECT.SESSION, desc: "Flat resistance + rising lows breakout (CE) — STRONG", default: "false" },
+      { key: "PA_PATTERN_DESC_TRIANGLE", label: "Descending Triangle",      type: "toggle", effect: EFFECT.SESSION, desc: "Flat support + falling highs breakdown (PE) — STRONG", default: "false" },
       // ── Pattern parameters ──
-      { key: "PA_CHART_PATTERNS_ENABLED", label: "Chart Patterns", type: "toggle", effect: EFFECT.SESSION, desc: "Enable Double Top/Bottom and Triangle pattern signals", default: "false" },
       { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum candle body size for engulfing/BOS patterns", default: "5" },
       { key: "PA_PIN_WICK_RATIO", label: "Pin Bar Wick Ratio", type: "number", min: 1.5, max: 4, step: 0.5, effect: EFFECT.SESSION, desc: "Min wick-to-body ratio for hammer/shooting star", default: "2" },
       // ── Support/Resistance ──

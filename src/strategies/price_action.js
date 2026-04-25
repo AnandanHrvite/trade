@@ -310,7 +310,15 @@ function getSignal(candles, opts) {
   var MAX_STRUCT_SL_PTS = parseFloat(cfg("PA_MAX_STRUCT_SL_PTS", "15")); // skip BOS/IB if raw structural SL > this
   var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for BOS/IB
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
-  var CHART_PATTERNS_ENABLED = cfg("PA_CHART_PATTERNS_ENABLED", "false") === "true"; // Double Top/Bottom, Triangles
+  // Per-pattern toggles
+  var PATTERN_ENGULFING     = cfg("PA_PATTERN_ENGULFING",     "true")  === "true";
+  var PATTERN_PINBAR        = cfg("PA_PATTERN_PINBAR",        "true")  === "true";
+  var PATTERN_BOS           = cfg("PA_PATTERN_BOS",           "true")  === "true";
+  var PATTERN_INSIDE_BAR    = cfg("PA_PATTERN_INSIDE_BAR",    "true")  === "true";
+  var PATTERN_DOUBLE_TOP    = cfg("PA_PATTERN_DOUBLE_TOP",    "false") === "true";
+  var PATTERN_DOUBLE_BOTTOM = cfg("PA_PATTERN_DOUBLE_BOTTOM", "false") === "true";
+  var PATTERN_ASC_TRIANGLE  = cfg("PA_PATTERN_ASC_TRIANGLE",  "false") === "true";
+  var PATTERN_DESC_TRIANGLE = cfg("PA_PATTERN_DESC_TRIANGLE", "false") === "true";
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -400,8 +408,10 @@ function getSignal(candles, opts) {
   }
 
   // ── INSIDE BAR BREAKOUT CHECK ──────────────────────────────────────────────
+  // If pattern toggled off mid-session, drop any stale pending state
+  if (!PATTERN_INSIDE_BAR && _insideBarPending) _insideBarPending = null;
   // If we had a pending inside bar, check if this candle breaks out
-  if (_insideBarPending) {
+  if (PATTERN_INSIDE_BAR && _insideBarPending) {
     var mother = _insideBarPending;
     if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
       // Bullish breakout — quality gates: structural SL cap + ADX rising
@@ -462,7 +472,7 @@ function getSignal(candles, opts) {
   }
 
   // ── Check for new inside bar (queue for next candle breakout) ──────────────
-  if (isInsideBar(prev, sc)) {
+  if (PATTERN_INSIDE_BAR && isInsideBar(prev, sc)) {
     _insideBarPending = {
       motherCandle: prev,
       triggerHigh: prev.high,
@@ -475,7 +485,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
-  if (isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -490,7 +500,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
-  if (isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -505,7 +515,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
-  if (isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -520,7 +530,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
-  if (isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -537,7 +547,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 5: BREAK OF STRUCTURE ──────────────────────────────────────────
   // Quality gates: reject BOS when structure is thin (swing too far = false-break risk)
   // or when the trend is fading (ADX not rising vs 2 bars ago).
-  var bos = checkBOS(sc, swings.swingHighs, swings.swingLows);
+  var bos = PATTERN_BOS ? checkBOS(sc, swings.swingHighs, swings.swingLows) : { bullish: false, bearish: false };
   if (bos.bullish && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = Math.min(sc.low, prev.low);
     var rawStructGap = sc.close - rawSL;
@@ -588,7 +598,7 @@ function getSignal(candles, opts) {
   var dblBot = { detected: false };
   var ascTri = { detected: false };
   var descTri = { detected: false };
-  if (CHART_PATTERNS_ENABLED) {
+  if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
   if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblTop.topLevel;
@@ -603,8 +613,10 @@ function getSignal(candles, opts) {
       reason: "PE: Double Top neckline break " + dblTop.neckline.toFixed(0) + " | top=" + dblTop.topLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
+  } // end PATTERN_DOUBLE_TOP
 
   // ── PATTERN 7: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
+  if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
   if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblBot.bottomLevel;
@@ -619,8 +631,10 @@ function getSignal(candles, opts) {
       reason: "CE: Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " | bottom=" + dblBot.bottomLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
+  } // end PATTERN_DOUBLE_BOTTOM
 
   // ── PATTERN 8: ASCENDING TRIANGLE (Bullish breakout) ──────────────────────
+  if (PATTERN_ASC_TRIANGLE) {
   ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = ascTri.risingLow;
@@ -635,8 +649,10 @@ function getSignal(candles, opts) {
       reason: "CE: Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
+  } // end PATTERN_ASC_TRIANGLE
 
   // ── PATTERN 9: DESCENDING TRIANGLE (Bearish breakout) ─────────────────────
+  if (PATTERN_DESC_TRIANGLE) {
   descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = descTri.fallingHigh;
@@ -651,7 +667,7 @@ function getSignal(candles, opts) {
       reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
     });
   }
-  } // end CHART_PATTERNS_ENABLED
+  } // end PATTERN_DESC_TRIANGLE
 
   // ── No signal — build reason ───────────────────────────────────────────────
   var parts = [];
