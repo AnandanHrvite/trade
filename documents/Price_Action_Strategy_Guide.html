@@ -776,6 +776,11 @@ td.pe { color: var(--red); }
         <span class="badge-new">NEW</span>
       </div>
 
+      <div class="tip-box">
+        <div class="tip-title">Diagram is a schematic — actual detection spans many candles</div>
+        <div>The 5 candles below (Rise / Peak 1 / Valley / Peak 2 / Break) are <strong>structural anchor points</strong>, not the literal candle count. Detection scans the last <code>PA_SR_LOOKBACK = 30</code> candles for swing highs/lows, requires the two peaks to be <strong>at least 5 candles apart</strong>, and computes the neckline as the lowest low across the entire range between them. A real signal typically spans 10–25 candles, like the Investopedia/BabyPips reference charts.</div>
+      </div>
+
       <!-- Double Top chart -->
       <div class="chart-box">
         <div class="chart-title">Double Top — Two Swing Highs at Same Level, Neckline Break</div>
@@ -887,6 +892,11 @@ td.pe { color: var(--red); }
         <span class="pattern-name">Ascending / Descending Triangle</span>
         <span class="strength-badge strong">STRONG</span>
         <span class="badge-new">NEW</span>
+      </div>
+
+      <div class="tip-box">
+        <div class="tip-title">Diagram is a schematic — actual detection spans many candles</div>
+        <div>The 5 candles below (SH1 / SL1 / SH2 / SL2 / Breakout) are <strong>structural anchor points</strong>, not the literal candle count. Detection scans the last <code>PA_SR_LOOKBACK = 30</code> candles for swing highs/lows and uses the most recent two of each to validate the flat S/R + converging trendline. A real triangle typically spans 15–30 candles with multiple touches on each side, like the Investopedia/BabyPips reference charts.</div>
       </div>
 
       <!-- Ascending Triangle -->
