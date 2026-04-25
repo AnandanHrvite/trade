@@ -2271,9 +2271,41 @@ router.get("/history", (req, res) => {
   const data = loadPAData();
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
 
+  // Canonical pattern name (uses t.pattern if present, else extracts from entryReason)
+  const patternOf = (t) => {
+    if (t && t.pattern) return t.pattern;
+    const r = (t && t.entryReason) || "";
+    if (/Inside Bar/i.test(r))            return "Inside Bar Breakout";
+    if (/Bullish Engulfing/i.test(r))     return "Bullish Engulfing";
+    if (/Bearish Engulfing/i.test(r))     return "Bearish Engulfing";
+    if (/Hammer/i.test(r))                return "Hammer";
+    if (/Shooting Star/i.test(r))         return "Shooting Star";
+    if (/BOS/i.test(r))                   return "Break of Structure";
+    if (/Double Top/i.test(r))            return "Double Top";
+    if (/Double Bottom/i.test(r))         return "Double Bottom";
+    if (/Ascending Triangle/i.test(r))    return "Ascending Triangle";
+    if (/Descending Triangle/i.test(r))   return "Descending Triangle";
+    return "Unknown";
+  };
+  // Group bullish+bearish variants under one filter key (mirrors the toggle scheme)
+  const patternGroupOf = (t) => {
+    const p = patternOf(t);
+    if (p === "Bullish Engulfing" || p === "Bearish Engulfing") return "Engulfing";
+    if (p === "Hammer" || p === "Shooting Star") return "Pin Bar";
+    return p;
+  };
+
   const allTrades = data.sessions.flatMap(s =>
-    (s.trades || []).map(t => ({ ...t, date: s.date }))
+    (s.trades || []).map(t => ({
+      ...t,
+      date: s.date,
+      pattern: patternOf(t),
+      patternGroup: patternGroupOf(t),
+    }))
   );
+  // Distinct pattern groups present in data, plus "All"
+  const PATTERN_GROUP_ORDER = ["Engulfing","Pin Bar","Break of Structure","Inside Bar Breakout","Double Top","Double Bottom","Ascending Triangle","Descending Triangle","Unknown"];
+  const presentGroups = PATTERN_GROUP_ORDER.filter(g => allTrades.some(t => t.patternGroup === g));
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
   const totalLosses = allTrades.filter(t => t.pnl < 0).length;
   const inr = (n) => typeof n === "number"
@@ -2306,8 +2338,19 @@ router.get("/history", (req, res) => {
           const exitTimeOnly = t.exitTime ? (t.exitTime.split(', ')[1] || '—') : '—';
           const entryReasonShort = (t.entryReason||'—').substring(0,25) + ((t.entryReason||'').length>25?'…':'');
           const exitReasonShort = (t.exitReason||'—').substring(0,25) + ((t.exitReason||'').length>25?'…':'');
-          return `<tr>
+          const pat = patternOf(t);
+          const patGroup = patternGroupOf(t);
+          const patShort = pat === "Inside Bar Breakout" ? "Inside Bar"
+                         : pat === "Break of Structure"  ? "BOS"
+                         : pat === "Bullish Engulfing"   ? "Bull Engulf"
+                         : pat === "Bearish Engulfing"   ? "Bear Engulf"
+                         : pat === "Ascending Triangle"  ? "Asc Triangle"
+                         : pat === "Descending Triangle" ? "Desc Triangle"
+                         : pat;
+          const pnlVal = (typeof t.pnl === "number") ? t.pnl : 0;
+          return `<tr data-pattern-group="${patGroup}" data-pattern="${pat}" data-side="${t.side||''}" data-pnl="${pnlVal}">
             <td><span class="badge ${badgeCls}">${t.side}</span></td>
+            <td style="color:#a78bfa;font-size:0.7rem;font-weight:600;" title="${pat}">${patShort}</td>
             <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
             <td style="color:#c8d8f0;">${entrySpot}</td>
             <td style="color:#c8d8f0;font-size:0.75rem;">${entryTimeOnly}</td>
@@ -2322,15 +2365,15 @@ router.get("/history", (req, res) => {
         }).join("");
 
         return `
-        <div class="session-card">
+        <div class="session-card" data-session-idx="${actualIdx}" data-trade-count="${trades.length}" data-wins="${sessionWins}" data-losses="${sessionLosses}" data-pnl="${s.pnl}">
           <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
             <div>
               <div class="session-meta">Session ${sIdx} &middot; ${s.date} &middot; ${s.strategy || "—"}</div>
               <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
-                <span>${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
-                <span style="color:#10b981;">${sessionWins}W</span>
-                <span style="color:#ef4444;">${sessionLosses}L</span>
-                <span>WR ${winRate}</span>
+                <span class="sc-trade-count">${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
+                <span class="sc-wins" style="color:#10b981;">${sessionWins}W</span>
+                <span class="sc-losses" style="color:#ef4444;">${sessionLosses}L</span>
+                <span class="sc-wr">WR ${winRate}</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
@@ -2338,8 +2381,8 @@ router.get("/history", (req, res) => {
               <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${s.date})')">🗑 Delete Session</button>
             </div>
             <div>
-              <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
-              <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
+              <div class="session-pnl session-pnl-val" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
+              <div class="session-wl session-wl-val">${sessionWins}W / ${sessionLosses}L</div>
             </div>
           </div>
           <div class="session-body">
@@ -2347,7 +2390,7 @@ router.get("/history", (req, res) => {
           <div style="overflow-x:auto;">
             <div class="tbl-wrap"><table class="tbl">
               <thead><tr>
-                <th>Side</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th style="text-align:center;">Action</th>
+                <th>Side</th><th>Pattern</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th style="text-align:center;">Action</th>
               </tr></thead>
               <tbody>${tradeRows}</tbody>
             </table></div>
@@ -2444,6 +2487,13 @@ ${buildSidebar('paHistory', liveActive)}
       <div class="top-bar-meta">${data.sessions.length} sessions · ${allTrades.length} total trades</div>
     </div>
     <div class="top-bar-right">
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;">
+        Pattern
+        <select id="patternFilter" onchange="applyPatternFilter(this.value)" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;outline:none;">
+          <option value="ALL">All (${allTrades.length})</option>
+          ${presentGroups.map(g => `<option value="${g}">${g} (${allTrades.filter(t => t.patternGroup === g).length})</option>`).join("")}
+        </select>
+      </label>
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button class="copy-btn" onclick="copyTradeLog(this)">📋 Copy Trade Log</button>
@@ -2468,18 +2518,18 @@ ${buildSidebar('paHistory', liveActive)}
         <div class="sc-sub">${(data.capital - startCap) >= 0 ? '▲' : '▼'} ${inr(Math.abs(data.capital - startCap))} vs start</div>
       </div>
       <div class="sc">
-        <div class="sc-label">All-Time PnL</div>
-        <div class="sc-val" style="color:${pnlColor(data.totalPnl)};">${data.totalPnl >= 0 ? '+' : ''}${inr(data.totalPnl)}</div>
+        <div class="sc-label" id="sumPnlLabel">All-Time PnL</div>
+        <div class="sc-val" id="sumPnl" style="color:${pnlColor(data.totalPnl)};">${data.totalPnl >= 0 ? '+' : ''}${inr(data.totalPnl)}</div>
       </div>
       <div class="sc">
-        <div class="sc-label">Overall Win Rate</div>
-        <div class="sc-val">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) + '%' : '—'}</div>
-        <div class="sc-sub">${totalWins}W · ${totalLosses}L · ${allTrades.length} trades</div>
+        <div class="sc-label" id="sumWrLabel">Overall Win Rate</div>
+        <div class="sc-val" id="sumWr">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) + '%' : '—'}</div>
+        <div class="sc-sub" id="sumWrSub">${totalWins}W · ${totalLosses}L · ${allTrades.length} trades</div>
       </div>
       <div class="sc">
         <div class="sc-label">Sessions</div>
         <div class="sc-val">${data.sessions.length}</div>
-        <div class="sc-sub">across all time</div>
+        <div class="sc-sub" id="sumSessionsSub">across all time</div>
       </div>
     </div>
 
@@ -2541,6 +2591,9 @@ ${buildSidebar('paHistory', liveActive)}
         <div class="ana-mini"><h3>📥 Entry Reason Breakdown</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>Wins</th><th>Losses</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaEntryBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>🚪 Exit Reason Breakdown</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Count</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaExitBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>📅 Day of Week</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Day</th><th>Trades</th><th>WR%</th><th>P&L</th><th>Avg</th></tr></thead><tbody id="anaDowBody"></tbody></table></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-mini" style="grid-column:1 / -1;"><h3>🎯 Pattern Breakdown (combined view — ignores filter)</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Pattern</th><th>Count</th><th>Wins</th><th>Losses</th><th>WR%</th><th>P&L</th><th>Avg</th><th>Best</th><th>Worst</th></tr></thead><tbody id="anaPatternBody"></tbody></table></div></div>
       </div>
       <div style="border-top:0.5px solid #0e1428;margin:16px 0 12px;padding-top:12px;">
         <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#ef4444;font-weight:700;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;">🔍 Loss Analysis</div>
@@ -2606,6 +2659,91 @@ ${buildSidebar('paHistory', liveActive)}
 <script>
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
+
+// ── Pattern filter (top-of-page dropdown) ────────────────────────────────
+var FILTERED_TRADES = ALL_TRADES_JSON.slice();
+var currentPatternFilter = 'ALL';
+
+function applyPatternFilter(g){
+  currentPatternFilter = g || 'ALL';
+  FILTERED_TRADES = (currentPatternFilter === 'ALL')
+    ? ALL_TRADES_JSON.slice()
+    : ALL_TRADES_JSON.filter(function(t){ return t.patternGroup === currentPatternFilter; });
+
+  // 1. hide/show trade rows in every session card
+  var rows = document.querySelectorAll('.session-card tbody tr');
+  rows.forEach(function(tr){
+    var pg = tr.getAttribute('data-pattern-group');
+    var match = currentPatternFilter === 'ALL' || pg === currentPatternFilter;
+    tr.style.display = match ? '' : 'none';
+  });
+
+  // 2. recompute each session header (trades / wins / losses / PnL / WR)
+  document.querySelectorAll('.session-card').forEach(function(card){
+    var visibleRows = Array.prototype.filter.call(
+      card.querySelectorAll('tbody tr'),
+      function(tr){ return tr.style.display !== 'none'; }
+    );
+    var n = visibleRows.length;
+    var w = 0, l = 0, pnl = 0;
+    visibleRows.forEach(function(tr){
+      var p = parseFloat(tr.getAttribute('data-pnl')) || 0;
+      pnl += p;
+      if (p > 0) w++;
+      else if (p < 0) l++;
+    });
+    var wr = n > 0 ? ((w/n)*100).toFixed(1) + '%' : '—';
+    var setText = function(sel, txt){ var el = card.querySelector(sel); if (el) el.textContent = txt; };
+    setText('.sc-trade-count', n + ' trade' + (n!==1 ? 's' : ''));
+    setText('.sc-wins',   w + 'W');
+    setText('.sc-losses', l + 'L');
+    setText('.sc-wr',     'WR ' + wr);
+    var pnlEl = card.querySelector('.session-pnl-val');
+    if (pnlEl){
+      var pc = pnl >= 0 ? '#10b981' : '#ef4444';
+      pnlEl.style.color = pc;
+      pnlEl.textContent = fmtAnaSigned(pnl);
+    }
+    var wlEl = card.querySelector('.session-wl-val');
+    if (wlEl) wlEl.textContent = w + 'W / ' + l + 'L';
+    // Hide entire session card when filtered subset has 0 trades
+    card.style.display = (n === 0 && currentPatternFilter !== 'ALL') ? 'none' : '';
+  });
+
+  // 3. recompute top summary cards
+  var totalN = FILTERED_TRADES.length;
+  var totalW = FILTERED_TRADES.filter(function(t){return (t.pnl||0)>0;}).length;
+  var totalL = FILTERED_TRADES.filter(function(t){return (t.pnl||0)<0;}).length;
+  var totalPnl = FILTERED_TRADES.reduce(function(s,t){return s+(t.pnl||0);},0);
+  var sumPnl   = document.getElementById('sumPnl');
+  var sumWr    = document.getElementById('sumWr');
+  var sumWrSub = document.getElementById('sumWrSub');
+  var sumPnlLabel = document.getElementById('sumPnlLabel');
+  var sumWrLabel  = document.getElementById('sumWrLabel');
+  var sumSessionsSub = document.getElementById('sumSessionsSub');
+  if (sumPnl){
+    sumPnl.style.color = totalPnl >= 0 ? '#10b981' : '#ef4444';
+    sumPnl.textContent = fmtAnaSigned(totalPnl);
+  }
+  if (sumWr) sumWr.textContent = totalN ? ((totalW/totalN)*100).toFixed(1) + '%' : '—';
+  if (sumWrSub) sumWrSub.textContent = totalW + 'W · ' + totalL + 'L · ' + totalN + ' trades';
+  var suffix = currentPatternFilter === 'ALL' ? '' : ' (' + currentPatternFilter + ')';
+  if (sumPnlLabel) sumPnlLabel.textContent = 'All-Time PnL' + suffix;
+  if (sumWrLabel)  sumWrLabel.textContent  = 'Win Rate' + suffix;
+  if (sumSessionsSub){
+    var visSessions = Array.prototype.filter.call(
+      document.querySelectorAll('.session-card'),
+      function(c){ return c.style.display !== 'none'; }
+    ).length;
+    sumSessionsSub.textContent = currentPatternFilter === 'ALL' ? 'across all time' : visSessions + ' session(s) with this pattern';
+  }
+
+  // 4. refresh Day View if visible
+  if (typeof dwVisible !== 'undefined' && dwVisible) buildDayView();
+
+  // 5. refresh Analytics if visible
+  if (typeof anaVisible !== 'undefined' && anaVisible) renderAnalytics();
+}
 
 // ── Trade Detail Modal (history) ──────────────────────────────────────────
 function histFmt(n){ return (n != null && n !== 0 && n !== '') ? '\\u20b9' + Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '\\u2014'; }
@@ -2937,7 +3075,7 @@ function toggleDayWise(){
 var dwPage = 1, dwPageSize = 10;
 function buildDayView(){
   var dayMap={};
-  ALL_TRADES_JSON.forEach(function(t){
+  FILTERED_TRADES.forEach(function(t){
     var d = t.date || 'Unknown';
     if(!dayMap[d]) dayMap[d]={date:d,trades:0,wins:0,losses:0,pnl:0};
     dayMap[d].trades++;
@@ -3022,8 +3160,69 @@ function toggleAnalytics(){
 }
 
 function renderAnalytics(){
-  var trades = ALL_TRADES_JSON.slice();
-  if(!trades.length) return;
+  // Pattern Breakdown — always uses FULL dataset so user sees all patterns side-by-side, even when filter excludes them
+  (function renderPatternBreakdown(){
+    var fullTrades = ALL_TRADES_JSON;
+    var patMap = {};
+    fullTrades.forEach(function(t){
+      var g = t.patternGroup || 'Unknown';
+      if (!patMap[g]) patMap[g] = { cnt:0, wins:0, losses:0, pnl:0, best:-Infinity, worst:Infinity };
+      var d = patMap[g];
+      d.cnt++;
+      var p = (typeof t.pnl === 'number') ? t.pnl : 0;
+      d.pnl += p;
+      if (p > 0) d.wins++; else if (p < 0) d.losses++;
+      if (p > d.best) d.best = p;
+      if (p < d.worst) d.worst = p;
+    });
+    var groups = Object.keys(patMap).sort(function(a,b){ return patMap[b].pnl - patMap[a].pnl; });
+    var html = '';
+    groups.forEach(function(g){
+      var d = patMap[g];
+      var pc = d.pnl >= 0 ? '#10b981' : '#ef4444';
+      var wr = d.cnt>0 ? ((d.wins/d.cnt)*100).toFixed(0) : '0';
+      var avg = d.cnt>0 ? Math.round(d.pnl/d.cnt) : 0;
+      var bestStr = d.best === -Infinity ? '—' : fmtAna(d.best);
+      var worstStr = d.worst === Infinity ? '—' : fmtAna(d.worst);
+      var safeG = g.replace(/'/g, "\\\\'");
+      html += '<tr data-pat-row="'+g+'" style="cursor:pointer;" title="Click to filter by '+g+'">'
+        + '<td style="color:#a78bfa;font-weight:600;">'+g+'</td>'
+        + '<td>'+d.cnt+'</td>'
+        + '<td style="color:#10b981;">'+d.wins+'</td>'
+        + '<td style="color:#ef4444;">'+d.losses+'</td>'
+        + '<td style="color:'+(parseFloat(wr)>=55?'#10b981':parseFloat(wr)>=45?'#f59e0b':'#ef4444')+';">'+wr+'%</td>'
+        + '<td style="color:'+pc+';font-weight:700;">'+fmtAna(d.pnl)+'</td>'
+        + '<td style="color:'+pc+';">'+fmtAna(avg)+'</td>'
+        + '<td style="color:#10b981;">'+bestStr+'</td>'
+        + '<td style="color:#ef4444;">'+worstStr+'</td>'
+        + '</tr>';
+    });
+    var body = document.getElementById('anaPatternBody');
+    if (body){
+      body.innerHTML = html || '<tr><td colspan="9" style="text-align:center;color:#3a5070;padding:14px;">No pattern data</td></tr>';
+      // Wire row clicks to filter
+      Array.prototype.forEach.call(body.querySelectorAll('tr[data-pat-row]'), function(tr){
+        tr.addEventListener('click', function(){
+          var g = tr.getAttribute('data-pat-row');
+          var sel = document.getElementById('patternFilter');
+          if (sel) sel.value = g;
+          applyPatternFilter(g);
+        });
+      });
+    }
+  })();
+
+  var trades = FILTERED_TRADES.slice();
+  if(!trades.length){
+    // Clear charts/tables when filter excludes everything (Pattern Breakdown above stays full-data)
+    Object.keys(anaCharts).forEach(function(k){ if(anaCharts[k] && anaCharts[k].destroy) anaCharts[k].destroy(); });
+    ['anaEntryBody','anaExitBody','anaDowBody','anaWorstBody','anaLossStreakBody','anaWorstDayBody','anaLossReasonBody'].forEach(function(id){
+      var el = document.getElementById(id); if (el) el.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#3a5070;padding:14px;">No trades match the current filter</td></tr>';
+    });
+    var s = document.getElementById('anaStreaks'); if (s) s.innerHTML = '<div style="color:#3a5070;font-size:0.7rem;">No data</div>';
+    var r = document.getElementById('anaRiskMetrics'); if (r) r.innerHTML = '<div style="color:#3a5070;font-size:0.7rem;">No data</div>';
+    return;
+  }
   var _gc = '#0e1428';
   var _tc = '#3a5070';
 
