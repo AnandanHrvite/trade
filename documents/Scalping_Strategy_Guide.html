@@ -371,28 +371,43 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.2.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; Approach + Body Filters</div>
+  <div class="version">Version 4.3.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter</div>
   <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 0. WHAT'S NEW IN v4.2.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.2.0 (2026-04-20)</h2>
+<h2><span class="sec-num">00</span> What's New in v4.3.0 (2026-04-24)</h2>
+<div class="card card-purple">
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
+    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>SCALP_VIX_MAX_ENTRY</code> and <code>SCALP_VIX_STRONG_ONLY</code> let scalp tolerate higher volatility than swing. Both fall back to <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code> when unset.</li>
+    <li><strong>Trade guards (shared)</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads; <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>) auto-exits trades stuck flat (theta-bleed guard).</li>
+    <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /scalp-live/reset</code> (Reset button on the Scalp Live status page) to clear scalp live history without restarting.</li>
+    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade aggregation including Scalp Live; Day View panel + per-mode breakdown.</li>
+    <li><strong>Per-filter near-miss audit</strong> &mdash; logs every candle that missed entry by exactly one filter (visible in <code>/logs</code>). Use to quantify the cost of each individual scalp filter.</li>
+    <li><strong>Crash-safe JSONL trade log</strong> &mdash; every scalp exit appended to <code>~/trading-data/scalp_paper_trades_log.jsonl</code> + <code>~/trading-data/trades/scalp_paper_trades_YYYY-MM-DD.jsonl</code>. Async, atomic per line.</li>
+    <li><strong>Per-module dashboard card</strong> for Scalp with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
+    <li><strong>Telegram crash + startup-recovery alerts</strong> apply to scalp sessions too.</li>
+  </ul>
+</div>
+
+<h2><span class="sec-num">00a</span> v4.2.0 Highlights (2026-04-20)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
       <ul style="padding-left:20px; margin-top:6px;">
-        <li><code>SCALP_REQUIRE_APPROACH</code> &mdash; reject first-touch breakouts where prev candle was on opposite half of BB. CE blocked if <code>prev.close &lt; BB.middle</code>; PE blocked if <code>prev.close &gt; BB.middle</code>.</li>
-        <li><code>SCALP_MIN_BODY_RATIO</code> &mdash; require entry candle body to be at least N% of range. <code>0.5</code> rejects doji / long-wick breakouts signaling exhaustion.</li>
+        <li><code>SCALP_REQUIRE_APPROACH</code> &mdash; reject first-touch breakouts where prev candle was on opposite half of BB.</li>
+        <li><code>SCALP_MIN_BODY_RATIO</code> &mdash; require entry candle body to be at least N% of range; rejects doji / long-wick breakouts.</li>
       </ul>
     </li>
-    <li><strong>Trail grace period</strong> (<code>SCALP_TRAIL_GRACE_SECS</code>) &mdash; suppress trail-exit for first N seconds after entry so a first-tick spike + tiny pullback doesn't kill the trade. Initial SL remains active.</li>
-    <li><strong>Live NIFTY candlestick chart with BB overlay</strong> on scalp paper / live pages. Click a trade row to focus chart on that trade; zoom preserved across refresh.</li>
-    <li><strong>History page</strong> &mdash; per-session delete + view modal (full trade breakdown without leaving the list).</li>
-    <li><strong>Telegram</strong> &mdash; dedicated scalp toggles: <code>TG_SCALP_STARTED / ENTRY / EXIT / SIGNALS / DAYREPORT</code>, all gated by master <code>TG_ENABLED</code>. Consolidated 15:30 IST day report covers scalp alongside Swing and PA.</li>
-    <li><strong>Rate-limit backoff</strong> on option LTP polling + spot-proxy trail fallback when broker throttles; trailing doesn't freeze during throttle windows.</li>
-    <li><strong>Default scalp resolution locked to 5-min</strong> (previously 3-min in older builds).</li>
+    <li><strong>Trail grace period</strong> (<code>SCALP_TRAIL_GRACE_SECS</code>) &mdash; suppress trail-exit for first N secs after entry; initial SL remains active.</li>
+    <li><strong>Live NIFTY candlestick chart with BB overlay</strong> on scalp paper / live pages.</li>
+    <li><strong>History page</strong> &mdash; per-session delete + view modal.</li>
+    <li><strong>Telegram</strong> &mdash; dedicated scalp toggles, master <code>TG_ENABLED</code>, consolidated 15:30 IST report.</li>
+    <li><strong>Rate-limit backoff</strong> on option LTP + spot-proxy trail fallback when broker throttles.</li>
+    <li><strong>Default scalp resolution locked to 5-min</strong>.</li>
   </ul>
 </div>
 
@@ -700,6 +715,19 @@
   <p>When BB width is below <code>0.15%</code> of price (approx &lt;36pts on NIFTY 24000), entries are skipped. Narrow bands indicate consolidation where breakouts are unreliable. Controlled via <code>SCALP_BB_SQUEEZE_FILTER</code> and <code>SCALP_BB_MIN_WIDTH_PCT</code>.</p>
 </div>
 
+<div class="card card-purple">
+  <h4 style="color:var(--purple);">Trend Filter <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h4>
+  <p>Even when BB / RSI both fire, the trend filter rejects entries that lean against the prevailing direction. <code>SCALP_TREND_FILTER</code> defaults to <code>true</code>.</p>
+  <table>
+    <thead><tr><th>Side</th><th>Blocked when</th></tr></thead>
+    <tbody>
+      <tr><td><strong>CE</strong></td><td>BB-mid is sloping down <em>or</em> N-candle momentum is negative beyond threshold</td></tr>
+      <tr><td><strong>PE</strong></td><td>BB-mid is sloping up <em>or</em> N-candle momentum is positive beyond threshold</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:8px;font-size:0.85rem;">Tunables: <code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code> (BB-mid slope window), <code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code> (close momentum window), <code>SCALP_TREND_MOMENTUM_PCT=0.15</code> (min N-candle move as % of price). Reject reasons appear as <code>TREND_BLOCK_CE</code> / <code>TREND_BLOCK_PE</code> in skip logs.</p>
+</div>
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 4. ENTRY LOGIC                                                          -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -739,7 +767,9 @@
     <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -&#8377;2,000</td><td>Kill switch halts all entries for the day</td></tr>
     <tr><td><strong>Max Daily Trades</strong></td><td>&lt; 30 trades</td><td>Prevents overtrading on choppy days</td></tr>
     <tr><td><strong>SL Pause Cooldown</strong></td><td>2 candles after SL hit</td><td>Configurable via <code>SCALP_SL_PAUSE_CANDLES</code>; extra candles added per consecutive SL</td></tr>
-    <tr><td><strong>VIX Filter</strong></td><td>India VIX &le; 20</td><td>Strong-only signals between 16&ndash;20; all blocked above 20</td></tr>
+    <tr><td><strong>VIX Filter</strong></td><td>VIX &le; <code>SCALP_VIX_MAX_ENTRY</code> (or inherits <code>VIX_MAX_ENTRY</code>)</td><td>Strong-only band between <code>SCALP_VIX_STRONG_ONLY</code> and the max</td></tr>
+    <tr><td><strong>Trend Filter</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span></td><td>BB-mid slope + momentum match side</td><td>Block CE in downtrend / PE in uptrend (<code>SCALP_TREND_FILTER</code>)</td></tr>
+    <tr><td><strong>Bid-Ask Spread</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span></td><td>Spread &le; <code>MAX_BID_ASK_SPREAD_PTS</code> (default 2)</td><td>Reject wide spreads; fails open if quotes missing</td></tr>
     <tr><td><strong>No Open Position</strong></td><td>No active scalp trade</td><td>Only one scalp position at a time</td></tr>
     <tr><td><strong>BB Squeeze</strong></td><td>BB width &ge; 0.15% of price</td><td>Narrow bands = consolidation, skip entry</td></tr>
   </tbody>
@@ -816,6 +846,13 @@
   </div>
   <div class="exit-item">
     <div class="exit-badge p4">P4</div>
+    <div>
+      <strong style="color:var(--accent2);">Time-Stop (theta-bleed guard)</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span>
+      <p style="font-size:0.85rem;">Auto-exit any trade that has stayed flat (|PnL| &lt; <code>TIME_STOP_FLAT_PTS</code>, default 20 pts) for <code>TIME_STOP_CANDLES</code> consecutive candles (default 4). Prevents pure theta drain on directionless trades. Reason logged as <code>TIME_STOP</code>.</p>
+    </div>
+  </div>
+  <div class="exit-item">
+    <div class="exit-badge p5">P5</div>
     <div>
       <strong style="color:var(--text2);">EOD Square-off</strong>
       <p style="font-size:0.85rem;">All open positions squared off at 3:20 PM IST. No overnight holding for scalp trades.</p>
@@ -972,6 +1009,11 @@
     <h4 class="red">VIX &gt; 20 &mdash; High Vol</h4>
     <p>Panic/fear zone. All scalp entries blocked. Wide swings cause whipsaws, inflated option premiums erode edge. Wait for VIX to cool.</p>
   </div>
+</div>
+
+<div class="card card-purple">
+  <h4 class="purple">Per-Module Override <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h4>
+  <p>Scalp now carries its own VIX thresholds independent of swing. If <code>SCALP_VIX_MAX_ENTRY</code> or <code>SCALP_VIX_STRONG_ONLY</code> is unset, scalp falls back to the swing values (<code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code>). Toggle the entire scalp filter on/off via <code>SCALP_VIX_ENABLED</code>.</p>
 </div>
 
 <div class="highlight">
@@ -1382,6 +1424,30 @@
   </tbody>
 </table>
 
+<h3>V4 Quality Filters + Trend Filter <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>SCALP_REQUIRE_APPROACH</code></td><td><code>false</code></td><td>V4: block entry if prev candle was on opposite half of BB</td></tr>
+    <tr><td><code>SCALP_MIN_BODY_RATIO</code></td><td><code>0</code></td><td>V4: min entry-candle body as % of range</td></tr>
+    <tr><td><code>SCALP_TRAIL_GRACE_SECS</code></td><td><code>0</code></td><td>Suppress trail-exit for first N seconds (SL still active)</td></tr>
+    <tr><td><code>SCALP_TREND_FILTER</code></td><td><code>true</code></td><td>Block CE in downtrends / PE in uptrends</td></tr>
+    <tr><td><code>SCALP_TREND_MOMENTUM_PCT</code></td><td><code>0.15</code></td><td>Min N-candle move (% of price) to call a direction</td></tr>
+    <tr><td><code>SCALP_TREND_MOMENTUM_LOOKBACK</code></td><td><code>5</code></td><td>Candles for momentum measurement</td></tr>
+    <tr><td><code>SCALP_TREND_MID_SLOPE_LOOKBACK</code></td><td><code>3</code></td><td>Candles for BB-mid slope measurement</td></tr>
+  </tbody>
+</table>
+
+<h3>Trade Guards (shared) <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h3>
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Block entry on wide bid-ask spread (fails open if quotes missing)</td></tr>
+    <tr><td><code>TIME_STOP_CANDLES</code></td><td><code>4</code></td><td>Auto-exit a trade flat for N candles</td></tr>
+    <tr><td><code>TIME_STOP_FLAT_PTS</code></td><td><code>20</code></td><td>"Flat" defined as |PnL| &lt; N points</td></tr>
+  </tbody>
+</table>
+
 <h3>Risk Controls</h3>
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
@@ -1396,13 +1462,16 @@
   </tbody>
 </table>
 
-<h3>VIX Filter</h3>
+<h3>VIX Filter (per-module) <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h3>
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry filtering for scalp</td></tr>
-    <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block ALL entries above this VIX level</td></tr>
-    <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Only STRONG signals allowed above this VIX</td></tr>
+    <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry filtering for scalp (independent toggle)</td></tr>
+    <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold (falls back to swing if unset)</td></tr>
+    <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold (falls back to swing if unset)</td></tr>
+    <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Swing default &mdash; used as fallback by scalp</td></tr>
+    <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Swing default &mdash; used as fallback by scalp</td></tr>
+    <tr><td><code>VIX_FAIL_MODE</code></td><td><code>closed</code></td><td>When VIX feed unavailable: <code>closed</code> = block, <code>open</code> = allow</td></tr>
   </tbody>
 </table>
 
@@ -1430,8 +1499,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.2.0 &bull; Generated 2026-04-20<br/>
-    NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters
+    SCALP_BB_RSI_V4 &mdash; Version 4.3.0 &bull; Generated 2026-04-24<br/>
+    NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
   </p>
 </div>
 

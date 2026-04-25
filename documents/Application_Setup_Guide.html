@@ -516,16 +516,35 @@
 <!-- 0. WHAT'S NEW IN v4.2.0                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue" id="whatsnew">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.2.0 (2026-04-20)</h2>
-  <p>Key infrastructure and UI upgrades added since v4.1.0. Setup steps below reflect the current system.</p>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.3.0 (2026-04-24)</h2>
+  <p>Live-side analytics, per-module dashboard, trade guards, audit trails. Setup is unchanged from v4.2.0; new env vars and routes are listed below and reflected in the rest of this guide.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
+    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (Swing + Scalp + PA Live), parity with <code>/consolidation</code>.</li>
+    <li><strong>Per-mode <code>/reset</code> endpoints</strong> &mdash; <code>POST /swing-live/reset</code>, <code>POST /scalp-live/reset</code>, <code>POST /pa-live/reset</code> from each live status page (gated when a session is active).</li>
+    <li><strong>Per-module dashboard cards</strong> &mdash; one card per strategy with its own Paper/Live toggle, stats, and cumulative P&amp;L chart (red/green by sign). Mutual lock between Start-All Paper and Start-All Live.</li>
+    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>SCALP_VIX_MAX_ENTRY</code>, <code>SCALP_VIX_STRONG_ONLY</code>, <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (each falls back to the swing values if unset).</li>
+    <li><strong>Trade guards</strong> shared across modes &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>), <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>); PA tightens to <code>PA_TIME_STOP_CANDLES=3</code>, <code>PA_TIME_STOP_FLAT_PTS=10</code>.</li>
+    <li><strong>Scalp trend filter</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks counter-trend BB breakouts. Tunables: <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>, <code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>.</li>
+    <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS/Inside-Bar setups with too-wide structural SL.</li>
+    <li><strong>Crash-safe JSONL trade log</strong> &mdash; new files <code>~/trading-data/{swing|scalp|pa}_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Append-only, atomic, downloadable per date from history pages.</li>
+    <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs candles that missed entry by exactly one filter, visible in <code>/logs</code> SSE feed. Quantifies opportunity cost per filter.</li>
+    <li><strong>Sidebar accordion + UI toggles</strong> &mdash; <code>UI_SHOW_SIMULATE</code>, <code>UI_SHOW_COMPARE</code>, <code>UI_SHOW_TRACKER</code> (all default <code>false</code>) hide optional menus. Login Logs moved out of the sidebar into the Settings top-bar; breadcrumbs added to Settings, Monitor, Docs, P&amp;L History.</li>
+    <li><strong>Bulk Edit modal</strong> &mdash; "<code>📋 BULK EDIT</code>" top-bar button on Settings opens a focused modal; lines starting with <code>-KEY</code> delete that key from <code>.env</code>.</li>
+    <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; synchronous <code>curl</code>-based send on shutdown so alerts survive <code>process.exit</code>; crash-marker file produces a recovery ping on next boot with cause + uptime.</li>
+    <li><strong>Operations</strong> &mdash; PM2 heap caps restored (<code>--max-old-space-size=900</code>, <code>max_memory_restart 940M</code>); SIGTERM crash root-cause fixed; backtest engine memory footprint shrunk; Monitor page maintenance actions.</li>
+  </ul>
+</section>
+
+<section class="section blue">
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.2.0 Highlights (2026-04-20)</h2>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode paper trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
     <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (Swing / Scalp / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
     <li><strong>Dashboard Start-All buttons</strong> launch every enabled mode (Swing + Scalp + PA) with one click.</li>
     <li><strong>Telegram restructured</strong>: 17 per-mode toggles (<code>TG_{SWING|SCALP|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}</code>) + master <code>TG_ENABLED</code> gate + consolidated 15:30 IST day report (<code>TG_DAYREPORT_CONSOLIDATED</code>).</li>
-    <li><strong>Settings UI</strong>: bulk paste config (KEY=VALUE pairs), one-click server restart, frozen dependent fields (VIX / Scalp section auto-disable when their master toggle is off).</li>
+    <li><strong>Settings UI</strong>: bulk paste config (KEY=VALUE pairs), one-click server restart, frozen dependent fields.</li>
     <li><strong>Scalp V4 quality filters</strong> exposed in Settings UI: <code>SCALP_REQUIRE_APPROACH</code>, <code>SCALP_MIN_BODY_RATIO</code>, <code>SCALP_TRAIL_GRACE_SECS</code>.</li>
-    <li><strong>Login cookie</strong> now uses <code>SameSite=Lax</code> (was Strict) to fix mobile OAuth redirect loop during broker login.</li>
+    <li><strong>Login cookie</strong> now uses <code>SameSite=Lax</code> (was Strict) to fix mobile OAuth redirect loop.</li>
     <li><strong>New persistent file</strong>: <code>~/trading-data/historical_pnl.json</code> holds one-time P&amp;L baselines per broker.</li>
   </ul>
 </section>
@@ -724,32 +743,36 @@
   <h3>Routes by Strategy &amp; Mode</h3>
   <table>
     <thead>
-      <tr><th>Strategy</th><th>Live Route</th><th>Paper Route</th><th>Backtest Route</th><th>Broker</th></tr>
+      <tr><th>Strategy</th><th>Live Route</th><th>Paper Route</th><th>Backtest Route</th><th>Reset (live)</th><th>Broker</th></tr>
     </thead>
     <tbody>
       <tr>
         <td><strong>Swing</strong> (SAR+EMA+RSI, 15-min)</td>
-        <td><code>/swing</code></td>
+        <td><code>/swing-live</code></td>
         <td><code>/swing-paper</code></td>
         <td><code>/swing-backtest</code></td>
+        <td><code>POST /swing-live/reset</code></td>
         <td>Zerodha Kite</td>
       </tr>
       <tr>
-        <td><strong>Scalp</strong> (BB+RSI+PSAR, 3-min)</td>
-        <td><code>/scalp</code></td>
+        <td><strong>Scalp</strong> (BB+RSI+PSAR V4, 5-min)</td>
+        <td><code>/scalp-live</code></td>
         <td><code>/scalp-paper</code></td>
         <td><code>/scalp-backtest</code></td>
+        <td><code>POST /scalp-live/reset</code></td>
         <td>Fyers</td>
       </tr>
       <tr>
         <td><strong>Price Action</strong> (8 Patterns, 5-min)</td>
-        <td><code>/pa</code></td>
+        <td><code>/pa-live</code></td>
         <td><code>/pa-paper</code></td>
         <td><code>/pa-backtest</code></td>
+        <td><code>POST /pa-live/reset</code></td>
         <td>Fyers</td>
       </tr>
     </tbody>
   </table>
+  <p style="margin-top:10px;">Cross-mode analytics: <code>/consolidation</code> (paper) and <code>/live-consolidation</code> (live) aggregate all 3 strategies into a unified history with daily/monthly/yearly roll-ups, Day View panel, and per-mode breakdown.</p>
 
   <!-- ── Daily Workflow Flowchart ── -->
   <h3>Recommended Daily Workflow</h3>
@@ -1041,7 +1064,7 @@
     <li>Set both values in your <code>.env</code> file.</li>
   </ol>
 
-  <h3>Notification Toggles (v4.2.0 — 17 per-mode + master gate)</h3>
+  <h3>Notification Toggles (17 per-mode + master gate)</h3>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
@@ -1054,6 +1077,9 @@
       <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined EOD summary across all modes at 15:30 IST (weekdays only)</td></tr>
     </tbody>
   </table>
+
+  <h3>Crash + Startup-Recovery Alerts (v4.3.0)</h3>
+  <p>The bot writes a <strong>crash-marker file</strong> on uncaught exceptions / SIGTERM capturing the cause + stack. On the next startup the marker is read and a recovery alert is sent over Telegram (cause + uptime), and any orphaned positions from <code>~/trading-data/.active_*.json</code> are reconciled against broker positions; mismatches alert immediately. Telegram on shutdown uses a <strong>synchronous <code>curl</code></strong> spawn so alerts survive <code>process.exit()</code>.</p>
 
   <div class="note note-success">
     <strong>Tip:</strong> Leave <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> blank to disable all Telegram notifications without changing individual toggle values. Or set <code>TG_ENABLED=false</code> as a master switch that preserves per-mode config.
@@ -1186,29 +1212,74 @@
     </tbody>
   </table>
 
-  <!-- ── VIX Filter ────────────────────────────────────── -->
-  <div class="env-group g-red">VIX Filter &mdash; Market Regime Filter</div>
+  <!-- ── VIX Filter (per-module) ───────────────────────── -->
+  <div class="env-group g-red">VIX Filter &mdash; Per-Module Market Regime Filter (v4.3.0)</div>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry blocking (Strategy 1)</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block all entries when VIX exceeds this level</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Allow only strong signals when VIX &gt; this value</td></tr>
-      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Scalp mode (independent)</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Enable VIX-based entry blocking (Swing)</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Swing &mdash; block all entries when VIX exceeds this</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Swing &mdash; only strong signals when VIX &gt; this</td></tr>
+      <tr><td><code>VIX_FAIL_MODE</code></td><td><code>closed</code></td><td>When VIX feed unavailable: <code>closed</code> = block (safe), <code>open</code> = allow</td></tr>
+      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Scalp (independent toggle)</td></tr>
+      <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for Scalp</td></tr>
+      <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for Scalp</td></tr>
+      <tr><td><code>PA_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Price Action (independent toggle)</td></tr>
+      <tr><td><code>PA_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for PA</td></tr>
+      <tr><td><code>PA_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for PA</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Trade Guards (shared) ─────────────────────────── -->
+  <div class="env-group g-red">Trade Guards &mdash; Shared Across Modes (v4.3.0)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Block entry if option bid-ask spread &gt; N points (fails open if quotes missing)</td></tr>
+      <tr><td><code>TIME_STOP_CANDLES</code></td><td><code>4</code></td><td>Auto-exit a trade flat for N candles (theta-bleed guard)</td></tr>
+      <tr><td><code>TIME_STOP_FLAT_PTS</code></td><td><code>20</code></td><td>"Flat" defined as |PnL| &lt; N points</td></tr>
+      <tr><td><code>PA_TIME_STOP_CANDLES</code></td><td><code>3</code></td><td>PA-specific override (tighter)</td></tr>
+      <tr><td><code>PA_TIME_STOP_FLAT_PTS</code></td><td><code>10</code></td><td>PA-specific override (tighter)</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── UI Visibility Toggles ─────────────────────────── -->
+  <div class="env-group g-cyan">UI Visibility Toggles (v4.3.0)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>UI_SHOW_SIMULATE</code></td><td><code>false</code></td><td>Show "Simulate" link under each mode in sidebar</td></tr>
+      <tr><td><code>UI_SHOW_COMPARE</code></td><td><code>false</code></td><td>Show "Compare" link in sidebar</td></tr>
+      <tr><td><code>UI_SHOW_TRACKER</code></td><td><code>false</code></td><td>Show "Tracker" under Swing</td></tr>
     </tbody>
   </table>
 
   <!-- ── Scalp ─────────────────────────────────────────── -->
-  <div class="env-group g-cyan">Scalping &mdash; BB+RSI Strategy (Fyers Orders)</div>
+  <div class="env-group g-cyan">Scalping &mdash; BB+RSI+PSAR V4 Strategy (Fyers Orders)</div>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Enable scalp mode UI and engine</td></tr>
-      <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Start scalp trading on boot</td></tr>
-      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code></td><td>Candle resolution in minutes</td></tr>
+      <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide scalp UI and engine in sidebar</td></tr>
+      <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Must be <code>true</code> for Fyers scalp orders</td></tr>
+      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes (locked to 5 since v4.2)</td></tr>
       <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
       <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
       <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp V4 Quality Filters + Trend Filter (v4.3.0)</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_REQUIRE_APPROACH</code></td><td><code>false</code></td><td>V4: block entry if prev candle was on opposite half of BB</td></tr>
+      <tr><td><code>SCALP_MIN_BODY_RATIO</code></td><td><code>0</code></td><td>V4: min entry-candle body as % of range (0.5 skips doji/wick)</td></tr>
+      <tr><td><code>SCALP_TRAIL_GRACE_SECS</code></td><td><code>0</code></td><td>Suppress trail-exit for first N secs after entry (SL still active)</td></tr>
+      <tr><td><code>SCALP_TREND_FILTER</code></td><td><code>true</code></td><td>Block CE in downtrends / PE in uptrends (BB-mid slope + momentum)</td></tr>
+      <tr><td><code>SCALP_TREND_MOMENTUM_PCT</code></td><td><code>0.15</code></td><td>Min N-candle move (% of price) to call a direction</td></tr>
+      <tr><td><code>SCALP_TREND_MOMENTUM_LOOKBACK</code></td><td><code>5</code></td><td>Candles for momentum measurement</td></tr>
+      <tr><td><code>SCALP_TREND_MID_SLOPE_LOOKBACK</code></td><td><code>3</code></td><td>Candles for BB-mid slope measurement</td></tr>
+      <tr><td><code>SCALP_BB_SQUEEZE_FILTER</code></td><td><code>true</code></td><td>Skip entries when BB bands narrow</td></tr>
     </tbody>
   </table>
 
@@ -1285,8 +1356,9 @@
       <tr><td><code>PA_PIN_WICK_RATIO</code></td><td><code>2</code></td><td>Pin bar wick-to-body ratio</td></tr>
       <tr><td><code>PA_SR_LOOKBACK</code></td><td><code>30</code></td><td>Support/Resistance lookback candles</td></tr>
       <tr><td><code>PA_SR_ZONE_PTS</code></td><td><code>15</code></td><td>S/R zone tolerance in points</td></tr>
-      <tr><td><code>PA_MAX_SL_PTS</code></td><td><code>25</code></td><td>Max stop loss points</td></tr>
-      <tr><td><code>PA_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min stop loss points</td></tr>
+      <tr><td><code>PA_MAX_SL_PTS</code></td><td><code>12</code> (signal) / <code>25</code> (route fallback)</td><td>Strategy caps signal SL at 12; routes fall back to 25 if signal-level cap is bypassed</td></tr>
+      <tr><td><code>PA_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min stop loss points (floor)</td></tr>
+      <tr><td><code>PA_MAX_STRUCT_SL_PTS</code></td><td><code>15</code></td><td>Skip BOS / Inside-Bar setups when raw structural SL exceeds this (thin-structure / false-breakout guard)</td></tr>
       <tr><td><code>PA_CHART_PATTERN_TOL</code></td><td><code>12</code></td><td>Tolerance for double top/bottom &amp; triangles</td></tr>
     </tbody>
   </table>
@@ -1298,9 +1370,14 @@
       <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max PA trades per day</td></tr>
       <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Max daily PA loss (INR)</td></tr>
       <tr><td><code>PA_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
-      <tr><td><code>PA_TRAIL_START</code></td><td><code>800</code></td><td>Profit (INR) to activate trailing</td></tr>
-      <tr><td><code>PA_TRAIL_PCT</code></td><td><code>75</code></td><td>Base trail % of peak profit</td></tr>
-      <tr><td><code>PA_TRAIL_TIERS</code></td><td><code>1500:65,3000:70,...</code></td><td>Tiered trail: profit:pct pairs</td></tr>
+      <tr><td><code>PA_TRAIL_START</code></td><td><code>350</code></td><td>Profit (INR) to activate trailing</td></tr>
+      <tr><td><code>PA_TRAIL_TIERS</code></td><td><code>500:55,1000:60,3000:70,5000:80,10000:90</code></td><td>Tiered trail: peak:pct pairs</td></tr>
+      <tr><td><code>PA_CANDLE_TRAIL_ENABLED</code></td><td><code>true</code></td><td>Use prev N-bar H/L as trail exit</td></tr>
+      <tr><td><code>PA_CANDLE_TRAIL_BARS</code></td><td><code>2</code></td><td>Lookback for candle trail</td></tr>
+      <tr><td><code>PA_TIME_STOP_CANDLES</code></td><td><code>3</code></td><td>Auto-exit flat trades after N candles (PA-specific override)</td></tr>
+      <tr><td><code>PA_TIME_STOP_FLAT_PTS</code></td><td><code>10</code></td><td>"Flat" threshold for time-stop (PA-specific override)</td></tr>
+      <tr><td><code>PA_RSI_CAPS_ENABLED</code></td><td><code>false</code></td><td>Block CE when RSI overbought / PE when oversold</td></tr>
+      <tr><td><code>PA_CHART_PATTERNS_ENABLED</code></td><td><code>false</code></td><td>Enable Double Top/Bottom + Triangles</td></tr>
       <tr><td><code>PA_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points for backtest</td></tr>
     </tbody>
   </table>
@@ -1435,45 +1512,41 @@
   <table>
     <thead><tr><th>File / Directory</th><th>Purpose</th><th>Lifecycle</th></tr></thead>
     <tbody>
-      <tr>
-        <td><code>~/trading-data/.fyers_token</code></td>
-        <td>Fyers OAuth access token</td>
-        <td>Refreshed daily via <code>/auth/login</code></td>
-      </tr>
-      <tr>
-        <td><code>~/trading-data/.zerodha_token</code></td>
-        <td>Zerodha Kite access token</td>
-        <td>Expires at 6 AM IST daily</td>
-      </tr>
-      <tr>
-        <td><code>~/trading-data/trade-logs/</code></td>
-        <td>Strategy 1 &amp; Scalp trade history (JSON)</td>
-        <td>Persistent, one file per session</td>
-      </tr>
-      <tr>
-        <td><code>~/trading-data/backtest/</code></td>
-        <td>Backtest results and reports</td>
-        <td>Persistent</td>
-      </tr>
-      <tr>
-        <td><code>~/trading-data/cache/</code></td>
-        <td>Cached historical candle data</td>
-        <td>Auto-pruned after <code>CACHE_MAX_DAYS</code></td>
-      </tr>
+      <tr><td><code>.fyers_token</code> / <code>.zerodha_token</code></td><td>Broker OAuth tokens</td><td>Refreshed daily</td></tr>
+      <tr><td><code>paper_trades.json</code> / <code>scalp_paper_trades.json</code> / <code>pa_paper_trades.json</code></td><td>Per-mode paper trade sessions</td><td>Persistent, in-place updates</td></tr>
+      <tr><td><code>live_trades.json</code> / <code>scalp_live_trades.json</code> / <code>pa_live_trades.json</code></td><td>Per-mode live trade sessions</td><td>Persistent, in-place updates</td></tr>
+      <tr><td><code>{swing|scalp|pa}_paper_trades_log.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0)</span></td><td>Crash-safe per-trade JSONL audit (cumulative)</td><td>Append-only; survives crashes via <code>O_APPEND</code></td></tr>
+      <tr><td><code>trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0)</span></td><td>Per-day trade JSONL files</td><td>Append-only, downloadable per date from history pages</td></tr>
+      <tr><td><code>historical_pnl.json</code></td><td>One-time past P&amp;L baselines per broker</td><td>Persistent</td></tr>
+      <tr><td><code>.active_trade_position.json</code> / <code>.active_scalp_position.json</code> / <code>.active_pa_position.json</code></td><td>Crash recovery &mdash; persisted active position per mode</td><td>Created on entry, removed on exit</td></tr>
+      <tr><td><code>backtest_cache/</code></td><td>Cached historical candles</td><td>90-day auto-prune</td></tr>
+      <tr><td><code>candle_cache/</code></td><td>Live candle cache</td><td>60-day trim (<code>CACHE_MAX_DAYS</code>)</td></tr>
+      <tr><td><code>reports/</code></td><td>Daily trade reports</td><td>Persistent</td></tr>
     </tbody>
   </table>
 
   <h3>Directory Structure</h3>
   <pre><code><span class="var">~/trading-data/</span>
-  <span class="cmt">|</span>
-  <span class="cmt">|--</span> <span class="str">.fyers_token</span>         <span class="cmt"># Fyers access token</span>
-  <span class="cmt">|--</span> <span class="str">.zerodha_token</span>       <span class="cmt"># Zerodha access token</span>
-  <span class="cmt">|--</span> <span class="var">trade-logs/</span>          <span class="cmt"># Trade history files</span>
-  <span class="cmt">|--</span> <span class="var">backtest/</span>            <span class="cmt"># Backtest result files</span>
-  <span class="cmt">|--</span> <span class="var">cache/</span>               <span class="cmt"># Candle data cache</span></code></pre>
+  <span class="cmt">|--</span> <span class="str">.fyers_token</span> / <span class="str">.zerodha_token</span>                <span class="cmt"># Broker OAuth tokens</span>
+  <span class="cmt">|--</span> <span class="str">paper_trades.json</span>                            <span class="cmt"># Swing paper sessions</span>
+  <span class="cmt">|--</span> <span class="str">scalp_paper_trades.json</span>                      <span class="cmt"># Scalp paper sessions</span>
+  <span class="cmt">|--</span> <span class="str">pa_paper_trades.json</span>                         <span class="cmt"># PA paper sessions</span>
+  <span class="cmt">|--</span> <span class="str">live_trades.json</span>                             <span class="cmt"># Swing live sessions</span>
+  <span class="cmt">|--</span> <span class="str">scalp_live_trades.json</span>                       <span class="cmt"># Scalp live sessions</span>
+  <span class="cmt">|--</span> <span class="str">pa_live_trades.json</span>                          <span class="cmt"># PA live sessions</span>
+  <span class="cmt">|--</span> <span class="str">historical_pnl.json</span>                          <span class="cmt"># One-time P&amp;L baselines per broker</span>
+  <span class="cmt">|--</span> <span class="str">{swing|scalp|pa}_paper_trades_log.jsonl</span>      <span class="cmt"># Crash-safe cumulative JSONL audit (v4.3.0)</span>
+  <span class="cmt">|--</span> <span class="var">trades/</span>                                      <span class="cmt"># Per-day JSONL trade files (v4.3.0)</span>
+  <span class="cmt">|     |--</span> <span class="str">{mode}_paper_trades_YYYY-MM-DD.jsonl</span>
+  <span class="cmt">|--</span> <span class="str">.active_trade_position.json</span>                  <span class="cmt"># Crash recovery (swing)</span>
+  <span class="cmt">|--</span> <span class="str">.active_scalp_position.json</span>                  <span class="cmt"># Crash recovery (scalp)</span>
+  <span class="cmt">|--</span> <span class="str">.active_pa_position.json</span>                     <span class="cmt"># Crash recovery (PA)</span>
+  <span class="cmt">|--</span> <span class="var">backtest_cache/</span>                              <span class="cmt"># Historical candles (90-day auto-prune)</span>
+  <span class="cmt">|--</span> <span class="var">candle_cache/</span>                                <span class="cmt"># Live candle cache (60-day trim)</span>
+  <span class="cmt">|--</span> <span class="var">reports/</span>                                     <span class="cmt"># Daily trade reports</span></code></pre>
 
   <div class="note note-warn">
-    <strong>Backup:</strong> The <code>~/trading-data/</code> directory contains all your trade history and tokens. Back it up regularly, especially before any EC2 instance changes or migrations.
+    <strong>Backup:</strong> The <code>~/trading-data/</code> directory contains all trade history, tokens, and the new JSONL audit trail. Back it up regularly, especially before any EC2 instance changes or migrations.
   </div>
 </section>
 
@@ -1483,7 +1556,7 @@
 <!-- FOOTER                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <footer class="page-footer">
-  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.2.0 &nbsp;|&nbsp; 2026-04-20
+  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.3.0 &nbsp;|&nbsp; 2026-04-24
 </footer>
 
 </body>

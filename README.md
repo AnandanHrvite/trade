@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with 3 independent strategies (Swing, Scalp, Price Action), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics, Telegram alerts, and a full web dashboard.
+NIFTY options algorithmic trading bot with 3 independent strategies (Swing, Scalp, Price Action), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -49,7 +49,14 @@ All three modes run **in parallel** on the same WebSocket — different candle r
 | **PA Live** | can | can | can | can | — | cannot |
 | **PA Paper** | can | can | can | can | cannot | — |
 
-Backtests run in the background (one at a time) and never block live/paper modes. The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click.
+Backtests run in the background (one at a time) and never block live/paper modes. The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click; the two are **mutually locked** (one disables the other and pulses while active) so you never accidentally double-run paper + live across modes. Start-all failures surface in a modal instead of silently reloading.
+
+### Dashboard Layout
+
+- **Per-module cards** (Swing / Scalp / PA) — each card has its own Paper/Live toggle, trades, win-rate, total-P&L, and a cumulative P&L chart. Charts colour green/red by P&L sign.
+- **Cumulative P&L card** with a Paper/Live toggle that swaps the data source feeding the per-module charts.
+- **Side-by-side broker rows** (Fyers + Zerodha on one row).
+- **Hover-only date labels** on charts (x-axis decluttered).
 
 ## Strategies
 
@@ -62,9 +69,10 @@ Backtests run in the background (one at a time) and never block live/paper modes
 ### Strategy 2: Scalp — BB + RSI + PSAR V4 (5-min)
 - **Entry**: Close beyond Bollinger Band + RSI confirmation (> 55 for CE, < 45 for PE)
 - **V4 quality filters** (opt-in via Settings): approach filter (reject first-touch breakouts), body-strength filter (reject doji/wick breakouts)
-- **Other filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle), activity filter, CPR narrow filter
+- **Trend filter** (`SCALP_TREND_FILTER`, default on): block CE in downtrends / PE in uptrends using BB-mid slope + N-candle momentum
+- **Other filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle + threshold), activity filter, CPR narrow filter
 - **SL**: Previous candle low/high (capped between min/max pts)
-- **Exit**: Initial SL + tiered trailing profit % of peak + PSAR trailing (only tightens) + PSAR flip
+- **Exit**: Initial SL + tiered trailing profit % of peak + PSAR trailing (only tightens) + PSAR flip + bid-ask spread guard + time-stop on flat trades
 - **Trail tiers**: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 - **Trail grace period**: Suppress trail-exit for first N seconds after entry (SL still active) to protect against first-tick spike + tiny pullback
 
@@ -72,8 +80,9 @@ Backtests run in the background (one at a time) and never block live/paper modes
 - **Patterns**: Bullish/Bearish Engulfing, Pin Bar, Inside Bar Breakout, Break of Structure, Double Top/Bottom, Ascending/Descending Triangle
 - **S/R Zones**: Dynamic from swing highs/lows (last 30 candles, zone = swing ±10pts)
 - **RSI confluence**: CE requires RSI > 45, PE requires RSI < 55 (optional RSI caps block overbought CE / oversold PE)
-- **SL**: Signal candle wick boundary
-- **Exit**: Candle trail (prev N-bar H/L, parallel with profit-lock floor) + tiered profit-lock + PSAR
+- **SL**: Signal candle wick, capped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]`. BOS/Inside-Bar setups are skipped if the raw structural SL exceeds `PA_MAX_STRUCT_SL_PTS=15` (thin-structure / false-breakout guard).
+- **Exit**: Candle trail (prev N-bar H/L, parallel with profit-lock floor) + tiered profit-lock + PSAR + PA-specific time-stop (3 candles / ±10pts) + bid-ask spread guard
+- **Tightening goal**: cap loss/trade and let winners run via the existing trail stack
 
 ### Market Scenario Simulator
 - After-hours testing with 8 scenarios: trending up/down, choppy, volatile, breakout up/down, V-recovery, inverted-V
@@ -138,6 +147,10 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trade_position.json     # Crash recovery — swing position
   .active_scalp_position.json     # Crash recovery — scalp position
   .active_pa_position.json        # Crash recovery — PA position
+  swing_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
+  scalp_paper_trades_log.jsonl
+  pa_paper_trades_log.jsonl
+  trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
   backtest_cache/                 # Cached historical candles (90-day auto-prune)
   candle_cache/                   # Live candle cache (60-day trim)
   reports/                        # Daily trade reports
@@ -171,9 +184,15 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `SCALP_TRAIL_GRACE_SECS` | `0` | Suppress trail-exit for first N secs after entry (SL still active) |
 | `SCALP_REQUIRE_APPROACH` | `false` | V4: block entry if prev candle is on opposite BB half |
 | `SCALP_MIN_BODY_RATIO` | `0` | V4: min entry-candle body as % of range (0.5 skips doji/wick breakouts) |
+| `SCALP_TREND_FILTER` | `true` | Block CE in downtrends / PE in uptrends (BB-mid slope + momentum) |
+| `SCALP_TREND_MOMENTUM_PCT` | `0.15` | Min N-candle move (% of price) to call a direction |
+| `SCALP_TREND_MOMENTUM_LOOKBACK` | `5` | Candles for momentum measurement |
+| `SCALP_TREND_MID_SLOPE_LOOKBACK` | `3` | Candles for BB-mid slope measurement |
 | `SCALP_MAX_DAILY_TRADES` | `30` | Daily scalp cap |
 | `SCALP_MAX_DAILY_LOSS` | `2000` | Scalp kill-switch in INR |
 | `SCALP_VIX_ENABLED` | `false` | Independent VIX filter for scalp |
+| `SCALP_VIX_MAX_ENTRY` | (falls back to `VIX_MAX_ENTRY`) | Per-mode VIX block-entry threshold |
+| `SCALP_VIX_STRONG_ONLY` | (falls back to `VIX_STRONG_ONLY`) | Per-mode strong-only threshold |
 | `SCALP_BB_SQUEEZE_FILTER` | `true` | Skip entries when BB bands narrow |
 
 ### Price Action Mode (5-min, Fyers)
@@ -182,25 +201,57 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `PA_MODE_ENABLED` | `true` | Show/hide PA menus in sidebar |
 | `PA_ENABLED` | `false` | Must be `true` for Fyers PA live orders |
 | `PA_RESOLUTION` | `5` | Candle size in minutes |
-| `PA_MAX_SL_PTS` | `25` | Max SL distance (pts) |
+| `PA_MAX_SL_PTS` | `12` (signal) / `25` (route fallback) | Strategy caps signal SL at 12; routes fall back to 25 if signal-level cap is bypassed |
+| `PA_MIN_SL_PTS` | `8` | Floor for SL distance |
+| `PA_MAX_STRUCT_SL_PTS` | `15` | Skip BOS/Inside-Bar setups when raw structural SL exceeds this |
 | `PA_CANDLE_TRAIL_ENABLED` | `true` | Use prev N-bar H/L as trail exit |
 | `PA_CANDLE_TRAIL_BARS` | `2` | Lookback for candle trail |
 | `PA_TRAIL_START` | `350` | Activate trailing after ₹N profit |
 | `PA_TRAIL_TIERS` | `500:55,1000:60,3000:70,5000:80,10000:90` | Peak:pct ladder |
+| `PA_TIME_STOP_CANDLES` | `3` | Auto-exit flat trades after N candles (PA override of global `4`) |
+| `PA_TIME_STOP_FLAT_PTS` | `10` | "Flat" threshold for time-stop (PA override of global `20`) |
 | `PA_RSI_CAPS_ENABLED` | `false` | Block CE when RSI overbought / PE when oversold |
-| `PA_CHART_PATTERNS_ENABLED` | `false` | Enable Double Top/Bottom + Triangles |
+| `PA_PATTERN_ENGULFING` | `true` | Toggle Bullish/Bearish Engulfing at S/R |
+| `PA_PATTERN_PINBAR` | `true` | Toggle Hammer / Shooting Star (pin bars) at S/R |
+| `PA_PATTERN_BOS` | `true` | Toggle Break-of-Structure (close beyond swing) |
+| `PA_PATTERN_INSIDE_BAR` | `true` | Toggle Inside Bar mother-bar breakout |
+| `PA_PATTERN_DOUBLE_TOP` | `false` | Toggle Double Top (M) bearish reversal |
+| `PA_PATTERN_DOUBLE_BOTTOM` | `false` | Toggle Double Bottom (W) bullish reversal |
+| `PA_PATTERN_ASC_TRIANGLE` | `false` | Toggle Ascending Triangle bullish breakout |
+| `PA_PATTERN_DESC_TRIANGLE` | `false` | Toggle Descending Triangle bearish breakdown |
 | `PA_MAX_DAILY_TRADES` | `30` | Daily PA cap |
 | `PA_MAX_DAILY_LOSS` | `2000` | PA kill-switch in INR |
+| `PA_VIX_ENABLED` | `false` | Independent VIX filter for PA |
+| `PA_VIX_MAX_ENTRY` | (falls back to `VIX_MAX_ENTRY`) | Per-mode VIX block-entry threshold |
+| `PA_VIX_STRONG_ONLY` | (falls back to `VIX_STRONG_ONLY`) | Per-mode strong-only threshold |
 
-### VIX Filter
+### VIX Filter (per-module)
 | Key | Default | Notes |
 |-----|---------|-------|
 | `VIX_FILTER_ENABLED` | `true` | Block Swing entries in high-VIX |
-| `VIX_MAX_ENTRY` | `20` | Block all entries above this |
-| `VIX_STRONG_ONLY` | `16` | Only STRONG signals above this |
+| `VIX_MAX_ENTRY` | `20` | Swing block-all-entries threshold |
+| `VIX_STRONG_ONLY` | `16` | Swing strong-only threshold |
 | `VIX_FAIL_MODE` | `closed` | When VIX unavailable: closed = block (safe), open = allow |
-| `SCALP_VIX_ENABLED` | `false` | Independent VIX toggle for scalp |
-| `PA_VIX_ENABLED` | `false` | Independent VIX toggle for PA |
+| `SCALP_VIX_ENABLED` | `false` | Independent toggle |
+| `SCALP_VIX_MAX_ENTRY` | inherits | Per-mode threshold (falls back to `VIX_MAX_ENTRY` if unset) |
+| `SCALP_VIX_STRONG_ONLY` | inherits | Per-mode threshold (falls back to `VIX_STRONG_ONLY`) |
+| `PA_VIX_ENABLED` | `false` | Independent toggle |
+| `PA_VIX_MAX_ENTRY` | inherits | Per-mode threshold |
+| `PA_VIX_STRONG_ONLY` | inherits | Per-mode threshold |
+
+### Trade Guards (shared across modes)
+| Key | Default | Notes |
+|-----|---------|-------|
+| `MAX_BID_ASK_SPREAD_PTS` | `2` | Block entry when option bid-ask spread > N pts (fails open if quotes missing) |
+| `TIME_STOP_CANDLES` | `4` | Auto-exit a trade flat for N candles |
+| `TIME_STOP_FLAT_PTS` | `20` | "Flat" defined as |PnL| < N points |
+
+### UI Visibility Toggles
+| Key | Default | Notes |
+|-----|---------|-------|
+| `UI_SHOW_SIMULATE` | `false` | Show "Simulate" link under each mode in sidebar |
+| `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
+| `UI_SHOW_TRACKER` | `false` | Show "Tracker" under Swing |
 
 ### Telegram Alerts (17 toggles + master gate)
 | Key | Default | Notes |
@@ -258,17 +309,25 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ### Analytics & Tools
 | URL | Description |
 |-----|-------------|
-| `/consolidation` | Cross-mode trade history + analytics (Swing + Scalp + PA combined, daily/monthly/yearly roll-ups) |
+| `/consolidation` | Cross-mode **paper** trade history + analytics (Swing + Scalp + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
+| `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
 | `/compare/trading` | Paper vs Backtest comparison (swing) |
 | `/compare/scalping` | Paper vs Backtest comparison (scalping) |
-| `/settings` | All config settings UI + bulk paste config + server restart |
-| `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) |
-| `/logs` | Application logs (with SSE live feed) |
+| `/settings` | All config settings UI + Bulk Edit modal (paste/delete keys) + server restart |
+| `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) + maintenance actions |
+| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here) |
 | `/docs` | README, CHANGELOG, documents viewer |
-| `/login-logs` | Failed login attempts with geolocation |
+| `/login-logs` | Failed login attempts with geolocation (now linked from Settings top-bar; not in sidebar) |
 | `/deploy/status` | GitHub Actions deploy status |
 | `/health` | Health check endpoint |
+
+### Reset Endpoints (per-mode live history)
+| URL | Description |
+|-----|-------------|
+| `POST /swing-live/reset` | Clear Swing live trade history (gated when session active) |
+| `POST /scalp-live/reset` | Clear Scalp live trade history |
+| `POST /pa-live/reset` | Clear PA live trade history |
 
 ### API Endpoints
 | URL | Description |
@@ -299,22 +358,23 @@ src/
     fyersBroker.js                    # Fyers order placement (scalp live + PA live)
     logger.js                         # Console interceptor + in-memory log store
   routes/
-    swingLive.js                      # Swing live trade (15-min, Zerodha) + chart
-    swingPaper.js                     # Swing paper trade (15-min, simulated) + chart + view modal
+    swingLive.js                      # Swing live (15-min, Zerodha) + chart + /reset endpoint
+    swingPaper.js                     # Swing paper (15-min, simulated) + chart + view modal + history JSONL download
     swingBacktest.js                  # Swing backtest (15-min, split-by-years/months)
-    scalpLive.js                      # Scalp live (5-min, Fyers) + chart + BB overlay
+    scalpLive.js                      # Scalp live (5-min, Fyers) + chart + BB overlay + /reset endpoint
     scalpPaper.js                     # Scalp paper (5-min, simulated) + chart + BB overlay
     scalpBacktest.js                  # Scalp backtest
-    paLive.js                         # PA live (5-min, Fyers) + chart + swing overlay
+    paLive.js                         # PA live (5-min, Fyers) + chart + swing overlay + /reset endpoint
     paPaper.js                        # PA paper (5-min, simulated) + chart + swing overlay
     paBacktest.js                     # PA backtest
     manualTracker.js                  # Manual position tracker + SL trailer
-    consolidation.js                  # Cross-mode trade history + analytics (all 3 modes combined)
+    consolidation.js                  # Cross-mode PAPER trade history + Day View + analytics
+    liveConsolidation.js              # Cross-mode LIVE trade history + analytics (parity with /consolidation)
     pnlHistory.js                     # Broker baselines + live-bot P&L by FY
     compare.js                        # Paper vs Backtest comparison pages
-    settings.js                       # Settings UI + bulk paste config + restart endpoint
-    monitor.js                        # EC2 health metrics
-    logs.js                           # Log viewer + SSE stream
+    settings.js                       # Settings UI + Bulk Edit modal (paste/delete keys) + restart endpoint
+    monitor.js                        # EC2 health metrics + maintenance actions
+    logs.js                           # Log viewer + SSE stream (near-miss audit visible)
     docs.js                           # README/CHANGELOG/docs viewer
     auth.js                           # Fyers + Zerodha OAuth
     deploy.js                         # GitHub Actions webhook + status
@@ -323,16 +383,20 @@ src/
   utils/
     socketManager.js                  # Fyers WebSocket singleton + fan-out
     sharedSocketState.js              # Mode coexistence manager
-    sharedNav.js                      # Sidebar navigation component
+    sharedNav.js                      # Sidebar (accordion) + per-feature menu toggles
     positionPersist.js                # Crash recovery — position save/load
     backtestJobManager.js             # Background backtest job queue (1-at-a-time)
     backtestCache.js                  # Disk cache for historical candles
     candleCache.js                    # Live candle cache
     tradeUtils.js                     # Shared pure helpers for all trade routes
+    tradeGuards.js                    # Bid-ask spread guard + time-stop (shared across modes)
+    tradeLogger.js                    # Crash-safe JSONL trade-exit log (cumulative + per-day)
+    nearMissLog.js                    # Per-filter near-miss audit (logs candles missed by exactly one filter)
     charges.js                        # Brokerage + tax calculator
     nseHolidays.js                    # NSE holiday + expiry API
-    notify.js                         # Telegram notifications (17 per-mode toggles + master gate)
+    notify.js                         # Telegram notifications + crash + startup-recovery alerts (sync on shutdown)
     consolidatedEodReporter.js        # Single combined day report at 15:30 IST
+    skipLogger.js                     # Per-day skip-reason log
     resultStore.js                    # Backtest result persistence
     loginLogStore.js                  # Login attempt persistence
     time.js                           # IST time helpers
@@ -344,10 +408,12 @@ src/
 ## Security
 
 - **Login gate**: Cookie-based password (`LOGIN_SECRET`), 15-min sliding expiry, rate limiting (5 attempts/15 min/IP), `SameSite=Lax` cookie for mobile OAuth compatibility
-- **API secret**: Token required on all action routes (start/stop/exit/save) and settings page
+- **API secret**: Token required on all action routes (start/stop/exit/save/reset) and settings page
 - **Brute-force logging**: GPS + IP-API geolocation on failed login attempts
-- **Crash recovery**: Position state persisted to disk with orphan detection + Telegram alert
-- **Sensitive settings hidden**: `SECRET_KEY`, `ZERODHA_API_SECRET`, `ACCESS_TOKEN`, `ZERODHA_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` are never shown or editable via UI
+- **Crash recovery**: Position state persisted to disk with orphan detection + Telegram alert; SIGTERM handled cleanly to avoid silent restarts
+- **Crash + recovery alerts**: Crash-marker file captures error type/stack on uncaught exception → next startup sends Telegram alert with cause and uptime; orphaned positions vs broker reconciled at boot
+- **Synchronous Telegram on shutdown**: alerts are sent via `curl` so they survive `process.exit()` and aren't dropped mid-flight
+- **Sensitive settings hidden**: `SECRET_KEY`, `ZERODHA_API_SECRET`, `ACCESS_TOKEN`, `ZERODHA_ACCESS_TOKEN`, `TELEGRAM_BOT_TOKEN` are never shown or editable via UI; bulk-edit auto-ignores them too
 
 ## Tech Stack
 

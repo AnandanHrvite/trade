@@ -426,10 +426,10 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>TRADING LOGIC</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.2.0</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.3.0</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-04-20 &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-04-24 &nbsp;|&nbsp;
     <strong>Timeframe:</strong> 15-minute &nbsp;|&nbsp;
     <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
     <strong>Route:</strong> <code>/swing-*</code>
@@ -437,7 +437,7 @@
 
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew"><span class="num">00</span> What's New in v4.2.0</a>
+    <a href="#whatsnew"><span class="num">00</span> What's New in v4.3.0</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -465,20 +465,39 @@
 <!-- 0. WHAT'S NEW IN v4.2.0                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew">
-  <h2>00 &mdash; What's New in v4.2.0 (2026-04-20)</h2>
-  <p>UI / infrastructure upgrades on top of the stable v4.1 signal logic. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override are unchanged.</p>
+  <h2>00 &mdash; What's New in v4.3.0 (2026-04-24)</h2>
+  <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history with Day View and per-mode breakdown; mirrors the existing paper-side <code>/consolidation</code>.</li>
+      <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /swing-live/reset</code> wipes Swing live history (gated when a session is active). Surfaced as a Reset button on the Swing Live status page.</li>
+      <li><strong>Per-module VIX thresholds</strong> &mdash; Swing keeps using <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code>; Scalp and PA can now override these per-mode (and fall back to swing values when unset). No change for Swing-only deployments.</li>
+      <li><strong>Trade guards (shared)</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> blocks entry on wide spreads; <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> auto-exits trades that stay flat (theta-bleed guard). Applies to Swing too.</li>
+      <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs every candle that missed entry by exactly one filter (and which filter blocked it). Visible live in <code>/logs</code> SSE feed; quantifies the opportunity cost of each filter.</li>
+      <li><strong>Crash-safe JSONL trade log</strong> &mdash; every Swing exit is appended to <code>~/trading-data/swing_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/swing_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Async, atomic per line.</li>
+      <li><strong>Per-module dashboard cards</strong> with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign). Mutual lock between Start-All Paper and Start-All Live.</li>
+      <li><strong>Eye-icon View buttons</strong> on swing-paper-history rows &rarr; trade detail modal; Day View pagination on backtest + paper history.</li>
+      <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; synchronous shutdown send + crash-marker recovery ping. Orphan reconciliation on boot.</li>
+      <li><strong>Sidebar accordion + UI toggles</strong> (<code>UI_SHOW_SIMULATE</code>, <code>UI_SHOW_COMPARE</code>, <code>UI_SHOW_TRACKER</code>); Login Logs moved to Settings top-bar.</li>
+      <li><strong>Bulk Edit modal</strong> on Settings supports deleting keys via lines starting with <code>-KEY</code>.</li>
+      <li><strong>Operations</strong> &mdash; PM2 heap caps restored, SIGTERM root-cause fixed, backtest engine memory shrunk.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="section page-break">
+  <h2>00a &mdash; v4.2.0 Highlights (2026-04-20)</h2>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
-      <li><strong>Click trade row → focus chart</strong> on that trade's entry–exit window. Zoom preserved across auto-refresh.</li>
-      <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; aggregates Swing + Scalp + PA paper trades into one timeline with daily/monthly/yearly roll-ups and cross-mode filters.</li>
-      <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) &mdash; one-time past P&amp;L baseline per broker (Kite / Fyers) plus auto-computed live-bot P&amp;L grouped by Indian FY. Swing live P&amp;L surfaces under Kite.</li>
-      <li><strong>Telegram restructure</strong> &mdash; 17 per-mode toggles (<code>TG_SWING_*</code>, <code>TG_SCALP_*</code>, <code>TG_PA_*</code>) plus a master <code>TG_ENABLED</code> gate and a consolidated <code>TG_DAYREPORT_CONSOLIDATED</code> at 15:30 IST.</li>
-      <li><strong>Dashboard Start-All</strong> &mdash; Start-All Paper / Start-All Live buttons kick off every enabled mode with one click.</li>
-      <li><strong>Per-session delete + view modal</strong> on <code>/swing-paper/history</code>.</li>
-      <li><strong>Settings: bulk paste</strong> (<code>KEY=VALUE</code> pairs) and one-click server restart.</li>
-      <li><strong>Simulator fidelity</strong> &mdash; historical replay warmup increased from 30 → 300 candles (indicators reach steady state before first replay signal). Intra-candle ticks zig-zag noisily instead of smooth O→H→L→C.</li>
-      <li><strong>Login cookie SameSite=Lax</strong> to fix mobile OAuth redirect loop during broker login flow.</li>
+      <li><strong>Click trade row → focus chart</strong>; zoom preserved across auto-refresh.</li>
+      <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; cross-mode paper trades.</li>
+      <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) with broker baselines + live overlay grouped by Indian FY.</li>
+      <li><strong>Telegram restructure</strong> &mdash; 17 per-mode toggles + master <code>TG_ENABLED</code> + consolidated 15:30 IST report.</li>
+      <li><strong>Dashboard Start-All</strong> Paper / Live buttons.</li>
+      <li><strong>Settings: bulk paste</strong> + one-click server restart.</li>
+      <li><strong>Simulator fidelity</strong> &mdash; warmup 30 → 300 candles; intra-candle ticks zig-zag.</li>
+      <li><strong>Login cookie SameSite=Lax</strong> to fix mobile OAuth redirect loop.</li>
     </ul>
   </div>
 </div>
@@ -1683,9 +1702,49 @@
       <tbody>
         <tr><td>Data Source</td><td>NSE India VIX via Fyers <code>getQuotes</code></td></tr>
         <tr><td>Cache Duration</td><td>60 seconds (avoids API rate limits)</td></tr>
-        <tr><td>Failure Mode</td><td><span class="tag tag-green">Fail-open</span> &mdash; if VIX fetch fails, entries are allowed (conservative for the trader, not the system)</td></tr>
+        <tr><td>Failure Mode</td><td><code>VIX_FAIL_MODE</code> &mdash; <code>closed</code> = block (safe default), <code>open</code> = allow</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="card">
+    <h3>Per-Module Thresholds (v4.3.0)</h3>
+    <p>Each strategy now carries its own VIX thresholds (with fall-back to the swing values).</p>
+    <table>
+      <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code></td><td><code>true</code> / <code>20</code> / <code>16</code></td><td>Swing thresholds (canonical)</td></tr>
+        <tr><td><code>SCALP_VIX_ENABLED</code> / <code>SCALP_VIX_MAX_ENTRY</code> / <code>SCALP_VIX_STRONG_ONLY</code></td><td><code>false</code> / inherits / inherits</td><td>Scalp overrides; falls back to swing if unset</td></tr>
+        <tr><td><code>PA_VIX_ENABLED</code> / <code>PA_VIX_MAX_ENTRY</code> / <code>PA_VIX_STRONG_ONLY</code></td><td><code>false</code> / inherits / inherits</td><td>PA overrides; falls back to swing if unset</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 14b. TRADE GUARDS — BID-ASK SPREAD + TIME-STOP (v4.3.0)                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break" id="s14b">
+  <h2>14b &mdash; Trade Guards &mdash; Bid-Ask Spread + Time-Stop <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h2>
+  <p>Two shared guards live in <code>src/utils/tradeGuards.js</code> and are consulted by Swing, Scalp, and PA paper + live engines.</p>
+  <div class="card">
+    <h3>Bid-Ask Spread Guard (entry)</h3>
+    <p>Before placing an entry, the option's bid/ask spread is compared to <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>). If wider, the entry is rejected with reason <code>WIDE_SPREAD</code>. The check fails <strong>open</strong> if quotes are unavailable, so live entries don't freeze on a transient broker outage.</p>
+  </div>
+  <div class="card">
+    <h3>Time-Stop (exit)</h3>
+    <p>Any open trade that has stayed flat (|PnL| &lt; <code>TIME_STOP_FLAT_PTS</code>) for <code>TIME_STOP_CANDLES</code> consecutive candles is auto-exited with reason <code>TIME_STOP</code>. This prevents pure theta drain on directionless trades. Defaults: <code>4</code> candles / <code>20</code> pts. PA tightens to <code>3</code> / <code>10</code> via <code>PA_TIME_STOP_CANDLES</code>/<code>PA_TIME_STOP_FLAT_PTS</code>.</p>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 14c. NEAR-MISS AUDIT (v4.3.0)                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section" id="s14c">
+  <h2>14c &mdash; Per-Filter Near-Miss Audit <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h2>
+  <p>Every candle-close evaluation produces a <code>filterAudit</code> structure listing which gates passed and which failed. <code>src/utils/nearMissLog.js</code> logs every candle that missed entry by <em>exactly one</em> filter (configurable threshold), tagging the failing filter name and detail (e.g. <code>ADX 18.4 &lt; 20</code>). View live in the <code>/logs</code> SSE feed.</p>
+  <div class="card">
+    <p>Use this to <em>quantify</em> the opportunity cost of each filter: if "ADX gate" misses 30 trades a week and most would have been winners, you have data to support relaxing it. The Paper Trade Data Collection window is exactly when this audit is most valuable.</p>
   </div>
 </div>
 
@@ -2002,8 +2061,8 @@
 <!-- ── Footer ──────────────────────────────────────────────────────────── -->
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
-  <div style="font-weight:600;margin-bottom:4px;">TRADING LOGIC &mdash; Complete Strategy Reference v4.2.0</div>
-  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-20</div>
+  <div style="font-weight:600;margin-bottom:4px;">TRADING LOGIC &mdash; Complete Strategy Reference v4.3.0</div>
+  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-24</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 

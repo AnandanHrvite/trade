@@ -214,18 +214,20 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 4.2.0</span>
-      <span>2026-04-20</span>
-      <span>8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | Live Chart</span>
+      <span>Version 4.3.0</span>
+      <span>2026-04-24</span>
+      <span>8 Patterns | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
       <div class="pillar">S/R Zones</div>
       <div class="pillar">8 Patterns</div>
+      <div class="pillar">Tightened SL (12pt)</div>
+      <div class="pillar">Structural-SL Skip</div>
       <div class="pillar">Candle Trail SL</div>
-      <div class="pillar">VIX Regime Filter</div>
+      <div class="pillar">Time-Stop Guard</div>
+      <div class="pillar">Per-Module VIX</div>
       <div class="pillar">Crash Recovery</div>
-      <div class="pillar">Live Chart + Swing Overlay</div>
     </div>
   </div>
 </header>
@@ -235,7 +237,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
-    <a href="#whatsnew">What's New (v4.2.0)</a>
+    <a href="#whatsnew">What's New (v4.3.0)</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
     <a href="#patterns">8 Patterns</a>
@@ -262,21 +264,39 @@ td.pe { color: var(--red); }
 <section id="whatsnew">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">0</span> What's New in v4.2.0 (2026-04-20)</h2>
-      <p>UI / infrastructure upgrades on top of v4.1 PA signal logic. The 8 patterns, S/R detection, RSI confluence, and candle-trail exit are unchanged.</p>
+      <h2><span class="num">0</span> What's New in v4.3.0 (2026-04-24)</h2>
+      <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remain unchanged.</p>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
-        <li><strong>Live NIFTY candlestick chart</strong> with swing-high/low overlay on <code>/pa-paper/status</code> and <code>/pa-live/status</code>. Toggleable via <code>CHART_ENABLED</code>.</li>
-        <li><strong>Click trade row → focus chart</strong> on that trade's entry–exit window. Zoom preserved across auto-refresh.</li>
+        <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS / Inside-Bar setups whose raw structural SL exceeds 15 pts. Goal: cap loss/trade and let winners run via the existing trail stack.</li>
+        <li><strong>PA time-stop (theta-bleed guard)</strong> &mdash; auto-exit a trade flat for <code>PA_TIME_STOP_CANDLES=3</code> candles within ±<code>PA_TIME_STOP_FLAT_PTS=10</code> pts (overrides shared defaults of <code>4</code>/<code>20</code>).</li>
+        <li><strong>Bid-ask spread guard</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads; fails open if quotes unavailable.</li>
+        <li><strong>Per-module VIX thresholds</strong> &mdash; <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (fall back to <code>VIX_MAX_ENTRY</code>/<code>VIX_STRONG_ONLY</code> when unset).</li>
+        <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live history including PA Live; per-mode breakdown + Day View panel.</li>
+        <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /pa-live/reset</code> (Reset button on PA Live status page).</li>
+        <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs candles missed by exactly one filter; visible in <code>/logs</code>.</li>
+        <li><strong>Crash-safe JSONL trade log</strong> &mdash; <code>~/trading-data/pa_paper_trades_log.jsonl</code> + per-day files in <code>~/trading-data/trades/</code>. Async, atomic.</li>
+        <li><strong>Per-module dashboard card</strong> for PA with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
+        <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; orphan reconciliation against <code>~/trading-data/.active_pa_position.json</code>.</li>
+      </ul>
+    </div>
+
+    <div class="section-header" style="margin-top:24px;">
+      <h2><span class="num">0a</span> v4.2.0 Highlights (2026-04-20)</h2>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong>Live NIFTY candlestick chart</strong> with swing-high/low overlay on PA paper / live.</li>
+        <li><strong>Click trade row → focus chart</strong>; zoom preserved across auto-refresh.</li>
         <li><strong>Per-session delete + view modal</strong> on <code>/pa-paper/history</code>.</li>
-        <li><strong>PA panels on dashboard</strong> alongside Swing + Scalp, with Start-All Paper / Live buttons.</li>
-        <li><strong>Telegram</strong> &mdash; dedicated PA toggles (<code>TG_PA_STARTED / ENTRY / EXIT / SIGNALS / DAYREPORT</code>) gated by master <code>TG_ENABLED</code>. Consolidated 15:30 IST day report covers PA alongside Swing and Scalp.</li>
-        <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; PA trades aggregated with Swing + Scalp for unified daily/monthly/yearly P&amp;L roll-ups.</li>
-        <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) &mdash; PA live P&amp;L surfaces under Fyers broker totals.</li>
-        <li><strong>Configurable RSI caps</strong> (<code>PA_RSI_CAPS_ENABLED</code>) to block overbought CE / oversold PE entries.</li>
-        <li><strong>Candle trail with profit-lock floor</strong> &mdash; both run in parallel; whichever fires first exits. Configurable via <code>PA_CANDLE_TRAIL_ENABLED</code> + <code>PA_CANDLE_TRAIL_BARS</code>.</li>
-        <li><strong>Simulator fidelity</strong> &mdash; historical replay warmup bumped 30 → 300 candles for proper indicator warm-up.</li>
+        <li><strong>PA panels on dashboard</strong> with Start-All Paper / Live buttons.</li>
+        <li><strong>Telegram</strong> &mdash; dedicated PA toggles + master <code>TG_ENABLED</code> + 15:30 IST consolidated report.</li>
+        <li><strong>Consolidation page</strong> aggregates PA with Swing + Scalp.</li>
+        <li><strong>P&amp;L History</strong> &mdash; PA live P&amp;L under Fyers totals.</li>
+        <li><strong>Configurable RSI caps</strong> (<code>PA_RSI_CAPS_ENABLED</code>).</li>
+        <li><strong>Candle trail with profit-lock floor</strong> &mdash; parallel exits.</li>
+        <li><strong>Simulator fidelity</strong> &mdash; warmup 30 → 300 candles.</li>
       </ul>
     </div>
   </div>
@@ -1128,16 +1148,24 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="card mt-2">
-      <h3>SL Distance Clamping</h3>
-      <p class="fs-sm text-muted mb-2">Formula: <code>SL distance = max(min(raw_distance, 25), 8)</code></p>
+      <h3>SL Distance Clamping <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0 tightened</span></h3>
+      <p class="fs-sm text-muted mb-2">Signal layer: <code>SL distance = max(min(raw_distance, 12), 8)</code> — capped at <strong>12 pts</strong> to bound per-trade loss.</p>
       <div class="grid-2">
         <div class="tip-box">
           <div class="tip-title">Min SL Floor: 8 pts</div>
           <p class="fs-sm"><code>PA_MIN_SL_PTS = 8</code> — Prevents noise stops. If raw SL is only 3 pts away, it widens to 8 pts to avoid getting stopped on normal volatility.</p>
         </div>
         <div class="tip-box">
-          <div class="tip-title">Max SL Cap: 25 pts</div>
-          <p class="fs-sm"><code>PA_MAX_SL_PTS = 25</code> — Limits risk per trade. If the signal candle has a 40pt wick, SL caps at 25pts from entry.</p>
+          <div class="tip-title">Max SL Cap: 12 pts (tightened from 25)</div>
+          <p class="fs-sm"><code>PA_MAX_SL_PTS = 12</code> at the signal layer (route-level fallback remains 25 if the signal cap is bypassed). Tighter cap bounds per-trade loss to ~&#8377;1,560 (12 pts × 130 qty); the trail stack lets winners run.</p>
+        </div>
+        <div class="tip-box">
+          <div class="tip-title">Structural-SL Skip: 15 pts</div>
+          <p class="fs-sm"><code>PA_MAX_STRUCT_SL_PTS = 15</code> — BOS / Inside-Bar setups whose <em>raw</em> structural SL exceeds 15 pts are <strong>rejected outright</strong>. Thin structure → high false-breakout risk; better to skip than scale a wide SL down.</p>
+        </div>
+        <div class="tip-box">
+          <div class="tip-title">Time-Stop: 3 candles / ±10 pts</div>
+          <p class="fs-sm"><code>PA_TIME_STOP_CANDLES = 3</code>, <code>PA_TIME_STOP_FLAT_PTS = 10</code> — auto-exit a trade flat for 3 consecutive candles within ±10 pts. Theta-bleed guard tighter than the shared default of 4/20.</p>
         </div>
       </div>
     </div>
@@ -1748,13 +1776,26 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="card">
-      <h3 class="mb-2">Stop Loss &amp; Risk</h3>
+      <h3 class="mb-2">Stop Loss &amp; Risk <span class="badge-new">v4.3.0</span></h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        <div class="config-card"><span class="key">PA_MAX_SL_PTS</span><span class="val">25</span></div>
+        <div class="config-card"><span class="key">PA_MAX_SL_PTS (signal)</span><span class="val">12</span></div>
+        <div class="config-card"><span class="key">PA_MAX_SL_PTS (route fallback)</span><span class="val">25</span></div>
         <div class="config-card"><span class="key">PA_MIN_SL_PTS</span><span class="val">8</span></div>
+        <div class="config-card"><span class="key">PA_MAX_STRUCT_SL_PTS</span><span class="val">15</span></div>
         <div class="config-card"><span class="key">PA_MAX_DAILY_TRADES</span><span class="val">30</span></div>
         <div class="config-card"><span class="key">PA_MAX_DAILY_LOSS</span><span class="val">2000</span></div>
         <div class="config-card"><span class="key">PA_SL_PAUSE_CANDLES</span><span class="val">2</span></div>
+        <div class="config-card"><span class="key">PA_TIME_STOP_CANDLES</span><span class="val">3</span></div>
+        <div class="config-card"><span class="key">PA_TIME_STOP_FLAT_PTS</span><span class="val">10</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb-2">Trade Guards (shared) <span class="badge-new">v4.3.0</span></h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div class="config-card"><span class="key">MAX_BID_ASK_SPREAD_PTS</span><span class="val">2</span></div>
+        <div class="config-card"><span class="key">TIME_STOP_CANDLES</span><span class="val">4 (PA overrides 3)</span></div>
+        <div class="config-card"><span class="key">TIME_STOP_FLAT_PTS</span><span class="val">20 (PA overrides 10)</span></div>
       </div>
     </div>
 
@@ -1776,11 +1817,13 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="card">
-      <h3 class="mb-2">VIX Regime Filter <span class="badge-new">NEW</span></h3>
+      <h3 class="mb-2">VIX Regime Filter (per-module) <span class="badge-new">v4.3.0</span></h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="config-card"><span class="key">PA_VIX_ENABLED</span><span class="val">false</span></div>
-        <div class="config-card"><span class="key">VIX_STRONG_ONLY</span><span class="val">16</span></div>
-        <div class="config-card"><span class="key">VIX_MAX_ENTRY</span><span class="val">20</span></div>
+        <div class="config-card"><span class="key">PA_VIX_MAX_ENTRY</span><span class="val">inherits VIX_MAX_ENTRY</span></div>
+        <div class="config-card"><span class="key">PA_VIX_STRONG_ONLY</span><span class="val">inherits VIX_STRONG_ONLY</span></div>
+        <div class="config-card"><span class="key">VIX_MAX_ENTRY (swing fallback)</span><span class="val">20</span></div>
+        <div class="config-card"><span class="key">VIX_STRONG_ONLY (swing fallback)</span><span class="val">16</span></div>
         <div class="config-card"><span class="key">VIX_FAIL_MODE</span><span class="val">closed</span></div>
       </div>
     </div>
@@ -2153,7 +2196,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.2.0 | Updated 2026-04-20</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.3.0 | Updated 2026-04-24</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>

@@ -4,6 +4,109 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.3.0 — Live Traded History, Per-Module Dashboard, Trade Guards, Audit Trails (2026-04-24)
+
+### Live Traded History — Cross-Mode Live View
+
+- **`/live-consolidation`** — unified live-trade history (Swing Live + Scalp Live + PA Live), parallel to the existing `/consolidation` (paper). Same Daily/Monthly/Yearly roll-ups, filters, equity curve, and bulk copy.
+- **Sidebar entry** under "🔴 Live Traded History" (sibling to "Paper Traded History").
+- **Per-mode `/reset` endpoints** — `POST /swing-live/reset`, `POST /scalp-live/reset`, `POST /pa-live/reset`. Reset buttons live on each live status page; gated when a session is active.
+- **Toggle on dashboard** — the cumulative-P&L card switches between Paper and Live data sources, both feeding the same charts.
+
+### Dashboard — Per-Module P&L Cards + Mutual Lock
+
+- **Per-module cards** (Swing / Scalp / PA) — each card has a Paper/Live toggle, trades, win-rate, total-P&L stats, and its own cumulative chart.
+- **Per-module charts** colored red/green by P&L sign (not by paper/live colour).
+- **Hover-only date labels** on dashboard charts (x-axis decluttered).
+- **Mutual lock** between *Start All Paper* and *Start All Live* — once one is running, the other is disabled and pulses to indicate active state. Prevents accidentally double-running across modes.
+- **Start-all failures surface in a modal** instead of silent reload.
+- **Side-by-side broker rows** (Fyers + Zerodha on one row), compact pro layout.
+
+### Per-Module VIX Thresholds
+
+- **`SCALP_VIX_MAX_ENTRY`, `SCALP_VIX_STRONG_ONLY`, `PA_VIX_MAX_ENTRY`, `PA_VIX_STRONG_ONLY`** — Scalp and PA now have independent VIX thresholds (not just enable/disable). Each falls back to the swing values if unset, so existing configs stay compatible.
+- Documented in `.env.example`; surfaced in Settings.
+
+### Trade Guards — Bid-Ask Spread + Time-Stop
+
+- **`MAX_BID_ASK_SPREAD_PTS`** (default `2`) — block entry if option bid-ask spread is wider than N points. Fails *open* if quotes unavailable so live entries don't freeze on a missing feed.
+- **`TIME_STOP_CANDLES`** (default `4`) + **`TIME_STOP_FLAT_PTS`** (default `20`) — auto-exit a trade that has stayed flat (|PnL| < flatPts) for N candles, to bail out of pure theta-bleed.
+- **PA-specific overrides**: `PA_TIME_STOP_CANDLES=3`, `PA_TIME_STOP_FLAT_PTS=10` (tighter, since PA SL is also tighter).
+- Shared in `src/utils/tradeGuards.js`, used by all 3 paper + live engines.
+
+### Scalp — Trend Filter
+
+- **`SCALP_TREND_FILTER`** (default `true`) — block BB breakouts against the prevailing direction (no CE in a downtrend, no PE in an uptrend). Reduces whipsaws in choppy zones.
+- Tunables: `SCALP_TREND_MOMENTUM_PCT=0.15`, `SCALP_TREND_MOMENTUM_LOOKBACK=5`, `SCALP_TREND_MID_SLOPE_LOOKBACK=3`. BB-mid slope + N-candle momentum jointly classify direction.
+
+### Price Action — Tightening (entries + SL + trail)
+
+- **Capped per-trade loss** — strategy-layer SL now bounded by `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]` during signal generation (route-level fallback remains 25).
+- **Structural-SL skip** — `PA_MAX_STRUCT_SL_PTS=15`: reject BOS / Inside-Bar setups whose raw structural SL exceeds 15 pts (thin-structure / false-breakout guard).
+- **PA time-stop** — flat exit after 3 candles / ±10 pts (overrides global 4 / 20).
+- **Goal**: cap loss/trade and let winners run via the existing tiered trail + candle-trail stack.
+
+### Per-Filter Near-Miss Audit
+
+- **`src/utils/nearMissLog.js`** — every candle that *almost* triggered a trade (missed by exactly one filter) is logged with the failing filter name + detail. Wired into PA, Swing, and Scalp paper modes.
+- View live in `/logs` SSE feed. Quantifies the opportunity cost of each individual filter for tuning.
+
+### Crash-Safe JSONL Trade Log
+
+- **`src/utils/tradeLogger.js`** — every trade exit appended (POSIX `O_APPEND`, atomic per-line) to:
+  - `~/trading-data/{swing|scalp|pa}_paper_trades_log.jsonl` (cumulative)
+  - `~/trading-data/trades/{swing|scalp|pa}_paper_trades_YYYY-MM-DD.jsonl` (per-day)
+- **Async fire-and-forget** — trade-exit hot path is no longer blocked by I/O.
+- **Per-day skip + trade JSONL** is downloadable from history pages (per-date).
+- Survives crashes — no data loss vs the old session JSON flush-on-exit.
+
+### Consolidation — Day View Panel
+
+- **Day View** table on `/consolidation` (and matching panels on per-mode paper/scalp history) — chronological per-trade list with date, mode, entry/exit time, side, P&L; per-mode breakdown.
+- **Pagination** on Day View on backtest + paper-history pages (no more 500-row scroll on long sessions).
+- **Red/green tint** on P&L cells (cell background + row tint on consolidation, table-row tint on history).
+
+### Sidebar — Accordion + Per-Feature Toggles
+
+- **Accordion sections** (Swing / Scalp / PA) — only one expanded at a time; collapses cleanly.
+- **Per-feature menu toggles** (env-driven, hidden by default to declutter):
+  - `UI_SHOW_SIMULATE` (default `false`) — show "Simulate" link under each mode
+  - `UI_SHOW_COMPARE` (default `false`) — show "Compare" link
+  - `UI_SHOW_TRACKER` (default `false`) — show "Tracker" under Swing
+- **Login Logs removed from sidebar** — moved to a top-bar button on the Settings page (still accessible at `/login-logs`).
+- **Breadcrumbs** added to Settings, Monitor, Docs, P&L History, and Login Logs.
+- **History button** on every paper status page (Swing/Scalp/PA) → jumps to that mode's history.
+
+### Settings UI — Bulk Edit Modal + Delete-Key Support
+
+- **"Bulk Update & Restart" modal** (button label `📋 BULK EDIT` in top-bar) — bulk paste was moved out of the page body into a focused modal.
+- **Delete keys** — lines beginning with `-` (e.g., `-PA_MIN_RR`) remove keys from `.env` during bulk apply. Lets you prune dead config keys without manual file editing.
+- **Reset & Save** button on each section was renamed for clarity (now scoped reset, not a global "reset everything").
+- Quick Links (P&L History / Monitor / Docs / Login Logs) moved into top-bar buttons.
+
+### Telegram — Crash + Startup-Recovery Alerts
+
+- **Synchronous Telegram on shutdown** — `sendTelegramSync()` spawns `curl` so alerts survive `process.exit()` (previously fire-and-forget could be killed mid-flight).
+- **Crash-marker file** — captures the error type + stack on uncaught exception / SIGTERM. On next startup, the marker is read and a recovery alert is sent (cause + uptime).
+- **Startup recovery ping** also reconciles persisted positions vs broker positions and alerts on orphans.
+
+### Operations / PM2
+
+- **Heap caps restored** (`--max-old-space-size=900`, `max_memory_restart: 940M`) after a fix that was killing live paper trade.
+- **Backtest engine memory footprint shrunk** — large date-range runs now fit comfortably under the t3.micro ceiling.
+- **Monitor page maintenance actions** for safe in-app cleanup of caches/log dirs.
+- **SIGTERM handler** fixed — was the root cause of silent restarts during nodemon/pm2 reload cycles.
+
+### Misc UI / UX
+
+- **Eye-icon View buttons** in swing-paper-history → trade-detail modal (parity with PA/scalp).
+- **Copy Trade Log + Delete Session** moved into the session header (before PnL) on all paper-history pages.
+- **Compact dashboard** — per-module start rows + single-line broker rows.
+- **Light-theme overrides** for all-backtest + docs pages.
+- **All-backtest 401** now surfaces an error modal instead of silent refresh loop.
+
+---
+
 ## v4.2.0 — Live Charts, Consolidation, P&L History, Telegram Restructure (2026-04-20)
 
 ### Live NIFTY Candlestick Charts
