@@ -301,6 +301,7 @@ app.use("/compare",        require("./routes/compare"));        // ← paper vs 
 app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
+app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics

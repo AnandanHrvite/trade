@@ -46,7 +46,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
-  const paKeys      = ['paBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive'];
+  const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive'];
 
   const isTradingOpen = tradingKeys.includes(activePage);
   const isScalpOpen   = scalpKeys.includes(activePage);
@@ -71,7 +71,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   ];
 
   const paItems = [
-    { key: 'paBacktest', href: '/pa-backtest',       icon: '📐', label: 'Backtest' },
+    { key: 'paBacktest',        href: '/pa-backtest',         icon: '📐', label: 'Backtest' },
+    { key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '△',  label: 'Pattern Test' },
     { key: 'paPaper',    href: '/pa-paper/status',   icon: '📐', label: 'Paper'    },
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
@@ -115,7 +116,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // Block all backtest & paper (trading + scalping + PA) when ANY live mode is active
   const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE' || _paMode === 'PA_LIVE';
-  const blocked = anyLiveActive ? ['allBacktest', 'swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPaper'] : [];
+  const blocked = anyLiveActive ? ['allBacktest', 'swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPatternBacktest', 'paPaper'] : [];
 
   function renderItem(p) {
     const isActive   = p.key === activePage;

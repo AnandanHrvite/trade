@@ -2051,3 +2051,6 @@ document.getElementById('btModal').addEventListener('click',function(e){
 });
 
 module.exports = router;
+// Exposed for /pa-pattern-backtest so it can run the same engine with a single
+// pattern flag enabled at a time (sets PA_PATTERN_* env vars before calling).
+module.exports.runPABacktest = runPABacktest;
