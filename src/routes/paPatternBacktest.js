@@ -125,6 +125,7 @@ function renderPanel(p, result) {
         <span class="meta-range" data-meta-range>${paramsStr}</span>
         <span class="meta-dot">·</span>
         <span class="meta-ago" data-meta-ago>${ago}</span>
+        <button class="btn-copy" data-copy>📋 Copy Trades</button>
         <button class="btn-run" data-run>▶ Run</button>
       </div>
     </div>
@@ -149,6 +150,63 @@ router.get("/stats", (req, res) => {
     params:  r.params  || null,
     savedAt: r.savedAt || null,
   });
+});
+
+// ── JSON: trade rows for one pattern (or "ALL" for every enabled pattern) ────
+// Returns the same TSV columns the regular /pa-backtest "Copy Trade Log"
+// produces, so paste-targets (Sheets / chat) line up.
+function buildTradeRows(pattern, trades) {
+  const fmt2 = (n) => (n == null ? "—" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const datePart = (dt) => {
+    if (!dt) return "—";
+    const p = String(dt).split(", ");
+    const d = (p[0] || "").split("/");
+    if (d.length === 3) return d[0].padStart(2,'0') + '/' + d[1].padStart(2,'0') + '/' + d[2];
+    return p[0] || "—";
+  };
+  const timePart = (dt) => {
+    if (!dt) return "—";
+    const p = String(dt).split(", ");
+    return p[1] || "—";
+  };
+  return trades.map(t => {
+    const sl = (t.stopLoss && t.stopLoss !== "N/A") ? parseFloat(t.stopLoss) : null;
+    const cols = [
+      pattern,
+      t.side || "",
+      datePart(t.entryTime || ""),
+      fmt2(t.entryPrice),
+      timePart(t.entryTime || ""),
+      fmt2(t.exitPrice),
+      timePart(t.exitTime || ""),
+      sl != null ? fmt2(sl) : "—",
+      typeof t.pnl === "number" ? t.pnl.toFixed(2) : "—",
+      String(t.entryReason || "—"),
+      String(t.exitReason || "—"),
+    ];
+    return cols.join("\t");
+  });
+}
+
+router.get("/trades", (req, res) => {
+  const pattern = String(req.query.pattern || "");
+  const header = "Pattern\tSide\tDate\tEntry\tEntry Time\tExit\tExit Time\tSL\tPnL\tEntry Reason\tExit Reason";
+
+  if (pattern === "ALL") {
+    const enabled = PATTERN_KEYS.filter(k => process.env[`PA_PATTERN_${k}`] === "true");
+    const all = [];
+    for (const k of enabled) {
+      const r = loadResult(RESULT_KEY(k));
+      if (r && Array.isArray(r.trades)) all.push(...buildTradeRows(k, r.trades));
+    }
+    return res.json({ tsv: [header, ...all].join("\n"), count: all.length, patterns: enabled });
+  }
+
+  if (!PATTERN_KEYS.includes(pattern)) return res.status(400).json({ error: "bad pattern" });
+  const r = loadResult(RESULT_KEY(pattern));
+  if (!r || !Array.isArray(r.trades)) return res.json({ tsv: header, count: 0 });
+  const rows = buildTradeRows(pattern, r.trades);
+  res.json({ tsv: [header, ...rows].join("\n"), count: rows.length });
 });
 
 // ── Trigger one pattern's backtest (background) ──────────────────────────────
@@ -232,7 +290,14 @@ router.get("/", (req, res) => {
   const to         = req.query.to         || defTo;
   const resolution = req.query.resolution || process.env.PA_RESOLUTION || "5";
 
-  const panelsHtml = PATTERNS.map(p => renderPanel(p, loadResult(RESULT_KEY(p.key)))).join('\n');
+  // Only render panels for patterns currently enabled in settings
+  // (PA_PATTERN_<KEY>=true). Disabled patterns are hidden so this page
+  // mirrors what your live/paper run will actually use.
+  const enabledPatterns = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] === "true");
+  const panelsHtml = enabledPatterns.length
+    ? enabledPatterns.map(p => renderPanel(p, loadResult(RESULT_KEY(p.key)))).join('\n')
+    : `<div class="empty-state" style="padding:40px;">No PA patterns enabled in settings. Toggle <b>PA_PATTERN_*</b> on in <a href="/settings#pa" style="color:#60a5fa;">Settings</a> to see panels here.</div>`;
+  const disabledList = PATTERNS.filter(p => process.env[`PA_PATTERN_${p.key}`] !== "true").map(p => p.label).join(', ');
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -273,6 +338,9 @@ router.get("/", (req, res) => {
   .btn-run{background:#0d1320;border:1px solid #1a2540;color:#60a5fa;padding:4px 10px;border-radius:5px;font-size:0.68rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;}
   .btn-run:hover{background:#0a1e3d;border-color:#3b82f6;}
   .btn-run:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-copy{background:#0d1f17;border:1px solid #1a3a26;color:#34d399;padding:4px 10px;border-radius:5px;font-size:0.68rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;}
+  .btn-copy:hover{background:#0a2d1e;border-color:#10b981;}
+  .btn-copy.copied,#copyAllBtn.copied{background:#0a3a23 !important;color:#86efac !important;border-color:#10b981 !important;}
 
   .run-status{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.8px;padding:2px 7px;border-radius:3px;font-family:'IBM Plex Mono',monospace;}
   .run-status.idle{display:none;}
@@ -341,6 +409,7 @@ ${buildSidebar('paPatternBacktest', liveActive)}
       </select>
     </div>
     <button class="run-btn" id="runAllBtn">▶▶ Run All Patterns</button>
+    <button class="run-btn" id="copyAllBtn" style="background:#0f3a26;color:#34d399;border-color:#1f7a4d;">📋 Copy All Trades</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">✕ Cancel</button>
     <span id="runAllStatus" style="font-size:0.68rem;color:#4a6080;margin-left:auto;"></span>
   </div>
@@ -592,6 +661,67 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
 document.getElementById('cancelBtn').addEventListener('click', function(){
   RUN_STATE.cancel = true;
   document.getElementById('runAllStatus').textContent = 'Cancelling… (current run finishes in background)';
+});
+
+// ── Clipboard copy (per-panel + global) ──────────────────────────────────────
+function doCopy(text, btn, origLabel){
+  function onOk(){
+    btn.classList.add('copied');
+    btn.textContent = '✅ Copied!';
+    setTimeout(function(){ btn.classList.remove('copied'); btn.textContent = origLabel; }, 2000);
+  }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+    onOk();
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(onOk).catch(fallback);
+  } else { fallback(); }
+}
+
+document.querySelectorAll('[data-copy]').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var panel = btn.closest('.panel');
+    var pattern = panel.dataset.pattern;
+    var orig = btn.textContent;
+    btn.textContent = '⏳ …';
+    fetch('/pa-pattern-backtest/trades?pattern=' + encodeURIComponent(pattern), { cache:'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(!d || d.count === 0){
+          btn.textContent = '∅ No trades';
+          setTimeout(function(){ btn.textContent = orig; }, 1800);
+          return;
+        }
+        doCopy(d.tsv, btn, '📋 Copy Trades');
+      })
+      .catch(function(){
+        btn.textContent = '⚠ Failed';
+        setTimeout(function(){ btn.textContent = orig; }, 1800);
+      });
+  });
+});
+
+document.getElementById('copyAllBtn').addEventListener('click', function(){
+  var btn = this;
+  var orig = btn.textContent;
+  btn.textContent = '⏳ Loading…';
+  fetch('/pa-pattern-backtest/trades?pattern=ALL', { cache:'no-store' })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(!d || d.count === 0){
+        btn.textContent = '∅ No trades yet';
+        setTimeout(function(){ btn.textContent = orig; }, 2000);
+        return;
+      }
+      doCopy(d.tsv, btn, '📋 Copy All Trades');
+    })
+    .catch(function(){
+      btn.textContent = '⚠ Copy failed';
+      setTimeout(function(){ btn.textContent = orig; }, 2000);
+    });
 });
 
 // ── Individual panel Run buttons ─────────────────────────────────────────────
