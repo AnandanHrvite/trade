@@ -142,6 +142,7 @@ const SETTINGS_SCHEMA = [
     icon: "📐",
     fields: [
       { key: "PA_MODE_ENABLED", label: "Price Action Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide price action menus", default: "true" },
+      { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable PA live order placement (Fyers). Required to start a PA Live session.", default: "false" },
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high (scope: PA only)", default: "false" },
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PA only: block entries above this VIX", default: "20" },
@@ -188,6 +189,7 @@ const SETTINGS_SCHEMA = [
       { key: "PA_TIME_STOP_CANDLES", label: "Time-Stop Candles", type: "number", min: 2, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Exit flat trades after this many candles (theta bleed guard)", default: "3" },
       { key: "PA_TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |PnL| < this many points (trade has gone nowhere)", default: "10" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
+      { key: "PA_OPT_STOP_PCT", label: "PA Option Stop %", type: "number", min: 0.05, max: 0.5, step: 0.05, effect: EFFECT.SESSION, desc: "Fallback stop-loss as % of option premium for PA live (used when premium-based SL is tighter than spot SL)", default: "0.15" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max PA entries per day", default: "30" },
       { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
       { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
@@ -211,10 +213,14 @@ const SETTINGS_SCHEMA = [
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "+50=ITM, 0=ATM, -50=OTM", default: "0" },
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta" },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation" },
-      { key: "BACKTEST_GAMMA", label: "Gamma", type: "number", min: 0, max: 0.01, step: 0.0005, effect: EFFECT.BACKTEST, desc: "Option gamma — adjusts delta as spot moves (0=flat delta)" },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees" },
       { key: "BACKTEST_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.BACKTEST, desc: "Simulated slippage per side (entry+exit). 0=off, 2=realistic for NIFTY options", default: "0" },
       { key: "LTP_STALE_THRESHOLD_SEC", label: "LTP Stale Alert (sec)", type: "number", min: 5, max: 60, step: 5, effect: EFFECT.INSTANT, desc: "Warn in logs if option LTP has no update for this many seconds", default: "15" },
+      { key: "LTP_STALE_FALLBACK_SEC", label: "LTP Stale Fallback (sec)", type: "number", min: 1, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Live engines fall back to candle close when option LTP is older than this", default: "5" },
+      { key: "GAP_THRESHOLD_PTS", label: "Gap Threshold (pts)", type: "number", min: 10, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip first candle if previous close vs open gap exceeds this (overnight-gap guard for live engines)", default: "50" },
+      { key: "MAX_BID_ASK_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 20, step: 0.5, effect: EFFECT.SESSION, desc: "Reject live entries when option bid-ask spread is wider than this", default: "2" },
+      { key: "TIME_STOP_CANDLES", label: "Time-Stop Candles (default)", type: "number", min: 2, max: 12, step: 1, effect: EFFECT.SESSION, desc: "Default time-stop window used by trade guards (per-mode overrides take precedence)", default: "4" },
+      { key: "TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts, default)", type: "number", min: 5, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Default flat-PnL band for the time-stop guard (|pnl| < this fires the stop)", default: "20" },
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place SL-M order at exchange on every entry. Protects against bot crash/disconnect. Options only.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta for converting spot SL to option premium trigger price", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
@@ -233,7 +239,6 @@ const SETTINGS_SCHEMA = [
       { key: "APP_ID", label: "Fyers App ID", type: "text", effect: EFFECT.SERVER },
       { key: "REDIRECT_URL", label: "Fyers Redirect URL", type: "text", effect: EFFECT.SERVER },
       { key: "ZERODHA_API_KEY", label: "Zerodha API Key", type: "text", effect: EFFECT.SERVER },
-      { key: "ZERODHA_REDIRECT_URL", label: "Zerodha Redirect URL", type: "text", effect: EFFECT.SERVER },
     ],
   },
   {
@@ -335,8 +340,9 @@ const IMMEDIATE_KEYS = new Set([
   "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY", "PA_VIX_STRONG_ONLY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
-  "BACKTEST_FROM", "BACKTEST_TO", "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
-  "BACKTEST_DELTA", "BACKTEST_GAMMA", "BACKTEST_THETA_DAY", "SWING_PAPER_CAPITAL",
+  "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
+  "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "SWING_PAPER_CAPITAL",
+  "PA_ENABLED",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_ENABLED",
   "TG_SWING_STARTED", "TG_SCALP_STARTED", "TG_PA_STARTED",
@@ -376,6 +382,10 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
   "SCALP_REQUIRE_APPROACH", "SCALP_MIN_BODY_RATIO",
   "SCALP_TREND_FILTER", "SCALP_TREND_MOMENTUM_LOOKBACK", "SCALP_TREND_MOMENTUM_PCT", "SCALP_TREND_MID_SLOPE_LOOKBACK",
+  // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
+  "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
+  "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",
+  "PA_OPT_STOP_PCT",
 ]);
 
 // ── Write values back to .env file (preserves comments and structure) ───────

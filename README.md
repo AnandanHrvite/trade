@@ -347,8 +347,6 @@ src/
     strategy1_sar_ema_rsi.js          # Swing 15-min strategy (SAR + EMA9 + RSI)
     scalp_bb_cpr.js                   # Scalp 5-min V4 (BB + RSI + PSAR + approach/body filters)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps)
-    scalp_ema9_rsi.js                 # Scalp V1 (EMA9 cross, legacy)
-    scalp_ema9_rsi_v2.js              # Scalp V2 (two-candle confirmation, legacy)
     index.js                          # Strategy registry
   services/
     backtestEngine.js                 # Historical candle fetch + backtest engine
