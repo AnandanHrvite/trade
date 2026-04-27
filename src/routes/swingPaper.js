@@ -3897,7 +3897,8 @@ async function loadDailyFiles(){
       var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
       var btns  = '';
       if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
-      if (r.tradesSize) btns += '<button class="export-btn" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
+      if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
+      if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
       if (!btns) btns = '<span style="color:#4a6080;">—</span>';
       return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
     }).join('');
@@ -3910,6 +3911,17 @@ function toggleDailyFiles(){
   var b = document.getElementById('dailyFilesBody');
   var t = document.getElementById('dailyFilesToggle');
   if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
+}
+async function restoreSession(date){
+  if (!confirm('Rebuild session for '+date+' from daily JSONL? This will add any trades found there that are not already in a session.')) return;
+  try {
+    var res = await fetch('/swing-paper/restore-session/'+date, { method: 'POST', cache: 'no-store' });
+    var d = await res.json();
+    if (!d.success) { showToast('❌ '+(d.error||'Restore failed'), '#ef4444'); return; }
+    if (d.restored === 0) { showToast('ℹ️ '+(d.message||'Nothing to restore'), '#3b82f6'); return; }
+    showToast('✅ Restored '+d.restored+' trade(s) — PnL ₹'+(d.sessionPnl||0), '#10b981');
+    setTimeout(function(){ location.reload(); }, 1000);
+  } catch(e) { showToast('❌ '+(e&&e.message||e), '#ef4444'); }
 }
 loadDailyFiles();
 
@@ -4636,6 +4648,66 @@ router.delete("/session/:index", (req, res) => {
     success: true,
     message: "Session deleted successfully.",
   });
+});
+
+// ── Restore deleted/missing sessions from daily JSONL ────────────────────────
+// JSONL is append-only — Delete Session never touches it. This endpoint reads
+// the daily trade JSONL for an IST date, finds trades not already in any
+// existing session (deduped by entryBarTime), and rebuilds a session.
+router.post("/restore-session/:date", (req, res) => {
+  if (ptState.running) {
+    return res.status(400).json({ success: false, error: "Stop paper trading before restoring." });
+  }
+  const date = String(req.params.date || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
+  }
+  const allTrades = tradeLogger.readDailyTrades("swing", date);
+  if (!allTrades.length) {
+    return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
+  }
+  const data = loadPaperData();
+  const seen = new Set();
+  for (const s of (data.sessions || [])) {
+    for (const t of (s.trades || [])) {
+      const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+      if (key) seen.add(String(key));
+    }
+  }
+  const missing = allTrades.filter(t => {
+    const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+    return key && !seen.has(String(key));
+  });
+  if (!missing.length) {
+    return res.json({ success: true, restored: 0, message: "Nothing to restore — all trades already in sessions." });
+  }
+  const sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
+  const wins   = missing.filter(t => (Number(t.pnl) || 0) > 0).length;
+  const losses = missing.filter(t => (Number(t.pnl) || 0) <= 0).length;
+  const session = {
+    date,
+    strategy:    missing[0]?.strategy || "STRATEGY_1",
+    instrument:  missing[0]?.instrument || "NIFTY_OPTIONS",
+    startTime:   missing[0]?.entryTime || date,
+    endTime:     missing[missing.length - 1]?.exitTime || date,
+    trades:      missing,
+    totalTrades: missing.length,
+    wins,
+    losses,
+    winRate:     missing.length ? `${((wins / missing.length) * 100).toFixed(1)}%` : "N/A",
+    sessionPnl,
+    restoredFromJsonl: true,
+  };
+  data.sessions.push(session);
+  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.totalPnl = parseFloat(data.sessions.reduce(
+    (sum, s) => sum + (s.sessionPnl != null ? s.sessionPnl : (s.pnl || 0)),
+    0
+  ).toFixed(2));
+  data.capital = parseFloat((getCapitalFromEnv() + data.totalPnl).toFixed(2));
+  savePaperData(data);
+  log(`♻️ Restored swing paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
+  return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 /**

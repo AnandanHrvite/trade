@@ -98,11 +98,31 @@ function appendTradeLog(mode, trade) {
   }
 }
 
+/**
+ * Read all trades from the daily JSONL for a given mode and IST date.
+ * Returns an array of parsed trade objects (skipping any malformed lines).
+ * Returns [] if the file does not exist or cannot be read.
+ */
+function readDailyTrades(mode, dateStr) {
+  const fp = dailyFilePathFor(mode, dateStr);
+  let text;
+  try { text = fs.readFileSync(fp, "utf-8"); }
+  catch (_) { return []; }
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    try { out.push(JSON.parse(t)); } catch (_) { /* skip bad line */ }
+  }
+  return out;
+}
+
 module.exports = {
   appendTradeLog,
   filePathFor,
   dailyFilePathFor,
   listDailyDates,
+  readDailyTrades,
   istDateString,
   FILE_BY_MODE,
   DAILY_PREFIX_BY_MODE,
