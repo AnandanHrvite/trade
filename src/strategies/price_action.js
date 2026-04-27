@@ -677,6 +677,86 @@ function getSignal(candles, opts) {
   if (isShootingStar(sc, PIN_WICK_RATIO) && !resistanceCheck.near) parts.push("Shooting Star but no resistance");
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
+
+  // ── Filter audit (additive logging — does not affect entry decisions) ─────
+  // Records which filters passed/failed for CE and PE so the structured skip
+  // log captures *why* this bar produced no signal. Patterns are checked
+  // regardless of toggle state; disabled patterns are tagged "(off)" so we
+  // can see opportunity cost in the data window.
+  var _auditBullEngulf = isBullishEngulfing(prev, sc, MIN_BODY);
+  var _auditBearEngulf = isBearishEngulfing(prev, sc, MIN_BODY);
+  var _auditHammer     = isHammer(sc, PIN_WICK_RATIO);
+  var _auditShootStar  = isShootingStar(sc, PIN_WICK_RATIO);
+  var _auditBOS        = checkBOS(sc, swings.swingHighs, swings.swingLows);
+  var _auditIBBull     = !!(_insideBarPending && sc.close > _insideBarPending.triggerHigh);
+  var _auditIBBear     = !!(_insideBarPending && sc.close < _insideBarPending.triggerLow);
+  var _auditDblTop     = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
+  var _auditDblBot     = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
+  var _auditAscTri     = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+  var _auditDescTri    = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+
+  function _tag(formed, enabled) { return formed ? (enabled ? "" : "(off)") : null; }
+  var _bullFormed = [];
+  if (_auditBullEngulf)      _bullFormed.push("Engulf"  + (PATTERN_ENGULFING     ? "" : "(off)"));
+  if (_auditHammer)          _bullFormed.push("Hammer"  + (PATTERN_PINBAR        ? "" : "(off)"));
+  if (_auditBOS.bullish)     _bullFormed.push("BOS"     + (PATTERN_BOS           ? "" : "(off)"));
+  if (_auditIBBull)          _bullFormed.push("IB"      + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
+  if (_auditDblBot.detected) _bullFormed.push("DblBot"  + (PATTERN_DOUBLE_BOTTOM ? "" : "(off)"));
+  if (_auditAscTri.detected) _bullFormed.push("AscTri"  + (PATTERN_ASC_TRIANGLE  ? "" : "(off)"));
+  var _bearFormed = [];
+  if (_auditBearEngulf)      _bearFormed.push("Engulf"    + (PATTERN_ENGULFING     ? "" : "(off)"));
+  if (_auditShootStar)       _bearFormed.push("ShootStar" + (PATTERN_PINBAR        ? "" : "(off)"));
+  if (_auditBOS.bearish)     _bearFormed.push("BOS"       + (PATTERN_BOS           ? "" : "(off)"));
+  if (_auditIBBear)          _bearFormed.push("IB"        + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
+  if (_auditDblTop.detected) _bearFormed.push("DblTop"    + (PATTERN_DOUBLE_TOP    ? "" : "(off)"));
+  if (_auditDescTri.detected)_bearFormed.push("DescTri"   + (PATTERN_DESC_TRIANGLE ? "" : "(off)"));
+
+  function _nearestDist(price, levels) {
+    var best = null;
+    for (var i = 0; i < levels.length; i++) {
+      var d = Math.abs(price - levels[i].price);
+      if (best === null || d < best) best = d;
+    }
+    return best;
+  }
+  var _nearLowDist  = _nearestDist(sc.low,  swings.swingLows);
+  var _nearHighDist = _nearestDist(sc.high, swings.swingHighs);
+
+  var _ceAuditChecks = [
+    { name: "RSI in CE range", ok: rsi > RSI_CE_MIN && rsi < RSI_CE_MAX,
+      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE_MIN + "-" + RSI_CE_MAX },
+    { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
+      detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
+    { name: "Near support", ok: supportCheck.near,
+      detail: supportCheck.near
+        ? ("support=" + supportCheck.level.toFixed(0))
+        : ("no swing low within " + SR_ZONE_PTS + "pts" + (_nearLowDist !== null ? " (nearest " + _nearLowDist.toFixed(0) + "pts)" : "")) },
+    { name: "Bullish pattern", ok: _bullFormed.length > 0,
+      detail: _bullFormed.length ? _bullFormed.join(",") : "none formed (Engulf/Hammer/BOS/IB/DblBot/AscTri)" },
+  ];
+  var _peAuditChecks = [
+    { name: "RSI in PE range", ok: rsi > RSI_PE_MIN && rsi < RSI_PE_MAX,
+      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE_MAX },
+    { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
+      detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
+    { name: "Near resistance", ok: resistanceCheck.near,
+      detail: resistanceCheck.near
+        ? ("resistance=" + resistanceCheck.level.toFixed(0))
+        : ("no swing high within " + SR_ZONE_PTS + "pts" + (_nearHighDist !== null ? " (nearest " + _nearHighDist.toFixed(0) + "pts)" : "")) },
+    { name: "Bearish pattern", ok: _bearFormed.length > 0,
+      detail: _bearFormed.length ? _bearFormed.join(",") : "none formed (Engulf/ShootStar/BOS/IB/DblTop/DescTri)" },
+  ];
+
+  function _auditSide(checks) {
+    var passed = [], failed = [];
+    for (var i = 0; i < checks.length; i++) {
+      if (checks[i].ok) passed.push(checks[i].name);
+      else              failed.push({ name: checks[i].name, detail: checks[i].detail });
+    }
+    return { passed: passed.length, total: checks.length, passedNames: passed, failed: failed };
+  }
+  base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
+
   return base;
 }
 
