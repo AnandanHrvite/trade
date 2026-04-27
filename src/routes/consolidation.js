@@ -39,7 +39,8 @@ function loadAllTrades() {
   for (const src of SOURCES) {
     const data = safeRead(src.file);
     for (const s of (data.sessions || [])) {
-      const sessionDate = s.date || "";
+      const rawDate = s.date || "";
+      const sessionDate = rawDate.slice(0, 10);
       for (const t of (s.trades || [])) {
         out.push({
           mode:        src.mode,
