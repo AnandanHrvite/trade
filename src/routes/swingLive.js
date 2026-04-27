@@ -33,6 +33,8 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const { getCharges } = require("../utils/charges");
 const { saveTradePosition, clearTradePosition } = require("../utils/positionPersist");
+const { logNearMiss } = require("../utils/nearMissLog");
+const skipLogger = require("../utils/skipLogger");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -842,7 +844,8 @@ async function squareOff(exitPrice, reason) {
 
   const { symbol, qty, side, entryPrice, optionEntryLtp, entryTime,
           stopLoss, optionExpiry, optionStrike, optionType, spotAtEntry,
-          optionCurrentLtp: posOptLtp } = tradeState.position;
+          optionCurrentLtp: posOptLtp,
+          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = tradeState.position;
   const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
 
@@ -919,6 +922,11 @@ async function squareOff(exitPrice, reason) {
     // Bar timestamps for chart markers
     entryBarTime:   tradeState.position ? (tradeState.position.entryBarTime || null) : null,
     exitBarTime:    tradeState.currentBar ? tradeState.currentBar.time : null,
+    // Data-collection fields (captured at entry)
+    signalStrength: signalStrength   || null,
+    vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
+    entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
   });
   tradeState.sessionPnl = parseFloat((tradeState.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) tradeState._wins = (tradeState._wins || 0) + 1;
@@ -1018,7 +1026,7 @@ async function onCandleClose(candle) {
   if (tradeState.candles.length > 200) tradeState.candles.shift();
 
   const strategy = getActiveStrategy();
-  const { signal, reason, stopLoss, signalStrength: _ccStrength } = strategy.getSignal(tradeState.candles);
+  const { signal, reason, stopLoss, signalStrength: _ccStrength, ...indicators } = strategy.getSignal(tradeState.candles);
 
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
@@ -1033,6 +1041,22 @@ async function onCandleClose(candle) {
   const _vixDisplay = vixFilter.VIX_ENABLED ? getCachedVix() : null;
   log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
+  if (signal === "NONE" && !tradeState.position) {
+    logNearMiss(indicators.filterAudit, "LIVE", log);
+    skipLogger.appendSkipLog("swing", {
+      gate: "strategy",
+      reason: reason || null,
+      spot: candle.close,
+      ema9: indicators.ema9 ?? null,
+      ema9Slope: indicators.ema9Slope ?? null,
+      rsi: indicators.rsi ?? null,
+      sar: indicators.sar ?? null,
+      sarTrend: indicators.sarTrend ?? null,
+      adx: indicators.adx ?? null,
+      audit: indicators.filterAudit || null,
+    });
+  }
+
   // Telegram: candle close signal update (only when flat — no position open)
   // Tells you exactly why a trade was/wasn't taken every 15 min candle
   if (!tradeState.position && signal !== null) {
@@ -1041,6 +1065,7 @@ async function onCandleClose(candle) {
       mode: "LIVE",
       signal,
       reason: reason ? reason.slice(0, 200) : "—",
+      strength: _ccStrength,
       spot: candle.close,
       time: _candleIST,
     });
@@ -1147,10 +1172,27 @@ async function onCandleClose(candle) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
       return;
     }
+    if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
+      const resumeTime = new Date(tradeState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+      log(`⏸ [LIVE] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
+      return;
+    }
+    if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
+      log(`🚫 [LIVE] Daily max trades reached — candle-close entry blocked (${signal})`);
+      return;
+    }
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
     const _vixCheck = await checkLiveVix(_ccStrength || "MARGINAL");
     if (!_vixCheck.allowed) {
       log(`🌡️ [LIVE] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
+      skipLogger.appendSkipLog("swing", {
+        gate: "vix",
+        reason: _vixCheck.reason || null,
+        spot: candle.close,
+        signalStrength: _ccStrength || "MARGINAL",
+        signal,
+        path: "candle-close",
+      });
       return;
     }
     const side = signal === "BUY_CE" ? "CE" : "PE";
@@ -1208,6 +1250,16 @@ async function onCandleClose(candle) {
         const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
         if (!_sp.ok) {
           log(`⏭️ [LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+          skipLogger.appendSkipLog("swing", {
+            gate: "spread",
+            reason: _sp.reason || null,
+            spot: candle.close,
+            side,
+            symbol,
+            bid: _q && _q.bid,
+            ask: _q && _q.ask,
+            path: "candle-close",
+          });
           tradeState._entryPending = false;
           clearTimeout(_ltEntryTimer);
           return;
@@ -1254,6 +1306,12 @@ async function onCandleClose(candle) {
       const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
       const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
 
+      // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+      const _entryIstMin     = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+      const _entryHourIST    = Math.floor(_entryIstMin / 60);
+      const _entryMinuteIST  = _entryIstMin % 60;
+      const _vixAtEntry      = getCachedVix();
+
       tradeState.position = {
         side,
         symbol,
@@ -1279,6 +1337,11 @@ async function onCandleClose(candle) {
         optionEntryLtp:    null,
         optionCurrentLtp:  null,
         optionEntryLtpTime: null,
+        // Data-collection fields — surfaced on the trade record at exit
+        signalStrength:    _ccStrength || null,
+        vixAtEntry:        _vixAtEntry,
+        entryHourIST:      _entryHourIST,
+        entryMinuteIST:    _entryMinuteIST,
       };
 
       tradeState.optionSymbol = symbol;
@@ -1434,6 +1497,15 @@ function onSpotTick(tick) {
         if (!tradeState._vixBlockLoggedCandle || tradeState._vixBlockLoggedCandle !== _currentBarTime) {
           tradeState._vixBlockLoggedCandle = _currentBarTime;
           log(`🌡️ [LIVE] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+          skipLogger.appendSkipLog("swing", {
+            gate: "vix",
+            reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
+            spot: ltp,
+            vix: _vixIntraVal,
+            signalStrength,
+            signal,
+            path: "intra-candle",
+          });
         }
       } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
@@ -1494,6 +1566,16 @@ function onSpotTick(tick) {
           const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
           if (!_sp.ok) {
             log(`⏭️ [LIVE] SKIP intra-tick entry — spread too wide (${_sp.reason})`);
+            skipLogger.appendSkipLog("swing", {
+              gate: "spread",
+              reason: _sp.reason || null,
+              spot: ltp,
+              side,
+              symbol,
+              bid: _q && _q.bid,
+              ask: _q && _q.ask,
+              path: "intra-candle",
+            });
             tradeState._entryPending = false;
             clearTimeout(_ltIntraTimer);
             return;
@@ -1536,6 +1618,12 @@ function onSpotTick(tick) {
         const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
         const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
 
+        // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+        const _entryIstMinIntra    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+        const _entryHourISTIntra   = Math.floor(_entryIstMinIntra / 60);
+        const _entryMinuteISTIntra = _entryIstMinIntra % 60;
+        const _vixAtEntryIntra     = _vixIntraVal != null ? _vixIntraVal : getCachedVix();
+
         tradeState.position = {
           side,
           symbol,
@@ -1559,6 +1647,11 @@ function onSpotTick(tick) {
           optionEntryLtp:    null,
           optionCurrentLtp:  null,
           optionEntryLtpTime: null,
+          // Data-collection fields — surfaced on the trade record at exit
+          signalStrength:    signalStrength || null,
+          vixAtEntry:        _vixAtEntryIntra,
+          entryHourIST:      _entryHourISTIntra,
+          entryMinuteIST:    _entryMinuteISTIntra,
         };
 
         tradeState.optionSymbol = symbol;

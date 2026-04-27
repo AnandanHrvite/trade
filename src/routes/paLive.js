@@ -387,7 +387,8 @@ async function squareOff(exitPrice, reason) {
   _squareOffInFlight = true;
 
   const { symbol, qty, side, entryPrice, entryTime, spotAtEntry,
-          optionEntryLtp, optionCurrentLtp } = state.position;
+          optionEntryLtp, optionCurrentLtp,
+          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
@@ -453,6 +454,11 @@ async function squareOff(exitPrice, reason) {
     entryReason: state.position ? (state.position.reason || "") : "",
     entryBarTime: state.position ? (state.position.entryBarTime || null) : null,
     exitBarTime:  state.currentBar ? state.currentBar.time : null,
+    // Data-collection fields (captured at entry)
+    signalStrength: signalStrength   || null,
+    vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
+    entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
@@ -817,6 +823,12 @@ async function resolveAndEnter(side, spot, result) {
     const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
     const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
 
+    // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+    const _entryIstMin    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+    const _entryHourIST   = Math.floor(_entryIstMin / 60);
+    const _entryMinuteIST = _entryIstMin % 60;
+    const _vixAtEntry     = getCachedVix();
+
     state.position = {
       side,
       symbol,
@@ -841,6 +853,11 @@ async function resolveAndEnter(side, spot, result) {
       optionCurrentLtp: null,
       optionEntryLtpTime: null,
       entryBarTime:     state.currentBar ? state.currentBar.time : null,
+      // Data-collection fields — surfaced on the trade record at exit
+      signalStrength:   result.signalStrength || null,
+      vixAtEntry:       _vixAtEntry,
+      entryHourIST:     _entryHourIST,
+      entryMinuteIST:   _entryMinuteIST,
     };
 
     state.optionSymbol = symbol;

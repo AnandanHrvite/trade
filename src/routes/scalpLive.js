@@ -36,6 +36,8 @@ const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { saveScalpPosition, clearScalpPosition } = require("../utils/positionPersist");
+const { logNearMiss } = require("../utils/nearMissLog");
+const skipLogger = require("../utils/skipLogger");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_LIVE";
@@ -50,6 +52,7 @@ const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
 // Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
 // Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
@@ -382,7 +385,8 @@ async function squareOff(exitPrice, reason) {
   _squareOffInFlight = true;
 
   const { symbol, qty, side, entryPrice, entryTime, spotAtEntry,
-          optionEntryLtp, optionCurrentLtp } = state.position;
+          optionEntryLtp, optionCurrentLtp,
+          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
@@ -448,6 +452,11 @@ async function squareOff(exitPrice, reason) {
     entryReason: state.position ? (state.position.reason || "") : "",
     entryBarTime: state.position ? (state.position.entryBarTime || null) : null,
     exitBarTime:  state.currentBar ? state.currentBar.time : null,
+    // Data-collection fields (captured at entry)
+    signalStrength: signalStrength   || null,
+    vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
+    entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
+    entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
@@ -591,15 +600,21 @@ function onTick(tick) {
     }
 
     // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
+    //    Grace period: skip trail-exit in first N secs (prevents first-tick spike kills)
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      let _pct = _SCALP_TRAIL_PCT;
-      for (const tier of _SCALP_TRAIL_TIERS) {
-        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-      }
-      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-      if (curPnl <= trailFloor) {
-        squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
-        return;
+      const _ageSecs = pos.entryTimeMs ? (Date.now() - pos.entryTimeMs) / 1000 : Infinity;
+      if (_SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS) {
+        // Trail suppressed during grace window — SL still active above
+      } else {
+        let _pct = _SCALP_TRAIL_PCT;
+        for (const tier of _SCALP_TRAIL_TIERS) {
+          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+        }
+        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+        if (curPnl <= trailFloor) {
+          squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+          return;
+        }
       }
     }
 
@@ -689,6 +704,17 @@ async function onCandleClose(bar) {
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
     log(`⏭️ [SCALP-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    logNearMiss(result.filterAudit, "SCALP-LIVE", log);
+    skipLogger.appendSkipLog("scalp", {
+      gate: "strategy",
+      reason: result.reason || null,
+      spot: lastBar.close,
+      bbLower: result.bbLower ?? null,
+      bbUpper: result.bbUpper ?? null,
+      rsi: result.rsi ?? null,
+      sar: result.sar ?? null,
+      audit: result.filterAudit || null,
+    });
     const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     notifySignal({
       mode: "SCALP-LIVE",
@@ -704,7 +730,17 @@ async function onCandleClose(bar) {
   if (process.env.SCALP_VIX_ENABLED === "true") {
     const _strength = deriveScalpStrength(result);
     const _vixCheck = await checkLiveVix(_strength, { mode: "scalp" });
-    if (!_vixCheck.allowed) { log(`⏭️ [SCALP-LIVE] SKIP: ${_vixCheck.reason}`); return; }
+    if (!_vixCheck.allowed) {
+      log(`⏭️ [SCALP-LIVE] SKIP: ${_vixCheck.reason}`);
+      skipLogger.appendSkipLog("scalp", {
+        gate: "vix",
+        reason: _vixCheck.reason || null,
+        spot: bar.close,
+        signalStrength: _strength,
+        side: result.signal === "BUY_CE" ? "CE" : "PE",
+      });
+      return;
+    }
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -755,6 +791,15 @@ async function resolveAndEnter(side, spot, result) {
       const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
       if (!_sp.ok) {
         log(`⏭️ [SCALP-LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+        skipLogger.appendSkipLog("scalp", {
+          gate: "spread",
+          reason: _sp.reason || null,
+          spot,
+          side,
+          symbol,
+          bid: _q && _q.bid,
+          ask: _q && _q.ask,
+        });
         return;
       }
     }
@@ -773,6 +818,13 @@ async function resolveAndEnter(side, spot, result) {
     const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
     const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
 
+    // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
+    const _entryIstMin    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+    const _entryHourIST   = Math.floor(_entryIstMin / 60);
+    const _entryMinuteIST = _entryIstMin % 60;
+    const _vixAtEntry     = getCachedVix();
+    const _signalStrength = deriveScalpStrength(result);
+
     state.position = {
       side,
       symbol,
@@ -780,6 +832,7 @@ async function resolveAndEnter(side, spot, result) {
       entryPrice:       spot,
       spotAtEntry:      spot,
       entryTime:        istNow(),
+      entryTimeMs:      Date.now(),
       reason:           result.reason,
       stopLoss:         clampedSL,
       initialStopLoss:  clampedSL,
@@ -797,6 +850,11 @@ async function resolveAndEnter(side, spot, result) {
       optionCurrentLtp: null,
       optionEntryLtpTime: null,
       entryBarTime:     state.currentBar ? state.currentBar.time : null,
+      // Data-collection fields — surfaced on the trade record at exit
+      signalStrength:   _signalStrength,
+      vixAtEntry:       _vixAtEntry,
+      entryHourIST:     _entryHourIST,
+      entryMinuteIST:   _entryMinuteIST,
     };
 
     state.optionSymbol = symbol;
