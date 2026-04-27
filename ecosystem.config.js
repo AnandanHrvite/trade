@@ -13,6 +13,11 @@ module.exports = {
       autorestart: true,
       restart_delay: 5000,
       kill_timeout: 8000,
+      // Exit code 10 = our "config error, do not restart" sentinel (see
+      // app.js EXIT_CONFIG_ERROR). Prevents PM2 from crash-looping the bot
+      // — and spamming Telegram — when something like missing SSL certs
+      // or a malformed .env makes startup impossible until manually fixed.
+      stop_exit_codes: [10],
       env: {
         NODE_ENV: "production",
         UV_THREADPOOL_SIZE: "2",

@@ -1690,8 +1690,14 @@ process.on("uncaughtException", (err) => {
 });
 
 // Abnormal exit (non-zero, non-signal). SIGTERM/SIGINT are handled by gracefulShutdown.
+// `plannedExit = true` marks intentional process.exit(...) (config errors, etc.)
+// so the handler doesn't fire a misleading "crash" telegram. Exit code 10 is
+// our sentinel for "config error — do not restart" (see ecosystem.config.js
+// `stop_exit_codes: [10]`).
+const EXIT_CONFIG_ERROR = 10;
+let plannedExit = false;
 process.on("exit", (code) => {
-  if (code !== 0) {
+  if (code !== 0 && !plannedExit) {
     writeCrashMarker("exit", new Error(`process exit code=${code}`));
     try { sendTelegramSync(`⚠️ PROCESS EXIT\ncode=${code} uptime=${Math.floor(process.uptime())}s`); } catch (_) {}
   }
@@ -1754,10 +1760,13 @@ try {
     cert: fs.readFileSync("./certs/cert.pem"),
   };
 } catch (e) {
-  console.error("\n❌  SSL certificates not found. Generate them on EC2:\n");
+  const cmd = `openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 3650 -nodes -subj "/CN=${EC2_IP}"`;
+  console.error("\n❌  SSL certificates not found. Generate them:\n");
   console.error("    mkdir -p certs");
-  console.error(`    openssl req -x509 -newkey rsa:4096 -keyout certs/key.pem -out certs/cert.pem -days 3650 -nodes -subj "/CN=${EC2_IP}"\n`);
-  process.exit(1);
+  console.error(`    ${cmd}\n`);
+  try { sendTelegramSync(`🔧 STARTUP ABORTED — SSL certs missing\nReason: ${truncate(e.message, 200)}\n\nFix:\nmkdir -p certs && ${cmd}`); } catch (_) {}
+  plannedExit = true;
+  process.exit(EXIT_CONFIG_ERROR);
 }
 
 const server = https.createServer(sslOptions, app);
