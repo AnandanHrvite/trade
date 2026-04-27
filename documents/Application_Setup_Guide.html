@@ -484,8 +484,8 @@
   <h1>Application Setup &amp; Configuration Guide</h1>
   <p class="subtitle">Palani Andawar Trading System &mdash; Complete Registration &amp; Secrets Reference</p>
   <div class="meta">
-    <span><span class="badge badge-blue">v4.2.0</span></span>
-    <span>Generated: 2026-04-20</span>
+    <span><span class="badge badge-blue">v4.4.0</span></span>
+    <span>Generated: 2026-04-27</span>
     <span>NIFTY Options Algo Trading &mdash; Swing + Scalp + Price Action</span>
   </div>
 </header>
@@ -496,7 +496,7 @@
 <nav class="toc">
   <h2>&#9776; Table of Contents</h2>
   <ol>
-    <li><a href="#whatsnew">What's New in v4.2.0</a></li>
+    <li><a href="#whatsnew">What's New in v4.4.0</a></li>
     <li><a href="#architecture">System Architecture Overview</a></li>
     <li><a href="#modes">Trading Modes &mdash; Backtest, Paper, Live</a></li>
     <li><a href="#fyers">Fyers API Registration</a></li>
@@ -513,10 +513,29 @@
 <div class="container">
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.2.0                                     -->
+<!-- 0. WHAT'S NEW IN v4.4.0                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue" id="whatsnew">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.3.0 (2026-04-24)</h2>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.4.0 (2026-04-27)</h2>
+  <p>Hybrid initial SL cap for Swing, one-click <em>Sync to Local</em> for the EC2 trading-data directory, paper-history restore from append-only JSONL, and a paper-parity sweep across all 3 live engines. Setup is unchanged from v4.3.0; new env vars and routes are listed below.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Swing hybrid initial SL cap</strong> &mdash; new env knobs <code>SWING_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>SWING_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>SWING_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL now takes the tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code> floored at <code>MIN_PTS</code>. Wired into Swing Paper + Swing Live; backtest is intentionally untouched during the paper-data-collection window. New trade-record field <code>sarStopLoss</code> preserves raw SAR distance for analysis.</li>
+    <li><strong>One-click "Sync to Local"</strong> &mdash; Dashboard button hits <code>/sync/info</code> (size preview) then streams <code>/sync/download-all</code> (a <code>tar.gz</code> of <code>~/trading-data/</code>) to the browser. Server &rarr; client only; no upload path. Mirror EC2 trade data without SSH.</li>
+    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /{swing|scalp|pa}-paper/history/restore</code> rebuilds a deleted session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
+    <li><strong>Live paper-parity sweep</strong> &mdash; <code>swingLive</code> gains <code>pauseUntil</code>/<code>MAX_DAILY_TRADES</code> guards on candle-close path; <code>scalpLive</code> ports <code>SCALP_TRAIL_GRACE_SECS</code>; <code>paLive</code> mirrors PA Paper's audit + skip-log wiring (sharing the same JSONL skip file as PA Paper). All three now capture <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surface them on exit.</li>
+    <li><strong>Settings cleanup</strong> &mdash; UI was drifting from code: <code>BACKTEST_GAMMA</code>, <code>ZERODHA_REDIRECT_URL</code> removed (no readers); <code>PA_ENABLED</code>, <code>PA_OPT_STOP_PCT</code>, <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>, <code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code> added. <code>BACKTEST_FROM/TO/GAMMA</code> removed from <code>IMMEDIATE_KEYS</code>. Two unimported legacy scalp strategies deleted.</li>
+    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from the Swing section into <strong>Common &mdash; Instrument</strong> in the Settings UI (read by <code>src/config/instrument.js</code> for all 3 engines). Pure UI move; keys + <code>.env</code> + <code>IMMEDIATE_KEYS</code> classification unchanged.</li>
+    <li><strong>Consolidation date normalization</strong> &mdash; session date on <code>/consolidation</code> normalized to <code>YYYY-MM-DD</code> so daily/monthly/yearly roll-ups stay consistent across older sessions stored in mixed formats.</li>
+    <li><strong>SSL-cert failure hardening at startup</strong> &mdash; on missing/invalid <code>certs/cert.pem</code>/<code>key.pem</code>, bootstrap now clears the Telegram crash-marker and skips non-restart code so a misconfigured cert no longer triggers a phantom "recovered from crash" alert.</li>
+    <li><strong>Misc swing-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/Scalp); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.3.0                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section blue">
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, per-module dashboard, trade guards, audit trails. Setup is unchanged from v4.2.0; new env vars and routes are listed below and reflected in the rest of this guide.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (Swing + Scalp + PA Live), parity with <code>/consolidation</code>.</li>
@@ -536,7 +555,7 @@
 </section>
 
 <section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.2.0 Highlights (2026-04-20)</h2>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0b. v4.2.0 Highlights (2026-04-20)</h2>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode paper trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
     <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (Swing / Scalp / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
@@ -1179,6 +1198,18 @@
     </tbody>
   </table>
 
+  <h4>Hybrid Initial SL Cap <span style="font-size:0.7em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.4.0</span></h4>
+  <p style="margin:6px 0 10px 0; color:var(--accent-orange);">Initial SL = tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code>, floored at <code>MIN_PTS</code>. Wired into Swing Paper + Swing Live; backtest is intentionally untouched during the paper-data-collection window.</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SWING_USE_PREV_CANDLE_SL</code></td><td><code>true</code></td><td>Include prev-candle low/high (structural) in the min-of stack</td></tr>
+      <tr><td><code>SWING_MAX_INITIAL_SL_PTS</code></td><td><code>50</code></td><td>Hard cap on initial SL distance &mdash; binds when SAR-only would be wider</td></tr>
+      <tr><td><code>SWING_MIN_INITIAL_SL_PTS</code></td><td><code>15</code></td><td>Floor for initial SL distance &mdash; prevents suicide-tight SLs on doji bars</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:6px 0 12px 0;"><code>TRAIL_ACTIVATE_PTS</code> is rescaled to the capped SL gap so the env knob actually binds. New trade-record field <code>sarStopLoss</code> preserves the raw SAR distance for analysis.</p>
+
   <h4>3-Tier Trailing Stop Loss</h4>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
@@ -1563,7 +1594,7 @@
 <!-- FOOTER                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <footer class="page-footer">
-  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.3.0 &nbsp;|&nbsp; 2026-04-24
+  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.4.0 &nbsp;|&nbsp; 2026-04-27
 </footer>
 
 </body>

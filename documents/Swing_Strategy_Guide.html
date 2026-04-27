@@ -426,10 +426,10 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>SWING STRATEGY</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.3.0</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.4.0</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-04-24 &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-04-27 &nbsp;|&nbsp;
     <strong>Timeframe:</strong> 15-minute &nbsp;|&nbsp;
     <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
     <strong>Route:</strong> <code>/swing-*</code>
@@ -437,7 +437,7 @@
 
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew"><span class="num">00</span> What's New in v4.3.0</a>
+    <a href="#whatsnew"><span class="num">00</span> What's New in v4.4.0</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -462,11 +462,31 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.2.0                                                -->
+<!-- 0. WHAT'S NEW IN v4.4.0                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew">
-  <h2>00 &mdash; What's New in v4.3.0 (2026-04-24)</h2>
-  <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
+  <h2>00 &mdash; What's New in v4.4.0 (2026-04-27)</h2>
+  <p>Hybrid initial SL cap, paper-history Restore from append-only JSONL, and a paper-parity sweep into Swing Live (skip-log/near-miss wiring + daily-trades guard on candle-close). The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong>Hybrid initial SL cap</strong> &mdash; new env knobs <code>SWING_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>SWING_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>SWING_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL = tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code>, floored at <code>MIN_PTS</code> to avoid suicide-tight SLs on doji bars. Wired into <strong>both</strong> Swing Paper and Swing Live (candle-close + intra-candle paths). Backtest is intentionally untouched during the paper-data-collection window.</li>
+      <li><strong>Trail activation rescaled</strong> &mdash; <code>TRAIL_ACTIVATE_PTS</code> now scales with the capped SL gap so the env knob actually binds (previously it could be dwarfed by 100&ndash;130 pt SAR-only stops).</li>
+      <li><strong>New trade-record field <code>sarStopLoss</code></strong> &mdash; preserves the raw SAR distance at entry so paper-vs-live and paper-vs-historical analyses can compare against the pre-cap value.</li>
+      <li><strong>Live paper-parity</strong> &mdash; Swing Live's candle-close entry path now has the same <code>pauseUntil</code> + <code>MAX_DAILY_TRADES</code> guards as the intra-candle path (and as paper). <code>skipLogger</code> + <code>logNearMiss</code> are wired across the signal=NONE / VIX / spread blocks. Trade record now captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on exit &mdash; same schema as Swing Paper.</li>
+      <li><strong>Paper-history Restore</strong> &mdash; <code>POST /swing-paper/history/restore</code> replays the daily JSONL trade log for an IST date and rebuilds any session deleted via the UI. Idempotent (re-running on a fully-present date returns "Nothing to restore"); refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
+      <li><strong>Sync to Local</strong> &mdash; Dashboard button now streams <code>~/trading-data/</code> as a <code>tar.gz</code> to the browser (<code>/sync/info</code> + <code>/sync/download-all</code>), so you can pull Swing Live + Paper trade logs off EC2 without SSH.</li>
+      <li><strong>Settings UI</strong> exposes the 3 swing SL knobs in the Swing section so SAVE ALL writes them straight to <code>.env</code>.</li>
+      <li><strong>Misc swing-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/Scalp); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.3.0                                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <h2>00a &mdash; v4.3.0 Highlights (2026-04-24)</h2>
+  <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remained unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history with Day View and per-mode breakdown; mirrors the existing paper-side <code>/consolidation</code>.</li>
@@ -486,7 +506,7 @@
 </div>
 
 <div class="section page-break">
-  <h2>00a &mdash; v4.2.0 Highlights (2026-04-20)</h2>
+  <h2>00b &mdash; v4.2.0 Highlights (2026-04-20)</h2>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
@@ -1671,6 +1691,50 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 13a. HYBRID INITIAL SL CAP (v4.4.0)                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <h2>13a &mdash; Hybrid Initial SL Cap <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.4.0</span></h2>
+
+  <p>Initial SL on Swing was historically <strong>SAR-based only</strong> &mdash; on young trends the SAR can sit 100&ndash;130 pts away, so a single losing trade could wipe out multiple winners. v4.4.0 adds a per-trade hybrid cap that picks the <em>tightest</em> structurally-justified SL and floors it so it can't go suicide-tight on doji bars.</p>
+
+  <div class="card">
+    <h3>Computation</h3>
+    <pre style="background:rgba(0,0,0,0.25);padding:14px;border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:0.9rem;line-height:1.55;overflow-x:auto;">
+<span style="color:#79c0ff;">candidates</span> = [
+   sarStopLoss,                             <span style="color:#8b949e;">// raw SAR (preserved on trade record)</span>
+   prev-candle low/high <em>(if</em> SWING_USE_PREV_CANDLE_SL <em>)</em>,
+   entry &plusmn; SWING_MAX_INITIAL_SL_PTS         <span style="color:#8b949e;">// hard cap</span>
+]
+
+<span style="color:#79c0ff;">stopLoss</span>   = tightest of candidates  <span style="color:#8b949e;">// min for CE, max for PE</span>
+<span style="color:#79c0ff;">stopLoss</span>   = floor at entry &plusmn; SWING_MIN_INITIAL_SL_PTS</pre>
+  </div>
+
+  <div class="card">
+    <h3>Configuration</h3>
+    <table>
+      <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>SWING_USE_PREV_CANDLE_SL</code></td><td><code>true</code></td><td>Include prev-candle structural low/high in the min-of stack</td></tr>
+        <tr><td><code>SWING_MAX_INITIAL_SL_PTS</code></td><td><code>50</code></td><td>Hard cap on initial SL distance &mdash; binds when SAR alone would be wider</td></tr>
+        <tr><td><code>SWING_MIN_INITIAL_SL_PTS</code></td><td><code>15</code></td><td>Floor for initial SL distance &mdash; protects against suicide-tight SLs on doji bars</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Side-Effects</h3>
+    <ul style="padding-left:22px;line-height:1.85;">
+      <li><strong>Trail activation rescaled.</strong> <code>TRAIL_ACTIVATE_PTS</code> previously could be dwarfed by a wide SAR-only SL. With the cap binding, the trail-activation knob actually controls when the 3-tier trailer engages.</li>
+      <li><strong>New trade-record field <code>sarStopLoss</code></strong> preserves the raw SAR distance at entry, so paper-vs-live and paper-vs-historical analyses can compare against the pre-cap value.</li>
+      <li><strong>Wired into Swing Paper + Swing Live</strong> on both candle-close and intra-candle entry paths via the shared <code>_applyInitialSLCap()</code> helper. Backtest is intentionally untouched during the paper-trade data-collection window so historical baseline stays comparable.</li>
+      <li><strong>Settings UI.</strong> All 3 knobs are exposed in the Swing section; SAVE ALL writes them straight to <code>.env</code>.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 14. VIX MARKET REGIME FILTER                                          -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="s14">
@@ -2061,8 +2125,8 @@
 <!-- ── Footer ──────────────────────────────────────────────────────────── -->
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
-  <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.3.0</div>
-  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-24</div>
+  <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.0</div>
+  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-27</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 

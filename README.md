@@ -57,12 +57,14 @@ Backtests run in the background (one at a time) and never block live/paper modes
 - **Cumulative P&L card** with a Paper/Live toggle that swaps the data source feeding the per-module charts.
 - **Side-by-side broker rows** (Fyers + Zerodha on one row).
 - **Hover-only date labels** on charts (x-axis decluttered).
+- **Sync to Local button** — one click streams `~/trading-data/` as a `tar.gz` to the browser (server → client only). Lets you mirror the EC2 host's persistent data without SSH.
 
 ## Strategies
 
 ### Strategy 1: Swing — SAR + EMA9 + RSI (15-min)
 - **Entry**: EMA9 OHLC4 touch + SAR positioning + RSI momentum + ADX trend + EMA slope
 - **Filters**: ADX chop filter (skip low-ADX), RSI overbought/oversold caps, VIX regime, EMA30 trend gate (optional), body >= 10pt, SAR gap >= 55pt
+- **Initial SL (hybrid cap)**: Tightest of `[SAR, prev-candle structural, entry ± SWING_MAX_INITIAL_SL_PTS]`, floored at `SWING_MIN_INITIAL_SL_PTS` to avoid suicide-tight SLs on doji bars. Trail activation rescales with the capped gap. Wired into Swing Paper + Swing Live.
 - **Exit**: Tiered trailing SL (T1/T2/T3) + 50% candle rule + opposite signal + EOD
 - **Logic 3 override**: Captures lagging-SAR CE entries that classic logic misses
 
@@ -167,9 +169,14 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `SWING_LIVE_ENABLED` | `false` | Must be `true` for Zerodha orders |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `EMA30_FILTER` | `true` | Medium-term trend gate |
+| `SWING_USE_PREV_CANDLE_SL` | `true` | Hybrid initial SL — include prev-candle structural in min-of stack |
+| `SWING_MAX_INITIAL_SL_PTS` | `50` | Hard cap on initial SL distance (pts) — binds when SAR-only would be wider |
+| `SWING_MIN_INITIAL_SL_PTS` | `15` | Floor for initial SL distance (pts) — protects against suicide-tight SLs |
 | `TRADE_ENTRY_START` | `09:30` | Earliest entry time (IST) |
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |
+
+> `EXPIRY_OVERRIDE` and `EXPIRY_TYPE` live under **Common — Instrument** in Settings (read by `src/config/instrument.js` for all 3 engines).
 
 ### Scalp Mode (5-min, Fyers)
 | Key | Default | Notes |
@@ -337,6 +344,9 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `/api/expiry-dates` | NIFTY weekly/monthly expiry calendar |
 | `/api/cache-info` | Candle cache stats |
 | `/auth/status/all` | Combined broker auth status |
+| `/sync/info` | Size preview of `~/trading-data/` (used by Sync to Local button) |
+| `/sync/download-all` | Streams `~/trading-data/` as a `tar.gz` (server → client) |
+| `POST /{swing|scalp|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
 
 ## Project Structure
 
@@ -368,6 +378,7 @@ src/
     manualTracker.js                  # Manual position tracker + SL trailer
     consolidation.js                  # Cross-mode PAPER trade history + Day View + analytics
     liveConsolidation.js              # Cross-mode LIVE trade history + analytics (parity with /consolidation)
+    sync.js                           # /sync/info + /sync/download-all (tar.gz of ~/trading-data/)
     pnlHistory.js                     # Broker baselines + live-bot P&L by FY
     compare.js                        # Paper vs Backtest comparison pages
     settings.js                       # Settings UI + Bulk Edit modal (paste/delete keys) + restart endpoint

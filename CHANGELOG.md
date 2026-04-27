@@ -4,6 +4,62 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.4.0 — Hybrid Initial SL Cap, Sync to Local, Restore Sessions, Live Paper-Parity (2026-04-27)
+
+### Swing — Hybrid Initial SL Cap
+
+- **`SWING_USE_PREV_CANDLE_SL`** (default `true`), **`SWING_MAX_INITIAL_SL_PTS`** (default `50`), **`SWING_MIN_INITIAL_SL_PTS`** (default `15`).
+- Initial SL was previously always SAR-based (typically 100–130 pts wide on young trends), so a single losing trade could wipe out multiple winners. New logic in `_applyInitialSLCap()` takes the tightest of `[SAR, prev-candle structural low/high, entry ± MAX_PTS]` then floors at `MIN_PTS` to avoid suicide-tight SLs on doji bars.
+- **Trail activation rescaled** — `TRAIL_ACTIVATE_PTS` now scales with the capped SL gap, so the env knob actually binds.
+- **Wired into both Swing Paper and Swing Live** (`src/routes/swingPaper.js`, `src/routes/swingLive.js`); candle-close + intra-candle entry paths both go through the cap. Backtest is intentionally untouched during the paper-trade data-collection window.
+- **Settings UI** exposes all 3 knobs in the Swing section.
+- New trade-record field `sarStopLoss` preserves the raw SAR distance for paper-vs-live + paper-vs-historical analysis.
+
+### Live — Paper-Parity Sweep
+
+- **`/swing-live`** — adds `pauseUntil` + `MAX_DAILY_TRADES` guards on the candle-close entry path (intra-candle path already had them); wires `skipLogger` + `logNearMiss` across signal=NONE / VIX / spread blocks (both candle-close + intra-candle); adds `strength` to `notifySignal` payload.
+- **`/scalp-live`** — ports `SCALP_TRAIL_GRACE_SECS` so first-tick noise spikes don't kill trades (matches paper); adds `entryTimeMs`; wires `skipLogger` + `logNearMiss` across the same gates.
+- **`/pa-live`** — mirrors PA Paper's audit and skip-log wiring (strategy / VIX / spread gates), sharing the same `pa_paper_skips_*.jsonl` file as PA Paper.
+- All three live engines now capture `signalStrength`, `vixAtEntry`, `entryHourIST`, `entryMinuteIST` at entry and surface them on the trade record at exit — feeding the active paper-trade data-collection schema.
+- **Pure additive logging on PA strategy** — `result.filterAudit` (CE/PE × RSI / ADX / SR / Pattern) is populated on the no-signal path so JSONL skip logs capture *why* each bar produced no signal. `nearMissLog` now emits "🎯 NEAR-MISS" lines when a bar misses by exactly one filter. No threshold, pattern, RSI/ADX/SL, or signal logic changed.
+
+### Dashboard — One-Click "Sync to Local"
+
+- **`/sync/info`** + **`/sync/download-all`** — a Dashboard button now streams a `tar.gz` of `~/trading-data/` to the browser so the EC2 host's persistent trade data can be mirrored locally without SSH.
+- Direction is **server → client only** (no upload path). Useful for local replay, off-EC2 backups, and cross-checking JSONL trade logs.
+
+### Paper History — Restore Deleted Sessions
+
+- **Restore button** next to each row in the Daily Data Files table on all 3 paper history pages (Swing / Scalp / PA). Reads the daily JSONL for that IST date, dedupes trades against any sessions already present (by `entryBarTime` / `entryTime`), and rebuilds a session containing only the missing trades.
+- Works because JSONL trade logs are append-only and untouched by Delete Session — recovered sessions are tagged `restoredFromJsonl: true`.
+- **Idempotent** — re-running on a fully-present date returns "Nothing to restore." Endpoints refuse while paper is running (mirrors the delete handler).
+- Backed by new helper `readDailyTrades(mode, date)` in `src/utils/tradeLogger.js`.
+
+### Settings — Schema Cleanup + Re-grouping
+
+- **Drift fixed** — settings UI was diverging from code: a few schema fields had no readers, several env vars used in code had no UI, and two unimported scalp strategies still lingered in `src/strategies/`.
+- Removed: `BACKTEST_GAMMA`, `ZERODHA_REDIRECT_URL` (no readers).
+- Added: `PA_ENABLED`, `PA_OPT_STOP_PCT`, `GAP_THRESHOLD_PTS`, `LTP_STALE_FALLBACK_SEC`, `MAX_BID_ASK_SPREAD_PTS`, `TIME_STOP_CANDLES`, `TIME_STOP_FLAT_PTS` (now editable via UI).
+- Removed from `IMMEDIATE_KEYS`: `BACKTEST_FROM`, `BACKTEST_TO`, `BACKTEST_GAMMA`.
+- Deleted unused legacy strategies `src/strategies/scalp_ema9_rsi.js` and `scalp_ema9_rsi_v2.js` (active scalp strategy is `scalp_bb_cpr.js`).
+- **Expiry override moved** from the Swing section to **Common — Instrument** in the Settings UI. Both `EXPIRY_OVERRIDE` and `EXPIRY_TYPE` are read by `src/config/instrument.js` for all 3 engines (Swing / Scalp / PA), so the prior placement under Swing was misleading. Pure UI re-grouping — keys, `.env`, and `IMMEDIATE_KEYS` classification unchanged.
+
+### Consolidation — Date Normalization
+
+- **`/consolidation` session date** normalized to `YYYY-MM-DD` so daily / monthly / yearly roll-ups are consistent across older sessions that previously stored dates in mixed formats. Equity curve and Day View both align on the canonical date format now.
+
+### Startup — SSL-Cert Failure Hardening
+
+- On SSL cert load failure (missing/invalid `certs/cert.pem` or `certs/key.pem`) the bootstrap now clears the Telegram crash-marker and skips the non-restart code path, so a misconfigured cert no longer triggers a phantom "recovered from crash" alert on the next boot.
+
+### Misc UI / Bug Fixes
+
+- **Eye-icon View button** on swing-paper-history rows is now wired through to the trade detail modal (parity with PA / Scalp).
+- **Delete Session** on swing-paper-history now reloads cleanly (toast JS injected on delete) instead of leaving a half-rendered table.
+- **Template-literal `\n` escape fix** on swing-paper-history rendering — long sessions no longer break copy-trade-log generation.
+
+---
+
 ## v4.3.0 — Live Traded History, Per-Module Dashboard, Trade Guards, Audit Trails (2026-04-24)
 
 ### Live Traded History — Cross-Mode Live View

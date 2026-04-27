@@ -371,14 +371,28 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.3.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter</div>
+  <div class="version">Version 4.4.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter</div>
   <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.2.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.4.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.3.0 (2026-04-24)</h2>
+<h2><span class="sec-num">00</span> What's New in v4.4.0 (2026-04-27)</h2>
+<div class="card card-purple">
+  <p>Paper-parity sweep into Scalp Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No scalp signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Scalp Live ports trail-grace</strong> &mdash; <code>SCALP_TRAIL_GRACE_SECS</code> now applies to live as well as paper, so a first-tick noise spike + tiny pullback can no longer kill a live trade in the first few seconds (initial SL still active throughout). Live also gains <code>entryTimeMs</code> on the trade record.</li>
+    <li><strong>Live audit + skip-log wiring</strong> &mdash; <code>scalpLive</code> now wires <code>skipLogger</code> + <code>logNearMiss</code> across the signal=NONE / VIX / spread blocks (matching <code>scalpPaper</code>). Trade record captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on exit &mdash; same schema as Scalp Paper, feeding the active paper-trade data-collection JSONL.</li>
+    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /scalp-paper/history/restore</code> rebuilds a deleted Scalp session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>. New helper <code>readDailyTrades("scalp", date)</code> in <code>src/utils/tradeLogger.js</code>.</li>
+    <li><strong>Sync to Local</strong> &mdash; Dashboard button now streams <code>~/trading-data/</code> as a <code>tar.gz</code> (<code>/sync/info</code> + <code>/sync/download-all</code>), so Scalp paper + live trade logs and the active-position file can be mirrored locally without SSH.</li>
+    <li><strong>Settings cleanup</strong> &mdash; two unimported legacy scalp strategies (<code>scalp_ema9_rsi.js</code>, <code>scalp_ema9_rsi_v2.js</code>) deleted; the active scalp strategy stays <code>scalp_bb_cpr.js</code>. Settings UI now also exposes the shared trade-guards keys (<code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code>) plus <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>.</li>
+    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from Swing into <strong>Common &mdash; Instrument</strong>. They've always been read by all 3 engines (including Scalp); just a clearer placement.</li>
+    <li><strong>Consolidation date normalized</strong> to <code>YYYY-MM-DD</code> &mdash; older Scalp sessions now line up correctly on <code>/consolidation</code> daily/monthly/yearly roll-ups.</li>
+  </ul>
+</div>
+
+<h2><span class="sec-num">00a</span> v4.3.0 Highlights (2026-04-24)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
@@ -386,14 +400,14 @@
     <li><strong>Trade guards (shared)</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads; <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>) auto-exits trades stuck flat (theta-bleed guard).</li>
     <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /scalp-live/reset</code> (Reset button on the Scalp Live status page) to clear scalp live history without restarting.</li>
     <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade aggregation including Scalp Live; Day View panel + per-mode breakdown.</li>
-    <li><strong>Per-filter near-miss audit</strong> &mdash; logs every candle that missed entry by exactly one filter (visible in <code>/logs</code>). Use to quantify the cost of each individual scalp filter.</li>
-    <li><strong>Crash-safe JSONL trade log</strong> &mdash; every scalp exit appended to <code>~/trading-data/scalp_paper_trades_log.jsonl</code> + <code>~/trading-data/trades/scalp_paper_trades_YYYY-MM-DD.jsonl</code>. Async, atomic per line.</li>
+    <li><strong>Per-filter near-miss audit</strong> &mdash; logs every candle that missed entry by exactly one filter (visible in <code>/logs</code>).</li>
+    <li><strong>Crash-safe JSONL trade log</strong> &mdash; every scalp exit appended to <code>~/trading-data/scalp_paper_trades_log.jsonl</code> + per-day files in <code>~/trading-data/trades/</code>.</li>
     <li><strong>Per-module dashboard card</strong> for Scalp with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
     <li><strong>Telegram crash + startup-recovery alerts</strong> apply to scalp sessions too.</li>
   </ul>
 </div>
 
-<h2><span class="sec-num">00a</span> v4.2.0 Highlights (2026-04-20)</h2>
+<h2><span class="sec-num">00b</span> v4.2.0 Highlights (2026-04-20)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
@@ -1499,7 +1513,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.3.0 &bull; Generated 2026-04-24<br/>
+    SCALP_BB_RSI_V4 &mdash; Version 4.4.0 &bull; Generated 2026-04-27<br/>
     NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
   </p>
 </div>

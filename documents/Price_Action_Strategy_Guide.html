@@ -214,8 +214,8 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 4.3.0</span>
-      <span>2026-04-24</span>
+      <span>Version 4.4.0</span>
+      <span>2026-04-27</span>
       <span>8 Patterns | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
@@ -237,7 +237,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
-    <a href="#whatsnew">What's New (v4.3.0)</a>
+    <a href="#whatsnew">What's New (v4.4.0)</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
     <a href="#patterns">8 Patterns</a>
@@ -259,31 +259,44 @@ td.pe { color: var(--red); }
 </nav>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.2.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.4.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section id="whatsnew">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">0</span> What's New in v4.3.0 (2026-04-24)</h2>
-      <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remain unchanged.</p>
+      <h2><span class="num">0</span> What's New in v4.4.0 (2026-04-27)</h2>
+      <p>Pure additive logging on the PA strategy + paper-parity sweep into PA Live (audit / skip-log wiring shared with PA Paper). The 8 patterns, S/R detection, RSI confluence, and the v4.3.0 SL tightening (8&ndash;12 pt cap + structural-SL skip + time-stop) remain unchanged.</p>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
-        <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS / Inside-Bar setups whose raw structural SL exceeds 15 pts. Goal: cap loss/trade and let winners run via the existing trail stack.</li>
-        <li><strong>PA time-stop (theta-bleed guard)</strong> &mdash; auto-exit a trade flat for <code>PA_TIME_STOP_CANDLES=3</code> candles within ±<code>PA_TIME_STOP_FLAT_PTS=10</code> pts (overrides shared defaults of <code>4</code>/<code>20</code>).</li>
-        <li><strong>Bid-ask spread guard</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads; fails open if quotes unavailable.</li>
-        <li><strong>Per-module VIX thresholds</strong> &mdash; <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (fall back to <code>VIX_MAX_ENTRY</code>/<code>VIX_STRONG_ONLY</code> when unset).</li>
-        <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live history including PA Live; per-mode breakdown + Day View panel.</li>
-        <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /pa-live/reset</code> (Reset button on PA Live status page).</li>
-        <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs candles missed by exactly one filter; visible in <code>/logs</code>.</li>
-        <li><strong>Crash-safe JSONL trade log</strong> &mdash; <code>~/trading-data/pa_paper_trades_log.jsonl</code> + per-day files in <code>~/trading-data/trades/</code>. Async, atomic.</li>
-        <li><strong>Per-module dashboard card</strong> for PA with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
-        <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; orphan reconciliation against <code>~/trading-data/.active_pa_position.json</code>.</li>
+        <li><strong>PA Live mirrors PA Paper's audit + skip-log wiring</strong> &mdash; <code>src/routes/paLive.js</code> now imports <code>nearMissLog</code> + <code>skipLogger</code> and populates the same three skip gates with structured data (<em>strategy</em> &rarr; spot, pattern, srLevel, RSI, ADX, filterAudit; <em>VIX</em> &rarr; signalStrength + side; <em>spread</em> &rarr; symbol + bid/ask). Live and paper share the same <code>pa_paper_skips_*.jsonl</code> file (same <code>"pa"</code> mode key). <strong>No entry, exit, order-placement, RSI/ADX, SL, or signal logic changed</strong> &mdash; additive logging only.</li>
+        <li><strong>Strategy-layer <code>filterAudit</code> on no-signal path</strong> &mdash; <code>src/strategies/price_action.js</code> now populates structured per-filter pass/fail data (CE/PE &times; RSI/ADX/SR/Pattern) so the JSONL skip log captures <em>why</em> each bar produced no signal instead of opaque "Pattern=none SR=-". <code>nearMissLog</code> emits "🎯 NEAR-MISS" lines when a bar misses by exactly one filter &mdash; useful during the paper-trade data-collection window for surfacing each filter's opportunity cost.</li>
+        <li><strong>Live trade-record schema parity</strong> &mdash; PA Live now captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on the trade record at exit (matching PA Paper).</li>
+        <li><strong>Paper-history Restore</strong> &mdash; <code>POST /pa-paper/history/restore</code> rebuilds a deleted PA session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>. New helper <code>readDailyTrades("pa", date)</code> in <code>src/utils/tradeLogger.js</code>.</li>
+        <li><strong>Sync to Local</strong> &mdash; Dashboard button streams <code>~/trading-data/</code> as a <code>tar.gz</code> (<code>/sync/info</code> + <code>/sync/download-all</code>), so PA paper + live trade logs and the PA active-position file can be mirrored locally without SSH.</li>
+        <li><strong>Settings cleanup</strong> &mdash; <code>PA_ENABLED</code> + <code>PA_OPT_STOP_PCT</code> are now editable via Settings UI; expiry override + type moved from Swing to <strong>Common &mdash; Instrument</strong> (read by <code>src/config/instrument.js</code> for all 3 engines including PA).</li>
+        <li><strong>Consolidation date normalized</strong> to <code>YYYY-MM-DD</code> &mdash; PA sessions in older formats now line up correctly on <code>/consolidation</code> daily/monthly/yearly roll-ups.</li>
       </ul>
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0a</span> v4.2.0 Highlights (2026-04-20)</h2>
+      <h2><span class="num">0a</span> v4.3.0 Highlights (2026-04-24)</h2>
+      <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remained unchanged.</p>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS / Inside-Bar setups whose raw structural SL exceeds 15 pts.</li>
+        <li><strong>PA time-stop (theta-bleed guard)</strong> &mdash; auto-exit a trade flat for <code>PA_TIME_STOP_CANDLES=3</code> candles within ±<code>PA_TIME_STOP_FLAT_PTS=10</code> pts.</li>
+        <li><strong>Bid-ask spread guard</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads.</li>
+        <li><strong>Per-module VIX thresholds</strong> &mdash; <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code>.</li>
+        <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) + <code>POST /pa-live/reset</code>.</li>
+        <li><strong>Per-filter near-miss audit</strong> &mdash; logs candles missed by exactly one filter.</li>
+        <li><strong>Crash-safe JSONL trade log</strong> for PA paper.</li>
+      </ul>
+    </div>
+
+    <div class="section-header" style="margin-top:24px;">
+      <h2><span class="num">0b</span> v4.2.0 Highlights (2026-04-20)</h2>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
@@ -2220,7 +2233,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.3.0 | Updated 2026-04-24</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.4.0 | Updated 2026-04-27</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>
