@@ -36,6 +36,8 @@ const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { savePAPosition, clearPAPosition } = require("../utils/positionPersist");
+const { logNearMiss } = require("../utils/nearMissLog");
+const skipLogger = require("../utils/skipLogger");
 
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -716,7 +718,18 @@ async function onCandleClose(bar) {
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [PA-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}`);
+    log(`⏭️ [PA-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} Pattern=${result.pattern||'none'} SR=${result.srLevel||'-'} RSI=${result.rsi||'?'}${result.adx !== null && result.adx !== undefined ? ' ADX='+result.adx : ''}`);
+    logNearMiss(result.filterAudit, "PA-LIVE", log);
+    skipLogger.appendSkipLog("pa", {
+      gate: "strategy",
+      reason: result.reason || null,
+      spot: lastBar.close,
+      pattern: result.pattern || null,
+      srLevel: result.srLevel || null,
+      rsi: result.rsi ?? null,
+      adx: result.adx ?? null,
+      audit: result.filterAudit || null,
+    });
     const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     notifySignal({
       mode: "PA-LIVE",
@@ -732,7 +745,17 @@ async function onCandleClose(bar) {
   if (process.env.PA_VIX_ENABLED === "true") {
     const _strength = result.signalStrength || "MARGINAL";
     const _vixCheck = await checkLiveVix(_strength, { mode: "pa" });
-    if (!_vixCheck.allowed) { log(`⏭️ [PA-LIVE] SKIP: ${_vixCheck.reason}`); return; }
+    if (!_vixCheck.allowed) {
+      log(`⏭️ [PA-LIVE] SKIP: ${_vixCheck.reason}`);
+      skipLogger.appendSkipLog("pa", {
+        gate: "vix",
+        reason: _vixCheck.reason || null,
+        spot: bar.close,
+        signalStrength: _strength,
+        side: result.signal === "BUY_CE" ? "CE" : "PE",
+      });
+      return;
+    }
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -767,6 +790,15 @@ async function resolveAndEnter(side, spot, result) {
       const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
       if (!_sp.ok) {
         log(`⏭️ [PA-LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+        skipLogger.appendSkipLog("pa", {
+          gate: "spread",
+          reason: _sp.reason || null,
+          spot,
+          side,
+          symbol,
+          bid: _q && _q.bid,
+          ask: _q && _q.ask,
+        });
         return;
       }
     }
