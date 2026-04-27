@@ -51,6 +51,42 @@ const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
+// ── Initial SL cap (Hybrid: structural + hard cap, with min floor) ───────────
+// Original SAR-based SL is often 100-130pt wide on young trends — full loss too big.
+// Hybrid takes whichever is TIGHTER: SAR / prev candle structural / hard pts cap,
+// then floors at SWING_MIN_INITIAL_SL_PTS so we never get a sub-bar suicide-tight SL.
+const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
+const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
+const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
+
+// Helper used by both entry paths (candle-close + intra-candle)
+function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle) {
+  if (!stopLoss || !entrySpot) return { stopLoss, capLog: null };
+  const _origSAR = stopLoss;
+  let _slCandidate = stopLoss;
+  const _sources = [`SAR=₹${stopLoss}`];
+  if (_SWING_USE_PREV_CANDLE_SL && lastCandle) {
+    const _structSL = side === "CE" ? lastCandle.low : lastCandle.high;
+    _sources.push(`prev${side === "CE" ? "Low" : "High"}=₹${_structSL}`);
+    _slCandidate = side === "CE" ? Math.max(_slCandidate, _structSL) : Math.min(_slCandidate, _structSL);
+  }
+  if (_SWING_MAX_INITIAL_SL_PTS > 0) {
+    const _capSL = side === "CE" ? entrySpot - _SWING_MAX_INITIAL_SL_PTS : entrySpot + _SWING_MAX_INITIAL_SL_PTS;
+    _sources.push(`hardCap=₹${_capSL.toFixed(2)} (${_SWING_MAX_INITIAL_SL_PTS}pt)`);
+    _slCandidate = side === "CE" ? Math.max(_slCandidate, _capSL) : Math.min(_slCandidate, _capSL);
+  }
+  if (_SWING_MIN_INITIAL_SL_PTS > 0) {
+    const _floorSL = side === "CE" ? entrySpot - _SWING_MIN_INITIAL_SL_PTS : entrySpot + _SWING_MIN_INITIAL_SL_PTS;
+    _slCandidate = side === "CE" ? Math.min(_slCandidate, _floorSL) : Math.max(_slCandidate, _floorSL);
+  }
+  _slCandidate = parseFloat(_slCandidate.toFixed(2));
+  if (_slCandidate === stopLoss) return { stopLoss, capLog: null, origSAR: _origSAR };
+  const _newGap = Math.abs(entrySpot - _slCandidate).toFixed(1);
+  const _oldGap = Math.abs(entrySpot - stopLoss).toFixed(1);
+  const capLog = `🛡️ [LIVE] Initial SL tightened: ₹${stopLoss} (${_oldGap}pt) → ₹${_slCandidate} (${_newGap}pt) | sources: [${_sources.join(", ")}] | floor=${_SWING_MIN_INITIAL_SL_PTS}pt`;
+  return { stopLoss: _slCandidate, capLog, origSAR: _origSAR };
+}
+
 // ── EOD stop time — cached at module load ─────────────────────────────────────
 // parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
 const _STOP_MINS = (function() {
@@ -1207,9 +1243,14 @@ async function onCandleClose(candle) {
         ? parseFloat((_ccLastCandle.low + (_ccLastCandle.high - _ccLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
         : null;
 
-      // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
-      // Without cap: a 546pt SAR gap gives 137pt activation — trail never fires in practice.
-      // Cap at 40pt ensures trail always activates within a reasonable profit move.
+      // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────────
+      // Tighten raw SAR-based stopLoss using prevCandle structural + hard pts cap,
+      // floored at SWING_MIN_INITIAL_SL_PTS. Trail activation uses the FINAL SL gap.
+      const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle);
+      const _origSARforPos = _slCapResult.origSAR || stopLoss;
+      stopLoss = _slCapResult.stopLoss;
+
+      // Dynamic trail activation: 25% of (capped) SL gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
       const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
       const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
 
@@ -1223,6 +1264,7 @@ async function onCandleClose(candle) {
         reason,
         stopLoss:          stopLoss || null,
         initialStopLoss:   stopLoss || null,
+        sarStopLoss:       _origSARforPos || null,  // raw SAR before hybrid cap
         trailActivatePts:  _dynTrailActivate,
         bestPrice:         null,
         candlesHeld:       0,
@@ -1252,6 +1294,7 @@ async function onCandleClose(candle) {
         ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
         : `BUY ${getLotQty()} × ${symbol}`;
       log(`📝 [LIVE] ${entryLabel} @ SPOT ₹${candle.close} | SL: ₹${stopLoss} | TrailActivate: +${_dynTrailActivate}pt | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
+      if (_slCapResult.capLog) log(_slCapResult.capLog);
       // ── Telegram notification ───────────────────────────────────────────────
       notifyEntry({
         mode:           "LIVE",
@@ -1484,7 +1527,12 @@ function onSpotTick(tick) {
           ? parseFloat((_intraLastCandle.low + (_intraLastCandle.high - _intraLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
           : null;
 
-        // Dynamic trail activation: 25% of initial SAR gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
+        // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────
+        const _slCapResultIntra = _applyInitialSLCap(stopLoss, ltp, side, _intraLastCandle);
+        const _origSARforPosIntra = _slCapResultIntra.origSAR || stopLoss;
+        stopLoss = _slCapResultIntra.stopLoss;
+
+        // Dynamic trail activation: 25% of (capped) SL gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
         const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
         const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
 
@@ -1498,6 +1546,7 @@ function onSpotTick(tick) {
           reason,
           stopLoss:          stopLoss || null,
           initialStopLoss:   stopLoss || null,
+          sarStopLoss:       _origSARforPosIntra || null,  // raw SAR before hybrid cap
           trailActivatePts:  _dynTrailActivateIntra,
           bestPrice:         null,
           candlesHeld:       0,
@@ -1525,6 +1574,7 @@ function onSpotTick(tick) {
           ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
           : `BUY ${getLotQty()} × ${symbol}`;
         log(`📝 [LIVE] ${entryLabel2} @ SPOT ₹${ltp} | SL: ₹${stopLoss} | TrailActivate: +${_dynTrailActivateIntra}pt | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
+        if (_slCapResultIntra.capLog) log(_slCapResultIntra.capLog);
         notifyEntry({
           mode:           "LIVE",
           side,
@@ -2190,6 +2240,7 @@ router.get("/status/data", (req, res) => {
         entryTime:         pos.entryTime,
         stopLoss:          pos.stopLoss,
         initialStopLoss:   pos.initialStopLoss || null,
+        sarStopLoss:       pos.sarStopLoss     || null,
         trailActivatePts:  pos.trailActivatePts || null,
         optionStrike:      pos.optionStrike,
         optionExpiry:      pos.optionExpiry,
