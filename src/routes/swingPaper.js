@@ -3804,6 +3804,7 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
 </div>
 
 <script>${modalJS()}</script>
+<script>${toastJS()}</script>
 <script id="trades-data" type="application/json">${JSON.stringify(allTrades)}</script>
 <script id="sessions-data" type="application/json">${JSON.stringify(data.sessions)}</script>
 <script>
@@ -4070,9 +4071,22 @@ async function deleteSession(idx, label) {
     if (!r) return;
     var d;
     try { d = await r.json(); } catch(_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
-    if (d.success) { showToast('✅ ' + (d.message || 'Session deleted'), '#10b981'); setTimeout(function(){ location.reload(); }, 900); }
-    else { showToast('❌ ' + (d.error || 'Delete failed'), '#ef4444'); }
-  } catch(e) { showToast('❌ Delete request failed: ' + e.message, '#ef4444'); }
+    if (d.success) {
+      // Reload first so the page state always reflects the server.
+      // Toast is best-effort — if it fails, we still must not leave the user
+      // staring at stale session indexes (delete would hit the wrong one).
+      try { showToast('✅ ' + (d.message || 'Session deleted'), '#10b981'); } catch(_) {}
+      location.reload();
+      return;
+    }
+    try { showToast('❌ ' + (d.error || 'Delete failed'), '#ef4444'); } catch(_) {
+      showAlert({icon:'❌',title:'Delete failed',message:d.error||'Unknown error',btnClass:'modal-btn-danger'});
+    }
+  } catch(e) {
+    try { showToast('❌ Delete request failed: ' + e.message, '#ef4444'); } catch(_) {
+      showAlert({icon:'❌',title:'Delete request failed',message:e.message,btnClass:'modal-btn-danger'});
+    }
+  }
 }
 
 // ── Copy & Analytics Functions ────────────────────────────────────────────
