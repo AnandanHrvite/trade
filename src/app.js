@@ -288,6 +288,7 @@ app.use("/swing-paper", require("./routes/swingPaper"));
 app.use("/swing-live",      require("./routes/swingLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
+app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
@@ -862,6 +863,7 @@ ${buildSidebar('dashboard', liveActive)}
     <button id="btn-all-live"  class="util-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
     <button onclick="hardReset()" class="util-btn" title="Clears all tokens and restarts — use when tokens look stuck">🔄 Hard Reset</button>
     <button onclick="refreshHolidays()" id="holiday-refresh-btn" class="util-btn" title="Force-refresh NSE holidays cache">📅 Refresh Holidays</button>
+    <button onclick="syncToLocal()" id="sync-local-btn" class="util-btn" title="Download ~/trading-data/ from server as tar.gz">📦 Sync to Local</button>
     <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
   </div>
 
@@ -1606,6 +1608,71 @@ async function refreshHolidays(){
     btn.style.opacity = '1';
     showAlert({icon:'❌',title:'Network Error',message:err.message+'\\n\\nPlease check your internet connection and try again.',btnClass:'modal-btn-danger'});
   }
+}
+
+// ── Sync to Local — one-shot tar.gz download of ~/trading-data/ from server ──
+function fmtBytes(n){
+  if(!n) return '0 B';
+  var u=['B','KB','MB','GB']; var i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return n.toFixed(n<10?2:1)+' '+u[i];
+}
+async function syncToLocal(){
+  var btn = document.getElementById('sync-local-btn');
+  if(!btn) return;
+  btn.disabled = true;
+  var orig = btn.textContent;
+  btn.textContent = '⏳ Checking…';
+  btn.style.opacity = '0.6';
+
+  // 1) Fetch size preview
+  var info;
+  try {
+    var r = await secretFetch('/sync/info');
+    if(!r) { btn.disabled=false; btn.textContent=orig; btn.style.opacity='1'; return; }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    info = await r.json();
+  } catch(err){
+    btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
+    showAlert({icon:'❌',title:'Could not read server data',message:err.message,btnClass:'modal-btn-danger'});
+    return;
+  }
+
+  btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
+
+  if(!info.exists){
+    showAlert({icon:'📭',title:'Nothing to sync',message:'~/trading-data/ does not exist on the server yet.\\nRun a paper or live session first.',btnClass:'modal-btn-primary'});
+    return;
+  }
+
+  // 2) Confirm with user
+  var ageMin = info.newestMtimeMs ? Math.round((Date.now()-info.newestMtimeMs)/60000) : null;
+  var ageStr = ageMin === null ? '' : (ageMin < 60 ? ageMin+' min ago' : ageMin < 1440 ? Math.round(ageMin/60)+' h ago' : Math.round(ageMin/1440)+' d ago');
+  var msg = 'Download a snapshot of the server\\'s ~/trading-data/ folder.\\n\\n' +
+            '• Files: ' + info.fileCount + '\\n' +
+            '• Size:  ' + fmtBytes(info.totalBytes) + ' (uncompressed)\\n' +
+            (ageStr ? '• Newest: ' + ageStr + '\\n' : '') +
+            '\\nFormat: .tar.gz — unpack with: tar -xzf <file>';
+  var ok = await showConfirm({
+    icon:'📦', title:'Sync to Local',
+    message: msg,
+    confirmText:'Download', confirmClass:'modal-btn-primary'
+  });
+  if(!ok) return;
+
+  // 3) Trigger download via hidden link. Pass API secret as query param if set
+  // (browser navigation can't carry the x-api-secret header).
+  var url = '/sync/download-all';
+  try {
+    var s = sessionStorage.getItem('__api_secret');
+    if(s) url += '?secret=' + encodeURIComponent(s);
+  } catch(_){}
+  var a = document.createElement('a');
+  a.href = url;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); }, 1000);
 }
 </script>
 </div></div>
