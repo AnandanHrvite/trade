@@ -50,6 +50,14 @@ const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
+// ── Initial SL cap (Hybrid: structural + hard cap, with min floor) ───────────
+// Original SAR-based SL is often 100-130pt wide on young trends — full loss too big.
+// Hybrid takes whichever is TIGHTER: SAR / prev candle structural / hard pts cap,
+// then floors at SWING_MIN_INITIAL_SL_PTS so we never get a sub-bar suicide-tight SL.
+const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
+const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
+const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
+
 // ── EOD stop time — cached at module load ─────────────────────────────────────
 // parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
 const _STOP_MINS = (function() {
@@ -571,8 +579,42 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // 50% entry gate REMOVED — replaced by breakeven stop at +25pt
   const _entrySpot = spotAtEntry || price;
 
-  // Trail activation from env — dynamic: 25% of SAR gap, floored at env, capped at 40pts
-  const _initialSARgapPaper = stopLoss ? Math.abs((spotAtEntry || price) - stopLoss) : 0;
+  // ── HYBRID INITIAL SL CAP ────────────────────────────────────────────────
+  // Tighten the raw SAR-based stopLoss using: prev-candle structural + hard pts cap,
+  // floored at SWING_MIN_INITIAL_SL_PTS so we never get a suicide-tight SL on doji bars.
+  // Result: take the tightest of [SAR, prevCandle structural, entry±MAX], then floor at MIN.
+  const _origSAR_SL = stopLoss;
+  let _capLog = null;
+  if (stopLoss && _entrySpot) {
+    let _slCandidate = stopLoss; // start with SAR
+    const _sources = [`SAR=₹${stopLoss}`];
+
+    if (_SWING_USE_PREV_CANDLE_SL && _lastCandle) {
+      const _structSL = side === "CE" ? _lastCandle.low : _lastCandle.high;
+      _sources.push(`prev${side === "CE" ? "Low" : "High"}=₹${_structSL}`);
+      _slCandidate = side === "CE" ? Math.max(_slCandidate, _structSL) : Math.min(_slCandidate, _structSL);
+    }
+    if (_SWING_MAX_INITIAL_SL_PTS > 0) {
+      const _capSL = side === "CE" ? _entrySpot - _SWING_MAX_INITIAL_SL_PTS : _entrySpot + _SWING_MAX_INITIAL_SL_PTS;
+      _sources.push(`hardCap=₹${_capSL.toFixed(2)} (${_SWING_MAX_INITIAL_SL_PTS}pt)`);
+      _slCandidate = side === "CE" ? Math.max(_slCandidate, _capSL) : Math.min(_slCandidate, _capSL);
+    }
+    if (_SWING_MIN_INITIAL_SL_PTS > 0) {
+      const _floorSL = side === "CE" ? _entrySpot - _SWING_MIN_INITIAL_SL_PTS : _entrySpot + _SWING_MIN_INITIAL_SL_PTS;
+      _slCandidate = side === "CE" ? Math.min(_slCandidate, _floorSL) : Math.max(_slCandidate, _floorSL);
+    }
+    _slCandidate = parseFloat(_slCandidate.toFixed(2));
+    if (_slCandidate !== stopLoss) {
+      const _newGap = Math.abs(_entrySpot - _slCandidate).toFixed(1);
+      const _oldGap = Math.abs(_entrySpot - stopLoss).toFixed(1);
+      _capLog = `🛡️ [PAPER] Initial SL tightened: ₹${stopLoss} (${_oldGap}pt) → ₹${_slCandidate} (${_newGap}pt) | sources: [${_sources.join(", ")}] | floor=${_SWING_MIN_INITIAL_SL_PTS}pt`;
+      stopLoss = _slCandidate;
+    }
+  }
+
+  // Trail activation from env — dynamic: 25% of effective SL gap, floored at env, capped at 40pts
+  // Uses the FINAL (capped) SL gap so trail activation scales with real risk, not original SAR gap.
+  const _initialSARgapPaper = stopLoss ? Math.abs(_entrySpot - stopLoss) : 0;
   const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
 
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
@@ -592,6 +634,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     reason,
     stopLoss:          stopLoss || null,
     initialStopLoss:   stopLoss || null,
+    sarStopLoss:       _origSAR_SL || null,   // original SAR-based SL before hybrid cap (for analysis)
     trailActivatePts:  _dynTrailActivatePaper,
     entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry — for 50% rule
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
@@ -625,6 +668,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
 
   const slText = stopLoss ? ` | SL: ₹${stopLoss}` : "";
   log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | TrailActivate: +${_dynTrailActivatePaper}pt | Opt: capturing… | Reason: ${reason}`);
+  if (_capLog) log(_capLog);
   if (entryPrevMid !== null) {
     // log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
   }
@@ -722,6 +766,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryMinuteIST:   entryMinuteIST   != null ? entryMinuteIST   : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
     initialStopLoss:  ptState.position.initialStopLoss  || null,
+    sarStopLoss:      ptState.position.sarStopLoss      || null,   // raw SAR-based SL before hybrid cap (for analysis)
     trailActivatePts: ptState.position.trailActivatePts || null,
     entryPrevMid:     ptState.position.entryPrevMid     || null,   // 50%-rule reference
     bestPrice:        ptState.position.bestPrice        || null,   // peak favorable price during trade
