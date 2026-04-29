@@ -167,7 +167,8 @@ const SETTINGS_SCHEMA = [
       // ── ADX chop filter ──
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
-      { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (BOS/IB only)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for BOS & Inside Bar breakout entries (blocks fading-trend signals)", default: "true" },
+      { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (all patterns)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for EVERY entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading.", default: "true" },
+      { key: "PA_ADX_DIRECTIONAL", label: "ADX Directional (+DI/-DI)", type: "toggle", effect: EFFECT.SESSION, desc: "Require +DI > -DI for CE entries and -DI > +DI for PE entries. Blocks counter-trend bullish/bearish patterns inside a strong opposite-direction trend (key fix for losing on bearish-trend days).", default: "true" },
       // ── Pattern toggles (per-signal) ──
       { key: "PA_PATTERN_ENGULFING",     label: "Engulfing (CE/PE)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish/Bearish Engulfing at S/R — STRONG", default: "true" },
       { key: "PA_PATTERN_PINBAR",        label: "Pin Bar (Hammer/Star)",    type: "toggle", effect: EFFECT.SESSION, desc: "Hammer at support / Shooting Star at resistance — MARGINAL", default: "true" },
@@ -195,8 +196,10 @@ const SETTINGS_SCHEMA = [
       { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
       { key: "PA_TIME_STOP_CANDLES", label: "Time-Stop Candles", type: "number", min: 2, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Exit flat trades after this many candles (theta bleed guard)", default: "3" },
       { key: "PA_TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |PnL| < this many points (trade has gone nowhere)", default: "10" },
+      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Once peak PnL ≥ this many rupees, lift SL to entry+buffer pts so a winning trade can never close red. 0 = disabled.", default: "300" },
+      { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above (CE) / below (PE) entry for the breakeven SL — small slippage cushion", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
-      { key: "PA_OPT_STOP_PCT", label: "PA Option Stop %", type: "number", min: 0.05, max: 0.5, step: 0.05, effect: EFFECT.SESSION, desc: "Fallback stop-loss as % of option premium for PA live (used when premium-based SL is tighter than spot SL)", default: "0.15" },
+      { key: "PA_OPT_STOP_PCT", label: "PA Option Stop %", type: "number", min: 0.05, max: 0.5, step: 0.05, effect: EFFECT.SESSION, desc: "Cap option premium decay at this fraction. Fires before spot SL when option side has bled out. 0 = disabled.", default: "0.15" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max PA entries per day", default: "30" },
       { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
       { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
