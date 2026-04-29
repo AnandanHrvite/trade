@@ -52,8 +52,8 @@ const SETTINGS_SCHEMA = [
       { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Swing entries when VIX is high (scope: Swing only)" },
       { key: "VIX_MAX_ENTRY", label: "Swing VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: block entries above this VIX", default: "20" },
       { key: "VIX_STRONG_ONLY", label: "Swing VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: above this VIX only STRONG signals allowed", default: "16" },
-      { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss" },
-      { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Maximum entries per day" },
+      { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss (also latched on 3 consecutive losses)", default: "5000" },
+      { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on entries per session — prevents chop-day overtrading", default: "6" },
       { key: "MAX_SAR_DISTANCE", label: "Max SL Distance (pts)", type: "number", min: 40, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Reject entries with SL > this (caps risk per trade)", default: "80" },
       { key: "BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 10, max: 50, step: 5, effect: EFFECT.SESSION, desc: "SL moves to entry after +N pts move", default: "25" },
       { key: "SWING_USE_PREV_CANDLE_SL", label: "Use Prev Candle as SL", type: "toggle", effect: EFFECT.SESSION, desc: "Initial SL = prev candle low/high (structural). Combined with SAR + max/min caps below", default: "true" },
@@ -79,7 +79,7 @@ const SETTINGS_SCHEMA = [
       { key: "TRAIL_TIER2_UPTO", label: "T2 Upto (pts)", type: "number", min: 20, max: 200, step: 5, effect: EFFECT.SESSION, desc: "T1 to N pts profit → T2 gap", default: "55" },
       { key: "TRAIL_TIER2_GAP", label: "T2 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap during T2 (tightening)", default: "25" },
       { key: "TRAIL_TIER3_GAP", label: "T3 Gap (pts)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Trail gap above T2 (tightest)", default: "15" },
-      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Fallback stop-loss as % of option premium" },
+      { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Fallback stop-loss as % of option premium (fires before underlying SL on far-SAR setups)", default: "0.25" },
     ],
   },
   {
@@ -158,7 +158,8 @@ const SETTINGS_SCHEMA = [
       // ── ADX chop filter ──
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
-      { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (BOS/IB only)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for BOS & Inside Bar breakout entries (blocks fading-trend signals)", default: "true" },
+      { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (all patterns)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for EVERY entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading.", default: "true" },
+      { key: "PA_ADX_DIRECTIONAL", label: "ADX Directional (+DI/-DI)", type: "toggle", effect: EFFECT.SESSION, desc: "Require +DI > -DI for CE entries and -DI > +DI for PE entries. Blocks counter-trend bullish/bearish patterns inside a strong opposite-direction trend (key fix for losing on bearish-trend days).", default: "true" },
       // ── Pattern toggles (per-signal) ──
       { key: "PA_PATTERN_ENGULFING",     label: "Engulfing (CE/PE)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish/Bearish Engulfing at S/R — STRONG", default: "true" },
       { key: "PA_PATTERN_PINBAR",        label: "Pin Bar (Hammer/Star)",    type: "toggle", effect: EFFECT.SESSION, desc: "Hammer at support / Shooting Star at resistance — MARGINAL", default: "true" },
@@ -755,9 +756,17 @@ router.get("/", (req, res) => {
     return out.join("");
   }
 
+  // Build a flat key→default map so the client can populate the form with
+  // schema defaults on demand (used by the "Load Defaults" button per section).
+  const SCHEMA_DEFAULTS = {};
+  SETTINGS_SCHEMA.forEach(s => s.fields.forEach(f => {
+    if (f.default !== undefined) SCHEMA_DEFAULTS[f.key] = String(f.default);
+  }));
+
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
     const eyeBtn = `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`;
+    const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="event.stopPropagation();loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
     const openClass = idx === 0 ? ' open' : '';
     const fieldCount = s.fields.length;
     return `
@@ -766,6 +775,7 @@ router.get("/", (req, res) => {
         <span class="section-chevron">▶</span>
         ${s.icon} ${s.section}
         <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">${fieldCount} settings</span>
+        ${defaultsBtn}
         ${eyeBtn}
       </div>
       <div class="section-card">
@@ -775,6 +785,7 @@ router.get("/", (req, res) => {
   }).join("");
 
   const sectionSummaryJSON = JSON.stringify(sectionSummaries);
+  const schemaDefaultsJSON = JSON.stringify(SCHEMA_DEFAULTS);
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -998,6 +1009,15 @@ router.get("/", (req, res) => {
       transition: all 0.15s; flex-shrink: 0; margin-left: 8px;
     }
     .section-eye-btn:hover { border-color: var(--accent); color: var(--accent); }
+    /* ── Section "Load Defaults" button ─────────────────── */
+    .section-defaults-btn {
+      background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3);
+      border-radius: 6px; padding: 3px 10px; cursor: pointer;
+      color: var(--yellow); font-size: 0.65rem; font-weight: 700;
+      letter-spacing: 0.5px; transition: all 0.15s; flex-shrink: 0; margin-left: 8px;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    .section-defaults-btn:hover { background: rgba(251,191,36,0.18); border-color: var(--yellow); }
 
     /* ── Section summary modal ──────────────────────────── */
     .summary-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; font-family: 'JetBrains Mono', monospace; }
@@ -1945,7 +1965,37 @@ async function showExpiryModal() {
 
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
+var _schemaDefaults   = ${schemaDefaultsJSON};
 var _sectionNames = { 0: 'Trading Strategy (15-min)', 1: 'Scalping Strategy (BB+CPR)' };
+
+// ── Load Defaults (per section) ────────────────────────────────────────────
+// Populates every input in the section with its schema default, marks dirty,
+// but does NOT save — user reviews then clicks "Save Changes".
+function loadSectionDefaults(sectionId) {
+  var section = document.querySelector('[data-section="' + sectionId + '"]');
+  if (!section) return;
+  var changed = 0, skipped = 0;
+  section.querySelectorAll('[data-key]').forEach(function(el) {
+    if (el.disabled) { skipped++; return; }
+    var key = el.getAttribute('data-key');
+    if (!key) return;
+    var def = _schemaDefaults[key];
+    if (def === undefined) return;
+    if (el.type === 'checkbox') {
+      var want = (def === 'true' || def === '1');
+      if (el.checked !== want) { el.checked = want; markDirty(el); changed++; }
+    } else if (el.tagName === 'SELECT') {
+      if (el.value !== def) { el.value = def; markDirty(el); changed++; }
+    } else {
+      if (String(el.value) !== String(def)) { el.value = def; markDirty(el); changed++; }
+    }
+  });
+  if (changed > 0) {
+    showToast('Loaded ' + changed + ' default value' + (changed > 1 ? 's' : '') + ' — review and click Save Changes', 'info');
+  } else {
+    showToast('All values already match recommended defaults', 'info');
+  }
+}
 
 var _summaryClipboard = '';
 

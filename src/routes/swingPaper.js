@@ -2030,7 +2030,7 @@ router.post("/manualEntry", async (req, res) => {
   }
 
   // Fallback SL if SAR not available
-  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "200");
+  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
   if (!sarSL) {
     sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
   }
