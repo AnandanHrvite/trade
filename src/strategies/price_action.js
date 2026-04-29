@@ -19,9 +19,13 @@
  * ENTRY CONFLUENCE & QUALITY GATES:
  *   RSI(14): CE min/max, PE min/max — blocks entries at exhausted-move extremes
  *   ADX level: blocks entries when market is ranging (PA_ADX_MIN)
- *   ADX rising (BOS/IB only): require ADX[now] >= ADX[2 bars ago] — blocks
- *     BOS and Inside Bar breakout entries when the trend is fading. Engulfing
- *     and pin-bar reversal setups don't need this gate.
+ *   ADX rising (all patterns when PA_ADX_RISING_REQUIRED=true):
+ *     require ADX[now] >= ADX[2 bars ago]. Blocks any setup when the trend is
+ *     fading — counter-trend reversals at "support" most often fail when ADX
+ *     is dropping.
+ *   ADX directional (PA_ADX_DIRECTIONAL=true): require +DI > -DI for CE,
+ *     -DI > +DI for PE. Blocks counter-trend bullish/bearish patterns inside
+ *     a strong opposite-direction trend.
  *   Structural SL cap (BOS/IB only): skip when raw swing/mother-bar distance
  *     exceeds PA_MAX_STRUCT_SL_PTS. Thin structure → false breakout risk.
  *
@@ -308,7 +312,8 @@ function getSignal(candles, opts) {
   var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "12"));
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
   var MAX_STRUCT_SL_PTS = parseFloat(cfg("PA_MAX_STRUCT_SL_PTS", "15")); // skip BOS/IB if raw structural SL > this
-  var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for BOS/IB
+  var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for ALL patterns
+  var ADX_DIRECTIONAL = cfg("PA_ADX_DIRECTIONAL", "true") === "true";    // require +DI>-DI for CE, -DI>+DI for PE
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
   // Per-pattern toggles
   var PATTERN_ENGULFING     = cfg("PA_PATTERN_ENGULFING",     "true")  === "true";
@@ -365,6 +370,8 @@ function getSignal(candles, opts) {
   // ── ADX trend filter ──────────────────────────────────────────────────────
   var adxVal = null;
   var adxPrev2 = null;
+  var pdiVal = null; // +DI (bullish directional)
+  var mdiVal = null; // -DI (bearish directional)
   var isTrending = true; // default pass if ADX disabled
   var adxRising = true;  // default pass if ADX disabled or insufficient history
   if (ADX_ENABLED) {
@@ -372,15 +379,46 @@ function getSignal(candles, opts) {
     var lows   = candles.map(function(c) { return c.low; });
     var adxCloses = candles.map(function(c) { return c.close; });
     var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: adxCloses });
-    adxVal = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
+    if (adxArr.length > 0) {
+      var lastAdx = adxArr[adxArr.length - 1];
+      adxVal = lastAdx.adx;
+      pdiVal = lastAdx.pdi !== undefined ? lastAdx.pdi : null;
+      mdiVal = lastAdx.mdi !== undefined ? lastAdx.mdi : null;
+    }
     // Slope check: current ADX vs. 2 bars ago (rising = trend firming, falling = trend dying)
     adxPrev2 = adxArr.length >= 3 ? adxArr[adxArr.length - 3].adx : null;
     isTrending = adxVal === null ? true : adxVal >= ADX_MIN;
     adxRising  = (adxVal !== null && adxPrev2 !== null) ? adxVal >= adxPrev2 : true;
   }
   base.adx = adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null;
+  base.pdi = pdiVal !== null ? parseFloat(pdiVal.toFixed(1)) : null;
+  base.mdi = mdiVal !== null ? parseFloat(mdiVal.toFixed(1)) : null;
   base.adxRising = adxRising;
   base.isTrending = isTrending;
+
+  // ── Directional ADX gate helpers (used by every pattern below) ────────────
+  // Returns false (block) when directional check is enabled and the requested
+  // side is fighting the dominant +DI/-DI direction. Default-pass when ADX is
+  // off OR DI values are missing (insufficient history).
+  function _diOk(side) {
+    if (!ADX_ENABLED || !ADX_DIRECTIONAL) return true;
+    if (pdiVal === null || mdiVal === null) return true;
+    return side === "CE" ? pdiVal > mdiVal : mdiVal > pdiVal;
+  }
+  // ADX-rising gate (all patterns). Default-pass when ADX off / disabled flag.
+  function _risingOk() {
+    if (!ADX_ENABLED || !ADX_RISING_REQ) return true;
+    return adxRising;
+  }
+  function _risingDetail() {
+    return "ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") +
+           " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago";
+  }
+  function _diDetail(side) {
+    var want = side === "CE" ? "+DI>-DI" : "-DI>+DI";
+    return want + " (+DI=" + (pdiVal !== null ? pdiVal.toFixed(1) : "n/a") +
+           " -DI=" + (mdiVal !== null ? mdiVal.toFixed(1) : "n/a") + ")";
+  }
 
   // ── Swing points & S/R zones ───────────────────────────────────────────────
   var swings = findSwingPoints(candles, SR_LOOKBACK);
@@ -414,7 +452,7 @@ function getSignal(candles, opts) {
   if (PATTERN_INSIDE_BAR && _insideBarPending) {
     var mother = _insideBarPending;
     if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
-      // Bullish breakout — quality gates: structural SL cap + ADX rising
+      // Bullish breakout — quality gates: structural SL cap + ADX rising + directional
       var rawSL = mother.motherCandle.low;
       var rawStructGap = sc.close - rawSL;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -422,9 +460,14 @@ function getSignal(candles, opts) {
         base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
         return base;
       }
-      if (ADX_RISING_REQ && !adxRising) {
+      if (!_risingOk()) {
         _insideBarPending = null;
-        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+        base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
+        return base;
+      }
+      if (!_diOk("CE")) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — wrong direction (" + _diDetail("CE") + ")";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -440,7 +483,7 @@ function getSignal(candles, opts) {
       });
     }
     if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
-      // Bearish breakout — quality gates: structural SL cap + ADX rising
+      // Bearish breakout — quality gates: structural SL cap + ADX rising + directional
       var rawSL = mother.motherCandle.high;
       var rawStructGap = rawSL - sc.close;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -448,9 +491,14 @@ function getSignal(candles, opts) {
         base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
         return base;
       }
-      if (ADX_RISING_REQ && !adxRising) {
+      if (!_risingOk()) {
         _insideBarPending = null;
-        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+        base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
+        return base;
+      }
+      if (!_diOk("PE")) {
+        _insideBarPending = null;
+        base.reason = "IB breakout skipped — wrong direction (" + _diDetail("PE") + ")";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -486,6 +534,8 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
   if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+    if (!_risingOk()) { base.reason = "Bull Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("CE")) { base.reason = "Bull Engulf skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -501,6 +551,8 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
   if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+    if (!_risingOk()) { base.reason = "Bear Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("PE")) { base.reason = "Bear Engulf skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -516,6 +568,8 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
   if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+    if (!_risingOk()) { base.reason = "Hammer skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("CE")) { base.reason = "Hammer skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -531,6 +585,8 @@ function getSignal(candles, opts) {
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
   if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+    if (!_risingOk()) { base.reason = "Shooting Star skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("PE")) { base.reason = "Shooting Star skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -555,8 +611,12 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
       return base;
     }
-    if (ADX_RISING_REQ && !adxRising) {
-      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+    if (!_risingOk()) {
+      base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
+      return base;
+    }
+    if (!_diOk("CE")) {
+      base.reason = "BOS skipped — wrong direction (" + _diDetail("CE") + ")";
       return base;
     }
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -577,8 +637,12 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
       return base;
     }
-    if (ADX_RISING_REQ && !adxRising) {
-      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
+    if (!_risingOk()) {
+      base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
+      return base;
+    }
+    if (!_diOk("PE")) {
+      base.reason = "BOS skipped — wrong direction (" + _diDetail("PE") + ")";
       return base;
     }
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -601,6 +665,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
   if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+    if (!_risingOk()) { base.reason = "Double Top skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("PE")) { base.reason = "Double Top skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = dblTop.topLevel;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -619,6 +685,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
   if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+    if (!_risingOk()) { base.reason = "Double Bottom skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("CE")) { base.reason = "Double Bottom skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = dblBot.bottomLevel;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -637,6 +705,8 @@ function getSignal(candles, opts) {
   if (PATTERN_ASC_TRIANGLE) {
   ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+    if (!_risingOk()) { base.reason = "Asc Triangle skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("CE")) { base.reason = "Asc Triangle skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = ascTri.risingLow;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -655,6 +725,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DESC_TRIANGLE) {
   descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+    if (!_risingOk()) { base.reason = "Desc Triangle skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
+    if (!_diOk("PE")) { base.reason = "Desc Triangle skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = descTri.fallingHigh;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));

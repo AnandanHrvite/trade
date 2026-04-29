@@ -50,6 +50,13 @@ const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
 const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
 const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
 const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+// Breakeven SL shift: once peak PnL crosses trigger ₹, lift SL to entry + buffer points.
+// Caps a winning trade from ever turning into a loser. 0 = disabled.
+const _PA_BE_TRIGGER     = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300");
+const _PA_BE_BUFFER      = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");
+// Option-level stop (% of entry premium). Caps catastrophic premium decay even
+// when the spot SL hasn't been hit yet. 0 = disabled.
+const _PA_OPT_STOP_PCT   = parseFloat(process.env.PA_OPT_STOP_PCT || "0");
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -487,7 +494,40 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (initial or swing-trailed)
+    // ── BREAKEVEN SL SHIFT ─────────────────────────────────────────────────
+    // Once the trade has gone ₹PA_BREAKEVEN_TRIGGER in profit, lift SL to
+    // entry + buffer pts so a winner can never become a loser.
+    if (_PA_BE_TRIGGER > 0 && !pos.breakevenApplied && pos.peakPnl >= _PA_BE_TRIGGER) {
+      const beSL = pos.side === "CE"
+        ? parseFloat((pos.entryPrice + _PA_BE_BUFFER).toFixed(2))
+        : parseFloat((pos.entryPrice - _PA_BE_BUFFER).toFixed(2));
+      const tighter = pos.side === "CE" ? beSL > pos.stopLoss : beSL < pos.stopLoss;
+      if (tighter) {
+        log(`🛡️ [PA-PAPER] Breakeven SL: ₹${pos.stopLoss} → ₹${beSL} (peak ₹${Math.round(pos.peakPnl)} ≥ ₹${_PA_BE_TRIGGER})`);
+        pos.stopLoss = beSL;
+        pos.slSource = "Breakeven";
+      }
+      pos.breakevenApplied = true;
+    }
+
+    // ── OPTION-PREMIUM STOP ─────────────────────────────────────────────────
+    // Hard cap on % decay of the option premium. Fires before the spot SL
+    // when the option side has bled out (delta+theta). Skip if option LTP is
+    // stale or entry premium not captured.
+    if (_PA_OPT_STOP_PCT > 0 && pos.optionEntryLtp && state.optionLtp) {
+      const _staleMs = parseInt(process.env.LTP_STALE_FALLBACK_SEC || "5", 10) * 1000;
+      const _fresh = state.optionLtpUpdatedAt && (Date.now() - state.optionLtpUpdatedAt) < _staleMs;
+      if (_fresh) {
+        const optStopPrice = pos.optionEntryLtp * (1 - _PA_OPT_STOP_PCT);
+        if (state.optionLtp <= optStopPrice) {
+          const lossPct = Math.round(_PA_OPT_STOP_PCT * 100);
+          simulateSell(price, `Option Stop ${lossPct}% (₹${state.optionLtp.toFixed(2)} ≤ ₹${optStopPrice.toFixed(2)} of ₹${pos.optionEntryLtp})`, price);
+          return;
+        }
+      }
+    }
+
+    // 1. SL hit (initial or swing-trailed or breakeven)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "Swing";
