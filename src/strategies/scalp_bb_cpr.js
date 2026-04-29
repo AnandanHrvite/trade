@@ -67,7 +67,7 @@ function isInTradingWindow(unixSec) {
 // ── Indicator cache — avoid redundant recalculation on every tick ────────────
 // Cache key = last closed candle time + current candle OHLC (changes on each tick)
 // If the closed candles haven't changed AND current bar is same, reuse cached indicators.
-let _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null };
+let _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, rsiPrev: null, sar: null };
 
 function _makeIndicatorKey(candles) {
   if (candles.length < 2) return null;
@@ -87,6 +87,9 @@ function getSignal(candles, opts) {
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
   var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "55"));
   var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "45"));
+  var RSI_CE_MAX  = parseFloat(cfg("SCALP_RSI_CE_MAX", "78"));   // overbought guard — block CE above
+  var RSI_PE_MIN  = parseFloat(cfg("SCALP_RSI_PE_MIN", "22"));   // oversold guard  — block PE below
+  var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
 
@@ -114,12 +117,13 @@ function getSignal(candles, opts) {
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
   var cacheKey = _makeIndicatorKey(candles);
-  var bb, bbMiddles, rsi, sar;
+  var bb, bbMiddles, rsi, rsiPrev, sar;
 
   if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
     bb        = _indicatorCache.bb;
     bbMiddles = _indicatorCache.bbMiddles;
     rsi       = _indicatorCache.rsi;
+    rsiPrev   = _indicatorCache.rsiPrev;
     sar       = _indicatorCache.sar;
   } else {
     var closes = candles.map(function(c) { return c.close; });
@@ -132,10 +136,11 @@ function getSignal(candles, opts) {
     bb        = bbArr[bbArr.length - 1];
     bbMiddles = bbArr.map(function(x) { return x.middle; });
 
-    // RSI
+    // RSI (capture prior value too — used by RSI-turning guard)
     var rsiArr = RSI.calculate({ period: RSI_PERIOD, values: closes });
     if (rsiArr.length < 1) { base.reason = "RSI warming up"; return base; }
-    rsi = rsiArr[rsiArr.length - 1];
+    rsi     = rsiArr[rsiArr.length - 1];
+    rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
 
     // Parabolic SAR
     var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
@@ -143,7 +148,7 @@ function getSignal(candles, opts) {
     sar = sarArr[sarArr.length - 1];
 
     // Cache for next tick with same window
-    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, sar: sar };
+    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, rsiPrev: rsiPrev, sar: sar };
   }
 
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
@@ -275,6 +280,14 @@ function getSignal(candles, opts) {
 
   // CE (Long): price at/above BB upper + RSI > 55
   if (sc.close >= bb.upper && rsi > RSI_CE) {
+    if (rsi > RSI_CE_MAX) {
+      base.reason = "CE blocked: RSI=" + rsi.toFixed(1) + " > " + RSI_CE_MAX + " (overbought / exhausted move)";
+      return base;
+    }
+    if (RSI_TURNING && rsi < rsiPrev) {
+      base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
+      return base;
+    }
     if (trendOn && trendDirection !== "UP") {
       base.reason = "CE blocked: no uptrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs >=" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
       return base;
@@ -303,6 +316,14 @@ function getSignal(candles, opts) {
 
   // PE (Short): price at/below BB lower + RSI < 45
   if (sc.close <= bb.lower && rsi < RSI_PE) {
+    if (rsi < RSI_PE_MIN) {
+      base.reason = "PE blocked: RSI=" + rsi.toFixed(1) + " < " + RSI_PE_MIN + " (oversold / exhausted move)";
+      return base;
+    }
+    if (RSI_TURNING && rsi > rsiPrev) {
+      base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
+      return base;
+    }
     if (trendOn && trendDirection !== "DOWN") {
       base.reason = "PE blocked: no downtrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs <=-" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
       return base;
@@ -351,11 +372,36 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Trailing SL update: PSAR only — tighten only, never widen ──
+// ── Trailing SL update: break-even snap → PSAR — tighten only, never widen ──
+// opts: { peakPnl, initialRiskRupees, entryPrice, slippagePts }
+//   - peakPnl + initialRiskRupees: enable break-even snap when peak ≥ trigger × risk
+//   - entryPrice + slippagePts: target spot price for the break-even SL
 function updateTrailingSL(candles, currentSL, side, opts) {
   opts = opts || {};
   var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
+
+  // ── Break-even snap (preempts PSAR — runs first because it's the bigger win) ─
+  // Once peak P&L reaches BE_TRIGGER_R × initial risk, snap SL to entry +/- offset.
+  // Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
+  var beTriggerR = parseFloat(cfg("SCALP_BREAKEVEN_TRIGGER_R", "0.7"));
+  var beOffsetPts = parseFloat(cfg("SCALP_BREAKEVEN_OFFSET_PTS", "1"));
+  if (beTriggerR > 0
+      && opts.peakPnl != null
+      && opts.initialRiskRupees > 0
+      && opts.entryPrice != null
+      && opts.peakPnl >= beTriggerR * opts.initialRiskRupees) {
+    var beSL = side === "CE"
+      ? opts.entryPrice + beOffsetPts
+      : opts.entryPrice - beOffsetPts;
+    beSL = parseFloat(beSL.toFixed(2));
+    if (side === "CE" && beSL > currentSL) {
+      return { sl: beSL, source: "BreakEven" };
+    }
+    if (side === "PE" && beSL < currentSL) {
+      return { sl: beSL, source: "BreakEven" };
+    }
+  }
 
   var highs = candles.map(function(c) { return c.high; });
   var lows  = candles.map(function(c) { return c.low; });

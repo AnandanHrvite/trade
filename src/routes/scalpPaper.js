@@ -45,12 +45,19 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "350");
-const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
-const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "600");
+const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
+const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93");
 // Trail grace: suppress trail-exits in the first N seconds after entry
 // (prevents first-tick spike → tiny pullback from killing trades immediately)
 const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
+// Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
+const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+// Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
+const _SCALP_TIME_STOP_CANDLES = process.env.SCALP_TIME_STOP_CANDLES != null
+  ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
+const _SCALP_TIME_STOP_FLAT_PTS = process.env.SCALP_TIME_STOP_FLAT_PTS != null
+  ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
@@ -109,6 +116,8 @@ let state = {
   optionLtpUpdatedAt: null,
   optionSymbol:   null,
   _slPauseUntil:  null,
+  _slPauseUntilBySide: { CE: 0, PE: 0 },
+  _consecSLsBySide:    { CE: 0, PE: 0 },
   _dailyLossHit:  false,
   _simMode:       false,
   _simScenario:   null,
@@ -232,6 +241,13 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   const _vixAtEntry     = getCachedVix();
   const _signalStrength = entryMeta.signalStrength || null;
 
+  // Initial rupee risk (used by break-even snap + trail price-stop math).
+  // Approximate as: |entry-SL| × DELTA × qty (charges ignored — they shrink the
+  // realised loss but the BE trigger should fire before charges matter).
+  const _DELTA_INIT = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+  const _slPtsAbs   = stopLoss != null ? Math.abs(price - stopLoss) : 0;
+  const _initialRiskRupees = _slPtsAbs * _DELTA_INIT * qty;
+
   state.position = {
     side,
     symbol,
@@ -248,6 +264,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     bestPrice:        null,
     candlesHeld:      0,
     peakPnl:          0,
+    initialRiskRupees: _initialRiskRupees,
+    trailStopSpot:    null,   // armed when peak crosses TRAIL_START — exits at this spot price
+    trailStopPct:     null,   // remembered tier % for log message
 
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
     optionEntryLtp:   null,
@@ -367,18 +386,43 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
 
-  // SL pause — escalate after consecutive SLs
+  // SL pause — escalate after consecutive SLs (per-side when SCALP_PER_SIDE_PAUSE=true)
+  state._consecSLsBySide = state._consecSLsBySide || { CE: 0, PE: 0 };
+  state._slPauseUntilBySide = state._slPauseUntilBySide || { CE: 0, PE: 0 };
   if (reason.includes("SL")) {
-    state._consecSLs = (state._consecSLs || 0) + 1;
+    if (_SCALP_PER_SIDE_PAUSE) {
+      state._consecSLsBySide[side] += 1;
+    } else {
+      state._consecSLsBySide.CE += 1;
+      state._consecSLsBySide.PE += 1;
+    }
+    const _streak = _SCALP_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
     const extraPause = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
-    const pauseCandles = state._consecSLs >= 2
-      ? _SCALP_PAUSE_CANDLES + extraPause * (state._consecSLs - 1)
+    const pauseCandles = _streak >= 2
+      ? _SCALP_PAUSE_CANDLES + extraPause * (_streak - 1)
       : _SCALP_PAUSE_CANDLES;
-    state._slPauseUntil = simNow() + (pauseCandles * SCALP_RES * 60 * 1000);
-    const escalateNote = state._consecSLs >= 2 ? ` (${state._consecSLs} consecutive SLs → ${pauseCandles} candles)` : "";
-    log(`⏸️ [SCALP-PAPER] SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
+    const _until = simNow() + (pauseCandles * SCALP_RES * 60 * 1000);
+    if (_SCALP_PER_SIDE_PAUSE) {
+      state._slPauseUntilBySide[side] = _until;
+    } else {
+      state._slPauseUntilBySide.CE = _until;
+      state._slPauseUntilBySide.PE = _until;
+    }
+    // Mirror combined value for legacy UI fields
+    state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
+    state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
+    const sideLabel = _SCALP_PER_SIDE_PAUSE ? `${side} ` : "";
+    const escalateNote = _streak >= 2 ? ` (${_streak} consecutive SLs → ${pauseCandles} candles)` : "";
+    log(`⏸️ [SCALP-PAPER] ${sideLabel}SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
   } else if (netPnl > 0) {
-    state._consecSLs = 0; // Reset on a winning trade
+    // Reset only the winning side's streak (or both if not per-side)
+    if (_SCALP_PER_SIDE_PAUSE) {
+      state._consecSLsBySide[side] = 0;
+    } else {
+      state._consecSLsBySide.CE = 0;
+      state._consecSLsBySide.PE = 0;
+    }
+    state._consecSLs = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
   }
 
   // Daily loss kill
@@ -490,7 +534,55 @@ function onTick(tick) {
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
 
-    // 1. SL hit (Prev Candle initial, PSAR trailing)
+    // 2a. TRAIL PRICE-STOP — recompute when peak grows past TRAIL_START.
+    //     Converts the PnL trail into a spot-price stop so a fast tick can't
+    //     overshoot the floor: when price crosses trailStopSpot the SL block
+    //     below catches it and exits AT that price (not wherever the tick is).
+    if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
+      const _ageSecs = pos.entryTimeMs ? (simNow() - pos.entryTimeMs) / 1000 : Infinity;
+      const _graceActive = _SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS;
+      if (!_graceActive) {
+        let _pct = _SCALP_TRAIL_PCT;
+        for (const tier of _SCALP_TRAIL_TIERS) {
+          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
+        }
+        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+        // Inverse of _tickPnl: target spot move that yields trailFloor PnL
+        // (charges ignored — small bias is in our favour, exit slightly above floor)
+        const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
+        const _q    = pos.qty || getLotQty();
+        if (DELTA > 0 && _q > 0) {
+          const targetMove = trailFloor / (DELTA * _q);
+          const newTrailSpot = parseFloat(
+            (pos.side === "CE" ? pos.entryPrice + targetMove : pos.entryPrice - targetMove).toFixed(2)
+          );
+          // Tighten only — never loosen the trail
+          const tightens = pos.trailStopSpot == null
+            || (pos.side === "CE" && newTrailSpot > pos.trailStopSpot)
+            || (pos.side === "PE" && newTrailSpot < pos.trailStopSpot);
+          if (tightens) {
+            pos.trailStopSpot = newTrailSpot;
+            pos.trailStopPct  = _pct;
+          }
+        }
+      }
+    }
+
+    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap, Trail price-stop)
+    //    Trail price-stop is *also* an SL — so a fast adverse tick exits at the
+    //    floor price instead of plunging through it.
+    const _trailHit = (pos.trailStopSpot != null) && (
+      (pos.side === "CE" && price <= pos.trailStopSpot) ||
+      (pos.side === "PE" && price >= pos.trailStopSpot)
+    );
+    if (_trailHit) {
+      simulateSell(
+        pos.trailStopSpot,
+        `Trail ${pos.trailStopPct}% (peak ₹${Math.round(pos.peakPnl)} → spot ${pos.trailStopSpot})`,
+        price
+      );
+      return;
+    }
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
@@ -502,25 +594,6 @@ function onTick(tick) {
       const _src = pos.slSource || "PSAR";
       simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
       return;
-    }
-
-    // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-    //    Grace period: skip trail-exit in first N secs (prevents first-tick spike kills)
-    if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      const _ageSecs = pos.entryTimeMs ? (simNow() - pos.entryTimeMs) / 1000 : Infinity;
-      if (_SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS) {
-        // Trail suppressed during grace window — SL still active above
-      } else {
-        let _pct = _SCALP_TRAIL_PCT;
-        for (const tier of _SCALP_TRAIL_TIERS) {
-          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-        }
-        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-        if (curPnl <= trailFloor) {
-          simulateSell(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`, price);
-          return;
-        }
-      }
     }
 
     // EOD check — skip in simulation mode
@@ -554,7 +627,10 @@ async function onCandleClose(bar) {
       } else if (_pos.spotAtEntry) {
         _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
       }
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      const _tsOpts = {};
+      if (_SCALP_TIME_STOP_CANDLES != null)  _tsOpts.maxCandles = _SCALP_TIME_STOP_CANDLES;
+      if (_SCALP_TIME_STOP_FLAT_PTS != null) _tsOpts.flatPts    = _SCALP_TIME_STOP_FLAT_PTS;
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts, _tsOpts);
       if (_tsReason) {
         log(`⏳ [SCALP-PAPER] ${_tsReason}`);
         simulateSell(bar.close, _tsReason, bar.close);
@@ -571,9 +647,13 @@ async function onCandleClose(bar) {
       return;
     }
 
-    // Update trailing SL: min(prevCandle, PSAR) — tighten only, track source
+    // Update trailing SL: BreakEven snap → PSAR — tighten only, track source
     if (window.length >= 15) {
-      const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
+      const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side, {
+        peakPnl:           state.position.peakPnl,
+        initialRiskRupees: state.position.initialRiskRupees,
+        entryPrice:        state.position.entryPrice,
+      });
       if (trailResult.sl !== state.position.stopLoss) {
         log(`📐 [SCALP-PAPER] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
         state.position.stopLoss = trailResult.sl;
@@ -588,9 +668,14 @@ async function onCandleClose(bar) {
   if (!state._simMode && !isMarketHours()) { log(`⏭️ [SCALP-PAPER] SKIP: outside market hours`); return; }
   if (state._dailyLossHit) { log(`⏭️ [SCALP-PAPER] SKIP: daily loss limit hit`); return; }
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-PAPER] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
-  if (state._slPauseUntil && simNow() < state._slPauseUntil) {
-    const secsLeft = Math.ceil((state._slPauseUntil - simNow()) / 1000);
-    log(`⏭️ [SCALP-PAPER] SKIP: SL cooldown (${secsLeft}s left)`);
+  // Per-side SL cooldown is checked AFTER the strategy returns a side (further below).
+  // Keep the legacy global check as a fast-path when both sides are paused (only true
+  // when SCALP_PER_SIDE_PAUSE=false or both sides happen to be paused simultaneously).
+  const _pauseCE = state._slPauseUntilBySide && state._slPauseUntilBySide.CE > simNow();
+  const _pausePE = state._slPauseUntilBySide && state._slPauseUntilBySide.PE > simNow();
+  if (_pauseCE && _pausePE) {
+    const secsLeft = Math.ceil((Math.min(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE) - simNow()) / 1000);
+    log(`⏭️ [SCALP-PAPER] SKIP: SL cooldown both sides (${secsLeft}s left)`);
     return;
   }
   if (state._expiryDayBlocked) { log(`⏭️ [SCALP-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
@@ -631,6 +716,14 @@ async function onCandleClose(bar) {
     return;
   }
 
+  // Per-side SL cooldown — block only if THIS side has an active pause
+  const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
+  if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > simNow()) {
+    const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - simNow()) / 1000);
+    log(`⏭️ [SCALP-PAPER] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
+    return;
+  }
+
   // VIX — post-strategy check with derived strength (skip in sim mode)
   if (!state._simMode && process.env.SCALP_VIX_ENABLED === "true") {
     const _strength = deriveScalpStrength(result);
@@ -642,13 +735,13 @@ async function onCandleClose(bar) {
         reason: _vixCheck.reason || null,
         spot: bar.close,
         signalStrength: _strength,
-        side: result.signal === "BUY_CE" ? "CE" : "PE",
+        side: _signalSide,
       });
       return;
     }
   }
 
-  const side = result.signal === "BUY_CE" ? "CE" : "PE";
+  const side = _signalSide;
   const spot = bar.close;
 
   // Resolve option symbol
@@ -838,8 +931,9 @@ router.get("/start", async (req, res) => {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
     sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
-    _expiryDayBlocked: _expiryBlocked,
+    optionLtp: null, optionSymbol: null, _slPauseUntil: null,
+    _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
+    _dailyLossHit: false, _expiryDayBlocked: _expiryBlocked,
   };
 
   sharedSocketState.setScalpActive("SCALP_PAPER");

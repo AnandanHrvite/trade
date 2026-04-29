@@ -101,11 +101,18 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
 
   // PNL-based trailing profit (tiered % of peak)
-  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "350");
-  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "65");
-  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
+  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "600");
+  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
+  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93")
     .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
     .sort((a, b) => b.peak - a.peak);
+  // Per-side SL pause — when true, an SL on CE only pauses CE entries
+  const SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+  // Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
+  const SCALP_TIME_STOP_CANDLES_OVR = process.env.SCALP_TIME_STOP_CANDLES != null
+    ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
+  const SCALP_TIME_STOP_FLAT_PTS_OVR = process.env.SCALP_TIME_STOP_FLAT_PTS != null
+    ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -171,8 +178,11 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log("══════════════════════════════════════════════");
 
   const window = candles.slice(0, 30);
-  let _slPauseUntilTs = 0;
-  let _consecSLs = 0;
+  let _slPauseUntilTs = 0;       // legacy combined; tracked for log lines
+  let _consecSLs = 0;             // legacy combined
+  // Per-side cooldown state
+  const _slPauseUntilBySide = { CE: 0, PE: 0 };
+  const _consecSLsBySide    = { CE: 0, PE: 0 };
   let _dailyTradeCount = 0;
   let _dailyPnl = 0;
   let _prevDate = null;
@@ -201,6 +211,8 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       _dailyPnl = 0;
       _slPauseUntilTs = 0;
       _consecSLs = 0;
+      _slPauseUntilBySide.CE = 0; _slPauseUntilBySide.PE = 0;
+      _consecSLsBySide.CE    = 0; _consecSLsBySide.PE    = 0;
       pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
@@ -229,6 +241,11 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       const rawGap = Math.abs(entryPrice - pendingSignal.rawSL);
       const slPts = Math.max(Math.min(rawGap, pendingSignal.maxSlPts), pendingSignal.minSlPts);
       const sl = parseFloat((entryPrice + slPts * (pendingSignal.side === "CE" ? -1 : 1)).toFixed(2));
+      // Initial rupee risk (used by break-even snap in updateTrailingSL).
+      // Approximate: |entry-SL| × DELTA × qty (flat charges ignored).
+      const _initRiskBT = OPTION_SIM
+        ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
+        : Math.abs(entryPrice - sl) * LOT_SIZE;
       position = {
         side:           pendingSignal.side,
         entryPrice:     entryPrice,
@@ -240,6 +257,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         target:         null,
         candlesHeld:    0,
         peakPnl:        0,
+        initialRiskRupees: _initRiskBT,
       };
       pendingSignal = null;
     } else if (pendingSignal && (position || isEOD)) {
@@ -316,12 +334,36 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = "PSAR flip";
       }
 
-      // 4. Update trailing SL (PSAR only, tighten only)
+      // 4. Update trailing SL (BreakEven snap → PSAR, tighten only)
       if (!exitReason) {
-        const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side);
+        const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side, {
+          peakPnl:           position.peakPnl,
+          initialRiskRupees: position.initialRiskRupees,
+          entryPrice:        position.entryPrice,
+        });
         if (trailResult.sl !== position.stopLoss) {
           position.stopLoss = trailResult.sl;
           if (trailResult.source) position.slSource = trailResult.source;
+        }
+      }
+
+      // 4b. Time-stop — flat trade after N candles (theta bleed risk)
+      // Only fires when |pnl in option-pts| < flat band; matches paper/live guard.
+      if (!exitReason) {
+        const _tsCandles = SCALP_TIME_STOP_CANDLES_OVR != null
+          ? SCALP_TIME_STOP_CANDLES_OVR
+          : parseInt(process.env.TIME_STOP_CANDLES || "4", 10);
+        const _tsFlatPts = SCALP_TIME_STOP_FLAT_PTS_OVR != null
+          ? SCALP_TIME_STOP_FLAT_PTS_OVR
+          : parseFloat(process.env.TIME_STOP_FLAT_PTS || "20");
+        if (position.candlesHeld >= _tsCandles) {
+          // Approximate option-premium pts via spot move × DELTA (matches paper helper)
+          const _spotMove = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+          const _pnlOptPts = OPTION_SIM ? _spotMove * DELTA : _spotMove;
+          if (Math.abs(_pnlOptPts) < _tsFlatPts) {
+            const sign = _pnlOptPts >= 0 ? "+" : "";
+            exitReason = `Time-stop — flat after ${position.candlesHeld} candles (${sign}${_pnlOptPts.toFixed(1)}pt)`;
+          }
         }
       }
 
@@ -367,13 +409,33 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         _dailyPnl += pnl;
         _dailyTradeCount++;
         if (exitReason.includes("SL")) {
-          _consecSLs++;
-          const pauseCandles = _consecSLs >= 2
-            ? SCALP_PAUSE_CANDLES + SCALP_CONSEC_EXTRA * (_consecSLs - 1)
+          if (SCALP_PER_SIDE_PAUSE) {
+            _consecSLsBySide[position.side] += 1;
+          } else {
+            _consecSLsBySide.CE += 1;
+            _consecSLsBySide.PE += 1;
+          }
+          const _streak = SCALP_PER_SIDE_PAUSE ? _consecSLsBySide[position.side] : Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
+          const pauseCandles = _streak >= 2
+            ? SCALP_PAUSE_CANDLES + SCALP_CONSEC_EXTRA * (_streak - 1)
             : SCALP_PAUSE_CANDLES;
-          _slPauseUntilTs = candle.time + (pauseCandles * SCALP_RES * 60);
+          const _untilTs = candle.time + (pauseCandles * SCALP_RES * 60);
+          if (SCALP_PER_SIDE_PAUSE) {
+            _slPauseUntilBySide[position.side] = _untilTs;
+          } else {
+            _slPauseUntilBySide.CE = _untilTs;
+            _slPauseUntilBySide.PE = _untilTs;
+          }
+          _slPauseUntilTs = Math.max(_slPauseUntilBySide.CE, _slPauseUntilBySide.PE);
+          _consecSLs     = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
         } else if (pnl > 0) {
-          _consecSLs = 0;
+          if (SCALP_PER_SIDE_PAUSE) {
+            _consecSLsBySide[position.side] = 0;
+          } else {
+            _consecSLsBySide.CE = 0;
+            _consecSLsBySide.PE = 0;
+          }
+          _consecSLs = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
         }
         position = null;
       }
@@ -386,7 +448,8 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (expiryDates && !expiryDates.has(candleDate)) continue;
     if (_dailyTradeCount >= SCALP_MAX_TRADES) continue;
     if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
-    if (candle.time < _slPauseUntilTs) continue;
+    // Both-sides-paused fast path (entry-side specific check happens after signal returns)
+    if (candle.time < _slPauseUntilBySide.CE && candle.time < _slPauseUntilBySide.PE) continue;
 
     const result = scalpStrategy.getSignal(window, {
       silent: true,
@@ -420,6 +483,8 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 
     // Queue signal — will enter on NEXT candle's open (eliminates look-ahead bias)
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
+    // Per-side SL cooldown — block only if THIS side has an active pause
+    if (candle.time < _slPauseUntilBySide[side]) continue;
     pendingSignal = {
       side,
       rawSL:    result.stopLoss, // absolute SL level from strategy
