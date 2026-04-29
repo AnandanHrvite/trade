@@ -2435,7 +2435,7 @@ ${buildSidebar('scalpHistory', liveActive)}
     <div class="top-bar-right">
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
-      <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
+      <button onclick="copyAllJsonl(this)" class="export-btn" title="Copy the full per-trade JSONL log to clipboard">📋 Copy JSONL</button>
       <a href="/scalp-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Crash-safe per-trade JSONL log — full field capture for offline analysis">⬇ JSONL</a>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="/scalp-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
@@ -2807,26 +2807,24 @@ if (document.getElementById('jsonlModal')) {
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = document.getElementById('jsonlModal'); if (m && m.style.display !== 'none') m.style.display = 'none'; } });
 }
 
-function exportAllCSV() {
-  if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
-  var header = ['Session Date','Side','Symbol','Qty','Entry Time','Exit Time','Entry NIFTY','Exit NIFTY','Option Entry','Option Exit','PnL','PnL Mode','Exit Reason'];
-  var rows = ALL_TRADES_JSON.map(function(t) {
-    return [
-      t.date||'', t.side||'', t.symbol||'', t.qty||'',
-      t.entryTime||'', t.exitTime||'',
-      t.spotAtEntry||t.entryPrice||'', t.spotAtExit||t.exitPrice||'',
-      t.optionEntryLtp||'', t.optionExitLtp||'',
-      t.pnl!=null?t.pnl:'', t.pnlMode||'', t.exitReason||''
-    ];
-  });
-  var csv = [header].concat(rows).map(function(r) {
-    return r.map(function(v){ return '"' + String(v||'').replace(/"/g,'""')+'"'; }).join(',');
-  }).join('\\n');
-  var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
-  var a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
-  a.download = 'scalp_paper_history_' + d + '.csv';
-  a.click();
+async function copyAllJsonl(btn) {
+  var orig = btn.innerHTML;
+  btn.innerHTML = '\\u23f3 Fetching\\u2026';
+  btn.disabled = true;
+  try {
+    var res = await fetch('/scalp-paper/download/trades.jsonl', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var text = await res.text();
+    btn.innerHTML = orig; btn.disabled = false;
+    if (!text || !text.trim()) {
+      showAlert({icon:'\\u26a0\\ufe0f',title:'No Data',message:'No trade logs to copy yet',btnClass:'modal-btn-primary'});
+      return;
+    }
+    doCopy(text, btn, 'JSONL');
+  } catch(e) {
+    btn.innerHTML = orig; btn.disabled = false;
+    showAlert({icon:'\\u274c',title:'Copy Failed',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'});
+  }
 }
 
 async function confirmReset() {
