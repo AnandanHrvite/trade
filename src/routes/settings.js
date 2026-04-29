@@ -18,6 +18,7 @@ const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
+const settingsAudit = require("../utils/settingsAudit");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -538,6 +539,16 @@ router.post("/save", (req, res) => {
     }
   }
 
+  // Snapshot prior values for audit BEFORE updateEnvFile mutates process.env.
+  // Prefer .env on disk; fall back to process.env (covers schema defaults
+  // not yet persisted to .env).
+  const auditPrevEnv = {};
+  const auditKeys = new Set([...Object.keys(cleaned), ...deleteKeys]);
+  for (const k of auditKeys) {
+    if (k in envOnDisk)         auditPrevEnv[k] = envOnDisk[k];
+    else if (k in process.env)  auditPrevEnv[k] = process.env[k];
+  }
+
   const result = updateEnvFile(cleaned, deleteKeys);
   if (result.success) {
     const summary = [];
@@ -545,6 +556,18 @@ router.post("/save", (req, res) => {
     if (deleteKeys.length) summary.push(`deleted ${deleteKeys.length}: ${deleteKeys.join(", ")}`);
     console.log(`[settings] ${summary.join(" | ")}`,
       result.fileSaved ? `(persisted to ${ENV_PATH})` : `(IN-MEMORY ONLY — .env write failed: ${result.fileError}, path: ${ENV_PATH})`);
+
+    try {
+      const written = settingsAudit.logSave({
+        prevEnv: auditPrevEnv,
+        updates: cleaned,
+        deleteKeys,
+        req,
+      });
+      if (written) console.log(`[settings] audit: logged ${written} change(s) → ${settingsAudit.AUDIT_FILE}`);
+    } catch (err) {
+      console.warn("[settings] audit log failed:", err.message);
+    }
   }
   res.json({ ...result, envPath: ENV_PATH });
 });
@@ -2186,6 +2209,157 @@ router.get("/env", (req, res) => {
     return res.json({ error: "Could not read .env" });
   }
   res.json(envData);
+});
+
+// ── GET /settings/audit/data — JSON stream of audit entries (newest first) ──
+router.get("/audit/data", (req, res) => {
+  const opts = {
+    limit:  Math.min(parseInt(req.query.limit, 10) || 500, 5000),
+    since:  req.query.since || null,
+    key:    req.query.key   || null,
+    action: req.query.action || null,
+  };
+  let entries = settingsAudit.readAuditLog(opts);
+  if (req.query.source) entries = entries.filter(e => (e.source || "").includes(req.query.source));
+  res.json({ count: entries.length, entries });
+});
+
+// ── GET /settings/audit — HTML view of the audit log ────────────────────────
+router.get("/audit", (req, res) => {
+  const appSecret = process.env.API_SECRET;
+  if (appSecret && req.query.secret !== appSecret) {
+    return res.status(401).send(`<!DOCTYPE html><html><body style="font-family:monospace;background:#040c18;color:#c8d8f0;padding:40px;">
+      <h2>Audit log — auth required</h2>
+      <form onsubmit="event.preventDefault();window.location='/settings/audit?secret='+encodeURIComponent(this.s.value);">
+        <input name="s" type="password" placeholder="App Secret" autofocus style="padding:10px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;"/>
+        <button style="padding:10px 20px;background:#1e40af;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;">Unlock</button>
+      </form></body></html>`);
+  }
+
+  const filterKey    = (req.query.key    || "").trim();
+  const filterAction = (req.query.action || "").trim();
+  const filterSource = (req.query.source || "").trim();
+  const limit        = Math.min(parseInt(req.query.limit, 10) || 500, 5000);
+
+  let entries = settingsAudit.readAuditLog({
+    limit,
+    key:    filterKey    || null,
+    action: filterAction || null,
+  });
+  if (filterSource) entries = entries.filter(e => (e.source || "").includes(filterSource));
+
+  // Group by timestamp+source for display
+  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const escapeHtml = s => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
+  const fmtTs = ts => {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
+    } catch (_) { return ts; }
+  };
+
+  const actionColor = a => ({ add: "#10b981", update: "#f59e0b", delete: "#ef4444" }[a] || "#94a3b8");
+  const sourceLabel = s => {
+    if (!s) return "—";
+    if (s.startsWith("git:")) return `<span style="color:#60a5fa;" title="reconstructed from commit">git ${escapeHtml(s.slice(4))}</span>`;
+    if (s === "ui") return `<span style="color:#10b981;">ui</span>`;
+    return escapeHtml(s);
+  };
+
+  const fmtVal = v => {
+    if (v === null || v === undefined) return `<span style="color:#4a6080;">∅</span>`;
+    const s = String(v);
+    if (s.length > 80) return `<span title="${escapeHtml(s)}">${escapeHtml(s.slice(0, 80))}…</span>`;
+    return escapeHtml(s);
+  };
+
+  const rows = entries.map(e => `
+    <tr>
+      <td style="white-space:nowrap;color:#94a3b8;font-size:0.72rem;">${escapeHtml(fmtTs(e.ts))}</td>
+      <td><span style="color:${actionColor(e.action)};font-weight:600;text-transform:uppercase;font-size:0.7rem;">${escapeHtml(e.action || "")}</span></td>
+      <td style="font-weight:600;color:#e2e8f0;"><a href="/settings/audit?secret=${encodeURIComponent(req.query.secret || "")}&key=${encodeURIComponent(e.key)}" style="color:inherit;text-decoration:none;border-bottom:1px dotted #4a6080;">${escapeHtml(e.key)}</a></td>
+      <td style="color:#fca5a5;font-family:'IBM Plex Mono',monospace;">${fmtVal(e.from)}</td>
+      <td style="color:#86efac;font-family:'IBM Plex Mono',monospace;">${fmtVal(e.to)}</td>
+      <td>${sourceLabel(e.source)}</td>
+      <td style="color:#64748b;font-size:0.7rem;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(e.commit_subject || e.ua || "")}">${escapeHtml(e.commit_subject || e.ua || "")}</td>
+    </tr>
+  `).join("");
+
+  // Action counts for the badge bar (over the filtered set)
+  const counts = entries.reduce((m, e) => { m[e.action] = (m[e.action] || 0) + 1; return m; }, {});
+  const totalLine = `${entries.length} entr${entries.length === 1 ? "y" : "ies"}` +
+    (counts.update ? ` · <span style="color:#f59e0b;">${counts.update} updated</span>` : "") +
+    (counts.add ? ` · <span style="color:#10b981;">${counts.add} added</span>` : "") +
+    (counts.delete ? ` · <span style="color:#ef4444;">${counts.delete} deleted</span>` : "");
+
+  const secret = req.query.secret || "";
+
+  res.send(`<!DOCTYPE html><html><head>
+<title>Settings Audit Log</title>
+${faviconLink()}
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;display:flex;min-height:100vh;}
+${sidebarCSS()}
+.audit-main{flex:1;padding:24px 32px;overflow-x:auto;}
+.audit-header{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:12px;}
+.audit-header h1{font-size:1.05rem;color:#60a5fa;font-weight:600;}
+.audit-header .sub{font-size:0.72rem;color:#4a6080;margin-top:4px;}
+.filter-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.filter-bar input,.filter-bar select{padding:6px 10px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;font-size:0.74rem;}
+.filter-bar input:focus,.filter-bar select:focus{outline:none;border-color:#3b82f6;}
+.filter-bar button{padding:6px 14px;background:#1e40af;color:#fff;border:none;border-radius:6px;font-family:inherit;font-size:0.74rem;cursor:pointer;font-weight:600;}
+.filter-bar button:hover{background:#2563eb;}
+.filter-bar a.clear{color:#94a3b8;font-size:0.7rem;text-decoration:none;border-bottom:1px dotted #4a6080;}
+.summary{font-size:0.74rem;color:#94a3b8;margin-bottom:12px;}
+table{width:100%;border-collapse:collapse;background:#07111f;border:1px solid #0e1e36;border-radius:8px;overflow:hidden;}
+th{padding:10px 12px;text-align:left;font-size:0.7rem;color:#60a5fa;font-weight:600;background:#0a1528;border-bottom:1px solid #1e3a5a;text-transform:uppercase;letter-spacing:0.5px;}
+td{padding:8px 12px;font-size:0.78rem;border-bottom:1px solid #0e1e36;vertical-align:top;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#0a1528;}
+.empty{text-align:center;padding:40px;color:#4a6080;font-size:0.8rem;}
+</style></head><body>
+<div class="app-shell">${buildSidebar('settings', liveActive, false)}
+<div class="audit-main">
+  <div class="audit-header">
+    <div>
+      <h1>⚙️ Settings Audit Log</h1>
+      <div class="sub">Every change to .env values — UI saves and historical commits.</div>
+    </div>
+    <form class="filter-bar" method="get" action="/settings/audit">
+      <input type="hidden" name="secret" value="${escapeHtml(secret)}"/>
+      <input type="text" name="key" placeholder="key contains…" value="${escapeHtml(filterKey)}" style="width:180px;"/>
+      <select name="action">
+        <option value="">all actions</option>
+        <option value="add"    ${filterAction==='add'?'selected':''}>add</option>
+        <option value="update" ${filterAction==='update'?'selected':''}>update</option>
+        <option value="delete" ${filterAction==='delete'?'selected':''}>delete</option>
+      </select>
+      <select name="source">
+        <option value="">all sources</option>
+        <option value="ui"  ${filterSource==='ui'?'selected':''}>ui only</option>
+        <option value="git" ${filterSource==='git'?'selected':''}>git only</option>
+      </select>
+      <input type="number" name="limit" value="${limit}" min="10" max="5000" style="width:80px;" title="row limit"/>
+      <button type="submit">filter</button>
+      ${(filterKey||filterAction||filterSource) ? `<a class="clear" href="/settings/audit?secret=${encodeURIComponent(secret)}">clear</a>` : ''}
+      <a class="clear" href="/settings?secret=${encodeURIComponent(secret)}" style="margin-left:12px;">← back to settings</a>
+    </form>
+  </div>
+  <div class="summary">${totalLine}</div>
+  ${entries.length === 0 ? `<div class="empty">No audit entries match these filters.</div>` : `
+  <table>
+    <thead><tr>
+      <th>Timestamp (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`}
+</div></div>
+</body></html>`);
 });
 
 module.exports = router;
