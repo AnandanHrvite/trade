@@ -195,6 +195,32 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     return TRAIL_T3_GAP;
   }
 
+  // ── Prev-candle structural trail (candle-by-candle, profit-only) ─────────────
+  // Disabled by default — enable after validating in backtest before going live.
+  // Composes with SAR + tier trail (tighten-only, never loosens).
+  const SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+  const SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
+  const SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
+  const SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
+
+  function applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
+    if (!SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
+    if (!lastCandle || currentSL == null || entrySpot == null) return currentSL;
+    const profit = side === "CE"
+      ? (bestPrice || entrySpot) - entrySpot
+      : entrySpot - (bestPrice || entrySpot);
+    if (profit < SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS) return currentSL;
+    const structPx = side === "CE" ? lastCandle.low : lastCandle.high;
+    const gap = side === "CE" ? (lastCandle.close - structPx) : (structPx - lastCandle.close);
+    if (gap > SWING_PREV_CANDLE_TRAIL_MAX_GAP) return currentSL;
+    const proposed = side === "CE"
+      ? structPx - SWING_PREV_CANDLE_TRAIL_BUFFER_PTS
+      : structPx + SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
+    if (side === "CE" && proposed > currentSL) return quantize(proposed, 2);
+    if (side === "PE" && proposed < currentSL) return quantize(proposed, 2);
+    return currentSL;
+  }
+
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
   _istHHMMCache.clear();
@@ -389,6 +415,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
             position.stopLoss = trailSL;
           }
         }
+      }
+    }
+
+    // ── PREV-CANDLE STRUCTURAL TRAIL (candle-by-candle, profit-only) ─────────
+    // After current candle close, if trade is in profit, tighten SL to this candle's
+    // low (CE) / high (PE) ± buffer. Tighten-only; skip wide bars to prevent loosening.
+    if (position && SWING_PREV_CANDLE_TRAIL_ENABLED) {
+      const oldSL = position.stopLoss;
+      const newSL = applyPrevCandleTrail(oldSL, candle, position.side, position.bestPrice, position.entryPrice);
+      if (newSL !== oldSL) {
+        if (_verbose) {
+          const ref = position.side === "CE" ? candle.low : candle.high;
+          console.log(`  📐 PREV-CANDLE TRAIL ${position.side}: ₹${oldSL} → ₹${newSL} | ref ${position.side === "CE" ? "low" : "high"}=${ref} buf=${SWING_PREV_CANDLE_TRAIL_BUFFER_PTS}pt`);
+        }
+        position.stopLoss = newSL;
       }
     }
 

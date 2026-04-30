@@ -61,6 +61,36 @@ const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "tru
 const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
 const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
 
+// ── Prev-candle structural trail (candle-by-candle, profit-only) ──────────────
+// Disabled by default — enable after backtest validation.
+// Composes with SAR + tier trail (tighten-only — never loosens).
+const _SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+const _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
+const _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
+const _SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
+
+// Tighten-only, profit-gated: returns the proposed SL (or current SL if no change).
+// `lastCandle` = the candle that just closed; `entrySpot` = entry NIFTY level.
+function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
+  if (!_SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
+  if (!lastCandle || currentSL == null || entrySpot == null) return currentSL;
+  const profit = side === "CE"
+    ? (bestPrice || entrySpot) - entrySpot
+    : entrySpot - (bestPrice || entrySpot);
+  if (profit < _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS) return currentSL;
+  const structPx = side === "CE" ? lastCandle.low : lastCandle.high;
+  // Skip wide bars — don't let one outsized candle loosen the structural trail target
+  const gap = side === "CE" ? (lastCandle.close - structPx) : (structPx - lastCandle.close);
+  if (gap > _SWING_PREV_CANDLE_TRAIL_MAX_GAP) return currentSL;
+  const proposed = side === "CE"
+    ? structPx - _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS
+    : structPx + _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
+  // Tighten-only
+  if (side === "CE" && proposed > currentSL) return parseFloat(proposed.toFixed(2));
+  if (side === "PE" && proposed < currentSL) return parseFloat(proposed.toFixed(2));
+  return currentSL;
+}
+
 // Helper used by both entry paths (candle-close + intra-candle)
 function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle) {
   if (!stopLoss || !entrySpot) return { stopLoss, capLog: null };
@@ -1106,6 +1136,20 @@ async function onCandleClose(candle) {
       pos.stopLoss = stopLoss;
       const _optSAR = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
       log(`🔄 [LIVE] SAR trail: ₹${oldSL} → ₹${stopLoss} (${pos.side === "CE" ? "↑" : "↓"} tightened)${_optSAR}`);
+    }
+  }
+
+  // ── Prev-candle structural trail (candle-by-candle, profit-only) ───────────
+  if (_SWING_PREV_CANDLE_TRAIL_ENABLED && tradeState.position && tradeState.position.stopLoss != null) {
+    const pos     = tradeState.position;
+    const _oldPCT = pos.stopLoss;
+    const _newPCT = _applyPrevCandleTrail(_oldPCT, candle, pos.side, pos.bestPrice, pos.spotAtEntry);
+    if (_newPCT !== _oldPCT) {
+      pos.stopLoss = _newPCT;
+      const _optPCT = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
+      log(`📐 [LIVE] PrevCandle trail ${pos.side}: ₹${_oldPCT} → ₹${_newPCT} | ref ${pos.side === "CE" ? "low" : "high"}=₹${pos.side === "CE" ? candle.low : candle.high} buf=${_SWING_PREV_CANDLE_TRAIL_BUFFER_PTS}pt${_optPCT}`);
+      saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
+      updateHardSL(_newPCT);
     }
   }
 
