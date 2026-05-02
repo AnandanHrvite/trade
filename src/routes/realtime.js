@@ -79,9 +79,9 @@ ${faviconLink()}
   .stat .lbl { font-size:0.62rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.5px; }
   .stat .val { font-size:0.95rem; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
 
-  .pos-pos { color:#10b981; }
-  .pos-neg { color:#ef4444; }
-  .pos-zero { color:#94a3b8; }
+  .pos-pos { color:#10b981 !important; }
+  .pos-neg { color:#ef4444 !important; }
+  .pos-zero { color:#94a3b8 !important; }
 
   .footer-meta { font-size:0.68rem; color:#5d6c87; display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
 
@@ -126,7 +126,9 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.swing td:first-child { color:#2563eb; }
   :root[data-theme="light"] .rollup tr.scalp td:first-child { color:#d97706; }
   :root[data-theme="light"] .rollup tr.pa    td:first-child { color:#9333ea; }
-  :root[data-theme="light"] .pos-zero { color:#64748b; }
+  :root[data-theme="light"] .pos-zero { color:#64748b !important; }
+  :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
+  :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
 </style>
 </head>
 <body>
