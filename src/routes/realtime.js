@@ -182,7 +182,7 @@ ${sidebar}
         <th>Closed P&amp;L (Today)</th>
         <th>Trades</th>
         <th>W / L</th>
-        <th>Cumulative P&amp;L</th>
+        <th>Today Total (Open + Closed)</th>
       </tr>
     </thead>
     <tbody id="rollup-body">
@@ -275,7 +275,7 @@ function renderRollup(all) {
     { key:'PA',    cls:'pa',    label:'PRICE ACTION',  d: all.PA    },
   ];
 
-  let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0, totalCum = 0;
+  let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0;
   let anyRunning = false, anyData = false;
 
   const tbody = document.getElementById('rollup-body');
@@ -287,19 +287,18 @@ function renderRollup(all) {
       continue;
     }
     anyData = true;
-    const open = openPnl(d);
-    const closed = d.sessionPnl ?? 0;
-    const cum = d.totalPnl ?? 0;
+    const open = +openPnl(d) || 0;
+    const closed = +(d.sessionPnl ?? 0) || 0;
+    const dayTotal = open + closed;
     const trades = d.tradeCount ?? 0;
     const w = d.wins ?? 0;
     const l = d.losses ?? 0;
     if (d.running) anyRunning = true;
-    totalOpen += +open || 0;
-    totalClosed += +closed || 0;
+    totalOpen += open;
+    totalClosed += closed;
     totalTrades += +trades || 0;
     totalW += +w || 0;
     totalL += +l || 0;
-    totalCum += +cum || 0;
     html += \`<tr class="\${r.cls}">
       <td>\${r.label}</td>
       <td>\${d.running ? 'RUNNING' : 'STOPPED'}</td>
@@ -307,9 +306,10 @@ function renderRollup(all) {
       <td class="\${cls(closed)}">\${fmtINR(closed)}</td>
       <td>\${trades}</td>
       <td>\${w} / \${l}</td>
-      <td class="\${cls(cum)}">\${fmtINR(cum)}</td>
+      <td class="\${cls(dayTotal)}">\${fmtINR(dayTotal)}</td>
     </tr>\`;
   }
+  const grandDayTotal = totalOpen + totalClosed;
   html += \`<tr class="total">
     <td>TOTAL</td>
     <td>\${anyData ? (anyRunning ? 'RUNNING' : 'STOPPED') : '—'}</td>
@@ -317,7 +317,7 @@ function renderRollup(all) {
     <td class="\${cls(totalClosed)}">\${fmtINR(totalClosed)}</td>
     <td>\${totalTrades}</td>
     <td>\${totalW} / \${totalL}</td>
-    <td class="\${cls(totalCum)}">\${fmtINR(totalCum)}</td>
+    <td class="\${cls(grandDayTotal)}">\${fmtINR(grandDayTotal)}</td>
   </tr>\`;
   tbody.innerHTML = html;
 }
