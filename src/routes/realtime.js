@@ -28,8 +28,8 @@ function renderPage(liveActive) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Real-Time Monitor</title>
 ${faviconLink()}
-${sidebarCSS()}
 <style>
+  ${sidebarCSS()}
   body { margin:0; background:#040c18; color:#e0eaf8; font-family:'Segoe UI',-apple-system,sans-serif; }
   .main-content { padding:20px 24px; }
   .top-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:16px; flex-wrap:wrap; }
