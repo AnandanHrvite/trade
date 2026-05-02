@@ -28,6 +28,7 @@ function renderPage(liveActive) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Real-Time Monitor</title>
 ${faviconLink()}
+<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
   ${sidebarCSS()}
   body { margin:0; background:#040c18; color:#e0eaf8; font-family:'Segoe UI',-apple-system,sans-serif; }
@@ -98,6 +99,34 @@ ${faviconLink()}
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+
+  /* ── Light-theme overrides ── */
+  :root[data-theme="light"] .top-bar h1 { color:#1e293b; }
+  :root[data-theme="light"] .top-bar .sub { color:#64748b; }
+  :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  :root[data-theme="light"] .toggle button { color:#64748b; }
+  :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  :root[data-theme="light"] .card.swing .card-title { color:#2563eb; }
+  :root[data-theme="light"] .card.scalp .card-title { color:#d97706; }
+  :root[data-theme="light"] .card.pa    .card-title { color:#9333ea; }
+  :root[data-theme="light"] .pos-block,
+  :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
+  :root[data-theme="light"] .flat-block { color:#64748b; }
+  :root[data-theme="light"] .pos-symbol { color:#475569; }
+  :root[data-theme="light"] .pos-grid .lbl { color:#64748b; }
+  :root[data-theme="light"] .pos-grid .val { color:#1e293b; }
+  :root[data-theme="light"] .stat { background:#f8fafc !important; border-color:#e0e4ea !important; }
+  :root[data-theme="light"] .stat .lbl { color:#64748b; }
+  :root[data-theme="light"] .stat .val { color:#1e293b; }
+  :root[data-theme="light"] .footer-meta { color:#94a3b8; border-top-color:#e0e4ea; }
+  :root[data-theme="light"] .rollup { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#64748b !important; border-bottom-color:#e0e4ea !important; }
+  :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
+  :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
+  :root[data-theme="light"] .rollup tr.swing td:first-child { color:#2563eb; }
+  :root[data-theme="light"] .rollup tr.scalp td:first-child { color:#d97706; }
+  :root[data-theme="light"] .rollup tr.pa    td:first-child { color:#9333ea; }
+  :root[data-theme="light"] .pos-zero { color:#64748b; }
 </style>
 </head>
 <body>
