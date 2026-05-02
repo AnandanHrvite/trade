@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with 3 independent strategies (Swing, Scalp, Price Action), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+NIFTY options algorithmic trading bot with 3 independent strategies (Swing, Scalp, Price Action), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all 3 strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -316,6 +316,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ### Analytics & Tools
 | URL | Description |
 |-----|-------------|
+| `/realtime` | **Unified real-time monitor** — one screen for all 3 strategies with a PAPER/LIVE toggle, three cards (Swing / Scalp / PA) showing open position + today's stats, and a rollup table with **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. |
 | `/consolidation` | Cross-mode **paper** trade history + analytics (Swing + Scalp + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
 | `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
@@ -378,6 +379,7 @@ src/
     manualTracker.js                  # Manual position tracker + SL trailer
     consolidation.js                  # Cross-mode PAPER trade history + Day View + analytics
     liveConsolidation.js              # Cross-mode LIVE trade history + analytics (parity with /consolidation)
+    realtime.js                       # Unified real-time monitor (PAPER/LIVE toggle, all 3 strategies on one screen)
     sync.js                           # /sync/info + /sync/download-all (tar.gz of ~/trading-data/)
     pnlHistory.js                     # Broker baselines + live-bot P&L by FY
     compare.js                        # Paper vs Backtest comparison pages

@@ -4,6 +4,26 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.4.1 — Unified Real-Time Monitor (2026-05-02)
+
+### Real-Time Monitor — One Screen, PAPER/LIVE Toggle
+
+- **New route `/realtime`** ([src/routes/realtime.js](src/routes/realtime.js)) and sidebar entry **📡 Real-Time** (between Backtest and Paper Traded History). Replaces the workflow of bouncing between six dedicated paper/live status pages just to see what's happening right now.
+- **Single screen** with a **PAPER ⇄ LIVE** toggle at the top right (blue = paper, red = live). Polls every 4 seconds.
+- **Three side-by-side cards** — SWING / SCALP / PRICE ACTION — each showing:
+  - RUNNING / STOPPED / OFFLINE badge
+  - Open position card: side (CE/PE), symbol, qty, entry spot, entry option LTP, current option LTP, live spot, points moved, stop loss, entry time, **unrealised P&L with %**
+  - "FLAT — no open position" placeholder when no trade is active
+  - Today's stat tiles: Trades, Wins / Losses, Session P&L
+  - Footer: live LTP, last tick time, tick count
+- **Rollup table below** — one row per strategy plus a **TOTAL** row, columns: Strategy, Status, Open P&L (unrealised), Closed P&L (today), Trades, W / L, **Today Total (Open + Closed)**. Everything is today-only — no cumulative-across-all-sessions number on this page.
+- **Read-only** — no Start / Stop / Exit buttons. Drill-down still happens on the dedicated `/swing-paper`, `/swing-live`, etc. pages.
+- **Theme-aware** — respects the global `UI_THEME` setting (Day / Night view) like every other page; full light-mode overrides for cards, rollup, stats, and toggle. Positive / negative P&L values stay green / red in both themes via `!important` semantic color classes (so light-mode `.rollup td { color:#334155 }` rules can't override the P&L coloring by selector specificity).
+- **No new backend aggregation** — the page polls each strategy's existing `/{mode}-{paper|live}/status/data` endpoint in parallel from the browser, so it always reads the same source the dedicated status pages already use. Zero risk of divergence; one normalised key handles `unrealisedPnl` (swing) vs `unrealised` (scalp/PA).
+- **Runs alongside live trading** — not in the sidebar's `blocked` list, so it's reachable while any live session is active (read-only, can't disturb broker state).
+
+---
+
 ## v4.4.0 — Hybrid Initial SL Cap, Sync to Local, Restore Sessions, Live Paper-Parity (2026-04-27)
 
 ### Swing — Hybrid Initial SL Cap

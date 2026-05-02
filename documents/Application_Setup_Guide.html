@@ -484,8 +484,8 @@
   <h1>Application Setup &amp; Configuration Guide</h1>
   <p class="subtitle">Palani Andawar Trading System &mdash; Complete Registration &amp; Secrets Reference</p>
   <div class="meta">
-    <span><span class="badge badge-blue">v4.4.0</span></span>
-    <span>Generated: 2026-04-27</span>
+    <span><span class="badge badge-blue">v4.4.1</span></span>
+    <span>Generated: 2026-05-02</span>
     <span>NIFTY Options Algo Trading &mdash; Swing + Scalp + Price Action</span>
   </div>
 </header>
@@ -496,7 +496,7 @@
 <nav class="toc">
   <h2>&#9776; Table of Contents</h2>
   <ol>
-    <li><a href="#whatsnew">What's New in v4.4.0</a></li>
+    <li><a href="#whatsnew">What's New in v4.4.1</a></li>
     <li><a href="#architecture">System Architecture Overview</a></li>
     <li><a href="#modes">Trading Modes &mdash; Backtest, Paper, Live</a></li>
     <li><a href="#fyers">Fyers API Registration</a></li>
@@ -513,10 +513,27 @@
 <div class="container">
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.0                                     -->
+<!-- 0. WHAT'S NEW IN v4.4.1                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue" id="whatsnew">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.4.0 (2026-04-27)</h2>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.4.1 (2026-05-02)</h2>
+  <p>Single-screen real-time monitor with a PAPER/LIVE toggle — replaces the workflow of bouncing between six dedicated paper/live status pages just to see what's happening right now. Setup is unchanged from v4.4.0.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>New route <code>/realtime</code></strong> (<code>src/routes/realtime.js</code>) and sidebar entry <strong>&#128225; Real-Time</strong>, sitting between Backtest and Paper Traded History.</li>
+    <li><strong>One screen, PAPER &harr; LIVE toggle</strong> &mdash; blue PAPER / red LIVE pill at the top right; polls every 4 seconds.</li>
+    <li><strong>Three side-by-side cards</strong> (SWING / SCALP / PRICE ACTION) &mdash; each shows RUNNING/STOPPED/OFFLINE badge, open position (side, symbol, qty, entry spot/option, current option LTP, points moved, SL, entry time, unrealised P&amp;L with %), or "FLAT &mdash; no open position"; plus today's stat tiles (Trades, Wins/Losses, Session P&amp;L) and a footer with live LTP, last tick time, and tick count.</li>
+    <li><strong>Rollup table</strong> &mdash; one row per strategy + a TOTAL row, columns: Strategy, Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Page is today-only &mdash; cumulative-across-all-sessions number is intentionally absent here.</li>
+    <li><strong>Read-only</strong> &mdash; no Start/Stop/Exit buttons; drill-down still happens on the dedicated <code>/swing-paper</code>, <code>/swing-live</code>, etc. pages. Page stays reachable while any live session is active (not in the sidebar's <code>blocked</code> list, since it can't disturb broker state).</li>
+    <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes via <code>!important</code> semantic color classes (so light-mode <code>.rollup td</code> overrides can't beat them by selector specificity).</li>
+    <li><strong>No new backend aggregation</strong> &mdash; the browser polls each strategy's existing <code>/{mode}-{paper|live}/status/data</code> endpoint in parallel, so the unified screen always reads the same source the dedicated status pages already trust. One normalised key handles <code>unrealisedPnl</code> (swing) vs <code>unrealised</code> (scalp/PA).</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.4.0                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section blue">
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.4.0 Highlights (2026-04-27)</h2>
   <p>Hybrid initial SL cap for Swing, one-click <em>Sync to Local</em> for the EC2 trading-data directory, paper-history restore from append-only JSONL, and a paper-parity sweep across all 3 live engines. Setup is unchanged from v4.3.0; new env vars and routes are listed below.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Swing hybrid initial SL cap</strong> &mdash; new env knobs <code>SWING_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>SWING_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>SWING_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL now takes the tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code> floored at <code>MIN_PTS</code>. Wired into Swing Paper + Swing Live; backtest is intentionally untouched during the paper-data-collection window. New trade-record field <code>sarStopLoss</code> preserves raw SAR distance for analysis.</li>
@@ -532,10 +549,10 @@
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.3.0                                    -->
+<!-- 0b. WHAT'S NEW IN v4.3.0                                    -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.3.0 Highlights (2026-04-24)</h2>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0b. v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, per-module dashboard, trade guards, audit trails. Setup is unchanged from v4.2.0; new env vars and routes are listed below and reflected in the rest of this guide.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (Swing + Scalp + PA Live), parity with <code>/consolidation</code>.</li>
@@ -555,7 +572,7 @@
 </section>
 
 <section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0b. v4.2.0 Highlights (2026-04-20)</h2>
+  <h2><span class="section-icon icon-blue">&#9734;</span> 0c. v4.2.0 Highlights (2026-04-20)</h2>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode paper trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
     <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (Swing / Scalp / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
@@ -791,7 +808,7 @@
       </tr>
     </tbody>
   </table>
-  <p style="margin-top:10px;">Cross-mode analytics: <code>/consolidation</code> (paper) and <code>/live-consolidation</code> (live) aggregate all 3 strategies into a unified history with daily/monthly/yearly roll-ups, Day View panel, and per-mode breakdown.</p>
+  <p style="margin-top:10px;">Cross-mode analytics: <code>/consolidation</code> (paper) and <code>/live-consolidation</code> (live) aggregate all 3 strategies into a unified history with daily/monthly/yearly roll-ups, Day View panel, and per-mode breakdown. For an at-a-glance view of <em>right now</em> (no history), use <code>/realtime</code> &mdash; one screen with a PAPER/LIVE toggle, three live cards (Swing / Scalp / PA), and a today-only rollup table; polls each strategy's <code>/status/data</code> every 4s.</p>
 
   <!-- ── Daily Workflow Flowchart ── -->
   <h3>Recommended Daily Workflow</h3>
@@ -1594,7 +1611,7 @@
 <!-- FOOTER                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <footer class="page-footer">
-  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.4.0 &nbsp;|&nbsp; 2026-04-27
+  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.4.1 &nbsp;|&nbsp; 2026-05-02
 </footer>
 
 </body>
