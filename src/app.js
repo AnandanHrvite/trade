@@ -307,6 +307,7 @@ app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← P
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
+app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
 app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 

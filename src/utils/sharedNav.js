@@ -86,6 +86,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       items: [
         { key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' },
         { key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' },
+        { key: 'realtime',          href: '/realtime',           icon: '📡', label: 'Real-Time' },
         { key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' },
         { key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' },
       ]
