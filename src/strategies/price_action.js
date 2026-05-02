@@ -753,8 +753,9 @@ function getSignal(candles, opts) {
   // ── Filter audit (additive logging — does not affect entry decisions) ─────
   // Records which filters passed/failed for CE and PE so the structured skip
   // log captures *why* this bar produced no signal. Patterns are checked
-  // regardless of toggle state; disabled patterns are tagged "(off)" so we
-  // can see opportunity cost in the data window.
+  // regardless of toggle state, but only enabled+formed patterns count toward
+  // the "pattern" filter — disabled (off) ones are surfaced in detail for
+  // opportunity-cost visibility but never pass the gate.
   var _auditBullEngulf = isBullishEngulfing(prev, sc, MIN_BODY);
   var _auditBearEngulf = isBearishEngulfing(prev, sc, MIN_BODY);
   var _auditHammer     = isHammer(sc, PIN_WICK_RATIO);
@@ -767,21 +768,40 @@ function getSignal(candles, opts) {
   var _auditAscTri     = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   var _auditDescTri    = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
 
-  function _tag(formed, enabled) { return formed ? (enabled ? "" : "(off)") : null; }
-  var _bullFormed = [];
-  if (_auditBullEngulf)      _bullFormed.push("Engulf"  + (PATTERN_ENGULFING     ? "" : "(off)"));
-  if (_auditHammer)          _bullFormed.push("Hammer"  + (PATTERN_PINBAR        ? "" : "(off)"));
-  if (_auditBOS.bullish)     _bullFormed.push("BOS"     + (PATTERN_BOS           ? "" : "(off)"));
-  if (_auditIBBull)          _bullFormed.push("IB"      + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
-  if (_auditDblBot.detected) _bullFormed.push("DblBot"  + (PATTERN_DOUBLE_BOTTOM ? "" : "(off)"));
-  if (_auditAscTri.detected) _bullFormed.push("AscTri"  + (PATTERN_ASC_TRIANGLE  ? "" : "(off)"));
-  var _bearFormed = [];
-  if (_auditBearEngulf)      _bearFormed.push("Engulf"    + (PATTERN_ENGULFING     ? "" : "(off)"));
-  if (_auditShootStar)       _bearFormed.push("ShootStar" + (PATTERN_PINBAR        ? "" : "(off)"));
-  if (_auditBOS.bearish)     _bearFormed.push("BOS"       + (PATTERN_BOS           ? "" : "(off)"));
-  if (_auditIBBear)          _bearFormed.push("IB"        + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
-  if (_auditDblTop.detected) _bearFormed.push("DblTop"    + (PATTERN_DOUBLE_TOP    ? "" : "(off)"));
-  if (_auditDescTri.detected)_bearFormed.push("DescTri"   + (PATTERN_DESC_TRIANGLE ? "" : "(off)"));
+  // Split "formed" patterns into enabled vs disabled — only enabled count
+  // toward the "Bullish/Bearish pattern" gate; disabled are shown for context.
+  var _bullEnabled = [], _bullDisabled = [];
+  function _addBull(formed, name, enabled) {
+    if (!formed) return;
+    if (enabled) _bullEnabled.push(name);
+    else         _bullDisabled.push(name + "(off)");
+  }
+  _addBull(_auditBullEngulf,      "Engulf",  PATTERN_ENGULFING);
+  _addBull(_auditHammer,          "Hammer",  PATTERN_PINBAR);
+  _addBull(_auditBOS.bullish,     "BOS",     PATTERN_BOS);
+  _addBull(_auditIBBull,          "IB",      PATTERN_INSIDE_BAR);
+  _addBull(_auditDblBot.detected, "DblBot",  PATTERN_DOUBLE_BOTTOM);
+  _addBull(_auditAscTri.detected, "AscTri",  PATTERN_ASC_TRIANGLE);
+  var _bearEnabled = [], _bearDisabled = [];
+  function _addBear(formed, name, enabled) {
+    if (!formed) return;
+    if (enabled) _bearEnabled.push(name);
+    else         _bearDisabled.push(name + "(off)");
+  }
+  _addBear(_auditBearEngulf,      "Engulf",    PATTERN_ENGULFING);
+  _addBear(_auditShootStar,       "ShootStar", PATTERN_PINBAR);
+  _addBear(_auditBOS.bearish,     "BOS",       PATTERN_BOS);
+  _addBear(_auditIBBear,          "IB",        PATTERN_INSIDE_BAR);
+  _addBear(_auditDblTop.detected, "DblTop",    PATTERN_DOUBLE_TOP);
+  _addBear(_auditDescTri.detected,"DescTri",   PATTERN_DESC_TRIANGLE);
+
+  function _patternDetail(enabled, disabled, allList) {
+    if (enabled.length) {
+      return enabled.join(",") + (disabled.length ? " (also: " + disabled.join(",") + ")" : "");
+    }
+    if (disabled.length) return "only disabled patterns formed: " + disabled.join(",");
+    return "none formed (" + allList + ")";
+  }
 
   function _nearestDist(price, levels) {
     var best = null;
@@ -794,29 +814,53 @@ function getSignal(candles, opts) {
   var _nearLowDist  = _nearestDist(sc.low,  swings.swingLows);
   var _nearHighDist = _nearestDist(sc.high, swings.swingHighs);
 
+  // ADX-rising / directional gates — mirror _risingOk()/_diOk() exactly so
+  // the audit reflects what the strategy actually checks per pattern.
+  var _risingActive = ADX_ENABLED && ADX_RISING_REQ;
+  var _risingPass   = !_risingActive || adxRising;
+  var _risingDetailStr = _risingActive
+    ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") +
+       " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago")
+    : "rising gate off";
+
+  var _diActive = ADX_ENABLED && ADX_DIRECTIONAL;
+  var _diMissing = pdiVal === null || mdiVal === null;
+  var _diCePass = !_diActive || _diMissing || pdiVal > mdiVal;
+  var _diPePass = !_diActive || _diMissing || mdiVal > pdiVal;
+  function _diDetailStr(side) {
+    if (!_diActive) return "directional gate off";
+    if (_diMissing) return "DI not available (warming)";
+    return (side === "CE" ? "+DI>-DI" : "-DI>+DI") +
+           " (+DI=" + pdiVal.toFixed(1) + " -DI=" + mdiVal.toFixed(1) + ")";
+  }
+
   var _ceAuditChecks = [
     { name: "RSI in CE range", ok: rsi > RSI_CE_MIN && rsi < RSI_CE_MAX,
       detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE_MIN + "-" + RSI_CE_MAX },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
+    { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
+    { name: "ADX directional", ok: _diCePass, detail: _diDetailStr("CE") },
     { name: "Near support", ok: supportCheck.near,
       detail: supportCheck.near
         ? ("support=" + supportCheck.level.toFixed(0))
         : ("no swing low within " + SR_ZONE_PTS + "pts" + (_nearLowDist !== null ? " (nearest " + _nearLowDist.toFixed(0) + "pts)" : "")) },
-    { name: "Bullish pattern", ok: _bullFormed.length > 0,
-      detail: _bullFormed.length ? _bullFormed.join(",") : "none formed (Engulf/Hammer/BOS/IB/DblBot/AscTri)" },
+    { name: "Bullish pattern (enabled)", ok: _bullEnabled.length > 0,
+      detail: _patternDetail(_bullEnabled, _bullDisabled, "Engulf/Hammer/BOS/IB/DblBot/AscTri") },
   ];
   var _peAuditChecks = [
     { name: "RSI in PE range", ok: rsi > RSI_PE_MIN && rsi < RSI_PE_MAX,
       detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE_MAX },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
+    { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
+    { name: "ADX directional", ok: _diPePass, detail: _diDetailStr("PE") },
     { name: "Near resistance", ok: resistanceCheck.near,
       detail: resistanceCheck.near
         ? ("resistance=" + resistanceCheck.level.toFixed(0))
         : ("no swing high within " + SR_ZONE_PTS + "pts" + (_nearHighDist !== null ? " (nearest " + _nearHighDist.toFixed(0) + "pts)" : "")) },
-    { name: "Bearish pattern", ok: _bearFormed.length > 0,
-      detail: _bearFormed.length ? _bearFormed.join(",") : "none formed (Engulf/ShootStar/BOS/IB/DblTop/DescTri)" },
+    { name: "Bearish pattern (enabled)", ok: _bearEnabled.length > 0,
+      detail: _patternDetail(_bearEnabled, _bearDisabled, "Engulf/ShootStar/BOS/IB/DblTop/DescTri") },
   ];
 
   function _auditSide(checks) {
