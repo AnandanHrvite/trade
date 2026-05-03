@@ -214,8 +214,8 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 4.4.0</span>
-      <span>2026-04-27</span>
+      <span>Version 4.4.1</span>
+      <span>2026-05-02</span>
       <span>8 Patterns | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
@@ -237,7 +237,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
-    <a href="#whatsnew">What's New (v4.4.0)</a>
+    <a href="#whatsnew">What's New (v4.4.1)</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
     <a href="#patterns">8 Patterns</a>
@@ -259,12 +259,27 @@ td.pe { color: var(--red); }
 </nav>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.4.1                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section id="whatsnew">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">0</span> What's New in v4.4.0 (2026-04-27)</h2>
+      <h2><span class="num">0</span> What's New in v4.4.1 (2026-05-02)</h2>
+      <p>Unified Real-Time Monitor &mdash; one screen to see PA alongside Swing and Scalp. UI / observability only; <strong>no PA pattern, S/R, RSI confluence, SL, or exit changes</strong>.</p>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
+        <li><strong>PRICE ACTION card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
+        <li><strong>Rollup table</strong> includes PA's row alongside Swing + Scalp + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
+        <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/pa-paper/status</code> and <code>/pa-live/status</code>. The Real-Time Monitor stays reachable while PA Live is active.</li>
+        <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
+        <li><strong>No new backend aggregation</strong> &mdash; the browser polls PA's existing <code>/pa-paper/status/data</code> or <code>/pa-live/status/data</code> in parallel with Swing + Scalp, so the unified screen always reads the same source the dedicated PA pages already trust.</li>
+      </ul>
+    </div>
+
+    <div class="section-header" style="margin-top:24px;">
+      <h2><span class="num">0a</span> v4.4.0 Highlights (2026-04-27)</h2>
       <p>Pure additive logging on the PA strategy + paper-parity sweep into PA Live (audit / skip-log wiring shared with PA Paper). The 8 patterns, S/R detection, RSI confluence, and the v4.3.0 SL tightening (8&ndash;12 pt cap + structural-SL skip + time-stop) remain unchanged.</p>
     </div>
     <div class="card">
@@ -280,7 +295,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0a</span> v4.3.0 Highlights (2026-04-24)</h2>
+      <h2><span class="num">0b</span> v4.3.0 Highlights (2026-04-24)</h2>
       <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remained unchanged.</p>
     </div>
     <div class="card">
@@ -296,7 +311,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0b</span> v4.2.0 Highlights (2026-04-20)</h2>
+      <h2><span class="num">0c</span> v4.2.0 Highlights (2026-04-20)</h2>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
@@ -2233,7 +2248,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.4.0 | Updated 2026-04-27</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.4.1 | Updated 2026-05-02</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>

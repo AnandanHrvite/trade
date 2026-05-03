@@ -376,9 +376,22 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.4.1                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.4.0 (2026-04-27)</h2>
+<h2><span class="sec-num">00</span> What's New in v4.4.1 (2026-05-02)</h2>
+<div class="card card-purple">
+  <p>Unified Real-Time Monitor &mdash; one screen to see Scalp alongside Swing and PA. UI / observability only; <strong>no scalp signal-layer, V4 filters, trend filter, SL, or trail-tier changes</strong>.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
+    <li><strong>Scalp card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
+    <li><strong>Rollup table</strong> includes Scalp's row alongside Swing + PA + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
+    <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/scalp-paper/status</code> and <code>/scalp-live/status</code>. The Real-Time Monitor stays reachable while Scalp Live is active.</li>
+    <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
+    <li><strong>No new backend aggregation</strong> &mdash; the browser polls Scalp's existing <code>/scalp-paper/status/data</code> or <code>/scalp-live/status/data</code> in parallel with Swing + PA, so the unified screen always reads the same source the dedicated Scalp pages already trust.</li>
+  </ul>
+</div>
+
+<h2><span class="sec-num">00a</span> v4.4.0 Highlights (2026-04-27)</h2>
 <div class="card card-purple">
   <p>Paper-parity sweep into Scalp Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No scalp signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -392,7 +405,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00a</span> v4.3.0 Highlights (2026-04-24)</h2>
+<h2><span class="sec-num">00b</span> v4.3.0 Highlights (2026-04-24)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
@@ -407,7 +420,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00b</span> v4.2.0 Highlights (2026-04-20)</h2>
+<h2><span class="sec-num">00c</span> v4.2.0 Highlights (2026-04-20)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
@@ -1513,7 +1526,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.4.0 &bull; Generated 2026-04-27<br/>
+    SCALP_BB_RSI_V4 &mdash; Version 4.4.1 &bull; Generated 2026-05-02<br/>
     NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
   </p>
 </div>

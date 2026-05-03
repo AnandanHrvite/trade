@@ -426,10 +426,10 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>SWING STRATEGY</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.4.0</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.4.1</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-04-27 &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-05-02 &nbsp;|&nbsp;
     <strong>Timeframe:</strong> 15-minute &nbsp;|&nbsp;
     <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
     <strong>Route:</strong> <code>/swing-*</code>
@@ -437,7 +437,7 @@
 
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew"><span class="num">00</span> What's New in v4.4.0</a>
+    <a href="#whatsnew"><span class="num">00</span> What's New in v4.4.1</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -462,10 +462,28 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.0                                                -->
+<!-- 0. WHAT'S NEW IN v4.4.1                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew">
-  <h2>00 &mdash; What's New in v4.4.0 (2026-04-27)</h2>
+  <h2>00 &mdash; What's New in v4.4.1 (2026-05-02)</h2>
+  <p>Unified Real-Time Monitor &mdash; one screen to see Swing alongside Scalp and PA. UI / observability only; <strong>no swing signal-layer or SL/exit changes</strong>.</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
+      <li><strong>Swing card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
+      <li><strong>Rollup table</strong> includes Swing's row alongside Scalp + PA + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
+      <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/swing-paper/status</code> and <code>/swing-live/status</code>. The Real-Time Monitor stays reachable while Swing Live is active.</li>
+      <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
+      <li><strong>No new backend aggregation</strong> &mdash; the browser polls Swing's existing <code>/swing-paper/status/data</code> or <code>/swing-live/status/data</code> in parallel with Scalp + PA, so the unified screen always reads the same source the dedicated Swing pages already trust. Normalised key handles <code>unrealisedPnl</code> (Swing) vs <code>unrealised</code> (Scalp/PA).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.4.0                                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break">
+  <h2>00a &mdash; v4.4.0 Highlights (2026-04-27)</h2>
   <p>Hybrid initial SL cap, paper-history Restore from append-only JSONL, and a paper-parity sweep into Swing Live (skip-log/near-miss wiring + daily-trades guard on candle-close). The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -485,7 +503,7 @@
 <!-- 0a. WHAT'S NEW IN v4.3.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <h2>00a &mdash; v4.3.0 Highlights (2026-04-24)</h2>
+  <h2>00b &mdash; v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remained unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -506,7 +524,7 @@
 </div>
 
 <div class="section page-break">
-  <h2>00b &mdash; v4.2.0 Highlights (2026-04-20)</h2>
+  <h2>00c &mdash; v4.2.0 Highlights (2026-04-20)</h2>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
@@ -2125,8 +2143,8 @@
 <!-- ── Footer ──────────────────────────────────────────────────────────── -->
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
-  <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.0</div>
-  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-04-27</div>
+  <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.1</div>
+  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-05-02</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 
