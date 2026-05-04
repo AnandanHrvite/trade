@@ -269,7 +269,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     candlesHeld:      0,
     peakPnl:          0,
     initialRiskRupees: _initialRiskRupees,
-    trailStopSpot:    null,   // armed when peak crosses TRAIL_START — exits at this spot price
+    trailFloorPnl:    null,   // armed when peak crosses TRAIL_START — exits when curPnl drops to this
     trailStopPct:     null,   // remembered tier % for log message
 
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
@@ -557,10 +557,10 @@ function onTick(tick) {
       }
     }
 
-    // 2a. TRAIL PRICE-STOP — recompute when peak grows past TRAIL_START.
-    //     Converts the PnL trail into a spot-price stop so a fast tick can't
-    //     overshoot the floor: when price crosses trailStopSpot the SL block
-    //     below catches it and exits AT that price (not wherever the tick is).
+    // 2a. TRAIL — track a PnL floor. Exit when curPnl drops below it.
+    //     PnL-based (not spot-based) so fast IV/gamma spikes that vanish
+    //     without spot following don't fool the trail into exiting at a
+    //     "right" spot price where the option has already given back.
     if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
       const _ageSecs = pos.entryTimeMs ? (simNow() - pos.entryTimeMs) / 1000 : Infinity;
       const _graceActive = _SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS;
@@ -569,39 +569,20 @@ function onTick(tick) {
         for (const tier of _SCALP_TRAIL_TIERS) {
           if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
         }
-        const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-        // Inverse of _tickPnl: target spot move that yields trailFloor PnL
-        // (charges ignored — small bias is in our favour, exit slightly above floor)
-        const DELTA = parseFloat(process.env.BACKTEST_DELTA || "0.55");
-        const _q    = pos.qty || getLotQty();
-        if (DELTA > 0 && _q > 0) {
-          const targetMove = trailFloor / (DELTA * _q);
-          const newTrailSpot = parseFloat(
-            (pos.side === "CE" ? pos.entryPrice + targetMove : pos.entryPrice - targetMove).toFixed(2)
-          );
-          // Tighten only — never loosen the trail
-          const tightens = pos.trailStopSpot == null
-            || (pos.side === "CE" && newTrailSpot > pos.trailStopSpot)
-            || (pos.side === "PE" && newTrailSpot < pos.trailStopSpot);
-          if (tightens) {
-            pos.trailStopSpot = newTrailSpot;
-            pos.trailStopPct  = _pct;
-          }
+        const newFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
+        // Tighten only — never loosen the floor
+        if (pos.trailFloorPnl == null || newFloor > pos.trailFloorPnl) {
+          pos.trailFloorPnl = newFloor;
+          pos.trailStopPct  = _pct;
         }
       }
     }
 
-    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap, Trail price-stop)
-    //    Trail price-stop is *also* an SL — so a fast adverse tick exits at the
-    //    floor price instead of plunging through it.
-    const _trailHit = (pos.trailStopSpot != null) && (
-      (pos.side === "CE" && price <= pos.trailStopSpot) ||
-      (pos.side === "PE" && price >= pos.trailStopSpot)
-    );
-    if (_trailHit) {
+    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap, PnL trail)
+    if (pos.trailFloorPnl != null && curPnl <= pos.trailFloorPnl) {
       simulateSell(
-        pos.trailStopSpot,
-        `Trail ${pos.trailStopPct}% (peak ₹${Math.round(pos.peakPnl)} → spot ${pos.trailStopSpot})`,
+        price,
+        `Trail ${pos.trailStopPct}% (peak ₹${Math.round(pos.peakPnl)} → PnL ₹${Math.round(curPnl)})`,
         price
       );
       return;
