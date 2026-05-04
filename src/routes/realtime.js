@@ -85,6 +85,14 @@ ${faviconLink()}
 
   .footer-meta { font-size:0.68rem; color:#5d6c87; display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
 
+  .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+  .act-btn { background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; }
+  .act-btn:hover { background:#0e1c33; border-color:#3b82f6; color:#fff; }
+  .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
+  .card.swing .act-btn:hover { border-color:#3b82f6; }
+  .card.scalp .act-btn:hover { border-color:#f59e0b; }
+  .card.pa    .act-btn:hover { border-color:#a855f7; }
+
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
   .rollup th { background:#0e1c33; color:#9aa9c2; font-size:0.72rem; font-weight:600; letter-spacing:0.5px; padding:10px 12px; text-align:right; border-bottom:1px solid #1c2c47; }
@@ -129,6 +137,9 @@ ${faviconLink()}
   :root[data-theme="light"] .pos-zero { color:#64748b !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
+  :root[data-theme="light"] .act-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
+  :root[data-theme="light"] .act-btn:hover { background:#fff !important; color:#1e293b; }
+  :root[data-theme="light"] .act-btn.copied { background:rgba(16,185,129,0.10) !important; border-color:#10b981 !important; color:#059669; }
 </style>
 </head>
 <body>
@@ -154,6 +165,10 @@ ${sidebar}
       <div id="body-SWING"><div class="flat-block">Loading…</div></div>
       <div class="stats-row" id="stats-SWING"></div>
       <div class="footer-meta" id="meta-SWING"><span>—</span><span>—</span></div>
+      <div class="actions">
+        <button type="button" class="act-btn" id="copy-SWING" onclick="copyDayLog('SWING', this)">📋 Copy Day Log</button>
+        <a class="act-btn" id="open-SWING" href="/swing-paper/status">Open Status →</a>
+      </div>
     </div>
     <div class="card scalp" id="card-SCALP">
       <div class="card-header">
@@ -163,6 +178,10 @@ ${sidebar}
       <div id="body-SCALP"><div class="flat-block">Loading…</div></div>
       <div class="stats-row" id="stats-SCALP"></div>
       <div class="footer-meta" id="meta-SCALP"><span>—</span><span>—</span></div>
+      <div class="actions">
+        <button type="button" class="act-btn" id="copy-SCALP" onclick="copyDayLog('SCALP', this)">📋 Copy Day Log</button>
+        <a class="act-btn" id="open-SCALP" href="/scalp-paper/status">Open Status →</a>
+      </div>
     </div>
     <div class="card pa" id="card-PA">
       <div class="card-header">
@@ -172,6 +191,10 @@ ${sidebar}
       <div id="body-PA"><div class="flat-block">Loading…</div></div>
       <div class="stats-row" id="stats-PA"></div>
       <div class="footer-meta" id="meta-PA"><span>—</span><span>—</span></div>
+      <div class="actions">
+        <button type="button" class="act-btn" id="copy-PA" onclick="copyDayLog('PA', this)">📋 Copy Day Log</button>
+        <a class="act-btn" id="open-PA" href="/pa-paper/status">Open Status →</a>
+      </div>
     </div>
   </div>
 
@@ -201,8 +224,22 @@ const ENDPOINTS = {
   PAPER: { SWING:'/swing-paper/status/data', SCALP:'/scalp-paper/status/data', PA:'/pa-paper/status/data' },
   LIVE:  { SWING:'/swing-live/status/data',  SCALP:'/scalp-live/status/data',  PA:'/pa-live/status/data'  }
 };
+const STATUS_PAGES = {
+  PAPER: { SWING:'/swing-paper/status', SCALP:'/scalp-paper/status', PA:'/pa-paper/status' },
+  LIVE:  { SWING:'/swing-live/status',  SCALP:'/scalp-live/status',  PA:'/pa-live/status'  }
+};
+const STRATEGY_LABELS = { SWING:'SWING', SCALP:'SCALP', PA:'PRICE ACTION' };
 let mode = 'PAPER';
 let timer = null;
+const latestData = { SWING:null, SCALP:null, PA:null };
+
+function updateOpenLinks() {
+  const pages = STATUS_PAGES[mode];
+  for (const k of ['SWING', 'SCALP', 'PA']) {
+    const a = document.getElementById('open-' + k);
+    if (a) a.href = pages[k];
+  }
+}
 
 const fmtINR = n => {
   if (n === null || n === undefined || isNaN(n)) return '—';
@@ -217,6 +254,7 @@ const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-
 const openPnl = d => d ? (d.unrealisedPnl ?? d.unrealised ?? 0) : 0;
 
 function renderColumn(strategy, d) {
+  latestData[strategy] = d;
   const badgeEl = document.getElementById('badge-' + strategy);
   const bodyEl  = document.getElementById('body-' + strategy);
   const statsEl = document.getElementById('stats-' + strategy);
@@ -342,10 +380,78 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
     document.querySelectorAll('#mode-toggle button').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
     mode = b.dataset.mode;
+    updateOpenLinks();
     poll();
   });
 });
 
+function copyDayLog(strategy, btn) {
+  const d = latestData[strategy];
+  if (!d) {
+    btn.textContent = 'No data yet';
+    setTimeout(() => { btn.textContent = '📋 Copy Day Log'; }, 1400);
+    return;
+  }
+  const today = new Date().toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit' });
+  const open = openPnl(d);
+  const sess = d.sessionPnl ?? 0;
+  const dayTotal = (+open || 0) + (+sess || 0);
+  const lines = [];
+  lines.push(STRATEGY_LABELS[strategy] + ' — ' + mode + ' (' + today + ')');
+  lines.push('─'.repeat(56));
+  lines.push('Status:        ' + (d.running ? 'RUNNING' : 'STOPPED'));
+  lines.push('Trades:        ' + (d.tradeCount ?? 0) + '   W/L: ' + (d.wins ?? 0) + '/' + (d.losses ?? 0));
+  lines.push('Open P&L:      ' + fmtINR(open));
+  lines.push('Closed P&L:    ' + fmtINR(sess));
+  lines.push('Day Total:     ' + fmtINR(dayTotal));
+  if (d.lastTickPrice) lines.push('Last LTP:      ' + fmtNum(d.lastTickPrice) + (d.lastTickTime ? ' @ ' + d.lastTickTime : ''));
+
+  const pos = d.position;
+  if (pos) {
+    lines.push('');
+    lines.push('OPEN POSITION');
+    lines.push('  ' + (pos.side || '') + ' ' + (pos.symbol || '') + '  qty=' + (pos.qty ?? '—'));
+    lines.push('  Entry Spot: ' + fmtNum(pos.entryPrice) + '   Live Spot: ' + fmtNum(pos.liveClose) + '   Pts: ' + fmtNum(pos.pointsMoved));
+    lines.push('  Entry Opt:  ' + fmtNum(pos.optionEntryLtp) + '   Curr Opt:  ' + fmtNum(pos.optionCurrentLtp));
+    lines.push('  SL: ' + fmtNum(pos.stopLoss) + '   Entry Time: ' + (pos.entryTime || '—'));
+  }
+
+  const trades = Array.isArray(d.trades) ? d.trades : [];
+  if (trades.length) {
+    lines.push('');
+    lines.push('TRADES TODAY (' + trades.length + ')');
+    trades.forEach((t, i) => {
+      const side   = t.optionType || t.side || '';
+      const sym    = t.symbol || '';
+      const qty    = t.qty ?? '';
+      const eT     = t.entry || t.entryTime || '';
+      const xT     = t.exit  || t.exitTime  || '';
+      const pnl    = (typeof t.pnl === 'number') ? fmtINR(t.pnl) : '—';
+      const reason = t.reason || t.exitReason || '';
+      lines.push('  ' + (i+1) + '. ' + side + ' ' + sym + ' qty=' + qty + '  ' + eT + '→' + xT + '  P&L=' + pnl + (reason ? '  [' + reason + ']' : ''));
+    });
+  }
+
+  const logs = Array.isArray(d.logs) ? d.logs : [];
+  if (logs.length) {
+    lines.push('');
+    lines.push('ACTIVITY LOG (last ' + logs.length + ' lines, newest first — includes entry signals + skip reasons)');
+    logs.forEach(l => lines.push('  ' + (typeof l === 'string' ? l : JSON.stringify(l))));
+  }
+
+  const text = lines.join('\\n');
+  navigator.clipboard.writeText(text).then(() => {
+    btn.classList.add('copied');
+    btn.textContent = '✓ Copied (' + text.length.toLocaleString() + ' chars)';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 Copy Day Log'; }, 1800);
+  }).catch(err => {
+    btn.textContent = 'Copy failed';
+    console.error('clipboard write failed', err);
+    setTimeout(() => { btn.textContent = '📋 Copy Day Log'; }, 1800);
+  });
+}
+
+updateOpenLinks();
 poll();
 timer = setInterval(poll, 4000);
 </script>
