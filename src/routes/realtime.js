@@ -86,7 +86,7 @@ ${faviconLink()}
   .footer-meta { font-size:0.68rem; color:#5d6c87; display:flex; justify-content:space-between; padding-top:6px; border-top:1px solid #15243d; }
 
   .actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
-  .act-btn { background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; }
+  .act-btn { display:inline-flex; align-items:center; justify-content:center; background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; line-height:1.2; font-family:inherit; }
   .act-btn:hover { background:#0e1c33; border-color:#3b82f6; color:#fff; }
   .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
   .card.swing .act-btn:hover { border-color:#3b82f6; }
