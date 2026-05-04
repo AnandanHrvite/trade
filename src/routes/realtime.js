@@ -231,7 +231,6 @@ const STATUS_PAGES = {
 const STRATEGY_LABELS = { SWING:'SWING', SCALP:'SCALP', PA:'PRICE ACTION' };
 let mode = 'PAPER';
 let timer = null;
-const latestData = { SWING:null, SCALP:null, PA:null };
 
 function updateOpenLinks() {
   const pages = STATUS_PAGES[mode];
@@ -254,7 +253,6 @@ const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-
 const openPnl = d => d ? (d.unrealisedPnl ?? d.unrealised ?? 0) : 0;
 
 function renderColumn(strategy, d) {
-  latestData[strategy] = d;
   const badgeEl = document.getElementById('badge-' + strategy);
   const bodyEl  = document.getElementById('body-' + strategy);
   const statsEl = document.getElementById('stats-' + strategy);
@@ -385,70 +383,69 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
   });
 });
 
-function copyDayLog(strategy, btn) {
-  const d = latestData[strategy];
-  if (!d) {
-    btn.textContent = 'No data yet';
-    setTimeout(() => { btn.textContent = '📋 Copy Day Log'; }, 1400);
-    return;
-  }
-  const today = new Date().toLocaleDateString('en-IN', { timeZone:'Asia/Kolkata', year:'numeric', month:'2-digit', day:'2-digit' });
-  const open = openPnl(d);
-  const sess = d.sessionPnl ?? 0;
-  const dayTotal = (+open || 0) + (+sess || 0);
-  const lines = [];
-  lines.push(STRATEGY_LABELS[strategy] + ' — ' + mode + ' (' + today + ')');
-  lines.push('─'.repeat(56));
-  lines.push('Status:        ' + (d.running ? 'RUNNING' : 'STOPPED'));
-  lines.push('Trades:        ' + (d.tradeCount ?? 0) + '   W/L: ' + (d.wins ?? 0) + '/' + (d.losses ?? 0));
-  lines.push('Open P&L:      ' + fmtINR(open));
-  lines.push('Closed P&L:    ' + fmtINR(sess));
-  lines.push('Day Total:     ' + fmtINR(dayTotal));
-  if (d.lastTickPrice) lines.push('Last LTP:      ' + fmtNum(d.lastTickPrice) + (d.lastTickTime ? ' @ ' + d.lastTickTime : ''));
+// Both trades.jsonl and skips.jsonl live under the paper-prefix endpoint
+// (live + paper share the same daily skip JSONL by design — see v4.4.0 changelog).
+const JSONL_PREFIX = { SWING:'/swing-paper', SCALP:'/scalp-paper', PA:'/pa-paper' };
 
-  const pos = d.position;
-  if (pos) {
-    lines.push('');
-    lines.push('OPEN POSITION');
-    lines.push('  ' + (pos.side || '') + ' ' + (pos.symbol || '') + '  qty=' + (pos.qty ?? '—'));
-    lines.push('  Entry Spot: ' + fmtNum(pos.entryPrice) + '   Live Spot: ' + fmtNum(pos.liveClose) + '   Pts: ' + fmtNum(pos.pointsMoved));
-    lines.push('  Entry Opt:  ' + fmtNum(pos.optionEntryLtp) + '   Curr Opt:  ' + fmtNum(pos.optionCurrentLtp));
-    lines.push('  SL: ' + fmtNum(pos.stopLoss) + '   Entry Time: ' + (pos.entryTime || '—'));
+async function fetchText(url) {
+  try {
+    const r = await fetch(url, { cache:'no-store' });
+    if (!r.ok) return { ok:false, status:r.status, text:'' };
+    return { ok:true, status:200, text: await r.text() };
+  } catch (e) {
+    return { ok:false, status:0, text:'', err:String(e) };
   }
+}
 
-  const trades = Array.isArray(d.trades) ? d.trades : [];
-  if (trades.length) {
-    lines.push('');
-    lines.push('TRADES TODAY (' + trades.length + ')');
-    trades.forEach((t, i) => {
-      const side   = t.optionType || t.side || '';
-      const sym    = t.symbol || '';
-      const qty    = t.qty ?? '';
-      const eT     = t.entry || t.entryTime || '';
-      const xT     = t.exit  || t.exitTime  || '';
-      const pnl    = (typeof t.pnl === 'number') ? fmtINR(t.pnl) : '—';
-      const reason = t.reason || t.exitReason || '';
-      lines.push('  ' + (i+1) + '. ' + side + ' ' + sym + ' qty=' + qty + '  ' + eT + '→' + xT + '  P&L=' + pnl + (reason ? '  [' + reason + ']' : ''));
-    });
+async function copyDayLog(strategy, btn) {
+  const origLabel = btn.textContent;
+  btn.textContent = 'Copying…';
+  btn.disabled = true;
+
+  // YYYY-MM-DD in IST (en-CA locale gives ISO date format)
+  const istDate = new Date().toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' });
+  const prefix  = JSONL_PREFIX[strategy];
+
+  const [tradesRes, skipsRes] = await Promise.all([
+    fetchText(prefix + '/download/trades/' + istDate),
+    fetchText(prefix + '/download/skips/'  + istDate),
+  ]);
+
+  const tradesText = tradesRes.ok ? tradesRes.text.trim() : '';
+  const skipsText  = skipsRes.ok  ? skipsRes.text.trim()  : '';
+  const tradeCount = tradesText ? tradesText.split(/\\r?\\n/).length : 0;
+  const skipCount  = skipsText  ? skipsText.split(/\\r?\\n/).length  : 0;
+
+  const out = [];
+  out.push('# ' + STRATEGY_LABELS[strategy] + ' (' + mode + ') — ' + istDate);
+  out.push('# entries: ' + tradeCount + '   skips: ' + skipCount);
+  out.push('');
+  out.push('=== ENTRY LOG (' + tradeCount + ' trades) ===');
+  if (tradesText) {
+    out.push(tradesText);
+  } else {
+    out.push('(no trades file for ' + istDate + (tradesRes.status === 404 ? ' — none today' : ' — http ' + tradesRes.status) + ')');
   }
-
-  const logs = Array.isArray(d.logs) ? d.logs : [];
-  if (logs.length) {
-    lines.push('');
-    lines.push('ACTIVITY LOG (last ' + logs.length + ' lines, newest first — includes entry signals + skip reasons)');
-    logs.forEach(l => lines.push('  ' + (typeof l === 'string' ? l : JSON.stringify(l))));
+  out.push('');
+  out.push('=== SKIP LOG (' + skipCount + ' skips) ===');
+  if (skipsText) {
+    out.push(skipsText);
+  } else {
+    out.push('(no skips file for ' + istDate + (skipsRes.status === 404 ? ' — none today' : ' — http ' + skipsRes.status) + ')');
   }
 
-  const text = lines.join('\\n');
-  navigator.clipboard.writeText(text).then(() => {
+  const text = out.join('\\n');
+  try {
+    await navigator.clipboard.writeText(text);
     btn.classList.add('copied');
-    btn.textContent = '✓ Copied (' + text.length.toLocaleString() + ' chars)';
-    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '📋 Copy Day Log'; }, 1800);
-  }).catch(err => {
-    btn.textContent = 'Copy failed';
+    btn.textContent = '✓ ' + tradeCount + ' entries, ' + skipCount + ' skips';
+  } catch (err) {
     console.error('clipboard write failed', err);
-    setTimeout(() => { btn.textContent = '📋 Copy Day Log'; }, 1800);
-  });
+    btn.textContent = 'Copy failed';
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = origLabel; }, 2200);
+  }
 }
 
 updateOpenLinks();
