@@ -60,6 +60,10 @@ const _SCALP_TIME_STOP_CANDLES = process.env.SCALP_TIME_STOP_CANDLES != null
   ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
 const _SCALP_TIME_STOP_FLAT_PTS = process.env.SCALP_TIME_STOP_FLAT_PTS != null
   ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
+// Breakeven snap — needs to run per-tick (not per-bar) because most trades exit
+// inside the entry candle before updateTrailingSL would be called.
+const _SCALP_BE_TRIGGER_R   = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
+const _SCALP_BE_OFFSET_PTS  = parseFloat(process.env.SCALP_BREAKEVEN_OFFSET_PTS || "1");
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
@@ -616,6 +620,25 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
+
+    // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥
+    //         BE_TRIGGER_R × initial risk. Tighten-only, so it fires at most once.
+    //         Per-bar updateTrailingSL also has this check, but most trades exit
+    //         inside the entry bar, so we have to evaluate it per-tick too.
+    if (_SCALP_BE_TRIGGER_R > 0
+        && pos.initialRiskRupees > 0
+        && pos.peakPnl >= _SCALP_BE_TRIGGER_R * pos.initialRiskRupees) {
+      const _beSL = parseFloat((pos.side === "CE"
+        ? pos.entryPrice + _SCALP_BE_OFFSET_PTS
+        : pos.entryPrice - _SCALP_BE_OFFSET_PTS).toFixed(2));
+      const _beTightens = (pos.side === "CE" && _beSL > pos.stopLoss)
+                       || (pos.side === "PE" && _beSL < pos.stopLoss);
+      if (_beTightens) {
+        log(`📐 [SCALP-LIVE] Trail SL (BreakEven): ₹${pos.stopLoss} → ₹${_beSL}`);
+        pos.stopLoss = _beSL;
+        pos.slSource = "BreakEven";
+      }
+    }
 
     // 2a. TRAIL PRICE-STOP — recompute when peak grows past TRAIL_START.
     //     Converts the PnL trail into a spot-price stop so a fast tick can't
