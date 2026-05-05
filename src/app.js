@@ -423,6 +423,33 @@ app.get("/", (req, res) => {
     ? `ℹ️ Token valid until 6 AM. Re-login each morning before starting live trade.`
     : ``;
 
+  // ── Option expiry override warning ───────────────────────────────────────
+  // Trigger when OPTION_EXPIRY_OVERRIDE is set AND that expiry day's session
+  // (15:30 IST close) is already past. User must update to next expiry.
+  let optionExpiryAlertHtml = "";
+  const manualExpiryStr = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  if (manualExpiryStr) {
+    const parts = manualExpiryStr.split("-");
+    const validShape = parts.length === 3 && !parts.some(p => isNaN(parseInt(p, 10)));
+    if (validShape) {
+      const expirySessionEndIST = new Date(`${manualExpiryStr}T15:30:00+05:30`);
+      const nowReal = new Date();
+      if (nowReal.getTime() > expirySessionEndIST.getTime()) {
+        const dispDate = new Date(`${manualExpiryStr}T00:00:00+05:30`)
+          .toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+        optionExpiryAlertHtml =
+          `<div class="opt-expiry-alert">`
+          + `<span class="opt-expiry-icon">🚨</span>`
+          + `<div class="opt-expiry-text">`
+          +   `<div class="opt-expiry-title">Option expiry session ended</div>`
+          +   `<div class="opt-expiry-body">Manual expiry <strong>${dispDate}</strong> has passed. Update <strong>Option Expiry (manual)</strong> to the next expiry date before starting trades.</div>`
+          + `</div>`
+          + `<a href="/settings#OPTION_EXPIRY_OVERRIDE" class="opt-expiry-cta">Change Expiry →</a>`
+          + `</div>`;
+      }
+    }
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -600,6 +627,36 @@ app.get("/", (req, res) => {
     .brk-expiry.expired  { background:#2d1600; border-color:#c05621; color:#f6ad55; }
     .brk-expiry.expiring { background:#2a1600; border-color:#744210; color:#fbd38d; }
     .brk-expiry.valid    { background:#070d14; border-color:#1a3050; color:#4a7090; }
+
+    /* ── Option expiry override RED alert (full-width, prominent) ── */
+    .opt-expiry-alert {
+      display:flex; align-items:center; gap:14px;
+      padding:12px 16px; border-radius:10px;
+      background:linear-gradient(90deg,#2a0508 0%,#1c0610 100%);
+      border:1px solid #ef4444; color:#fecaca;
+      box-shadow:0 0 0 1px rgba(239,68,68,0.15), 0 4px 14px rgba(239,68,68,0.18);
+      animation:pulse-red 2s ease-in-out infinite;
+      margin-bottom:0;
+    }
+    @keyframes pulse-red { 0%,100%{box-shadow:0 0 0 1px rgba(239,68,68,0.15), 0 4px 14px rgba(239,68,68,0.18);} 50%{box-shadow:0 0 0 1px rgba(239,68,68,0.35), 0 6px 22px rgba(239,68,68,0.32);} }
+    .opt-expiry-icon { font-size:1.4rem; flex-shrink:0; }
+    .opt-expiry-text { flex:1; min-width:0; }
+    .opt-expiry-title { font-size:0.78rem; font-weight:700; color:#fca5a5; letter-spacing:0.3px; margin-bottom:2px; }
+    .opt-expiry-body  { font-size:0.72rem; color:#fecaca; line-height:1.5; }
+    .opt-expiry-body strong { color:#fff; }
+    .opt-expiry-cta {
+      display:inline-flex; align-items:center; gap:4px; flex-shrink:0;
+      padding:7px 14px; border-radius:7px;
+      background:#ef4444; color:#fff; text-decoration:none;
+      font-size:0.75rem; font-weight:700; letter-spacing:0.2px;
+      border:1px solid #f87171; transition:filter 0.15s, transform 0.08s;
+    }
+    .opt-expiry-cta:hover { filter:brightness(1.12); }
+    .opt-expiry-cta:active { transform:translateY(1px); }
+    @media (max-width:640px) {
+      .opt-expiry-alert { flex-direction:column; align-items:flex-start; }
+      .opt-expiry-cta { width:100%; justify-content:center; }
+    }
 
     /* Compact utility strip (Start All / Hard Reset / NSE Holidays / Cache info) */
     .util-strip {
@@ -833,6 +890,8 @@ ${buildSidebar('dashboard', liveActive)}
   </div>
 
 <div class="page">
+
+  ${optionExpiryAlertHtml}
 
   <!-- ① BROKER CONNECTIONS — compact single-line rows -->
   <div class="brokers">
