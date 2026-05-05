@@ -480,8 +480,8 @@ async function prefetchOptionSymbols(spot) {
   if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return; // not needed for futures
   try {
     const [ce, pe] = await Promise.all([
-      validateAndGetOptionSymbol(spot, 'CE'),
-      validateAndGetOptionSymbol(spot, 'PE'),
+      validateAndGetOptionSymbol(spot, 'CE', 'swing'),
+      validateAndGetOptionSymbol(spot, 'PE', 'swing'),
     ]);
     
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
@@ -1267,7 +1267,7 @@ async function onCandleClose(candle) {
           ({ symbol, expiry, strike, invalid } = cachedCs);
           log(`⚡ [LIVE] Using pre-fetched symbol (candle-close): ${symbol}`);
         } else {
-          ({ symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(candle.close, side));
+          ({ symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(candle.close, side, 'swing'));
         }
         const atmStrike   = Math.round(candle.close / 50) * 50;
         const strikeLabel = strike === atmStrike ? "ATM" : "ITM";
@@ -1571,7 +1571,7 @@ function onSpotTick(tick) {
           symbolPromise = Promise.resolve(cached);
         } else {
           log(`🔍 [LIVE] Cache miss — live symbol lookup (spot moved or first trade of session)`);
-          symbolPromise = validateAndGetOptionSymbol(ltp, side);
+          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'swing');
         }
       }
 
@@ -1970,8 +1970,8 @@ router.get("/start", async (req, res) => {
       // Check 2: Option symbols
       try {
         const [ce, pe] = await Promise.all([
-          validateAndGetOptionSymbol(spot, "CE"),
-          validateAndGetOptionSymbol(spot, "PE"),
+          validateAndGetOptionSymbol(spot, "CE", 'swing'),
+          validateAndGetOptionSymbol(spot, "PE", 'swing'),
         ]);
         if (!ce.invalid && ce.symbol) {
           _checks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
@@ -2219,7 +2219,7 @@ router.post("/manualEntry", async (req, res) => {
 
   try {
     const { validateAndGetOptionSymbol, getLotQty } = require("../config/instrument");
-    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const optResult = await validateAndGetOptionSymbol(spot, side, 'swing');
     const symbol = optResult.symbol;
     const qty = getLotQty();
     const orderSide = side === "CE" ? 1 : -1; // Zerodha: 1=BUY, -1=SELL for options we always BUY

@@ -363,8 +363,8 @@ async function prefetchOptionSymbols(spot) {
   if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return;
   try {
     const [ce, pe] = await Promise.all([
-      validateAndGetOptionSymbol(spot, 'CE'),
-      validateAndGetOptionSymbol(spot, 'PE'),
+      validateAndGetOptionSymbol(spot, 'CE', 'swing'),
+      validateAndGetOptionSymbol(spot, 'PE', 'swing'),
     ]);
     
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
@@ -1160,7 +1160,7 @@ async function onCandleClose(candle) {
         symbolPromise = Promise.resolve(cachedCs);
       } else {
         log(`🔍 [PAPER] Cache miss — live symbol lookup`);
-        symbolPromise = validateAndGetOptionSymbol(candle.close, side);
+        symbolPromise = validateAndGetOptionSymbol(candle.close, side, 'swing');
       }
     }
 
@@ -1407,7 +1407,7 @@ function onTick(tick) {
           symbolPromise = Promise.resolve(cached);
         } else {
           log(`🔍 [PAPER] Cache miss — live symbol lookup (spot moved or first trade of session)`);
-          symbolPromise = validateAndGetOptionSymbol(ltp, side);
+          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'swing');
         }
       }
 
@@ -1838,8 +1838,8 @@ router.get("/start", async (req, res) => {
       _ptChecks.fyers = { ok: true, msg: `NIFTY ₹${spot} | ATM ${atm}` };
       try {
         const [ce, pe] = await Promise.all([
-          validateAndGetOptionSymbol(spot, "CE"),
-          validateAndGetOptionSymbol(spot, "PE"),
+          validateAndGetOptionSymbol(spot, "CE", 'swing'),
+          validateAndGetOptionSymbol(spot, "PE", 'swing'),
         ]);
         if (!ce.invalid && ce.symbol) {
           _ptChecks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
@@ -2089,7 +2089,7 @@ router.post("/manualEntry", async (req, res) => {
   // Get option symbol
   try {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
-    const optResult = await validateAndGetOptionSymbol(spot, side);
+    const optResult = await validateAndGetOptionSymbol(spot, side, 'swing');
     const symbol = optResult.symbol;
     const qty = parseInt(process.env.NIFTY_LOT_SIZE || "65") * parseInt(process.env.LOT_MULTIPLIER || "1");
 

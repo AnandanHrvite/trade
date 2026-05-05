@@ -47,6 +47,8 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "SWING_OPTION_EXPIRY_OVERRIDE", label: "Swing Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "Swing-only override. When set, overrides the common Option Expiry. Use to keep swing on next-week expiry while scalp/PA trade current expiry. Leave blank to fall back to common.", default: "" },
+      { key: "SWING_OPTION_EXPIRY_TYPE", label: "Swing Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Swing-only expiry type. Blank = inherit from common.", default: "" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "09:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
@@ -358,6 +360,7 @@ const IMMEDIATE_KEYS = new Set([
   "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY", "PA_VIX_STRONG_ONLY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
+  "SWING_OPTION_EXPIRY_OVERRIDE", "SWING_OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "SWING_PAPER_CAPITAL",
   "PA_ENABLED",

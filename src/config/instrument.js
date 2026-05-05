@@ -435,13 +435,18 @@ function parseDateToCode(dateStr) {
  *
  * Usage:  const { symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(spot, side);
  */
-async function validateAndGetOptionSymbol(spot, side) {
+async function validateAndGetOptionSymbol(spot, side, mode) {
   const strike = calcATMStrike(spot, side);
-  console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}`);
+  console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}${mode ? `, mode=${mode}` : ""}`);
 
   // ── Manual expiry override — skip all auto-detection ──────────────────────
-  const manualExpiry = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
-  const expiryType = (process.env.OPTION_EXPIRY_TYPE || "weekly").trim().toLowerCase();
+  // Per-mode override takes precedence over the common override. e.g. SWING_OPTION_EXPIRY_OVERRIDE
+  // lets swing trade next-week options (avoid 0DTE) while scalp/PA continue on common expiry.
+  const modeKey = mode ? String(mode).toUpperCase() : null;
+  const modeOverride = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
+  const modeType     = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_TYPE`]     || "").trim().toLowerCase() : "";
+  const manualExpiry = modeOverride || (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const expiryType   = modeType     || (process.env.OPTION_EXPIRY_TYPE     || "weekly").trim().toLowerCase();
   if (manualExpiry && manualExpiry.length >= 8) {
     const parts = manualExpiry.split("-");
     if (parts.length !== 3 || parts.some(p => isNaN(parseInt(p)))) {
