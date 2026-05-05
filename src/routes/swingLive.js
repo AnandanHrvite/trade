@@ -425,6 +425,22 @@ function isStartAllowed() {
   return getISTMinutes() < _STOP_MINS;
 }
 
+// ── 0DTE expiry-day detector (same logic as swingPaper) ──────────────────────
+// Swing on 0DTE = bad idea. /start refuses unless ?force=1 is passed.
+function _getEffectiveSwingExpiry() {
+  const swing  = (process.env.SWING_OPTION_EXPIRY_OVERRIDE || "").trim();
+  const common = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  return swing || common || null;
+}
+function _getISTDateStr() {
+  const ist = new Date(Date.now() + 19800000);
+  return ist.toISOString().slice(0, 10);
+}
+function isSwingExpiringToday() {
+  const expiry = _getEffectiveSwingExpiry();
+  return expiry && expiry === _getISTDateStr();
+}
+
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1862,7 +1878,20 @@ router.get("/start", async (req, res) => {
   if (process.env.SWING_LIVE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set SWING_LIVE_ENABLED=true in .env." });
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
   if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /swing-paper/stop" });
-  
+
+  // ── 0DTE expiry-day warning ────────────────────────────────────────────────
+  // Block live start if today is the configured swing expiry — 0DTE on swing
+  // will bleed real money via theta+gamma. User must override with ?force=1.
+  if (isSwingExpiringToday() && req.query.force !== "1") {
+    const _exp = _getEffectiveSwingExpiry();
+    return res.status(409).json({
+      success: false,
+      code: "EXPIRY_DAY_0DTE",
+      expiry: _exp,
+      message: `Configured swing expiry (${_exp}) is today — that's 0DTE. Swing strategy is not designed for same-day expiry (theta+gamma will crush option premium). Update SWING_OPTION_EXPIRY_OVERRIDE to next week's expiry in Settings, or click "Start Anyway" to proceed.`,
+    });
+  }
+
   // ── NEW: Trading session validation (holidays + time check) ────────────────
   const tradingCheck = await isTradingAllowed();
   if (!tradingCheck.allowed) {
@@ -3117,13 +3146,29 @@ async function ltHandleExit(btn) {
     if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; }
   }
 }
-async function ltHandleStart(btn) {
+async function ltHandleStart(btn, force) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/swing-live/start');
+    var url = force ? '/swing-live/start?force=1' : '/swing-live/start';
+    var res = await secretFetch(url);
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
+      // 0DTE expiry-day warning — show confirm modal, retry with force=1 if accepted
+      if (data.code === 'EXPIRY_DAY_0DTE') {
+        var ok = await showConfirm({
+          icon: '⚠️',
+          title: '0DTE Expiry Day — REAL MONEY at Risk',
+          message: data.message + '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update Swing Option Expiry in Settings instead.',
+          confirmText: 'Start Anyway (Real Money)',
+          confirmClass: 'modal-btn-danger'
+        });
+        if (!ok) {
+          if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
+          return;
+        }
+        return ltHandleStart(btn, true);  // retry with force=1
+      }
       ltShowToast('❌ ' + (data.error || 'Failed to start'), '#ef4444');
       if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
       return;

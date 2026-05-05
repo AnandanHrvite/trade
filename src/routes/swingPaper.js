@@ -349,6 +349,23 @@ function getCapitalFromEnv() {
   return parseFloat(process.env.SWING_PAPER_CAPITAL || "100000");
 }
 
+// ── 0DTE expiry-day detector ─────────────────────────────────────────────────
+// Swing on 0DTE = bad idea (theta+gamma crush 15-min hold times). Used by
+// /start to block the user with a warning unless ?force=1 is passed.
+function _getEffectiveSwingExpiry() {
+  const swing  = (process.env.SWING_OPTION_EXPIRY_OVERRIDE || "").trim();
+  const common = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
+  return swing || common || null;
+}
+function _getISTDateStr() {
+  const ist = new Date(Date.now() + 19800000);
+  return ist.toISOString().slice(0, 10);
+}
+function isSwingExpiringToday() {
+  const expiry = _getEffectiveSwingExpiry();
+  return expiry && expiry === _getISTDateStr();
+}
+
 // ── Option LTP via REST polling ──────────────────────────────────────────────
 // ONE permanent socket → NIFTY spot only. Never reconnected.
 // Option LTP fetched via Fyers REST getQuotes() every 3 seconds while in trade.
@@ -1737,6 +1754,19 @@ router.get("/start", async (req, res) => {
     return res.status(400).json({
       success: false,
       error: `Cannot start paper trading — Live Trading is currently active. Stop it first at /swing-live/stop`,
+    });
+  }
+
+  // ── 0DTE expiry-day warning ────────────────────────────────────────────────
+  // Block start if today is the configured swing expiry — swing strategy bleeds
+  // on 0DTE due to theta+gamma. User can override with ?force=1 if intentional.
+  if (isSwingExpiringToday() && req.query.force !== "1") {
+    const _exp = _getEffectiveSwingExpiry();
+    return res.status(409).json({
+      success: false,
+      code: "EXPIRY_DAY_0DTE",
+      expiry: _exp,
+      message: `Configured swing expiry (${_exp}) is today — that's 0DTE. Swing strategy is not designed for same-day expiry (theta+gamma will crush option premium). Update SWING_OPTION_EXPIRY_OVERRIDE to next week's expiry in Settings, or click "Start Anyway" to proceed.`,
     });
   }
 
@@ -4779,14 +4809,30 @@ router.get("/debug", (req, res) => {
 router.get("/client.js", (req, res) => {
   res.setHeader("Content-Type", "application/javascript");
   res.setHeader("Cache-Control", "no-cache");
-  res.send(`async function handleStart(btn) {
+  res.send(`async function handleStart(btn, force) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    const res = await secretFetch('/swing-paper/start');
+    const url = force ? '/swing-paper/start?force=1' : '/swing-paper/start';
+    const res = await secretFetch(url);
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     let data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (non-JSON response)' }; }
     if (!data.success) {
+      // 0DTE expiry-day warning — show confirm modal, retry with force=1 if accepted
+      if (data.code === 'EXPIRY_DAY_0DTE') {
+        const ok = await showConfirm({
+          icon: '⚠️',
+          title: '0DTE Expiry Day — Not Recommended',
+          message: data.message + '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update Swing Option Expiry in Settings instead.)',
+          confirmText: 'Start Anyway',
+          confirmClass: 'modal-btn-danger'
+        });
+        if (!ok) {
+          if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
+          return;
+        }
+        return handleStart(btn, true);  // retry with force=1
+      }
       showToast('❌ ' + (data.error || 'Failed to start'), '#ef4444');
       if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; }
       return;
