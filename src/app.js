@@ -1262,6 +1262,38 @@ async function _startAll(endpoints){
       if (!r){ results.failures.push({ endpoint: ep, error: 'No response from server' }); continue; }
       var body = null;
       try { body = await r.json(); } catch(_) { /* non-JSON body */ }
+      // 0DTE expiry-day warning — pop confirm modal, optionally retry with ?force=1
+      if (body && body.code === 'EXPIRY_DAY_0DTE'){
+        var isLive = /-live\\//.test(ep);
+        var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
+        var titleCopy   = isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended';
+        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update Swing Option Expiry in Settings instead.' : '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update Swing Option Expiry in Settings instead.)';
+        var ok = await showConfirm({
+          icon: '⚠️',
+          title: titleCopy,
+          message: (body.message || '0DTE detected') + extraNote,
+          confirmText: confirmCopy,
+          confirmClass: 'modal-btn-danger'
+        });
+        if (ok){
+          try {
+            var r2 = await secretFetch(ep + '?force=1');
+            var body2 = null;
+            try { body2 = await r2.json(); } catch(_) {}
+            if (r2 && r2.ok && (!body2 || body2.success !== false)){
+              results.successes.push({ endpoint: ep });
+            } else {
+              var msg2 = (body2 && (body2.error || body2.message)) || ('HTTP ' + (r2 ? r2.status : '?'));
+              results.failures.push({ endpoint: ep, status: r2 ? r2.status : 0, error: msg2 });
+            }
+          } catch(e2){
+            results.failures.push({ endpoint: ep, error: (e2 && e2.message) || 'Network error on retry' });
+          }
+        } else {
+          results.failures.push({ endpoint: ep, status: 409, error: 'Skipped — 0DTE expiry-day. Update Swing Option Expiry in Settings.' });
+        }
+        continue;
+      }
       if (r.ok && (!body || body.success !== false)){
         results.successes.push({ endpoint: ep });
       } else {
