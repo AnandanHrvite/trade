@@ -1980,7 +1980,8 @@ async function loadExpiriesTable() {
       body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">No expiry dates found</td></tr>';
       return;
     }
-    document.getElementById('expiryYearTitle').textContent = 'NIFTY Options Expiry Calendar ' + data.year;
+    var yearEl = document.getElementById('expiryYearTitle');
+    if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + data.year;
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
     data.expiries.forEach(function(e, i) {
