@@ -18,7 +18,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
-const { BollingerBands } = require("technicalindicators");
+const { BollingerBands, PSAR } = require("technicalindicators");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -1104,7 +1104,11 @@ router.post("/manualEntry", async (req, res) => {
 router.get("/status/chart-data", (req, res) => {
   try {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
-    if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    // Only include the partial currentBar during market hours — pre-market ticks
+    // have wide spreads / stale prints that produce a junk spike on the chart.
+    if (state.currentBar && (state._simMode || isMarketHours())) {
+      candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    }
 
     // BB overlay (same params as the strategy) — aligned with candles
     const BB_PERIOD = parseInt(process.env.SCALP_BB_PERIOD || "20", 10);
@@ -1120,6 +1124,20 @@ router.get("/status/chart-data", (req, res) => {
         bbMiddle.push({ time: t, value: parseFloat(bbArr[i].middle.toFixed(2)) });
         bbLower.push({ time: t, value: parseFloat(bbArr[i].lower.toFixed(2)) });
       }
+    }
+
+    // PSAR overlay — same params as the strategy. Plotted as dots above/below price
+    const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
+    const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+    let sarPoints = [];
+    if (candles.length >= 3) {
+      try {
+        const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        const off = candles.length - sarArr.length;
+        for (let i = 0; i < sarArr.length; i++) {
+          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+        }
+      } catch (_) { /* ignore */ }
     }
 
     const shortReason = (r) => {
@@ -1142,7 +1160,7 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower });
+    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1646,7 +1664,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#a78bfa;">· SAR</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
 </div>` : ""}
@@ -2050,23 +2068,36 @@ function doCopy(text,btn,label){
   var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  // PSAR rendered as a thin dotted "line" (dot-per-bar look). Lightweight Charts has no scatter
+  // primitive, so a Line series with style=Dotted and lineWidth=1 closely approximates SAR dots.
+  var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
-  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false });
+  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
+  // Robust zoom preservation: capture user-driven range changes (subscription fires on
+  // user pan/zoom AND on programmatic setData/update). We use a debounced "internal"
+  // flag so we ignore our own range changes during a refresh and only persist the
+  // user's intended range. Once captured, _userRange is restored after every poll.
+  var _userRange = null, _internalUpdate = false, _internalTimer = null;
+  chart.timeScale().subscribeVisibleLogicalRangeChange(function(r) {
+    if (_internalUpdate) return;
+    if (r) _userRange = r;
+  });
   async function fetchChart() {
     try {
       var res = await fetch('/scalp-paper/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return; var d = await res.json();
       if (!d.candles || !d.candles.length) return;
-      var savedLogical = (_lcc > 0) ? chart.timeScale().getVisibleLogicalRange() : null;
+      _internalUpdate = true;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
-      if (savedLogical) {
-        try { chart.timeScale().setVisibleLogicalRange(savedLogical); } catch(_) {}
-      }
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
+      if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
+      if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
+      if (_internalTimer) clearTimeout(_internalTimer);
+      _internalTimer = setTimeout(function() { _internalUpdate = false; }, 60);
       var selEt = window._spSelEt || null;
       var allMarkers = (d.markers || []).slice();
       var markers = allMarkers;

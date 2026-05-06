@@ -32,6 +32,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const tickSimulator = require("../services/tickSimulator");
+const { EMA, PSAR } = require("technicalindicators");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
@@ -2233,7 +2234,9 @@ router.get("/status/chart-data", (req, res) => {
       low:  c.low,
       close: c.close,
     }));
-    if (ptState.currentBar) {
+    // Only include the partial currentBar during market hours — pre-market quotes
+    // produce a wide-spread junk spike on the chart.
+    if (ptState.currentBar && (ptState._simMode || isMarketHours())) {
       candles.push({
         time:  ptState.currentBar.time,
         open:  ptState.currentBar.open,
@@ -2241,6 +2244,33 @@ router.get("/status/chart-data", (req, res) => {
         low:   ptState.currentBar.low,
         close: ptState.currentBar.close,
       });
+    }
+
+    // EMA9 overlay — same period as the strategy
+    const EMA9_PERIOD = 9;
+    let ema9Series = [];
+    if (candles.length >= EMA9_PERIOD) {
+      try {
+        // Strategy uses OHLC4 — keep parity so the line matches signal-time values
+        const ohlc4 = candles.map(c => (c.open + c.high + c.low + c.close) / 4);
+        const arr = EMA.calculate({ period: EMA9_PERIOD, values: ohlc4 });
+        const off = candles.length - arr.length;
+        for (let i = 0; i < arr.length; i++) {
+          ema9Series.push({ time: candles[i + off].time, value: parseFloat(arr[i].toFixed(2)) });
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // PSAR overlay — same params as the strategy (step=0.02, max=0.2)
+    let sarPoints = [];
+    if (candles.length >= 3) {
+      try {
+        const sarArr = PSAR.calculate({ step: 0.02, max: 0.2, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        const off = candles.length - sarArr.length;
+        for (let i = 0; i < sarArr.length; i++) {
+          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+        }
+      } catch (_) { /* ignore */ }
     }
 
     // Trade markers: entry + exit points from today's session
@@ -2281,7 +2311,7 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice });
+    return res.json({ candles, markers, stopLoss, entryPrice, ema9: ema9Series, sar: sarPoints });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2811,6 +2841,8 @@ ${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
+        <span style="color:#fbbf24;">── EMA9</span> &nbsp;
+        <span style="color:#a78bfa;">· SAR</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span> &nbsp;
         <span style="color:#3b82f6;">-- Entry Price</span>
       </div>
@@ -3152,18 +3184,25 @@ ${modalJS()}
     wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
   });
 
+  // EMA9 (strategy's primary trend line) + PSAR dots
+  const ema9Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle: LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+
   // SL line
   let slLine = null;
   // Entry price line
   let entryLine = null;
 
-  function adjustToIST(unixSec) {
-    // Lightweight Charts treats time as UTC. IST = UTC+5:30 = +19800s.
-    // If server already sends IST epoch, subtract offset so chart displays IST labels.
-    return unixSec;
-  }
-
   let _lastCandleCount = 0;
+
+  // Robust zoom preservation: ignore programmatic range changes during fetch and
+  // pin to the user's most recent manual zoom/pan range on every poll.
+  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
+  let _userRange = null, _internalUpdate = false, _internalTimer = null;
+  chart.timeScale().subscribeVisibleLogicalRangeChange(function(r) {
+    if (_internalUpdate) return;
+    if (r) _userRange = r;
+  });
 
   async function fetchChart() {
     try {
@@ -3173,22 +3212,28 @@ ${modalJS()}
 
       if (!d.candles || d.candles.length === 0) return;
 
+      _internalUpdate = true;
+
       // Full reload if candle count changed significantly (new session), else just update last candle
       if (Math.abs(d.candles.length - _lastCandleCount) > 1 || _lastCandleCount === 0) {
         candleSeries.setData(d.candles.map(function(c) {
-          return { time: adjustToIST(c.time), open: c.open, high: c.high, low: c.low, close: c.close };
+          return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };
         }));
       } else if (d.candles.length > 0) {
         var last = d.candles[d.candles.length - 1];
-        candleSeries.update({ time: adjustToIST(last.time), open: last.open, high: last.high, low: last.low, close: last.close });
+        candleSeries.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
       }
       _lastCandleCount = d.candles.length;
+
+      // Indicator overlays
+      if (d.ema9 && d.ema9.length) ema9Series.setData(d.ema9); else ema9Series.setData([]);
+      if (d.sar  && d.sar.length)  sarSeries.setData(d.sar);   else sarSeries.setData([]);
 
       // Markers (entries & exits)
       if (d.markers && d.markers.length > 0) {
         var sorted = d.markers.slice().sort(function(a, b) { return a.time - b.time; });
         candleSeries.setMarkers(sorted.map(function(m) {
-          return { time: adjustToIST(m.time), position: m.position, color: m.color, shape: m.shape, text: m.text };
+          return { time: m.time, position: m.position, color: m.color, shape: m.shape, text: m.text };
         }));
       } else {
         candleSeries.setMarkers([]);
@@ -3213,6 +3258,11 @@ ${modalJS()}
           axisLabelVisible: true, title: 'Entry',
         });
       }
+
+      // Restore user's manual zoom/pan, then release the internal-update flag
+      if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
+      if (_internalTimer) clearTimeout(_internalTimer);
+      _internalTimer = setTimeout(function() { _internalUpdate = false; }, 60);
 
     } catch (e) {
       console.warn('[Chart] fetch error:', e.message);

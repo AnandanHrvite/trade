@@ -1044,7 +1044,11 @@ router.post("/manualEntry", async (req, res) => {
 router.get("/status/chart-data", (req, res) => {
   try {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
-    if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    // Only include the partial currentBar during market hours — pre-market quotes
+    // are sparse/stale and produce a junk spike on the chart.
+    if (state.currentBar && (state._simMode || isMarketHours())) {
+      candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    }
 
     // Swing highs/lows — the structural pivots PA uses for BOS/S-R
     const SR_LOOKBACK = parseInt(process.env.PA_SR_LOOKBACK || "30", 10);
@@ -2001,21 +2005,26 @@ async function ptHandleReset(btn) {
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
-  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false });
+  chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
+  // Robust zoom preservation: track user-driven range and restore after every poll.
+  var _userRange = null, _internalUpdate = false, _internalTimer = null;
+  chart.timeScale().subscribeVisibleLogicalRangeChange(function(r) {
+    if (_internalUpdate) return;
+    if (r) _userRange = r;
+  });
   async function fetchChart() {
     try {
       var res = await fetch('/pa-paper/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return; var d = await res.json();
       if (!d.candles || !d.candles.length) return;
-      // Preserve user's current zoom/pan across refreshes
-      var savedLogical = (_lcc > 0) ? chart.timeScale().getVisibleLogicalRange() : null;
+      _internalUpdate = true;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
-      if (savedLogical) {
-        try { chart.timeScale().setVisibleLogicalRange(savedLogical); } catch(_) {}
-      }
+      if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
+      if (_internalTimer) clearTimeout(_internalTimer);
+      _internalTimer = setTimeout(function() { _internalUpdate = false; }, 60);
       var selEt = window._spSelEt || null;
       var allMarkers = (d.markers || []).slice();
       var markers = allMarkers;
