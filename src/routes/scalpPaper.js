@@ -2567,7 +2567,8 @@ ${buildSidebar('scalpHistory', liveActive)}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button onclick="copyAllJsonl(this)" class="export-btn" title="Copy the full per-trade JSONL log to clipboard">📋 Copy JSONL</button>
-      <a href="/scalp-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Crash-safe per-trade JSONL log — full field capture for offline analysis">⬇ JSONL</a>
+      <a href="/scalp-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative per-trade log (.txt) — full field capture for offline analysis">⬇ tradeLogs</a>
+      <a href="/scalp-paper/download/skips-all" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative skip log (.txt) — all daily skip files concatenated">⬇ skipLogs</a>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="/scalp-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
@@ -3484,9 +3485,9 @@ router.post("/restore-session/:date", (req, res) => {
 router.get("/download/trades.jsonl", (req, res) => {
   const logPath = tradeLogger.filePathFor("scalp");
   const today   = new Date().toISOString().slice(0, 10);
-  const dlName  = `scalp_paper_trades_log_${today}.jsonl`;
+  const dlName  = `scalp_paper_trades_log_${today}.txt`;
   if (!fs.existsSync(logPath)) {
-    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
     return res.send("");
   }
@@ -3510,12 +3511,28 @@ router.get("/download/daily-files", (req, res) => {
   res.json({ rows });
 });
 
+router.get("/download/skips-all", (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const dlName = `scalp_paper_skips_all_${today}.txt`;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
+  const dates = skipLogger.listDates("scalp").map(d => d.date).sort();
+  let body = "";
+  for (const d of dates) {
+    try {
+      const p = skipLogger.filePathFor("scalp", d);
+      if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8");
+    } catch (_) {}
+  }
+  res.send(body);
+});
+
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
   const p = skipLogger.filePathFor("scalp", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `scalp_paper_skips_${date}.jsonl`);
+  res.download(p, `scalp_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
@@ -3523,7 +3540,7 @@ router.get("/download/trades/:date", (req, res) => {
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
   const p = tradeLogger.dailyFilePathFor("scalp", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `scalp_paper_trades_${date}.jsonl`);
+  res.download(p, `scalp_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {

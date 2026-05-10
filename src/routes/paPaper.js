@@ -2548,8 +2548,8 @@ ${buildSidebar('paHistory', liveActive)}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button class="copy-btn" onclick="copyTradeLog(this)">📋 Copy Trade Log</button>
-      <button onclick="exportAllCSV()" class="export-btn">⬇ Export CSV</button>
-      <a href="/pa-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Crash-safe per-trade JSONL log — full field capture for offline analysis">⬇ JSONL</a>
+      <a href="/pa-paper/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative per-trade log (.txt) — full field capture for offline analysis">⬇ tradeLogs</a>
+      <a href="/pa-paper/download/skips-all" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative skip log (.txt) — all daily skip files concatenated">⬇ skipLogs</a>
       <button onclick="confirmReset()" class="reset-btn">🗑 Reset</button>
       <a href="/pa-paper/status" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;cursor:pointer;">← Status</a>
     </div>
@@ -3006,28 +3006,6 @@ async function copyAllDailyFiles(btn){
 if (document.getElementById('jsonlModal')) {
   document.getElementById('jsonlModal').addEventListener('click', function(e){ if (e.target === this) this.style.display = 'none'; });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape') { var m = document.getElementById('jsonlModal'); if (m && m.style.display !== 'none') m.style.display = 'none'; } });
-}
-
-function exportAllCSV() {
-  if (!ALL_TRADES_JSON.length) { showAlert({icon:'⚠️',title:'No Data',message:'No trades to export',btnClass:'modal-btn-primary'}); return; }
-  var header = ['Session Date','Side','Symbol','Qty','Entry Time','Exit Time','Entry NIFTY','Exit NIFTY','Option Entry','Option Exit','PnL','PnL Mode','Exit Reason'];
-  var rows = ALL_TRADES_JSON.map(function(t) {
-    return [
-      t.date||'', t.side||'', t.symbol||'', t.qty||'',
-      t.entryTime||'', t.exitTime||'',
-      t.spotAtEntry||t.entryPrice||'', t.spotAtExit||t.exitPrice||'',
-      t.optionEntryLtp||'', t.optionExitLtp||'',
-      t.pnl!=null?t.pnl:'', t.pnlMode||'', t.exitReason||''
-    ];
-  });
-  var csv = [header].concat(rows).map(function(r) {
-    return r.map(function(v){ return '"' + String(v||'').replace(/"/g,'""')+'"'; }).join(',');
-  }).join('\\n');
-  var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
-  var a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
-  a.download = 'pa_paper_history_' + d + '.csv';
-  a.click();
 }
 
 async function confirmReset() {
@@ -3617,9 +3595,9 @@ router.post("/restore-session/:date", (req, res) => {
 router.get("/download/trades.jsonl", (req, res) => {
   const logPath = tradeLogger.filePathFor("pa");
   const today   = new Date().toISOString().slice(0, 10);
-  const dlName  = `pa_paper_trades_log_${today}.jsonl`;
+  const dlName  = `pa_paper_trades_log_${today}.txt`;
   if (!fs.existsSync(logPath)) {
-    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
     return res.send("");
   }
@@ -3647,12 +3625,28 @@ router.get("/download/daily-files", (req, res) => {
   res.json({ rows });
 });
 
+router.get("/download/skips-all", (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const dlName = `pa_paper_skips_all_${today}.txt`;
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
+  const dates = skipLogger.listDates("pa").map(d => d.date).sort();
+  let body = "";
+  for (const d of dates) {
+    try {
+      const p = skipLogger.filePathFor("pa", d);
+      if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8");
+    } catch (_) {}
+  }
+  res.send(body);
+});
+
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
   const p = skipLogger.filePathFor("pa", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `pa_paper_skips_${date}.jsonl`);
+  res.download(p, `pa_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
@@ -3660,7 +3654,7 @@ router.get("/download/trades/:date", (req, res) => {
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
   const p = tradeLogger.dailyFilePathFor("pa", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `pa_paper_trades_${date}.jsonl`);
+  res.download(p, `pa_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
