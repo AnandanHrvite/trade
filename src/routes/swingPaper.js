@@ -22,6 +22,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
+const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
@@ -1740,11 +1741,12 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
-  if (!process.env.ACCESS_TOKEN) {
-    return res.status(401).json({
-      success: false,
-      error: "Fyers not logged in. Click 'Re-login' on the Dashboard to authenticate Fyers first.",
-    });
+  // Verify the Fyers token actually works before we wire up the socket. Catches
+  // the mobile-login-never-completed case where ACCESS_TOKEN is set in env but
+  // the token is partial/invalid — would otherwise surface as -15 minutes later.
+  const auth = await verifyFyersToken();
+  if (!auth.ok) {
+    return res.status(401).json({ success: false, error: auth.message, code: auth.code });
   }
 
   if (ptState.running) {

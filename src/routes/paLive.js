@@ -26,6 +26,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
+const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, parseTrailTiers, sleep } = require("../utils/tradeUtils");
@@ -1042,12 +1043,13 @@ router.get("/start", async (req, res) => {
     return res.status(409).send(_errorPage("Cannot Start", check.reason, "/pa-live/status", "\u2190 Back"));
   }
 
-  if (!process.env.ACCESS_TOKEN) {
-    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not logged in. Login first.", "/auth", "Login with Fyers"));
+  const auth = await verifyFyersToken();
+  if (!auth.ok) {
+    return res.status(401).send(_errorPage("Not Authenticated", auth.message, "/auth/login", "Login with Fyers"));
   }
 
   if (!fyersBroker.isAuthenticated()) {
-    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not authenticated for orders. Login first.", "/auth", "Login with Fyers"));
+    return res.status(401).send(_errorPage("Not Authenticated", "Fyers not authenticated for orders. Login first.", "/auth/login", "Login with Fyers"));
   }
 
   if (process.env.PA_ENABLED !== "true") {

@@ -22,6 +22,7 @@ const path    = require("path");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 
 const socketManager     = require("../utils/socketManager");
+const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const fyers             = require("../config/fyers");
 const tradeGuards       = require("../utils/tradeGuards");
 const zerodha           = require("../services/zerodhaBroker");
@@ -1873,7 +1874,8 @@ function onSpotTick(tick) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  if (!process.env.ACCESS_TOKEN)          return res.status(401).json({ success: false, error: "Fyers not authenticated. Visit /auth/login first." });
+  const _auth = await verifyFyersToken();
+  if (!_auth.ok)                          return res.status(401).json({ success: false, error: _auth.message, code: _auth.code });
   if (!zerodha.isAuthenticated())         return res.status(401).json({ success: false, error: "Zerodha not authenticated. Visit /auth/zerodha/login first." });
   if (process.env.SWING_LIVE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set SWING_LIVE_ENABLED=true in .env." });
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
