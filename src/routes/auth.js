@@ -105,10 +105,7 @@ router.post("/manual", async (req, res) => {
     if (response.s === "ok") {
       fyers.setAccessToken(response.access_token);
       console.log("✅ [Fyers] Manual login successful. Token saved to disk.");
-      return res.send(buildSuccessPage(
-        "Fyers Login Successful ✅",
-        "Token stored. You can close this page and start a session.",
-      ));
+      return res.send(buildManualSuccessPage(response.access_token));
     }
     console.error("❌ [Fyers] Manual token exchange failed:", response);
     return res.status(400).send(buildManualLoginPage(
@@ -406,6 +403,67 @@ function copyUrl(){
     if(!btn) return;
     var orig = btn.textContent; btn.textContent = msg;
     setTimeout(function(){ btn.textContent = orig; }, 1400);
+  }
+}
+</script>
+</body></html>`;
+}
+
+function buildManualSuccessPage(accessToken) {
+  const tok = String(accessToken || "");
+  // HTML-escape so the token can never break out of the textarea attribute or DOM.
+  const tokEsc = tok.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Fyers Login Successful</title>${faviconLink()}
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:-apple-system,sans-serif;background:#0f1117;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;}
+  .card{background:#1a1f2e;border:1px solid #065f46;border-radius:16px;padding:28px;max-width:560px;width:100%;}
+  .icon{font-size:2.4rem;text-align:center;margin-bottom:12px;}
+  h1{font-size:1.2rem;font-weight:700;color:#10b981;margin-bottom:8px;text-align:center;}
+  .sub{font-size:0.82rem;color:#a0aec0;line-height:1.55;text-align:center;margin-bottom:20px;}
+  .label{font-size:0.7rem;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;}
+  .token-box{background:#0a1429;border:1px solid #1e3a5f;border-radius:8px;padding:12px;font-family:monospace;font-size:0.72rem;color:#93c5fd;word-break:break-all;line-height:1.5;max-height:180px;overflow:auto;-webkit-user-select:all;user-select:all;}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .btn{flex:1;min-width:130px;background:#2563eb;color:#fff;text-decoration:none;text-align:center;padding:11px 14px;border-radius:8px;font-weight:600;font-size:0.85rem;border:none;cursor:pointer;}
+  .btn.success{background:#10b981;}
+  .btn.secondary{background:#1e3a5f;}
+  .btn:hover{filter:brightness(1.15);}
+  .hint{font-size:0.74rem;color:#64748b;line-height:1.6;margin-top:14px;text-align:center;}
+</style></head><body>
+<div class="card">
+  <div class="icon">✅</div>
+  <h1>Fyers Login Successful</h1>
+  <p class="sub">Token stored on the server. You can copy it below if you need it elsewhere — otherwise just head to the dashboard and start a session.</p>
+
+  <div class="label">Access Token</div>
+  <div class="token-box" id="token-box">${tokEsc}</div>
+  <div class="row">
+    <button type="button" class="btn success" onclick="copyToken()">📋 Copy Token</button>
+    <a href="/" class="btn">→ Dashboard</a>
+    <a href="/auth/manual" class="btn secondary">Re-do Manual Login</a>
+  </div>
+  <p class="hint">Tap the token box and it'll select itself; or use the Copy button. Treat this token like a password — anyone with it can place orders on your account.</p>
+</div>
+<script>
+function copyToken(){
+  var tok = document.getElementById('token-box').textContent;
+  function flash(msg){
+    var btn = document.querySelector('.btn.success');
+    if(!btn) return;
+    var orig = btn.textContent; btn.textContent = msg;
+    setTimeout(function(){ btn.textContent = orig; }, 1400);
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(tok).then(function(){ flash('✅ Copied!'); }).catch(fallback);
+  } else { fallback(); }
+  function fallback(){
+    var ta = document.createElement('textarea');
+    ta.value = tok; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); flash('✅ Copied!'); }catch(e){ flash('Tap token to select'); }
+    document.body.removeChild(ta);
   }
 }
 </script>
