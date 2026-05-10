@@ -539,7 +539,8 @@ function getSignal(candles, opts) {
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
   if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi < RSI_OVERSOLD) {
     if (!_risingOk()) { base.reason = "Bull Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("CE")) { base.reason = "Bull Engulf skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
+    // Skip _diOk: reversal at oversold S/R is by definition counter-trend.
+    // RSI < OVERSOLD + 5-fractal real support is the counter-trend filter.
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -556,7 +557,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
   if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
     if (!_risingOk()) { base.reason = "Bear Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("PE")) { base.reason = "Bear Engulf skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
+    // Skip _diOk: reversal at overbought S/R is by definition counter-trend.
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -573,7 +574,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
   if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi < RSI_OVERSOLD) {
     if (!_risingOk()) { base.reason = "Hammer skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("CE")) { base.reason = "Hammer skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
+    // Skip _diOk: reversal pattern, counter-trend by design.
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -590,7 +591,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
   if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
     if (!_risingOk()) { base.reason = "Shooting Star skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("PE")) { base.reason = "Shooting Star skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
+    // Skip _diOk: reversal pattern, counter-trend by design.
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -664,7 +665,7 @@ function getSignal(candles, opts) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
   if (dblTop.detected && rsi > RSI_OVERBOUGHT && candleBody(sc) >= MIN_BODY) {
     if (!_risingOk()) { base.reason = "Double Top skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("PE")) { base.reason = "Double Top skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
+    // Skip _diOk: reversal pattern, counter-trend by design.
     var rawSL = dblTop.topLevel;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -684,7 +685,7 @@ function getSignal(candles, opts) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
   if (dblBot.detected && rsi < RSI_OVERSOLD && candleBody(sc) >= MIN_BODY) {
     if (!_risingOk()) { base.reason = "Double Bottom skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("CE")) { base.reason = "Double Bottom skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
+    // Skip _diOk: reversal pattern, counter-trend by design.
     var rawSL = dblBot.bottomLevel;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
