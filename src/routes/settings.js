@@ -171,19 +171,16 @@ const SETTINGS_SCHEMA = [
       { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 55, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought — buying exhausted move)", default: "65" },
       { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
       { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold — shorting exhausted move)", default: "25" },
-      // ── Reversal RSI thresholds (Engulf, Hammer, ShootStar, DblTop/Bot) ──
-      { key: "PA_RSI_OVERSOLD", label: "RSI Oversold (CE rev)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "CE reversal patterns (Bull Engulf at support, Hammer, Double Bottom) require RSI BELOW this — true oversold reversal, not mid-range. Trend patterns (BOS/IB/Triangles) ignore this and use the bands above.", default: "40" },
-      { key: "PA_RSI_OVERBOUGHT", label: "RSI Overbought (PE rev)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "PE reversal patterns (Bear Engulf at resistance, Shooting Star, Double Top) require RSI ABOVE this — true overbought reversal, not mid-range. Trend patterns (BOS/IB/Triangles) ignore this and use the bands above.", default: "60" },
       // ── ADX chop filter ──
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
       { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (all patterns)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for EVERY entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading.", default: "true" },
-      { key: "PA_ADX_DIRECTIONAL", label: "ADX Directional (+DI/-DI)", type: "toggle", effect: EFFECT.SESSION, desc: "Require +DI > -DI for CE and -DI > +DI for PE. Applied to TRIANGLES only (Asc/Desc — continuation patterns that should align with trend). BOS/IB exempt (breakout = directional signal). Reversal patterns (Engulf/Hammer/ShootStar/DblTop/Bot) exempt — they are counter-trend by design and use RSI extremes + 5-fractal real S/R as the counter-trend filter instead.", default: "true" },
+      { key: "PA_ADX_DIRECTIONAL", label: "ADX Directional (+DI/-DI)", type: "toggle", effect: EFFECT.SESSION, desc: "Require +DI > -DI for CE entries and -DI > +DI for PE entries. Blocks counter-trend bullish/bearish patterns inside a strong opposite-direction trend (key fix for losing on bearish-trend days).", default: "true" },
       // ── Pattern toggles (per-signal) ──
       { key: "PA_PATTERN_ENGULFING",     label: "Engulfing (CE/PE)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish/Bearish Engulfing at S/R — STRONG", default: "true" },
       { key: "PA_PATTERN_PINBAR",        label: "Pin Bar (Hammer/Star)",    type: "toggle", effect: EFFECT.SESSION, desc: "Hammer at support / Shooting Star at resistance — MARGINAL", default: "true" },
-      { key: "PA_PATTERN_BOS",           label: "Break of Structure",       type: "toggle", effect: EFFECT.SESSION, desc: "Close above swing high (CE) / below swing low (PE) — STRONG. Skips ADX Directional gate (breakout = directional signal).", default: "true" },
-      { key: "PA_PATTERN_INSIDE_BAR",    label: "Inside Bar Breakout",      type: "toggle", effect: EFFECT.SESSION, desc: "Mother bar breakout (3-candle wait) — STRONG. Skips ADX Directional gate (breakout = directional signal).", default: "true" },
+      { key: "PA_PATTERN_BOS",           label: "Break of Structure",       type: "toggle", effect: EFFECT.SESSION, desc: "Close above swing high (CE) / below swing low (PE) — STRONG", default: "true" },
+      { key: "PA_PATTERN_INSIDE_BAR",    label: "Inside Bar Breakout",      type: "toggle", effect: EFFECT.SESSION, desc: "Mother bar breakout (3-candle wait) — STRONG", default: "true" },
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M)",           type: "toggle", effect: EFFECT.SESSION, desc: "Bearish reversal — neckline breakdown — STRONG", default: "false" },
       { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish reversal — neckline breakout — STRONG", default: "false" },
       { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle",       type: "toggle", effect: EFFECT.SESSION, desc: "Flat resistance + rising lows breakout (CE) — STRONG", default: "false" },
@@ -199,14 +196,14 @@ const SETTINGS_SCHEMA = [
       { key: "PA_CANDLE_TRAIL_BARS", label: "Candle Trail Bars", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.SESSION, desc: "Bars to look back for trail level (3 = lowest low / highest high of last 3 bars)", default: "3" },
       { key: "PA_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 50, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much peak profit. Set high enough to let winners breathe through noise.", default: "600" },
       { key: "PA_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 20, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Exit when profit drops below X% of peak (loose base pct — lets trade breathe until tiers bind)", default: "40" },
-      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — tighter locking as peak grows. Format: 1000:50,1500:60,2500:70,4000:80,6000:88", default: "1000:50,1500:60,2500:70,4000:80,6000:88" },
+      { key: "PA_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — tighter locking as peak grows. Format: 1000:50,1500:60,2500:70,4000:80", default: "1000:50,1500:60,2500:70,4000:80" },
       // ── Risk management ──
       { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 8, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on SL distance after clamping. 12 pts × ~130 qty ≈ ₹1560 max loss per trade.", default: "12" },
       { key: "PA_MAX_STRUCT_SL_PTS", label: "Max Structural SL (pts, BOS/IB)", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Skip BOS/IB setups when raw structural SL (swing or mother bar) exceeds this — thin structure = false breakout risk", default: "15" },
       { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
       { key: "PA_TIME_STOP_CANDLES", label: "Time-Stop Candles", type: "number", min: 2, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Exit flat trades after this many candles (theta bleed guard)", default: "3" },
       { key: "PA_TIME_STOP_FLAT_PTS", label: "Time-Stop Flat (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |PnL| < this many points (trade has gone nowhere)", default: "10" },
-      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Once peak PnL ≥ this many rupees, lift SL to entry+buffer pts so a winning trade can never close red. 0 = disabled.", default: "150" },
+      { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Once peak PnL ≥ this many rupees, lift SL to entry+buffer pts so a winning trade can never close red. 0 = disabled.", default: "300" },
       { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above (CE) / below (PE) entry for the breakeven SL — small slippage cushion", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
       { key: "PA_OPT_STOP_PCT", label: "PA Option Stop %", type: "number", min: 0.05, max: 0.5, step: 0.05, effect: EFFECT.SESSION, desc: "Cap option premium decay at this fraction. Fires before spot SL when option side has bled out. 0 = disabled.", default: "0.15" },
@@ -291,7 +288,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send PA day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary across all modes at 15:30 IST", default: "true" },
-      { key: "TG_WEEKLY_REPORT", label: "Weekly Trade Report (Mon 8PM)", type: "toggle", effect: EFFECT.INSTANT, desc: "Weekly Telegram summary across SWING/SCALP/PA every Monday at 20:00 IST. Reads JSONL trade logs, compares last 7d vs prior 7d, flags any mode whose avg-loss-to-avg-win ratio worsened ≥20%.", default: "true" },
     ],
   },
   {

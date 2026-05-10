@@ -401,72 +401,6 @@ function notifyConsolidatedDayReport({ byMode }) {
   sendTelegram(lines.join("\n"));
 }
 
-/**
- * Weekly per-mode trade report — last 7d vs prior 7d.
- * Input: byMode = { SWING: {last, prior}, SCALP: {...}, PA: {...} }
- *   where each window has { trades, wins, losses, avgWin, avgLoss, netPnl,
- *                           winRate, ratio }  (ratio = avgLoss/avgWin)
- * Flags any mode whose loss-to-win ratio worsened by ≥20% week-over-week.
- */
-function notifyWeeklyTradeReport({ byMode }) {
-  if (!canSend("TG_WEEKLY_REPORT")) return;
-
-  const groups = ["SWING", "SCALP", "PA"];
-  const { date, time } = nowISTString();
-  const lines = [
-    `📊 WEEKLY TRADE REPORT`,
-    ``,
-    `📅 ${date}`,
-    `🕐 ${time} IST`,
-    `Window: last 7d vs prior 7d`,
-    ``,
-  ];
-
-  const flags = [];
-  for (const g of groups) {
-    const entry = (byMode && byMode[g]) || { last: null, prior: null };
-    const last  = entry.last  || { trades: 0, wins: 0, losses: 0, avgWin: 0, avgLoss: 0, netPnl: 0, winRate: 0, ratio: null };
-    const prior = entry.prior || { trades: 0, wins: 0, losses: 0, avgWin: 0, avgLoss: 0, netPnl: 0, winRate: 0, ratio: null };
-
-    lines.push(`── ${g} ──`);
-    if (last.trades === 0 && prior.trades === 0) {
-      lines.push(`No trades in either window.`);
-      lines.push(``);
-      continue;
-    }
-
-    lines.push(`Trades   : ${last.trades}  (prev ${prior.trades})`);
-    lines.push(`Net PnL  : ${inr(last.netPnl)}  (prev ${inr(prior.netPnl)}) ${pnlArrow(last.netPnl)}`);
-    lines.push(`Win rate : ${last.winRate}%  (prev ${prior.winRate}%)`);
-    lines.push(`Avg win  : ${inr(last.avgWin)}  (prev ${inr(prior.avgWin)})`);
-    lines.push(`Avg loss : ${inr(last.avgLoss)}  (prev ${inr(prior.avgLoss)})`);
-
-    const r = last.ratio !== null ? last.ratio.toFixed(2) : "—";
-    const rPrev = prior.ratio !== null ? prior.ratio.toFixed(2) : "—";
-    lines.push(`Loss/Win : ${r}x  (prev ${rPrev}x)  [lower is better]`);
-
-    // Flag if ratio worsened ≥20% (or went from finite → unbounded with losses present).
-    if (last.ratio !== null && prior.ratio !== null && prior.ratio > 0) {
-      const delta = (last.ratio - prior.ratio) / prior.ratio;
-      if (delta >= 0.20) {
-        flags.push(`${g}: loss-to-win ratio worsened ${(delta * 100).toFixed(0)}% (${rPrev}x → ${r}x)`);
-      }
-    } else if (last.ratio === null && last.losses > 0) {
-      flags.push(`${g}: zero winners this week with ${last.losses} losses`);
-    }
-    lines.push(``);
-  }
-
-  if (flags.length) {
-    lines.push(`⚠️ Watch list:`);
-    for (const f of flags) lines.push(`• ${f}`);
-  } else {
-    lines.push(`✅ No mode flagged this week.`);
-  }
-
-  sendTelegram(lines.join("\n"));
-}
-
 module.exports = {
   isConfigured,
   sendTelegram,
@@ -480,6 +414,5 @@ module.exports = {
   notifySignal,
   notifyDayReport,
   notifyConsolidatedDayReport,
-  notifyWeeklyTradeReport,
   notifyAuthError,
 };

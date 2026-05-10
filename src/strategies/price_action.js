@@ -19,13 +19,9 @@
  * ENTRY CONFLUENCE & QUALITY GATES:
  *   RSI(14): CE min/max, PE min/max — blocks entries at exhausted-move extremes
  *   ADX level: blocks entries when market is ranging (PA_ADX_MIN)
- *   ADX rising (all patterns when PA_ADX_RISING_REQUIRED=true):
- *     require ADX[now] >= ADX[2 bars ago]. Blocks any setup when the trend is
- *     fading — counter-trend reversals at "support" most often fail when ADX
- *     is dropping.
- *   ADX directional (PA_ADX_DIRECTIONAL=true): require +DI > -DI for CE,
- *     -DI > +DI for PE. Blocks counter-trend bullish/bearish patterns inside
- *     a strong opposite-direction trend.
+ *   ADX rising (BOS/IB only): require ADX[now] >= ADX[2 bars ago] — blocks
+ *     BOS and Inside Bar breakout entries when the trend is fading. Engulfing
+ *     and pin-bar reversal setups don't need this gate.
  *   Structural SL cap (BOS/IB only): skip when raw swing/mother-bar distance
  *     exceeds PA_MAX_STRUCT_SL_PTS. Thin structure → false breakout risk.
  *
@@ -75,21 +71,17 @@ function isInTradingWindow(unixSec) {
 // A swing high: candle[i].high > candle[i-1].high AND candle[i].high > candle[i+1].high
 // A swing low:  candle[i].low  < candle[i-1].low  AND candle[i].low  < candle[i+1].low
 function findSwingPoints(candles, lookback) {
-  // 5-candle fractal: a swing is the high/low of 5 consecutive bars (curr +
-  // 2 either side). Stricter than the 3-candle version — filters out noise
-  // pivots that 5-min NIFTY produces every few candles, so "near S/R" gates
-  // bind to actually-meaningful levels rather than the last micro-pullback.
   var swingHighs = [];
   var swingLows  = [];
-  var start = Math.max(2, candles.length - lookback);
-  for (var i = start; i < candles.length - 2; i++) {
-    var p2 = candles[i - 2], p1 = candles[i - 1];
+  var start = Math.max(1, candles.length - lookback);
+  for (var i = start; i < candles.length - 1; i++) {
+    var prev = candles[i - 1];
     var curr = candles[i];
-    var n1 = candles[i + 1], n2 = candles[i + 2];
-    if (curr.high > p2.high && curr.high > p1.high && curr.high > n1.high && curr.high > n2.high) {
+    var next = candles[i + 1];
+    if (curr.high > prev.high && curr.high > next.high) {
       swingHighs.push({ price: curr.high, index: i, time: curr.time });
     }
-    if (curr.low < p2.low && curr.low < p1.low && curr.low < n1.low && curr.low < n2.low) {
+    if (curr.low < prev.low && curr.low < next.low) {
       swingLows.push({ price: curr.low, index: i, time: curr.time });
     }
   }
@@ -307,13 +299,6 @@ function getSignal(candles, opts) {
   var RSI_CE_MAX    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_CE_MAX", "85")) : 999;
   var RSI_PE_MAX    = parseFloat(cfg("PA_RSI_PE_MAX", "55"));
   var RSI_PE_MIN    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_PE_MIN", "15")) : -999;
-  // Reversal-pattern RSI thresholds (Engulf, Hammer, ShootStar, DblTop/Bot).
-  // Reversals fire BEST at extremes, not in the trend bands above. For CE at
-  // support we want oversold (RSI < OVERSOLD); for PE at resistance we want
-  // overbought (RSI > OVERBOUGHT). Trend patterns (BOS/IB/Triangles) keep the
-  // bands above — they're momentum, not reversal.
-  var RSI_OVERSOLD   = parseFloat(cfg("PA_RSI_OVERSOLD",   "40"));
-  var RSI_OVERBOUGHT = parseFloat(cfg("PA_RSI_OVERBOUGHT", "60"));
   var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "false") === "true";
   var ADX_MIN       = parseFloat(cfg("PA_ADX_MIN", "20"));
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
@@ -323,8 +308,7 @@ function getSignal(candles, opts) {
   var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "12"));
   var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
   var MAX_STRUCT_SL_PTS = parseFloat(cfg("PA_MAX_STRUCT_SL_PTS", "15")); // skip BOS/IB if raw structural SL > this
-  var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for ALL patterns
-  var ADX_DIRECTIONAL = cfg("PA_ADX_DIRECTIONAL", "true") === "true";    // require +DI>-DI for CE, -DI>+DI for PE
+  var ADX_RISING_REQ = cfg("PA_ADX_RISING_REQUIRED", "true") === "true"; // require ADX[t] >= ADX[t-2] for BOS/IB
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
   // Per-pattern toggles
   var PATTERN_ENGULFING     = cfg("PA_PATTERN_ENGULFING",     "true")  === "true";
@@ -381,8 +365,6 @@ function getSignal(candles, opts) {
   // ── ADX trend filter ──────────────────────────────────────────────────────
   var adxVal = null;
   var adxPrev2 = null;
-  var pdiVal = null; // +DI (bullish directional)
-  var mdiVal = null; // -DI (bearish directional)
   var isTrending = true; // default pass if ADX disabled
   var adxRising = true;  // default pass if ADX disabled or insufficient history
   if (ADX_ENABLED) {
@@ -390,46 +372,15 @@ function getSignal(candles, opts) {
     var lows   = candles.map(function(c) { return c.low; });
     var adxCloses = candles.map(function(c) { return c.close; });
     var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: adxCloses });
-    if (adxArr.length > 0) {
-      var lastAdx = adxArr[adxArr.length - 1];
-      adxVal = lastAdx.adx;
-      pdiVal = lastAdx.pdi !== undefined ? lastAdx.pdi : null;
-      mdiVal = lastAdx.mdi !== undefined ? lastAdx.mdi : null;
-    }
+    adxVal = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
     // Slope check: current ADX vs. 2 bars ago (rising = trend firming, falling = trend dying)
     adxPrev2 = adxArr.length >= 3 ? adxArr[adxArr.length - 3].adx : null;
     isTrending = adxVal === null ? true : adxVal >= ADX_MIN;
     adxRising  = (adxVal !== null && adxPrev2 !== null) ? adxVal >= adxPrev2 : true;
   }
   base.adx = adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null;
-  base.pdi = pdiVal !== null ? parseFloat(pdiVal.toFixed(1)) : null;
-  base.mdi = mdiVal !== null ? parseFloat(mdiVal.toFixed(1)) : null;
   base.adxRising = adxRising;
   base.isTrending = isTrending;
-
-  // ── Directional ADX gate helpers (used by every pattern below) ────────────
-  // Returns false (block) when directional check is enabled and the requested
-  // side is fighting the dominant +DI/-DI direction. Default-pass when ADX is
-  // off OR DI values are missing (insufficient history).
-  function _diOk(side) {
-    if (!ADX_ENABLED || !ADX_DIRECTIONAL) return true;
-    if (pdiVal === null || mdiVal === null) return true;
-    return side === "CE" ? pdiVal > mdiVal : mdiVal > pdiVal;
-  }
-  // ADX-rising gate (all patterns). Default-pass when ADX off / disabled flag.
-  function _risingOk() {
-    if (!ADX_ENABLED || !ADX_RISING_REQ) return true;
-    return adxRising;
-  }
-  function _risingDetail() {
-    return "ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") +
-           " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago";
-  }
-  function _diDetail(side) {
-    var want = side === "CE" ? "+DI>-DI" : "-DI>+DI";
-    return want + " (+DI=" + (pdiVal !== null ? pdiVal.toFixed(1) : "n/a") +
-           " -DI=" + (mdiVal !== null ? mdiVal.toFixed(1) : "n/a") + ")";
-  }
 
   // ── Swing points & S/R zones ───────────────────────────────────────────────
   var swings = findSwingPoints(candles, SR_LOOKBACK);
@@ -463,9 +414,7 @@ function getSignal(candles, opts) {
   if (PATTERN_INSIDE_BAR && _insideBarPending) {
     var mother = _insideBarPending;
     if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
-      // Bullish breakout — quality gates: structural SL cap + ADX rising.
-      // Skip _diOk: IB-Breakout is itself the directional signal (price is breaking
-      // out of consolidation), so requiring +DI>-DI as well throttles trend entries.
+      // Bullish breakout — quality gates: structural SL cap + ADX rising
       var rawSL = mother.motherCandle.low;
       var rawStructGap = sc.close - rawSL;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -473,9 +422,9 @@ function getSignal(candles, opts) {
         base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
         return base;
       }
-      if (!_risingOk()) {
+      if (ADX_RISING_REQ && !adxRising) {
         _insideBarPending = null;
-        base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
+        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -491,8 +440,7 @@ function getSignal(candles, opts) {
       });
     }
     if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
-      // Bearish breakout — quality gates: structural SL cap + ADX rising.
-      // Skip _diOk: IB-Breakout is itself the directional signal.
+      // Bearish breakout — quality gates: structural SL cap + ADX rising
       var rawSL = mother.motherCandle.high;
       var rawStructGap = rawSL - sc.close;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -500,9 +448,9 @@ function getSignal(candles, opts) {
         base.reason = "IB breakout skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
         return base;
       }
-      if (!_risingOk()) {
+      if (ADX_RISING_REQ && !adxRising) {
         _insideBarPending = null;
-        base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
+        base.reason = "IB breakout skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -537,10 +485,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
-  if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi < RSI_OVERSOLD) {
-    if (!_risingOk()) { base.reason = "Bull Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal at oversold S/R is by definition counter-trend.
-    // RSI < OVERSOLD + 5-fractal real support is the counter-trend filter.
+  if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -555,9 +500,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
-  if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
-    if (!_risingOk()) { base.reason = "Bear Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal at overbought S/R is by definition counter-trend.
+  if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -572,9 +515,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
-  if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi < RSI_OVERSOLD) {
-    if (!_risingOk()) { base.reason = "Hammer skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal pattern, counter-trend by design.
+  if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
     var rawSL = sc.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -589,9 +530,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
-  if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
-    if (!_risingOk()) { base.reason = "Shooting Star skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal pattern, counter-trend by design.
+  if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
     var rawSL = sc.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -616,11 +555,10 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
       return base;
     }
-    if (!_risingOk()) {
-      base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
+    if (ADX_RISING_REQ && !adxRising) {
+      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
       return base;
     }
-    // Skip _diOk: BOS is itself the directional signal — price has broken structure.
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] CE BOS above " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
@@ -639,11 +577,10 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — structure too wide (" + rawStructGap.toFixed(1) + " > " + MAX_STRUCT_SL_PTS + " pts)";
       return base;
     }
-    if (!_risingOk()) {
-      base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
+    if (ADX_RISING_REQ && !adxRising) {
+      base.reason = "BOS skipped — ADX not rising (ADX " + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago)";
       return base;
     }
-    // Skip _diOk: BOS is itself the directional signal.
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] PE BOS below " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
@@ -663,9 +600,7 @@ function getSignal(candles, opts) {
   var descTri = { detected: false };
   if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-  if (dblTop.detected && rsi > RSI_OVERBOUGHT && candleBody(sc) >= MIN_BODY) {
-    if (!_risingOk()) { base.reason = "Double Top skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal pattern, counter-trend by design.
+  if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblTop.topLevel;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -683,9 +618,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 7: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
   if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-  if (dblBot.detected && rsi < RSI_OVERSOLD && candleBody(sc) >= MIN_BODY) {
-    if (!_risingOk()) { base.reason = "Double Bottom skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    // Skip _diOk: reversal pattern, counter-trend by design.
+  if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblBot.bottomLevel;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -704,8 +637,6 @@ function getSignal(candles, opts) {
   if (PATTERN_ASC_TRIANGLE) {
   ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
-    if (!_risingOk()) { base.reason = "Asc Triangle skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("CE")) { base.reason = "Asc Triangle skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = ascTri.risingLow;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
@@ -724,8 +655,6 @@ function getSignal(candles, opts) {
   if (PATTERN_DESC_TRIANGLE) {
   descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
-    if (!_risingOk()) { base.reason = "Desc Triangle skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
-    if (!_diOk("PE")) { base.reason = "Desc Triangle skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = descTri.fallingHigh;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
@@ -752,9 +681,8 @@ function getSignal(candles, opts) {
   // ── Filter audit (additive logging — does not affect entry decisions) ─────
   // Records which filters passed/failed for CE and PE so the structured skip
   // log captures *why* this bar produced no signal. Patterns are checked
-  // regardless of toggle state, but only enabled+formed patterns count toward
-  // the "pattern" filter — disabled (off) ones are surfaced in detail for
-  // opportunity-cost visibility but never pass the gate.
+  // regardless of toggle state; disabled patterns are tagged "(off)" so we
+  // can see opportunity cost in the data window.
   var _auditBullEngulf = isBullishEngulfing(prev, sc, MIN_BODY);
   var _auditBearEngulf = isBearishEngulfing(prev, sc, MIN_BODY);
   var _auditHammer     = isHammer(sc, PIN_WICK_RATIO);
@@ -767,40 +695,21 @@ function getSignal(candles, opts) {
   var _auditAscTri     = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   var _auditDescTri    = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
 
-  // Split "formed" patterns into enabled vs disabled — only enabled count
-  // toward the "Bullish/Bearish pattern" gate; disabled are shown for context.
-  var _bullEnabled = [], _bullDisabled = [];
-  function _addBull(formed, name, enabled) {
-    if (!formed) return;
-    if (enabled) _bullEnabled.push(name);
-    else         _bullDisabled.push(name + "(off)");
-  }
-  _addBull(_auditBullEngulf,      "Engulf",  PATTERN_ENGULFING);
-  _addBull(_auditHammer,          "Hammer",  PATTERN_PINBAR);
-  _addBull(_auditBOS.bullish,     "BOS",     PATTERN_BOS);
-  _addBull(_auditIBBull,          "IB",      PATTERN_INSIDE_BAR);
-  _addBull(_auditDblBot.detected, "DblBot",  PATTERN_DOUBLE_BOTTOM);
-  _addBull(_auditAscTri.detected, "AscTri",  PATTERN_ASC_TRIANGLE);
-  var _bearEnabled = [], _bearDisabled = [];
-  function _addBear(formed, name, enabled) {
-    if (!formed) return;
-    if (enabled) _bearEnabled.push(name);
-    else         _bearDisabled.push(name + "(off)");
-  }
-  _addBear(_auditBearEngulf,      "Engulf",    PATTERN_ENGULFING);
-  _addBear(_auditShootStar,       "ShootStar", PATTERN_PINBAR);
-  _addBear(_auditBOS.bearish,     "BOS",       PATTERN_BOS);
-  _addBear(_auditIBBear,          "IB",        PATTERN_INSIDE_BAR);
-  _addBear(_auditDblTop.detected, "DblTop",    PATTERN_DOUBLE_TOP);
-  _addBear(_auditDescTri.detected,"DescTri",   PATTERN_DESC_TRIANGLE);
-
-  function _patternDetail(enabled, disabled, allList) {
-    if (enabled.length) {
-      return enabled.join(",") + (disabled.length ? " (also: " + disabled.join(",") + ")" : "");
-    }
-    if (disabled.length) return "only disabled patterns formed: " + disabled.join(",");
-    return "none formed (" + allList + ")";
-  }
+  function _tag(formed, enabled) { return formed ? (enabled ? "" : "(off)") : null; }
+  var _bullFormed = [];
+  if (_auditBullEngulf)      _bullFormed.push("Engulf"  + (PATTERN_ENGULFING     ? "" : "(off)"));
+  if (_auditHammer)          _bullFormed.push("Hammer"  + (PATTERN_PINBAR        ? "" : "(off)"));
+  if (_auditBOS.bullish)     _bullFormed.push("BOS"     + (PATTERN_BOS           ? "" : "(off)"));
+  if (_auditIBBull)          _bullFormed.push("IB"      + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
+  if (_auditDblBot.detected) _bullFormed.push("DblBot"  + (PATTERN_DOUBLE_BOTTOM ? "" : "(off)"));
+  if (_auditAscTri.detected) _bullFormed.push("AscTri"  + (PATTERN_ASC_TRIANGLE  ? "" : "(off)"));
+  var _bearFormed = [];
+  if (_auditBearEngulf)      _bearFormed.push("Engulf"    + (PATTERN_ENGULFING     ? "" : "(off)"));
+  if (_auditShootStar)       _bearFormed.push("ShootStar" + (PATTERN_PINBAR        ? "" : "(off)"));
+  if (_auditBOS.bearish)     _bearFormed.push("BOS"       + (PATTERN_BOS           ? "" : "(off)"));
+  if (_auditIBBear)          _bearFormed.push("IB"        + (PATTERN_INSIDE_BAR    ? "" : "(off)"));
+  if (_auditDblTop.detected) _bearFormed.push("DblTop"    + (PATTERN_DOUBLE_TOP    ? "" : "(off)"));
+  if (_auditDescTri.detected)_bearFormed.push("DescTri"   + (PATTERN_DESC_TRIANGLE ? "" : "(off)"));
 
   function _nearestDist(price, levels) {
     var best = null;
@@ -813,60 +722,29 @@ function getSignal(candles, opts) {
   var _nearLowDist  = _nearestDist(sc.low,  swings.swingLows);
   var _nearHighDist = _nearestDist(sc.high, swings.swingHighs);
 
-  // ADX-rising / directional gates — mirror _risingOk()/_diOk() exactly so
-  // the audit reflects what the strategy actually checks per pattern.
-  var _risingActive = ADX_ENABLED && ADX_RISING_REQ;
-  var _risingPass   = !_risingActive || adxRising;
-  var _risingDetailStr = _risingActive
-    ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") +
-       " vs " + (adxPrev2 !== null ? adxPrev2.toFixed(1) : "n/a") + " 2 bars ago")
-    : "rising gate off";
-
-  var _diActive = ADX_ENABLED && ADX_DIRECTIONAL;
-  var _diMissing = pdiVal === null || mdiVal === null;
-  var _diCePass = !_diActive || _diMissing || pdiVal > mdiVal;
-  var _diPePass = !_diActive || _diMissing || mdiVal > pdiVal;
-  function _diDetailStr(side) {
-    if (!_diActive) return "directional gate off";
-    if (_diMissing) return "DI not available (warming)";
-    return (side === "CE" ? "+DI>-DI" : "-DI>+DI") +
-           " (+DI=" + pdiVal.toFixed(1) + " -DI=" + mdiVal.toFixed(1) + ")";
-  }
-
-  // RSI passes if EITHER the trend band (BOS/IB/Triangles) OR the oversold
-  // extreme (Engulf/Hammer/DblBot) is satisfied — different patterns have
-  // different RSI requirements after the reversal-RSI fix.
-  var _ceRsiBandOk     = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;
-  var _ceRsiOversoldOk = rsi < RSI_OVERSOLD;
   var _ceAuditChecks = [
-    { name: "RSI eligible (CE)", ok: _ceRsiBandOk || _ceRsiOversoldOk,
-      detail: "RSI=" + rsi.toFixed(1) + " — need band " + RSI_CE_MIN + "-" + RSI_CE_MAX + " (trend) or <" + RSI_OVERSOLD + " (reversal)" },
+    { name: "RSI in CE range", ok: rsi > RSI_CE_MIN && rsi < RSI_CE_MAX,
+      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE_MIN + "-" + RSI_CE_MAX },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
-    { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
-    { name: "ADX directional", ok: _diCePass, detail: _diDetailStr("CE") },
     { name: "Near support", ok: supportCheck.near,
       detail: supportCheck.near
         ? ("support=" + supportCheck.level.toFixed(0))
         : ("no swing low within " + SR_ZONE_PTS + "pts" + (_nearLowDist !== null ? " (nearest " + _nearLowDist.toFixed(0) + "pts)" : "")) },
-    { name: "Bullish pattern (enabled)", ok: _bullEnabled.length > 0,
-      detail: _patternDetail(_bullEnabled, _bullDisabled, "Engulf/Hammer/BOS/IB/DblBot/AscTri") },
+    { name: "Bullish pattern", ok: _bullFormed.length > 0,
+      detail: _bullFormed.length ? _bullFormed.join(",") : "none formed (Engulf/Hammer/BOS/IB/DblBot/AscTri)" },
   ];
-  var _peRsiBandOk       = rsi > RSI_PE_MIN && rsi < RSI_PE_MAX;
-  var _peRsiOverboughtOk = rsi > RSI_OVERBOUGHT;
   var _peAuditChecks = [
-    { name: "RSI eligible (PE)", ok: _peRsiBandOk || _peRsiOverboughtOk,
-      detail: "RSI=" + rsi.toFixed(1) + " — need band " + RSI_PE_MIN + "-" + RSI_PE_MAX + " (trend) or >" + RSI_OVERBOUGHT + " (reversal)" },
+    { name: "RSI in PE range", ok: rsi > RSI_PE_MIN && rsi < RSI_PE_MAX,
+      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE_MAX },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
-    { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
-    { name: "ADX directional", ok: _diPePass, detail: _diDetailStr("PE") },
     { name: "Near resistance", ok: resistanceCheck.near,
       detail: resistanceCheck.near
         ? ("resistance=" + resistanceCheck.level.toFixed(0))
         : ("no swing high within " + SR_ZONE_PTS + "pts" + (_nearHighDist !== null ? " (nearest " + _nearHighDist.toFixed(0) + "pts)" : "")) },
-    { name: "Bearish pattern (enabled)", ok: _bearEnabled.length > 0,
-      detail: _patternDetail(_bearEnabled, _bearDisabled, "Engulf/ShootStar/BOS/IB/DblTop/DescTri") },
+    { name: "Bearish pattern", ok: _bearFormed.length > 0,
+      detail: _bearFormed.length ? _bearFormed.join(",") : "none formed (Engulf/ShootStar/BOS/IB/DblTop/DescTri)" },
   ];
 
   function _auditSide(checks) {

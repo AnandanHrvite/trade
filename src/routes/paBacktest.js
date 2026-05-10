@@ -92,16 +92,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     .sort((a, b) => b.peak - a.peak);
   const PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false"; // default true
   const PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
-  // Breakeven SL shift: once peak PnL >= trigger ₹, lift SL to entry + buffer pts.
-  const PA_BE_TRIGGER     = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300");
-  const PA_BE_BUFFER      = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");
-  // Option-level stop (% of entry premium). 0 = disabled. Only meaningful with OPTION_SIM.
-  const PA_OPT_STOP_PCT   = parseFloat(process.env.PA_OPT_STOP_PCT || "0");
-  // Time-stop: exit flat trades after N candles (parity with paPaper/paLive)
-  const PA_TIME_STOP_CANDLES  = parseInt(process.env.PA_TIME_STOP_CANDLES || "3", 10);
-  const PA_TIME_STOP_FLAT_PTS = parseFloat(process.env.PA_TIME_STOP_FLAT_PTS || "10");
-  // Estimated entry premium used by option-sim PnL math (matches existing logic at exit time).
-  const EST_ENTRY_PREMIUM = 200;
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -259,50 +249,16 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT order (matches paPaper/paLive):
-      //   0. Breakeven SL shift (no exit, just tightens SL)
-      //   1. Option-premium stop (worst-spot intra-candle)
-      //   2. Hard SL hit (initial / swing-trail / breakeven)
-      //   3. Trail profit (candle trail + profit-lock floor)
-      //   4. Swing-trailing SL update (no exit)
-      //   5. Time-stop (flat-trade theta bleed guard)
-      //   6. EOD
+      // EXIT: 1. SL hit  2. Trail profit  3. Update trailing SL  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 0. BREAKEVEN SL SHIFT — once peakPnl crosses trigger, lift SL to entry+buffer
-      if (PA_BE_TRIGGER > 0 && !position.breakevenApplied && position.peakPnl >= PA_BE_TRIGGER) {
-        const beSL = position.side === "CE"
-          ? parseFloat((position.entryPrice + PA_BE_BUFFER).toFixed(2))
-          : parseFloat((position.entryPrice - PA_BE_BUFFER).toFixed(2));
-        const tighter = position.side === "CE" ? beSL > position.stopLoss : beSL < position.stopLoss;
-        if (tighter) {
-          position.stopLoss = beSL;
-          position.slSource = "Breakeven";
-        }
-        position.breakevenApplied = true;
-      }
-
-      // 1. OPTION-PREMIUM STOP — caps premium drawdown when delta+theta have eaten the trade
-      // Computes worst-case PnL within the candle (using high for PE / low for CE).
-      // Only meaningful with OPTION_SIM; spot mode skips since there's no premium concept.
-      if (!exitReason && PA_OPT_STOP_PCT > 0 && OPTION_SIM) {
-        const optStopPnl = -(EST_ENTRY_PREMIUM * PA_OPT_STOP_PCT * LOT_SIZE);
-        const worstSpot  = position.side === "CE" ? candle.low : candle.high;
-        const worstPnl   = _runPnl(worstSpot);
-        if (worstPnl <= optStopPnl) {
-          exitPrice = _exitPriceForPnl(optStopPnl);
-          const lossPct = Math.round(PA_OPT_STOP_PCT * 100);
-          exitReason = `Option Stop ${lossPct}% (~₹${Math.round(optStopPnl)} loss)`;
-        }
-      }
-
-      // 2. SL hit (initial or swing-trailed or breakeven)
-      if (!exitReason && position.side === "CE" && candle.low <= position.stopLoss) {
+      // 1. SL hit (initial or swing-trailed)
+      if (position.side === "CE" && candle.low <= position.stopLoss) {
         exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "Swing";
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
-      } else if (!exitReason && position.side === "PE" && candle.high >= position.stopLoss) {
+      } else if (position.side === "PE" && candle.high >= position.stopLoss) {
         exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
         const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
         const _src = position.slSource || "Swing";
@@ -358,15 +314,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         if (trailResult.sl !== position.stopLoss) {
           position.stopLoss = trailResult.sl;
           if (trailResult.source) position.slSource = trailResult.source;
-        }
-      }
-
-      // 4. TIME-STOP — exit flat trades after N candles (theta bleed guard, parity with paPaper/paLive)
-      if (!exitReason && PA_TIME_STOP_CANDLES > 0 && position.candlesHeld >= PA_TIME_STOP_CANDLES) {
-        const _spotPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-        if (Math.abs(_spotPts) < PA_TIME_STOP_FLAT_PTS) {
-          exitPrice  = candle.close;
-          exitReason = `Time-stop after ${PA_TIME_STOP_CANDLES} candles flat (|pnl|=${Math.abs(_spotPts).toFixed(1)}<${PA_TIME_STOP_FLAT_PTS}pts)`;
         }
       }
 

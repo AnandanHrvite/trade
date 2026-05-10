@@ -16,7 +16,6 @@ const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
-const weeklyTradeReporter     = require("./utils/weeklyTradeReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(express.json());
@@ -1974,9 +1973,6 @@ server.listen(PORT, HOST, () => {
 
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
-
-  // ── Schedule weekly trade report at 20:00 IST every Monday ─────────────────
-  weeklyTradeReporter.start();
 });
 
 // ── Position Reconciliation — detect orphaned positions after crash ──────────
