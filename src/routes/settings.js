@@ -171,6 +171,9 @@ const SETTINGS_SCHEMA = [
       { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 55, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought — buying exhausted move)", default: "65" },
       { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
       { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold — shorting exhausted move)", default: "25" },
+      // ── Reversal RSI thresholds (Engulf, Hammer, ShootStar, DblTop/Bot) ──
+      { key: "PA_RSI_OVERSOLD", label: "RSI Oversold (CE rev)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "CE reversal patterns (Bull Engulf at support, Hammer, Double Bottom) require RSI BELOW this — true oversold reversal, not mid-range. Trend patterns (BOS/IB/Triangles) ignore this and use the bands above.", default: "40" },
+      { key: "PA_RSI_OVERBOUGHT", label: "RSI Overbought (PE rev)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "PE reversal patterns (Bear Engulf at resistance, Shooting Star, Double Top) require RSI ABOVE this — true overbought reversal, not mid-range. Trend patterns (BOS/IB/Triangles) ignore this and use the bands above.", default: "60" },
       // ── ADX chop filter ──
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },

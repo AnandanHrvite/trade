@@ -75,17 +75,21 @@ function isInTradingWindow(unixSec) {
 // A swing high: candle[i].high > candle[i-1].high AND candle[i].high > candle[i+1].high
 // A swing low:  candle[i].low  < candle[i-1].low  AND candle[i].low  < candle[i+1].low
 function findSwingPoints(candles, lookback) {
+  // 5-candle fractal: a swing is the high/low of 5 consecutive bars (curr +
+  // 2 either side). Stricter than the 3-candle version — filters out noise
+  // pivots that 5-min NIFTY produces every few candles, so "near S/R" gates
+  // bind to actually-meaningful levels rather than the last micro-pullback.
   var swingHighs = [];
   var swingLows  = [];
-  var start = Math.max(1, candles.length - lookback);
-  for (var i = start; i < candles.length - 1; i++) {
-    var prev = candles[i - 1];
+  var start = Math.max(2, candles.length - lookback);
+  for (var i = start; i < candles.length - 2; i++) {
+    var p2 = candles[i - 2], p1 = candles[i - 1];
     var curr = candles[i];
-    var next = candles[i + 1];
-    if (curr.high > prev.high && curr.high > next.high) {
+    var n1 = candles[i + 1], n2 = candles[i + 2];
+    if (curr.high > p2.high && curr.high > p1.high && curr.high > n1.high && curr.high > n2.high) {
       swingHighs.push({ price: curr.high, index: i, time: curr.time });
     }
-    if (curr.low < prev.low && curr.low < next.low) {
+    if (curr.low < p2.low && curr.low < p1.low && curr.low < n1.low && curr.low < n2.low) {
       swingLows.push({ price: curr.low, index: i, time: curr.time });
     }
   }
@@ -303,6 +307,13 @@ function getSignal(candles, opts) {
   var RSI_CE_MAX    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_CE_MAX", "85")) : 999;
   var RSI_PE_MAX    = parseFloat(cfg("PA_RSI_PE_MAX", "55"));
   var RSI_PE_MIN    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_PE_MIN", "15")) : -999;
+  // Reversal-pattern RSI thresholds (Engulf, Hammer, ShootStar, DblTop/Bot).
+  // Reversals fire BEST at extremes, not in the trend bands above. For CE at
+  // support we want oversold (RSI < OVERSOLD); for PE at resistance we want
+  // overbought (RSI > OVERBOUGHT). Trend patterns (BOS/IB/Triangles) keep the
+  // bands above — they're momentum, not reversal.
+  var RSI_OVERSOLD   = parseFloat(cfg("PA_RSI_OVERSOLD",   "40"));
+  var RSI_OVERBOUGHT = parseFloat(cfg("PA_RSI_OVERBOUGHT", "60"));
   var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "false") === "true";
   var ADX_MIN       = parseFloat(cfg("PA_ADX_MIN", "20"));
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
@@ -526,7 +537,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 1: BULLISH ENGULFING at Support ────────────────────────────────
-  if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (PATTERN_ENGULFING && isBullishEngulfing(prev, sc, MIN_BODY) && supportCheck.near && rsi < RSI_OVERSOLD) {
     if (!_risingOk()) { base.reason = "Bull Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("CE")) { base.reason = "Bull Engulf skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = sc.low;
@@ -543,7 +554,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 2: BEARISH ENGULFING at Resistance ─────────────────────────────
-  if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (PATTERN_ENGULFING && isBearishEngulfing(prev, sc, MIN_BODY) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
     if (!_risingOk()) { base.reason = "Bear Engulf skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("PE")) { base.reason = "Bear Engulf skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = sc.high;
@@ -560,7 +571,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 3: HAMMER (Pin Bar) at Support ─────────────────────────────────
-  if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
+  if (PATTERN_PINBAR && isHammer(sc, PIN_WICK_RATIO) && supportCheck.near && rsi < RSI_OVERSOLD) {
     if (!_risingOk()) { base.reason = "Hammer skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("CE")) { base.reason = "Hammer skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = sc.low;
@@ -577,7 +588,7 @@ function getSignal(candles, opts) {
   }
 
   // ── PATTERN 4: SHOOTING STAR (Pin Bar) at Resistance ───────────────────────
-  if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
+  if (PATTERN_PINBAR && isShootingStar(sc, PIN_WICK_RATIO) && resistanceCheck.near && rsi > RSI_OVERBOUGHT) {
     if (!_risingOk()) { base.reason = "Shooting Star skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("PE")) { base.reason = "Shooting Star skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = sc.high;
@@ -651,7 +662,7 @@ function getSignal(candles, opts) {
   var descTri = { detected: false };
   if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-  if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  if (dblTop.detected && rsi > RSI_OVERBOUGHT && candleBody(sc) >= MIN_BODY) {
     if (!_risingOk()) { base.reason = "Double Top skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("PE")) { base.reason = "Double Top skipped — wrong direction (" + _diDetail("PE") + ")"; return base; }
     var rawSL = dblTop.topLevel;
@@ -671,7 +682,7 @@ function getSignal(candles, opts) {
   // ── PATTERN 7: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
   if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-  if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  if (dblBot.detected && rsi < RSI_OVERSOLD && candleBody(sc) >= MIN_BODY) {
     if (!_risingOk()) { base.reason = "Double Bottom skipped — ADX not rising (" + _risingDetail() + ")"; return base; }
     if (!_diOk("CE")) { base.reason = "Double Bottom skipped — wrong direction (" + _diDetail("CE") + ")"; return base; }
     var rawSL = dblBot.bottomLevel;
@@ -821,9 +832,14 @@ function getSignal(candles, opts) {
            " (+DI=" + pdiVal.toFixed(1) + " -DI=" + mdiVal.toFixed(1) + ")";
   }
 
+  // RSI passes if EITHER the trend band (BOS/IB/Triangles) OR the oversold
+  // extreme (Engulf/Hammer/DblBot) is satisfied — different patterns have
+  // different RSI requirements after the reversal-RSI fix.
+  var _ceRsiBandOk     = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;
+  var _ceRsiOversoldOk = rsi < RSI_OVERSOLD;
   var _ceAuditChecks = [
-    { name: "RSI in CE range", ok: rsi > RSI_CE_MIN && rsi < RSI_CE_MAX,
-      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE_MIN + "-" + RSI_CE_MAX },
+    { name: "RSI eligible (CE)", ok: _ceRsiBandOk || _ceRsiOversoldOk,
+      detail: "RSI=" + rsi.toFixed(1) + " — need band " + RSI_CE_MIN + "-" + RSI_CE_MAX + " (trend) or <" + RSI_OVERSOLD + " (reversal)" },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
     { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
@@ -835,9 +851,11 @@ function getSignal(candles, opts) {
     { name: "Bullish pattern (enabled)", ok: _bullEnabled.length > 0,
       detail: _patternDetail(_bullEnabled, _bullDisabled, "Engulf/Hammer/BOS/IB/DblBot/AscTri") },
   ];
+  var _peRsiBandOk       = rsi > RSI_PE_MIN && rsi < RSI_PE_MAX;
+  var _peRsiOverboughtOk = rsi > RSI_OVERBOUGHT;
   var _peAuditChecks = [
-    { name: "RSI in PE range", ok: rsi > RSI_PE_MIN && rsi < RSI_PE_MAX,
-      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE_MAX },
+    { name: "RSI eligible (PE)", ok: _peRsiBandOk || _peRsiOverboughtOk,
+      detail: "RSI=" + rsi.toFixed(1) + " — need band " + RSI_PE_MIN + "-" + RSI_PE_MAX + " (trend) or >" + RSI_OVERBOUGHT + " (reversal)" },
     { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
       detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
     { name: "ADX rising", ok: _risingPass, detail: _risingDetailStr },
