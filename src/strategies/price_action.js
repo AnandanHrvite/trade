@@ -452,7 +452,9 @@ function getSignal(candles, opts) {
   if (PATTERN_INSIDE_BAR && _insideBarPending) {
     var mother = _insideBarPending;
     if (sc.close > mother.triggerHigh && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX) {
-      // Bullish breakout — quality gates: structural SL cap + ADX rising + directional
+      // Bullish breakout — quality gates: structural SL cap + ADX rising.
+      // Skip _diOk: IB-Breakout is itself the directional signal (price is breaking
+      // out of consolidation), so requiring +DI>-DI as well throttles trend entries.
       var rawSL = mother.motherCandle.low;
       var rawStructGap = sc.close - rawSL;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -463,11 +465,6 @@ function getSignal(candles, opts) {
       if (!_risingOk()) {
         _insideBarPending = null;
         base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
-        return base;
-      }
-      if (!_diOk("CE")) {
-        _insideBarPending = null;
-        base.reason = "IB breakout skipped — wrong direction (" + _diDetail("CE") + ")";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -483,7 +480,8 @@ function getSignal(candles, opts) {
       });
     }
     if (sc.close < mother.triggerLow && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN) {
-      // Bearish breakout — quality gates: structural SL cap + ADX rising + directional
+      // Bearish breakout — quality gates: structural SL cap + ADX rising.
+      // Skip _diOk: IB-Breakout is itself the directional signal.
       var rawSL = mother.motherCandle.high;
       var rawStructGap = rawSL - sc.close;
       if (rawStructGap > MAX_STRUCT_SL_PTS) {
@@ -494,11 +492,6 @@ function getSignal(candles, opts) {
       if (!_risingOk()) {
         _insideBarPending = null;
         base.reason = "IB breakout skipped — ADX not rising (" + _risingDetail() + ")";
-        return base;
-      }
-      if (!_diOk("PE")) {
-        _insideBarPending = null;
-        base.reason = "IB breakout skipped — wrong direction (" + _diDetail("PE") + ")";
         return base;
       }
       var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
@@ -615,10 +608,7 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
       return base;
     }
-    if (!_diOk("CE")) {
-      base.reason = "BOS skipped — wrong direction (" + _diDetail("CE") + ")";
-      return base;
-    }
+    // Skip _diOk: BOS is itself the directional signal — price has broken structure.
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] CE BOS above " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
@@ -641,10 +631,7 @@ function getSignal(candles, opts) {
       base.reason = "BOS skipped — ADX not rising (" + _risingDetail() + ")";
       return base;
     }
-    if (!_diOk("PE")) {
-      base.reason = "BOS skipped — wrong direction (" + _diDetail("PE") + ")";
-      return base;
-    }
+    // Skip _diOk: BOS is itself the directional signal.
     var slPts = Math.max(Math.min(rawStructGap, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] PE BOS below " + bos.level.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);

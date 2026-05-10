@@ -874,12 +874,38 @@ router.get("/start", async (req, res) => {
     log(`📅 [PA-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
+  // Restore today's accumulated PnL from JSONL so a mid-day restart cannot wipe
+  // the daily-loss kill. Without this, hitting the cap then restarting would
+  // re-enable entries against a deeper hole — root cause of the 04-22 blow-up.
+  let _restoredPnl = 0, _restoredWins = 0, _restoredLosses = 0;
+  try {
+    const _today = new Date().toISOString().slice(0, 10);
+    const _todayTrades = tradeLogger.readDailyTrades("pa", _today) || [];
+    for (const t of _todayTrades) {
+      const p = Number(t.pnl) || 0;
+      _restoredPnl += p;
+      if (p > 0) _restoredWins++; else if (p < 0) _restoredLosses++;
+    }
+    _restoredPnl = parseFloat(_restoredPnl.toFixed(2));
+    if (_todayTrades.length) {
+      log(`♻️ [PA-PAPER] Restored ${_todayTrades.length} trade(s) from today's JSONL — PnL ₹${_restoredPnl}`);
+    }
+  } catch (e) {
+    log(`⚠️ [PA-PAPER] Could not restore today's PnL on start: ${e.message}`);
+  }
+  const _dailyLossHitOnStart = _restoredPnl <= -_PA_MAX_LOSS;
+  if (_dailyLossHitOnStart) {
+    log(`🚨 [PA-PAPER] Daily loss cap already hit today (₹${_restoredPnl} <= -₹${_PA_MAX_LOSS}) — entries blocked`);
+  }
+
   // Reset state
   state = {
     running: true, position: null, candles: [], currentBar: null, barStartTime: null,
     log: [], sessionTrades: [], sessionStart: new Date().toISOString(),
-    sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
-    optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
+    sessionPnl: _restoredPnl, _wins: _restoredWins, _losses: _restoredLosses,
+    tickCount: 0, lastTickTime: null, lastTickPrice: null,
+    optionLtp: null, optionSymbol: null, _slPauseUntil: null,
+    _dailyLossHit: _dailyLossHitOnStart,
     _expiryDayBlocked: _expiryBlocked,
   };
 
