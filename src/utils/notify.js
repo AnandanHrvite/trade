@@ -149,6 +149,44 @@ function sendIfMaster(text) {
   sendTelegram(text);
 }
 
+// In-memory cooldown for system alerts. Map<key, lastSentMs>. Process-local — resets
+// on restart. Used to prevent flooding Telegram if an upstream issue causes the same
+// alert to fire repeatedly within a short window.
+const _alertCooldowns = new Map();
+
+function _shouldSendAlert(key, cooldownMs) {
+  const last = _alertCooldowns.get(key) || 0;
+  if (Date.now() - last < cooldownMs) return false;
+  _alertCooldowns.set(key, Date.now());
+  return true;
+}
+
+/**
+ * notifyAuthError({ broker, code, message })
+ * Fires when a broker (Fyers/Zerodha) rejects auth (e.g. Fyers WS code -15 "invalid token").
+ * Master-gated only — never silenced by per-mode toggles, since broken auth means trading
+ * is dead. Cooldown of 30 min per broker so repeated reconnects don't flood the chat.
+ */
+function notifyAuthError({ broker, code, message }) {
+  if (!isConfigured() || !isMasterEnabled()) return;
+  const key = `auth:${(broker || "unknown").toLowerCase()}`;
+  if (!_shouldSendAlert(key, 30 * 60_000)) return;
+  const { date, time } = nowISTString();
+  const lines = [
+    `🚨 BROKER AUTH FAILURE — TRADING STOPPED`,
+    ``,
+    `Broker : ${broker || "—"}`,
+    `Code   : ${code != null ? code : "—"}`,
+    `Reason : ${message || "—"}`,
+    ``,
+    `📅 ${date}`,
+    `🕐 ${time} IST`,
+    ``,
+    `Action required: re-login at /auth/login and restart any running session.`,
+  ];
+  sendTelegram(lines.join("\n"));
+}
+
 // ── Formatters ────────────────────────────────────────────────────────────────
 
 function inr(n) {
@@ -443,4 +481,5 @@ module.exports = {
   notifyDayReport,
   notifyConsolidatedDayReport,
   notifyWeeklyTradeReport,
+  notifyAuthError,
 };

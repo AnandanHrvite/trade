@@ -211,6 +211,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   <span class="deploy-chip-dot" id="deploy-chip-dot"></span>
   <span id="deploy-chip-label"></span>
 </div>
+<div id="socket-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.82rem;font-weight:600;padding:10px 16px;text-align:center;border-bottom:2px solid #ef4444;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="socket-broken-msg">⚠️ Broker socket disconnected</span>
+  <a href="/auth/login" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">Re-login →</a>
+  <button onclick="document.getElementById('socket-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
+</div>
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
 (function(){
@@ -354,6 +359,50 @@ function toggleNavGroup(gid){
 
   poll();
   setInterval(poll,8000);
+})();
+
+/* ── Broker socket health banner (auth failures, dropped feed) ────────────── */
+(function(){
+  var banner = document.getElementById('socket-broken-banner');
+  var msgEl  = document.getElementById('socket-broken-msg');
+  if(!banner || !msgEl) return;
+  var dismissedKey = 'socket_banner_dismissed_until';
+
+  function isDismissedNow(){
+    try {
+      var until = parseInt(sessionStorage.getItem(dismissedKey) || '0', 10);
+      return until && Date.now() < until;
+    } catch(e){ return false; }
+  }
+  // Snooze re-show for 60s when user clicks Dismiss (so it doesn't pop right back).
+  banner.querySelector('button').addEventListener('click', function(){
+    try { sessionStorage.setItem(dismissedKey, String(Date.now() + 60000)); } catch(e){}
+  });
+
+  function render(d){
+    if(!d || !d.broken){ banner.style.display = 'none'; return; }
+    if(isDismissedNow()){ banner.style.display = 'none'; return; }
+    var msg;
+    if(d.reason === 'auth-failed'){
+      msg = '🚨 BROKER AUTH FAILED — token rejected (code ' + (d.lastErrorCode != null ? d.lastErrorCode : '?') + '). Trading is stopped. Please re-login.';
+    } else if(d.reason === 'down'){
+      var sec = Math.round((d.downForMs || 0) / 1000);
+      msg = '⚠️ Broker socket disconnected for ' + sec + 's during market hours — feed is silent. Check connectivity / re-login.';
+    } else {
+      msg = '⚠️ Broker socket issue detected.';
+    }
+    msgEl.textContent = msg;
+    banner.style.display = 'block';
+  }
+
+  function poll(){
+    fetch('/auth/socket-health', { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(render)
+      .catch(function(){ /* network blip — leave banner state as-is */ });
+  }
+  poll();
+  setInterval(poll, 5000);
 })();
 </script>`;
 }

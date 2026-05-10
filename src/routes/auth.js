@@ -21,6 +21,7 @@ const router  = express.Router();
 const { faviconLink } = require("../utils/sharedNav");
 const fyers   = require("../config/fyers");
 const zerodha = require("../services/zerodhaBroker");
+const socketManager = require("../utils/socketManager");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FYERS AUTH
@@ -94,6 +95,13 @@ router.get("/status", (req, res) => {
     loggedIn: hasToken,
     message:  hasToken ? "Fyers access token is set." : "Not logged in. Visit /auth/login",
   });
+});
+
+// Socket health snapshot — polled every few seconds by the dashboard banner so
+// users get an in-page red alert the moment the Fyers WebSocket auth dies (or
+// the feed has been silent for >60s during market hours). Cheap, no auth needed.
+router.get("/socket-health", (req, res) => {
+  res.json(socketManager.getHealth());
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

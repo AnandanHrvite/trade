@@ -15,22 +15,34 @@
  */
 
 const { fyersDataSocket } = require('fyers-api-v3');
+const { notifyAuthError } = require('./notify');
+const { clearFyersToken } = require('../config/fyers');
 
-const HEARTBEAT_MS = 20_000;
-const MAX_BACKOFF  = 15_000;
-const BASE_BACKOFF = 2_000;
+const HEARTBEAT_MS         = 20_000;
+const MAX_BACKOFF          = 15_000;
+const BASE_BACKOFF         = 2_000;
+// After this many consecutive auth-rejection errors (Fyers code -15), give up retrying.
+// The token is invalid — reconnecting won't help. We stop the loop, fire a Telegram
+// alert, and surface a "broken" health state so the dashboard banner can light up.
+const AUTH_FAIL_LIMIT      = 3;
 
 class SocketManager {
   constructor() {
-    this._symbol     = null;
-    this._onSpotTick = null;
-    this._onLog      = null;
-    this._skt        = null;   // SDK instance — created once, reused on reconnects
-    this._stopped    = true;
-    this._retryCount = 0;
-    this._retryTimer = null;
-    this._watchdog   = null;
-    this._lastTickAt = null;
+    this._symbol         = null;
+    this._onSpotTick     = null;
+    this._onLog          = null;
+    this._skt            = null;   // SDK instance — created once, reused on reconnects
+    this._stopped        = true;
+    this._retryCount     = 0;
+    this._retryTimer     = null;
+    this._watchdog       = null;
+    this._lastTickAt     = null;
+    this._connectedAt    = null;
+    this._lastDownAt     = null;   // when the socket last went into a non-connected state
+    this._authFailCount  = 0;      // consecutive auth-rejection errors (resets on tick)
+    this._authFailed     = false;  // sticky — set when AUTH_FAIL_LIMIT reached
+    this._lastErrorCode  = null;
+    this._lastErrorMsg   = null;
     // ── Multi-callback fan-out for parallel modes (main + scalp) ──────────
     // Map of callbackId → { onTick, onLog }
     // When secondary modes (scalp) register, ticks are dispatched to ALL callbacks.
@@ -48,11 +60,16 @@ class SocketManager {
       if (onLog) onLog(`📡 [SOCKET] Reusing existing connection for ${spotSymbol}`);
       return;
     }
-    this._symbol     = spotSymbol;
-    this._onSpotTick = onSpotTick;
-    this._onLog      = onLog;
-    this._stopped    = false;
-    this._retryCount = 0;
+    this._symbol        = spotSymbol;
+    this._onSpotTick    = onSpotTick;
+    this._onLog         = onLog;
+    this._stopped       = false;
+    this._retryCount    = 0;
+    this._authFailCount = 0;
+    this._authFailed    = false;
+    this._lastErrorCode = null;
+    this._lastErrorMsg  = null;
+    this._lastDownAt    = Date.now();
     this._connect();
     this._startWatchdog();
   }
@@ -81,6 +98,38 @@ class SocketManager {
    */
   isRunning() {
     return !this._stopped;
+  }
+
+  /** True once we've given up on a permanent auth failure (Fyers code -15). */
+  isAuthFailed() {
+    return this._authFailed;
+  }
+
+  /**
+   * Health snapshot for the dashboard banner / /auth/socket-health endpoint.
+   * `broken: true` means the user needs to act:
+   *   - authFailed → re-login (token cleared)
+   *   - down for >60s during market hours while a session is running
+   */
+  getHealth() {
+    const running   = !this._stopped;
+    const downForMs = this._lastDownAt ? Date.now() - this._lastDownAt : 0;
+    const inMarket  = this._isMarketHours();
+    const longDown  = running && inMarket && this._lastDownAt && downForMs > 60_000;
+    let reason = null;
+    if (this._authFailed) reason = "auth-failed";
+    else if (longDown)    reason = "down";
+    return {
+      running,
+      authFailed:    this._authFailed,
+      broken:        !!reason,
+      reason,
+      lastErrorCode: this._lastErrorCode,
+      lastErrorMsg:  this._lastErrorMsg,
+      lastTickAt:    this._lastTickAt,
+      downForMs:     this._lastDownAt ? downForMs : 0,
+      inMarketHours: inMarket,
+    };
   }
 
   stop() {
@@ -116,6 +165,13 @@ class SocketManager {
       // The Fyers SDK is a hard singleton. We keep the reference so _connect()
       // can call skt.connect() on the existing instance instead of re-instantiating.
     }
+    // Clear connectedAt so the 'close' handler's uptime check uses the most recent
+    // successful connect window, not a stale one from earlier in the session. Without
+    // this reset, the SDK firing 'close' before 'connect' on reconnect would read an
+    // ancient _connectedAt (e.g. session start at 09:15), compute uptime > 10s on every
+    // close, and wrongly reset retryCount to 0 — making backoff useless and burning
+    // through reconnect attempts continuously.
+    this._connectedAt = null;
   }
 
   _connect() {
@@ -152,7 +208,8 @@ class SocketManager {
     skt.on('connect', () => {
       if (this._stopped) { this._detachListeners(); this._closeConnection(); return; }
       this._connectedAt = Date.now();
-      this._lastTickAt = Date.now();
+      this._lastTickAt  = Date.now();
+      this._lastDownAt  = null;
       this._log(`✅ [SOCKET] Connected — subscribing: ${this._symbol}`);
       skt.subscribe([this._symbol]);
       skt.mode(skt.FullMode);
@@ -161,6 +218,8 @@ class SocketManager {
     skt.on('message', (msg) => {
       if (this._stopped) return;
       this._lastTickAt = Date.now();
+      // Real ticks arriving means auth is fine — clear any partial auth-fail count.
+      if (this._authFailCount > 0) this._authFailCount = 0;
       const ticks = Array.isArray(msg) ? msg : [msg];
       ticks.forEach(t => {
         if (!t || !t.ltp) return;
@@ -177,11 +236,32 @@ class SocketManager {
 
     skt.on('error', (err) => {
       this._log(`❌ [SOCKET] Error: ${JSON.stringify(err)}`);
+      // Track last error for /socket-health surface.
+      try {
+        this._lastErrorCode = err && err.code != null ? err.code : null;
+        this._lastErrorMsg  = err && err.message ? String(err.message) : null;
+      } catch (_) {}
+      // Code -15 from Fyers WS is "Please provide valid token" — auth is dead, retrying
+      // can't recover it. After AUTH_FAIL_LIMIT consecutive -15s, bail out: stop retries,
+      // clear the bad token from disk + env so a stale token can't be picked up after a
+      // restart, fire a Telegram alert, and surface broken-state on the health endpoint.
+      if (err && err.code === -15) {
+        this._authFailCount += 1;
+        if (this._authFailCount >= AUTH_FAIL_LIMIT && !this._authFailed) {
+          this._authFailed = true;
+          this._clearRetry();
+          this._log(`🛑 [SOCKET] Auth rejected ${this._authFailCount}× (code -15) — giving up. Token cleared. Re-login at /auth/login.`);
+          try { clearFyersToken(); } catch (e) { this._log(`⚠️  [SOCKET] Token clear failed: ${e.message}`); }
+          try { notifyAuthError({ broker: "Fyers", code: err.code, message: err.message || "Invalid token" }); } catch (_) {}
+          return;
+        }
+      }
       if (!this._stopped) this._scheduleReconnect();
     });
 
     skt.on('close', () => {
       this._log('🔴 [SOCKET] Disconnected unexpectedly');
+      this._lastDownAt = Date.now();
       // Only reset retryCount if connection was stable for at least 10 seconds.
       // This prevents infinite 2s loops when the server immediately rejects.
       const uptime = this._connectedAt ? Date.now() - this._connectedAt : 0;
@@ -189,7 +269,9 @@ class SocketManager {
         this._retryCount = 0;
       }
       // NOTE: Do NOT set this._skt = null here — we need it for the reconnect.
-      if (!this._stopped) this._scheduleReconnect();
+      // Don't reconnect if auth has been declared dead — _scheduleReconnect would
+      // no-op anyway, but skipping the call keeps the log clean.
+      if (!this._stopped && !this._authFailed) this._scheduleReconnect();
     });
 
     skt.connect();
@@ -197,6 +279,7 @@ class SocketManager {
 
   _scheduleReconnect() {
     if (this._stopped) return;
+    if (this._authFailed) return;  // hard-stop on permanent auth failure
     this._clearRetry();
     const delay = Math.min(BASE_BACKOFF * Math.pow(2, this._retryCount), MAX_BACKOFF);
     this._retryCount++;
@@ -213,6 +296,7 @@ class SocketManager {
     this._watchdog = setInterval(() => {
       try {
         if (this._stopped) { this._clearWatchdog(); return; }
+        if (this._authFailed) return;  // don't try to reconnect on dead auth
         if (!this._isMarketHours()) return;
         const silence = this._lastTickAt ? Date.now() - this._lastTickAt : Infinity;
         if (silence > HEARTBEAT_MS) {
