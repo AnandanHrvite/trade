@@ -3076,6 +3076,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <option value="9999">All</option>
       </select>
       <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+      <button onclick="copyActivityLog(this)" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;white-space:nowrap;">📋 Copy Log</button>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
     <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
@@ -3119,6 +3120,20 @@ function logRender(){
   pag.innerHTML=h;
 }
 function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP),p)); logRender(); }
+function copyActivityLog(btn){
+  var txt=LOG_ALL.join('\\n');
+  var orig=btn.textContent;
+  function done(){ btn.textContent='\\u2705 Copied!'; setTimeout(function(){ btn.textContent=orig; },2000); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(function(){
+      var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+    });
+  } else {
+    var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+  }
+}
 logFilter();
 </script>
 <script>

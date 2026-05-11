@@ -1642,6 +1642,7 @@ ${state.sessionTrades.length > 0 ? `
       <option value="9999">All</option>
     </select>
     <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+    <button class="copy-btn" onclick="copyActivityLog(this)" style="margin-left:auto;">📋 Copy Log</button>
   </div>
   <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
   <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
@@ -1909,6 +1910,9 @@ function copyTradeLog(btn){
     lines.push((t.side||'')+'\\t'+spFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+spFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+spFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
+}
+function copyActivityLog(btn){
+  doCopy(LOG_ALL.join('\\n'),btn,'Log');
 }
 function doCopy(text,btn,label){
   var orig='\\ud83d\\udccb Copy '+label;
