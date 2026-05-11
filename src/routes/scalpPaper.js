@@ -284,6 +284,18 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     vixAtEntry:       _vixAtEntry,
     entryHourIST:     _entryHourIST,
     entryMinuteIST:   _entryMinuteIST,
+    // Entry-context snapshot for post-window analysis (BB distance, RSI, 15-min trend).
+    bbUpperAtEntry:   entryMeta.bbUpperAtEntry  != null ? entryMeta.bbUpperAtEntry  : null,
+    bbLowerAtEntry:   entryMeta.bbLowerAtEntry  != null ? entryMeta.bbLowerAtEntry  : null,
+    bbMiddleAtEntry:  entryMeta.bbMiddleAtEntry != null ? entryMeta.bbMiddleAtEntry : null,
+    rsiAtEntry:       entryMeta.rsiAtEntry      != null ? entryMeta.rsiAtEntry      : null,
+    ptsFromBB:        entryMeta.ptsFromBB       != null ? entryMeta.ptsFromBB       : null,
+    trendMomPct:      entryMeta.trendMomPct     != null ? entryMeta.trendMomPct     : null,
+    trendSlopeDir:    entryMeta.trendSlopeDir   != null ? entryMeta.trendSlopeDir   : null,
+    // MFE tracking — updated per-tick. Captures the best favourable excursion
+    // before exit (useful to size break-even trigger on losing trades).
+    mfeSpotPts:       0,
+    mfePnl:           0,
   };
 
   state.optionSymbol = symbol;
@@ -370,6 +382,16 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     bestPrice:       state.position.bestPrice       || null,
     candlesHeld:     state.position.candlesHeld     || 0,
     peakPnl:         state.position.peakPnl         || 0,
+    // Entry-context + MFE for post-window analysis.
+    bbUpperAtEntry:  state.position.bbUpperAtEntry  != null ? state.position.bbUpperAtEntry  : null,
+    bbLowerAtEntry:  state.position.bbLowerAtEntry  != null ? state.position.bbLowerAtEntry  : null,
+    bbMiddleAtEntry: state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null,
+    rsiAtEntry:      state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null,
+    ptsFromBB:       state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null,
+    trendMomPct:     state.position.trendMomPct     != null ? state.position.trendMomPct     : null,
+    trendSlopeDir:   state.position.trendSlopeDir   != null ? state.position.trendSlopeDir   : null,
+    mfeSpotPts:      state.position.mfeSpotPts      || 0,
+    mfePnl:          state.position.mfePnl          || 0,
     entryTimeMs:     state.position.entryTimeMs     || null,
     exitTimeMs:      _exitMsScalp,
     durationMs:      _durationMsScalp,
@@ -538,6 +560,13 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
+
+    // Track max favorable excursion (MFE) — spot pts in trade direction + rupee PnL.
+    // Mirrors peakPnl but stays in spot-pt units for "how far did it go for me"
+    // analysis on losing trades (sizes BE trigger, BB-line SL distance, etc.).
+    const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
 
     // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥
     //         BE_TRIGGER_R × initial risk. Tighten-only, so it fires at most once.
@@ -811,7 +840,26 @@ async function resolveAndEnter(side, spot, result) {
       }
     }
 
-    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, { signalStrength: deriveScalpStrength(result) });
+    // Distance from triggering BB band — positive = "extended beyond band" (deeper oversold/overbought).
+    // PE entry triggers when close ≤ BB lower → ptsFromBB = bbLower - spot (≥0 when extended).
+    // CE entry triggers when close ≥ BB upper → ptsFromBB = spot - bbUpper (≥0 when extended).
+    let _ptsFromBB = null;
+    if (side === "PE" && result.bbLower != null) {
+      _ptsFromBB = parseFloat((result.bbLower - spot).toFixed(2));
+    } else if (side === "CE" && result.bbUpper != null) {
+      _ptsFromBB = parseFloat((spot - result.bbUpper).toFixed(2));
+    }
+
+    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, {
+      signalStrength: deriveScalpStrength(result),
+      bbUpperAtEntry: result.bbUpper != null ? result.bbUpper : null,
+      bbLowerAtEntry: result.bbLower != null ? result.bbLower : null,
+      bbMiddleAtEntry: result.bbMiddle != null ? result.bbMiddle : null,
+      rsiAtEntry:      result.rsi     != null ? result.rsi     : null,
+      ptsFromBB:       _ptsFromBB,
+      trendMomPct:     result.trendMomPct  != null ? result.trendMomPct  : null,
+      trendSlopeDir:   result.trendSlopeDir != null ? result.trendSlopeDir : null,
+    });
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
   }
@@ -1748,6 +1796,7 @@ ${state.sessionTrades.length > 0 ? `
       <option value="9999">All</option>
     </select>
     <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+    <button class="copy-btn" onclick="copyActivityLog(this)" style="margin-left:auto;">📋 Copy Log</button>
   </div>
   <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
   <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
@@ -2035,6 +2084,9 @@ function copyTradeLog(btn){
     lines.push((t.side||'')+'\\t'+spFmtDate(t.entry)+'\\t'+(t.eSpot||'')+'\\t'+spFmtTime(t.entry)+'\\t'+(t.xSpot||'')+'\\t'+spFmtTime(t.exit)+'\\t'+(t.eSl||'')+'\\t'+(t.pnl!=null?t.pnl.toFixed(2):'')+'\\t'+(t.entryReason||'')+'\\t'+(t.reason||''));
   });
   doCopy(lines.join('\\n'),btn,'Trade Log');
+}
+function copyActivityLog(btn){
+  doCopy(LOG_ALL.join('\\n'),btn,'Log');
 }
 function doCopy(text,btn,label){
   var orig='\\ud83d\\udccb Copy '+label;

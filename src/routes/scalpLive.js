@@ -470,6 +470,16 @@ async function squareOff(exitPrice, reason) {
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
+    // Entry-context + MFE for post-window analysis.
+    bbUpperAtEntry:  state.position ? (state.position.bbUpperAtEntry  != null ? state.position.bbUpperAtEntry  : null) : null,
+    bbLowerAtEntry:  state.position ? (state.position.bbLowerAtEntry  != null ? state.position.bbLowerAtEntry  : null) : null,
+    bbMiddleAtEntry: state.position ? (state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null) : null,
+    rsiAtEntry:      state.position ? (state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null) : null,
+    ptsFromBB:       state.position ? (state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null) : null,
+    trendMomPct:     state.position ? (state.position.trendMomPct     != null ? state.position.trendMomPct     : null) : null,
+    trendSlopeDir:   state.position ? (state.position.trendSlopeDir   != null ? state.position.trendSlopeDir   : null) : null,
+    mfeSpotPts:      state.position ? (state.position.mfeSpotPts || 0) : 0,
+    mfePnl:          state.position ? (state.position.mfePnl     || 0) : 0,
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
@@ -621,6 +631,12 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
+
+    // Track max favorable excursion (MFE) in spot pts + rupees — for post-window
+    // analysis of how far losing trades went in our favour before reversing.
+    const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
 
     // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥
     //         BE_TRIGGER_R × initial risk. Tighten-only, so it fires at most once.
@@ -913,6 +929,14 @@ async function resolveAndEnter(side, spot, result) {
     const _DELTA_INIT = parseFloat(process.env.BACKTEST_DELTA || "0.55");
     const _initialRiskRupees = Math.abs(spot - clampedSL) * _DELTA_INIT * qty;
 
+    // Distance from triggering BB band — positive = "extended beyond band".
+    let _ptsFromBB = null;
+    if (side === "PE" && result.bbLower != null) {
+      _ptsFromBB = parseFloat((result.bbLower - spot).toFixed(2));
+    } else if (side === "CE" && result.bbUpper != null) {
+      _ptsFromBB = parseFloat((spot - result.bbUpper).toFixed(2));
+    }
+
     state.position = {
       side,
       symbol,
@@ -946,6 +970,17 @@ async function resolveAndEnter(side, spot, result) {
       vixAtEntry:       _vixAtEntry,
       entryHourIST:     _entryHourIST,
       entryMinuteIST:   _entryMinuteIST,
+      // Entry-context snapshot for post-window analysis (BB distance, RSI, 15-min trend).
+      bbUpperAtEntry:   result.bbUpper  != null ? result.bbUpper  : null,
+      bbLowerAtEntry:   result.bbLower  != null ? result.bbLower  : null,
+      bbMiddleAtEntry:  result.bbMiddle != null ? result.bbMiddle : null,
+      rsiAtEntry:       result.rsi      != null ? result.rsi      : null,
+      ptsFromBB:        _ptsFromBB,
+      trendMomPct:      result.trendMomPct   != null ? result.trendMomPct   : null,
+      trendSlopeDir:    result.trendSlopeDir != null ? result.trendSlopeDir : null,
+      // MFE — updated per-tick, captures best favourable excursion before exit.
+      mfeSpotPts:       0,
+      mfePnl:           0,
     };
 
     state.optionSymbol = symbol;
@@ -1915,6 +1950,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
         <option value="9999">All</option>
       </select>
       <span id="logCount" style="font-size:0.7rem;color:#4a6080;"></span>
+      <button onclick="copyActivityLog(this)" style="margin-left:auto;background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;white-space:nowrap;">\uD83D\uDCCB Copy Log</button>
     </div>
     <div id="logBox" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:12px 16px;max-height:360px;overflow-y:auto;"></div>
     <div id="logPag" style="display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;"></div>
@@ -2219,6 +2255,20 @@ function logRender(){
   pag.innerHTML=h;
 }
 function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP),p)); logRender(); }
+function copyActivityLog(btn){
+  var txt=LOG_ALL.join('\\n');
+  var orig=btn.textContent;
+  function done(){ btn.textContent='\\u2705 Copied!'; setTimeout(function(){ btn.textContent=orig; },2000); }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(function(){
+      var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+    });
+  } else {
+    var ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+  }
+}
 logFilter();
 
 /* ── NIFTY Chart (Lightweight Charts) ── */

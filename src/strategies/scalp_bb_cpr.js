@@ -243,10 +243,16 @@ function getSignal(candles, opts) {
   var trendMomLookback   = parseInt(cfg("SCALP_TREND_MOMENTUM_LOOKBACK",  "5"), 10);
   var trendSlopeLookback = parseInt(cfg("SCALP_TREND_MID_SLOPE_LOOKBACK", "3"), 10);
 
-  if (trendOn && candles.length > trendMomLookback && bbMiddles && bbMiddles.length > trendSlopeLookback) {
-    var pastClose  = candles[candles.length - 1 - trendMomLookback].close;
-    trendMomPct    = pastClose > 0 ? ((sc.close - pastClose) / pastClose) * 100 : 0;
+  // Compute trend momentum % unconditionally for data-collection logging.
+  // The full trend-direction classification still depends on trendOn.
+  if (candles.length > trendMomLookback) {
+    var _pastClose = candles[candles.length - 1 - trendMomLookback].close;
+    trendMomPct    = _pastClose > 0 ? ((sc.close - _pastClose) / _pastClose) * 100 : 0;
+  }
+  base.trendMomPct      = parseFloat(trendMomPct.toFixed(3));
+  base.trendMomLookback = trendMomLookback;
 
+  if (trendOn && candles.length > trendMomLookback && bbMiddles && bbMiddles.length > trendSlopeLookback) {
     var bbMidNow   = bbMiddles[bbMiddles.length - 1];
     var bbMidPast  = bbMiddles[bbMiddles.length - 1 - trendSlopeLookback];
     trendSlopeDir  = bbMidNow > bbMidPast ? "up" : (bbMidNow < bbMidPast ? "down" : "flat");
@@ -257,6 +263,7 @@ function getSignal(candles, opts) {
     else if (momDown && trendSlopeDir === "down") trendDirection = "DOWN";
     else trendDirection = "FLAT";
   }
+  base.trendSlopeDir = trendSlopeDir;
 
   // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
 
