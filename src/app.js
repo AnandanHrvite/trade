@@ -311,7 +311,7 @@ app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified b
 app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
 // ── Holiday Management API ────────────────────────────────────────────────────
-const { refreshHolidayCache, getNSEHolidays } = require("./utils/nseHolidays");
+const { refreshHolidayCache, getNSEHolidays, formatDateToYYYYMMDD } = require("./utils/nseHolidays");
 
 app.post("/api/holidays/refresh", async (req, res) => {
   try {
@@ -352,7 +352,7 @@ app.get("/api/expiry-dates", async (req, res) => {
       d.setDate(firstTue + 1);
 
       while (d.getMonth() === m) {
-        const iso = d.toISOString().split("T")[0];
+        const iso = formatDateToYYYYMMDD(d);
         const isMonthly = d.getDate() === lastTue.getDate();
         let actual = iso;
         let preponed = false;
@@ -361,7 +361,7 @@ app.get("/api/expiry-dates", async (req, res) => {
           let prev = new Date(d);
           for (let i = 0; i < 7; i++) {
             prev.setDate(prev.getDate() - 1);
-            const pIso = prev.toISOString().split("T")[0];
+            const pIso = formatDateToYYYYMMDD(prev);
             if (prev.getDay() !== 0 && prev.getDay() !== 6 && !holidays.includes(pIso)) {
               actual = pIso;
               preponed = true;
