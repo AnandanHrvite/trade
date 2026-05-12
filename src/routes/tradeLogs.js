@@ -81,7 +81,7 @@ router.get("/download", (req, res) => {
   if (!fs.existsSync(fp)) return res.status(404).send("file not found");
   const filename = `${mode}_paper_trades_${date}.jsonl`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  res.setHeader("Content-Type", "application/octet-stream");
   fs.createReadStream(fp).pipe(res);
 });
 
@@ -99,7 +99,7 @@ router.get("/download-all", (req, res) => {
   const today = tradeLogger.istDateString();
   const filename = `${mode}_paper_trades_ALL_${today}.jsonl`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  res.setHeader("Content-Type", "application/octet-stream");
   (function writeNext(i) {
     if (i >= dates.length) return res.end();
     const fp = tradeLogger.dailyFilePathFor(mode, dates[i].date);
@@ -179,7 +179,7 @@ router.get("/skips/download", (req, res) => {
   if (!fs.existsSync(fp)) return res.status(404).send("file not found");
   const filename = `${mode}_paper_skips_${date}.jsonl`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  res.setHeader("Content-Type", "application/octet-stream");
   fs.createReadStream(fp).pipe(res);
 });
 
@@ -195,7 +195,7 @@ router.get("/skips/download-all", (req, res) => {
   const today = skipLogger.istDateString();
   const filename = `${mode}_paper_skips_ALL_${today}.jsonl`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  res.setHeader("Content-Type", "application/octet-stream");
   (function writeNext(i) {
     if (i >= dates.length) return res.end();
     const fp = skipLogger.filePathFor(mode, dates[i].date);
