@@ -22,6 +22,7 @@ const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const tradeLogger   = require("../utils/tradeLogger");
+const skipLogger    = require("../utils/skipLogger");
 const settingsAudit = require("../utils/settingsAudit");
 
 const MODES = ["swing", "scalp", "pa"];
@@ -94,6 +95,79 @@ router.post("/delete", (req, res) => {
   try {
     fs.unlinkSync(fp);
     console.log(`[trade-logs] deleted ${fp}`);
+    res.json({ success: true, deleted: path.basename(fp) });
+  } catch (err) {
+    if (err.code === "ENOENT") return res.status(404).json({ success: false, error: "file not found" });
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── GET /trade-logs/skips/list — all daily skip files across all 3 modes ────
+router.get("/skips/list", (req, res) => {
+  const out = {};
+  for (const mode of MODES) {
+    let files;
+    try { files = skipLogger.listDates(mode); }
+    catch (_) { files = []; }
+    out[mode] = files.map(f => {
+      // Count lines + per-gate buckets (cheap full-read).
+      let total = 0;
+      const byGate = {};
+      try {
+        const text = fs.readFileSync(skipLogger.filePathFor(mode, f.date), "utf-8");
+        for (const line of text.split(/\r?\n/)) {
+          const t = line.trim();
+          if (!t) continue;
+          try {
+            const obj = JSON.parse(t);
+            total++;
+            const g = obj && obj.gate ? String(obj.gate) : "unknown";
+            byGate[g] = (byGate[g] || 0) + 1;
+          } catch (_) { /* skip bad line */ }
+        }
+      } catch (_) { /* file vanished */ }
+      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total, byGate };
+    });
+  }
+  res.json({ success: true, modes: out });
+});
+
+// ── GET /trade-logs/skips/view — parsed JSONL for one skip file ─────────────
+router.get("/skips/view", (req, res) => {
+  const mode = String(req.query.mode || "").toLowerCase();
+  const date = String(req.query.date || "");
+  if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
+  if (!validDate(date)) return res.status(400).json({ success: false, error: "bad date" });
+  let skips;
+  try { skips = skipLogger.readDailySkips(mode, date); }
+  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  res.json({ success: true, mode, date, count: skips.length, skips });
+});
+
+// ── GET /trade-logs/skips/download — raw JSONL stream ───────────────────────
+router.get("/skips/download", (req, res) => {
+  const mode = String(req.query.mode || "").toLowerCase();
+  const date = String(req.query.date || "");
+  if (!validMode(mode)) return res.status(400).send("bad mode");
+  if (!validDate(date)) return res.status(400).send("bad date");
+  const fp = skipLogger.filePathFor(mode, date);
+  if (!fs.existsSync(fp)) return res.status(404).send("file not found");
+  const filename = `${mode}_paper_skips_${date}.jsonl`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  fs.createReadStream(fp).pipe(res);
+});
+
+// ── POST /trade-logs/skips/delete — delete one skip file (gated) ────────────
+router.post("/skips/delete", (req, res) => {
+  const mode = String(req.query.mode || req.body?.mode || "").toLowerCase();
+  const date = String(req.query.date || req.body?.date || "");
+  if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
+  if (!validDate(date)) return res.status(400).json({ success: false, error: "bad date" });
+  const fp = skipLogger.filePathFor(mode, date);
+  try {
+    fs.unlinkSync(fp);
+    console.log(`[trade-logs] deleted skip file ${fp}`);
     res.json({ success: true, deleted: path.basename(fp) });
   } catch (err) {
     if (err.code === "ENOENT") return res.status(404).json({ success: false, error: "file not found" });
@@ -210,6 +284,7 @@ ${buildSidebar('tradeLogs', liveActive)}
 <div class="page">
   <div class="tabs">
     <div class="tab active" data-tab="files" onclick="setTab('files')">📁 Trade Files <span class="badge" id="filesBadge">—</span></div>
+    <div class="tab" data-tab="skips" onclick="setTab('skips')">🚫 Skip Logs <span class="badge" id="skipsBadge">—</span></div>
     <div class="tab" data-tab="audit" onclick="setTab('audit')">🔖 Checkpoints &amp; Settings Changes <span class="badge" id="auditBadge">—</span></div>
   </div>
 
@@ -217,6 +292,12 @@ ${buildSidebar('tradeLogs', liveActive)}
   <div class="tab-pane active" id="pane-files">
     <div class="sub">One JSONL per mode per IST date — crash-safe record of every paper trade taken that day. Use these for post-window analysis.</div>
     <div id="filesArea">Loading…</div>
+  </div>
+
+  <!-- ── SKIPS TAB ─────────────────────────────────────────────────── -->
+  <div class="tab-pane" id="pane-skips">
+    <div class="sub">Strategy / VIX / spread filter rejections — every signal that <em>almost</em> entered but was blocked by a gate. Files at <code>~/trading-data/skips/</code>. Click View to see per-row reason + indicator snapshot. Operational gates (cooldown, daily-loss cap, market-hours) are NOT logged here — only strategy gates.</div>
+    <div id="skipsArea">Click the tab to load…</div>
   </div>
 
   <!-- ── AUDIT TAB ─────────────────────────────────────────────────── -->
@@ -255,6 +336,7 @@ ${buildSidebar('tradeLogs', liveActive)}
   ${modalJS()}
 
   var _files = null;
+  var _skips = null;
   var _audit = null;
 
   function fmtSize(n) {
@@ -276,6 +358,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab === name); });
     document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.toggle('active', p.id === 'pane-' + name); });
     if (name === 'audit' && _audit === null) loadAudit();
+    if (name === 'skips' && _skips === null) loadSkips();
   }
 
   // ── FILES tab ───────────────────────────────────────────────────────
@@ -378,6 +461,108 @@ ${buildSidebar('tradeLogs', liveActive)}
     if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
     showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
     loadFiles();
+  }
+
+  // ── SKIPS tab ───────────────────────────────────────────────────────
+  function loadSkips() {
+    document.getElementById('skipsArea').innerHTML = 'Loading…';
+    fetch('/trade-logs/skips/list', { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.success) { document.getElementById('skipsArea').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
+        _skips = d.modes;
+        renderSkips();
+      })
+      .catch(function(){ document.getElementById('skipsArea').innerHTML = '<div class="empty">Cannot reach server.</div>'; });
+  }
+
+  function renderSkips() {
+    if (!_skips) return;
+    var modes = [
+      { key: 'swing', label: 'SWING', cls: 'mode-swing' },
+      { key: 'scalp', label: 'SCALP', cls: 'mode-scalp' },
+      { key: 'pa',    label: 'PRICE ACTION', cls: 'mode-pa' },
+    ];
+    var totalFiles = 0;
+    var html = '';
+    modes.forEach(function(m){
+      var rows = (_skips[m.key] || []);
+      totalFiles += rows.length;
+      var bodyHtml = rows.length === 0
+        ? '<div class="empty">No skip files yet for ' + m.label + '.</div>'
+        : '<table><thead><tr><th>IST Date</th><th>Skips</th><th>Top Reasons</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+          rows.map(function(r){
+            var gates = Object.keys(r.byGate || {}).map(function(g){ return [g, r.byGate[g]]; });
+            gates.sort(function(a,b){ return b[1] - a[1]; });
+            var top = gates.slice(0, 3).map(function(g){ return '<span title="' + escHtml(g[0]) + '" style="display:inline-block;margin-right:6px;font-size:0.62rem;color:#94a3b8;"><span style="color:#fbbf24;">' + g[1] + '</span> ' + escHtml(g[0]) + '</span>'; }).join('');
+            if (gates.length > 3) top += '<span style="font-size:0.62rem;color:#4a6080;">+' + (gates.length - 3) + ' more</span>';
+            return '<tr>' +
+              '<td class="num">' + escHtml(r.date) + '</td>' +
+              '<td class="num">' + r.total + '</td>' +
+              '<td>' + (top || '<span style="color:#4a6080;">—</span>') + '</td>' +
+              '<td class="num">' + fmtSize(r.size) + '</td>' +
+              '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
+              '<td><div class="actions">' +
+                '<button class="btn btn-view"     onclick="viewSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
+                '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
+                '<button class="btn btn-delete"   onclick="delSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
+              '</div></td>' +
+            '</tr>';
+          }).join('') + '</tbody></table>';
+      html +=
+        '<div class="mode-section">' +
+          '<div class="mode-head">' +
+            '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
+            '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + '</div>' +
+          '</div>' +
+          bodyHtml +
+        '</div>';
+    });
+    document.getElementById('skipsArea').innerHTML = html;
+    document.getElementById('skipsBadge').textContent = totalFiles;
+  }
+
+  function viewSkipFile(mode, date) {
+    document.getElementById('tvTitle').textContent = mode.toUpperCase() + ' SKIPS · ' + date;
+    document.getElementById('tvBody').innerHTML = 'Loading…';
+    document.getElementById('tvOverlay').classList.add('visible');
+    fetch('/trade-logs/skips/view?mode=' + mode + '&date=' + encodeURIComponent(date), { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.success) { document.getElementById('tvBody').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
+        if (!d.skips || d.skips.length === 0) { document.getElementById('tvBody').innerHTML = '<div class="empty">Empty file.</div>'; return; }
+        // Tally per-gate counts for header.
+        var byGate = {};
+        d.skips.forEach(function(s){ var g = s.gate || 'unknown'; byGate[g] = (byGate[g] || 0) + 1; });
+        var gateList = Object.keys(byGate).sort(function(a,b){ return byGate[b] - byGate[a]; });
+        var header = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + d.count + ' skip record(s).</div>';
+        header += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+          gateList.map(function(g){ return '<span style="font-size:0.66rem;padding:3px 9px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:4px;color:#fbbf24;"><b>' + byGate[g] + '</b> · ' + escHtml(g) + '</span>'; }).join('') +
+          '</div>';
+        var html = header + d.skips.map(function(s, i){
+          var when = s.ts || '';
+          return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">#' + (i+1) + ' · ' + escHtml(when) + ' · gate=<span style="color:#fbbf24;">' + escHtml(s.gate || '?') + '</span>' + (s.reason ? ' · reason=' + escHtml(s.reason) : '') + '</div><pre>' + escHtml(JSON.stringify(s, null, 2)) + '</pre></div>';
+        }).join('');
+        document.getElementById('tvBody').innerHTML = html;
+      })
+      .catch(function(){ document.getElementById('tvBody').innerHTML = '<div class="empty">Network error.</div>'; });
+  }
+
+  async function delSkipFile(mode, date) {
+    var ok = await showConfirm({
+      icon: '🗑',
+      title: 'Delete skip log',
+      message: 'Permanently delete ' + mode.toUpperCase() + ' SKIP log for ' + date + '?\\n\\nThis removes the daily skip JSONL from ~/trading-data/skips/. Cannot be undone.',
+      confirmText: 'Delete',
+      confirmClass: 'modal-btn-danger',
+    });
+    if (!ok) return;
+    var res = await secretFetch('/trade-logs/skips/delete?mode=' + mode + '&date=' + encodeURIComponent(date), { method: 'POST' });
+    if (!res) return;
+    var data = await res.json().catch(function(){ return null; });
+    if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
+    showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
+    loadSkips();
   }
 
   // ── AUDIT tab ───────────────────────────────────────────────────────

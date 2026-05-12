@@ -92,10 +92,29 @@ function appendSkipLog(mode, entry) {
   }
 }
 
+/**
+ * Read all skip entries from the daily JSONL for a given mode and IST date.
+ * Returns an array of parsed objects (skipping malformed lines).
+ */
+function readDailySkips(mode, dateStr) {
+  const fp = filePathFor(mode, dateStr);
+  let text;
+  try { text = fs.readFileSync(fp, "utf-8"); }
+  catch (_) { return []; }
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    try { out.push(JSON.parse(t)); } catch (_) { /* skip bad line */ }
+  }
+  return out;
+}
+
 module.exports = {
   appendSkipLog,
   filePathFor,
   listDates,
+  readDailySkips,
   istDateString,
   SKIPS_DIR,
   FILE_PREFIX_BY_MODE,

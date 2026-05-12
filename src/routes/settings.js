@@ -1308,7 +1308,6 @@ router.get("/", (req, res) => {
     <!-- Sticky save bar (appears when you change something) -->
     <div class="save-bar" id="saveBar">
       <span class="change-count" id="changeCount">0 unsaved changes</span>
-      <input id="checkpointNote" type="text" maxlength="500" placeholder="📝 Checkpoint note (optional): why are you changing this?" title="Saved alongside the old→new diff in the audit log. View under Trade Logs → Checkpoints." style="flex:1;min-width:160px;max-width:520px;padding:7px 11px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;font-size:0.74rem;outline:none;"/>
       <div class="btn-group">
         <button class="btn-discard" onclick="discardChanges()">Discard</button>
         <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
@@ -1460,10 +1459,8 @@ function discardChanges() {
   showToast('Changes discarded', 'info');
 }
 
-function saveSettings() {
+async function saveSettings() {
   var btn = document.getElementById('saveBtn');
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
 
   var updates = {};
   window._dirtyKeys.forEach(function(key) {
@@ -1476,14 +1473,24 @@ function saveSettings() {
     }
   });
 
-  if (Object.keys(updates).length === 0) {
-    btn.disabled = false;
-    btn.textContent = 'Save Changes';
-    return;
-  }
+  if (Object.keys(updates).length === 0) return;
 
-  var noteEl = document.getElementById('checkpointNote');
-  var note = noteEl ? (noteEl.value || '').trim() : '';
+  // Ask for an optional checkpoint note before saving. Returns null on Cancel,
+  // empty string when user just presses Enter / Submit without typing.
+  var keys = Object.keys(updates);
+  var preview = keys.slice(0, 4).join(', ') + (keys.length > 4 ? ', +' + (keys.length - 4) + ' more' : '');
+  var note = await showPrompt({
+    icon: '🔖',
+    title: 'Checkpoint Note',
+    message: 'Saving ' + keys.length + ' change' + (keys.length === 1 ? '' : 's') + ': ' + preview + '.\\n\\nDescribe WHY you are making this change (optional). It will be saved with the old→new diff in the audit log so future trade-log analysis can correlate outcomes with this change.\\n\\nLeave empty and press Submit to save without a note.',
+    placeholder: 'e.g. loosening trend gate, ADX 22 rejecting too many entries',
+    inputType: 'text',
+  });
+  if (note === null) return; // user clicked Cancel
+  note = (note || '').trim();
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
 
   secretFetch('/settings/save', {
     method: 'POST',
@@ -1510,7 +1517,6 @@ function saveSettings() {
         }
       });
       window._dirtyKeys.clear();
-      if (noteEl) noteEl.value = '';
       updateSaveBar();
 
       // Clear cached API secret if security settings changed

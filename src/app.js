@@ -252,7 +252,10 @@ const OPEN_PATHS = [
   "/trade-logs/view",       // JSON: parsed trades for one file
   "/trade-logs/download",   // download raw JSONL
   "/trade-logs/audit",      // JSON: settings audit (read-only)
-  // NOTE: POST /trade-logs/delete is intentionally protected (write op)
+  "/trade-logs/skips/list",     // JSON: list of daily skip files
+  "/trade-logs/skips/view",     // JSON: parsed skip lines for one file
+  "/trade-logs/skips/download", // download raw skip JSONL
+  // NOTE: POST /trade-logs/delete and POST /trade-logs/skips/delete are intentionally protected (write ops)
   // Scalp mode (read-only status/data)
   "/scalp-live/status",
   "/scalp-live/status/data",
