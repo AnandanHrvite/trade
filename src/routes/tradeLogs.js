@@ -20,7 +20,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
 const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
 const settingsAudit = require("../utils/settingsAudit");
@@ -457,6 +457,7 @@ ${buildSidebar('tradeLogs', liveActive)}
 
 <script>
   ${modalJS()}
+  ${toastJS()}
 
   var _files = null;
   var _skips = null;
@@ -591,8 +592,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     var res = await secretFetch('/trade-logs/delete?mode=' + mode + '&date=' + encodeURIComponent(date), { method: 'POST' });
     if (!res) return;
     var data = await res.json().catch(function(){ return null; });
-    if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
-    showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
+    if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), '#f87171'); return; }
+    showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), '#10b981');
     loadFiles();
   }
 
@@ -608,12 +609,12 @@ ${buildSidebar('tradeLogs', liveActive)}
     var res = await secretFetch('/trade-logs/delete-all?mode=' + mode, { method: 'POST' });
     if (!res) return;
     var data = await res.json().catch(function(){ return null; });
-    if (!data) { showToast('Delete failed: ' + res.status, 'error'); return; }
+    if (!data) { showToast('Delete failed: ' + res.status, '#f87171'); return; }
     var n = (data.deleted || []).length;
     if (data.failed && data.failed.length) {
-      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', 'error');
+      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', '#f87171');
     } else {
-      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' file' + (n === 1 ? '' : 's'), 'success');
+      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' file' + (n === 1 ? '' : 's'), '#10b981');
     }
     loadFiles();
   }
@@ -725,8 +726,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     var res = await secretFetch('/trade-logs/skips/delete?mode=' + mode + '&date=' + encodeURIComponent(date), { method: 'POST' });
     if (!res) return;
     var data = await res.json().catch(function(){ return null; });
-    if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
-    showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
+    if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), '#f87171'); return; }
+    showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), '#10b981');
     loadSkips();
   }
 
@@ -742,12 +743,12 @@ ${buildSidebar('tradeLogs', liveActive)}
     var res = await secretFetch('/trade-logs/skips/delete-all?mode=' + mode, { method: 'POST' });
     if (!res) return;
     var data = await res.json().catch(function(){ return null; });
-    if (!data) { showToast('Delete failed: ' + res.status, 'error'); return; }
+    if (!data) { showToast('Delete failed: ' + res.status, '#f87171'); return; }
     var n = (data.deleted || []).length;
     if (data.failed && data.failed.length) {
-      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', 'error');
+      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', '#f87171');
     } else {
-      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' skip file' + (n === 1 ? '' : 's'), 'success');
+      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' skip file' + (n === 1 ? '' : 's'), '#10b981');
     }
     loadSkips();
   }
