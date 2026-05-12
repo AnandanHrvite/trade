@@ -494,7 +494,7 @@ router.get("/data", (req, res) => {
 
 // ── POST /settings/save — Save updated values ──────────────────────────────
 router.post("/save", (req, res) => {
-  const { updates, deletes } = req.body;
+  const { updates, deletes, note } = req.body;
   if ((!updates || typeof updates !== "object") && !Array.isArray(deletes)) {
     return res.status(400).json({ success: false, error: "Missing updates or deletes" });
   }
@@ -571,6 +571,7 @@ router.post("/save", (req, res) => {
         updates: cleaned,
         deleteKeys,
         req,
+        note,
       });
       if (written) console.log(`[settings] audit: logged ${written} change(s) → ${settingsAudit.AUDIT_FILE}`);
     } catch (err) {
@@ -914,7 +915,7 @@ router.get("/", (req, res) => {
       padding: 12px 28px;
       display: none; align-items: center; justify-content: space-between; gap: 16px;
     }
-    .save-bar.visible { display: flex; }
+    .save-bar.visible { display: flex; flex-wrap: wrap; }
     .save-bar .change-count { font-size: 0.78rem; color: var(--yellow); font-weight: 700; }
     .save-bar .change-count::before { content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--yellow); margin-right:8px; vertical-align:middle; }
     .save-bar .btn-group { display: flex; gap: 10px; }
@@ -1307,6 +1308,7 @@ router.get("/", (req, res) => {
     <!-- Sticky save bar (appears when you change something) -->
     <div class="save-bar" id="saveBar">
       <span class="change-count" id="changeCount">0 unsaved changes</span>
+      <input id="checkpointNote" type="text" maxlength="500" placeholder="📝 Checkpoint note (optional): why are you changing this?" title="Saved alongside the old→new diff in the audit log. View under Trade Logs → Checkpoints." style="flex:1;min-width:160px;max-width:520px;padding:7px 11px;background:#0a1528;border:1px solid #1e3a5a;border-radius:6px;color:#c8d8f0;font-family:inherit;font-size:0.74rem;outline:none;"/>
       <div class="btn-group">
         <button class="btn-discard" onclick="discardChanges()">Discard</button>
         <button class="btn-save" id="saveBtn" onclick="saveSettings()">Save Changes</button>
@@ -1480,10 +1482,13 @@ function saveSettings() {
     return;
   }
 
+  var noteEl = document.getElementById('checkpointNote');
+  var note = noteEl ? (noteEl.value || '').trim() : '';
+
   secretFetch('/settings/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ updates: updates }),
+    body: JSON.stringify({ updates: updates, note: note }),
   })
   .then(function(res) {
     if (!res) return null;
@@ -1505,6 +1510,7 @@ function saveSettings() {
         }
       });
       window._dirtyKeys.clear();
+      if (noteEl) noteEl.value = '';
       updateSaveBar();
 
       // Clear cached API secret if security settings changed

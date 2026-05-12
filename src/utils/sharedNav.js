@@ -109,8 +109,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        { key: 'logs',      href: '/logs',       icon: '📜', label: 'Logs'       },
-        { key: 'settings',  href: '/settings',   icon: '⚙',  label: 'Settings'   },
+        { key: 'logs',       href: '/logs',        icon: '📜', label: 'Logs'       },
+        { key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' },
+        { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },
   ];

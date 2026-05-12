@@ -247,6 +247,12 @@ const OPEN_PATHS = [
   "/login-logs/clear",      // reset login logs
   "/settings",              // settings page (read-only view)
   "/settings/data",         // AJAX poll for current values
+  "/trade-logs",            // per-trade JSONL viewer (read-only)
+  "/trade-logs/list",       // JSON: list of daily JSONL files
+  "/trade-logs/view",       // JSON: parsed trades for one file
+  "/trade-logs/download",   // download raw JSONL
+  "/trade-logs/audit",      // JSON: settings audit (read-only)
+  // NOTE: POST /trade-logs/delete is intentionally protected (write op)
   // Scalp mode (read-only status/data)
   "/scalp-live/status",
   "/scalp-live/status/data",
@@ -288,6 +294,7 @@ app.use("/swing-paper", require("./routes/swingPaper"));
 app.use("/swing-live",      require("./routes/swingLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
+app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer

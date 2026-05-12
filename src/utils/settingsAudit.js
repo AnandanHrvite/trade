@@ -47,13 +47,15 @@ function appendEntries(entries, meta) {
   }
 }
 
-function logSave({ prevEnv, updates, deleteKeys, req }) {
+function logSave({ prevEnv, updates, deleteKeys, req, note }) {
   const entries = diffEntries(prevEnv, updates, deleteKeys);
   if (entries.length === 0) return 0;
+  const cleanNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
   const meta = {
     source: "ui",
     ip: (req && (req.ip || req.connection?.remoteAddress)) || null,
     ua: (req && req.get && req.get("user-agent")) || null,
+    ...(cleanNote ? { note: cleanNote } : {}),
   };
   appendEntries(entries, meta);
   return entries.length;
