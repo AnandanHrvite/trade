@@ -85,6 +85,31 @@ router.get("/download", (req, res) => {
   fs.createReadStream(fp).pipe(res);
 });
 
+// ── GET /trade-logs/download-all — concat ALL daily JSONLs for a mode ───────
+// Oldest first so the resulting file reads as a chronological log.
+router.get("/download-all", (req, res) => {
+  const mode = String(req.query.mode || "").toLowerCase();
+  if (!validMode(mode)) return res.status(400).send("bad mode");
+  let dates;
+  try { dates = tradeLogger.listDailyDates(mode); }
+  catch (_) { dates = []; }
+  if (!dates.length) return res.status(404).send("no files for this mode");
+  // listDailyDates is newest-first; reverse for chronological output.
+  dates.sort((a, b) => a.date.localeCompare(b.date));
+  const today = tradeLogger.istDateString();
+  const filename = `${mode}_paper_trades_ALL_${today}.jsonl`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  (function writeNext(i) {
+    if (i >= dates.length) return res.end();
+    const fp = tradeLogger.dailyFilePathFor(mode, dates[i].date);
+    const rs = fs.createReadStream(fp);
+    rs.on("end", () => writeNext(i + 1));
+    rs.on("error", () => writeNext(i + 1));
+    rs.pipe(res, { end: false });
+  })(0);
+});
+
 // ── POST /trade-logs/delete — delete one file (write op, gated) ─────────────
 router.post("/delete", (req, res) => {
   const mode = String(req.query.mode || req.body?.mode || "").toLowerCase();
@@ -156,6 +181,29 @@ router.get("/skips/download", (req, res) => {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
   fs.createReadStream(fp).pipe(res);
+});
+
+// ── GET /trade-logs/skips/download-all — concat ALL daily skip JSONLs ───────
+router.get("/skips/download-all", (req, res) => {
+  const mode = String(req.query.mode || "").toLowerCase();
+  if (!validMode(mode)) return res.status(400).send("bad mode");
+  let dates;
+  try { dates = skipLogger.listDates(mode); }
+  catch (_) { dates = []; }
+  if (!dates.length) return res.status(404).send("no files for this mode");
+  dates.sort((a, b) => a.date.localeCompare(b.date));
+  const today = skipLogger.istDateString();
+  const filename = `${mode}_paper_skips_ALL_${today}.jsonl`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "application/jsonl; charset=utf-8");
+  (function writeNext(i) {
+    if (i >= dates.length) return res.end();
+    const fp = skipLogger.filePathFor(mode, dates[i].date);
+    const rs = fs.createReadStream(fp);
+    rs.on("end", () => writeNext(i + 1));
+    rs.on("error", () => writeNext(i + 1));
+    rs.pipe(res, { end: false });
+  })(0);
 });
 
 // ── POST /trade-logs/skips/delete — delete one skip file (gated) ────────────
@@ -267,6 +315,43 @@ router.get("/", (req, res) => {
       table { font-size:0.66rem; }
       th, td { padding:6px 8px; }
     }
+
+    /* ── LIGHT THEME OVERRIDES ─────────────────────────────────────────
+       Activated when UI_THEME=light. sharedNav.js sets data-theme="light"
+       on <html> at runtime; these rules mirror the same palette used by
+       Settings / Dashboard so this page matches the rest of the app. */
+    :root[data-theme="light"] body { background:#f4f6f9; color:#334155; }
+    :root[data-theme="light"] .page { color:#334155; }
+    :root[data-theme="light"] h1 { color:#1e40af; }
+    :root[data-theme="light"] .sub { color:#64748b; }
+    :root[data-theme="light"] .sub code { background:#f1f5f9; padding:1px 5px; border-radius:3px; color:#475569; }
+    :root[data-theme="light"] .tabs { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .tab { color:#94a3b8; }
+    :root[data-theme="light"] .tab.active { color:#1e40af; border-bottom-color:#3b82f6; }
+    :root[data-theme="light"] .tab .badge { background:#f1f5f9; border-color:#e0e4ea; color:#64748b; }
+    :root[data-theme="light"] .mode-section { background:#fff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .mode-head { background:#f8fafc; border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .mode-meta { color:#94a3b8; }
+    :root[data-theme="light"] th { background:#f1f5f9; color:#64748b; }
+    :root[data-theme="light"] th, :root[data-theme="light"] td { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] tr:hover td { background:#f8fafc; }
+    :root[data-theme="light"] .empty { color:#94a3b8; }
+    :root[data-theme="light"] .filt-bar input,
+    :root[data-theme="light"] .filt-bar select { background:#fff; border-color:#e0e4ea; color:#334155; }
+    :root[data-theme="light"] .filt-bar label { color:#64748b; }
+    :root[data-theme="light"] .btn-view     { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
+    :root[data-theme="light"] .btn-download { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
+    :root[data-theme="light"] .btn-delete   { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    :root[data-theme="light"] .tv-overlay { background:rgba(15,23,42,0.55); }
+    :root[data-theme="light"] .tv-box { background:#fff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .tv-head { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .tv-title { color:#1e293b; }
+    :root[data-theme="light"] .tv-close { color:#94a3b8; }
+    :root[data-theme="light"] .tv-body pre { background:#f8fafc; border-color:#e0e4ea; color:#475569; }
+    :root[data-theme="light"] .audit-row.has-note { background:rgba(59,130,246,0.04); }
+    :root[data-theme="light"] .audit-note { color:#475569; }
+    :root[data-theme="light"] .from-val { color:#b91c1c; }
+    :root[data-theme="light"] .to-val   { color:#15803d; }
   </style>
 </head>
 <body>
@@ -409,11 +494,18 @@ ${buildSidebar('tradeLogs', liveActive)}
               '</div></td>' +
             '</tr>';
           }).join('') + '</tbody></table>';
+      var totalTrades = rows.reduce(function(s,r){ return s + (r.trades || 0); }, 0);
+      var dlAll = rows.length > 0
+        ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
+        : '';
       html +=
         '<div class="mode-section">' +
           '<div class="mode-head">' +
             '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:12px;">' +
+              '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalTrades + ' trade' + (totalTrades === 1 ? '' : 's') + '</div>' +
+              dlAll +
+            '</div>' +
           '</div>' +
           bodyHtml +
         '</div>';
@@ -509,11 +601,18 @@ ${buildSidebar('tradeLogs', liveActive)}
               '</div></td>' +
             '</tr>';
           }).join('') + '</tbody></table>';
+      var totalSkips = rows.reduce(function(s,r){ return s + (r.total || 0); }, 0);
+      var dlAll = rows.length > 0
+        ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily skip files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
+        : '';
       html +=
         '<div class="mode-section">' +
           '<div class="mode-head">' +
             '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + '</div>' +
+            '<div style="display:flex;align-items:center;gap:12px;">' +
+              '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalSkips + ' skip' + (totalSkips === 1 ? '' : 's') + '</div>' +
+              dlAll +
+            '</div>' +
           '</div>' +
           bodyHtml +
         '</div>';
