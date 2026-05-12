@@ -1,9 +1,10 @@
 require("dotenv").config();
 require("./services/logger");              // ← MUST be first: intercepts all console.* from here on
 
-const express  = require("express");
-const https    = require("https");
-const fs       = require("fs");
+const express     = require("express");
+const compression = require("compression");
+const https       = require("https");
+const fs          = require("fs");
 const { ACTIVE, getActiveStrategy } = require("./strategies");
 const instrumentConfig = require("./config/instrument");
 const zerodha  = require("./services/zerodhaBroker");
@@ -18,6 +19,7 @@ const { sendTelegram, sendTelegramSync } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
+app.use(compression());
 app.use(express.json());
 
 // ── Login gate — page-level password protection ─────────────────────────────
