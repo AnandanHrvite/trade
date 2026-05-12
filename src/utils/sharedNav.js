@@ -35,6 +35,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     statusLabel  = isRunning ? 'RUNNING' : 'STOPPED',
   } = opts;
 
+  const swingModeOn = (process.env.SWING_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
@@ -42,6 +43,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
   const showCompare  = (process.env.UI_SHOW_COMPARE  || 'false').toLowerCase() === 'true';
   const showTracker  = (process.env.UI_SHOW_TRACKER  || 'false').toLowerCase() === 'true';
+
+  // ── Top-level menu-visibility toggles ──
+  const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
+  const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'true').toLowerCase()  === 'true';
+  const showRealtime    = (process.env.UI_SHOW_REALTIME      || 'true').toLowerCase()  === 'true';
+  const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
+  const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
 
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
@@ -80,22 +88,24 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   ];
 
   // ── Grouped navigation sections (collapsible) ──
+  const topLevelItems = [
+    ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
+    ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' }] : []),
+    ...(showRealtime    ? [{ key: 'realtime',          href: '/realtime',           icon: '📡', label: 'Real-Time' }] : []),
+    ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
+    ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
+  ];
+
   const sections = [
-    {
+    ...(topLevelItems.length ? [{
       header: null, collapsible: false,
-      items: [
-        { key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' },
-        { key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' },
-        { key: 'realtime',          href: '/realtime',           icon: '📡', label: 'Real-Time' },
-        { key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' },
-        { key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' },
-      ]
-    },
-    {
+      items: topLevelItems,
+    }] : []),
+    ...(swingModeOn ? [{
       header: 'SWING', collapsible: true, collapsed: !isTradingOpen,
       groupId: 'nav-swing',
       items: swingItems,
-    },
+    }] : []),
     ...(scalpModeOn ? [{
       header: 'SCALP', collapsible: true, collapsed: !isScalpOpen,
       groupId: 'nav-scalp',

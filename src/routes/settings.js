@@ -95,7 +95,6 @@ const SETTINGS_SCHEMA = [
     section: "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
     icon: "⚡",
     fields: [
-      { key: "SCALP_MODE_ENABLED", label: "Scalp Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide scalp menus", default: "true" },
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
       { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (scope: Scalp only)", default: "false" },
@@ -160,7 +159,6 @@ const SETTINGS_SCHEMA = [
     section: "PRICE ACTION STRATEGY (5-min) — Fyers",
     icon: "📐",
     fields: [
-      { key: "PA_MODE_ENABLED", label: "Price Action Mode", type: "toggle", effect: EFFECT.INSTANT, desc: "Show/hide price action menus", default: "true" },
       { key: "PA_ENABLED", label: "PA Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable PA live order placement (Fyers). Required to start a PA Live session.", default: "false" },
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high (scope: PA only)", default: "false" },
@@ -320,9 +318,17 @@ const SETTINGS_SCHEMA = [
     section: "MENU VISIBILITY — Show / hide sidebar items",
     icon: "👁",
     fields: [
-      { key: "UI_SHOW_SIMULATE", label: "Show Simulate Menu", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
-      { key: "UI_SHOW_COMPARE",  label: "Show Compare Menu",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
-      { key: "UI_SHOW_TRACKER",  label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
+      { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Dashboard' menu in the sidebar. When off, '/' redirects to Settings.", default: "false" },
+      { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Backtest' (all-strategy) menu in the sidebar", default: "true" },
+      { key: "UI_SHOW_REALTIME",       label: "Show Real-Time",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Real-Time' menu in the sidebar", default: "true" },
+      { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Paper Traded History' menu in the sidebar", default: "true" },
+      { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Live Traded History' menu in the sidebar", default: "true" },
+      { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
     ],
   },
   {
@@ -879,7 +885,18 @@ router.get("/", (req, res) => {
     if (f.default !== undefined) SCHEMA_DEFAULTS[f.key] = String(f.default);
   }));
 
+  // ── Hide strategy sections when their master toggle is off ──
+  const swingModeOn = (envData["SWING_MODE_ENABLED"] ?? process.env.SWING_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const paModeOn    = (envData["PA_MODE_ENABLED"]    ?? process.env.PA_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  // (scalpModeOn already computed above for isFieldFrozen)
+  const SECTION_TO_MASTER = {
+    "SWING STRATEGY (15-min) — Zerodha":              swingModeOn,
+    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers":           scalpModeOn,
+    "PRICE ACTION STRATEGY (5-min) — Fyers":          paModeOn,
+  };
+
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
+    if (SECTION_TO_MASTER[s.section] === false) return "";
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
     const eyeBtn = `<button type="button" class="section-eye-btn" onclick="event.stopPropagation();showSectionSummary(${idx})" title="View all configured values">👁</button>`;
     const defaultsBtn = `<button type="button" class="section-defaults-btn" onclick="event.stopPropagation();loadSectionDefaults('${sectionId}')" title="Fill all fields in this section with the recommended schema defaults — does NOT save until you click Save Changes">↺ Load Defaults</button>`;
