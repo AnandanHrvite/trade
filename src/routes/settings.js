@@ -142,6 +142,7 @@ const SETTINGS_SCHEMA = [
       // ── BB Squeeze filter ──
       { key: "SCALP_BB_SQUEEZE_FILTER", label: "BB Squeeze Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when BB bands are narrow (consolidation = false breakouts)", default: "true" },
       { key: "SCALP_BB_MIN_WIDTH_PCT", label: "BB Min Width (%)", type: "number", min: 0.05, max: 0.5, step: 0.01, effect: EFFECT.SESSION, desc: "Min BB width as % of price (0.15 = skip if BB width < 36pts on NIFTY 24000)", default: "0.15" },
+      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow Threshold (%)", type: "number", min: 10, max: 80, step: 1, effect: EFFECT.SESSION, desc: "Today's CPR width as % of yesterday's range — below this = narrow CPR (trend-day signal). Used by BB+CPR strategy to qualify entries.", default: "33" },
       // ── V4 Quality filters ──
       { key: "SCALP_REQUIRE_APPROACH", label: "Require Approach", type: "toggle", effect: EFFECT.SESSION, desc: "Block entry if prev candle was on opposite half of BB (CE: prev close < BB middle = first-touch breakout, likely fades)", default: "false" },
       { key: "SCALP_MIN_BODY_RATIO", label: "Min Body Ratio", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Min entry candle body as % of range (0.5 = skip doji/wick breakouts where body < 50% of high-low). Set 0 to disable.", default: "0" },
@@ -461,7 +462,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_PAUSE_OVERRIDE_ENABLED", "SCALP_PAUSE_OVERRIDE_PTS",
   "SCALP_TIME_STOP_CANDLES", "SCALP_TIME_STOP_FLAT_PTS",
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
-  "SCALP_BB_SQUEEZE_FILTER", "SCALP_BB_MIN_WIDTH_PCT",
+  "SCALP_BB_SQUEEZE_FILTER", "SCALP_BB_MIN_WIDTH_PCT", "SCALP_CPR_NARROW_PCT",
   "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
   "SCALP_REQUIRE_APPROACH", "SCALP_MIN_BODY_RATIO",
   "SCALP_TREND_FILTER", "SCALP_TREND_MOMENTUM_LOOKBACK", "SCALP_TREND_MOMENTUM_PCT", "SCALP_TREND_MID_SLOPE_LOOKBACK",
