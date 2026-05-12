@@ -329,6 +329,26 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
+
+      // ── Swing submenu ──
+      { key: "UI_SHOW_SWING_BACKTEST", label: "Swing → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Swing group", default: "true" },
+      { key: "UI_SHOW_SWING_PAPER",    label: "Swing → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Swing group",    default: "true" },
+      { key: "UI_SHOW_SWING_LIVE",     label: "Swing → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Swing group",     default: "true" },
+
+      // ── Scalp submenu ──
+      { key: "UI_SHOW_SCALP_BACKTEST", label: "Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Scalp group", default: "true" },
+      { key: "UI_SHOW_SCALP_PAPER",    label: "Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Scalp group",    default: "true" },
+      { key: "UI_SHOW_SCALP_LIVE",     label: "Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Scalp group",     default: "true" },
+
+      // ── Price Action submenu ──
+      { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Price Action group",     default: "true" },
+      { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Pattern Test' inside the Price Action group", default: "true" },
+      { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Price Action group",        default: "true" },
+      { key: "UI_SHOW_PA_LIVE",             label: "PA → Live",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Price Action group",         default: "true" },
+
+      // ── System submenu (Settings is always shown) ──
+      { key: "UI_SHOW_LOGS",       label: "System → Logs",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Logs' inside the System group",       default: "true" },
+      { key: "UI_SHOW_TRADE_LOGS", label: "System → Trade Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Trade Logs' inside the System group", default: "true" },
     ],
   },
   {

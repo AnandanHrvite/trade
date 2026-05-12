@@ -51,6 +51,22 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
 
+  // ── Per-strategy submenu toggles ──
+  const showSwingBacktest = (process.env.UI_SHOW_SWING_BACKTEST || 'true').toLowerCase() === 'true';
+  const showSwingPaper    = (process.env.UI_SHOW_SWING_PAPER    || 'true').toLowerCase() === 'true';
+  const showSwingLive     = (process.env.UI_SHOW_SWING_LIVE     || 'true').toLowerCase() === 'true';
+  const showScalpBacktest = (process.env.UI_SHOW_SCALP_BACKTEST || 'true').toLowerCase() === 'true';
+  const showScalpPaper    = (process.env.UI_SHOW_SCALP_PAPER    || 'true').toLowerCase() === 'true';
+  const showScalpLive     = (process.env.UI_SHOW_SCALP_LIVE     || 'true').toLowerCase() === 'true';
+  const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'true').toLowerCase() === 'true';
+  const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'true').toLowerCase() === 'true';
+  const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
+  const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
+
+  // ── System submenu toggles (Settings is always shown) ──
+  const showLogs      = (process.env.UI_SHOW_LOGS       || 'true').toLowerCase() === 'true';
+  const showTradeLogs = (process.env.UI_SHOW_TRADE_LOGS || 'true').toLowerCase() === 'true';
+
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
@@ -62,29 +78,29 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // Build a swing items list with per-feature toggle
   const swingItems = [
-    { key: 'swingBacktest', href: '/swing-backtest',       icon: '🔍', label: 'Backtest' },
-    { key: 'swingPaper',    href: '/swing-paper/status',   icon: '📋', label: 'Paper'    },
+    ...(showSwingBacktest ? [{ key: 'swingBacktest', href: '/swing-backtest',       icon: '🔍', label: 'Backtest' }] : []),
+    ...(showSwingPaper    ? [{ key: 'swingPaper',    href: '/swing-paper/status',   icon: '📋', label: 'Paper'    }] : []),
     ...(showSim      ? [{ key: 'swingSim',     href: '/swing-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare  ? [{ key: 'swingCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
     ...(showTracker  ? [{ key: 'swingTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
-    { key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     },
+    ...(showSwingLive     ? [{ key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     }] : []),
   ];
 
   const scalpItems = [
-    { key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest' },
-    { key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'    },
+    ...(showScalpBacktest ? [{ key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest' }] : []),
+    ...(showScalpPaper    ? [{ key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'scalpCompare', href: '/compare/scalping',     icon: '⚖',  label: 'Compare'  }] : []),
-    { key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     },
+    ...(showScalpLive     ? [{ key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     }] : []),
   ];
 
   const paItems = [
-    { key: 'paBacktest',        href: '/pa-backtest',         icon: '📐', label: 'Backtest' },
-    { key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '△',  label: 'Pattern Test' },
-    { key: 'paPaper',    href: '/pa-paper/status',   icon: '📐', label: 'Paper'    },
+    ...(showPaBacktest        ? [{ key: 'paBacktest',        href: '/pa-backtest',         icon: '📐', label: 'Backtest' }] : []),
+    ...(showPaPatternBacktest ? [{ key: 'paPatternBacktest', href: '/pa-pattern-backtest', icon: '△',  label: 'Pattern Test' }] : []),
+    ...(showPaPaper           ? [{ key: 'paPaper',           href: '/pa-paper/status',     icon: '📐', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
-    { key: 'paLive',     href: '/pa-live/status',    icon: '📐', label: 'Live'     },
+    ...(showPaLive            ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
   ];
 
   // ── Grouped navigation sections (collapsible) ──
@@ -119,8 +135,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        { key: 'logs',       href: '/logs',        icon: '📜', label: 'Logs'       },
-        { key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' },
+        ...(showLogs      ? [{ key: 'logs',       href: '/logs',        icon: '📜', label: 'Logs'       }] : []),
+        ...(showTradeLogs ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },
