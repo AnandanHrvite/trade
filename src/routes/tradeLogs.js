@@ -129,6 +129,24 @@ router.post("/delete", (req, res) => {
   }
 });
 
+// ── POST /trade-logs/delete-all — delete every daily file for a mode ────────
+router.post("/delete-all", (req, res) => {
+  const mode = String(req.query.mode || req.body?.mode || "").toLowerCase();
+  if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
+  let dates;
+  try { dates = tradeLogger.listDailyDates(mode); }
+  catch (_) { dates = []; }
+  const deleted = [];
+  const failed = [];
+  for (const d of dates) {
+    const fp = tradeLogger.dailyFilePathFor(mode, d.date);
+    try { fs.unlinkSync(fp); deleted.push(d.date); }
+    catch (err) { if (err.code !== "ENOENT") failed.push({ date: d.date, error: err.message }); }
+  }
+  console.log(`[trade-logs] delete-all mode=${mode} removed=${deleted.length} failed=${failed.length}`);
+  res.json({ success: failed.length === 0, mode, deleted, failed });
+});
+
 // ── GET /trade-logs/skips/list — all daily skip files across all 3 modes ────
 router.get("/skips/list", (req, res) => {
   const out = {};
@@ -223,6 +241,24 @@ router.post("/skips/delete", (req, res) => {
     if (err.code === "ENOENT") return res.status(404).json({ success: false, error: "file not found" });
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// ── POST /trade-logs/skips/delete-all — delete every daily skip file ────────
+router.post("/skips/delete-all", (req, res) => {
+  const mode = String(req.query.mode || req.body?.mode || "").toLowerCase();
+  if (!validMode(mode)) return res.status(400).json({ success: false, error: "bad mode" });
+  let dates;
+  try { dates = skipLogger.listDates(mode); }
+  catch (_) { dates = []; }
+  const deleted = [];
+  const failed = [];
+  for (const d of dates) {
+    const fp = skipLogger.filePathFor(mode, d.date);
+    try { fs.unlinkSync(fp); deleted.push(d.date); }
+    catch (err) { if (err.code !== "ENOENT") failed.push({ date: d.date, error: err.message }); }
+  }
+  console.log(`[trade-logs] skips delete-all mode=${mode} removed=${deleted.length} failed=${failed.length}`);
+  res.json({ success: failed.length === 0, mode, deleted, failed });
 });
 
 // ── GET /trade-logs/audit — settings audit entries (newest first) ───────────
@@ -500,13 +536,16 @@ ${buildSidebar('tradeLogs', liveActive)}
       var dlAll = rows.length > 0
         ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
         : '';
+      var delAll = rows.length > 0
+        ? '<button class="btn btn-delete" onclick="delAllFiles(\\''+m.key+'\\','+rows.length+')" title="Delete every daily file for this mode">🗑 Delete All (' + rows.length + ')</button>'
+        : '';
       html +=
         '<div class="mode-section">' +
           '<div class="mode-head">' +
             '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
               '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalTrades + ' trade' + (totalTrades === 1 ? '' : 's') + '</div>' +
-              dlAll +
+              dlAll + delAll +
             '</div>' +
           '</div>' +
           bodyHtml +
@@ -554,6 +593,28 @@ ${buildSidebar('tradeLogs', liveActive)}
     var data = await res.json().catch(function(){ return null; });
     if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
     showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
+    loadFiles();
+  }
+
+  async function delAllFiles(mode, count) {
+    var ok = await showConfirm({
+      icon: '🗑',
+      title: 'Delete ALL ' + mode.toUpperCase() + ' trade logs',
+      message: 'Permanently delete every ' + mode.toUpperCase() + ' daily trade log (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\nThis cannot be undone. The cumulative log (separate file) is not affected.',
+      confirmText: 'Delete All',
+      confirmClass: 'modal-btn-danger',
+    });
+    if (!ok) return;
+    var res = await secretFetch('/trade-logs/delete-all?mode=' + mode, { method: 'POST' });
+    if (!res) return;
+    var data = await res.json().catch(function(){ return null; });
+    if (!data) { showToast('Delete failed: ' + res.status, 'error'); return; }
+    var n = (data.deleted || []).length;
+    if (data.failed && data.failed.length) {
+      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', 'error');
+    } else {
+      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' file' + (n === 1 ? '' : 's'), 'success');
+    }
     loadFiles();
   }
 
@@ -607,13 +668,16 @@ ${buildSidebar('tradeLogs', liveActive)}
       var dlAll = rows.length > 0
         ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily skip files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
         : '';
+      var delAll = rows.length > 0
+        ? '<button class="btn btn-delete" onclick="delAllSkips(\\''+m.key+'\\','+rows.length+')" title="Delete every daily skip file for this mode">🗑 Delete All (' + rows.length + ')</button>'
+        : '';
       html +=
         '<div class="mode-section">' +
           '<div class="mode-head">' +
             '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div style="display:flex;align-items:center;gap:12px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
               '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalSkips + ' skip' + (totalSkips === 1 ? '' : 's') + '</div>' +
-              dlAll +
+              dlAll + delAll +
             '</div>' +
           '</div>' +
           bodyHtml +
@@ -663,6 +727,28 @@ ${buildSidebar('tradeLogs', liveActive)}
     var data = await res.json().catch(function(){ return null; });
     if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), 'error'); return; }
     showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), 'success');
+    loadSkips();
+  }
+
+  async function delAllSkips(mode, count) {
+    var ok = await showConfirm({
+      icon: '🗑',
+      title: 'Delete ALL ' + mode.toUpperCase() + ' skip logs',
+      message: 'Permanently delete every ' + mode.toUpperCase() + ' daily skip log (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\nThis cannot be undone.',
+      confirmText: 'Delete All',
+      confirmClass: 'modal-btn-danger',
+    });
+    if (!ok) return;
+    var res = await secretFetch('/trade-logs/skips/delete-all?mode=' + mode, { method: 'POST' });
+    if (!res) return;
+    var data = await res.json().catch(function(){ return null; });
+    if (!data) { showToast('Delete failed: ' + res.status, 'error'); return; }
+    var n = (data.deleted || []).length;
+    if (data.failed && data.failed.length) {
+      showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', 'error');
+    } else {
+      showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' skip file' + (n === 1 ? '' : 's'), 'success');
+    }
     loadSkips();
   }
 
