@@ -79,9 +79,73 @@ function listDailyDates(mode) {
   return out;
 }
 
+// Provider injected by routes/settings.js so tradeLogger can capture the
+// current settings without owning the schema. fn(mode) -> { settings: {KEY:val,...} }.
+let _snapshotProvider = null;
+function setSettingsProvider(fn) {
+  _snapshotProvider = typeof fn === "function" ? fn : null;
+}
+
+function _writeSnapshotLineSync(mode, dateStr, obj) {
+  try {
+    fs.appendFileSync(dailyFilePathFor(mode, dateStr), JSON.stringify(obj) + "\n");
+  } catch (err) {
+    console.warn(`[tradeLogger] snapshot append failed (mode=${mode}): ${err.message}`);
+  }
+}
+
+// Called from appendTradeLog to seed the day's file with a settings snapshot
+// the first time a trade is logged for that mode/date.
+function _ensureDailyHeader(mode, ts) {
+  if (!_snapshotProvider) return;
+  const dateStr = istDateString(ts);
+  const fp = dailyFilePathFor(mode, dateStr);
+  try {
+    const st = fs.statSync(fp);
+    if (st.size > 0) return;
+  } catch (err) {
+    if (err.code !== "ENOENT") return;
+  }
+  let snap;
+  try { snap = _snapshotProvider(mode); }
+  catch (err) {
+    console.warn(`[tradeLogger] snapshot provider failed (mode=${mode}): ${err.message}`);
+    return;
+  }
+  if (!snap) return;
+  _writeSnapshotLineSync(mode, dateStr, {
+    type: "settings_snapshot",
+    mode,
+    capturedAt: new Date(ts).toISOString(),
+    reason: "day_start",
+    settings: snap.settings || snap,
+  });
+}
+
+// Used by routes/settings.js after a successful save to append the new
+// values to today's daily file, so settings changes during the session
+// land in the same document as the trades they affected.
+function appendSettingsSnapshot(mode, snapshot, meta = {}) {
+  const ts = Date.now();
+  const dateStr = istDateString(ts);
+  const settings = snapshot && typeof snapshot === "object"
+    ? (snapshot.settings || snapshot)
+    : {};
+  _writeSnapshotLineSync(mode, dateStr, {
+    type: "settings_snapshot",
+    mode,
+    capturedAt: new Date(ts).toISOString(),
+    reason: meta.reason || "settings_save",
+    ...(meta.changedKeys ? { changedKeys: meta.changedKeys } : {}),
+    ...(meta.note ? { note: meta.note } : {}),
+    settings,
+  });
+}
+
 function appendTradeLog(mode, trade) {
   try {
     const ts = Date.now();
+    _ensureDailyHeader(mode, ts);
     const line = JSON.stringify({ mode, loggedAt: new Date(ts).toISOString(), ...trade }) + "\n";
     // Fire-and-forget async append. POSIX O_APPEND makes each short write
     // atomic, so concurrent exits cannot interleave lines.
@@ -119,6 +183,8 @@ function readDailyTrades(mode, dateStr) {
 
 module.exports = {
   appendTradeLog,
+  appendSettingsSnapshot,
+  setSettingsProvider,
   filePathFor,
   dailyFilePathFor,
   listDailyDates,

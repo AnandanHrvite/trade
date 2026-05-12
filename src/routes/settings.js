@@ -19,6 +19,7 @@ const path    = require("path");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const settingsAudit = require("../utils/settingsAudit");
+const tradeLogger   = require("../utils/tradeLogger");
 
 // Use process.cwd() for the .env path — this is where Node was started,
 // which is always the project root (where .env lives).
@@ -330,6 +331,57 @@ const SETTINGS_SCHEMA = [
   },
 ];
 
+// ── Per-mode settings snapshot for the daily trade-log JSONL ────────────────
+// Each mode's daily JSONL file is seeded with a settings snapshot before the
+// first trade of the day, and a fresh snapshot is appended whenever a save
+// changes any key that affects that mode. Modes only see sections that drive
+// trade behaviour (strategy + instrument/backtest + charges) — credentials,
+// telegram, UI prefs are skipped.
+const MODE_SECTION_TITLES = {
+  swing: "SWING STRATEGY (15-min) — Zerodha",
+  scalp: "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
+  pa:    "PRICE ACTION STRATEGY (5-min) — Fyers",
+};
+const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
+  "COMMON — Instrument & Backtest",
+  "CHARGES & STT — Trading Costs",
+]);
+
+const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set() };
+const _KEY_TO_MODES = new Map();
+(function buildModeKeyIndex() {
+  const commonKeys = [];
+  for (const section of SETTINGS_SCHEMA) {
+    if (SNAPSHOT_COMMON_SECTION_TITLES.has(section.section)) {
+      for (const f of section.fields) commonKeys.push(f.key);
+    }
+  }
+  for (const [mode, title] of Object.entries(MODE_SECTION_TITLES)) {
+    const section = SETTINGS_SCHEMA.find(s => s.section === title);
+    if (section) for (const f of section.fields) _MODE_KEYS[mode].add(f.key);
+    for (const k of commonKeys) _MODE_KEYS[mode].add(k);
+  }
+  for (const mode of Object.keys(_MODE_KEYS)) {
+    for (const k of _MODE_KEYS[mode]) {
+      if (!_KEY_TO_MODES.has(k)) _KEY_TO_MODES.set(k, new Set());
+      _KEY_TO_MODES.get(k).add(mode);
+    }
+  }
+})();
+
+function buildModeSnapshot(mode) {
+  const keys = _MODE_KEYS[mode];
+  if (!keys) return null;
+  const settings = {};
+  for (const k of keys) {
+    const v = process.env[k];
+    if (v !== undefined && v !== "") settings[k] = v;
+  }
+  return { settings };
+}
+
+tradeLogger.setSettingsProvider(buildModeSnapshot);
+
 // ── Parse .env file into object ─────────────────────────────────────────────
 function parseEnvFile() {
   try {
@@ -576,6 +628,28 @@ router.post("/save", (req, res) => {
       if (written) console.log(`[settings] audit: logged ${written} change(s) → ${settingsAudit.AUDIT_FILE}`);
     } catch (err) {
       console.warn("[settings] audit log failed:", err.message);
+    }
+
+    try {
+      const affected = new Set();
+      const changedKeys = [...Object.keys(cleaned), ...deleteKeys];
+      for (const k of changedKeys) {
+        const modes = _KEY_TO_MODES.get(k);
+        if (modes) modes.forEach(m => affected.add(m));
+      }
+      if (affected.size > 0) {
+        const cleanNote = typeof note === "string" ? note.trim().slice(0, 500) : "";
+        for (const mode of affected) {
+          const modeChanged = changedKeys.filter(k => _MODE_KEYS[mode].has(k));
+          tradeLogger.appendSettingsSnapshot(mode, buildModeSnapshot(mode), {
+            reason: "settings_save",
+            changedKeys: modeChanged,
+            ...(cleanNote ? { note: cleanNote } : {}),
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[settings] daily snapshot append failed:", err.message);
     }
   }
   res.json({ ...result, envPath: ENV_PATH });
