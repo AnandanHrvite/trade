@@ -56,6 +56,10 @@ const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS ||
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
 const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+// Pause override — release per-side SL cooldown early if a subsequent candle close
+// proves the original direction resumed past the failed entry spot (retest-and-resume).
+const _SCALP_PAUSE_OVERRIDE_ENABLED = (process.env.SCALP_PAUSE_OVERRIDE_ENABLED || "false").toLowerCase() === "true";
+const _SCALP_PAUSE_OVERRIDE_PTS     = parseFloat(process.env.SCALP_PAUSE_OVERRIDE_PTS || "10");
 // Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
 const _SCALP_TIME_STOP_CANDLES = process.env.SCALP_TIME_STOP_CANDLES != null
   ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
@@ -137,6 +141,7 @@ let state = {
   _slPauseUntil:  null,
   _slPauseUntilBySide: { CE: 0, PE: 0 },
   _consecSLsBySide:    { CE: 0, PE: 0 },
+  _lastSLSpotBySide:   { CE: 0, PE: 0 },
   _dailyLossHit:  false,
   _entryPending:  false,
 };
@@ -497,6 +502,7 @@ async function squareOff(exitPrice, reason) {
   // SL pause — escalate after consecutive SLs (per-side when SCALP_PER_SIDE_PAUSE=true)
   state._consecSLsBySide = state._consecSLsBySide || { CE: 0, PE: 0 };
   state._slPauseUntilBySide = state._slPauseUntilBySide || { CE: 0, PE: 0 };
+  state._lastSLSpotBySide   = state._lastSLSpotBySide   || { CE: 0, PE: 0 };
   if (reason.includes("SL")) {
     if (_SCALP_PER_SIDE_PAUSE) {
       state._consecSLsBySide[side] += 1;
@@ -516,6 +522,9 @@ async function squareOff(exitPrice, reason) {
       state._slPauseUntilBySide.CE = _until;
       state._slPauseUntilBySide.PE = _until;
     }
+    // Remember the spot at which this side just failed — used by pause-override
+    // to detect "retest-and-resume" patterns where price returns to original direction.
+    state._lastSLSpotBySide[side] = spotAtEntry || entryPrice;
     state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
     state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
     const sideLabel = _SCALP_PER_SIDE_PAUSE ? `${side} ` : "";
@@ -820,9 +829,26 @@ async function onCandleClose(bar) {
   // Per-side SL cooldown — block only if THIS side has an active pause
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
   if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > Date.now()) {
-    const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - Date.now()) / 1000);
-    log(`⏭️ [SCALP-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
-    return;
+    // Pause override: if the prior-loss spot has been reclaimed by >= OVERRIDE_PTS in
+    // the original direction, treat the retest as complete and release the pause.
+    const _failSpot = state._lastSLSpotBySide && state._lastSLSpotBySide[_signalSide];
+    const _resumed = _SCALP_PAUSE_OVERRIDE_ENABLED && _failSpot && (
+      _signalSide === "CE"
+        ? bar.close >= _failSpot + _SCALP_PAUSE_OVERRIDE_PTS
+        : bar.close <= _failSpot - _SCALP_PAUSE_OVERRIDE_PTS
+    );
+    if (_resumed) {
+      log(`▶️ [SCALP-LIVE] Pause override — ${_signalSide} resumed: bar.close ₹${bar.close} vs failSpot ₹${_failSpot} (Δ${(bar.close-_failSpot).toFixed(1)}pt, threshold ${_SCALP_PAUSE_OVERRIDE_PTS}pt)`);
+      state._slPauseUntilBySide[_signalSide] = 0;
+      state._consecSLsBySide[_signalSide]    = 0;
+      state._lastSLSpotBySide[_signalSide]   = 0;
+      state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
+      state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
+    } else {
+      const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - Date.now()) / 1000);
+      log(`⏭️ [SCALP-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
+      return;
+    }
   }
 
   // VIX — post-strategy check with derived strength (SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
@@ -1168,6 +1194,7 @@ router.get("/start", async (req, res) => {
     optionLtp: null, optionLtpUpdatedAt: null, _ltpStaleLogged: false,
     optionSymbol: null, _slPauseUntil: null,
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
+    _lastSLSpotBySide: { CE: 0, PE: 0 },
     _dailyLossHit: false, _entryPending: false,
     _expiryDayBlocked: _expiryBlocked,
   };

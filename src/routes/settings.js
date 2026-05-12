@@ -134,6 +134,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit (5-min candles)", default: "3" },
       { key: "SCALP_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL after the 2nd (e.g. 2 = +2 candles on 2nd SL, +4 on 3rd)", default: "2" },
       { key: "SCALP_PER_SIDE_PAUSE", label: "Per-Side SL Pause", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, an SL on CE only pauses CE entries (PE still allowed) and vice versa. OFF = legacy global pause.", default: "true" },
+      { key: "SCALP_PAUSE_OVERRIDE_ENABLED", label: "Pause Override (retest+resume)", type: "toggle", effect: EFFECT.SESSION, desc: "Release SL cooldown early if a candle closes past the failed-entry spot in the original direction — re-enter when retest completes", default: "false" },
+      { key: "SCALP_PAUSE_OVERRIDE_PTS", label: "Pause Override Threshold (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Min spot delta past failed-entry to trigger override (CE: close >= entry+N, PE: close <= entry-N)", default: "10" },
       // ── Time-stop (per-mode override of TIME_STOP_* defaults) ──
       { key: "SCALP_TIME_STOP_CANDLES", label: "Scalp Time-Stop (candles)", type: "number", min: 2, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Exit flat scalp trades after this many 5-min candles (theta bleed guard). Overrides TIME_STOP_CANDLES.", default: "3" },
       { key: "SCALP_TIME_STOP_FLAT_PTS", label: "Scalp Time-Stop Flat (option pts)", type: "number", min: 2, max: 25, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |option-premium move| < this. Overrides TIME_STOP_FLAT_PTS.", default: "6" },
@@ -456,6 +458,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BREAKEVEN_TRIGGER_R", "SCALP_BREAKEVEN_OFFSET_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
+  "SCALP_PAUSE_OVERRIDE_ENABLED", "SCALP_PAUSE_OVERRIDE_PTS",
   "SCALP_TIME_STOP_CANDLES", "SCALP_TIME_STOP_FLAT_PTS",
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
   "SCALP_BB_SQUEEZE_FILTER", "SCALP_BB_MIN_WIDTH_PCT",
