@@ -61,6 +61,7 @@ const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
 const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
 const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
+const _SWING_STRONG_ONLY         = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
 
 // ── Prev-candle structural trail (candle-by-candle, profit-only) ──────────────
 // Disabled by default — enable after backtest validation.
@@ -1240,6 +1241,19 @@ async function onCandleClose(candle) {
     }
     if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       log(`🚫 [LIVE] Daily max trades reached — candle-close entry blocked (${signal})`);
+      return;
+    }
+    // ── Strong-only gate: block MARGINAL when SWING_STRONG_ONLY=true ─────────
+    if (_SWING_STRONG_ONLY && _ccStrength !== "STRONG") {
+      log(`🚫 [LIVE] STRONG_ONLY mode — MARGINAL entry blocked | Signal: ${signal}`);
+      skipLogger.appendSkipLog("swing", {
+        gate: "strong_only",
+        reason: "MARGINAL blocked by SWING_STRONG_ONLY",
+        spot: candle.close,
+        signalStrength: _ccStrength || "MARGINAL",
+        signal,
+        path: "candle-close",
+      });
       return;
     }
     // ── VIX filter: block entry in high-volatility regimes ──────────────────

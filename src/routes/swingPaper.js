@@ -59,6 +59,7 @@ const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
 const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
 const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
+const _SWING_STRONG_ONLY         = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
 
 // ── Prev-candle structural trail (candle-by-candle, profit-only) ──────────────
 // Disabled by default — enable after backtest validation.
@@ -1127,6 +1128,19 @@ async function onCandleClose(candle) {
       log(`⚡ [PAPER] STRONG signal at candle close (intra-tick missed it) — entering @ ₹${candle.close} | ${reason}`);
     } else {
       log(`📋 [PAPER] MARGINAL signal — candle-close entry @ ₹${candle.close} | ${reason}`);
+    }
+    // ── Strong-only gate: block MARGINAL when SWING_STRONG_ONLY=true ─────────
+    if (_SWING_STRONG_ONLY && candleCloseStrength !== "STRONG") {
+      log(`🚫 [PAPER] STRONG_ONLY mode — MARGINAL entry blocked | Signal: ${signal}`);
+      skipLogger.appendSkipLog("swing", {
+        gate: "strong_only",
+        reason: "MARGINAL blocked by SWING_STRONG_ONLY",
+        spot: candle.close,
+        signalStrength: candleCloseStrength,
+        signal,
+        path: "candle-close",
+      });
+      return;
     }
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
     const _vixCheck = await checkLiveVix(candleCloseStrength);
