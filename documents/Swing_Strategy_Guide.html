@@ -426,18 +426,19 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>SWING STRATEGY</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 15-Min NIFTY Options | v4.4.1</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 5-Min NIFTY Options (default) | v4.5.0</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-05-02 &nbsp;|&nbsp;
-    <strong>Timeframe:</strong> 15-minute &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-05-14 &nbsp;|&nbsp;
+    <strong>Timeframe:</strong> 5-minute (default; 15-min via <code>TRADE_RESOLUTION=15</code>) &nbsp;|&nbsp;
     <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
     <strong>Route:</strong> <code>/swing-*</code>
   </div>
 
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew"><span class="num">00</span> What's New in v4.4.1</a>
+    <a href="#whatsnew50"><span class="num">00</span> What's New in v4.5.0</a>
+    <a href="#whatsnew"><span class="num">00a</span> v4.4.1 Highlights</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -462,10 +463,33 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.1                                                -->
+<!-- 0. WHAT'S NEW IN v4.5.0                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break" id="whatsnew50">
+  <h2>00 &mdash; What's New in v4.5.0 (2026-05-14)</h2>
+  <p><strong>Default candle resolution changed from 15-min &rarr; 5-min</strong>, plus a STRONG-only entry gate, 0DTE refusal on swing start, and per-mode expiry override. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, Logic 3 override, and Hybrid Initial SL Cap remain unchanged at the signal layer.</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong>Default <code>TRADE_RESOLUTION</code> changed from <code>15</code> &rarr; <code>5</code></strong> &mdash; 15-min wasn't taking entries during the paper-trade data-collection window. The strategy itself is unchanged: all <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code> runtime branches are preserved, so flipping <code>TRADE_RESOLUTION=15</code> in <code>.env</code> (or via Settings UI) restores the prior behavior with no code change. Strategy header / description string updated to reflect the new default.</li>
+      <li><strong><code>SWING_STRONG_ONLY</code> toggle</strong> (default <code>false</code>) &mdash; when on, blocks <strong>MARGINAL</strong> signals on the <strong>candle-close</strong> entry path (intra-candle path was already STRONG-only, so this closes the asymmetry). Blocked entries are recorded to <code>skipLogger</code> with <code>gate: "strong_only"</code> for audit. Wired into both Swing Paper and Swing Live; surfaced in Settings UI.</li>
+      <li><strong>0DTE refusal on swing start</strong> &mdash; Swing <code>/start</code> is blocked when the configured expiry == today (gamma risk on intraday holding through expiry). The dashboard's All-Paper / All-Live flows catch the refusal per mode and surface it in the start-all error modal instead of silently skipping. A red banner appears when a stale manual expiry-override session has ended (override date in the past).</li>
+      <li><strong>Per-mode option expiry override</strong> &mdash; each mode (Swing/Scalp/PA) can now set its own expiry independent of the global setting. Useful when scalp is fine on Tue weekly expiry but swing should roll to next Tue.</li>
+      <li><strong>Expiry calendar fix</strong> &mdash; calendar was showing Mon dates instead of Tue (UTC shift bug); now correctly shows Tue weekly NIFTY expiries. Settings expiry modal no longer throws on a missing <code>year-title</code> element.</li>
+      <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL is the canonical export format (CSV/PDF dropped). Light-theme aware.</li>
+      <li><strong>Settings checkpoint notes</strong> &mdash; every Settings save can be tagged with a one-line note. Daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's trades.</li>
+      <li><strong>Auth hardening</strong> &mdash; mobile-friendly login flow end-to-end; pre-start broker token verification (Fyers/Zerodha tokens are validated before engines boot, so a position can't open with a dead token); access token displayed with Copy button after manual login; Fyers socket auth failure (code &minus;15) now bails out + sends a Telegram alert instead of silently retrying.</li>
+      <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on the activity-log header (swingLive + swingPaper). <code>navigator.clipboard</code> with textarea fallback.</li>
+      <li><strong>Per-menu / per-submenu sidebar visibility toggles</strong> &mdash; hide the Swing section entirely, or hide individual links within it (e.g., hide Backtest but keep Paper + Live). Driven by env vars + Settings UI.</li>
+      <li><strong>gzip on all responses</strong> &mdash; <code>/settings</code> dropped from ~329 KB &rarr; 61 KB; same wins across all HTML routes.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.4.1                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew">
-  <h2>00 &mdash; What's New in v4.4.1 (2026-05-02)</h2>
+  <h2>00a &mdash; v4.4.1 Highlights (2026-05-02)</h2>
   <p>Unified Real-Time Monitor &mdash; one screen to see Swing alongside Scalp and PA. UI / observability only; <strong>no swing signal-layer or SL/exit changes</strong>.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -483,7 +507,7 @@
 <!-- 0a. WHAT'S NEW IN v4.4.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <h2>00a &mdash; v4.4.0 Highlights (2026-04-27)</h2>
+  <h2>00b &mdash; v4.4.0 Highlights (2026-04-27)</h2>
   <p>Hybrid initial SL cap, paper-history Restore from append-only JSONL, and a paper-parity sweep into Swing Live (skip-log/near-miss wiring + daily-trades guard on candle-close). The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -503,7 +527,7 @@
 <!-- 0a. WHAT'S NEW IN v4.3.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <h2>00b &mdash; v4.3.0 Highlights (2026-04-24)</h2>
+  <h2>00c &mdash; v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remained unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -524,7 +548,7 @@
 </div>
 
 <div class="section page-break">
-  <h2>00c &mdash; v4.2.0 Highlights (2026-04-20)</h2>
+  <h2>00d &mdash; v4.2.0 Highlights (2026-04-20)</h2>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
@@ -547,7 +571,7 @@
   <h2>01 &mdash; Strategy Overview &amp; Performance</h2>
 
   <p>
-    <strong>SAR_EMA9_RSI</strong> is a trend-following pullback strategy on <strong>15-minute NIFTY candles</strong>.
+    <strong>SAR_EMA9_RSI</strong> is a trend-following pullback strategy on <strong>NIFTY candles &mdash; 5-minute by default since v4.5.0 (was 15-minute)</strong>. Set <code>TRADE_RESOLUTION=15</code> in <code>.env</code> or Settings to restore 15-min behavior; the strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code> for resolution-specific tuning.
     It identifies entries when price pulls back to the 9-period EMA during established trends, confirmed by
     Parabolic SAR direction, RSI momentum, ADX trend strength, and candle body conviction.
   </p>
@@ -602,7 +626,7 @@
     <div class="arch-box" style="border-color: var(--cyan);">Fyers API<br><span style="font-size:0.7rem;color:var(--text3)">WebSocket / REST</span></div>
     <div class="arch-arrow">&rarr;</div>
     <div class="arch-box">
-      Candle Builder<br><span style="font-size:0.7rem;color:var(--text3)">15-min OHLCV</span>
+      Candle Builder<br><span style="font-size:0.7rem;color:var(--text3)">5-min OHLCV (default; 15-min via env)</span>
     </div>
     <div class="arch-arrow">+</div>
     <div class="arch-box">
@@ -2118,7 +2142,8 @@
         <tbody>
           <tr><td><code>TRADE_ENTRY_START</code></td><td>09:30</td><td>Earliest entry time (IST)</td></tr>
           <tr><td><code>TRADE_ENTRY_END</code></td><td>14:00</td><td>Latest entry time (IST)</td></tr>
-          <tr><td><code>TRADE_RESOLUTION</code></td><td>15</td><td>Candle timeframe (minutes)</td></tr>
+          <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>Candle timeframe (minutes). Default changed from <code>15</code> &rarr; <code>5</code> in v4.5.0; set to <code>15</code> to restore prior behavior.</td></tr>
+          <tr><td><code>SWING_STRONG_ONLY</code></td><td>false</td><td>Block MARGINAL signals on candle-close entry path (intra-candle was already STRONG-only). Logged to skipLogger as <code>gate: "strong_only"</code>.</td></tr>
           <tr><td><code>NIFTY_LOT_SIZE</code></td><td>65</td><td>NIFTY lot size (exchange-set; override only if contract-size changes)</td></tr>
           <tr><td><code>LOT_MULTIPLIER</code></td><td>1</td><td>Number of lots per trade</td></tr>
         </tbody>
@@ -2144,7 +2169,7 @@
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
   <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.1</div>
-  <div>SAR_EMA9_RSI | 15-Min NIFTY Options | Generated 2026-05-02</div>
+  <div>SAR_EMA9_RSI | 5-Min NIFTY Options (default; 15-min via env) | Generated 2026-05-14</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 

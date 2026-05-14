@@ -11,7 +11,7 @@ Fyers WebSocket (NIFTY50 spot ticks — single connection)
         |
    ┌────┼──────────────────────────────────┐
    |    |                                  |
- Swing (15-min)       Scalp (5-min)        Price Action (5-min)
+ Swing (5-min*)       Scalp (5-min)        Price Action (5-min)
    |                       |                    |
  ┌─┴─┐                 ┌──┴──┐              ┌──┴──┐
  |   |                 |     |              |     |
@@ -26,9 +26,9 @@ All three modes run **in parallel** on the same WebSocket — different candle r
 
 | Mode | Strategy | Timeframe | Broker | Route Prefix |
 |------|----------|-----------|--------|-------------|
-| **Swing Live** | SAR + EMA9 + RSI | 15-min | Zerodha | `/swing-live` |
-| **Swing Paper** | SAR + EMA9 + RSI | 15-min | Simulated | `/swing-paper` |
-| **Swing Backtest** | SAR + EMA9 + RSI | 15-min | Historical | `/swing-backtest` |
+| **Swing Live** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Zerodha | `/swing-live` |
+| **Swing Paper** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Simulated | `/swing-paper` |
+| **Swing Backtest** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Historical | `/swing-backtest` |
 | **Scalp Live** | BB + RSI + PSAR (V4) | 5-min | Fyers | `/scalp-live` |
 | **Scalp Paper** | BB + RSI + PSAR (V4) | 5-min | Simulated | `/scalp-paper` |
 | **Scalp Backtest** | BB + RSI + PSAR (V4) | 5-min | Historical | `/scalp-backtest` |
@@ -61,29 +61,39 @@ Backtests run in the background (one at a time) and never block live/paper modes
 
 ## Strategies
 
-### Strategy 1: Swing — SAR + EMA9 + RSI (15-min)
+### Strategy 1: Swing — SAR + EMA9 + RSI (5-min default; 15-min via env)
 - **Entry**: EMA9 OHLC4 touch + SAR positioning + RSI momentum + ADX trend + EMA slope
 - **Filters**: ADX chop filter (skip low-ADX), RSI overbought/oversold caps, VIX regime, EMA30 trend gate (optional), body >= 10pt, SAR gap >= 55pt
 - **Initial SL (hybrid cap)**: Tightest of `[SAR, prev-candle structural, entry ± SWING_MAX_INITIAL_SL_PTS]`, floored at `SWING_MIN_INITIAL_SL_PTS` to avoid suicide-tight SLs on doji bars. Trail activation rescales with the capped gap. Wired into Swing Paper + Swing Live.
+- **Strong-only mode** (`SWING_STRONG_ONLY`, default off): blocks MARGINAL signals on the candle-close entry path (intra-candle path was already STRONG-only). Blocked entries are recorded to skipLogger as `gate: "strong_only"`.
 - **Exit**: Tiered trailing SL (T1/T2/T3) + 50% candle rule + opposite signal + EOD
 - **Logic 3 override**: Captures lagging-SAR CE entries that classic logic misses
+- **Default candle resolution changed to 5-min in v4.5.0** (15-min wasn't taking entries during the data-collection window). All `TRADE_RES === 5` vs `>= 15` runtime branches preserved — set `TRADE_RESOLUTION=15` in `.env` (or via Settings) to restore prior behavior.
 
 ### Strategy 2: Scalp — BB + RSI + PSAR V4 (5-min)
 - **Entry**: Close beyond Bollinger Band + RSI confirmation (> 55 for CE, < 45 for PE)
 - **V4 quality filters** (opt-in via Settings): approach filter (reject first-touch breakouts), body-strength filter (reject doji/wick breakouts)
 - **Trend filter** (`SCALP_TREND_FILTER`, default on): block CE in downtrends / PE in uptrends using BB-mid slope + N-candle momentum
-- **Other filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle + threshold), activity filter, CPR narrow filter
+- **Other filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle + threshold), activity filter, CPR narrow filter (`SCALP_CPR_NARROW_PCT`, now editable in Settings)
 - **SL**: Previous candle low/high (capped between min/max pts)
-- **Exit**: Initial SL + tiered trailing profit % of peak + PSAR trailing (only tightens) + PSAR flip + bid-ask spread guard + time-stop on flat trades
+- **Exit**: Initial SL + tiered trailing profit % of peak (PnL-floor model) + PSAR trailing (only tightens) + PSAR flip + bid-ask spread guard + time-stop on flat trades
 - **Trail tiers**: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
 - **Trail grace period**: Suppress trail-exit for first N seconds after entry (SL still active) to protect against first-tick spike + tiny pullback
+- **Breakeven snap fires per-tick** (not per-bar) so the BE jump can fire intra-bar once profit clears the threshold
+- **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free
+- **Pause override on retest-and-resume** (`SCALP_PAUSE_OVERRIDE_ENABLED`, default off; `SCALP_PAUSE_OVERRIDE_PTS=10`): if a candle closes ≥ N pts past the failed-entry spot in the original direction, release the per-side cooldown early and reset the consecutive-SL counter for that side. Only confirmed resumption clears the pause; genuine fails still cool down normally
+- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE** (max-favorable excursion in pts) over the life of the trade — feeds the active paper-trade data-collection schema
 
 ### Strategy 3: Price Action — Patterns + S/R Zones (5-min)
 - **Patterns**: Bullish/Bearish Engulfing, Pin Bar, Inside Bar Breakout, Break of Structure, Double Top/Bottom, Ascending/Descending Triangle
 - **S/R Zones**: Dynamic from swing highs/lows (last 30 candles, zone = swing ±10pts)
-- **RSI confluence**: CE requires RSI > 45, PE requires RSI < 55 (optional RSI caps block overbought CE / oversold PE)
+- **RSI confluence (per pattern class)**:
+  - **Continuation patterns (BOS, Inside-Bar)**: CE requires RSI > 45 (momentum-aligned), PE requires RSI < 55
+  - **Reversal patterns (Engulfing, Pin Bar, Double Top/Bottom)**: RSI logic **inverted** in v4.5.0 — bullish reversal CE looks for *oversold* RSI (< 55), bearish reversal PE looks for *overbought* RSI (> 45). Prior code had the same RSI gate as continuation patterns, which gated out exactly the reversal setups it should have caught.
+- **ADX directional gate**: applies to *trend* setups only. **BOS, Inside-Bar, and reversal patterns are exempt** — these are explicit breakout/reversal signals and gating them by trend direction was suppressing the very entries they're meant to catch.
 - **SL**: Signal candle wick, capped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]`. BOS/Inside-Bar setups are skipped if the raw structural SL exceeds `PA_MAX_STRUCT_SL_PTS=15` (thin-structure / false-breakout guard).
 - **Exit**: Candle trail (prev N-bar H/L, parallel with profit-lock floor) + tiered profit-lock + PSAR + PA-specific time-stop (3 candles / ±10pts) + bid-ask spread guard
+- **Restart-survival**: BOS / Inside-Bar pending state is now persisted across process restart (was being lost on `pm2 reload`)
 - **Tightening goal**: cap loss/trade and let winners run via the existing trail stack
 
 ### Market Scenario Simulator
@@ -160,21 +170,23 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 ## Key .env Settings
 
-### Swing Strategy (15-min, Zerodha)
+### Swing Strategy (5-min default, Zerodha)
 | Key | Default | Notes |
 |-----|---------|-------|
-| `TRADE_RESOLUTION` | `15` | Candle size in minutes |
+| `TRADE_RESOLUTION` | `5` | Candle size in minutes (changed from `15` in v4.5.0). Set to `15` to restore prior 15-min behavior — strategy code branches on `TRADE_RES === 5` vs `>= 15`. |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap |
 | `SWING_LIVE_ENABLED` | `false` | Must be `true` for Zerodha orders |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `EMA30_FILTER` | `true` | Medium-term trend gate |
+| `SWING_STRONG_ONLY` | `false` | Block MARGINAL signals on the candle-close entry path (intra-candle was already STRONG-only). Logged to skipLogger as `gate: "strong_only"`. |
 | `SWING_USE_PREV_CANDLE_SL` | `true` | Hybrid initial SL — include prev-candle structural in min-of stack |
 | `SWING_MAX_INITIAL_SL_PTS` | `50` | Hard cap on initial SL distance (pts) — binds when SAR-only would be wider |
 | `SWING_MIN_INITIAL_SL_PTS` | `15` | Floor for initial SL distance (pts) — protects against suicide-tight SLs |
 | `TRADE_ENTRY_START` | `09:30` | Earliest entry time (IST) |
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |
+| (auto) | — | Swing `/start` is **blocked** when configured expiry == today (0DTE refusal — gamma risk on holding swing through expiry). Per-mode expiry override is supported via `EXPIRY_OVERRIDE` (Common — Instrument). |
 
 > `EXPIRY_OVERRIDE` and `EXPIRY_TYPE` live under **Common — Instrument** in Settings (read by `src/config/instrument.js` for all 3 engines).
 
@@ -201,6 +213,10 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `SCALP_VIX_MAX_ENTRY` | (falls back to `VIX_MAX_ENTRY`) | Per-mode VIX block-entry threshold |
 | `SCALP_VIX_STRONG_ONLY` | (falls back to `VIX_STRONG_ONLY`) | Per-mode strong-only threshold |
 | `SCALP_BB_SQUEEZE_FILTER` | `true` | Skip entries when BB bands narrow |
+| `SCALP_CPR_NARROW_PCT` | (code default) | CPR-narrow filter threshold — now exposed as a Settings UI knob |
+| `SCALP_PER_SIDE_PAUSE` | `true` | An SL on CE only pauses CE entries; PE remains free |
+| `SCALP_PAUSE_OVERRIDE_ENABLED` | `false` | Release per-side SL cooldown early on retest-and-resume |
+| `SCALP_PAUSE_OVERRIDE_PTS` | `10` | Spot-delta threshold past failed-entry spot to trigger override |
 
 ### Price Action Mode (5-min, Fyers)
 | Key | Default | Notes |
@@ -260,6 +276,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
 | `UI_SHOW_TRACKER` | `false` | Show "Tracker" under Swing |
 
+> **Per-menu and per-submenu visibility toggles** (v4.5.0) are also configurable via Settings — hide entire mode sections (Swing / Scalp / PA) from the sidebar without disabling the underlying engine, or hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode section. Driven by env vars + Settings UI; persists across restart.
+
 ### Telegram Alerts (17 toggles + master gate)
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -316,15 +334,16 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ### Analytics & Tools
 | URL | Description |
 |-----|-------------|
-| `/realtime` | **Unified real-time monitor** — one screen for all 3 strategies with a PAPER/LIVE toggle, three cards (Swing / Scalp / PA) showing open position + today's stats, and a rollup table with **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. |
+| `/realtime` | **Unified real-time monitor** — one screen for all 3 strategies with a PAPER/LIVE toggle, three cards (Swing / Scalp / PA) showing open position + today's stats, and a rollup table with **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. **Per-card Open Status + Copy Day Log buttons** (Copy Day Log copies raw entry + skip JSONL, not the human-readable summary). |
 | `/consolidation` | Cross-mode **paper** trade history + analytics (Swing + Scalp + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
 | `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
 | `/compare/trading` | Paper vs Backtest comparison (swing) |
 | `/compare/scalping` | Paper vs Backtest comparison (scalping) |
-| `/settings` | All config settings UI + Bulk Edit modal (paste/delete keys) + server restart |
+| `/settings` | All config settings UI + Bulk Edit modal (paste/delete keys) + **checkpoint note prompt on every save** + server restart. Saved notes are appended to that day's trade JSONL alongside a settings snapshot, so the daily log carries the exact config that produced its trades. |
+| `/trade-logs` | **Renamed from JSONL viewer in v4.5.0.** Per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode **Download All** + **Delete All** buttons. JSONL is the canonical export format (CSV/PDF dropped — they were drifting on edge cases). Light-theme aware. |
 | `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) + maintenance actions |
-| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here) |
+| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / swingLive / swingPaper. |
 | `/docs` | README, CHANGELOG, documents viewer |
 | `/login-logs` | Failed login attempts with geolocation (now linked from Settings top-bar; not in sidebar) |
 | `/deploy/status` | GitHub Actions deploy status |
@@ -355,7 +374,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 src/
   app.js                              # Express server, dashboard, route registration, Start-All
   strategies/
-    strategy1_sar_ema_rsi.js          # Swing 15-min strategy (SAR + EMA9 + RSI)
+    strategy1_sar_ema_rsi.js          # Swing strategy (SAR + EMA9 + RSI) — 5-min default; 15-min via TRADE_RESOLUTION=15
     scalp_bb_cpr.js                   # Scalp 5-min V4 (BB + RSI + PSAR + approach/body filters)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps)
     index.js                          # Strategy registry
@@ -367,9 +386,9 @@ src/
     fyersBroker.js                    # Fyers order placement (scalp live + PA live)
     logger.js                         # Console interceptor + in-memory log store
   routes/
-    swingLive.js                      # Swing live (15-min, Zerodha) + chart + /reset endpoint
-    swingPaper.js                     # Swing paper (15-min, simulated) + chart + view modal + history JSONL download
-    swingBacktest.js                  # Swing backtest (15-min, split-by-years/months)
+    swingLive.js                      # Swing live (5-min default, Zerodha) + chart + /reset endpoint + STRONG_ONLY gate
+    swingPaper.js                     # Swing paper (5-min default, simulated) + chart + view modal + history JSONL download + STRONG_ONLY gate
+    swingBacktest.js                  # Swing backtest (5-min default, split-by-years/months)
     scalpLive.js                      # Scalp live (5-min, Fyers) + chart + BB overlay + /reset endpoint
     scalpPaper.js                     # Scalp paper (5-min, simulated) + chart + BB overlay
     scalpBacktest.js                  # Scalp backtest
@@ -418,7 +437,10 @@ src/
 
 ## Security
 
-- **Login gate**: Cookie-based password (`LOGIN_SECRET`), 15-min sliding expiry, rate limiting (5 attempts/15 min/IP), `SameSite=Lax` cookie for mobile OAuth compatibility
+- **Login gate**: Cookie-based password (`LOGIN_SECRET`), 15-min sliding expiry, rate limiting (5 attempts/15 min/IP), `SameSite=Lax` cookie for mobile OAuth compatibility, mobile-friendly login flow end-to-end
+- **Pre-start broker token verification**: before booting trading engines, Fyers/Zerodha tokens are validated; if stale, the user is bounced to re-login *before* a position can open with a dead token
+- **Access token visible after manual login** (with Copy button) for cross-checking against the broker session manager
+- **Fyers socket auth failure (code -15)**: bails out + sends a Telegram alert instead of silently retrying
 - **API secret**: Token required on all action routes (start/stop/exit/save/reset) and settings page
 - **Brute-force logging**: GPS + IP-API geolocation on failed login attempts
 - **Crash recovery**: Position state persisted to disk with orphan detection + Telegram alert; SIGTERM handled cleanly to avoid silent restarts
@@ -436,3 +458,4 @@ src/
 - **Charts**: Chart.js (theme-aware) + live candlestick overlays on status pages
 - **Deployment**: PM2 on AWS EC2 t3.micro + GitHub Actions CI/CD
 - **Caching**: Disk-based candle cache (backtest + live, auto-pruned)
+- **Compression**: gzip middleware on all HTTP responses (≈80% size reduction on `/settings`; ~329 KB → 61 KB)

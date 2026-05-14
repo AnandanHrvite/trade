@@ -4,6 +4,118 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## v4.5.0 — 5-Min Swing Default, Scalp Pause Override, PA Reversal Fixes, Trade Logs Manager (2026-05-14)
+
+### Swing — Default Resolution Changed to 5-Min
+
+- **`TRADE_RESOLUTION` default changed from `15` → `5`** ([src/routes/swingPaper.js](src/routes/swingPaper.js), [src/routes/swingLive.js](src/routes/swingLive.js), [src/strategies/strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js)).
+- 15-min wasn't taking entries during the paper-trade data-collection window. The strategy itself is unchanged — all `TRADE_RES === 5` vs `>= 15` runtime branches are preserved, so flipping `TRADE_RESOLUTION=15` in `.env` (or via Settings UI) restores the prior behavior with no code change.
+- Strategy header / description string updated to reflect the new default.
+
+### Swing — `SWING_STRONG_ONLY` Toggle
+
+- **`SWING_STRONG_ONLY`** (default `false`) — when on, blocks **MARGINAL** signals on the **candle-close** entry path (intra-candle path was already STRONG-only, so this closes the asymmetry).
+- Blocked entries are recorded to `skipLogger` with `gate: "strong_only"` for audit.
+- Wired into both Swing Paper and Swing Live; surfaced in Settings UI.
+
+### Scalp — Pause Override on Retest-and-Resume
+
+- **`SCALP_PAUSE_OVERRIDE_ENABLED`** (default `false`) + **`SCALP_PAUSE_OVERRIDE_PTS`** (default `10`) ([src/routes/scalpPaper.js](src/routes/scalpPaper.js), [src/routes/scalpLive.js](src/routes/scalpLive.js)).
+- After a per-side SL hit, scalp normally cools down on that side for N candles. This blocked re-entry on the common pattern where price retests through the entry (hitting SL), then resumes in the original direction — the bot sat idle while the actual move played out.
+- New gate: when a candle closes ≥ `SCALP_PAUSE_OVERRIDE_PTS` past the failed-entry spot in the original direction, the per-side pause is released early and the consecutive-SL counter for that side is reset. Genuine fails still cool down normally; only confirmed resumption clears the pause.
+- New state field `_lastSLSpotBySide: { CE, PE }` records the spot at which each side last failed.
+
+### Scalp — Trail / Breakeven Fixes
+
+- **Trail uses PnL floor** instead of spot-delta model ([src/routes/scalpPaper.js](src/routes/scalpPaper.js), [src/routes/scalpLive.js](src/routes/scalpLive.js)) — fixes mismatches between the trail % the user configured and the rupee floor actually enforced.
+- **Breakeven snap fires per-tick, not per-bar** — moves the breakeven jump out of the once-per-candle path so it can fire intra-bar once profit clears the threshold. Matches the rest of the tick-driven exit stack.
+
+### Scalp — Per-Trade Context Logging (additive only)
+
+- Each scalp trade record now captures BB / RSI / trend context at entry and **MFE** (max-favorable excursion in points) over the life of the trade ([feat(scalp): log BB/RSI/trend context + MFE per trade](src/routes/scalpPaper.js)).
+- Pure logging — no entry, exit, SL, or trail logic changed. Feeds the active paper-trade data-collection schema.
+
+### Scalp — `SCALP_CPR_NARROW_PCT` Now Editable in Settings
+
+- `SCALP_CPR_NARROW_PCT` (CPR-narrow filter threshold) was code-only; now exposed as a Settings UI knob.
+
+### Price Action — Reversal Pattern Fixes (additive)
+
+- **BOS / Inside-Bar exempt from the ADX directional gate** ([src/strategies/price_action.js](src/strategies/price_action.js)) — these are explicit breakout patterns; gating them by ADX direction was suppressing the very signals they're meant to catch. Restart-survival also added so the BOS/IB pending state isn't lost across a process restart.
+- **Reversal patterns** (Engulfing, Pin Bar, Double Top/Bottom): RSI logic was inverted (CE was requiring RSI > 45 / PE requiring RSI < 55 — wrong sign for reversal entries) and the swing-detection lookback was tightened. Reversal patterns are also now exempt from the ADX directional gate (an ADX-confirmed downtrend is exactly when a bullish reversal at support is most actionable).
+- **Reverted** the `feat(pa): tighten loss/win asymmetry + add weekly trade report` change after backtest regression — current PA exit stack (candle trail + tiered profit-lock + PSAR + time-stop) remains the canonical configuration.
+
+### Trade Logs Page — Renamed + Cumulative Skip Logs + Drop CSV/PDF
+
+- **JSONL viewer renamed to "Trade Logs"** across the UI and routes ([feat(history): rename JSONL→tradeLogs, add cumulative skipLogs, drop CSV/PDF](src/routes/)).
+- **Cumulative skip logs** now shown alongside per-day trade logs in a dedicated tab — easier to audit *why* the bot didn't take entries over a multi-day window.
+- **CSV / PDF export removed** — JSONL is the canonical source of truth; the secondary formats were drifting from JSONL on edge cases. Downloads now land consistently as `.jsonl` (with a parallel `.txt` option for raw paste).
+- **Per-mode "Download All" + "Delete All"** buttons — bulk-export or wipe an entire mode's logs in one click. Light-theme overrides included.
+- **Toast notifications** on the Trade Logs page were silent (`showToast was undefined`) — now wired correctly.
+
+### Settings — Checkpoint Notes + Skip-Log Tab + Snapshot in Daily JSONL
+
+- **Checkpoint note prompt on Settings save** — every save can now be tagged with a one-line note ("rolled back PA RSI inversion", "tightened scalp body ratio to 0.5", etc.), creating an audit trail of *why* a config changed.
+- **Daily trade JSONL is now seeded with the current settings snapshot at session start** and re-appends on every Settings save during the session — so the JSONL log carries the exact config that produced each day's trades. No more "what was `SCALP_TRAIL_GRACE_SECS` set to on May 8?" guesswork.
+- **Skip-log tab** added to the Trade Logs / Settings flow alongside trade entries.
+
+### Sidebar — Per-Menu and Per-Submenu Visibility Toggles
+
+- **Per-menu visibility toggles** ([feat(ui): per-menu visibility toggles in Settings](src/utils/sharedNav.js)) — hide entire mode sections (Swing / Scalp / PA) from the sidebar without disabling the underlying engine.
+- **Per-submenu visibility toggles** — finer-grained: hide individual links (e.g., hide "Backtest" but keep "Paper" and "Live") within a still-visible mode section.
+- Driven by env vars + Settings UI; persists across restart. Lets you declutter the sidebar to match the workflow you actually use.
+
+### Auth — Mobile-Friendly Login + Token Display + Pre-Start Verification
+
+- **Mobile-friendly login flow** ([feat(auth): mobile-friendly login flow + pre-start token verification](src/routes/auth.js)) — the OAuth round-trip was previously redirecting back to a desktop-only landing page. Now responsive end-to-end.
+- **Pre-start token verification** — before booting trading engines, a quick token-validity check runs; if Fyers/Zerodha auth is stale, the user is bounced to re-login *before* a position can open with a dead token.
+- **Access token displayed with Copy button** after manual login — useful for cross-checking tokens against the broker's own session manager.
+- **Fyers socket auth failure (code -15)** now bails out + sends a Telegram alert instead of silently retrying ([fix(socket): bail + alert on Fyers auth failure (code -15)](src/utils/socketManager.js)).
+
+### Expiry / 0DTE Handling
+
+- **Swing blocks `/start` when the configured expiry == today** ([feat(swing): block start when configured expiry == today (0DTE warning)](src/routes/swingPaper.js)) — refuses to trade 0DTE for the swing strategy (gamma risk on intraday holding through expiry).
+- **Per-mode option expiry override** ([feat(swing): per-mode option expiry override (avoid 0DTE on Tuesdays)](src/config/instrument.js)) — each mode (Swing/Scalp/PA) can now set its own expiry override independent of the global setting. Useful when scalp is fine on Tue weekly expiry but swing should roll to next Tue.
+- **Dashboard handles 0DTE warning in Start-All flows** — All-Paper / All-Live now catches the 0DTE refusal per mode and surfaces it in the start-all error modal instead of silently skipping.
+- **Red banner on dashboard** when a manual expiry-override session has ended (i.e., the override date is in the past) so a stale override doesn't quietly block trading.
+- **Expiry calendar fix** — calendar was showing Mon dates instead of Tue (UTC shift bug); now correctly shows Tue weekly NIFTY expiries.
+- **Settings expiry modal** no longer throws on a missing `year-title` element.
+
+### Real-Time Monitor — Per-Card Action Buttons + Mini Activity Log
+
+- **Per-card "Open Status" + "Copy Day Log" buttons** ([feat(realtime): per-card Open Status + Copy Day Log buttons](src/routes/realtime.js)) — each strategy card on `/realtime` now has direct jump-to-status and one-click day-log copy.
+- **Copy Day Log copies raw entry + skip JSONL**, not the human-readable summary — useful for paste-into-LLM analysis.
+- **Compact 5-line activity-log preview inside each SWING / SCALP / PA card** ([feat(realtime): show recent activity log per strategy card](src/routes/realtime.js)) — at-a-glance confirmation the engines are alive when flat. Uses the existing `logs` / `logTotal` fields each `/status/data` endpoint already returns; no backend changes.
+- **Layout fix** — `<a>` and `<button>` heights/centering aligned in the action row.
+
+### Settings — Swing Section Labels Renamed (15-min → 5-min)
+
+- User-visible section headers, Telegram alert descriptions, and the section-summary modal title now read **5-min** instead of 15-min, matching the new `TRADE_RESOLUTION` default ([feat(ui): rename Swing strategy labels 15-min → 5-min](src/routes/settings.js)). `SECTION_TO_MASTER` visibility map updated in lockstep (keyed by the exact title string, so any drift would silently break the per-section visibility toggle).
+
+### Charts — Zoom Preserved, Pre-Market Junk Dropped, Strategy Overlays
+
+- **Zoom preserved across refresh** on paper-trade charts ([fix(paper-charts): preserve zoom, drop pre-market junk, add strategy overlays](src/routes/)).
+- **Pre-market junk dropped** — sub-09:15 ticks no longer pollute the candle chart x-axis.
+- **Strategy overlays** added consistently across paper charts (matches what live charts already had).
+
+### Activity Log — Copy Button
+
+- **"Copy Log" button** ([feat(ui): add Copy Log button to activity log](src/routes/)) on the activity-log header of paLive, paPaper, swingLive, swingPaper. `navigator.clipboard` with textarea fallback. Mirrors the existing `copyTradeLog` pattern.
+
+### Settings — Eye-Icon Modal Consolidation
+
+- **Two eye-icon modals consolidated into a top-bar button** — was creating UI noise at the section level; now a single top-bar action covers both.
+
+### Performance — gzip Compression
+
+- **`compression` middleware applied to all responses** ([perf: gzip-compress all responses](src/app.js)) — `/settings` page dropped from **329 KB → 61 KB** (≈80% reduction). Same wins across all HTML routes.
+
+### Misc
+
+- `/data` directory added to `.gitignore`.
+
+---
+
 ## v4.4.1 — Unified Real-Time Monitor (2026-05-02)
 
 ### Real-Time Monitor — One Screen, PAPER/LIVE Toggle

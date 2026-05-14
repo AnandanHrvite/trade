@@ -214,9 +214,9 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 4.4.1</span>
-      <span>2026-05-02</span>
-      <span>8 Patterns | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
+      <span>Version 4.5.0</span>
+      <span>2026-05-14</span>
+      <span>8 Patterns | RSI Inversion for Reversals | ADX Exemption (BOS/IB/Reversals) | Restart-Survive | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
@@ -237,7 +237,8 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
-    <a href="#whatsnew">What's New (v4.4.1)</a>
+    <a href="#whatsnew50">What's New (v4.5.0)</a>
+    <a href="#whatsnew">v4.4.1</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
     <a href="#patterns">8 Patterns</a>
@@ -259,12 +260,31 @@ td.pe { color: var(--red); }
 </nav>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.1                                                  -->
+<!-- 0. WHAT'S NEW IN v4.5.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<section id="whatsnew">
+<section id="whatsnew50">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">0</span> What's New in v4.4.1 (2026-05-02)</h2>
+      <h2><span class="num">0</span> What's New in v4.5.0 (2026-05-14)</h2>
+      <p><strong>Reversal-pattern RSI logic inverted</strong>, BOS / Inside-Bar / reversal patterns exempted from the ADX directional gate, and BOS/IB pending state now survives restart. The 8 patterns, S/R detection, signal candle wick SL, candle trail, profit-lock tiers, PSAR, and time-stop remain in place.</p>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong>Reversal patterns &mdash; RSI logic inverted</strong> (Engulfing, Pin Bar, Double Top/Bottom). Prior code required <code>RSI &gt; 45</code> for bullish reversal CE and <code>RSI &lt; 55</code> for bearish reversal PE &mdash; the same momentum-aligned gate as continuation patterns. That gated out exactly the reversal setups it should have caught (a bullish reversal at support is most actionable when RSI is *oversold*, not when momentum already favors the upside). v4.5.0 inverts: bullish reversal CE looks for *oversold* RSI (&lt; 55), bearish reversal PE looks for *overbought* RSI (&gt; 45). Continuation patterns (BOS, Inside-Bar) keep momentum-aligned RSI.</li>
+        <li><strong>BOS / Inside-Bar exempt from the ADX directional gate</strong> &mdash; these are explicit breakout patterns; gating them by trend direction was suppressing the very signals they're meant to catch. Reversal patterns are also now exempt (an ADX-confirmed downtrend is exactly when a bullish reversal at support is most actionable). The ADX directional gate now applies only to *trend* setups.</li>
+        <li><strong>Reversal-pattern swing-detection lookback tightened</strong> &mdash; rejects looser swings that were producing low-quality reversal signals.</li>
+        <li><strong>BOS / Inside-Bar pending state survives restart</strong> &mdash; the pending breakout state was being lost on <code>pm2 reload</code>, so a setup primed before restart was discarded. Now persisted and reloaded.</li>
+        <li><strong>Reverted "tighten loss/win asymmetry + add weekly trade report"</strong> after backtest regression. Current PA exit stack (candle trail + tiered profit-lock + PSAR + time-stop) remains the canonical configuration.</li>
+        <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL canonical (CSV/PDF dropped).</li>
+        <li><strong>Settings checkpoint notes</strong> &mdash; daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact PA config that produced each day's trades.</li>
+        <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on paLive + paPaper activity-log header.</li>
+        <li><strong>Per-card Open Status + Copy Day Log buttons</strong> on <code>/realtime</code>; Copy Day Log copies raw entry + skip JSONL.</li>
+        <li><strong>gzip on all responses</strong> &mdash; ~80% reduction on Settings.</li>
+      </ul>
+    </div>
+
+    <div class="section-header" style="margin-top:24px;">
+      <h2><span class="num">0a</span> v4.4.1 Highlights (2026-05-02)</h2>
       <p>Unified Real-Time Monitor &mdash; one screen to see PA alongside Swing and Scalp. UI / observability only; <strong>no PA pattern, S/R, RSI confluence, SL, or exit changes</strong>.</p>
     </div>
     <div class="card">
@@ -279,7 +299,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0a</span> v4.4.0 Highlights (2026-04-27)</h2>
+      <h2><span class="num">0b</span> v4.4.0 Highlights (2026-04-27)</h2>
       <p>Pure additive logging on the PA strategy + paper-parity sweep into PA Live (audit / skip-log wiring shared with PA Paper). The 8 patterns, S/R detection, RSI confluence, and the v4.3.0 SL tightening (8&ndash;12 pt cap + structural-SL skip + time-stop) remain unchanged.</p>
     </div>
     <div class="card">
@@ -295,7 +315,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0b</span> v4.3.0 Highlights (2026-04-24)</h2>
+      <h2><span class="num">0c</span> v4.3.0 Highlights (2026-04-24)</h2>
       <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remained unchanged.</p>
     </div>
     <div class="card">
@@ -311,7 +331,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0c</span> v4.2.0 Highlights (2026-04-20)</h2>
+      <h2><span class="num">0d</span> v4.2.0 Highlights (2026-04-20)</h2>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
@@ -1065,9 +1085,10 @@ td.pe { color: var(--red); }
         <ul>
           <li>ADX(14) calculated on every candle from high/low/close arrays</li>
           <li>Minimum threshold: <code>PA_ADX_MIN = 20</code></li>
-          <li>When <strong>ADX &lt; 20</strong> — market is <strong>ranging/choppy</strong> — ALL entries blocked</li>
+          <li>When <strong>ADX &lt; 20</strong> — market is <strong>ranging/choppy</strong> — trend setups blocked</li>
           <li>When <strong>ADX &ge; 20</strong> — market is <strong>trending</strong> — patterns allowed to fire</li>
           <li>Can be disabled: <code>PA_ADX_ENABLED = false</code></li>
+          <li><strong>v4.5.0 directional-gate exemption</strong>: BOS, Inside-Bar, and reversal patterns (Engulfing, Pin Bar, Double Top/Bottom) are <strong>exempt from the ADX directional gate</strong>. These are explicit breakout / reversal signals — gating them by trend direction was suppressing the very entries they're meant to catch (e.g., a bullish reversal at support is most actionable when ADX confirms a downtrend). The directional gate now applies only to *trend* setups; ADX threshold itself still applies to all.</li>
         </ul>
       </div>
       <div class="card">
@@ -1463,34 +1484,53 @@ td.pe { color: var(--red); }
 <section id="rsi">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">8</span> RSI as Confluence Filter</h2>
-      <p>RSI(14) is NOT the primary signal. Patterns lead, RSI confirms. It prevents entries against momentum extremes.</p>
+      <h2><span class="num">8</span> RSI as Confluence Filter <span class="badge-new">v4.5.0 — split by pattern class</span></h2>
+      <p>RSI(14) is NOT the primary signal. Patterns lead, RSI confirms. <strong>v4.5.0:</strong> the gate now splits by pattern class — continuation patterns use the original momentum-aligned gate; reversal patterns use an *inverted* gate (oversold for bullish reversal, overbought for bearish reversal).</p>
     </div>
 
+    <h3>Continuation Patterns &mdash; BOS, Inside Bar (momentum-aligned)</h3>
     <div class="grid-2">
       <div class="card" style="border-left: 4px solid var(--green);">
         <h3 class="text-green">CE Entry — RSI Gate</h3>
         <div style="font-size: 1.8rem; font-weight: 800; color: var(--green); margin: 10px 0;">RSI &gt; 45</div>
         <ul class="fs-sm">
-          <li><strong>RSI &gt; 45:</strong> Not deeply bearish — momentum supports upward move</li>
+          <li><strong>RSI &gt; 45:</strong> Not deeply bearish — momentum supports upward continuation</li>
           <li>No upper cap by default. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to add cap at <code>PA_RSI_CE_MAX=85</code></li>
-          <li>RSI 46 is perfectly fine for CE — the pattern IS the signal</li>
         </ul>
       </div>
       <div class="card" style="border-left: 4px solid var(--red);">
         <h3 class="text-red">PE Entry — RSI Gate</h3>
         <div style="font-size: 1.8rem; font-weight: 800; color: var(--red); margin: 10px 0;">RSI &lt; 55</div>
         <ul class="fs-sm">
-          <li><strong>RSI &lt; 55:</strong> Not deeply bullish — momentum supports downward move</li>
+          <li><strong>RSI &lt; 55:</strong> Not deeply bullish — momentum supports downward continuation</li>
           <li>No lower floor by default. Enable <code>PA_RSI_CAPS_ENABLED=true</code> to add floor at <code>PA_RSI_PE_MIN=15</code></li>
-          <li>RSI 54 is fine for PE — the pattern provides the conviction</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin-top:24px;">Reversal Patterns &mdash; Engulfing, Pin Bar, Double Top/Bottom (inverted, v4.5.0)</h3>
+    <div class="grid-2">
+      <div class="card" style="border-left: 4px solid var(--green);">
+        <h3 class="text-green">CE Entry — RSI Gate (inverted)</h3>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--green); margin: 10px 0;">RSI &lt; 55</div>
+        <ul class="fs-sm">
+          <li><strong>RSI &lt; 55 (oversold-leaning):</strong> A bullish reversal at support is most actionable when momentum is *not* already up</li>
+          <li>Prior code required <code>RSI &gt; 45</code> for reversal CE — exactly the wrong sign; gated out the setups it should have caught</li>
+        </ul>
+      </div>
+      <div class="card" style="border-left: 4px solid var(--red);">
+        <h3 class="text-red">PE Entry — RSI Gate (inverted)</h3>
+        <div style="font-size: 1.8rem; font-weight: 800; color: var(--red); margin: 10px 0;">RSI &gt; 45</div>
+        <ul class="fs-sm">
+          <li><strong>RSI &gt; 45 (overbought-leaning):</strong> A bearish reversal at resistance is most actionable when momentum hasn't already flipped down</li>
+          <li>Reversal-pattern swing-detection lookback also tightened in v4.5.0 to reject looser swings</li>
         </ul>
       </div>
     </div>
 
     <div class="tip-box mt-2">
       <div class="tip-title">Key Insight</div>
-      <p class="fs-sm">RSI acts as a <strong>veto</strong>, not a trigger. A perfect bullish engulfing at support with RSI = 75 is blocked (overbought). A mediocre pattern with RSI = 50 passes. The pattern provides the trade thesis; RSI prevents counter-momentum trades.</p>
+      <p class="fs-sm">RSI still acts as a <strong>veto</strong>, not a trigger. The split-by-pattern-class gate matches the pattern's intent: continuation patterns ride momentum, reversal patterns fade it. Without this split, every reversal entry was being filtered by a momentum-aligned gate that contradicted the setup.</p>
     </div>
   </div>
 </section>
@@ -1572,6 +1612,7 @@ td.pe { color: var(--red); }
           <li>Atomic writes via <strong>tmp + rename</strong> — no corrupted files on crash</li>
           <li>Saves: side, symbol, qty, entry price, SL, best price, order ID, option details</li>
           <li>Cleared automatically when position closes</li>
+          <li><strong>v4.5.0:</strong> BOS / Inside-Bar <em>pending</em> state is also persisted. The pending breakout state was previously lost on <code>pm2 reload</code>, so a setup primed before restart was discarded. Now reloaded on boot.</li>
         </ul>
       </div>
       <div class="card">
@@ -2248,7 +2289,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.4.1 | Updated 2026-05-02</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.5.0 | Updated 2026-05-14</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>

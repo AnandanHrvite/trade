@@ -371,14 +371,31 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.4.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter</div>
+  <div class="version">Version 4.5.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter + Pause Override</div>
   <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.4.1                                                  -->
+<!-- 0. WHAT'S NEW IN v4.5.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.4.1 (2026-05-02)</h2>
+<h2><span class="sec-num">00</span> What's New in v4.5.0 (2026-05-14)</h2>
+<div class="card card-purple">
+  <p><strong>Pause override on retest-and-resume</strong>, trail / breakeven fixes, additive per-trade context logging (BB / RSI / trend + MFE), and CPR-narrow filter exposed in Settings. The BB + RSI entry, V4 quality filters, trend filter, PSAR trailing, and trail-tier ladder remain unchanged at the signal layer.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Pause override on retest-and-resume</strong> &mdash; <code>SCALP_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>) + <code>SCALP_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>). After a per-side SL hit, scalp normally cools down on that side for N candles. This blocked re-entry on the common pattern where price retests through the entry (hitting SL), then resumes in the original direction &mdash; the bot sat idle while the actual move played out. New gate: when a candle closes &ge; <code>SCALP_PAUSE_OVERRIDE_PTS</code> past the failed-entry spot in the original direction, the per-side pause is released early and the consecutive-SL counter for that side is reset. Only confirmed resumption clears the pause; genuine fails still cool down normally. New state field <code>_lastSLSpotBySide: { CE, PE }</code> records the spot at which each side last failed.</li>
+    <li><strong>Trail uses PnL floor instead of spot-delta model</strong> &mdash; fixes mismatches between the trail % the user configured and the rupee floor actually enforced.</li>
+    <li><strong>Breakeven snap fires per-tick, not per-bar</strong> &mdash; moves the BE jump out of the once-per-candle path so it can fire intra-bar once profit clears the threshold. Matches the rest of the tick-driven exit stack.</li>
+    <li><strong>Per-trade context logging (additive)</strong> &mdash; each scalp trade record now captures BB / RSI / trend context at entry and <strong>MFE</strong> (max-favorable excursion in points) over the life of the trade. Pure logging &mdash; no entry, exit, SL, or trail logic changed. Feeds the active paper-trade data-collection schema.</li>
+    <li><strong><code>SCALP_CPR_NARROW_PCT</code> editable in Settings</strong> &mdash; the CPR-narrow filter threshold was code-only; now a Settings UI knob.</li>
+    <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL is the canonical export format (CSV/PDF dropped).</li>
+    <li><strong>Settings checkpoint notes</strong> &mdash; daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's scalp trades.</li>
+    <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on the activity-log header.</li>
+    <li><strong>Per-card Open Status + Copy Day Log buttons</strong> on <code>/realtime</code>; Copy Day Log copies raw entry + skip JSONL, not the human-readable summary.</li>
+    <li><strong>gzip on all responses</strong> &mdash; ~80% size reduction on Settings.</li>
+  </ul>
+</div>
+
+<h2><span class="sec-num">00a</span> v4.4.1 Highlights (2026-05-02)</h2>
 <div class="card card-purple">
   <p>Unified Real-Time Monitor &mdash; one screen to see Scalp alongside Swing and PA. UI / observability only; <strong>no scalp signal-layer, V4 filters, trend filter, SL, or trail-tier changes</strong>.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -391,7 +408,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00a</span> v4.4.0 Highlights (2026-04-27)</h2>
+<h2><span class="sec-num">00b</span> v4.4.0 Highlights (2026-04-27)</h2>
 <div class="card card-purple">
   <p>Paper-parity sweep into Scalp Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No scalp signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -405,7 +422,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00b</span> v4.3.0 Highlights (2026-04-24)</h2>
+<h2><span class="sec-num">00c</span> v4.3.0 Highlights (2026-04-24)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
@@ -420,7 +437,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00c</span> v4.2.0 Highlights (2026-04-20)</h2>
+<h2><span class="sec-num">00d</span> v4.2.0 Highlights (2026-04-20)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
@@ -1486,6 +1503,9 @@
     <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
     <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
     <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra pause candles per consecutive SL</td></tr>
+    <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
+    <tr><td><code>SCALP_PAUSE_OVERRIDE_ENABLED</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.5.0</span></td><td><code>false</code></td><td>Release per-side SL cooldown early on retest-and-resume (a candle close &ge; <code>OVERRIDE_PTS</code> past failed-entry spot in original direction)</td></tr>
+    <tr><td><code>SCALP_PAUSE_OVERRIDE_PTS</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.5.0</span></td><td><code>10</code></td><td>Spot-delta threshold past failed-entry spot to trigger override</td></tr>
   </tbody>
 </table>
 
@@ -1526,7 +1546,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.4.1 &bull; Generated 2026-05-02<br/>
+    SCALP_BB_RSI_V4 &mdash; Version 4.5.0 &bull; Generated 2026-05-14<br/>
     NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
   </p>
 </div>
