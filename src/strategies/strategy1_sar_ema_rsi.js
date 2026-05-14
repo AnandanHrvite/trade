@@ -24,7 +24,7 @@
  *   Similarly for CE: SAR dots below (trend=1), price touches EMA9 from below.
  *
  * EXIT: SAR trailing SL (on every tick) | Opposite signal | EOD 3:20 PM
- * Timeframe: 15-min (set TRADE_RESOLUTION=15 in .env) | EMA: OHLC4 | Window: 9:30 AM–3:00 PM IST
+ * Timeframe: 5-min (set TRADE_RESOLUTION=5 in .env) | EMA: OHLC4 | Window: 9:30 AM–3:00 PM IST
  *
  * ── 15-MIN TUNING (applied in-place — strategy unchanged, params scaled) ────
  *  1. Session start    : 9:30 AM             (15-min candles stable enough after first candle; earlier entry opportunities)
@@ -42,7 +42,7 @@
 const { EMA, RSI, ADX } = require("technicalindicators");
 
 const NAME        = "SAR_EMA9_RSI";
-const DESCRIPTION = "15-min | SAR+EMA9 slope+RSI | ADX trend | body>=10pt+directional | STRONG intra | MARGINAL close | Logic3: RSI<42 | All thresholds via Settings";
+const DESCRIPTION = "5-min | SAR+EMA9 slope+RSI | ADX trend | body>=10pt+directional | STRONG intra | MARGINAL close | Logic3: RSI<42 | All thresholds via Settings";
 
 // ── Parabolic SAR (step=0.02, max=0.2) ───────────────────────────────────────
 // trend=1  → uptrend,   SAR dots BELOW price

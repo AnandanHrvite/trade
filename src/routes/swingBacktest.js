@@ -47,7 +47,7 @@ router.get("/", async (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "15";
+  const resolution = req.query.resolution || process.env.TRADE_RESOLUTION || "5";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = req.query.symbol     || "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
@@ -315,7 +315,7 @@ ${buildSidebar('swingBacktest', liveActive)}
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
     <div><label>Candle</label>
       <select id="r">
-        <option value="15" selected>15-min</option>
+        <option value="5" selected>5-min</option>
       </select>
     </div>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
@@ -1538,7 +1538,7 @@ document.getElementById('btModal').addEventListener('click',function(e){
 
 function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   const nav = buildNav("backtest", liveActive);
-  const resOptions = `<option value="15" selected>15-min</option>`;
+  const resOptions = `<option value="5" selected>5-min</option>`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Backtest — ௐ Palani Andawar Thunai ॐ</title>

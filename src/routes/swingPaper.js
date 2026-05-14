@@ -36,7 +36,7 @@ const tickSimulator = require("../services/tickSimulator");
 const { EMA, PSAR } = require("technicalindicators");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
-const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "15", 10); // candle resolution in minutes
+const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "5", 10); // candle resolution in minutes
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
 
 // ── Trail tier config — cached at module load (never changes at runtime) ─────
