@@ -74,6 +74,12 @@ ${faviconLink()}
 
   .flat-block { text-align:center; color:#94a3b8; font-size:0.86rem; padding:18px 12px; }
 
+  /* Recent activity mini-log */
+  .activity { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:#9aa9c2; max-height:110px; overflow:hidden; }
+  .activity .ahead { display:flex; justify-content:space-between; align-items:center; color:#7d8aa3; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-family:inherit; }
+  .activity .arow { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .activity .empty { color:#5d6c87; font-style:italic; padding:6px 0; text-align:center; }
+
   .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:auto; }
   .stat { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:7px 8px; text-align:center; }
   .stat .lbl { font-size:0.62rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.5px; }
@@ -123,6 +129,9 @@ ${faviconLink()}
   :root[data-theme="light"] .pos-symbol { color:#475569; }
   :root[data-theme="light"] .pos-grid .lbl { color:#64748b; }
   :root[data-theme="light"] .pos-grid .val { color:#1e293b; }
+  :root[data-theme="light"] .activity { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
+  :root[data-theme="light"] .activity .ahead { color:#94a3b8; }
+  :root[data-theme="light"] .activity .empty { color:#94a3b8; }
   :root[data-theme="light"] .stat { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .stat .lbl { color:#64748b; }
   :root[data-theme="light"] .stat .val { color:#1e293b; }
@@ -163,6 +172,7 @@ ${sidebar}
         <div class="badge stop" id="badge-SWING">—</div>
       </div>
       <div id="body-SWING"><div class="flat-block">Loading…</div></div>
+      <div class="activity" id="activity-SWING"><div class="empty">Waiting for activity…</div></div>
       <div class="stats-row" id="stats-SWING"></div>
       <div class="footer-meta" id="meta-SWING"><span>—</span><span>—</span></div>
       <div class="actions">
@@ -176,6 +186,7 @@ ${sidebar}
         <div class="badge stop" id="badge-SCALP">—</div>
       </div>
       <div id="body-SCALP"><div class="flat-block">Loading…</div></div>
+      <div class="activity" id="activity-SCALP"><div class="empty">Waiting for activity…</div></div>
       <div class="stats-row" id="stats-SCALP"></div>
       <div class="footer-meta" id="meta-SCALP"><span>—</span><span>—</span></div>
       <div class="actions">
@@ -189,6 +200,7 @@ ${sidebar}
         <div class="badge stop" id="badge-PA">—</div>
       </div>
       <div id="body-PA"><div class="flat-block">Loading…</div></div>
+      <div class="activity" id="activity-PA"><div class="empty">Waiting for activity…</div></div>
       <div class="stats-row" id="stats-PA"></div>
       <div class="footer-meta" id="meta-PA"><span>—</span><span>—</span></div>
       <div class="actions">
@@ -252,11 +264,33 @@ const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-
 // Endpoints disagree on key: swing uses unrealisedPnl, scalp/pa use unrealised
 const openPnl = d => d ? (d.unrealisedPnl ?? d.unrealised ?? 0) : 0;
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderActivity(strategy, d) {
+  const el = document.getElementById('activity-' + strategy);
+  if (!el) return;
+  if (!d || !Array.isArray(d.logs) || d.logs.length === 0) {
+    el.innerHTML = '<div class="empty">' + (d ? 'Waiting for activity…' : 'No data') + '</div>';
+    return;
+  }
+  const lines = d.logs.slice(0, 5);
+  const total = d.logTotal ?? d.logs.length;
+  let html = '<div class="ahead"><span>Recent activity</span><span>' + total + ' entries</span></div>';
+  for (const line of lines) html += '<div class="arow">' + escapeHtml(line) + '</div>';
+  el.innerHTML = html;
+}
+
 function renderColumn(strategy, d) {
   const badgeEl = document.getElementById('badge-' + strategy);
   const bodyEl  = document.getElementById('body-' + strategy);
   const statsEl = document.getElementById('stats-' + strategy);
   const metaEl  = document.getElementById('meta-' + strategy);
+
+  renderActivity(strategy, d);
 
   if (!d) {
     badgeEl.className = 'badge err'; badgeEl.textContent = 'OFFLINE';
