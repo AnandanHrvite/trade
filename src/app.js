@@ -135,6 +135,11 @@ app.post("/login", (req, res) => {
     delete _loginAttempts[ip];
     const token = crypto.createHash("sha256").update(secret).digest("hex");
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
+    // Land on /realtime when a paper/live trade is running during NSE hours (9:15–15:30 IST).
+    const istMin = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+    if (istMin >= 555 && istMin < 930 && sharedSocketState.isAnyActive()) {
+      return res.redirect("/realtime");
+    }
     return res.redirect("/");
   }
 
