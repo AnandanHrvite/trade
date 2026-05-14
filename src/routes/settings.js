@@ -48,6 +48,7 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Swing candle timeframe (5-min or 15-min). Scalp & PA have their own resolution settings.", default: "5" },
       { key: "SWING_OPTION_EXPIRY_OVERRIDE", label: "Swing Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "Swing-only override. When set, overrides the common Option Expiry. Use to keep swing on next-week expiry while scalp/PA trade current expiry. Leave blank to fall back to common.", default: "" },
       { key: "SWING_OPTION_EXPIRY_TYPE", label: "Swing Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Swing-only expiry type. Blank = inherit from common.", default: "" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
@@ -223,7 +224,6 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show candlestick chart with entry/exit markers on status pages", default: "true" },
       { key: "VIX_FAIL_MODE", label: "VIX Unavailable (all modules)", type: "select", options: ["closed", "open"], effect: EFFECT.INSTANT, desc: "Shared fallback for all VIX filters when VIX data is missing: closed = block entries (safe), open = allow entries", default: "closed" },
-      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Trading candle timeframe (5-min or 15-min)", default: "5" },
       { key: "TRADE_START_TIME", label: "Market Start Time", type: "time", effect: EFFECT.SESSION, desc: "Market open time — execution gate start (HH:MM IST)", default: "09:15" },
       { key: "TRADE_STOP_TIME", label: "Market Stop Time", type: "time", effect: EFFECT.SESSION, desc: "Auto-stop time — EOD square off + engine shutdown (HH:MM IST)", default: "15:30" },
       { key: "INSTRUMENT", label: "Trade Type", type: "select", options: ["NIFTY_OPTIONS", "NIFTY_FUTURES"], effect: EFFECT.INSTANT, desc: "Options (CE/PE) or Futures" },
