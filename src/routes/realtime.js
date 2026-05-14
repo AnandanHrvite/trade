@@ -44,7 +44,7 @@ ${faviconLink()}
   .cols { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; margin-bottom:18px; }
   @media (max-width: 1100px) { .cols { grid-template-columns:1fr; } }
 
-  .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; }
+  .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
   .card.swing { border-top-color:#3b82f6; }
   .card.scalp { border-top-color:#f59e0b; }
   .card.pa    { border-top-color:#a855f7; }
@@ -75,7 +75,7 @@ ${faviconLink()}
   .flat-block { text-align:center; color:#94a3b8; font-size:0.86rem; padding:18px 12px; }
 
   /* Recent activity mini-log */
-  .activity { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:#9aa9c2; max-height:110px; overflow:hidden; }
+  .activity { background:#040c18; border:1px solid #15243d; border-radius:6px; padding:6px 8px; font-family:'SF Mono','Menlo','Monaco',monospace; font-size:0.68rem; line-height:1.45; color:#9aa9c2; max-height:110px; overflow:hidden; min-width:0; }
   .activity .ahead { display:flex; justify-content:space-between; align-items:center; color:#7d8aa3; font-size:0.62rem; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; font-family:inherit; }
   .activity .arow { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .activity .empty { color:#5d6c87; font-style:italic; padding:6px 0; text-align:center; }
