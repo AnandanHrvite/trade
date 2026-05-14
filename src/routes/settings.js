@@ -44,7 +44,7 @@ const EFFECT = {
 
 const SETTINGS_SCHEMA = [
   {
-    section: "SWING STRATEGY (15-min) — Zerodha",
+    section: "SWING STRATEGY (5-min) — Zerodha",
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
@@ -270,15 +270,15 @@ const SETTINGS_SCHEMA = [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
       { key: "TG_ENABLED", label: "Telegram Alerts (Master)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch — when OFF, no Telegram alerts are sent regardless of the toggles below", default: "true" },
 
-      { key: "TG_SWING_STARTED", label: "Swing — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Swing (15-min) paper/live session is started", default: "true" },
+      { key: "TG_SWING_STARTED", label: "Swing — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Swing (5-min) paper/live session is started", default: "true" },
       { key: "TG_SCALP_STARTED", label: "Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Scalp paper/live session is started", default: "true" },
       { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action paper/live session is started", default: "true" },
 
-      { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (15-min) trade entry (paper + live)", default: "true" },
+      { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade entry (paper + live)", default: "true" },
       { key: "TG_SCALP_ENTRY", label: "Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade entry (paper + live)", default: "true" },
       { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade entry (paper + live)", default: "true" },
 
-      { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (15-min) trade exit (paper + live)", default: "true" },
+      { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade exit (paper + live)", default: "true" },
       { key: "TG_SCALP_EXIT", label: "Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade exit (paper + live)", default: "true" },
       { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade exit (paper + live)", default: "true" },
 
@@ -368,7 +368,7 @@ const SETTINGS_SCHEMA = [
 // trade behaviour (strategy + instrument/backtest + charges) — credentials,
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
-  swing: "SWING STRATEGY (15-min) — Zerodha",
+  swing: "SWING STRATEGY (5-min) — Zerodha",
   scalp: "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
   pa:    "PRICE ACTION STRATEGY (5-min) — Fyers",
 };
@@ -910,7 +910,7 @@ router.get("/", (req, res) => {
   const paModeOn    = (envData["PA_MODE_ENABLED"]    ?? process.env.PA_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
-    "SWING STRATEGY (15-min) — Zerodha":              swingModeOn,
+    "SWING STRATEGY (5-min) — Zerodha":              swingModeOn,
     "SCALP STRATEGY (BB+RSI+PSAR) — Fyers":           scalpModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":          paModeOn,
   };
@@ -2157,7 +2157,7 @@ function showExpHolTab(tab) {
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
 var _schemaDefaults   = ${schemaDefaultsJSON};
-var _sectionNames = { 0: 'Trading Strategy (15-min)', 1: 'Scalping Strategy (BB+CPR)' };
+var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'Scalping Strategy (BB+CPR)' };
 
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,
