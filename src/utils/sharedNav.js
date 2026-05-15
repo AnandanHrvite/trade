@@ -993,7 +993,11 @@ function showConfirm(opts) {
 // shows a stricter "Are you absolutely sure?" step before resolving true.
 // A short subject string can be passed in opts.subject to interpolate into
 // the second-step message (e.g. "SWING · 2026-05-12").
-async function showDoubleConfirm(opts) {
+// NOTE: async function declarations are block-scoped even in sloppy mode
+// (Annex B hoisting applies only to regular function declarations), so we
+// use a var + async function expression so this helper is reachable from
+// onclick handlers defined outside this guard block.
+var showDoubleConfirm = async function(opts) {
   opts = opts || {};
   var first = await showConfirm(opts);
   if (!first) return false;
@@ -1007,7 +1011,7 @@ async function showDoubleConfirm(opts) {
     confirmClass: 'modal-btn-danger',
   });
   return !!second;
-}
+};
 
 function showPrompt(opts) {
   opts = opts || {};
