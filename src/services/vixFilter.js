@@ -23,7 +23,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-const fyers = require("../config/fyers");
+const fyers        = require("../config/fyers");
+const tickRecorder = require("../utils/tickRecorder");
 
 const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 
@@ -76,6 +77,9 @@ async function fetchLiveVix({ force = false } = {}) {
       if (typeof ltp === "number" && ltp > 0) {
         _cachedVix   = ltp;
         _cachedVixTs = now;
+        // Record only on cache fill (not cache hits) so replay sees the same
+        // poll cadence the live system saw.
+        try { tickRecorder.recordVix(ltp); } catch (_) {}
         const maxEntry   = getVixMaxEntry("swing");
         const strongOnly = getVixStrongOnly("swing");
         const newRegime = ltp > maxEntry ? "HIGH" : ltp > strongOnly ? "ELEVATED" : "NORMAL";

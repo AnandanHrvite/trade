@@ -48,6 +48,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
   const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'true').toLowerCase()  === 'true';
   const showRealtime    = (process.env.UI_SHOW_REALTIME      || 'true').toLowerCase()  === 'true';
+  const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true';
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
 
@@ -62,6 +63,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'true').toLowerCase() === 'true';
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
   const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
+  const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showLogs      = (process.env.UI_SHOW_LOGS       || 'true').toLowerCase() === 'true';
@@ -70,7 +72,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
-  const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive'];
+  const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
 
   const isTradingOpen = tradingKeys.includes(activePage);
   const isScalpOpen   = scalpKeys.includes(activePage);
@@ -101,6 +103,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
     ...(showPaLive            ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
+    ...(showPaLiveHarness     ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   // ── Grouped navigation sections (collapsible) ──
@@ -108,6 +111,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
     ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' }] : []),
     ...(showRealtime    ? [{ key: 'realtime',          href: '/realtime',           icon: '📡', label: 'Real-Time' }] : []),
+    ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '📼', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
   ];

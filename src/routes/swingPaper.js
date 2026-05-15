@@ -22,6 +22,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
+const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -440,7 +441,9 @@ async function fetchOptionLtp(symbol) {
           fetchOptionLtp._rlActive = false;
           _rateLimitSkipCycles = 0;
         }
-        return parseFloat(ltp);
+        const _ltp = parseFloat(ltp);
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "swing-paper"); } catch (_) {}
+        return _ltp;
       }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
     } else {
@@ -1964,6 +1967,25 @@ router.get("/start", async (req, res) => {
     log(`⚠️  Could not pre-load candles: ${err.message} — will build from live ticks`);
   }
 
+  // Tick-recorder session-start snapshot
+  ptState._sessionId = `swing-paper:${Date.now()}`;
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "swing-paper",
+      sessionId: ptState._sessionId,
+      settings: tickRecorder.snapshotSettings(),
+      warmup:   ptState.candles.map(c => ({ ...c })),
+      vix:      getCachedVix(),
+      meta: {
+        instrument:       instrumentConfig.INSTRUMENT,
+        resolutionMin:    getTradeResolution(),
+        spotSymbol:       subscribeSymbol,
+        sessionStartISO:  ptState.sessionStart,
+        activeStrategy:   ACTIVE,
+      },
+    });
+  } catch (_) {}
+
   // ── Pre-market warmup mode ─────────────────────────────────────────────────
   // Started before TRADE_START_TIME (default 09:15)? History is pre-loaded.
   // Fyers ticks only arrive from 9:15 IST — bot waits silently until market opens.
@@ -1986,6 +2008,13 @@ router.get("/start", async (req, res) => {
     }
     ptState.running = false;
     stopOptionPolling();
+    try {
+      tickRecorder.recordSessionStop({
+        mode: "swing-paper",
+        sessionId: ptState._sessionId || null,
+        reason: "auto_stop_eod",
+      });
+    } catch (_) {}
     if (!sharedSocketState.isScalpActive()) {
       socketManager.stop();
     }
@@ -2036,6 +2065,15 @@ router.get("/stop", async (req, res) => {
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   sharedSocketState.clear();
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
+
+  try {
+    tickRecorder.recordSessionStop({
+      mode: "swing-paper",
+      sessionId: ptState._sessionId || null,
+      reason: "user_stop",
+    });
+  } catch (_) {}
+
   log("⏹ [PAPER] Paper trading stopped");
 
   const session = saveSession();

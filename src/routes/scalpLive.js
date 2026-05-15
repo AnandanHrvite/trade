@@ -26,6 +26,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
+const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -183,7 +184,9 @@ async function fetchOptionLtp(symbol) {
           log(`✅ [SCALP-LIVE] Rate limit cleared — polling resumed`);
           _rateLimitBackoff = 0;
         }
-        return parseFloat(ltp);
+        const _ltp = parseFloat(ltp);
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "scalp-live"); } catch (_) {}
+        return _ltp;
       }
     }
   } catch (err) {
@@ -1208,6 +1211,25 @@ router.get("/start", async (req, res) => {
     fetchLiveVix({ force: true }).catch(() => {});
   }
 
+  // Tick-recorder session-start snapshot
+  state._sessionId = `scalp-live:${Date.now()}`;
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "scalp-live",
+      sessionId: state._sessionId,
+      settings: tickRecorder.snapshotSettings(),
+      warmup:   state.candles.map(c => ({ ...c })),
+      vix:      getCachedVix(),
+      meta: {
+        instrument:       instrumentConfig.INSTRUMENT,
+        resolutionMin:    SCALP_RES,
+        expiryDayBlocked: _expiryBlocked,
+        spotSymbol:       NIFTY_INDEX_SYMBOL,
+        sessionStartISO:  state.sessionStart,
+      },
+    });
+  } catch (_) {}
+
   // ── Position reconciliation — check Fyers for orphaned positions ──────────
   try {
     const brokerPositions = await fyersBroker.getPositions();
@@ -1270,6 +1292,15 @@ function stopSession() {
   state.running = false;
   stopOptionPolling();
   clearScalpEODBackup();
+
+  try {
+    tickRecorder.recordSessionStop({
+      mode: "scalp-live",
+      sessionId: state._sessionId || null,
+      reason: "user_stop",
+    });
+  } catch (_) {}
+
   socketManager.removeCallback(CALLBACK_ID);
 
   if (!sharedSocketState.isActive()) {

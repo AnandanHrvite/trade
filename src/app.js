@@ -318,7 +318,8 @@ app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp pap
 app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
 app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
 // ── Price Action mode routes (5-min, independent from main & scalp) ─────────
-app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders)
+app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders) — legacy
+app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live via PAPER + harness (LIVE = PAPER guaranteed)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
@@ -326,6 +327,7 @@ app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Ac
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
+app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)
 app.use("/pnl-history",    require("./routes/pnlHistory"));    // ← manual year-wise P&L (Kite + Fyers) + live bot overlay
 
@@ -1967,6 +1969,18 @@ server.listen(PORT, HOST, () => {
   console.log(`   Telegram         : ${process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? "✅ configured" : "❌ not set"}`);
   console.log(`   Login Gate       : ${process.env.LOGIN_SECRET ? "✅ active" : "🔓 open (no LOGIN_SECRET)"}`);
   console.log(`   Node             : ${process.version} | PID: ${process.pid}`);
+
+  // Tick-recorder disk cleanup — runs once at startup and then every 24h.
+  // Default retention 30 days (~300 MB). Tunable via TICK_RECORDER_RETAIN_DAYS.
+  try {
+    const tickRecorder = require("./utils/tickRecorder");
+    const r = tickRecorder.pruneOldRecordings();
+    if (r.deleted > 0) console.log(`   Tick recordings  : pruned ${r.deleted} day(s) older than ${r.retainDays}d (kept ${r.kept})`);
+    setInterval(() => { try { tickRecorder.pruneOldRecordings(); } catch (_) {} }, 24 * 3600_000).unref();
+  } catch (err) {
+    console.warn(`   Tick recordings  : prune skipped — ${err.message}`);
+  }
+
   console.log(`\n📖 Dashboard → https://${EC2_IP}:${PORT}`);
   console.log(`   📜 Live Logs  → https://${EC2_IP}:${PORT}/logs`);
   console.log(`   ⚠️  Browser warning expected (self-signed cert) — click Advanced → Proceed\n`);

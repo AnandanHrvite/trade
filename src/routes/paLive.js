@@ -26,6 +26,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
+const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -168,7 +169,9 @@ async function fetchOptionLtp(symbol) {
           log(`✅ [PA-LIVE] Rate limit cleared — polling resumed`);
           _rateLimitBackoff = 0;
         }
-        return parseFloat(ltp);
+        const _ltp = parseFloat(ltp);
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "pa-live"); } catch (_) {}
+        return _ltp;
       }
     }
   } catch (err) {
@@ -1056,6 +1059,25 @@ router.get("/start", async (req, res) => {
     fetchLiveVix({ force: true }).catch(() => {});
   }
 
+  // Tick-recorder session-start snapshot
+  state._sessionId = `pa-live:${Date.now()}`;
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "pa-live",
+      sessionId: state._sessionId,
+      settings: tickRecorder.snapshotSettings(),
+      warmup:   state.candles.map(c => ({ ...c })),
+      vix:      getCachedVix(),
+      meta: {
+        instrument:       instrumentConfig.INSTRUMENT,
+        resolutionMin:    PA_RES,
+        expiryDayBlocked: _expiryBlocked,
+        spotSymbol:       NIFTY_INDEX_SYMBOL,
+        sessionStartISO:  state.sessionStart,
+      },
+    });
+  } catch (_) {}
+
   // ── Position reconciliation — check Fyers for orphaned positions ──────────
   try {
     const brokerPositions = await fyersBroker.getPositions();
@@ -1117,6 +1139,15 @@ function stopSession() {
   state.running = false;
   stopOptionPolling();
   clearPAEODBackup();
+
+  try {
+    tickRecorder.recordSessionStop({
+      mode: "pa-live",
+      sessionId: state._sessionId || null,
+      reason: "user_stop",
+    });
+  } catch (_) {}
+
   socketManager.removeCallback(CALLBACK_ID);
 
   if (!sharedSocketState.isActive()) {

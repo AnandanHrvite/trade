@@ -17,6 +17,7 @@
 const { fyersDataSocket } = require('fyers-api-v3');
 const { notifyAuthError } = require('./notify');
 const { clearFyersToken } = require('../config/fyers');
+const tickRecorder         = require('./tickRecorder');
 
 const HEARTBEAT_MS         = 20_000;
 const MAX_BACKOFF          = 15_000;
@@ -223,6 +224,9 @@ class SocketManager {
       const ticks = Array.isArray(msg) ? msg : [msg];
       ticks.forEach(t => {
         if (!t || !t.ltp) return;
+        // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
+        // Done before fan-out so even if a strategy throws, the tick is still captured.
+        try { tickRecorder.recordSpotTick(t); } catch (_) {}
         // Primary callback
         if (this._onSpotTick) {
           try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }

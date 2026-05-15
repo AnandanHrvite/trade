@@ -22,6 +22,7 @@ const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
+const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
@@ -159,7 +160,9 @@ async function fetchOptionLtp(symbol) {
           log(`✅ [PA-PAPER] Rate limit cleared — polling resumed`);
           _rateLimitBackoff = 0;
         }
-        return parseFloat(ltp);
+        const _ltp = parseFloat(ltp);
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "pa-paper"); } catch (_) {}
+        return _ltp;
       }
       log(`⚠️ [PA-PAPER] fetchOptionLtp no LTP in response for ${symbol}: ${JSON.stringify(v).slice(0, 200)}`);
     } else {
@@ -854,6 +857,25 @@ router.get("/start", async (req, res) => {
     fetchLiveVix({ force: true }).catch(() => {});
   }
 
+  // Tick-recorder session-start snapshot
+  state._sessionId = `pa-paper:${Date.now()}`;
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "pa-paper",
+      sessionId: state._sessionId,
+      settings: tickRecorder.snapshotSettings(),
+      warmup:   state.candles.map(c => ({ ...c })),
+      vix:      getCachedVix(),
+      meta: {
+        instrument:       instrumentConfig.INSTRUMENT,
+        resolutionMin:    PA_RES,
+        expiryDayBlocked: _expiryBlocked,
+        spotSymbol:       NIFTY_INDEX_SYMBOL,
+        sessionStartISO:  state.sessionStart,
+      },
+    });
+  } catch (_) {}
+
   // Socket: piggyback if already running, else start our own
   if (socketManager.isRunning()) {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
@@ -899,6 +921,14 @@ function stopSession() {
 
   state.running = false;
   stopOptionPolling();
+
+  try {
+    tickRecorder.recordSessionStop({
+      mode: "pa-paper",
+      sessionId: state._sessionId || null,
+      reason: state._simMode ? "sim_stop" : "user_stop",
+    });
+  } catch (_) {}
 
   // Stop tick simulator if in sim mode
   if (state._simMode) {

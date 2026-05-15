@@ -22,6 +22,7 @@ const path    = require("path");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 
 const socketManager     = require("../utils/socketManager");
+const tickRecorder      = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const fyers             = require("../config/fyers");
 const tradeGuards       = require("../utils/tradeGuards");
@@ -466,7 +467,9 @@ async function fetchOptionLtp(symbol) {
           _rateLimitSkipCycles = 0;
           fetchOptionLtp._rlActive = false;
         }
-        return parseFloat(ltp);
+        const _ltp = parseFloat(ltp);
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "swing-live"); } catch (_) {}
+        return _ltp;
       }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
     } else {
@@ -2140,6 +2143,25 @@ router.get("/start", async (req, res) => {
     log(`⚠️ [LIVE] Position reconciliation failed: ${err.message}`);
   }
 
+  // Tick-recorder session-start snapshot
+  tradeState._sessionId = `swing-live:${Date.now()}`;
+  try {
+    tickRecorder.recordSessionStart({
+      mode: "swing-live",
+      sessionId: tradeState._sessionId,
+      settings: tickRecorder.snapshotSettings(),
+      warmup:   tradeState.candles.map(c => ({ ...c })),
+      vix:      (typeof getCachedVix === "function") ? getCachedVix() : null,
+      meta: {
+        instrument:       instrumentConfig.INSTRUMENT,
+        resolutionMin:    getTradeResolution(),
+        spotSymbol:       NIFTY_INDEX_SYMBOL,
+        sessionStartISO:  tradeState.sessionStart,
+        activeStrategy:   ACTIVE,
+      },
+    });
+  } catch (_) {}
+
   log(`📡 Subscribing to ${NIFTY_INDEX_SYMBOL} for live tick data...`);
   socketManager.start(NIFTY_INDEX_SYMBOL, onSpotTick, log);
   sharedSocketState.setActive("SWING_LIVE");
@@ -2194,6 +2216,15 @@ router.get("/stop", async (req, res) => {
   tradeState.running      = false;
   clearEODBackupTimer();
   sharedSocketState.clear();
+
+  try {
+    tickRecorder.recordSessionStop({
+      mode: "swing-live",
+      sessionId: tradeState._sessionId || null,
+      reason: "user_stop",
+    });
+  } catch (_) {}
+
   log("⏹ [LIVE] Live trading stopped");
 
   res.json({ success: true, message: "Live trading stopped. Position squared off via Zerodha." });
