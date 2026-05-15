@@ -38,6 +38,7 @@ const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { fmtISTDateTime, getISTMinutes, getBucketStart, parseOptionDetails } = require("../utils/tradeUtils");
+const skipLogger = require("../utils/skipLogger");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "orbPaper";
@@ -809,6 +810,7 @@ th{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070
 .pos-cell-v{font-size:0.92rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px;}
 @media(max-width:900px){.pos-row{grid-template-columns:repeat(2,1fr);}}
 </style></head><body>
+<div class="app-shell">
 ${buildSidebar('orbPaper', liveActive, state.running, {
   showStartBtn: !state.running, startBtnJs: `location.href='/orb-paper/start'`, startLabel: '▶ Start ORB',
   showStopBtn: state.running,   stopBtnJs:  `location.href='/orb-paper/stop'`,  stopLabel:  '■ Stop ORB',
@@ -1030,7 +1032,7 @@ function renderChart(points){
 refresh();
 setInterval(refresh, 2000);
 </script>
-</body></html>`;
+</div></body></html>`;
   res.send(html);
 });
 

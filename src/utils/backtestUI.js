@@ -222,6 +222,7 @@ ${modalCSS()}
 </style>
 </head>
 <body>
+<div class="app-shell">
 ${buildSidebar(activePage, liveActive)}
 <div class="main-content">
 <div class="page">
@@ -369,7 +370,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
   </div>
 </div>
 
-</div></div>
+</div></div></div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
 <script>

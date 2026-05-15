@@ -252,6 +252,7 @@ ${sidebarCSS()}
 .preset-btn:hover{background:rgba(16,185,129,0.18);}
 .notes{margin-top:18px;font-size:0.72rem;color:#94a3b8;background:#08091a;border:0.5px solid #0e1428;border-radius:8px;padding:14px 16px;}
 </style></head><body>
+<div class="app-shell">
 ${buildSidebar('orbBacktest', liveActive)}
 <main class="main">
   <div class="title">🔍 ORB Backtest</div>
@@ -286,7 +287,7 @@ function goto(p){
   window.location='/orb-backtest?from='+p2[0]+'&to='+p2[1];
 }
 </script>
-</body></html>`;
+</div></body></html>`;
 }
 
 function renderErrorPage(msg, from, to) {

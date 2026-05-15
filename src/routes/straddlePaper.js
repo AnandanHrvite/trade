@@ -824,6 +824,7 @@ th{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070
 .leg-row{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px;}
 @media(max-width:900px){.pos-row,.leg-row{grid-template-columns:1fr;}}
 </style></head><body>
+<div class="app-shell">
 ${buildSidebar('straddlePaper', liveActive, state.running, {
   showStartBtn: !state.running, startBtnJs: `location.href='/straddle-paper/start'`, startLabel: '▶ Start Straddle',
   showStopBtn: state.running,   stopBtnJs:  `location.href='/straddle-paper/stop'`,  stopLabel:  '■ Stop Straddle',
@@ -1038,7 +1039,7 @@ function renderChart(points){
 refresh();
 setInterval(refresh, 2000);
 </script>
-</body></html>`;
+</div></body></html>`;
   res.send(html);
 });
 
