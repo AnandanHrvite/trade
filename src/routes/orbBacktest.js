@@ -191,9 +191,14 @@ function runOrbBacktest(allCandles) {
 router.get("/idle", (req, res) => res.redirect("/orb-backtest"));
 
 router.get("/", async (req, res) => {
-  const { from, to } = req.query;
+  let { from, to } = req.query;
+  // No params → default to last 30 days so the page always renders the full
+  // results layout (matches scalp/PA backtest behaviour — no separate idle UI).
   if (!from || !to) {
-    return res.send(renderIdleForm());
+    const today = new Date();
+    const def30 = new Date(); def30.setDate(today.getDate() - 30);
+    const fmt = d => d.toISOString().slice(0, 10);
+    return res.redirect(`/orb-backtest?from=${fmt(def30)}&to=${fmt(today)}`);
   }
   try {
     console.log(`🔍 ORB Backtest: ${from} → ${to}`);

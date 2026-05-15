@@ -165,8 +165,13 @@ function runStraddleBacktest(allCandles) {
 router.get("/idle", (req, res) => res.redirect("/straddle-backtest"));
 
 router.get("/", async (req, res) => {
-  const { from, to } = req.query;
-  if (!from || !to) return res.send(renderIdleForm());
+  let { from, to } = req.query;
+  if (!from || !to) {
+    const today = new Date();
+    const def30 = new Date(); def30.setDate(today.getDate() - 30);
+    const fmt = d => d.toISOString().slice(0, 10);
+    return res.redirect(`/straddle-backtest?from=${fmt(def30)}&to=${fmt(today)}`);
+  }
 
   try {
     console.log(`🔍 Straddle Backtest: ${from} → ${to}`);

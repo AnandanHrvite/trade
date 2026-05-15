@@ -385,8 +385,8 @@ var filtered = TRADES.slice();
 var sortCol = 'entry', sortDir = -1, pg = 1, pp = 10;
 
 function fmt(n){ return n!=null ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; }
-function fmtAna(n){ return (n>=0?'+':'') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
-function fpts(n){ if(n==null) return '—'; var s=n>=0?'+':''; return s+'₹'+Math.round(Math.abs(n)).toLocaleString('en-IN'); }
+function fmtAna(n){ var s = n>=0?'+':'−'; return s + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
+function fpts(n){ if(n==null) return '—'; var s = n>=0?'+':'−'; return s+'₹'+Math.round(Math.abs(n)).toLocaleString('en-IN'); }
 function fmtDate(dt){ if(!dt) return '—'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+'/'+d[2]; return p[0]||'—'; }
 function fmtTime(dt){ if(!dt) return '—'; var p=dt.split(', '); return p[1]||'—'; }
 
