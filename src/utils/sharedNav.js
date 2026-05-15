@@ -42,8 +42,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const swingModeOn    = (process.env.SWING_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const scalpModeOn    = (process.env.SCALP_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
-  const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'false').toLowerCase() === 'true';
-  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'false').toLowerCase() === 'true';
+  const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
+  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';

@@ -382,8 +382,8 @@ const SETTINGS_SCHEMA = [
       { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
-      { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "false" },
-      { key: "STRADDLE_MODE_ENABLED",  label: "Straddle Mode (Long Straddle Volatility)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the STRADDLE sidebar group AND the STRADDLE strategy section in Settings. When off, both are hidden.", default: "false" },
+      { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "STRADDLE_MODE_ENABLED",  label: "Straddle Mode (Long Straddle Volatility)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the STRADDLE sidebar group AND the STRADDLE strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
@@ -994,8 +994,8 @@ router.get("/", (req, res) => {
   // ── Hide strategy sections when their master toggle is off ──
   const swingModeOn    = (envData["SWING_MODE_ENABLED"]    ?? process.env.SWING_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
-  const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "false").toLowerCase() === "true";
-  const straddleModeOn = (envData["STRADDLE_MODE_ENABLED"] ?? process.env.STRADDLE_MODE_ENABLED ?? "false").toLowerCase() === "true";
+  const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
+  const straddleModeOn = (envData["STRADDLE_MODE_ENABLED"] ?? process.env.STRADDLE_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
