@@ -875,6 +875,246 @@ function logViewerHTML(logsJSON, prefix = 'log') {
 
 
 /**
+ * CSS for the shared table enhancer (sort + filter + pagination on <table>).
+ * Tables tagged with `enh-table-full` get sort+filter+paginate; tables tagged
+ * with `enh-table-sort-filter` get sort+filter only. Include once per page.
+ */
+function tableEnhancerCSS() {
+  return `
+    .enh-bar{display:flex;align-items:center;gap:8px;margin:0 0 6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.64rem;color:#4a6080;}
+    .enh-bar .enh-filter{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 9px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;width:200px;}
+    .enh-bar .enh-filter:focus{border-color:#3b82f6;}
+    .enh-bar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:3px 6px;border-radius:5px;font-family:inherit;font-size:0.66rem;outline:none;cursor:pointer;}
+    .enh-bar .enh-info{color:#3a5070;}
+    .enh-bar .enh-label{font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;}
+    .enh-pager{display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:#4a6080;}
+    .enh-pager .enh-btn{background:#0d1320;border:1px solid #1a2236;color:#4a9cf5;padding:3px 8px;min-width:26px;border-radius:5px;font-family:inherit;font-size:0.66rem;cursor:pointer;}
+    .enh-pager .enh-btn:hover:not(:disabled){background:#0a1e3d;border-color:#3b82f6;}
+    .enh-pager .enh-btn:disabled{opacity:0.3;cursor:not-allowed;}
+    th.enh-sort{cursor:pointer;user-select:none;}
+    th.enh-sort:hover{color:#3b82f6 !important;}
+    th.enh-sort::after{content:'\\2195';opacity:0.25;margin-left:4px;font-size:0.7em;display:inline-block;}
+    th.enh-sort[data-dir="asc"]::after{content:'\\2191';opacity:1;color:#3b82f6;}
+    th.enh-sort[data-dir="desc"]::after{content:'\\2193';opacity:1;color:#3b82f6;}
+    :root[data-theme="light"] .enh-bar .enh-filter,
+    :root[data-theme="light"] .enh-bar select{background:#fff!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .enh-bar .enh-info,
+    :root[data-theme="light"] .enh-bar .enh-label{color:#94a3b8!important;}
+    :root[data-theme="light"] .enh-pager .enh-btn{background:#fff!important;border-color:#e0e4ea!important;color:#2563eb!important;}
+    :root[data-theme="light"] .enh-pager .enh-btn:hover:not(:disabled){background:#eff6ff!important;border-color:#3b82f6!important;}
+  `;
+}
+
+/**
+ * JS snippet for the shared table enhancer. Defines window.enhanceTable(tbl, opts)
+ * and auto-enhances tables with classes `enh-table-full` (sort+filter+paginate)
+ * or `enh-table-sort-filter` (sort+filter only) on DOMContentLoaded. Safe to call
+ * enhanceTable() again on dynamically populated tables (e.g. after AJAX fill).
+ */
+function tableEnhancerJS() {
+  return `
+(function(){
+  function parseSortVal(raw){
+    if (raw == null) return { kind:'empty' };
+    var s = String(raw).trim();
+    if (s === '' || s === '—' || s === '-') return { kind:'empty' };
+    // numeric (strip currency, commas, %, +/- prefix kept)
+    var num = s.replace(/[₹,\\$£€%\\s]/g,'');
+    if (/^[-+]?\\d+(?:\\.\\d+)?$/.test(num)) return { kind:'num', val: parseFloat(num) };
+    // date-ish (YYYY-MM-DD or DD/MM/YYYY etc.) — fallback to Date.parse
+    var d = Date.parse(s);
+    if (!isNaN(d) && /[\\-\\/:]/.test(s)) return { kind:'num', val: d };
+    return { kind:'text', val: s.toLowerCase() };
+  }
+  function cmpCells(a, b, dir){
+    var ka = parseSortVal(a), kb = parseSortVal(b);
+    // empties always last regardless of dir
+    if (ka.kind === 'empty' && kb.kind === 'empty') return 0;
+    if (ka.kind === 'empty') return 1;
+    if (kb.kind === 'empty') return -1;
+    var c;
+    if (ka.kind === 'num' && kb.kind === 'num') c = ka.val - kb.val;
+    else c = String(ka.val).localeCompare(String(kb.val));
+    return dir === 'desc' ? -c : c;
+  }
+  function cellSortText(td){
+    if (!td) return '';
+    if (td.dataset && td.dataset.sort != null) return td.dataset.sort;
+    return (td.textContent || '').trim();
+  }
+  function visibleCellText(row){
+    return (row.textContent || '').toLowerCase();
+  }
+
+  window.enhanceTable = function(tbl, opts){
+    if (!tbl) return;
+    opts = opts || {};
+    var thead = tbl.tHead, tbody = tbl.tBodies && tbl.tBodies[0];
+    if (!thead || !tbody) return;
+    var headerCells = thead.rows[0] ? thead.rows[0].cells : [];
+    // Collect current tbody rows as the row pool.
+    var rows = Array.prototype.slice.call(tbody.rows);
+    // Skip placeholder rows (e.g. "Loading…", "No data") — they have a single cell with colspan.
+    var hasReal = rows.some(function(r){ return r.cells.length > 1 || (r.cells[0] && !r.cells[0].hasAttribute('colspan')); });
+    if (rows.length === 0 || !hasReal) {
+      // nothing to enhance yet; leave a marker so we can re-enhance later
+      tbl.__enhPending = opts;
+      return;
+    }
+    delete tbl.__enhPending;
+
+    var first = !tbl.__enh;
+    var inst = tbl.__enh || (tbl.__enh = {});
+    inst.allRows = rows;
+    inst.filtered = rows.slice();
+    inst.page = inst.page || 1;
+    inst.pageSize = (opts.paginate ? (inst.pageSize || opts.pageSize || 10) : 0);
+    inst.sortIdx = -1;
+    inst.sortDir = null;
+    inst.opts = opts;
+
+    if (first) {
+      // Build controls bar
+      if (opts.filter || opts.paginate) {
+        var bar = document.createElement('div');
+        bar.className = 'enh-bar';
+        var html = '';
+        if (opts.filter) html += '<input type="search" class="enh-filter" placeholder="\u{1F50D} Filter rows…"/>';
+        if (opts.paginate) html += '<span class="enh-label">Rows</span><select class="enh-pagesize"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="0">All</option></select>';
+        html += '<span class="enh-info"></span>';
+        bar.innerHTML = html;
+        tbl.parentNode.insertBefore(bar, tbl);
+        inst.bar = bar;
+        var fi = bar.querySelector('.enh-filter');
+        if (fi) fi.addEventListener('input', function(){ inst.page = 1; apply(); });
+        var ps = bar.querySelector('.enh-pagesize');
+        if (ps) {
+          ps.value = String(inst.pageSize);
+          ps.addEventListener('change', function(){
+            inst.pageSize = parseInt(ps.value, 10) || 0;
+            inst.page = 1;
+            apply();
+          });
+        }
+      }
+      // Build pager
+      if (opts.paginate) {
+        var pager = document.createElement('div');
+        pager.className = 'enh-pager';
+        pager.innerHTML = '<button class="enh-btn" data-act="first" title="First">«</button><button class="enh-btn" data-act="prev" title="Prev">‹</button><span class="enh-pager-info"></span><button class="enh-btn" data-act="next" title="Next">›</button><button class="enh-btn" data-act="last" title="Last">»</button>';
+        tbl.parentNode.insertBefore(pager, tbl.nextSibling);
+        inst.pager = pager;
+        pager.addEventListener('click', function(e){
+          var act = e.target && e.target.getAttribute && e.target.getAttribute('data-act');
+          if (!act) return;
+          var total = inst.filtered.length;
+          var pgs = inst.pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / inst.pageSize));
+          if (act === 'first') inst.page = 1;
+          else if (act === 'prev') inst.page = Math.max(1, inst.page - 1);
+          else if (act === 'next') inst.page = Math.min(pgs, inst.page + 1);
+          else if (act === 'last') inst.page = pgs;
+          render();
+        });
+      }
+      // Sortable headers
+      if (opts.sort !== false) {
+        for (var i = 0; i < headerCells.length; i++) {
+          (function(idx, th){
+            if (th.dataset && th.dataset.noSort === '1') return;
+            th.classList.add('enh-sort');
+            th.addEventListener('click', function(){
+              if (inst.sortIdx === idx) {
+                inst.sortDir = inst.sortDir === 'asc' ? 'desc' : (inst.sortDir === 'desc' ? null : 'asc');
+                if (!inst.sortDir) inst.sortIdx = -1;
+              } else {
+                inst.sortIdx = idx;
+                inst.sortDir = 'asc';
+              }
+              for (var j = 0; j < headerCells.length; j++) {
+                if (j !== inst.sortIdx) headerCells[j].removeAttribute('data-dir');
+              }
+              if (inst.sortDir && inst.sortIdx >= 0) headerCells[inst.sortIdx].setAttribute('data-dir', inst.sortDir);
+              else if (inst.sortIdx >= 0) headerCells[inst.sortIdx].removeAttribute('data-dir');
+              apply();
+            });
+          })(i, headerCells[i]);
+        }
+      }
+    }
+
+    function apply(){
+      var q = '';
+      if (inst.bar) {
+        var fi = inst.bar.querySelector('.enh-filter');
+        if (fi) q = fi.value.toLowerCase().trim();
+      }
+      inst.filtered = q ? inst.allRows.filter(function(r){ return visibleCellText(r).indexOf(q) >= 0; }) : inst.allRows.slice();
+      if (inst.sortIdx >= 0 && inst.sortDir) {
+        var idx = inst.sortIdx, dir = inst.sortDir;
+        inst.filtered.sort(function(a, b){
+          return cmpCells(cellSortText(a.cells[idx]), cellSortText(b.cells[idx]), dir);
+        });
+      }
+      render();
+    }
+
+    function render(){
+      var total = inst.filtered.length;
+      var ps = inst.pageSize;
+      var pages = ps === 0 ? 1 : Math.max(1, Math.ceil(total / ps));
+      if (inst.page > pages) inst.page = pages;
+      if (inst.page < 1) inst.page = 1;
+      var slice = ps === 0 ? inst.filtered : inst.filtered.slice((inst.page - 1) * ps, inst.page * ps);
+      while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+      slice.forEach(function(r){ tbody.appendChild(r); });
+      if (inst.bar) {
+        var info = inst.bar.querySelector('.enh-info');
+        if (info) {
+          var base = (total === inst.allRows.length) ? (total + ' row' + (total === 1 ? '' : 's')) : (total + ' of ' + inst.allRows.length + ' rows');
+          if (ps !== 0 && total > 0 && total > ps) {
+            var startN = (inst.page - 1) * ps + 1;
+            var endN = Math.min(total, inst.page * ps);
+            base += ' · ' + startN + '–' + endN;
+          }
+          info.textContent = base;
+        }
+      }
+      if (inst.pager) {
+        var pi = inst.pager.querySelector('.enh-pager-info');
+        if (pi) pi.textContent = 'Page ' + inst.page + ' / ' + pages;
+        var firstBtn = inst.pager.querySelector('[data-act="first"]');
+        var prevBtn  = inst.pager.querySelector('[data-act="prev"]');
+        var nextBtn  = inst.pager.querySelector('[data-act="next"]');
+        var lastBtn  = inst.pager.querySelector('[data-act="last"]');
+        if (firstBtn) firstBtn.disabled = inst.page <= 1;
+        if (prevBtn)  prevBtn.disabled  = inst.page <= 1;
+        if (nextBtn)  nextBtn.disabled  = inst.page >= pages;
+        if (lastBtn)  lastBtn.disabled  = inst.page >= pages;
+        inst.pager.style.display = (ps === 0 || pages <= 1) ? 'none' : '';
+      }
+    }
+
+    apply();
+  };
+
+  function autoEnhance(root){
+    (root || document).querySelectorAll('table.enh-table-full').forEach(function(t){
+      if (!t.__enh) window.enhanceTable(t, { sort:true, filter:true, paginate:true, pageSize: parseInt(t.dataset.pageSize || '10', 10) });
+    });
+    (root || document).querySelectorAll('table.enh-table-sort-filter').forEach(function(t){
+      if (!t.__enh) window.enhanceTable(t, { sort:true, filter:true, paginate:false });
+    });
+  }
+  window.autoEnhanceTables = autoEnhance;
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ autoEnhance(); });
+  else autoEnhance();
+})();
+`;
+}
+
+
+/**
  * Shared favicon link tag (OM icon for browser tab).
  * Include once per page inside <head>.
  */
@@ -1366,4 +1606,4 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 </div></div></div></body></html>`;
 }
 
-module.exports = { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage };
+module.exports = { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };

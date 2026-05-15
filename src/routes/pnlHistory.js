@@ -19,7 +19,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -180,6 +180,7 @@ router.get("/", (req, res) => {
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
     ${sidebarCSS()}
     ${modalCSS()}
+    ${tableEnhancerCSS()}
     .main-content{flex:1;margin-left:200px;padding:18px 22px 40px;min-height:100vh;}
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
@@ -330,7 +331,7 @@ router.get("/", (req, res) => {
       <h3>Live Bot P&amp;L by Financial Year <span class="tag auto">AUTO</span></h3>
       ${fyRows.length === 0 ? `<div class="empty">No live bot trades recorded yet. Numbers will appear here automatically as live trades close.</div>` : `
       <div class="tbl-wrap">
-        <table class="tbl">
+        <table class="tbl enh-table-full">
           <thead>
             <tr>
               <th>Financial Year</th>
@@ -456,6 +457,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
   if (e.key === 'Enter' && document.getElementById('editModal').classList.contains('on')) saveBaseline();
 });
+${tableEnhancerJS()}
 </script>
 </body>
 </html>`;

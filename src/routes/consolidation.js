@@ -185,6 +185,31 @@ router.get("/", (req, res) => {
     .ana-section-title.gain{color:#10b981;}
     .ana-section-title.cross{color:#a855f7;}
 
+    /* Per-table filter bar + sortable headers + pager */
+    .ana-tbl-bar{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
+    .ana-tbl-filter{flex:1;min-width:120px;background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 8px;border-radius:5px;font-family:'IBM Plex Mono',monospace;font-size:0.66rem;outline:none;}
+    .ana-tbl-filter:focus{border-color:#3b82f6;}
+    .ana-tbl-count{font-size:0.55rem;color:#3a5070;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:0.6px;}
+    .ana-sortable{cursor:pointer;user-select:none;white-space:nowrap;}
+    .ana-sortable::after{content:'⇅';margin-left:3px;opacity:0.35;font-size:0.65rem;}
+    .ana-sortable:hover{color:#4a9cf5;}
+    .ana-sortable.ana-sorted-asc::after{content:'↑';opacity:1;color:#3b82f6;}
+    .ana-sortable.ana-sorted-desc::after{content:'↓';opacity:1;color:#3b82f6;}
+    .ana-tbl-pager{display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap;font-family:'IBM Plex Mono',monospace;font-size:0.6rem;color:#3a5070;}
+    .ana-tbl-pager label{font-size:0.55rem;text-transform:uppercase;letter-spacing:0.6px;color:#3a5070;}
+    .ana-tbl-pager select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:2px 5px;border-radius:4px;font-family:inherit;font-size:0.62rem;outline:none;cursor:pointer;}
+    .ana-tbl-pager select:focus{border-color:#3b82f6;}
+    .ana-tbl-pager-info{margin:0 4px;}
+    .ana-tbl-pager .btn{padding:2px 6px;min-width:22px;font-size:0.68rem;line-height:1;}
+    .ana-tbl-pager .btn:disabled{opacity:0.35;cursor:not-allowed;}
+
+    /* Light theme overrides for new controls */
+    :root[data-theme="light"] .ana-tbl-filter{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .ana-tbl-count,
+    :root[data-theme="light"] .ana-tbl-pager,
+    :root[data-theme="light"] .ana-tbl-pager label{color:#64748b!important;}
+    :root[data-theme="light"] .ana-tbl-pager select{background:#f8fafc!important;border-color:#e0e4ea!important;color:#334155!important;}
+
     /* Light theme overrides for analytics */
     :root[data-theme="light"] .ana-card,
     :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
@@ -1092,6 +1117,184 @@ function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
 function fmtAnaShort(v){ return Math.abs(v||0)>=1000 ? '₹'+Math.round((v||0)/1000)+'k' : '₹'+Math.round(v||0); }
 
+// ── Generic per-table enhancer: filter + sort + pager for analytics tables ──
+const _anaTblState = new Map();
+function _anaCellNum(s){
+  if (s == null) return null;
+  let v = String(s).trim();
+  if (!v) return null;
+  v = v.replace(/^\\(([\\d.,]+)\\)$/, '-$1');
+  if (v === '∞') return Number.POSITIVE_INFINITY;
+  if (v === '—' || v === '-' || v === '–') return null;
+  const stripped = v.replace(/[₹%,\\s+]/g, '');
+  if (/^-?\\d+(\\.\\d+)?$/.test(stripped)) return parseFloat(stripped);
+  return null;
+}
+function _anaParseRows(html){
+  const t = document.createElement('table');
+  t.innerHTML = '<tbody>' + (html||'') + '</tbody>';
+  return [...t.querySelectorAll('tbody > tr')].map(tr => {
+    const cells = [...tr.querySelectorAll('td')].map(td => (td.textContent||'').trim());
+    return { html: tr.outerHTML, cells, lc: cells.map(c => c.toLowerCase()).join(' \\u0001 ') };
+  });
+}
+function anaEnhance(tbodyId, rowsHtml, emptyHtml, opts){
+  opts = opts || {};
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
+  const table = tb.closest('table');
+  const wrap  = table.parentElement;
+  const mini  = wrap.parentElement;
+
+  let st = _anaTblState.get(tbodyId);
+  if (!st){
+    st = { rows:[], emptyHtml:'', filter:'', sortIdx:-1, sortDir:1, page:0, size:10, opts };
+    _anaTblState.set(tbodyId, st);
+
+    if (opts.filter){
+      const bar = document.createElement('div');
+      bar.className = 'ana-tbl-bar';
+      bar.innerHTML = '<input type="text" class="ana-tbl-filter" placeholder="Filter rows..." />'
+                    + '<span class="ana-tbl-count"></span>';
+      mini.insertBefore(bar, wrap);
+      bar.querySelector('.ana-tbl-filter').addEventListener('input', e => {
+        st.filter = (e.target.value||'').toLowerCase();
+        st.page = 0;
+        _anaRenderTbl(tbodyId);
+      });
+    }
+
+    table.querySelectorAll('thead th').forEach((th, i) => {
+      th.classList.add('ana-sortable');
+      th.addEventListener('click', () => {
+        if (st.sortIdx === i){ st.sortDir = -st.sortDir; }
+        else { st.sortIdx = i; st.sortDir = 1; }
+        st.page = 0;
+        _anaRenderTbl(tbodyId);
+      });
+    });
+
+    if (opts.pager){
+      const pg = document.createElement('div');
+      pg.className = 'ana-tbl-pager';
+      pg.innerHTML = '<label>Rows</label>'
+        + '<select class="ana-tbl-size">'
+        +   '<option value="5">5</option>'
+        +   '<option value="10" selected>10</option>'
+        +   '<option value="25">25</option>'
+        +   '<option value="50">50</option>'
+        +   '<option value="0">All</option>'
+        + '</select>'
+        + '<span class="ana-tbl-pager-info"></span>'
+        + '<button class="btn" data-act="first" title="First">«</button>'
+        + '<button class="btn" data-act="prev"  title="Prev">‹</button>'
+        + '<button class="btn" data-act="next"  title="Next">›</button>'
+        + '<button class="btn" data-act="last"  title="Last">»</button>';
+      wrap.parentNode.insertBefore(pg, wrap.nextSibling);
+      pg.querySelector('.ana-tbl-size').addEventListener('change', e => {
+        st.size = parseInt(e.target.value, 10) || 0;
+        st.page = 0;
+        _anaRenderTbl(tbodyId);
+      });
+      pg.querySelectorAll('button[data-act]').forEach(btn => btn.addEventListener('click', () => {
+        const filt = _anaFilteredRows(tbodyId);
+        const total = filt.length;
+        const sz = st.size || total || 1;
+        const last = Math.max(0, Math.ceil(total/sz) - 1);
+        const act = btn.dataset.act;
+        if (act === 'first') st.page = 0;
+        else if (act === 'prev')  st.page = Math.max(0, st.page - 1);
+        else if (act === 'next')  st.page = Math.min(last, st.page + 1);
+        else if (act === 'last')  st.page = last;
+        _anaRenderTbl(tbodyId);
+      }));
+    }
+  }
+
+  st.rows = _anaParseRows(rowsHtml);
+  st.emptyHtml = emptyHtml || '';
+  _anaRenderTbl(tbodyId);
+}
+function _anaFilteredRows(tbodyId){
+  const st = _anaTblState.get(tbodyId);
+  if (!st) return [];
+  let rows = st.rows.slice();
+  if (st.filter){
+    rows = rows.filter(r => r.lc.indexOf(st.filter) !== -1);
+  }
+  if (st.sortIdx >= 0){
+    const idx = st.sortIdx, dir = st.sortDir;
+    rows.sort((a,b) => {
+      const av = a.cells[idx] || '', bv = b.cells[idx] || '';
+      const an = _anaCellNum(av), bn = _anaCellNum(bv);
+      let cmp;
+      if (an != null && bn != null) cmp = an - bn;
+      else cmp = av.localeCompare(bv, undefined, { numeric: true });
+      return cmp * dir;
+    });
+  }
+  return rows;
+}
+function _anaRenderTbl(tbodyId){
+  const st = _anaTblState.get(tbodyId);
+  if (!st) return;
+  const tb = document.getElementById(tbodyId);
+  if (!tb) return;
+  const table = tb.closest('table');
+  const wrap  = table.parentElement;
+  const mini  = wrap.parentElement;
+
+  if (!st.rows.length){
+    tb.innerHTML = st.emptyHtml || '<tr><td style="text-align:center;color:#3a5070;">No data</td></tr>';
+    const bar0 = mini.querySelector('.ana-tbl-bar');
+    if (bar0) bar0.querySelector('.ana-tbl-count').textContent = '0 rows';
+    const pg0 = mini.querySelector('.ana-tbl-pager');
+    if (pg0){
+      pg0.querySelector('.ana-tbl-pager-info').textContent = '0–0 of 0';
+      pg0.querySelectorAll('button[data-act]').forEach(b => b.disabled = true);
+    }
+    table.querySelectorAll('thead th').forEach((th, i) => {
+      th.classList.remove('ana-sorted-asc','ana-sorted-desc');
+      if (i === st.sortIdx) th.classList.add(st.sortDir>0?'ana-sorted-asc':'ana-sorted-desc');
+    });
+    return;
+  }
+
+  const filtered = _anaFilteredRows(tbodyId);
+  const total = filtered.length;
+  const sz = st.size || total;
+  const pgCount = Math.max(1, Math.ceil(total/Math.max(1,sz)));
+  if (st.page >= pgCount) st.page = pgCount - 1;
+  if (st.page < 0) st.page = 0;
+  const start = sz ? st.page*sz : 0;
+  const end = sz ? Math.min(total, start + sz) : total;
+  const slice = filtered.slice(start, end);
+
+  tb.innerHTML = slice.length
+    ? slice.map(r => r.html).join('')
+    : '<tr><td colspan="20" style="text-align:center;color:#3a5070;">No rows match filter</td></tr>';
+
+  table.querySelectorAll('thead th').forEach((th, i) => {
+    th.classList.remove('ana-sorted-asc','ana-sorted-desc');
+    if (i === st.sortIdx) th.classList.add(st.sortDir>0?'ana-sorted-asc':'ana-sorted-desc');
+  });
+  const bar = mini.querySelector('.ana-tbl-bar');
+  if (bar){
+    bar.querySelector('.ana-tbl-count').textContent = total + ' row' + (total===1?'':'s')
+      + (st.filter ? ' (of ' + st.rows.length + ')' : '');
+  }
+  const pg = mini.querySelector('.ana-tbl-pager');
+  if (pg){
+    pg.querySelector('.ana-tbl-pager-info').textContent =
+      total === 0 ? '0–0 of 0' : (start+1) + '–' + end + ' of ' + total;
+    const bs = pg.querySelectorAll('button[data-act]');
+    const firstPage = st.page === 0;
+    const lastPage  = st.page >= pgCount - 1;
+    bs[0].disabled = bs[1].disabled = firstPage;
+    bs[2].disabled = bs[3].disabled = lastPage;
+  }
+}
+
 // Parse entry/exit time "HH:MM, DD/MM/YYYY" or "HH:MM:SS, DD/MM/YYYY" → ms or null
 function _parseTimeMs(t){
   if (!t) return null;
@@ -1140,9 +1343,9 @@ function renderAnalytics(){
   // ── Cross-mode comparison ──
   (function(){
     const modes = ['SWING','SCALP','PA'];
-    const tb = document.getElementById('anaModeBody');
-    if (!trades.length){ tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#3a5070;">No data</td></tr>'; }
-    else {
+    const EMPTY = '<tr><td colspan="10" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    if (!trades.length){ anaEnhance('anaModeBody', '', EMPTY, {}); return; }
+    {
       let html = '';
       const overall = { count:0, wins:0, losses:0, pnl:0, gp:0, gl:0 };
       modes.forEach(m => {
@@ -1191,7 +1394,7 @@ function renderAnalytics(){
         + '<td style="font-weight:700;">'+pfAll+'</td>'
         + '<td style="color:'+(expAll>=0?'#10b981':'#ef4444')+';font-weight:700;">'+fmtAnaSigned(expAll)+'</td>'
         + '</tr>';
-      tb.innerHTML = html;
+      anaEnhance('anaModeBody', html, '', {});
     }
   })();
 
@@ -1281,7 +1484,7 @@ function renderAnalytics(){
       const pc = dd.p>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+dd.n+'</td><td>'+dd.t+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(dd.p)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(dd.p/dd.t))+'</td></tr>';
     });
-    document.getElementById('anaDowBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaDowBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
   })();
 
   // ── Equity Curve (per trade, oldest → newest by entry time) ──
@@ -1380,7 +1583,7 @@ function renderAnalytics(){
         + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td>'
         + '</tr>';
     });
-    document.getElementById('anaEntryBody').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaEntryBody', html, '<tr><td colspan="8" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Exit Reason Breakdown ──
@@ -1402,7 +1605,7 @@ function renderAnalytics(){
         + '<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td>'
         + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>';
     });
-    document.getElementById('anaExitBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaExitBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Loss Distribution ──
@@ -1454,7 +1657,7 @@ function renderAnalytics(){
     worst.forEach(t => {
       html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
     });
-    document.getElementById('anaWorstBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
+    anaEnhance('anaWorstBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>', {});
   })();
 
   // ── Consecutive Loss Streaks ──
@@ -1469,7 +1672,7 @@ function renderAnalytics(){
       const avg = total / s.length;
       html += '<tr><td>'+(s[0].t.date||'—')+'</td><td>'+s.length+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(total)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(avg)+'</td></tr>';
     });
-    document.getElementById('anaLossStreakBody').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No loss streaks (2+)</td></tr>';
+    anaEnhance('anaLossStreakBody', html, '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No loss streaks (2+)</td></tr>', { pager:true });
   })();
 
   // ── Worst/Best Trading Days ──
@@ -1480,11 +1683,11 @@ function renderAnalytics(){
     const lossDays = arr.filter(d=>d.pnl<0).sort((a,b)=>a.pnl-b.pnl).slice(0,10);
     let html = '';
     lossDays.forEach(d => { html += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.losses+'</td><td style="color:#ef4444;">'+fmtAnaSigned(d.worst)+'</td></tr>'; });
-    document.getElementById('anaWorstDayBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
+    anaEnhance('anaWorstDayBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>', { filter:true, pager:true });
     const winDays = arr.filter(d=>d.pnl>0).sort((a,b)=>b.pnl-a.pnl).slice(0,10);
     let html2 = '';
     winDays.forEach(d => { html2 += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.wins+'</td><td style="color:#10b981;">'+fmtAnaSigned(d.best)+'</td></tr>'; });
-    document.getElementById('anaBestDayBody').innerHTML = html2 || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning days</td></tr>';
+    anaEnhance('anaBestDayBody', html2, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning days</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Loss by Exit Reason ──
@@ -1498,7 +1701,7 @@ function renderAnalytics(){
       const pct = ((d.cnt/Math.max(lossTrades.length,1))*100).toFixed(0);
       html += '<tr><td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r)+'">'+esc(r)+'</td><td>'+d.cnt+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td><td style="font-weight:600;">'+pct+'%</td></tr>';
     });
-    document.getElementById('anaLossReasonBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losses</td></tr>';
+    anaEnhance('anaLossReasonBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losses</td></tr>', {});
   })();
 
   // ── Losing Hours / Winning Hours ──
@@ -1520,8 +1723,8 @@ function renderAnalytics(){
         wh += '<tr><td style="font-weight:600;">'+h+':00</td><td>'+d.wins+' / '+d.total+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.winPnl)+'</td><td style="color:#10b981;">'+fmtAnaSigned(Math.round(d.winPnl/d.wins))+'</td><td style="color:'+col+';font-weight:700;">'+pct+'%</td></tr>';
       }
     });
-    document.getElementById('anaLossHourBody').innerHTML = lh || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
-    document.getElementById('anaWinHourBody').innerHTML = wh || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaLossHourBody', lh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
+    anaEnhance('anaWinHourBody', wh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
   })();
 
   // ── Top 10 Best Trades ──
@@ -1531,7 +1734,7 @@ function renderAnalytics(){
     best.forEach(t => {
       html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
     });
-    document.getElementById('anaBestBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning trades</td></tr>';
+    anaEnhance('anaBestBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning trades</td></tr>', {});
   })();
 
   // ── Cumulative P&L by Mode ──
@@ -1626,7 +1829,7 @@ function renderAnalytics(){
     const durs = trades.map(t => ({ d: _durMin(t), p: t.pnl||0 })).filter(x => x.d != null);
     if (_anaCharts.durDist) _anaCharts.durDist.destroy();
     if (!durs.length){
-      document.getElementById('anaDurBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>';
+      anaEnhance('anaDurBody', '', '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>', {});
       _anaCharts.durDist = new Chart(document.getElementById('anaDurDist'), { type: 'bar', data: { labels: [], datasets: [{ data: [] }] }, options: baseChartOpts() });
       return;
     }
@@ -1652,7 +1855,7 @@ function renderAnalytics(){
     let html = '';
     buckets.forEach((b,i) => { const d=bins[i]; if (!d.cnt) return; const wr = ((d.wins/d.cnt)*100).toFixed(0); const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+b.lbl+'</td><td>'+d.cnt+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    document.getElementById('anaDurBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>';
+    anaEnhance('anaDurBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>', {});
   })();
 
   // ── NIFTY spot move (points) distribution ──
@@ -1718,7 +1921,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.trades ? ((d.wins/d.trades)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+d.key+'</td><td>'+d.trades+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.trades))+'</td></tr>'; });
-    document.getElementById('anaWeeklyBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaWeeklyBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Drawdown stats ──
@@ -1747,18 +1950,18 @@ function renderAnalytics(){
   })();
 
   // ── Top option symbols / strikes / expiries ──
-  function _topTable(keyFn, bodyId, maxRows){
+  function _topTable(keyFn, bodyId){
     const m = new Map();
     trades.forEach(t => { const k = keyFn(t); if (k == null || k === '') return; if (!m.has(k)) m.set(k, { key: k, cnt: 0, wins: 0, pnl: 0 }); const b=m.get(k); b.cnt++; if (t.pnl>0) b.wins++; b.pnl += (t.pnl||0); });
-    const rows = Array.from(m.values()).sort((a,b) => b.cnt - a.cnt).slice(0, maxRows);
+    const rows = Array.from(m.values()).sort((a,b) => b.cnt - a.cnt);
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.key)+'">'+esc(d.key)+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td></tr>'; });
-    document.getElementById(bodyId).innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance(bodyId, html, '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
   }
-  _topTable(t => t.symbol, 'anaSymBody', 20);
-  _topTable(t => t.optionStrike, 'anaStrikeBody', 20);
-  _topTable(t => t.optionExpiry, 'anaExpiryBody', 20);
+  _topTable(t => t.symbol, 'anaSymBody');
+  _topTable(t => t.optionStrike, 'anaStrikeBody');
+  _topTable(t => t.optionExpiry, 'anaExpiryBody');
 
   // ── Strategy variant breakdown ──
   (function(){
@@ -1768,7 +1971,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.strat)+'">'+esc(d.strat)+'</td><td><span class="badge-mode badge-'+d.mode+'">'+d.mode+'</span></td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    document.getElementById('anaStratBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaStratBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>', { filter:true, pager:true });
   })();
 
   // ── Quantity Buckets ──
@@ -1779,7 +1982,7 @@ function renderAnalytics(){
     let html = '';
     rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
       html += '<tr><td style="font-weight:600;">'+d.q+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
-    document.getElementById('anaQtyBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    anaEnhance('anaQtyBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
   })();
 }
 

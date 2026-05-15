@@ -25,7 +25,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
-const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
@@ -2596,9 +2596,9 @@ router.get("/history", (req, res) => {
           <div class="session-body">
           ${trades.length > 0 ? `
           <div style="overflow-x:auto;">
-            <div class="tbl-wrap"><table class="tbl">
+            <div class="tbl-wrap"><table class="tbl enh-table-sort-filter">
               <thead><tr>
-                <th>Side</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th style="text-align:center;">Action</th>
+                <th>Side</th><th>Date</th><th>Entry</th><th>Entry Time</th><th>Exit</th><th>Exit Time</th><th>SL</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th data-no-sort="1" style="text-align:center;">Action</th>
               </tr></thead>
               <tbody>${tradeRows}</tbody>
             </table></div>
@@ -2621,6 +2621,7 @@ router.get("/history", (req, res) => {
     body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;overflow-x:hidden;}
     ${sidebarCSS()}
     ${modalCSS()}
+    ${tableEnhancerCSS()}
     .session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:18px;}
     .session-head{padding:16px 20px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;cursor:pointer;transition:background 0.15s;}
     .session-head:hover{background:#060e1c;}
@@ -2743,8 +2744,8 @@ ${buildSidebar('scalpHistory', liveActive)}
         <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Hide</button>
       </div>
       <div id="dailyFilesBody" style="overflow-x:auto;">
-        <table class="tbl" style="width:100%;"><thead><tr>
-          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Actions</th>
+        <table id="dailyFilesTbl" class="tbl enh-table-full" data-page-size="10" style="width:100%;"><thead><tr>
+          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th data-no-sort="1">Actions</th>
         </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
       </div>
     </div>
@@ -2946,8 +2947,9 @@ async function loadDailyFiles(){
       if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
       if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
       if (!btns) btns = '<span style="color:#4a6080;">—</span>';
-      return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
+      return '<tr><td data-sort="'+r.date+'">'+r.date+'</td><td data-sort="'+(r.skipsSize||0)+'">'+sCell+'</td><td data-sort="'+(r.tradesSize||0)+'">'+tCell+'</td><td>'+btns+'</td></tr>';
     }).join('');
+    if (window.enhanceTable) window.enhanceTable(document.getElementById('dailyFilesTbl'), { sort:true, filter:true, paginate:true, pageSize:10 });
   } catch(e) {
     var tbody2 = document.getElementById('dailyFilesRows');
     if (tbody2) tbody2.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:12px;">Failed to load: '+(e&&e.message||e)+'</td></tr>';
@@ -3533,6 +3535,7 @@ function renderAnalytics(){
     document.getElementById('anaLossHourBody').innerHTML=html;
   })();
 }
+${tableEnhancerJS()}
 </script>
 </body>
 </html>`;
