@@ -899,10 +899,12 @@ app.get("/", (req, res) => {
     .da-body { display:flex; flex-direction:column; gap:10px; }
     .da-loading { padding:18px; text-align:center; color:#4a6080; font-size:0.72rem; }
     .da-grid { display:grid; gap:8px; }
+    .da-grid.cols-1 { grid-template-columns:1fr; }
+    .da-grid.cols-2 { grid-template-columns:repeat(2, 1fr); }
     .da-grid.cols-3 { grid-template-columns:repeat(3, 1fr); }
     .da-grid.cols-4 { grid-template-columns:repeat(4, 1fr); }
     @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr 1fr; } }
-    @media (max-width:560px){ .da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr; } }
+    @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr; } }
     .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; }
     .da-tile.swing { border-top:2px solid #3b82f6; }
     .da-tile.scalp { border-top:2px solid #f59e0b; }
