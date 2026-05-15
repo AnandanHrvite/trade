@@ -1698,7 +1698,7 @@ loadCacheInfo();
 setInterval(loadCacheInfo, 60000); // refresh once a minute
 
 // ── Dashboard Analytics Panel ─────────────────────────────────────────────────
-// Live view (market hours) vs Post-market view (last session + 7-day rolling).
+// Live view (market hours) vs Post-market view (last session only).
 (function initAnalyticsPanel(){
   var root = document.getElementById('dashAnalytics');
   if (!root) return;
@@ -1829,18 +1829,6 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
     var lastDay = lastTradingDate(combinedAgg.byDate);
     var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
 
-    // 7-day rolling (last 7 calendar days inclusive of today, IST)
-    var sevenAgo = (function(){
-      var d = new Date();
-      var iso = d.toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' });
-      var parts = iso.split('-');
-      var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
-      dt.setUTCDate(dt.getUTCDate() - 6);
-      return dt.toISOString().slice(0,10);
-    })();
-    var todayIso = istDateISO();
-    var weekAgg = aggregateTrades(combined, sevenAgo, todayIso);
-
     // ── Last session card (per strategy) ──
     var lastHtml = '<div class="da-grid cols-4">';
     var lsTiles = [
@@ -1871,31 +1859,9 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
     '</div>';
     lastHtml += '</div>';
 
-    // ── 7-day rolling card ──
-    var weekHtml = '<div class="da-grid cols-4">';
-    lsTiles.forEach(function(t){
-      var s = weekAgg.byStrategy[t.key];
-      weekHtml += '<div class="da-tile ' + t.cls + '">' +
-        '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + s.t + 'T</span></div>' +
-        '<div class="da-big ' + cls(s.net) + '">' + fmtINR(s.net) + '</div>' +
-        '<div class="da-sub-line">' + s.w + 'W / ' + s.l + 'L &middot; WR ' + pctWR(s.w,s.l) + '%</div>' +
-      '</div>';
-    });
-    // 7-day TOTAL with best/worst day
-    var bestStr = weekAgg.bestDay  ? (weekAgg.bestDay.d  + ' ' + fmtINR(weekAgg.bestDay.v))  : '—';
-    var worstStr= weekAgg.worstDay ? (weekAgg.worstDay.d + ' ' + fmtINR(weekAgg.worstDay.v)) : '—';
-    weekHtml += '<div class="da-tile info">' +
-      '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + weekAgg.total.t + 'T</span></div>' +
-      '<div class="da-big ' + cls(weekAgg.total.net) + '">' + fmtINR(weekAgg.total.net) + '</div>' +
-      '<div class="da-sub-line">Best ' + bestStr + ' &middot; Worst ' + worstStr + '</div>' +
-    '</div>';
-    weekHtml += '</div>';
-
     var html = '';
     html += '<div class="da-tile-hdr" style="margin-top:2px;">Last trading day' + (lastDay ? ' &middot; ' + lastDay : '') + '</div>';
     html += lastHtml;
-    html += '<div class="da-tile-hdr" style="margin-top:6px;">7-day rolling (' + sevenAgo + ' → ' + todayIso + ')</div>';
-    html += weekHtml;
     var infoStrip = renderInfoStrip(expiryInfo, nextHoliday);
     if (infoStrip) html += '<div class="da-tile-hdr" style="margin-top:6px;">Market schedule</div>' + infoStrip;
     return html;
@@ -1946,7 +1912,7 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
       title.textContent = 'Today So Far';
     } else {
       badge.className = 'da-badge post'; badge.textContent = 'MARKET CLOSED';
-      title.textContent = 'Last Session + 7-day Rolling';
+      title.textContent = 'Last Session';
     }
     subEl.textContent = sub || '';
   }
