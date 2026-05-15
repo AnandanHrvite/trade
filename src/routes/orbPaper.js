@@ -651,16 +651,39 @@ router.get("/status/data", (req, res) => {
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
   const data = loadData();
 
-  // Compute OR (if formed)
   let or = null;
   try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
+
+  // Live position P&L (delta-proxy if option LTP stale)
+  let livePnl = null;
+  if (pos) {
+    const lot = pos.qty || instrumentConfig.getLotQty();
+    if (state.optionLtp != null) {
+      livePnl = parseFloat(((state.optionLtp - pos.optionEntryLtp) * lot).toFixed(2));
+    }
+  }
+
+  // Build cumulative P&L array for chart
+  const cumPnl = [];
+  let cum = 0;
+  for (const t of state.sessionTrades) {
+    cum += (t.pnl || 0);
+    cumPnl.push({ t: t.exitTime || t.entryTime, pnl: parseFloat(cum.toFixed(2)) });
+  }
+
+  // Stats for today
+  const wins = state.sessionTrades.filter(t => t.pnl > 0).length;
+  const losses = state.sessionTrades.filter(t => t.pnl < 0).length;
+  const winRate = state.sessionTrades.length ? ((wins / state.sessionTrades.length) * 100).toFixed(1) : null;
+  const bestTrade = state.sessionTrades.length ? Math.max(...state.sessionTrades.map(t => t.pnl || 0)) : null;
+  const worstTrade = state.sessionTrades.length ? Math.min(...state.sessionTrades.map(t => t.pnl || 0)) : null;
 
   res.json({
     running:        state.running,
     sessionPnl:     state.sessionPnl,
     tradesTaken:    state.tradesTaken,
-    sessionTrades:  state.sessionTrades.slice(-30),
-    log:            state.log.slice(-50),
+    sessionTrades:  state.sessionTrades.slice(-50),
+    log:            state.log.slice(-100),
     tickCount:      state.tickCount,
     lastTickPrice:  state.lastTickPrice,
     candles:        state.candles.length,
@@ -670,6 +693,9 @@ router.get("/status/data", (req, res) => {
     orh:            or && or.high,
     orl:            or && or.low,
     rangePts:       or ? Math.round((or.high - or.low) * 100) / 100 : null,
+    wins, losses, winRate, bestTrade, worstTrade,
+    cumPnl,
+    livePnl,
     position: pos ? {
       side: pos.side, symbol: pos.symbol,
       entrySpot: pos.entrySpot, optionEntryLtp: pos.optionEntryLtp,
@@ -678,6 +704,7 @@ router.get("/status/data", (req, res) => {
       entryTime: pos.entryTime, signalStrength: pos.signalStrength,
       orh: pos.orh, orl: pos.orl, rangePts: pos.rangePts,
       qty: pos.qty,
+      currentOptLtp: state.optionLtp,
     } : null,
     totalPnl: data.totalPnl,
     capital:  data.capital,
@@ -692,93 +719,207 @@ router.get("/status", (req, res) => {
 ${faviconLink()}
 <title>ORB Paper Trade</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;}
 ${sidebarCSS()}
 ${modalCSS()}
-${tableEnhancerCSS ? tableEnhancerCSS() : ""}
 .main{flex:1;margin-left:200px;padding:16px 22px 40px;min-height:100vh;}
 @media(max-width:900px){.main{margin-left:0;padding:14px;}}
+.crumb{background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 22px;display:flex;align-items:center;gap:7px;margin:-16px -22px 14px;position:sticky;top:0;z-index:90;}
+.crumb span.chip{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;}
 .page-title{font-size:1.05rem;font-weight:700;margin-bottom:2px;}
-.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:12px;}
-.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
-@media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);}}
+.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:14px;}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:14px;}
+@media(max-width:1400px){.grid{grid-template-columns:repeat(4,1fr);}}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr);}}
 .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:11px 13px;position:relative;overflow:hidden;}
-.sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#3b82f6;}
+.sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#10b981;}
+.sc.blue::before{background:#3b82f6;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}
 .sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
 .sc-val{font-size:1.1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+.sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;font-family:'IBM Plex Mono',monospace;}
 .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;margin-bottom:14px;}
-.panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+.panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:space-between;}
+.chart-wrap{position:relative;height:240px;}
 .log{background:#040c18;border:0.5px solid #0e1e36;border-radius:6px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#94a3b8;max-height:280px;overflow-y:auto;white-space:pre-wrap;line-height:1.55;}
+.log-search{background:#040c18;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 8px;border-radius:5px;font-size:0.7rem;font-family:inherit;width:160px;}
 table{width:100%;border-collapse:collapse;font-size:0.66rem;font-family:'IBM Plex Mono',monospace;}
 th,td{padding:6px 8px;text-align:left;border-bottom:0.5px solid #0e1e36;}
 th{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;background:#040c18;}
 .pos{color:#10b981;}.neg{color:#ef4444;}.muted{color:#3a5070;}
 .empty{text-align:center;color:#3a5070;padding:18px 0;font-size:0.7rem;}
+.pos-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+.pos-cell{background:#040c18;border:0.5px solid #0e1e36;border-radius:8px;padding:9px 12px;}
+.pos-cell-l{font-size:0.5rem;text-transform:uppercase;color:#3a5070;letter-spacing:1.2px;}
+.pos-cell-v{font-size:0.92rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+@media(max-width:900px){.pos-row{grid-template-columns:repeat(2,1fr);}}
 </style></head><body>
 ${buildSidebar('orbPaper', liveActive, state.running, {
   showStartBtn: !state.running, startBtnJs: `location.href='/orb-paper/start'`, startLabel: '▶ Start ORB',
   showStopBtn: state.running,   stopBtnJs:  `location.href='/orb-paper/stop'`,  stopLabel:  '■ Stop ORB',
-  showExitBtn: state.running,   exitBtnJs:  `location.href='/orb-paper/exit'`,  exitLabel:  '🚪 Exit Trade',
+  showExitBtn: state.running && !!state.position, exitBtnJs: `location.href='/orb-paper/exit'`, exitLabel: '🚪 Exit Trade',
 })}
 <main class="main">
-  <div class="page-title">📋 ORB Paper Trade</div>
-  <div class="page-sub">${orbStrategy.NAME} — opening range breakout (live data, simulated orders)</div>
-  <div class="grid">
-    <div class="sc"><div class="sc-label">Status</div><div class="sc-val" id="status">—</div></div>
-    <div class="sc"><div class="sc-label">Session P&L</div><div class="sc-val" id="pnl">—</div></div>
-    <div class="sc"><div class="sc-label">Trades</div><div class="sc-val" id="trades">—</div></div>
-    <div class="sc"><div class="sc-label">Spot</div><div class="sc-val" id="spot">—</div></div>
-    <div class="sc"><div class="sc-label">OR Range</div><div class="sc-val" id="or">—</div></div>
-    <div class="sc"><div class="sc-label">VIX</div><div class="sc-val" id="vix">—</div></div>
+  <div class="crumb">
+    <span class="chip" style="background:rgba(16,185,129,0.1);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);">📋 ORB PAPER</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span class="chip" style="background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);">${orbStrategy.NAME}</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span class="chip" id="crumb-status" style="background:rgba(74,96,128,0.15);color:#94a3b8;border:0.5px solid rgba(74,96,128,0.3);">—</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;" id="crumb-tick">— ticks · — candles</span>
   </div>
-  <div class="panel"><h3>Position</h3><div id="position-box" class="empty">No open position</div></div>
-  <div class="panel"><h3>Session Trades</h3><div id="trades-box" class="empty">No trades yet</div></div>
-  <div class="panel"><h3>Activity Log</h3><div id="log" class="log">—</div></div>
+  <div class="page-title">📋 ORB Paper Trade <span style="font-size:0.65rem;color:#4a6080;font-weight:400;margin-left:8px;">opening range breakout · simulated orders · live data</span></div>
+  <div class="page-sub">Single-leg ATM option buy on 15-min OR break. Square-off ${process.env.ORB_FORCED_EXIT || "15:15"} IST.</div>
+
+  <!-- Stat grid (8 cards) -->
+  <div class="grid">
+    <div class="sc"><div class="sc-label">Status</div><div class="sc-val" id="status">—</div><div class="sc-sub" id="status-sub">—</div></div>
+    <div class="sc blue"><div class="sc-label">Session P&L</div><div class="sc-val" id="pnl">—</div><div class="sc-sub" id="pnl-sub">— closed trades</div></div>
+    <div class="sc"><div class="sc-label">Live PnL</div><div class="sc-val" id="livePnl">—</div><div class="sc-sub" id="livePnl-sub">unrealised</div></div>
+    <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val" id="wr">—</div><div class="sc-sub" id="wr-sub">— W · — L</div></div>
+    <div class="sc"><div class="sc-label">Best Trade</div><div class="sc-val pos" id="bestT">—</div><div class="sc-sub">single best</div></div>
+    <div class="sc red"><div class="sc-label">Worst Trade</div><div class="sc-val neg" id="worstT">—</div><div class="sc-sub">single worst</div></div>
+    <div class="sc purple"><div class="sc-label">Spot · VIX</div><div class="sc-val" id="spotVix">—</div><div class="sc-sub" id="orRange">—</div></div>
+    <div class="sc"><div class="sc-label">All-Time</div><div class="sc-val" id="totalPnl">—</div><div class="sc-sub">since first session</div></div>
+  </div>
+
+  <!-- Position panel (rich) -->
+  <div class="panel">
+    <h3><span>📌 Open Position</span><span id="livePnlBadge" style="font-size:0.85rem;color:#94a3b8;"></span></h3>
+    <div id="position-box" class="empty">No open position — waiting for ORB break</div>
+  </div>
+
+  <!-- Cumulative P&L chart -->
+  <div class="panel">
+    <h3><span>📈 Today&apos;s Cumulative P&amp;L</span><span id="chartHint" style="font-size:0.6rem;color:#4a6080;">— trades</span></h3>
+    <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
+  </div>
+
+  <!-- Session trades -->
+  <div class="panel">
+    <h3><span>📜 Session Trades (today)</span><span id="tradesHint" style="font-size:0.6rem;color:#4a6080;">— trades</span></h3>
+    <div id="trades-box" class="empty">No trades yet</div>
+  </div>
+
+  <!-- Activity log -->
+  <div class="panel">
+    <h3><span>📓 Activity Log</span>
+      <span><input class="log-search" id="logSearch" placeholder="Search log…" oninput="filterLog()"/></span>
+    </h3>
+    <div id="log" class="log">—</div>
+  </div>
 </main>
 <script>
 ${modalJS()}
-${toastJS ? toastJS() : ""}
+var _pnlChart = null;
+var _rawLog = [];
+
 async function refresh() {
   try {
-    const r = await fetch('/orb-paper/status/data');
+    const r = await fetch('/orb-paper/status/data', {cache:'no-store'});
     const d = await r.json();
-    document.getElementById('status').innerHTML = d.running ? '<span class="pos">RUNNING</span>' : '<span class="muted">STOPPED</span>';
-    document.getElementById('pnl').innerHTML    = '<span class="' + (d.sessionPnl > 0 ? 'pos' : d.sessionPnl < 0 ? 'neg' : 'muted') + '">₹' + d.sessionPnl.toFixed(2) + '</span>';
-    document.getElementById('trades').textContent = d.tradesTaken;
-    document.getElementById('spot').textContent = d.lastTickPrice ? d.lastTickPrice.toFixed(2) : '—';
-    document.getElementById('or').textContent = (d.orh && d.orl) ? d.orh + '/' + d.orl + ' (' + d.rangePts + 'pt)' : '—';
-    document.getElementById('vix').textContent = d.vix != null ? d.vix.toFixed(2) : '—';
-    document.getElementById('log').textContent = (d.log || []).join('\\n');
+    var pnlCls = d.sessionPnl > 0 ? 'pos' : d.sessionPnl < 0 ? 'neg' : 'muted';
 
+    document.getElementById('status').innerHTML = d.running ? '<span class="pos">RUNNING</span>' : '<span class="muted">STOPPED</span>';
+    document.getElementById('status-sub').textContent = d.tradesTaken + ' trades taken';
+    document.getElementById('crumb-status').innerHTML = d.running ? '<span style="color:#10b981;">● RUNNING</span>' : '<span style="color:#94a3b8;">○ STOPPED</span>';
+    document.getElementById('crumb-tick').textContent = (d.tickCount||0) + ' ticks · ' + (d.candles||0) + ' candles';
+    document.getElementById('pnl').innerHTML    = '<span class="' + pnlCls + '">₹' + d.sessionPnl.toFixed(2) + '</span>';
+    document.getElementById('pnl-sub').textContent = (d.tradesTaken||0) + ' trade' + ((d.tradesTaken||0)===1?'':'s') + ' closed';
+    if(d.livePnl != null){
+      var lc = d.livePnl > 0 ? 'pos' : d.livePnl < 0 ? 'neg' : 'muted';
+      document.getElementById('livePnl').innerHTML = '<span class="' + lc + '">₹' + d.livePnl.toFixed(2) + '</span>';
+      document.getElementById('livePnl-sub').textContent = 'unrealised (live option LTP)';
+    } else {
+      document.getElementById('livePnl').textContent = '—';
+      document.getElementById('livePnl-sub').textContent = 'no open position';
+    }
+    document.getElementById('wr').textContent = (d.winRate != null ? d.winRate + '%' : '—');
+    document.getElementById('wr-sub').textContent = (d.wins||0) + 'W · ' + (d.losses||0) + 'L';
+    document.getElementById('bestT').textContent = d.bestTrade != null ? '₹' + d.bestTrade.toFixed(0) : '—';
+    document.getElementById('worstT').textContent = d.worstTrade != null ? '₹' + d.worstTrade.toFixed(0) : '—';
+    document.getElementById('spotVix').textContent = (d.lastTickPrice ? d.lastTickPrice.toFixed(2) : '—') + ' · VIX ' + (d.vix != null ? d.vix.toFixed(1) : '—');
+    document.getElementById('orRange').textContent = (d.orh && d.orl) ? 'OR ' + d.orh + '/' + d.orl + ' (' + d.rangePts + 'pt)' : 'OR not yet formed';
+    document.getElementById('totalPnl').innerHTML = '<span class="' + (d.totalPnl>=0?'pos':'neg') + '">₹' + (d.totalPnl||0).toLocaleString('en-IN', {maximumFractionDigits:0}) + '</span>';
+
+    // Log
+    _rawLog = d.log || [];
+    filterLog();
+
+    // Position
     if (d.position) {
       const p = d.position;
       const pCls = (p.side === 'CE') ? 'pos' : 'neg';
+      const liveOpt = p.currentOptLtp != null ? p.currentOptLtp : null;
+      const liveBadge = (d.livePnl != null) ? '<span class="' + (d.livePnl>=0?'pos':'neg') + '">₹' + d.livePnl.toFixed(0) + '</span>' : '—';
+      document.getElementById('livePnlBadge').innerHTML = liveBadge + ' live';
+      document.getElementById('position-box').className = '';
       document.getElementById('position-box').innerHTML =
-        '<table><tr><th>Side</th><th>Symbol</th><th>Strike</th><th>Entry Spot</th><th>Entry Opt LTP</th><th>SL Spot</th><th>Target Spot</th><th>Target Prem</th><th>Stop Prem</th><th>Qty</th></tr>' +
-        '<tr><td class="' + pCls + '"><b>' + p.side + '</b></td><td>' + p.symbol + '</td><td>' + (p.orh && p.orl ? p.orh + '/' + p.orl : '—') + '</td><td>' + p.entrySpot + '</td><td>₹' + p.optionEntryLtp + '</td><td>' + p.slSpot + '</td><td>' + p.targetSpot + '</td><td>₹' + p.targetPremium + '</td><td>₹' + p.stopPremium + '</td><td>' + p.qty + '</td></tr></table>';
+        '<div class="pos-row" style="margin-bottom:10px;">' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Side</div><div class="pos-cell-v ' + pCls + '">' + p.side + ' [' + (p.signalStrength||'—') + ']</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Strike (Symbol)</div><div class="pos-cell-v" style="font-size:0.72rem;">' + p.symbol + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Entry Spot · Time</div><div class="pos-cell-v">' + p.entrySpot + '<span style="font-weight:400;color:#94a3b8;font-size:0.7rem;"> · ' + p.entryTime + '</span></div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Qty</div><div class="pos-cell-v">' + p.qty + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">OR Range</div><div class="pos-cell-v">' + p.orl + '/' + p.orh + ' (' + p.rangePts + 'pt)</div></div>' +
+        '</div>' +
+        '<div class="pos-row">' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Entry Option LTP</div><div class="pos-cell-v">₹' + p.optionEntryLtp + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Current Option LTP</div><div class="pos-cell-v ' + (liveOpt != null && liveOpt >= p.optionEntryLtp ? 'pos' : 'neg') + '">' + (liveOpt != null ? '₹' + liveOpt : '—') + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Premium Target / Stop</div><div class="pos-cell-v"><span class="pos">₹' + p.targetPremium + '</span> / <span class="neg">₹' + p.stopPremium + '</span></div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Spot Target / SL</div><div class="pos-cell-v"><span class="pos">' + p.targetSpot + '</span> / <span class="neg">' + p.slSpot + '</span></div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Live P&amp;L</div><div class="pos-cell-v ' + (d.livePnl != null && d.livePnl >= 0 ? 'pos' : d.livePnl != null ? 'neg' : 'muted') + '">' + (d.livePnl != null ? '₹' + d.livePnl.toFixed(2) : '—') + '</div></div>' +
+        '</div>';
     } else {
       document.getElementById('position-box').className = 'empty';
-      document.getElementById('position-box').textContent = 'No open position';
+      document.getElementById('position-box').textContent = d.running ? 'No open position — waiting for ORB break' : 'No open position';
+      document.getElementById('livePnlBadge').textContent = '';
     }
 
+    // Trades table
     const trades = d.sessionTrades || [];
+    document.getElementById('tradesHint').textContent = trades.length + ' trade' + (trades.length===1?'':'s');
     if (trades.length) {
       const rows = trades.slice().reverse().map(function(t){
         var cls = t.pnl > 0 ? 'pos' : (t.pnl < 0 ? 'neg' : 'muted');
-        return '<tr><td>' + (t.entryTime||'') + '</td><td>' + (t.side||'') + '</td><td>' + (t.symbol||'') + '</td><td>' + (t.spotAtEntry||'') + '</td><td>' + (t.spotAtExit||'') + '</td><td>₹' + (t.optionEntryLtp||'') + '</td><td>₹' + (t.optionExitLtp||'') + '</td><td class="' + cls + '"><b>₹' + (t.pnl != null ? t.pnl.toFixed(2) : '—') + '</b></td><td style="color:#94a3b8">' + (t.exitReason||'') + '</td></tr>';
+        return '<tr><td>' + (t.entryTime||'') + '</td><td>' + (t.exitTime||'') + '</td><td class="' + (t.side==='CE'?'pos':'neg') + '"><b>' + (t.side||'') + '</b></td><td>' + (t.spotAtEntry||'') + '</td><td>' + (t.spotAtExit||'') + '</td><td>₹' + (t.optionEntryLtp||'') + '</td><td>₹' + (t.optionExitLtp||'') + '</td><td>' + (t.rangePts || '—') + '</td><td>' + (t.signalStrength || '—') + '</td><td class="' + cls + '"><b>₹' + (t.pnl != null ? t.pnl.toFixed(2) : '—') + '</b></td><td style="color:#94a3b8;font-size:0.65rem;">' + (t.exitReason||'') + '</td></tr>';
       }).join('');
       document.getElementById('trades-box').className = '';
-      document.getElementById('trades-box').innerHTML = '<table><tr><th>Entry</th><th>Side</th><th>Symbol</th><th>E.Spot</th><th>X.Spot</th><th>E.Opt</th><th>X.Opt</th><th>PnL</th><th>Exit</th></tr>' + rows + '</table>';
+      document.getElementById('trades-box').innerHTML = '<table><tr><th>Entry</th><th>Exit</th><th>Side</th><th>E.Spot</th><th>X.Spot</th><th>E.Opt</th><th>X.Opt</th><th>Range</th><th>Sig</th><th>PnL</th><th>Exit Reason</th></tr>' + rows + '</table>';
     } else {
       document.getElementById('trades-box').className = 'empty';
       document.getElementById('trades-box').textContent = 'No trades yet';
     }
-  } catch (e) { /* swallow — keep polling */ }
+
+    // Chart
+    renderChart(d.cumPnl || []);
+    document.getElementById('chartHint').textContent = (d.cumPnl ? d.cumPnl.length : 0) + ' closed';
+  } catch (e) {}
 }
+
+function filterLog(){
+  var q = (document.getElementById('logSearch').value || '').toLowerCase();
+  var lines = q ? _rawLog.filter(function(l){ return l.toLowerCase().indexOf(q) >= 0; }) : _rawLog;
+  document.getElementById('log').textContent = lines.join('\\n');
+}
+
+function renderChart(points){
+  var ctx = document.getElementById('pnlChart');
+  if(!ctx) return;
+  if(_pnlChart){ _pnlChart.destroy(); _pnlChart = null; }
+  var labels = points.map(function(_, i){ return i+1; });
+  var data = points.map(function(p){ return p.pnl; });
+  var endP = data.length ? data[data.length-1] : 0;
+  var col = endP >= 0 ? '#10b981' : '#ef4444';
+  _pnlChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels: labels, datasets:[{ data: data, borderColor: col, borderWidth: 2, backgroundColor: col+'22', fill: true, pointRadius: 3, tension: 0.3 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{title:function(ctx){return 'Trade #'+ctx[0].label;}, label:function(ctx){return '₹'+Math.round(ctx.raw).toLocaleString('en-IN');}}}}, scales:{ x:{ticks:{color:'#3a5070',font:{size:9}}, grid:{display:false}}, y:{ticks:{color:'#3a5070',font:{size:9},callback:function(v){return '₹'+Math.round(v/1000)+'k';}}, grid:{color:'#0e1e36'}} } }
+  });
+}
+
 refresh();
 setInterval(refresh, 2000);
 </script>
@@ -786,71 +927,83 @@ setInterval(refresh, 2000);
   res.send(html);
 });
 
-// ── History page ────────────────────────────────────────────────────────────
+// ── History page (reuses backtestUI renderer for full parity) ────────────────
 
 router.get("/history", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
   const data = loadData();
-  const allTrades = [];
-  for (const s of (data.sessions || [])) {
-    for (const t of (s.trades || [])) {
-      allTrades.push({
-        date:       (s.date || "").slice(0, 10),
-        side:       t.side, symbol: t.symbol,
-        strike:     t.optionStrike, expiry: t.optionExpiry,
-        entryTime:  t.entryTime, exitTime: t.exitTime,
-        spotEntry:  t.spotAtEntry, spotExit: t.spotAtExit,
-        optEntry:   t.optionEntryLtp, optExit: t.optionExitLtp,
-        pnl:        t.pnl, exitReason: t.exitReason,
-        strength:   t.signalStrength, rangePts: t.rangePts,
+
+  // Flatten all sessions into the backtestUI trade shape
+  const trades = [];
+  for (const sess of (data.sessions || [])) {
+    for (const t of (sess.trades || [])) {
+      const entryTs = parseEntryTimeToTs(t.entryTime, sess.date);
+      const exitTs  = parseEntryTimeToTs(t.exitTime,  sess.date);
+      trades.push({
+        side: t.side,
+        entry: t.entryTime || "",
+        exit:  t.exitTime  || "",
+        entryTs, exitTs,
+        ePrice: t.spotAtEntry,
+        xPrice: t.spotAtExit,
+        sl: t.stopLoss != null ? t.stopLoss : t.initialStopLoss,
+        pnl: t.pnl,
+        reason: t.exitReason,
+        entryReason: t.entryReason,
+        rangePts: t.rangePts,
+        strength: t.signalStrength,
+        eOpt: t.optionEntryLtp,
+        xOpt: t.optionExitLtp,
+        symbol: t.symbol,
       });
     }
   }
-  allTrades.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  const wins = allTrades.filter(t => t.pnl > 0).length;
-  const losses = allTrades.filter(t => t.pnl < 0).length;
-  const wr = allTrades.length ? ((wins / allTrades.length) * 100).toFixed(1) : "0.0";
-  const totalPnl = allTrades.reduce((a, t) => a + (t.pnl || 0), 0);
+  trades.sort((a, b) => (b.entryTs || 0) - (a.entryTs || 0));
+  const stats = computeBacktestStats(trades);
 
-  const rows = allTrades.map(t => {
-    const cls = t.pnl > 0 ? "pos" : t.pnl < 0 ? "neg" : "muted";
-    return `<tr><td>${t.date}</td><td>${t.entryTime || ""}</td><td>${t.side || ""}</td><td>${t.symbol || ""}</td><td>${t.strike || ""}</td><td>${t.spotEntry || ""}</td><td>${t.spotExit || ""}</td><td>₹${t.optEntry || ""}</td><td>₹${t.optExit || ""}</td><td>${t.rangePts || ""}</td><td>${t.strength || ""}</td><td class="${cls}"><b>₹${t.pnl != null ? t.pnl.toFixed(2) : "—"}</b></td><td style="color:#94a3b8">${t.exitReason || ""}</td></tr>`;
-  }).join("");
+  // Determine date range from trades
+  const dates = trades.map(t => (t.entry || "").split(",")[0].trim()).filter(Boolean);
+  const fromDate = dates.length ? dates[dates.length - 1] : "—";
+  const toDate   = dates.length ? dates[0] : "—";
 
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>${faviconLink()}<title>ORB History</title>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,sans-serif;}
-body{background:#040c18;color:#e0eaf8;}
-${sidebarCSS()}
-.main{flex:1;margin-left:200px;padding:16px 22px;}
-@media(max-width:900px){.main{margin-left:0;padding:14px;}}
-.title{font-size:1.05rem;font-weight:700;margin-bottom:8px;}
-.stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
-.stat{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:10px 14px;}
-.stat-l{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.stat-v{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-table{width:100%;border-collapse:collapse;font-size:0.65rem;font-family:'IBM Plex Mono',monospace;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;overflow:hidden;}
-th,td{padding:6px 8px;text-align:left;border-bottom:0.5px solid #0e1e36;}
-th{background:#040c18;font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.pos{color:#10b981;}.neg{color:#ef4444;}.muted{color:#3a5070;}
-</style></head><body>
-${buildSidebar('orbHistory', liveActive, false)}
-<main class="main">
-  <div class="title">📜 ORB Paper Trade History</div>
-  <div class="stats">
-    <div class="stat"><div class="stat-l">Total Trades</div><div class="stat-v">${allTrades.length}</div></div>
-    <div class="stat"><div class="stat-l">Win Rate</div><div class="stat-v">${wr}%</div></div>
-    <div class="stat"><div class="stat-l">Wins / Losses</div><div class="stat-v">${wins} / ${losses}</div></div>
-    <div class="stat"><div class="stat-l">Net P&L</div><div class="stat-v ${totalPnl > 0 ? "pos" : totalPnl < 0 ? "neg" : "muted"}">₹${totalPnl.toFixed(2)}</div></div>
-  </div>
-  <table>
-    <tr><th>Date</th><th>Entry</th><th>Side</th><th>Symbol</th><th>Strike</th><th>E.Spot</th><th>X.Spot</th><th>E.Opt</th><th>X.Opt</th><th>Range</th><th>Sig</th><th>PnL</th><th>Exit Reason</th></tr>
-    ${rows || `<tr><td colspan="13" style="text-align:center;color:#3a5070;padding:24px;">No trades yet</td></tr>`}
-  </table>
-</main>
-</body></html>`);
+  res.send(renderBacktestResults({
+    mode: "ORB HISTORY",
+    accent: "#10b981",
+    strategyName: orbStrategy.NAME,
+    endpoint: "/orb-paper/history",
+    from: fromDate, to: toDate,
+    summary: stats,
+    trades,
+    activePage: "orbHistory",
+    extraTradeColumns: [
+      { key: "rangePts", label: "Range (pt)" },
+      { key: "strength", label: "Sig" },
+      { key: "symbol", label: "Symbol" },
+    ],
+    extraStats: [
+      { label: "Avg OR Range", value: trades.length ? `${Math.round(trades.reduce((a, t) => a + (t.rangePts || 0), 0) / trades.length)}pt` : "—" },
+      { label: "STRONG Trades", value: trades.filter(t => t.strength === "STRONG").length },
+      { label: "Sessions", value: data.sessions ? data.sessions.length : 0 },
+      { label: "Capital", value: `₹${(data.capital || 0).toLocaleString("en-IN")}` },
+    ],
+    notes: "All paper-trade trades, every session. Filters/sorts/pagination active. Use the date range and presets to scope.",
+  }));
 });
+
+// Parse "DD/MM/YYYY, HH:MM:SS" → unix sec (treats as IST). Falls back to session date.
+function parseEntryTimeToTs(timeStr, fallbackDate) {
+  if (!timeStr) {
+    if (!fallbackDate) return 0;
+    return Math.floor(new Date(fallbackDate).getTime() / 1000);
+  }
+  const m = timeStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const d = parseInt(m[1], 10), mo = parseInt(m[2], 10) - 1, y = parseInt(m[3], 10);
+    const h = parseInt(m[4], 10), mi = parseInt(m[5], 10), s = m[6] ? parseInt(m[6], 10) : 0;
+    return Math.floor(Date.UTC(y, mo, d, h, mi, s) / 1000) - 19800;
+  }
+  return Math.floor(Date.now() / 1000);
+}
 
 // ── Error helper ────────────────────────────────────────────────────────────
 

@@ -668,19 +668,49 @@ router.get("/status/data", (req, res) => {
     ? parseFloat((state.ceLtp + state.peLtp).toFixed(2))
     : null;
   const data = loadData();
+
+  // Live P&L (pair-level)
+  let livePnl = null;
+  if (pos && state.ceLtp != null && state.peLtp != null) {
+    const lot = pos.qty || instrumentConfig.getLotQty();
+    livePnl = parseFloat((((state.ceLtp - pos.ce.entryLtp) + (state.peLtp - pos.pe.entryLtp)) * lot).toFixed(2));
+  }
+
+  // Cumulative P&L from pair-level (group by pairId)
+  const pairMap = new Map();
+  for (const t of state.sessionTrades) {
+    if (!t.pairId) continue;
+    if (!pairMap.has(t.pairId)) pairMap.set(t.pairId, { ts: 0, pnl: 0 });
+    const p = pairMap.get(t.pairId);
+    p.pnl += (t.pnl || 0);
+    p.ts = t.exitTime || t.entryTime;
+  }
+  const pairs = Array.from(pairMap.values());
+  let cum = 0;
+  const cumPnl = pairs.map(p => { cum += p.pnl; return { t: p.ts, pnl: parseFloat(cum.toFixed(2)) }; });
+
+  const wins = pairs.filter(p => p.pnl > 0).length;
+  const losses = pairs.filter(p => p.pnl < 0).length;
+  const winRate = pairs.length ? ((wins / pairs.length) * 100).toFixed(1) : null;
+  const bestPair = pairs.length ? Math.max(...pairs.map(p => p.pnl)) : null;
+  const worstPair = pairs.length ? Math.min(...pairs.map(p => p.pnl)) : null;
+
   res.json({
     running:        state.running,
     sessionPnl:     state.sessionPnl,
     pairsTaken:     state.pairsTaken,
-    sessionTrades:  state.sessionTrades.slice(-30),
-    log:            state.log.slice(-50),
+    sessionTrades:  state.sessionTrades.slice(-50),
+    log:            state.log.slice(-100),
     tickCount:      state.tickCount,
     lastTickPrice:  state.lastTickPrice,
     candles:        state.candles.length,
     ceLtp:          state.ceLtp,
     peLtp:          state.peLtp,
     combined,
+    livePnl,
     vix:            getCachedVix(),
+    wins, losses, winRate, bestPair, worstPair,
+    cumPnl,
     position: pos ? {
       pairId: pos.pairId, strike: pos.strike, expiry: pos.expiry,
       entrySpot: pos.entrySpot, entryTime: pos.entryTime,
@@ -703,6 +733,7 @@ router.get("/status", (req, res) => {
 ${faviconLink()}
 <title>Straddle Paper Trade</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -711,175 +742,293 @@ ${sidebarCSS()}
 ${modalCSS()}
 .main{flex:1;margin-left:200px;padding:16px 22px 40px;min-height:100vh;}
 @media(max-width:900px){.main{margin-left:0;padding:14px;}}
+.crumb{background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 22px;display:flex;align-items:center;gap:7px;margin:-16px -22px 14px;position:sticky;top:0;z-index:90;}
+.crumb span.chip{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;}
 .page-title{font-size:1.05rem;font-weight:700;margin-bottom:2px;}
-.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:12px;}
-.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
-@media(max-width:1100px){.grid{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:560px){.grid{grid-template-columns:repeat(2,1fr);}}
+.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:14px;}
+.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:14px;}
+@media(max-width:1400px){.grid{grid-template-columns:repeat(4,1fr);}}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr);}}
 .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:11px 13px;position:relative;overflow:hidden;}
-.sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#a855f7;}
+.sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#ec4899;}
+.sc.blue::before{background:#3b82f6;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}
 .sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
 .sc-val{font-size:1.1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+.sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;font-family:'IBM Plex Mono',monospace;}
 .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;margin-bottom:14px;}
-.panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+.panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:space-between;}
+.chart-wrap{position:relative;height:240px;}
 .log{background:#040c18;border:0.5px solid #0e1e36;border-radius:6px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#94a3b8;max-height:280px;overflow-y:auto;white-space:pre-wrap;line-height:1.55;}
+.log-search{background:#040c18;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 8px;border-radius:5px;font-size:0.7rem;font-family:inherit;width:160px;}
 table{width:100%;border-collapse:collapse;font-size:0.66rem;font-family:'IBM Plex Mono',monospace;}
 th,td{padding:6px 8px;text-align:left;border-bottom:0.5px solid #0e1e36;}
 th{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;background:#040c18;}
 .pos{color:#10b981;}.neg{color:#ef4444;}.muted{color:#3a5070;}
 .empty{text-align:center;color:#3a5070;padding:18px 0;font-size:0.7rem;}
+.pos-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
+.pos-cell{background:#040c18;border:0.5px solid #0e1e36;border-radius:8px;padding:9px 12px;}
+.pos-cell-l{font-size:0.5rem;text-transform:uppercase;color:#3a5070;letter-spacing:1.2px;}
+.pos-cell-v{font-size:0.92rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px;}
+.leg-row{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px;}
+@media(max-width:900px){.pos-row,.leg-row{grid-template-columns:1fr;}}
 </style></head><body>
 ${buildSidebar('straddlePaper', liveActive, state.running, {
   showStartBtn: !state.running, startBtnJs: `location.href='/straddle-paper/start'`, startLabel: '▶ Start Straddle',
   showStopBtn: state.running,   stopBtnJs:  `location.href='/straddle-paper/stop'`,  stopLabel:  '■ Stop Straddle',
-  showExitBtn: state.running,   exitBtnJs:  `location.href='/straddle-paper/exit'`,  exitLabel:  '🚪 Exit Pair',
+  showExitBtn: state.running && !!state.position, exitBtnJs: `location.href='/straddle-paper/exit'`, exitLabel: '🚪 Exit Pair',
 })}
 <main class="main">
-  <div class="page-title">📋 Straddle Paper Trade</div>
-  <div class="page-sub">${straddleStrategy.NAME} — paired ATM CE+PE long (volatility play, simulated)</div>
-  <div class="grid">
-    <div class="sc"><div class="sc-label">Status</div><div class="sc-val" id="status">—</div></div>
-    <div class="sc"><div class="sc-label">Session P&L</div><div class="sc-val" id="pnl">—</div></div>
-    <div class="sc"><div class="sc-label">Pairs</div><div class="sc-val" id="pairs">—</div></div>
-    <div class="sc"><div class="sc-label">Spot</div><div class="sc-val" id="spot">—</div></div>
-    <div class="sc"><div class="sc-label">Net Debit (live)</div><div class="sc-val" id="combined">—</div></div>
-    <div class="sc"><div class="sc-label">VIX</div><div class="sc-val" id="vix">—</div></div>
+  <div class="crumb">
+    <span class="chip" style="background:rgba(236,72,153,0.1);color:#ec4899;border:0.5px solid rgba(236,72,153,0.3);">🎯 STRADDLE PAPER</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span class="chip" style="background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);">${straddleStrategy.NAME}</span>
+    <span style="color:#1e2a40;font-size:10px;">›</span>
+    <span class="chip" id="crumb-status" style="background:rgba(74,96,128,0.15);color:#94a3b8;border:0.5px solid rgba(74,96,128,0.3);">—</span>
+    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;" id="crumb-tick">— ticks · — candles</span>
   </div>
-  <div class="panel"><h3>Open Pair</h3><div id="position-box" class="empty">No open pair</div></div>
-  <div class="panel"><h3>Session Trades (leg-flat)</h3><div id="trades-box" class="empty">No trades yet</div></div>
-  <div class="panel"><h3>Activity Log</h3><div id="log" class="log">—</div></div>
+  <div class="page-title">🎯 Straddle Paper Trade <span style="font-size:0.65rem;color:#4a6080;font-weight:400;margin-left:8px;">paired ATM CE+PE long · volatility play · simulated orders</span></div>
+  <div class="page-sub">BB-squeeze / low-VIX / event-day triggers. Combined-premium ±${((parseFloat(process.env.STRADDLE_TARGET_PCT || "0.4"))*100).toFixed(0)}%/−${((parseFloat(process.env.STRADDLE_STOP_PCT || "0.25"))*100).toFixed(0)}% exits.</div>
+
+  <div class="grid">
+    <div class="sc"><div class="sc-label">Status</div><div class="sc-val" id="status">—</div><div class="sc-sub" id="status-sub">—</div></div>
+    <div class="sc blue"><div class="sc-label">Session P&L</div><div class="sc-val" id="pnl">—</div><div class="sc-sub" id="pnl-sub">— closed pairs</div></div>
+    <div class="sc"><div class="sc-label">Live PnL</div><div class="sc-val" id="livePnl">—</div><div class="sc-sub" id="livePnl-sub">unrealised</div></div>
+    <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val" id="wr">—</div><div class="sc-sub" id="wr-sub">— W · — L</div></div>
+    <div class="sc"><div class="sc-label">Best Pair</div><div class="sc-val pos" id="bestT">—</div><div class="sc-sub">single best</div></div>
+    <div class="sc red"><div class="sc-label">Worst Pair</div><div class="sc-val neg" id="worstT">—</div><div class="sc-sub">single worst</div></div>
+    <div class="sc purple"><div class="sc-label">Spot · VIX</div><div class="sc-val" id="spotVix">—</div><div class="sc-sub" id="comb">Live combined —</div></div>
+    <div class="sc"><div class="sc-label">All-Time</div><div class="sc-val" id="totalPnl">—</div><div class="sc-sub">since first session</div></div>
+  </div>
+
+  <div class="panel">
+    <h3><span>📌 Open Pair</span><span id="livePnlBadge" style="font-size:0.85rem;color:#94a3b8;"></span></h3>
+    <div id="position-box" class="empty">No open pair — waiting for volatility trigger</div>
+  </div>
+
+  <div class="panel">
+    <h3><span>📈 Today&apos;s Cumulative P&amp;L (per pair)</span><span id="chartHint" style="font-size:0.6rem;color:#4a6080;">— pairs</span></h3>
+    <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h3><span>📜 Session Trades (leg-flat, latest first)</span><span id="tradesHint" style="font-size:0.6rem;color:#4a6080;">— rows</span></h3>
+    <div id="trades-box" class="empty">No trades yet</div>
+  </div>
+
+  <div class="panel">
+    <h3><span>📓 Activity Log</span>
+      <span><input class="log-search" id="logSearch" placeholder="Search log…" oninput="filterLog()"/></span>
+    </h3>
+    <div id="log" class="log">—</div>
+  </div>
 </main>
 <script>
 ${modalJS()}
-${toastJS ? toastJS() : ""}
+var _pnlChart = null;
+var _rawLog = [];
+
 async function refresh() {
   try {
-    const r = await fetch('/straddle-paper/status/data');
+    const r = await fetch('/straddle-paper/status/data', {cache:'no-store'});
     const d = await r.json();
+    var pnlCls = d.sessionPnl > 0 ? 'pos' : d.sessionPnl < 0 ? 'neg' : 'muted';
+
     document.getElementById('status').innerHTML = d.running ? '<span class="pos">RUNNING</span>' : '<span class="muted">STOPPED</span>';
-    document.getElementById('pnl').innerHTML    = '<span class="' + (d.sessionPnl > 0 ? 'pos' : d.sessionPnl < 0 ? 'neg' : 'muted') + '">₹' + d.sessionPnl.toFixed(2) + '</span>';
-    document.getElementById('pairs').textContent = d.pairsTaken;
-    document.getElementById('spot').textContent = d.lastTickPrice ? d.lastTickPrice.toFixed(2) : '—';
-    document.getElementById('combined').textContent = d.combined != null ? '₹' + d.combined : '—';
-    document.getElementById('vix').textContent = d.vix != null ? d.vix.toFixed(2) : '—';
-    document.getElementById('log').textContent = (d.log || []).join('\\n');
+    document.getElementById('status-sub').textContent = (d.pairsTaken||0) + ' pairs taken';
+    document.getElementById('crumb-status').innerHTML = d.running ? '<span style="color:#10b981;">● RUNNING</span>' : '<span style="color:#94a3b8;">○ STOPPED</span>';
+    document.getElementById('crumb-tick').textContent = (d.tickCount||0) + ' ticks · ' + (d.candles||0) + ' candles';
+    document.getElementById('pnl').innerHTML = '<span class="' + pnlCls + '">₹' + d.sessionPnl.toFixed(2) + '</span>';
+    document.getElementById('pnl-sub').textContent = (d.pairsTaken||0) + ' pair' + ((d.pairsTaken||0)===1?'':'s');
+    if(d.livePnl != null){
+      var lc = d.livePnl > 0 ? 'pos' : d.livePnl < 0 ? 'neg' : 'muted';
+      document.getElementById('livePnl').innerHTML = '<span class="' + lc + '">₹' + d.livePnl.toFixed(2) + '</span>';
+      document.getElementById('livePnl-sub').textContent = 'unrealised (both legs)';
+    } else {
+      document.getElementById('livePnl').textContent = '—';
+      document.getElementById('livePnl-sub').textContent = 'no open pair';
+    }
+    document.getElementById('wr').textContent = (d.winRate != null ? d.winRate + '%' : '—');
+    document.getElementById('wr-sub').textContent = (d.wins||0) + 'W · ' + (d.losses||0) + 'L';
+    document.getElementById('bestT').textContent = d.bestPair != null ? '₹' + d.bestPair.toFixed(0) : '—';
+    document.getElementById('worstT').textContent = d.worstPair != null ? '₹' + d.worstPair.toFixed(0) : '—';
+    document.getElementById('spotVix').textContent = (d.lastTickPrice ? d.lastTickPrice.toFixed(2) : '—') + ' · VIX ' + (d.vix != null ? d.vix.toFixed(1) : '—');
+    document.getElementById('comb').textContent = d.combined != null ? 'Live combined ₹' + d.combined : 'No live combined';
+    document.getElementById('totalPnl').innerHTML = '<span class="' + (d.totalPnl>=0?'pos':'neg') + '">₹' + (d.totalPnl||0).toLocaleString('en-IN', {maximumFractionDigits:0}) + '</span>';
+
+    _rawLog = d.log || [];
+    filterLog();
 
     if (d.position) {
       const p = d.position;
       const ceCur = p.ce.curLtp != null ? p.ce.curLtp : p.ce.entryLtp;
       const peCur = p.pe.curLtp != null ? p.pe.curLtp : p.pe.entryLtp;
-      const combined = (ceCur + peCur).toFixed(2);
+      const combined = +(ceCur + peCur).toFixed(2);
       const liveCls = combined >= p.netDebit ? 'pos' : 'neg';
+      const liveBadge = (d.livePnl != null) ? '<span class="' + (d.livePnl>=0?'pos':'neg') + '">₹' + d.livePnl.toFixed(0) + '</span>' : '—';
+      document.getElementById('livePnlBadge').innerHTML = liveBadge + ' live';
+      document.getElementById('position-box').className = '';
       document.getElementById('position-box').innerHTML =
-        '<table>' +
-        '<tr><th>Pair</th><th>Strike</th><th>Expiry</th><th>Entry Spot</th><th>Entry Time</th><th>Net Debit</th><th>Live Combined</th><th>Target</th><th>SL</th><th>Trigger</th></tr>' +
-        '<tr><td>' + p.pairId + '</td><td>' + p.strike + '</td><td>' + p.expiry + '</td><td>' + p.entrySpot + '</td><td>' + p.entryTime + '</td><td>₹' + p.netDebit + '</td><td class="' + liveCls + '">₹' + combined + '</td><td>₹' + p.targetNet + '</td><td>₹' + p.stopNet + '</td><td>' + p.trigger + '</td></tr>' +
-        '</table>' +
-        '<table style="margin-top:6px;">' +
-        '<tr><th>Leg</th><th>Symbol</th><th>Entry LTP</th><th>Current LTP</th><th>Δ</th></tr>' +
-        '<tr><td><b style="color:#10b981">CE</b></td><td>' + p.ce.symbol + '</td><td>₹' + p.ce.entryLtp + '</td><td>₹' + ceCur + '</td><td class="' + (ceCur >= p.ce.entryLtp ? 'pos' : 'neg') + '">' + (ceCur - p.ce.entryLtp).toFixed(2) + '</td></tr>' +
-        '<tr><td><b style="color:#ef4444">PE</b></td><td>' + p.pe.symbol + '</td><td>₹' + p.pe.entryLtp + '</td><td>₹' + peCur + '</td><td class="' + (peCur >= p.pe.entryLtp ? 'pos' : 'neg') + '">' + (peCur - p.pe.entryLtp).toFixed(2) + '</td></tr>' +
-        '</table>';
+        '<div class="pos-row">' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Pair</div><div class="pos-cell-v" style="font-size:0.72rem;">' + p.pairId + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Strike · Expiry</div><div class="pos-cell-v">' + p.strike + ' · ' + p.expiry + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Entry Spot · Time</div><div class="pos-cell-v">' + p.entrySpot + '<span style="font-weight:400;color:#94a3b8;font-size:0.7rem;"> · ' + p.entryTime + '</span></div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Trigger</div><div class="pos-cell-v" style="color:#fbbf24;">' + p.trigger + ' [' + (p.signalStrength||'—') + ']</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Qty (per leg)</div><div class="pos-cell-v">' + p.qty + '</div></div>' +
+        '</div>' +
+        '<div class="pos-row" style="margin-top:10px;">' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Net Debit</div><div class="pos-cell-v">₹' + p.netDebit + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Live Combined</div><div class="pos-cell-v ' + liveCls + '">₹' + combined + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Target / Stop</div><div class="pos-cell-v"><span class="pos">₹' + p.targetNet + '</span> / <span class="neg">₹' + p.stopNet + '</span></div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Peak Combined</div><div class="pos-cell-v">₹' + p.peakCombined + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Live P&amp;L</div><div class="pos-cell-v ' + (d.livePnl != null && d.livePnl >= 0 ? 'pos' : d.livePnl != null ? 'neg' : 'muted') + '">' + (d.livePnl != null ? '₹' + d.livePnl.toFixed(2) : '—') + '</div></div>' +
+        '</div>' +
+        '<div class="leg-row">' +
+        '  <div class="pos-cell" style="border-left:3px solid #10b981;"><div class="pos-cell-l">CE Leg</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">' + p.ce.symbol + '</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.78rem;font-family:\\'IBM Plex Mono\\',monospace;"><span>₹' + p.ce.entryLtp + ' → ₹' + ceCur + '</span><span class="' + (ceCur >= p.ce.entryLtp ? 'pos' : 'neg') + '">' + (ceCur - p.ce.entryLtp >= 0 ? '+' : '') + (ceCur - p.ce.entryLtp).toFixed(2) + '</span></div></div>' +
+        '  <div class="pos-cell" style="border-left:3px solid #ef4444;"><div class="pos-cell-l">PE Leg</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">' + p.pe.symbol + '</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.78rem;font-family:\\'IBM Plex Mono\\',monospace;"><span>₹' + p.pe.entryLtp + ' → ₹' + peCur + '</span><span class="' + (peCur >= p.pe.entryLtp ? 'pos' : 'neg') + '">' + (peCur - p.pe.entryLtp >= 0 ? '+' : '') + (peCur - p.pe.entryLtp).toFixed(2) + '</span></div></div>' +
+        '</div>';
     } else {
       document.getElementById('position-box').className = 'empty';
-      document.getElementById('position-box').textContent = 'No open pair';
+      document.getElementById('position-box').textContent = d.running ? 'No open pair — waiting for volatility trigger' : 'No open pair';
+      document.getElementById('livePnlBadge').textContent = '';
     }
 
     const trades = d.sessionTrades || [];
+    document.getElementById('tradesHint').textContent = trades.length + ' row' + (trades.length===1?'':'s');
     if (trades.length) {
       const rows = trades.slice().reverse().map(function(t){
         var cls = t.pnl > 0 ? 'pos' : (t.pnl < 0 ? 'neg' : 'muted');
-        return '<tr><td>' + (t.pairId||'') + '</td><td>' + (t.leg||'') + '</td><td>' + (t.symbol||'') + '</td><td>' + (t.entryTime||'') + '</td><td>₹' + (t.optionEntryLtp||'') + '</td><td>₹' + (t.optionExitLtp||'') + '</td><td class="' + cls + '"><b>₹' + (t.pnl != null ? t.pnl.toFixed(2) : '—') + '</b></td><td style="color:#94a3b8">' + (t.exitReason||'') + '</td></tr>';
+        var legCls = t.leg === 'CE' ? 'pos' : 'neg';
+        return '<tr><td style="font-size:0.62rem;">' + (t.pairId||'') + '</td><td class="' + legCls + '"><b>' + (t.leg||'') + '</b></td><td>' + (t.symbol||'') + '</td><td>' + (t.entryTime||'') + '</td><td>' + (t.exitTime||'') + '</td><td>₹' + (t.optionEntryLtp||'') + '</td><td>₹' + (t.optionExitLtp||'') + '</td><td class="' + cls + '"><b>₹' + (t.pnl != null ? t.pnl.toFixed(2) : '—') + '</b></td><td style="color:#94a3b8;font-size:0.65rem;">' + (t.exitReason||'') + '</td></tr>';
       }).join('');
       document.getElementById('trades-box').className = '';
-      document.getElementById('trades-box').innerHTML = '<table><tr><th>Pair</th><th>Leg</th><th>Symbol</th><th>Entry</th><th>E.LTP</th><th>X.LTP</th><th>Leg PnL</th><th>Exit</th></tr>' + rows + '</table>';
+      document.getElementById('trades-box').innerHTML = '<table><tr><th>Pair</th><th>Leg</th><th>Symbol</th><th>Entry</th><th>Exit</th><th>E.LTP</th><th>X.LTP</th><th>Leg PnL</th><th>Exit Reason</th></tr>' + rows + '</table>';
     } else {
       document.getElementById('trades-box').className = 'empty';
       document.getElementById('trades-box').textContent = 'No trades yet';
     }
-  } catch (e) { /* swallow */ }
+
+    renderChart(d.cumPnl || []);
+    document.getElementById('chartHint').textContent = (d.cumPnl ? d.cumPnl.length : 0) + ' pair' + ((d.cumPnl && d.cumPnl.length===1)?'':'s');
+  } catch (e) {}
 }
-refresh(); setInterval(refresh, 2000);
+
+function filterLog(){
+  var q = (document.getElementById('logSearch').value || '').toLowerCase();
+  var lines = q ? _rawLog.filter(function(l){ return l.toLowerCase().indexOf(q) >= 0; }) : _rawLog;
+  document.getElementById('log').textContent = lines.join('\\n');
+}
+
+function renderChart(points){
+  var ctx = document.getElementById('pnlChart');
+  if(!ctx) return;
+  if(_pnlChart){ _pnlChart.destroy(); _pnlChart = null; }
+  var labels = points.map(function(_, i){ return i+1; });
+  var data = points.map(function(p){ return p.pnl; });
+  var endP = data.length ? data[data.length-1] : 0;
+  var col = endP >= 0 ? '#ec4899' : '#ef4444';
+  _pnlChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels: labels, datasets:[{ data: data, borderColor: col, borderWidth: 2, backgroundColor: col+'22', fill: true, pointRadius: 3, tension: 0.3 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{title:function(ctx){return 'Pair #'+ctx[0].label;}, label:function(ctx){return '₹'+Math.round(ctx.raw).toLocaleString('en-IN');}}}}, scales:{ x:{ticks:{color:'#3a5070',font:{size:9}}, grid:{display:false}}, y:{ticks:{color:'#3a5070',font:{size:9},callback:function(v){return '₹'+Math.round(v/1000)+'k';}}, grid:{color:'#0e1e36'}} } }
+  });
+}
+
+refresh();
+setInterval(refresh, 2000);
 </script>
 </body></html>`;
   res.send(html);
 });
 
-// ── History page ────────────────────────────────────────────────────────────
+// ── History page (reuses backtestUI renderer for full parity) ────────────────
 
 router.get("/history", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
   const data = loadData();
-  // Group by pairId for net P&L view; flat list also useful
-  const allLegs = [];
-  for (const s of (data.sessions || [])) {
-    for (const t of (s.trades || [])) {
-      allLegs.push({
-        date:       (s.date || "").slice(0, 10),
-        pairId:     t.pairId, leg: t.leg, side: t.side,
-        symbol:     t.symbol, strike: t.optionStrike, expiry: t.optionExpiry,
-        entryTime:  t.entryTime, exitTime: t.exitTime,
-        optEntry:   t.optionEntryLtp, optExit: t.optionExitLtp,
-        pnl:        t.pnl, pairPnl: t.pairPnl,
-        exitReason: t.exitReason, trigger: t.trigger,
-        strength:   t.signalStrength,
-      });
+
+  // Group legs into pairs; one row per pair using pair-level P&L
+  const pairMap = new Map();
+  for (const sess of (data.sessions || [])) {
+    for (const t of (sess.trades || [])) {
+      if (!t.pairId) continue;
+      if (!pairMap.has(t.pairId)) {
+        pairMap.set(t.pairId, {
+          pairId: t.pairId, entryTime: t.entryTime, exitTime: t.exitTime,
+          strike: t.optionStrike, expiry: t.optionExpiry,
+          spotEntry: t.spotAtEntry, spotExit: t.spotAtExit,
+          ce: null, pe: null,
+          pairPnl: t.pairPnl, exitReason: t.exitReason,
+          trigger: t.trigger, strength: t.signalStrength,
+          netDebit: t.netDebit, netTarget: t.netTarget, netStop: t.netStop,
+          heldMs: t.durationMs,
+        });
+      }
+      const p = pairMap.get(t.pairId);
+      if (t.leg === "CE") p.ce = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
+      if (t.leg === "PE") p.pe = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
     }
   }
-  // Aggregate pair-level rows
-  const pairMap = new Map();
-  for (const l of allLegs) {
-    if (!l.pairId) continue;
-    if (!pairMap.has(l.pairId)) pairMap.set(l.pairId, { pairId: l.pairId, date: l.date, strike: l.strike, expiry: l.expiry, entryTime: l.entryTime, exitTime: l.exitTime, ce: null, pe: null, pairPnl: l.pairPnl, trigger: l.trigger, exitReason: l.exitReason, strength: l.strength });
-    const p = pairMap.get(l.pairId);
-    if (l.leg === "CE") p.ce = l;
-    if (l.leg === "PE") p.pe = l;
-  }
-  const pairs = Array.from(pairMap.values()).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  const wins   = pairs.filter(p => (p.pairPnl || 0) > 0).length;
-  const losses = pairs.filter(p => (p.pairPnl || 0) < 0).length;
-  const wr = pairs.length ? ((wins / pairs.length) * 100).toFixed(1) : "0.0";
-  const totalPnl = pairs.reduce((a, p) => a + (p.pairPnl || 0), 0);
 
-  const rows = pairs.map(p => {
-    const cls = (p.pairPnl || 0) > 0 ? "pos" : (p.pairPnl || 0) < 0 ? "neg" : "muted";
-    return `<tr><td>${p.date}</td><td>${p.entryTime || ""}</td><td>${p.strike || ""}</td><td>${p.expiry || ""}</td><td>${p.ce ? "₹" + p.ce.optEntry + "→₹" + p.ce.optExit + " (" + (p.ce.pnl >= 0 ? "+" : "") + p.ce.pnl + ")" : "—"}</td><td>${p.pe ? "₹" + p.pe.optEntry + "→₹" + p.pe.optExit + " (" + (p.pe.pnl >= 0 ? "+" : "") + p.pe.pnl + ")" : "—"}</td><td>${p.trigger || ""}</td><td>${p.strength || ""}</td><td class="${cls}"><b>₹${(p.pairPnl || 0).toFixed(2)}</b></td><td style="color:#94a3b8">${p.exitReason || ""}</td></tr>`;
-  }).join("");
+  const trades = Array.from(pairMap.values()).map(p => {
+    const entryTs = parseEntryTimeToTs(p.entryTime);
+    const exitTs  = parseEntryTimeToTs(p.exitTime);
+    return {
+      side: "STRADDLE",
+      entry: p.entryTime || "", exit: p.exitTime || "",
+      entryTs, exitTs,
+      ePrice: p.spotEntry, xPrice: p.spotExit,
+      sl: p.netStop,
+      pnl: p.pairPnl != null ? p.pairPnl : (p.ce && p.pe ? (p.ce.pnl + p.pe.pnl) : 0),
+      reason: p.exitReason, entryReason: `${p.trigger || ""} [${p.strength || ""}]`,
+      netDebit: p.netDebit,
+      trigger: p.trigger, strength: p.strength,
+      cePnl: p.ce ? p.ce.pnl : 0, pePnl: p.pe ? p.pe.pnl : 0,
+      strike: p.strike, expiry: p.expiry,
+      heldDays: p.heldMs ? (p.heldMs / 86400000).toFixed(2) : "0.00",
+    };
+  });
+  trades.sort((a, b) => (b.entryTs || 0) - (a.entryTs || 0));
+  const stats = computeBacktestStats(trades);
 
-  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"/>${faviconLink()}<title>Straddle History</title>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,sans-serif;}
-body{background:#040c18;color:#e0eaf8;}
-${sidebarCSS()}
-.main{flex:1;margin-left:200px;padding:16px 22px;}
-@media(max-width:900px){.main{margin-left:0;padding:14px;}}
-.title{font-size:1.05rem;font-weight:700;margin-bottom:8px;}
-.stats{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
-.stat{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:10px 14px;}
-.stat-l{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.stat-v{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-table{width:100%;border-collapse:collapse;font-size:0.65rem;font-family:'IBM Plex Mono',monospace;background:#07111f;border:0.5px solid #0e1e36;border-radius:8px;overflow:hidden;}
-th,td{padding:6px 8px;text-align:left;border-bottom:0.5px solid #0e1e36;}
-th{background:#040c18;font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.pos{color:#10b981;}.neg{color:#ef4444;}.muted{color:#3a5070;}
-</style></head><body>
-${buildSidebar('straddleHistory', liveActive, false)}
-<main class="main">
-  <div class="title">📜 Straddle Paper Trade History (per-pair)</div>
-  <div class="stats">
-    <div class="stat"><div class="stat-l">Total Pairs</div><div class="stat-v">${pairs.length}</div></div>
-    <div class="stat"><div class="stat-l">Win Rate</div><div class="stat-v">${wr}%</div></div>
-    <div class="stat"><div class="stat-l">Wins / Losses</div><div class="stat-v">${wins} / ${losses}</div></div>
-    <div class="stat"><div class="stat-l">Net P&L</div><div class="stat-v ${totalPnl > 0 ? "pos" : totalPnl < 0 ? "neg" : "muted"}">₹${totalPnl.toFixed(2)}</div></div>
-  </div>
-  <table>
-    <tr><th>Date</th><th>Entry</th><th>Strike</th><th>Expiry</th><th>CE Leg</th><th>PE Leg</th><th>Trigger</th><th>Sig</th><th>Pair PnL</th><th>Exit Reason</th></tr>
-    ${rows || `<tr><td colspan="10" style="text-align:center;color:#3a5070;padding:24px;">No pairs yet</td></tr>`}
-  </table>
-</main>
-</body></html>`);
+  const dates = trades.map(t => (t.entry || "").split(",")[0].trim()).filter(Boolean);
+  const fromDate = dates.length ? dates[dates.length - 1] : "—";
+  const toDate   = dates.length ? dates[0] : "—";
+
+  res.send(renderBacktestResults({
+    mode: "STRADDLE HISTORY",
+    accent: "#ec4899",
+    strategyName: straddleStrategy.NAME,
+    endpoint: "/straddle-paper/history",
+    from: fromDate, to: toDate,
+    summary: stats,
+    trades,
+    activePage: "straddleHistory",
+    extraTradeColumns: [
+      { key: "trigger", label: "Trigger" },
+      { key: "netDebit", label: "Debit ₹" },
+      { key: "heldDays", label: "Held (d)" },
+      { key: "strike", label: "Strike" },
+    ],
+    extraStats: [
+      { label: "BB Squeeze Pairs", value: trades.filter(t => t.trigger === "BB_SQUEEZE").length },
+      { label: "Low-VIX Pairs",    value: trades.filter(t => t.trigger === "LOW_VIX_CHEAP").length },
+      { label: "Forced Entries",   value: trades.filter(t => t.trigger === "FORCED_EVENT").length },
+      { label: "Sessions",         value: data.sessions ? data.sessions.length : 0 },
+    ],
+    notes: "Pair-level P&L (one row per straddle pair). Filters/sorts active. Each row's reason is the combined-premium exit decision (target/SL/time-stop).",
+  }));
 });
+
+function parseEntryTimeToTs(timeStr) {
+  if (!timeStr) return 0;
+  const m = timeStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const d = parseInt(m[1], 10), mo = parseInt(m[2], 10) - 1, y = parseInt(m[3], 10);
+    const h = parseInt(m[4], 10), mi = parseInt(m[5], 10), s = m[6] ? parseInt(m[6], 10) : 0;
+    return Math.floor(Date.UTC(y, mo, d, h, mi, s) / 1000) - 19800;
+  }
+  return Math.floor(Date.now() / 1000);
+}
 
 function _errorPage(title, message, backHref, backLabel) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>${faviconLink()}<title>${title}</title>
