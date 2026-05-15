@@ -365,11 +365,13 @@ app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live v
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
-// ── ORB / Straddle paper-trade routes (parallel new strategies, paper-only v1) ──
-app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade (Opening Range Breakout, 1 trade/day)
-app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest (delta+theta sim)
-app.use("/straddle-paper",    require("./routes/straddlePaper")); // ← Straddle paper trade (long ATM CE+PE paired)
-app.use("/straddle-backtest", require("./routes/straddleBacktest")); // ← Straddle date-range backtest (paired delta+theta)
+// ── ORB / Straddle routes (parallel strategies — paper, backtest, live) ─────
+app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade
+app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest
+app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIVE — real Fyers orders (DRY-RUN gated)
+app.use("/straddle-paper",    require("./routes/straddlePaper")); // ← Straddle paper trade
+app.use("/straddle-backtest", require("./routes/straddleBacktest")); // ← Straddle date-range backtest
+app.use("/straddle-live",     require("./routes/straddleLive"));  // ← Straddle LIVE — paired real Fyers orders (DRY-RUN gated)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
@@ -1417,7 +1419,7 @@ async function pollDashboardStatus(){
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
 var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${straddleModeOn ? ",'/straddle-paper/start'" : ""}];
-var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}];
+var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}${straddleModeOn ? ",'/straddle-live/start'" : ""}];
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1542,8 +1544,8 @@ var ALL_BTN_POLL = [
   { url:'/swing-live/status/data',  kind:'live'  }
   ${scalpModeOn ? ",{ url:'/scalp-paper/status/data', kind:'paper' },{ url:'/scalp-live/status/data', kind:'live' }" : ""}
   ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
-  ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' }" : ""}
-  ${straddleModeOn ? ",{ url:'/straddle-paper/status/data', kind:'paper' }" : ""}
+  ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' },{ url:'/orb-live/status/data', kind:'live' }" : ""}
+  ${straddleModeOn ? ",{ url:'/straddle-paper/status/data', kind:'paper' },{ url:'/straddle-live/status/data', kind:'live' }" : ""}
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
@@ -2486,7 +2488,7 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE");
+    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE" || m === "STRADDLE_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
 
     // Call stopSession() on each active route — this triggers squareOff for live modes
@@ -2496,7 +2498,9 @@ async function gracefulShutdown(signal) {
       "PA_LIVE":        require("./routes/paLive"),
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
+      "ORB_LIVE":       require("./routes/orbLive"),
       "STRADDLE_PAPER": require("./routes/straddlePaper"),
+      "STRADDLE_LIVE":  require("./routes/straddleLive"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];

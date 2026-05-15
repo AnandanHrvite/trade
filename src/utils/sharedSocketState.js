@@ -157,9 +157,19 @@ function canStart(mode) {
       return { allowed: true };
     case "ORB_PAPER":
       if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is already running" };
+      if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is running — stop it first" };
+      return { allowed: true };
+    case "ORB_LIVE":
+      if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is running — stop it first" };
+      if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is already running" };
       return { allowed: true };
     case "STRADDLE_PAPER":
       if (straddleMode === "STRADDLE_PAPER") return { allowed: false, reason: "Straddle Paper is already running" };
+      if (straddleMode === "STRADDLE_LIVE")  return { allowed: false, reason: "Straddle Live is running — stop it first" };
+      return { allowed: true };
+    case "STRADDLE_LIVE":
+      if (straddleMode === "STRADDLE_PAPER") return { allowed: false, reason: "Straddle Paper is running — stop it first" };
+      if (straddleMode === "STRADDLE_LIVE")  return { allowed: false, reason: "Straddle Live is already running" };
       return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };

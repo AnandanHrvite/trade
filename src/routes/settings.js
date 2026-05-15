@@ -222,6 +222,7 @@ const SETTINGS_SCHEMA = [
     section: "ORB STRATEGY (Opening Range Breakout) — Fyers",
     icon: "📋",
     fields: [
+      { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for ORB Live trading. Must be true AND LIVE_HARNESS_DRY_RUN=false for real Fyers orders to fire.", default: "false" },
       { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow ORB entries on weekly expiry day (Tuesday)", default: "false" },
       { key: "ORB_VIX_ENABLED", label: "VIX Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block ORB entries when VIX is high (scope: ORB only)", default: "false" },
       { key: "ORB_VIX_MAX_ENTRY", label: "ORB VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "ORB only: block entries above this VIX", default: "22" },
@@ -248,6 +249,7 @@ const SETTINGS_SCHEMA = [
     section: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
     icon: "🎯",
     fields: [
+      { key: "STRADDLE_LIVE_ENABLED", label: "Straddle Live Orders (gates /straddle-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for Straddle Live trading. Both legs (CE + PE) are placed sequentially when on. Partial-fill protection: if PE fails after CE fills, a Telegram alert is sent.", default: "false" },
       { key: "STRADDLE_EXPIRY_DAY_ONLY", label: "Straddle Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow straddle entries on weekly expiry day", default: "false" },
       { key: "STRADDLE_VIX_ENABLED", label: "VIX Filter (Straddle)", type: "toggle", effect: EFFECT.INSTANT, desc: "Use VIX gating for straddle entries", default: "true" },
       { key: "STRADDLE_VIX_MAX_ENTRY", label: "Straddle VIX Max Entry", type: "number", min: 12, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block when VIX > this (premium pumped, poor R:R)", default: "22" },
@@ -408,11 +410,13 @@ const SETTINGS_SCHEMA = [
       // ── ORB submenu ──
       { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the ORB group", default: "true" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the ORB group (needs ORB_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
 
       // ── Straddle submenu ──
       { key: "UI_SHOW_STRADDLE_BACKTEST", label: "Straddle → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Straddle group", default: "true" },
       { key: "UI_SHOW_STRADDLE_PAPER",    label: "Straddle → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_LIVE",     label: "Straddle → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Straddle group (needs STRADDLE_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_STRADDLE_HISTORY",  label: "Straddle → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
