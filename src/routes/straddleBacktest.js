@@ -67,22 +67,22 @@ function runStraddleBacktest(allCandles) {
       const combined = cePrem + pePrem;
 
       if (combined >= position.targetNet) {
-        closePair(position, c.time, cePrem, pePrem, `Combined target (₹${combined.toFixed(1)} >= ₹${position.targetNet})`);
+        closePair(position, c.time, c.close, cePrem, pePrem, `Combined target (₹${combined.toFixed(1)} >= ₹${position.targetNet})`);
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
       if (combined <= position.stopNet) {
-        closePair(position, c.time, cePrem, pePrem, `Combined SL (₹${combined.toFixed(1)} <= ₹${position.stopNet})`);
+        closePair(position, c.time, c.close, cePrem, pePrem, `Combined SL (₹${combined.toFixed(1)} <= ₹${position.stopNet})`);
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
       if (heldDays > MAX_HOLD_D) {
-        closePair(position, c.time, cePrem, pePrem, `Time stop (held ${heldDays.toFixed(1)}d > ${MAX_HOLD_D}d)`);
+        closePair(position, c.time, c.close, cePrem, pePrem, `Time stop (held ${heldDays.toFixed(1)}d > ${MAX_HOLD_D}d)`);
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
       if (heldDays >= MAX_HOLD_D - 1 && istMin >= FORCED_EXIT_MIN) {
-        closePair(position, c.time, cePrem, pePrem, "EOD T-1 (15:15 IST)");
+        closePair(position, c.time, c.close, cePrem, pePrem, "EOD T-1 (15:15 IST)");
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
@@ -120,16 +120,17 @@ function runStraddleBacktest(allCandles) {
     const thetaPerLeg = THETA_DAY * heldDays;
     const cePrem = Math.max(0.05, position.entryCe + spotMoveCE - thetaPerLeg);
     const pePrem = Math.max(0.05, position.entryPe + spotMovePE - thetaPerLeg);
-    closePair(position, c.time, cePrem, pePrem, "End of backtest range");
+    closePair(position, c.time, c.close, cePrem, pePrem, "End of backtest range");
     trades.push(buildTradeRecord(position));
   }
 
-  function closePair(pos, exitTime, exitCe, exitPe, reason) {
+  function closePair(pos, exitTime, exitSpot, exitCe, exitPe, reason) {
     const chargesCE = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.entryCe, exitPremium: exitCe, qty: LOT_SIZE });
     const chargesPE = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.entryPe, exitPremium: exitPe, qty: LOT_SIZE });
     const cePnl = parseFloat(((exitCe - pos.entryCe) * LOT_SIZE - chargesCE).toFixed(2));
     const pePnl = parseFloat(((exitPe - pos.entryPe) * LOT_SIZE - chargesPE).toFixed(2));
     pos.exitTime = exitTime;
+    pos.exitSpot = exitSpot;
     pos.exitCe = parseFloat(exitCe.toFixed(2));
     pos.exitPe = parseFloat(exitPe.toFixed(2));
     pos.cePnl = cePnl; pos.pePnl = pePnl;
@@ -144,7 +145,7 @@ function runStraddleBacktest(allCandles) {
       entry: entryTsStr(p.entryTime),
       exit:  entryTsStr(p.exitTime),
       entryTs: p.entryTime, exitTs: p.exitTime,
-      ePrice: p.entrySpot, xPrice: null, sl: p.stopNet,
+      ePrice: p.entrySpot, xPrice: p.exitSpot, sl: p.stopNet,
       pnl: p.pnl,
       reason: p.exitReason,
       entryReason: p.entryReason,

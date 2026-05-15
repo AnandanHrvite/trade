@@ -389,6 +389,21 @@ function fmtAna(n){ var s = n>=0?'+':'−'; return s + '₹' + Math.round(Math.a
 function fpts(n){ if(n==null) return '—'; var s = n>=0?'+':'−'; return s+'₹'+Math.round(Math.abs(n)).toLocaleString('en-IN'); }
 function fmtDate(dt){ if(!dt) return '—'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+'/'+d[2]; return p[0]||'—'; }
 function fmtTime(dt){ if(!dt) return '—'; var p=dt.split(', '); return p[1]||'—'; }
+// Format exit time-of-day; if exit date differs from entry date, prepend +Nd suffix
+// so the user can see at a glance that a straddle held overnight/multi-day.
+function fmtExitTime(entryDt, exitDt){
+  if(!exitDt) return '—';
+  var ep = entryDt ? entryDt.split(', ')[0] : '';
+  var xp = exitDt.split(', ');
+  var t = xp[1] || '—';
+  if(ep && xp[0] && ep !== xp[0]){
+    // Compute day-delta from DD/MM/YYYY strings
+    function toMs(d){ var s = d.split('/'); return s.length===3 ? Date.UTC(+s[2], +s[1]-1, +s[0]) : 0; }
+    var dd = Math.round((toMs(xp[0]) - toMs(ep)) / 86400000);
+    return t + ' <span style="color:#fbbf24;font-size:0.62rem;">+' + dd + 'd</span>';
+  }
+  return t;
+}
 
 // ── Run button ─────────────────────────────────────────────────────────────
 document.getElementById('runBtn').onclick = function(){
@@ -500,7 +515,7 @@ function render(){
       +'<td style="font-size:0.75rem;">'+fmtDate(t.entry)+'</td>'
       +'<td style="font-size:0.75rem;">'+fmtTime(t.entry)+'</td>'
       +'<td>'+fmt(t.ePrice)+'</td>'
-      +'<td style="font-size:0.75rem;">'+fmtTime(t.exit)+'</td>'
+      +'<td style="font-size:0.75rem;">'+fmtExitTime(t.entry, t.exit)+'</td>'
       +'<td>'+fmt(t.xPrice)+'</td>'
       +'<td style="color:#f59e0b;">'+(t.sl!=null?fmt(t.sl):'—')+'</td>'
       + extraCells
