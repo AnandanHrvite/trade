@@ -163,6 +163,39 @@ router.get("/", (req, res) => {
     .chart-wrap{position:relative;height:240px;}
     .empty{text-align:center;padding:40px 20px;color:#4a6080;font-size:0.8rem;}
 
+    /* ── Analytics panel (parity with paper-history pages) ───────────────── */
+    .ana-panel{margin-bottom:14px;}
+    .ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
+    @media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
+    .ana-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;}
+    .ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
+    .ana-chart-wrap{position:relative;height:220px;}
+    .ana-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px;}
+    @media(max-width:900px){.ana-row3{grid-template-columns:1fr;}}
+    .ana-mini{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;}
+    .ana-mini h3{font-size:0.58rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:8px;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl{width:100%;border-collapse:collapse;}
+    .ana-tbl th{text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:0.8px;color:#1e3050;padding:5px 8px;border-bottom:0.5px solid #0e1e36;font-family:'IBM Plex Mono',monospace;}
+    .ana-tbl td{padding:5px 8px;font-size:0.72rem;font-family:'IBM Plex Mono',monospace;color:#c8d8f0;border-bottom:0.5px solid #060d18;}
+    .ana-tbl tr:hover td{background:rgba(59,130,246,0.04);}
+    .ana-stat{display:flex;align-items:baseline;gap:6px;margin-bottom:6px;}
+    .ana-stat-val{font-size:1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
+    .ana-stat-label{font-size:0.62rem;color:#3a5070;}
+    .ana-section-title{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.5px;color:#ef4444;font-weight:700;margin:16px 0 12px;padding-top:12px;border-top:0.5px solid #0e1e36;font-family:'IBM Plex Mono',monospace;}
+    .ana-section-title.gain{color:#10b981;}
+    .ana-section-title.cross{color:#a855f7;}
+
+    /* Light theme overrides for analytics */
+    :root[data-theme="light"] .ana-card,
+    :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
+    :root[data-theme="light"] .ana-card h3,
+    :root[data-theme="light"] .ana-mini h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
+    :root[data-theme="light"] .ana-tbl td{color:#334155!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
+    :root[data-theme="light"] .ana-stat-label{color:#64748b!important;}
+    :root[data-theme="light"] .ana-section-title{border-color:#e0e4ea!important;}
+
     /* Light theme overrides */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
@@ -268,6 +301,7 @@ router.get("/", (req, res) => {
       <button class="btn" onclick="copyAll()">📋 All Trades</button>
       <button class="btn" onclick="downloadCSV()">⬇ CSV</button>
       <button id="dvToggle" class="btn" onclick="toggleDayView()" style="margin-left:auto;" title="Day-wise P&L summary across all modes">👁 Day View</button>
+      <button id="anaToggle" class="btn" onclick="toggleAnalytics()" title="Performance analytics across all modes (respects filters)">📊 Analytics</button>
     </div>
 
     <!-- Day View (toggleable) -->
@@ -292,6 +326,110 @@ router.get("/", (req, res) => {
           </tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Analytics Panel (toggleable) -->
+    <div id="anaPanel" class="ana-panel" style="display:none;">
+      <!-- Cross-mode comparison (unique to consolidation) -->
+      <div class="ana-mini" style="margin-bottom:12px;">
+        <h3>🧭 Cross-Mode Comparison</h3>
+        <div style="overflow-x:auto;">
+          <table class="ana-tbl">
+            <thead><tr>
+              <th>Mode</th><th>Trades</th><th>Wins</th><th>Losses</th><th>WR%</th>
+              <th>Net P&amp;L</th><th>Avg Win</th><th>Avg Loss</th><th>Profit Factor</th><th>Expectancy</th>
+            </tr></thead>
+            <tbody id="anaModeBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Headline risk metrics + streaks (overall) -->
+      <div class="ana-row3">
+        <div class="ana-mini"><h3>📊 Risk Metrics (overall)</h3><div id="anaRiskMetrics"></div></div>
+        <div class="ana-mini"><h3>🔥 Win / Loss Streaks</h3><div id="anaStreaks"></div></div>
+        <div class="ana-mini"><h3>📅 Day-of-Week</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Day</th><th>Trades</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaDowBody"></tbody></table></div></div>
+      </div>
+
+      <!-- Equity / Monthly / Drawdown / Hourly -->
+      <div class="ana-row">
+        <div class="ana-card"><h3>📈 Equity Curve (per-trade)</h3><div class="ana-chart-wrap"><canvas id="anaEquity"></canvas></div></div>
+        <div class="ana-card"><h3>📊 Monthly P&amp;L</h3><div class="ana-chart-wrap"><canvas id="anaMonthly"></canvas></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-card"><h3>📉 Drawdown</h3><div class="ana-chart-wrap"><canvas id="anaDrawdown"></canvas></div></div>
+        <div class="ana-card"><h3>⏰ Hourly Performance</h3><div class="ana-chart-wrap"><canvas id="anaHourly"></canvas></div></div>
+      </div>
+
+      <!-- Reason breakdowns -->
+      <div class="ana-row">
+        <div class="ana-mini"><h3>📥 Entry Reason Breakdown</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Mode</th><th>Count</th><th>Wins</th><th>Losses</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaEntryBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>🚪 Exit Reason Breakdown</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Mode</th><th>Count</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaExitBody"></tbody></table></div></div>
+      </div>
+
+      <!-- Loss analysis section -->
+      <div class="ana-section-title">🔍 Loss Analysis</div>
+      <div class="ana-row">
+        <div class="ana-card"><h3>📊 Loss Distribution</h3><div class="ana-chart-wrap"><canvas id="anaLossDist"></canvas></div></div>
+        <div class="ana-card"><h3>🔀 CE vs PE Performance</h3><div class="ana-chart-wrap"><canvas id="anaSidePerf"></canvas></div></div>
+      </div>
+      <div class="ana-row3">
+        <div class="ana-mini"><h3>💀 Top 10 Worst Trades</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Mode</th><th>Side</th><th>P&amp;L</th><th>Exit</th></tr></thead><tbody id="anaWorstBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>🔥 Consecutive Loss Streaks</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Start</th><th>Trades</th><th>Total Loss</th><th>Avg Loss</th></tr></thead><tbody id="anaLossStreakBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>📅 Worst Trading Days</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Day P&amp;L</th><th>Losses</th><th>Worst</th></tr></thead><tbody id="anaWorstDayBody"></tbody></table></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-mini"><h3>🚪 Loss by Exit Reason</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Loss Count</th><th>Total Loss</th><th>Avg Loss</th><th>% of Losses</th></tr></thead><tbody id="anaLossReasonBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>⏰ Losing Hours</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Hour</th><th>Losses</th><th>Loss P&amp;L</th><th>Avg Loss</th><th>Loss%</th></tr></thead><tbody id="anaLossHourBody"></tbody></table></div></div>
+      </div>
+
+      <!-- Best trades -->
+      <div class="ana-section-title gain">🏆 Best Performance</div>
+      <div class="ana-row3">
+        <div class="ana-mini"><h3>🌟 Top 10 Best Trades</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Mode</th><th>Side</th><th>P&amp;L</th><th>Exit</th></tr></thead><tbody id="anaBestBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>📅 Best Trading Days</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Day P&amp;L</th><th>Wins</th><th>Best</th></tr></thead><tbody id="anaBestDayBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>⏰ Winning Hours</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Hour</th><th>Wins</th><th>Win P&amp;L</th><th>Avg Win</th><th>Win%</th></tr></thead><tbody id="anaWinHourBody"></tbody></table></div></div>
+      </div>
+
+      <!-- Cross-mode comparison charts -->
+      <div class="ana-section-title cross">🧭 Cross-Mode Detail</div>
+      <div class="ana-row">
+        <div class="ana-card"><h3>📈 Cumulative P&amp;L by Mode</h3><div class="ana-chart-wrap"><canvas id="anaCumByMode"></canvas></div></div>
+        <div class="ana-card"><h3>📊 Monthly P&amp;L (stacked by mode)</h3><div class="ana-chart-wrap"><canvas id="anaMonthlyStacked"></canvas></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-card"><h3>📊 P&amp;L Distribution (all trades)</h3><div class="ana-chart-wrap"><canvas id="anaPnlDist"></canvas></div></div>
+        <div class="ana-card"><h3>📈 Rolling 30-trade Win Rate</h3><div class="ana-chart-wrap"><canvas id="anaRollWr"></canvas></div></div>
+      </div>
+
+      <!-- Time / duration / spot analytics -->
+      <div class="ana-section-title" style="color:#60a5fa;">⏱ Time &amp; Spot Analytics</div>
+      <div class="ana-row">
+        <div class="ana-card"><h3>⏱ Trade Duration Distribution (minutes)</h3><div class="ana-chart-wrap"><canvas id="anaDurDist"></canvas></div></div>
+        <div class="ana-card"><h3>🎯 NIFTY Spot Move Distribution (points)</h3><div class="ana-chart-wrap"><canvas id="anaSpotMove"></canvas></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-mini"><h3>⏱ Duration vs P&amp;L (buckets)</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Bucket</th><th>Trades</th><th>Wins</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaDurBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>🗓 Day × Hour Heatmap (Net P&amp;L)</h3><div id="anaHeatmap" style="font-family:'IBM Plex Mono',monospace;font-size:0.62rem;"></div></div>
+      </div>
+
+      <!-- Weekly + drawdown stats -->
+      <div class="ana-row">
+        <div class="ana-mini"><h3>📅 Weekly Performance</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Week</th><th>Trades</th><th>Wins</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaWeeklyBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>📉 Drawdown Stats</h3><div id="anaDdStats"></div></div>
+      </div>
+
+      <!-- Strike / expiry / symbol concentration -->
+      <div class="ana-section-title" style="color:#f59e0b;">🎯 Contract Analytics</div>
+      <div class="ana-row3">
+        <div class="ana-mini"><h3>🏷 Top Option Symbols</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Symbol</th><th>Trades</th><th>WR%</th><th>P&amp;L</th></tr></thead><tbody id="anaSymBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>🎯 Strike Analysis</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Strike</th><th>Trades</th><th>WR%</th><th>P&amp;L</th></tr></thead><tbody id="anaStrikeBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>📅 Expiry Analysis</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Expiry</th><th>Trades</th><th>WR%</th><th>P&amp;L</th></tr></thead><tbody id="anaExpiryBody"></tbody></table></div></div>
+      </div>
+      <div class="ana-row">
+        <div class="ana-mini"><h3>🧬 Strategy Variant Breakdown</h3><div style="overflow-x:auto;max-height:280px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Strategy</th><th>Mode</th><th>Trades</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaStratBody"></tbody></table></div></div>
+        <div class="ana-mini"><h3>🔢 Quantity Buckets</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Qty</th><th>Trades</th><th>WR%</th><th>P&amp;L</th><th>Avg</th></tr></thead><tbody id="anaQtyBody"></tbody></table></div></div>
       </div>
     </div>
 
@@ -827,6 +965,7 @@ function applyFilters(){
   renderTradesTable(rows);
   renderCumChart(rows);
   if (_dvVisible) buildDayView();
+  if (_anaVisible) renderAnalytics();
 
   const totalPnl = rows.reduce((a, t) => a + (t.pnl || 0), 0);
   document.getElementById('fCount').innerHTML =
@@ -942,6 +1081,706 @@ function wireTableControls(){
       });
     });
   });
+}
+
+// ── Analytics Panel ─────────────────────────────────────────────────────────
+let _anaVisible = false;
+const _anaCharts = {};
+const _MODE_COLOR = { SWING: '#3b82f6', SCALP: '#f59e0b', PA: '#a855f7' };
+
+function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
+function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
+function fmtAnaShort(v){ return Math.abs(v||0)>=1000 ? '₹'+Math.round((v||0)/1000)+'k' : '₹'+Math.round(v||0); }
+
+// Parse entry/exit time "HH:MM, DD/MM/YYYY" or "HH:MM:SS, DD/MM/YYYY" → ms or null
+function _parseTimeMs(t){
+  if (!t) return null;
+  const m = String(t).match(/(\\d{1,2}):(\\d{2})(?::(\\d{2}))?,\\s*(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})/);
+  if (!m) return null;
+  return new Date(+m[6], +m[5]-1, +m[4], +m[1], +m[2], +(m[3]||0)).getTime();
+}
+function _hourOf(t){
+  const ts = t.entryTime || '';
+  const m = String(ts).match(/(\\d{1,2}):(\\d{2})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+function _dowOf(t){
+  if (!t.date) return null;
+  const d = new Date(t.date + 'T00:00:00');
+  return isNaN(d) ? null : d.getDay();
+}
+function _monthOf(t){ return (t.date || '').slice(0, 7); }
+function _durMin(t){
+  const a = _parseTimeMs(t.entryTime), b = _parseTimeMs(t.exitTime);
+  if (a == null || b == null || b < a) return null;
+  return Math.round((b - a) / 60000);
+}
+
+function toggleAnalytics(){
+  _anaVisible = !_anaVisible;
+  document.getElementById('anaPanel').style.display = _anaVisible ? 'block' : 'none';
+  document.getElementById('anaToggle').classList.toggle('copied', _anaVisible);
+  if (_anaVisible) renderAnalytics();
+}
+
+function renderAnalytics(){
+  const trades = _lastFiltered.slice();
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const _gc = isLight ? '#e0e4ea' : '#0e1e36';
+  const _tc = isLight ? '#64748b' : '#3a5070';
+  const baseChartOpts = (extra) => Object.assign({
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { ticks: { color: _tc, font: { size: 9, family: 'IBM Plex Mono' } }, grid: { display: false } },
+      y: { ticks: { color: _tc, font: { size: 10, family: 'IBM Plex Mono' }, callback: v => fmtAnaShort(v) }, grid: { color: _gc } },
+    },
+  }, extra || {});
+
+  // ── Cross-mode comparison ──
+  (function(){
+    const modes = ['SWING','SCALP','PA'];
+    const tb = document.getElementById('anaModeBody');
+    if (!trades.length){ tb.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#3a5070;">No data</td></tr>'; }
+    else {
+      let html = '';
+      const overall = { count:0, wins:0, losses:0, pnl:0, gp:0, gl:0 };
+      modes.forEach(m => {
+        const sub = trades.filter(t => t.mode === m);
+        const wins = sub.filter(t => t.pnl > 0), losses = sub.filter(t => t.pnl < 0);
+        const gp = wins.reduce((s,t)=>s+t.pnl,0), gl = losses.reduce((s,t)=>s+t.pnl,0);
+        const pnl = sub.reduce((s,t)=>s+(t.pnl||0),0);
+        const wr = sub.length ? ((wins.length/sub.length)*100).toFixed(1) : '0.0';
+        const aw = wins.length ? Math.round(gp/wins.length) : 0;
+        const al = losses.length ? Math.round(gl/losses.length) : 0;
+        const pf = gl !== 0 ? (gp / Math.abs(gl)).toFixed(2) : (gp>0?'∞':'—');
+        const exp = sub.length ? Math.round(pnl/sub.length) : 0;
+        const pc = pnl>=0?'#10b981':'#ef4444';
+        const pfNum = parseFloat(pf);
+        const pfCol = isNaN(pfNum) ? '#c8d8f0' : (pfNum>=1.5?'#10b981':pfNum>=1?'#f59e0b':'#ef4444');
+        html += '<tr>'
+          + '<td><span class="badge-mode badge-'+m+'">'+m+'</span></td>'
+          + '<td>'+sub.length+'</td>'
+          + '<td style="color:#10b981;">'+wins.length+'</td>'
+          + '<td style="color:#ef4444;">'+losses.length+'</td>'
+          + '<td style="color:'+(parseFloat(wr)>=55?'#10b981':parseFloat(wr)>=45?'#f59e0b':'#ef4444')+';font-weight:700;">'+wr+'%</td>'
+          + '<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(pnl)+'</td>'
+          + '<td style="color:#10b981;">'+fmtAna(aw)+'</td>'
+          + '<td style="color:#ef4444;">'+fmtAna(al)+'</td>'
+          + '<td style="color:'+pfCol+';font-weight:700;">'+pf+'</td>'
+          + '<td style="color:'+(exp>=0?'#10b981':'#ef4444')+';">'+fmtAnaSigned(exp)+'</td>'
+          + '</tr>';
+        overall.count += sub.length; overall.wins += wins.length; overall.losses += losses.length;
+        overall.pnl += pnl; overall.gp += gp; overall.gl += gl;
+      });
+      const wrAll = overall.count ? ((overall.wins/overall.count)*100).toFixed(1) : '0.0';
+      const awAll = overall.wins ? Math.round(overall.gp/overall.wins) : 0;
+      const alAll = overall.losses ? Math.round(overall.gl/overall.losses) : 0;
+      const pfAll = overall.gl !== 0 ? (overall.gp/Math.abs(overall.gl)).toFixed(2) : (overall.gp>0?'∞':'—');
+      const expAll = overall.count ? Math.round(overall.pnl/overall.count) : 0;
+      const pcAll = overall.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr style="border-top:1px solid #0e1e36;background:rgba(59,130,246,0.04);">'
+        + '<td style="font-weight:700;color:#60a5fa;">ALL</td>'
+        + '<td style="font-weight:700;">'+overall.count+'</td>'
+        + '<td style="color:#10b981;font-weight:700;">'+overall.wins+'</td>'
+        + '<td style="color:#ef4444;font-weight:700;">'+overall.losses+'</td>'
+        + '<td style="font-weight:700;">'+wrAll+'%</td>'
+        + '<td style="color:'+pcAll+';font-weight:700;">'+fmtAnaSigned(overall.pnl)+'</td>'
+        + '<td style="color:#10b981;">'+fmtAna(awAll)+'</td>'
+        + '<td style="color:#ef4444;">'+fmtAna(alAll)+'</td>'
+        + '<td style="font-weight:700;">'+pfAll+'</td>'
+        + '<td style="color:'+(expAll>=0?'#10b981':'#ef4444')+';font-weight:700;">'+fmtAnaSigned(expAll)+'</td>'
+        + '</tr>';
+      tb.innerHTML = html;
+    }
+  })();
+
+  // ── Risk Metrics ──
+  (function(){
+    const wins = trades.filter(t=>t.pnl>0), losses = trades.filter(t=>t.pnl<0);
+    const totalPnl = trades.reduce((s,t)=>s+(t.pnl||0),0);
+    const gp = wins.reduce((s,t)=>s+t.pnl,0), gl = losses.reduce((s,t)=>s+t.pnl,0);
+    const pf = gl !== 0 ? (gp/Math.abs(gl)).toFixed(2) : (gp>0?'∞':'—');
+    const aw = wins.length ? Math.round(gp/wins.length) : 0;
+    const al = losses.length ? Math.round(gl/losses.length) : 0;
+    const exp = trades.length ? (totalPnl/trades.length) : 0;
+    const payoff = (al !== 0) ? (Math.abs(aw)/Math.abs(al)).toFixed(2) : '—';
+    let maxConsLoss = 0, cur = 0;
+    trades.forEach(t => { if (t.pnl<0){ cur++; if (cur>maxConsLoss) maxConsLoss = cur; } else cur = 0; });
+    const sortedPnl = trades.map(t=>t.pnl||0).sort((a,b)=>a-b);
+    const p5 = sortedPnl[Math.floor(sortedPnl.length*0.05)] || 0;
+    const p95 = sortedPnl[Math.floor(sortedPnl.length*0.95)] || 0;
+    // Sharpe-like (per-trade)
+    const mean = trades.length ? totalPnl/trades.length : 0;
+    const variance = trades.length ? trades.reduce((s,t)=>s+Math.pow((t.pnl||0)-mean,2),0)/trades.length : 0;
+    const stdev = Math.sqrt(variance);
+    const sharpe = stdev > 0 ? (mean/stdev).toFixed(2) : '—';
+    // Sortino-like
+    const negs = trades.filter(t=>(t.pnl||0)<0).map(t=>t.pnl);
+    const downVar = negs.length ? negs.reduce((s,v)=>s+v*v,0)/negs.length : 0;
+    const downStd = Math.sqrt(downVar);
+    const sortino = downStd > 0 ? (mean/downStd).toFixed(2) : '—';
+    // Loss-after-loss
+    let lossAfterLoss = 0, totalAfterLoss = 0;
+    for (let i=1; i<trades.length; i++){ if ((trades[i-1].pnl||0)<0){ totalAfterLoss++; if ((trades[i].pnl||0)<0) lossAfterLoss++; } }
+    const lalPct = totalAfterLoss ? ((lossAfterLoss/totalAfterLoss)*100).toFixed(0) : '—';
+    const pfNum = parseFloat(pf);
+    const pfCol = isNaN(pfNum) ? '#c8d8f0' : (pfNum>=1.5?'#10b981':pfNum>=1?'#f59e0b':'#ef4444');
+    document.getElementById('anaRiskMetrics').innerHTML =
+      '<div class="ana-stat"><span class="ana-stat-val" style="color:'+pfCol+';">'+pf+'</span><span class="ana-stat-label">Profit Factor</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:'+(exp>=0?'#10b981':'#ef4444')+';">'+fmtAnaSigned(exp)+'</span><span class="ana-stat-label">Expectancy / trade</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+fmtAna(aw)+'</span><span class="ana-stat-label">Avg Win</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+fmtAna(al)+'</span><span class="ana-stat-label">Avg Loss</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#60a5fa;">'+payoff+'</span><span class="ana-stat-label">Payoff (W/L)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+maxConsLoss+'</span><span class="ana-stat-label">Max consecutive losses</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:'+(parseFloat(lalPct)>=50?'#ef4444':'#10b981')+';">'+lalPct+'%</span><span class="ana-stat-label">Loss-after-loss %</span></div>'
+      + '<div style="border-top:0.5px solid #0e1e36;margin:8px 0;padding-top:8px;">'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#60a5fa;">'+sharpe+'</span><span class="ana-stat-label">Sharpe-like (μ/σ)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#a855f7;">'+sortino+'</span><span class="ana-stat-label">Sortino-like</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+fmtAna(p95)+'</span><span class="ana-stat-label">95th pct (best case)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+fmtAna(Math.abs(p5))+'</span><span class="ana-stat-label">5th pct (worst case)</span></div>'
+      + '</div>';
+  })();
+
+  // ── Win/Loss Streaks ──
+  (function(){
+    let maxWS=0, maxLS=0, curWS=0, curLS=0;
+    const wsArr = [], lsArr = [];
+    trades.forEach(t => {
+      if (t.pnl>0){ curWS++; if (curLS>0) lsArr.push(curLS); curLS=0; if (curWS>maxWS) maxWS=curWS; }
+      else if (t.pnl<0){ curLS++; if (curWS>0) wsArr.push(curWS); curWS=0; if (curLS>maxLS) maxLS=curLS; }
+    });
+    if (curWS>0) wsArr.push(curWS); if (curLS>0) lsArr.push(curLS);
+    const avgW = wsArr.length ? (wsArr.reduce((a,b)=>a+b,0)/wsArr.length).toFixed(1) : '0';
+    const avgL = lsArr.length ? (lsArr.reduce((a,b)=>a+b,0)/lsArr.length).toFixed(1) : '0';
+    const dayMap = new Map();
+    trades.forEach(t => { const d = t.date||'?'; dayMap.set(d, (dayMap.get(d)||0)+(t.pnl||0)); });
+    let profDays=0, lossDays=0;
+    for (const v of dayMap.values()){ if (v>=0) profDays++; else lossDays++; }
+    const totalDays = profDays + lossDays;
+    const avgDaily = totalDays ? Array.from(dayMap.values()).reduce((a,b)=>a+b,0)/totalDays : 0;
+    document.getElementById('anaStreaks').innerHTML =
+      '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+maxWS+'</span><span class="ana-stat-label">Best win streak</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+maxLS+'</span><span class="ana-stat-label">Worst loss streak</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#60a5fa;">'+avgW+'</span><span class="ana-stat-label">Avg win streak</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#f59e0b;">'+avgL+'</span><span class="ana-stat-label">Avg loss streak</span></div>'
+      + '<div style="border-top:0.5px solid #0e1e36;margin:8px 0;padding-top:8px;">'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+profDays+'</span><span class="ana-stat-label">Profitable days ('+(totalDays?((profDays/totalDays)*100).toFixed(0):'0')+'%)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+lossDays+'</span><span class="ana-stat-label">Losing days ('+(totalDays?((lossDays/totalDays)*100).toFixed(0):'0')+'%)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:'+(avgDaily>=0?'#10b981':'#ef4444')+';">'+fmtAnaSigned(avgDaily)+'</span><span class="ana-stat-label">Avg daily P&amp;L</span></div>'
+      + '</div>';
+  })();
+
+  // ── Day of Week ──
+  (function(){
+    const dow = {0:{n:'Sun',t:0,w:0,p:0},1:{n:'Mon',t:0,w:0,p:0},2:{n:'Tue',t:0,w:0,p:0},3:{n:'Wed',t:0,w:0,p:0},4:{n:'Thu',t:0,w:0,p:0},5:{n:'Fri',t:0,w:0,p:0},6:{n:'Sat',t:0,w:0,p:0}};
+    trades.forEach(t => { const d=_dowOf(t); if (d==null) return; dow[d].t++; if (t.pnl>0) dow[d].w++; dow[d].p+=(t.pnl||0); });
+    let html = '';
+    [1,2,3,4,5].forEach(d => { const dd=dow[d]; if (!dd.t) return;
+      const wr = ((dd.w/dd.t)*100).toFixed(0);
+      const pc = dd.p>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="font-weight:600;">'+dd.n+'</td><td>'+dd.t+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(dd.p)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(dd.p/dd.t))+'</td></tr>';
+    });
+    document.getElementById('anaDowBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Equity Curve (per trade, oldest → newest by entry time) ──
+  (function(){
+    const sorted = trades.slice().sort((a,b) => {
+      const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
+      if (ta!=null && tb!=null) return ta - tb;
+      return (a.date||'').localeCompare(b.date||'');
+    });
+    let eq = 0;
+    const data = sorted.map(t => (eq += (t.pnl||0)));
+    const labels = sorted.map((_, i) => i+1);
+    if (_anaCharts.equity) _anaCharts.equity.destroy();
+    _anaCharts.equity = new Chart(document.getElementById('anaEquity'), {
+      type: 'line',
+      data: { labels, datasets: [{ data, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.10)', borderWidth: 1.5, fill: true, pointRadius: 0, tension: 0.25 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'Equity: '+fmtAna(c.raw) } } }, scales: { x: { display: false }, y: { ticks: { color: _tc, callback: v => fmtAnaShort(v) }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Monthly P&L (overall) ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const k=_monthOf(t); if (!k) return; m.set(k, (m.get(k)||0)+(t.pnl||0)); });
+    const keys = Array.from(m.keys()).sort();
+    const monthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels = keys.map(k => monthNames[parseInt(k.slice(5,7),10)] + " '" + k.slice(2,4));
+    const vals = keys.map(k => Math.round(m.get(k)));
+    const colors = vals.map(v => v>=0?'#10b981':'#ef4444');
+    if (_anaCharts.monthly) _anaCharts.monthly.destroy();
+    _anaCharts.monthly = new Chart(document.getElementById('anaMonthly'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 4, barPercentage: 0.7 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtAnaSigned(c.raw) } } } }),
+    });
+  })();
+
+  // ── Drawdown ──
+  (function(){
+    const sorted = trades.slice().sort((a,b) => {
+      const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
+      if (ta!=null && tb!=null) return ta - tb;
+      return (a.date||'').localeCompare(b.date||'');
+    });
+    let eq=0, peak=0;
+    const dd = [], labels = [];
+    sorted.forEach((t,i) => { eq+=(t.pnl||0); if (eq>peak) peak=eq; dd.push(eq-peak); labels.push(i+1); });
+    if (_anaCharts.dd) _anaCharts.dd.destroy();
+    _anaCharts.dd = new Chart(document.getElementById('anaDrawdown'), {
+      type: 'line',
+      data: { labels, datasets: [{ data: dd, borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.12)', borderWidth: 1.5, fill: true, pointRadius: 0, tension: 0.25 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'DD: '+fmtAna(c.raw) } } }, scales: { x: { display: false }, y: { ticks: { color: _tc, callback: v => fmtAnaShort(v) }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Hourly Performance ──
+  (function(){
+    const hourMap = {};
+    trades.forEach(t => { const h=_hourOf(t); if (h==null) return; if (!hourMap[h]) hourMap[h]={pnl:0,cnt:0,wins:0}; hourMap[h].pnl+=(t.pnl||0); hourMap[h].cnt++; if (t.pnl>0) hourMap[h].wins++; });
+    const hours = Object.keys(hourMap).map(Number).sort((a,b)=>a-b);
+    const labels = hours.map(h => h+':00');
+    const vals = hours.map(h => Math.round(hourMap[h].pnl));
+    const colors = vals.map(v => v>=0 ? 'rgba(16,185,129,0.7)' : 'rgba(239,68,68,0.7)');
+    if (_anaCharts.hourly) _anaCharts.hourly.destroy();
+    _anaCharts.hourly = new Chart(document.getElementById('anaHourly'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: vals, backgroundColor: colors, borderRadius: 4, barPercentage: 0.7 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { title: c => { const h = hours[c[0].dataIndex]; return h+':00 ('+hourMap[h].cnt+' trades, '+((hourMap[h].wins/hourMap[h].cnt)*100).toFixed(0)+'% WR)'; }, label: c => fmtAnaSigned(c.raw) } } } }),
+    });
+  })();
+
+  // ── Entry Reason Breakdown ──
+  (function(){
+    const map = new Map();
+    trades.forEach(t => {
+      let r = (t.entryReason || 'Unknown'); if (r.length > 60) r = r.slice(0,60)+'…';
+      const key = r + '|' + t.mode;
+      if (!map.has(key)) map.set(key, { reason: r, mode: t.mode, cnt: 0, wins: 0, losses: 0, pnl: 0 });
+      const b = map.get(key);
+      b.cnt++; b.pnl += (t.pnl||0);
+      if (t.pnl>0) b.wins++; else if (t.pnl<0) b.losses++;
+    });
+    const rows = Array.from(map.values()).sort((a,b)=>b.cnt-a.cnt);
+    let html = '';
+    rows.forEach(d => {
+      const pc = d.pnl>=0?'#10b981':'#ef4444';
+      const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0';
+      html += '<tr>'
+        + '<td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.reason)+'">'+esc(d.reason)+'</td>'
+        + '<td><span class="badge-mode badge-'+d.mode+'">'+d.mode+'</span></td>'
+        + '<td>'+d.cnt+'</td>'
+        + '<td style="color:#10b981;">'+d.wins+'</td>'
+        + '<td style="color:#ef4444;">'+d.losses+'</td>'
+        + '<td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td>'
+        + '<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td>'
+        + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td>'
+        + '</tr>';
+    });
+    document.getElementById('anaEntryBody').innerHTML = html || '<tr><td colspan="8" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Exit Reason Breakdown ──
+  (function(){
+    const map = new Map();
+    trades.forEach(t => {
+      const r = t.exitReason || 'Unknown';
+      const key = r + '|' + t.mode;
+      if (!map.has(key)) map.set(key, { reason: r, mode: t.mode, cnt: 0, pnl: 0 });
+      const b = map.get(key); b.cnt++; b.pnl += (t.pnl||0);
+    });
+    const rows = Array.from(map.values()).sort((a,b) => b.pnl - a.pnl);
+    let html = '';
+    rows.forEach(d => {
+      const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.reason)+'">'+esc(d.reason)+'</td>'
+        + '<td><span class="badge-mode badge-'+d.mode+'">'+d.mode+'</span></td>'
+        + '<td>'+d.cnt+'</td>'
+        + '<td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td>'
+        + '<td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>';
+    });
+    document.getElementById('anaExitBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Loss Distribution ──
+  (function(){
+    const lossTrades = trades.filter(t => t.pnl<0);
+    if (_anaCharts.lossDist) _anaCharts.lossDist.destroy();
+    if (!lossTrades.length){
+      _anaCharts.lossDist = new Chart(document.getElementById('anaLossDist'), { type: 'bar', data: { labels: [], datasets: [{ data: [] }] }, options: baseChartOpts() });
+      return;
+    }
+    const vals = lossTrades.map(t => Math.abs(t.pnl)).sort((a,b)=>a-b);
+    const maxV = vals[vals.length-1];
+    const buckets = Math.min(12, Math.max(5, Math.ceil(Math.sqrt(vals.length))));
+    let step = Math.ceil(maxV/buckets/100)*100; if (step<1) step=1;
+    const bins = new Array(buckets).fill(0), labels = [];
+    for (let i=0;i<buckets;i++) labels.push(fmtAnaShort(i*step)+'–'+fmtAnaShort((i+1)*step));
+    vals.forEach(v => { const idx = Math.min(Math.floor(v/step), buckets-1); bins[idx]++; });
+    _anaCharts.lossDist = new Chart(document.getElementById('anaLossDist'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: bins, backgroundColor: 'rgba(239,68,68,0.6)', borderRadius: 4, barPercentage: 0.85 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw+' trades ('+((c.raw/lossTrades.length)*100).toFixed(0)+'%)' } } }, scales: { x: { ticks: { color: _tc, font: { size: 9, family: 'IBM Plex Mono' }, maxRotation: 45 }, grid: { display: false } }, y: { ticks: { color: _tc, stepSize: 1 }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── CE vs PE Performance (overall) ──
+  (function(){
+    const sides = { CE: { wins: 0, losses: 0, winPnl: 0, lossPnl: 0, total: 0 }, PE: { wins: 0, losses: 0, winPnl: 0, lossPnl: 0, total: 0 } };
+    trades.forEach(t => { const s = t.side; if (!sides[s]) return; sides[s].total++; if (t.pnl>0){ sides[s].wins++; sides[s].winPnl+=t.pnl; } else if (t.pnl<0){ sides[s].losses++; sides[s].lossPnl+=t.pnl; } });
+    const labels = ['CE','PE'].map(s => s+' ('+sides[s].total+' · '+((sides[s].wins/Math.max(sides[s].total,1))*100).toFixed(0)+'% WR)');
+    const winPnl = ['CE','PE'].map(s => Math.round(sides[s].winPnl));
+    const lossPnl = ['CE','PE'].map(s => Math.round(sides[s].lossPnl));
+    const net = ['CE','PE'].map(s => Math.round(sides[s].winPnl + sides[s].lossPnl));
+    if (_anaCharts.side) _anaCharts.side.destroy();
+    _anaCharts.side = new Chart(document.getElementById('anaSidePerf'), {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Win P&L',  data: winPnl,  backgroundColor: 'rgba(16,185,129,0.65)', borderRadius: 4, barPercentage: 0.6 },
+        { label: 'Loss P&L', data: lossPnl, backgroundColor: 'rgba(239,68,68,0.65)', borderRadius: 4, barPercentage: 0.6 },
+        { label: 'Net P&L',  data: net,     backgroundColor: net.map(v => v>=0?'rgba(59,130,246,0.65)':'rgba(245,158,11,0.65)'), borderRadius: 4, barPercentage: 0.6 },
+      ] },
+      options: baseChartOpts({ plugins: { legend: { labels: { color: _tc, font: { size: 9, family: 'IBM Plex Mono' } } } } }),
+    });
+  })();
+
+  // ── Top 10 Worst Trades ──
+  (function(){
+    const worst = trades.filter(t=>t.pnl<0).sort((a,b)=>a.pnl-b.pnl).slice(0,10);
+    let html = '';
+    worst.forEach(t => {
+      html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
+    });
+    document.getElementById('anaWorstBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
+  })();
+
+  // ── Consecutive Loss Streaks ──
+  (function(){
+    const streaks = []; let cur = [];
+    trades.forEach((t,i) => { if (t.pnl<0) cur.push({t,i}); else { if (cur.length>=2) streaks.push(cur.slice()); cur = []; } });
+    if (cur.length>=2) streaks.push(cur.slice());
+    streaks.sort((a,b) => a.reduce((s,c)=>s+c.t.pnl,0) - b.reduce((s,c)=>s+c.t.pnl,0));
+    let html = '';
+    streaks.slice(0,10).forEach(s => {
+      const total = s.reduce((sum,c)=>sum+c.t.pnl,0);
+      const avg = total / s.length;
+      html += '<tr><td>'+(s[0].t.date||'—')+'</td><td>'+s.length+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(total)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(avg)+'</td></tr>';
+    });
+    document.getElementById('anaLossStreakBody').innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No loss streaks (2+)</td></tr>';
+  })();
+
+  // ── Worst/Best Trading Days ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const d=t.date||'?'; if (!m.has(d)) m.set(d, { date: d, trades: 0, pnl: 0, losses: 0, wins: 0, worst: 0, best: 0 }); const b=m.get(d); b.trades++; b.pnl+=(t.pnl||0); if (t.pnl<0){ b.losses++; if (t.pnl<b.worst) b.worst=t.pnl; } if (t.pnl>0){ b.wins++; if (t.pnl>b.best) b.best=t.pnl; } });
+    const arr = Array.from(m.values());
+    const lossDays = arr.filter(d=>d.pnl<0).sort((a,b)=>a.pnl-b.pnl).slice(0,10);
+    let html = '';
+    lossDays.forEach(d => { html += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.losses+'</td><td style="color:#ef4444;">'+fmtAnaSigned(d.worst)+'</td></tr>'; });
+    document.getElementById('anaWorstDayBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
+    const winDays = arr.filter(d=>d.pnl>0).sort((a,b)=>b.pnl-a.pnl).slice(0,10);
+    let html2 = '';
+    winDays.forEach(d => { html2 += '<tr><td>'+d.date+'</td><td>'+d.trades+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td>'+d.wins+'</td><td style="color:#10b981;">'+fmtAnaSigned(d.best)+'</td></tr>'; });
+    document.getElementById('anaBestDayBody').innerHTML = html2 || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning days</td></tr>';
+  })();
+
+  // ── Loss by Exit Reason ──
+  (function(){
+    const lossTrades = trades.filter(t=>t.pnl<0);
+    const m = new Map();
+    lossTrades.forEach(t => { const r = t.exitReason||'Unknown'; if (!m.has(r)) m.set(r, { cnt: 0, pnl: 0 }); const b = m.get(r); b.cnt++; b.pnl += t.pnl; });
+    const rows = Array.from(m.entries()).sort((a,b) => a[1].pnl - b[1].pnl);
+    let html = '';
+    rows.forEach(([r,d]) => {
+      const pct = ((d.cnt/Math.max(lossTrades.length,1))*100).toFixed(0);
+      html += '<tr><td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(r)+'">'+esc(r)+'</td><td>'+d.cnt+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td><td style="font-weight:600;">'+pct+'%</td></tr>';
+    });
+    document.getElementById('anaLossReasonBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losses</td></tr>';
+  })();
+
+  // ── Losing Hours / Winning Hours ──
+  (function(){
+    const m = {};
+    trades.forEach(t => { const h=_hourOf(t); if (h==null) return; if (!m[h]) m[h]={total:0,wins:0,losses:0,winPnl:0,lossPnl:0}; m[h].total++; if (t.pnl>0){ m[h].wins++; m[h].winPnl+=t.pnl; } else if (t.pnl<0){ m[h].losses++; m[h].lossPnl+=t.pnl; } });
+    const hours = Object.keys(m).map(Number).sort((a,b)=>a-b);
+    let lh = '', wh = '';
+    hours.forEach(h => {
+      const d = m[h];
+      if (d.losses > 0){
+        const pct = ((d.losses/d.total)*100).toFixed(0);
+        const col = parseFloat(pct)>=60?'#ef4444':parseFloat(pct)>=45?'#f59e0b':'#10b981';
+        lh += '<tr><td style="font-weight:600;">'+h+':00</td><td>'+d.losses+' / '+d.total+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(d.lossPnl)+'</td><td style="color:#ef4444;">'+fmtAnaSigned(Math.round(d.lossPnl/d.losses))+'</td><td style="color:'+col+';font-weight:700;">'+pct+'%</td></tr>';
+      }
+      if (d.wins > 0){
+        const pct = ((d.wins/d.total)*100).toFixed(0);
+        const col = parseFloat(pct)>=60?'#10b981':parseFloat(pct)>=45?'#f59e0b':'#ef4444';
+        wh += '<tr><td style="font-weight:600;">'+h+':00</td><td>'+d.wins+' / '+d.total+'</td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(d.winPnl)+'</td><td style="color:#10b981;">'+fmtAnaSigned(Math.round(d.winPnl/d.wins))+'</td><td style="color:'+col+';font-weight:700;">'+pct+'%</td></tr>';
+      }
+    });
+    document.getElementById('anaLossHourBody').innerHTML = lh || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    document.getElementById('anaWinHourBody').innerHTML = wh || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Top 10 Best Trades ──
+  (function(){
+    const best = trades.filter(t=>t.pnl>0).sort((a,b)=>b.pnl-a.pnl).slice(0,10);
+    let html = '';
+    best.forEach(t => {
+      html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#10b981;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
+    });
+    document.getElementById('anaBestBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No winning trades</td></tr>';
+  })();
+
+  // ── Cumulative P&L by Mode ──
+  (function(){
+    const modes = ['SWING','SCALP','PA'];
+    const sorted = trades.slice().sort((a,b) => {
+      const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
+      if (ta!=null && tb!=null) return ta - tb;
+      return (a.date||'').localeCompare(b.date||'');
+    });
+    const labels = sorted.map((_,i)=>i+1);
+    const dsets = modes.map(m => {
+      let eq = 0;
+      const data = sorted.map(t => { if (t.mode===m) eq += (t.pnl||0); return eq; });
+      return { label: m, data, borderColor: _MODE_COLOR[m], backgroundColor: _MODE_COLOR[m]+'22', borderWidth: 1.5, fill: false, pointRadius: 0, tension: 0.25 };
+    });
+    if (_anaCharts.cumByMode) _anaCharts.cumByMode.destroy();
+    _anaCharts.cumByMode = new Chart(document.getElementById('anaCumByMode'), {
+      type: 'line',
+      data: { labels, datasets: dsets },
+      options: baseChartOpts({ plugins: { legend: { display: true, labels: { color: _tc, font: { size: 10, family: 'IBM Plex Mono' } } }, tooltip: { callbacks: { label: c => c.dataset.label+': '+fmtAna(c.raw) } } }, scales: { x: { display: false }, y: { ticks: { color: _tc, callback: v => fmtAnaShort(v) }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Monthly P&L stacked by mode ──
+  (function(){
+    const modes = ['SWING','SCALP','PA'];
+    const monthsSet = new Set();
+    const data = {}; modes.forEach(m => data[m] = new Map());
+    trades.forEach(t => { const k=_monthOf(t); if (!k) return; monthsSet.add(k); if (!data[t.mode]) return; data[t.mode].set(k, (data[t.mode].get(k)||0) + (t.pnl||0)); });
+    const keys = Array.from(monthsSet).sort();
+    const monthNames = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const labels = keys.map(k => monthNames[parseInt(k.slice(5,7),10)] + " '" + k.slice(2,4));
+    const dsets = modes.map(m => ({ label: m, data: keys.map(k => Math.round(data[m].get(k)||0)), backgroundColor: _MODE_COLOR[m], borderRadius: 3 }));
+    if (_anaCharts.monthlyStacked) _anaCharts.monthlyStacked.destroy();
+    _anaCharts.monthlyStacked = new Chart(document.getElementById('anaMonthlyStacked'), {
+      type: 'bar',
+      data: { labels, datasets: dsets },
+      options: baseChartOpts({ plugins: { legend: { display: true, labels: { color: _tc, font: { size: 10, family: 'IBM Plex Mono' } } }, tooltip: { callbacks: { label: c => c.dataset.label+': '+fmtAnaSigned(c.raw) } } }, scales: { x: { stacked: true, ticks: { color: _tc, font: { size: 9, family: 'IBM Plex Mono' } }, grid: { display: false } }, y: { stacked: true, ticks: { color: _tc, callback: v => fmtAnaShort(v) }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── P&L Distribution (all trades, signed) ──
+  (function(){
+    if (!trades.length){ if (_anaCharts.pnlDist) _anaCharts.pnlDist.destroy(); return; }
+    const vals = trades.map(t => t.pnl||0);
+    const mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    const span = mx - mn;
+    const buckets = Math.min(20, Math.max(8, Math.ceil(Math.sqrt(vals.length))));
+    const step = span > 0 ? span/buckets : 1;
+    const bins = new Array(buckets).fill(0), labels = [], colors = [];
+    for (let i=0;i<buckets;i++){
+      const lo = mn + i*step, hi = lo + step;
+      labels.push(fmtAnaShort(lo) + '…' + fmtAnaShort(hi));
+      colors.push((lo+hi)/2 >= 0 ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)');
+    }
+    vals.forEach(v => { const idx = Math.min(buckets-1, Math.max(0, Math.floor((v-mn)/step))); bins[idx]++; });
+    if (_anaCharts.pnlDist) _anaCharts.pnlDist.destroy();
+    _anaCharts.pnlDist = new Chart(document.getElementById('anaPnlDist'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: bins, backgroundColor: colors, borderRadius: 3, barPercentage: 0.9 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw+' trades ('+((c.raw/vals.length)*100).toFixed(1)+'%)' } } }, scales: { x: { ticks: { color: _tc, font: { size: 8, family: 'IBM Plex Mono' }, maxRotation: 60 }, grid: { display: false } }, y: { ticks: { color: _tc, stepSize: 1 }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Rolling 30-trade WR ──
+  (function(){
+    const sorted = trades.slice().sort((a,b) => {
+      const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
+      if (ta!=null && tb!=null) return ta - tb;
+      return (a.date||'').localeCompare(b.date||'');
+    });
+    const WIN = 30;
+    const labels = [], data = [];
+    for (let i=0; i<sorted.length; i++){
+      const start = Math.max(0, i - WIN + 1);
+      const slice = sorted.slice(start, i+1);
+      const w = slice.filter(t=>t.pnl>0).length;
+      labels.push(i+1);
+      data.push(slice.length ? +((w/slice.length)*100).toFixed(1) : 0);
+    }
+    if (_anaCharts.rollWr) _anaCharts.rollWr.destroy();
+    _anaCharts.rollWr = new Chart(document.getElementById('anaRollWr'), {
+      type: 'line',
+      data: { labels, datasets: [{ data, borderColor: '#a855f7', backgroundColor: 'rgba(168,85,247,0.10)', borderWidth: 1.5, fill: true, pointRadius: 0, tension: 0.25 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => 'WR: '+c.raw+'%' } } }, scales: { x: { display: false }, y: { min: 0, max: 100, ticks: { color: _tc, callback: v => v+'%' }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Trade Duration Distribution + buckets table ──
+  (function(){
+    const durs = trades.map(t => ({ d: _durMin(t), p: t.pnl||0 })).filter(x => x.d != null);
+    if (_anaCharts.durDist) _anaCharts.durDist.destroy();
+    if (!durs.length){
+      document.getElementById('anaDurBody').innerHTML = '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>';
+      _anaCharts.durDist = new Chart(document.getElementById('anaDurDist'), { type: 'bar', data: { labels: [], datasets: [{ data: [] }] }, options: baseChartOpts() });
+      return;
+    }
+    const buckets = [
+      { lbl: '0–5m',     min: 0,    max: 5 },
+      { lbl: '5–15m',    min: 5,    max: 15 },
+      { lbl: '15–30m',   min: 15,   max: 30 },
+      { lbl: '30–60m',   min: 30,   max: 60 },
+      { lbl: '1–2h',     min: 60,   max: 120 },
+      { lbl: '2–4h',     min: 120,  max: 240 },
+      { lbl: '4h+',      min: 240,  max: Infinity },
+    ];
+    const bins = buckets.map(()=> ({ cnt: 0, wins: 0, pnl: 0 }));
+    durs.forEach(x => { for (let i=0;i<buckets.length;i++){ if (x.d >= buckets[i].min && x.d < buckets[i].max){ bins[i].cnt++; if (x.p>0) bins[i].wins++; bins[i].pnl+=x.p; break; } } });
+    const labels = buckets.map(b => b.lbl);
+    const cntVals = bins.map(b => b.cnt);
+    const cntCols = bins.map(b => b.pnl>=0 ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)');
+    _anaCharts.durDist = new Chart(document.getElementById('anaDurDist'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: cntVals, backgroundColor: cntCols, borderRadius: 4, barPercentage: 0.75 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => bins[c.dataIndex].cnt+' trades · P&L '+fmtAnaSigned(bins[c.dataIndex].pnl) } } }, scales: { x: { ticks: { color: _tc, font: { size: 9, family: 'IBM Plex Mono' } }, grid: { display: false } }, y: { ticks: { color: _tc, stepSize: 1 }, grid: { color: _gc } } } }),
+    });
+    let html = '';
+    buckets.forEach((b,i) => { const d=bins[i]; if (!d.cnt) return; const wr = ((d.wins/d.cnt)*100).toFixed(0); const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="font-weight:600;">'+b.lbl+'</td><td>'+d.cnt+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
+    document.getElementById('anaDurBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No duration data</td></tr>';
+  })();
+
+  // ── NIFTY spot move (points) distribution ──
+  (function(){
+    const moves = [];
+    trades.forEach(t => {
+      const e = t.spotAtEntry, x = t.spotAtExit;
+      if (typeof e !== 'number' || typeof x !== 'number' || !t.side) return;
+      const m = (t.side === 'PE') ? (e - x) : (x - e);
+      moves.push(m);
+    });
+    if (_anaCharts.spotMove) _anaCharts.spotMove.destroy();
+    if (!moves.length){
+      _anaCharts.spotMove = new Chart(document.getElementById('anaSpotMove'), { type: 'bar', data: { labels: [], datasets: [{ data: [] }] }, options: baseChartOpts() });
+      return;
+    }
+    const mn = Math.min.apply(null, moves), mx = Math.max.apply(null, moves);
+    const span = mx - mn || 1;
+    const buckets = Math.min(16, Math.max(6, Math.ceil(Math.sqrt(moves.length))));
+    const step = span/buckets;
+    const bins = new Array(buckets).fill(0), labels = [], colors = [];
+    for (let i=0;i<buckets;i++){ const lo = mn + i*step, hi = lo + step; labels.push(lo.toFixed(0)+'…'+hi.toFixed(0)); colors.push((lo+hi)/2 >= 0 ? 'rgba(16,185,129,0.6)' : 'rgba(239,68,68,0.6)'); }
+    moves.forEach(v => { const idx = Math.min(buckets-1, Math.max(0, Math.floor((v-mn)/step))); bins[idx]++; });
+    _anaCharts.spotMove = new Chart(document.getElementById('anaSpotMove'), {
+      type: 'bar',
+      data: { labels, datasets: [{ data: bins, backgroundColor: colors, borderRadius: 3, barPercentage: 0.9 }] },
+      options: baseChartOpts({ plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw+' trades ('+((c.raw/moves.length)*100).toFixed(1)+'%)' } } }, scales: { x: { ticks: { color: _tc, font: { size: 8, family: 'IBM Plex Mono' }, maxRotation: 60 }, grid: { display: false } }, y: { ticks: { color: _tc, stepSize: 1 }, grid: { color: _gc } } } }),
+    });
+  })();
+
+  // ── Day × Hour Heatmap (Net P&L) ──
+  (function(){
+    const cells = {};
+    trades.forEach(t => { const dow=_dowOf(t), h=_hourOf(t); if (dow==null || h==null) return; const k = dow+'_'+h; cells[k] = (cells[k]||0) + (t.pnl||0); });
+    const hours = [9,10,11,12,13,14,15];
+    const days = [{i:1,n:'Mon'},{i:2,n:'Tue'},{i:3,n:'Wed'},{i:4,n:'Thu'},{i:5,n:'Fri'}];
+    let absMax = 1;
+    Object.values(cells).forEach(v => { if (Math.abs(v) > absMax) absMax = Math.abs(v); });
+    function col(v){
+      if (!v) return 'rgba(74,96,128,0.10)';
+      const ratio = Math.min(1, Math.abs(v)/absMax);
+      const alpha = (0.15 + 0.6*ratio).toFixed(2);
+      return v>0 ? 'rgba(16,185,129,'+alpha+')' : 'rgba(239,68,68,'+alpha+')';
+    }
+    let html = '<table style="border-collapse:collapse;width:100%;font-size:0.6rem;font-family:IBM Plex Mono,monospace;"><thead><tr><th style="padding:4px;color:'+_tc+';">Day\\\\Hr</th>';
+    hours.forEach(h => { html += '<th style="padding:4px;color:'+_tc+';">'+h+':00</th>'; });
+    html += '</tr></thead><tbody>';
+    days.forEach(d => {
+      html += '<tr><td style="padding:4px;color:#c8d8f0;font-weight:600;">'+d.n+'</td>';
+      hours.forEach(h => { const v = cells[d.i+'_'+h] || 0; const c = col(v); const lbl = v ? fmtAnaShort(v) : '·'; const tc = !v ? '#3a5070' : (v>=0?'#10b981':'#ef4444');
+        html += '<td style="padding:6px 4px;background:'+c+';color:'+tc+';text-align:center;border:1px solid '+_gc+';font-weight:700;" title="'+d.n+' '+h+':00 — '+fmtAnaSigned(v)+'">'+lbl+'</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('anaHeatmap').innerHTML = html;
+  })();
+
+  // ── Weekly Performance ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const k = weekKey(t.date); if (!k) return; if (!m.has(k)) m.set(k, { key: k, trades: 0, wins: 0, pnl: 0 }); const b=m.get(k); b.trades++; if (t.pnl>0) b.wins++; b.pnl += (t.pnl||0); });
+    const rows = Array.from(m.values()).sort((a,b)=>b.key.localeCompare(a.key));
+    let html = '';
+    rows.forEach(d => { const wr = d.trades ? ((d.wins/d.trades)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="font-weight:600;">'+d.key+'</td><td>'+d.trades+'</td><td style="color:#10b981;">'+d.wins+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.trades))+'</td></tr>'; });
+    document.getElementById('anaWeeklyBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Drawdown stats ──
+  (function(){
+    const sorted = trades.slice().sort((a,b) => {
+      const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
+      if (ta!=null && tb!=null) return ta - tb;
+      return (a.date||'').localeCompare(b.date||'');
+    });
+    let eq = 0, peak = 0, maxDd = 0, maxDdEnd = -1;
+    let inDd = false, ddLen = 0, maxDdLen = 0, curRecovery = 0, maxRecovery = 0;
+    sorted.forEach((t,i) => {
+      eq += (t.pnl||0);
+      if (eq > peak){ peak = eq; if (inDd){ if (curRecovery > maxRecovery) maxRecovery = curRecovery; } inDd = false; ddLen = 0; curRecovery = 0; }
+      else if (eq < peak){ inDd = true; ddLen++; curRecovery++; if (ddLen > maxDdLen) maxDdLen = ddLen; if (eq - peak < maxDd){ maxDd = eq - peak; maxDdEnd = i; } }
+    });
+    const totalPnl = eq;
+    const ddPct = peak > 0 ? ((Math.abs(maxDd)/peak)*100).toFixed(1) : '—';
+    document.getElementById('anaDdStats').innerHTML =
+      '<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">'+fmtAna(Math.abs(maxDd))+'</span><span class="ana-stat-label">Max drawdown</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#f59e0b;">'+ddPct+'%</span><span class="ana-stat-label">Max DD as % of peak</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#a855f7;">'+maxDdLen+'</span><span class="ana-stat-label">Longest DD (trades)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#60a5fa;">'+maxRecovery+'</span><span class="ana-stat-label">Longest recovery (trades)</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:'+(totalPnl>=0?'#10b981':'#ef4444')+';">'+fmtAnaSigned(totalPnl)+'</span><span class="ana-stat-label">Final equity</span></div>'
+      + '<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">'+fmtAna(peak)+'</span><span class="ana-stat-label">Peak equity</span></div>';
+  })();
+
+  // ── Top option symbols / strikes / expiries ──
+  function _topTable(keyFn, bodyId, maxRows){
+    const m = new Map();
+    trades.forEach(t => { const k = keyFn(t); if (k == null || k === '') return; if (!m.has(k)) m.set(k, { key: k, cnt: 0, wins: 0, pnl: 0 }); const b=m.get(k); b.cnt++; if (t.pnl>0) b.wins++; b.pnl += (t.pnl||0); });
+    const rows = Array.from(m.values()).sort((a,b) => b.cnt - a.cnt).slice(0, maxRows);
+    let html = '';
+    rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.key)+'">'+esc(d.key)+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td></tr>'; });
+    document.getElementById(bodyId).innerHTML = html || '<tr><td colspan="4" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  }
+  _topTable(t => t.symbol, 'anaSymBody', 20);
+  _topTable(t => t.optionStrike, 'anaStrikeBody', 20);
+  _topTable(t => t.optionExpiry, 'anaExpiryBody', 20);
+
+  // ── Strategy variant breakdown ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const s = t.strategy || 'default'; const k = s + '|' + t.mode; if (!m.has(k)) m.set(k, { strat: s, mode: t.mode, cnt: 0, wins: 0, pnl: 0 }); const b=m.get(k); b.cnt++; if (t.pnl>0) b.wins++; b.pnl += (t.pnl||0); });
+    const rows = Array.from(m.values()).sort((a,b)=>b.cnt-a.cnt);
+    let html = '';
+    rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(d.strat)+'">'+esc(d.strat)+'</td><td><span class="badge-mode badge-'+d.mode+'">'+d.mode+'</span></td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
+    document.getElementById('anaStratBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  // ── Quantity Buckets ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const q = t.qty || 0; if (!q) return; if (!m.has(q)) m.set(q, { q, cnt: 0, wins: 0, pnl: 0 }); const b=m.get(q); b.cnt++; if (t.pnl>0) b.wins++; b.pnl += (t.pnl||0); });
+    const rows = Array.from(m.values()).sort((a,b) => a.q - b.q);
+    let html = '';
+    rows.forEach(d => { const wr = d.cnt ? ((d.wins/d.cnt)*100).toFixed(0) : '0'; const pc = d.pnl>=0?'#10b981':'#ef4444';
+      html += '<tr><td style="font-weight:600;">'+d.q+'</td><td>'+d.cnt+'</td><td style="color:'+(parseFloat(wr)>=55?'#10b981':'#ef4444')+';">'+wr+'%</td><td style="color:'+pc+';font-weight:700;">'+fmtAnaSigned(d.pnl)+'</td><td style="color:'+pc+';">'+fmtAnaSigned(Math.round(d.pnl/d.cnt))+'</td></tr>'; });
+    document.getElementById('anaQtyBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
 }
 
 wireTableControls();
