@@ -440,6 +440,7 @@ app.get("/", (req, res) => {
   const paMode      = sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null;
   const paEnabled   = (process.env.PA_ENABLED || 'true').toLowerCase() === 'true';
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
   // ── Token expiry warning ─────────────────────────────────────────────────
@@ -692,7 +693,7 @@ app.get("/", (req, res) => {
       .opt-expiry-cta { width:100%; justify-content:center; }
     }
 
-    /* Compact utility strip (Start All / Hard Reset / NSE Holidays / Cache info) */
+    /* Compact utility strip (Start All / Reset Token) */
     .util-strip {
       display:flex; flex-wrap:wrap; align-items:center; gap:6px;
       padding:6px 10px; border-radius:9px;
@@ -887,6 +888,50 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .dash-chart-link { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
     :root[data-theme="light"] .dash-chart-empty { color:#94a3b8; }
 
+    /* ── Dashboard Analytics Panel (market-hour aware) ── */
+    .dash-analytics { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; }
+    .da-header { display:flex; align-items:center; gap:10px; margin-bottom:8px; flex-wrap:wrap; padding-bottom:6px; border-bottom:1px solid #1a2236; }
+    .da-title { display:flex; align-items:center; gap:8px; font-size:0.66rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
+    .da-badge { font-size:0.58rem; font-weight:700; padding:2px 8px; border-radius:4px; letter-spacing:0.6px; background:rgba(74,96,128,0.12); color:#a0b0c8; border:1px solid rgba(74,96,128,0.30); }
+    .da-badge.live { background:rgba(16,185,129,0.10); color:#10b981; border-color:rgba(16,185,129,0.30); }
+    .da-badge.post { background:rgba(59,130,246,0.10); color:#60a5fa; border-color:rgba(59,130,246,0.30); }
+    .da-sub { font-size:0.66rem; color:#4a6080; font-family:'IBM Plex Mono',monospace; margin-left:auto; }
+    .da-body { display:flex; flex-direction:column; gap:10px; }
+    .da-loading { padding:18px; text-align:center; color:#4a6080; font-size:0.72rem; }
+    .da-grid { display:grid; gap:8px; }
+    .da-grid.cols-3 { grid-template-columns:repeat(3, 1fr); }
+    .da-grid.cols-4 { grid-template-columns:repeat(4, 1fr); }
+    @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr 1fr; } }
+    @media (max-width:560px){ .da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr; } }
+    .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; }
+    .da-tile.swing { border-top:2px solid #3b82f6; }
+    .da-tile.scalp { border-top:2px solid #f59e0b; }
+    .da-tile.pa    { border-top:2px solid #a78bfa; }
+    .da-tile.info  { border-top:2px solid #22d3ee; }
+    .da-tile-hdr { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#7d8aa3; margin-bottom:6px; }
+    .da-tile-hdr .da-pill { font-size:0.55rem; padding:1px 7px; border-radius:3px; border:1px solid rgba(74,96,128,0.30); color:#7d8aa3; }
+    .da-tile-hdr .da-pill.run { background:rgba(16,185,129,0.10); color:#10b981; border-color:rgba(16,185,129,0.30); }
+    .da-tile-hdr .da-pill.stop { background:rgba(148,163,184,0.10); color:#94a3b8; border-color:rgba(148,163,184,0.30); }
+    .da-big { font-size:1.2rem; font-weight:700; line-height:1.15; font-variant-numeric:tabular-nums; }
+    .da-big.pos { color:#10b981; }
+    .da-big.neg { color:#ef4444; }
+    .da-big.flat { color:#94a3b8; }
+    .da-sub-line { font-size:0.66rem; color:#7d8aa3; margin-top:3px; font-variant-numeric:tabular-nums; font-family:'IBM Plex Mono',monospace; }
+    .da-kv { display:flex; align-items:baseline; justify-content:space-between; gap:8px; font-size:0.7rem; padding:3px 0; border-bottom:1px dashed rgba(74,96,128,0.20); }
+    .da-kv:last-child { border-bottom:none; }
+    .da-kv .k { color:#7d8aa3; }
+    .da-kv .v { color:#e0eaf8; font-variant-numeric:tabular-nums; font-family:'IBM Plex Mono',monospace; }
+    .da-kv .v.pos { color:#10b981; }
+    .da-kv .v.neg { color:#ef4444; }
+    .da-empty { padding:14px 12px; text-align:center; color:#4a6080; font-size:0.72rem; }
+    :root[data-theme="light"] .dash-analytics { background:#fff; border-color:#e0e4ea; }
+    :root[data-theme="light"] .da-tile { background:#f8fafc; border-color:#e0e4ea; }
+    :root[data-theme="light"] .da-title { color:#475569; }
+    :root[data-theme="light"] .da-sub { color:#94a3b8; }
+    :root[data-theme="light"] .da-tile-hdr { color:#64748b; }
+    :root[data-theme="light"] .da-kv .v { color:#1e293b; }
+    :root[data-theme="light"] .da-kv .k { color:#64748b; }
+
     /* ── MOBILE ── */
     @media (max-width:640px) {
       .main-content { margin-left:0; }
@@ -915,6 +960,7 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="top-bar-meta">System overview · Broker connections · Session status</div>
     </div>
     <div class="top-bar-right">
+      <span id="cache-info-pill" class="top-bar-cache empty" title="NIFTY candle cache built from Fyers history">📦 Candle cache: checking…</span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
@@ -956,10 +1002,7 @@ ${buildSidebar('dashboard', liveActive)}
   <div class="util-strip">
     <button id="btn-all-paper" class="util-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
     <button id="btn-all-live"  class="util-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
-    <button onclick="hardReset()" class="util-btn" title="Clears all tokens and restarts — use when tokens look stuck">🔄 Hard Reset</button>
-    <button onclick="refreshHolidays()" id="holiday-refresh-btn" class="util-btn" title="Force-refresh NSE holidays cache">📅 Refresh Holidays</button>
-    <button onclick="syncToLocal()" id="sync-local-btn" class="util-btn" title="Download ~/trading-data/ from server as tar.gz">📦 Sync to Local</button>
-    <span class="util-info" id="cache-info-txt">📦 Candle cache: checking…</span>
+    <button onclick="hardReset()" class="util-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
   </div>
 
   <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Paper/Live toggle, all-time) -->
@@ -1026,6 +1069,18 @@ ${buildSidebar('dashboard', liveActive)}
     <div class="dash-chart-wrap"><canvas id="dashCumChart"></canvas></div>
     <div id="dashCumEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>
   </div>
+
+  ${analyticsPanelOn ? `
+  <!-- ⑥ Dashboard analytics panel — market-hour aware -->
+  <div id="dashAnalytics" class="dash-analytics" style="margin-top:14px;">
+    <div class="da-header">
+      <div class="da-title"><span id="da-mode-badge" class="da-badge">—</span><span id="da-title-txt">Analytics</span></div>
+      <div class="da-sub" id="da-sub-txt">Loading…</div>
+    </div>
+    <div id="da-body" class="da-body">
+      <div class="da-loading">Loading analytics…</div>
+    </div>
+  </div>` : ''}
 
 </div>
 
@@ -1620,24 +1675,327 @@ document.addEventListener('click', function(e){
 
 loadModuleCharts();
 
-// ── Candle cache info ─────────────────────────────────────────────────────────
+// ── Candle cache info (top-bar pill) ─────────────────────────────────────────
 async function loadCacheInfo(){
   try {
     var r = await fetch('/api/cache-info', {cache:'no-store'});
     if (!r.ok) return;
     var d = await r.json();
-    var el = document.getElementById('cache-info-txt');
+    var el = document.getElementById('cache-info-pill');
     if (!el) return;
     if (d.cache) {
-      el.style.color = '#10b981';
+      el.classList.remove('empty');
       el.textContent = '📦 ' + d.cache.candles + ' candles · ' + d.cache.from + ' → ' + d.cache.to + ' · ' + d.cache.sizeKB + ' KB';
     } else {
-      el.style.color = '#4a6080';
-      el.textContent = '📦 No cache yet — built on first session start';
+      el.classList.add('empty');
+      el.textContent = '📦 No cache yet';
     }
   } catch(_){}
 }
 loadCacheInfo();
+setInterval(loadCacheInfo, 60000); // refresh once a minute
+
+// ── Dashboard Analytics Panel ─────────────────────────────────────────────────
+// Live view (market hours) vs Post-market view (last session + 7-day rolling).
+(function initAnalyticsPanel(){
+  var root = document.getElementById('dashAnalytics');
+  if (!root) return;
+
+  function fmtINR(n) {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    var v = +n; var sign = v < 0 ? '-' : '';
+    return sign + '₹' + Math.abs(v).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  }
+  function cls(n) {
+    if (n === null || n === undefined || isNaN(n) || +n === 0) return 'flat';
+    return +n > 0 ? 'pos' : 'neg';
+  }
+  function istNowMinutes(){
+    // Minutes since IST midnight using fixed +05:30 offset (no DST in India)
+    return Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
+  }
+  function istDateISO(){
+    var d = new Date();
+    // en-CA gives YYYY-MM-DD
+    return d.toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' });
+  }
+  function istDow(){
+    var d = new Date(new Date().toLocaleString('en-US', { timeZone:'Asia/Kolkata' }));
+    return d.getDay(); // 0=Sun..6=Sat
+  }
+
+  // Are we inside an NSE trading session?
+  function isMarketOpenNow(holidays){
+    var dow = istDow();
+    if (dow === 0 || dow === 6) return false;
+    var iso = istDateISO();
+    if (holidays && holidays.indexOf(iso) !== -1) return false;
+    var m = istNowMinutes();
+    return m >= 9*60+15 && m < 15*60+30;
+  }
+
+  function fetchJSON(url){
+    return fetch(url, { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+  }
+
+  function renderLive(data) {
+    // data: { swing, scalp, pa } each from /{strat}-paper/status/data
+    var tiles = [
+      { key:'SWING', cls:'swing', label:'SWING',         d:data.swing, page:'/swing-paper/status' },
+      { key:'SCALP', cls:'scalp', label:'SCALP',         d:data.scalp, page:'/scalp-paper/status' },
+      { key:'PA',    cls:'pa',    label:'PRICE ACTION',  d:data.pa,    page:'/pa-paper/status' },
+    ];
+    var html = '<div class="da-grid cols-3">';
+    tiles.forEach(function(t){
+      var d = t.d;
+      if (!d) {
+        html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
+        return;
+      }
+      var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised || 0);
+      var closed = d.sessionPnl || 0;
+      var day = (+open || 0) + (+closed || 0);
+      var c = cls(day);
+      var pill = d.running ? 'run' : 'stop';
+      html += '<div class="da-tile ' + t.cls + '">' +
+        '<div class="da-tile-hdr">' + t.label + '<span class="da-pill ' + pill + '">' + (d.running ? 'RUNNING' : 'STOPPED') + '</span></div>' +
+        '<div class="da-big ' + c + '">' + fmtINR(day) + '</div>' +
+        '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount||0) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderInfoStrip(expiryInfo, nextHoliday){
+    var items = [];
+    if (expiryInfo) {
+      items.push('<div class="da-tile info"><div class="da-tile-hdr">Next NIFTY Expiry</div><div class="da-big flat">' + expiryInfo.label + '</div><div class="da-sub-line">' + expiryInfo.daysAway + '</div></div>');
+    }
+    if (nextHoliday) {
+      items.push('<div class="da-tile info"><div class="da-tile-hdr">Next NSE Holiday</div><div class="da-big flat">' + nextHoliday.label + '</div><div class="da-sub-line">' + nextHoliday.daysAway + '</div></div>');
+    }
+    if (!items.length) return '';
+    return '<div class="da-grid cols-' + items.length + '">' + items.join('') + '</div>';
+  }
+
+  function aggregateTrades(trades, fromIso, toIso) {
+    // Returns { byStrategy: {SWING:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
+    var bys = { SWING:{net:0,t:0,w:0,l:0}, SCALP:{net:0,t:0,w:0,l:0}, PA:{net:0,t:0,w:0,l:0} };
+    var tot = { net:0, t:0, w:0, l:0 };
+    var byDate = {};
+    var bestDay = null, worstDay = null;
+    trades.forEach(function(tr){
+      if (!tr || !tr.date) return;
+      if (fromIso && tr.date < fromIso) return;
+      if (toIso && tr.date > toIso) return;
+      // strategy normalisation
+      var s = String(tr.strategy || '').toUpperCase();
+      var key = s.indexOf('SCALP') !== -1 ? 'SCALP' : (s.indexOf('PRICE') !== -1 || s.indexOf('PA') !== -1 ? 'PA' : 'SWING');
+      var p = +tr.pnl || 0;
+      bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++;
+      tot.net += p; tot.t++; if (p > 0) tot.w++; else if (p < 0) tot.l++;
+      byDate[tr.date] = (byDate[tr.date] || 0) + p;
+    });
+    // Best / worst day
+    Object.keys(byDate).forEach(function(d){
+      var v = byDate[d];
+      if (bestDay === null || v > bestDay.v) bestDay = { d:d, v:v };
+      if (worstDay === null || v < worstDay.v) worstDay = { d:d, v:v };
+    });
+    return { byStrategy: bys, total: tot, byDate: byDate, bestDay: bestDay, worstDay: worstDay };
+  }
+
+  function lastTradingDate(byDate){
+    var dates = Object.keys(byDate).sort();
+    return dates.length ? dates[dates.length - 1] : null;
+  }
+
+  function pctWR(w, l){
+    var tot = w + l;
+    return tot === 0 ? 0 : Math.round(100 * w / tot);
+  }
+
+  function renderPostMarket(paperTrades, liveTrades, expiryInfo, nextHoliday) {
+    var combined = (paperTrades || []).concat(liveTrades || []);
+    if (!combined.length) {
+      return renderInfoStrip(expiryInfo, nextHoliday) +
+        '<div class="da-empty">No trade history yet. Run a paper or live session — analytics appears here after-hours.</div>';
+    }
+    // Last completed trading day across paper+live
+    var combinedAgg = aggregateTrades(combined);
+    var lastDay = lastTradingDate(combinedAgg.byDate);
+    var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
+
+    // 7-day rolling (last 7 calendar days inclusive of today, IST)
+    var sevenAgo = (function(){
+      var d = new Date();
+      var iso = d.toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' });
+      var parts = iso.split('-');
+      var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
+      dt.setUTCDate(dt.getUTCDate() - 6);
+      return dt.toISOString().slice(0,10);
+    })();
+    var todayIso = istDateISO();
+    var weekAgg = aggregateTrades(combined, sevenAgo, todayIso);
+
+    // ── Last session card (per strategy) ──
+    var lastHtml = '<div class="da-grid cols-4">';
+    var lsTiles = [
+      { key:'SWING', cls:'swing', label:'SWING' },
+      { key:'SCALP', cls:'scalp', label:'SCALP' },
+      { key:'PA',    cls:'pa',    label:'PRICE ACTION' },
+    ];
+    lsTiles.forEach(function(t){
+      var s = lastDayAgg ? lastDayAgg.byStrategy[t.key] : null;
+      var net = s ? s.net : 0;
+      var trades = s ? s.t : 0;
+      var w = s ? s.w : 0, l = s ? s.l : 0;
+      lastHtml += '<div class="da-tile ' + t.cls + '">' +
+        '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + trades + 'T</span></div>' +
+        '<div class="da-big ' + cls(net) + '">' + fmtINR(net) + '</div>' +
+        '<div class="da-sub-line">' + w + 'W / ' + l + 'L &middot; WR ' + pctWR(w,l) + '%</div>' +
+      '</div>';
+    });
+    // Total card for last day
+    var tNet = lastDayAgg ? lastDayAgg.total.net : 0;
+    var tTrades = lastDayAgg ? lastDayAgg.total.t : 0;
+    var tW = lastDayAgg ? lastDayAgg.total.w : 0;
+    var tL = lastDayAgg ? lastDayAgg.total.l : 0;
+    lastHtml += '<div class="da-tile info">' +
+      '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + tTrades + 'T</span></div>' +
+      '<div class="da-big ' + cls(tNet) + '">' + fmtINR(tNet) + '</div>' +
+      '<div class="da-sub-line">' + tW + 'W / ' + tL + 'L &middot; WR ' + pctWR(tW,tL) + '%</div>' +
+    '</div>';
+    lastHtml += '</div>';
+
+    // ── 7-day rolling card ──
+    var weekHtml = '<div class="da-grid cols-4">';
+    lsTiles.forEach(function(t){
+      var s = weekAgg.byStrategy[t.key];
+      weekHtml += '<div class="da-tile ' + t.cls + '">' +
+        '<div class="da-tile-hdr">' + t.label + '<span class="da-pill">' + s.t + 'T</span></div>' +
+        '<div class="da-big ' + cls(s.net) + '">' + fmtINR(s.net) + '</div>' +
+        '<div class="da-sub-line">' + s.w + 'W / ' + s.l + 'L &middot; WR ' + pctWR(s.w,s.l) + '%</div>' +
+      '</div>';
+    });
+    // 7-day TOTAL with best/worst day
+    var bestStr = weekAgg.bestDay  ? (weekAgg.bestDay.d  + ' ' + fmtINR(weekAgg.bestDay.v))  : '—';
+    var worstStr= weekAgg.worstDay ? (weekAgg.worstDay.d + ' ' + fmtINR(weekAgg.worstDay.v)) : '—';
+    weekHtml += '<div class="da-tile info">' +
+      '<div class="da-tile-hdr">TOTAL<span class="da-pill">' + weekAgg.total.t + 'T</span></div>' +
+      '<div class="da-big ' + cls(weekAgg.total.net) + '">' + fmtINR(weekAgg.total.net) + '</div>' +
+      '<div class="da-sub-line">Best ' + bestStr + ' &middot; Worst ' + worstStr + '</div>' +
+    '</div>';
+    weekHtml += '</div>';
+
+    var html = '';
+    html += '<div class="da-tile-hdr" style="margin-top:2px;">Last trading day' + (lastDay ? ' &middot; ' + lastDay : '') + '</div>';
+    html += lastHtml;
+    html += '<div class="da-tile-hdr" style="margin-top:6px;">7-day rolling (' + sevenAgo + ' → ' + todayIso + ')</div>';
+    html += weekHtml;
+    var infoStrip = renderInfoStrip(expiryInfo, nextHoliday);
+    if (infoStrip) html += '<div class="da-tile-hdr" style="margin-top:6px;">Market schedule</div>' + infoStrip;
+    return html;
+  }
+
+  function buildExpiryInfo(expiries){
+    if (!expiries || !expiries.length) return null;
+    var todayIso = istDateISO();
+    var next = null;
+    for (var i = 0; i < expiries.length; i++) {
+      var e = expiries[i];
+      var dateStr = e.actual || e.date;
+      if (dateStr >= todayIso) { next = { dateStr: dateStr, monthly: e.monthly, preponed: e.preponed }; break; }
+    }
+    if (!next) return null;
+    var parts = next.dateStr.split('-');
+    var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
+    var nowDt = new Date(Date.UTC(+todayIso.split('-')[0], +todayIso.split('-')[1]-1, +todayIso.split('-')[2]));
+    var days = Math.round((dt - nowDt) / 86400000);
+    var typeLbl = next.monthly ? 'Monthly' : 'Weekly';
+    var preLbl  = next.preponed ? ' (preponed)' : '';
+    return { label: next.dateStr, daysAway: typeLbl + preLbl + ' &middot; ' + (days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's')) };
+  }
+
+  function buildNextHoliday(holidays){
+    if (!holidays || !holidays.length) return null;
+    var todayIso = istDateISO();
+    var sorted = holidays.slice().sort();
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i] >= todayIso) {
+        var parts = sorted[i].split('-');
+        var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
+        var nowDt = new Date(Date.UTC(+todayIso.split('-')[0], +todayIso.split('-')[1]-1, +todayIso.split('-')[2]));
+        var days = Math.round((dt - nowDt) / 86400000);
+        return { label: sorted[i], daysAway: (days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' away') };
+      }
+    }
+    return null;
+  }
+
+  // Tag the title & badge based on mode
+  function setMode(mode, sub){
+    var badge = document.getElementById('da-mode-badge');
+    var title = document.getElementById('da-title-txt');
+    var subEl = document.getElementById('da-sub-txt');
+    if (mode === 'live') {
+      badge.className = 'da-badge live'; badge.textContent = 'MARKET OPEN';
+      title.textContent = 'Today So Far';
+    } else {
+      badge.className = 'da-badge post'; badge.textContent = 'MARKET CLOSED';
+      title.textContent = 'Last Session + 7-day Rolling';
+    }
+    subEl.textContent = sub || '';
+  }
+
+  var _pollTimer = null;
+  function clearPoll(){ if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; } }
+
+  async function refresh(){
+    var body = document.getElementById('da-body');
+    // Fetch shared info (holidays + expiries) once per refresh
+    var [holRes, expRes] = await Promise.all([
+      fetchJSON('/api/holidays'),
+      fetchJSON('/api/expiry-dates'),
+    ]);
+    var holidays = (holRes && holRes.holidays) || [];
+    var expiries = (expRes && expRes.expiries) || [];
+    var expiryInfo = buildExpiryInfo(expiries);
+    var nextHol    = buildNextHoliday(holidays);
+    var marketOpen = isMarketOpenNow(holidays);
+
+    if (marketOpen) {
+      setMode('live', 'Polling every 8s &middot; ' + istDateISO());
+      var [swing, scalp, pa] = await Promise.all([
+        fetchJSON('/swing-paper/status/data'),
+        fetchJSON('/scalp-paper/status/data'),
+        fetchJSON('/pa-paper/status/data'),
+      ]);
+      var html = renderLive({ swing: swing, scalp: scalp, pa: pa });
+      var infoStrip = renderInfoStrip(expiryInfo, nextHol);
+      if (infoStrip) html += '<div class="da-tile-hdr" style="margin-top:6px;">Market schedule</div>' + infoStrip;
+      body.innerHTML = html;
+
+      clearPoll();
+      _pollTimer = setInterval(refresh, 8000);
+    } else {
+      setMode('post', 'Paper + Live combined &middot; refreshed ' + istDateISO());
+      var [paper, live] = await Promise.all([
+        fetchJSON('/consolidation/data'),
+        fetchJSON('/live-consolidation/data'),
+      ]);
+      var paperTrades = (paper && paper.trades) || [];
+      var liveTrades  = (live  && live.trades)  || [];
+      body.innerHTML = renderPostMarket(paperTrades, liveTrades, expiryInfo, nextHol);
+
+      clearPoll();
+      _pollTimer = setInterval(refresh, 60000); // every minute after-hours (covers session end)
+    }
+  }
+
+  refresh();
+})();
 
 // ── Check Trading Status — slim dismissible notification pill ────────────────
 function dismissStatusAlert(){
@@ -1696,11 +2054,11 @@ setInterval(pollSessionActiveSwap, 5000);
 
 async function hardReset(){
   var ok = await showDoubleConfirm({
-    icon: '⚠️', title: 'Hard Reset',
-    message: 'Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.',
+    icon: '⚠️', title: 'Reset Token',
+    message: 'Clear Fyers + Zerodha tokens and restart the server?\\nYou will need to re-login both brokers after.',
     confirmText: 'Reset', confirmClass: 'modal-btn-danger',
     subject: 'All broker tokens + server restart',
-    secondConfirmText: 'Yes, hard reset'
+    secondConfirmText: 'Yes, reset tokens'
   });
   if(!ok) return;
   try {
@@ -1719,101 +2077,8 @@ async function hardReset(){
   }
 }
 
-async function refreshHolidays(){
-  var btn = document.getElementById('holiday-refresh-btn');
-  if(!btn) return;
-
-  btn.disabled = true;
-  btn.textContent = '⏳ Refreshing...';
-  btn.style.opacity = '0.6';
-
-  try {
-    var res = await secretFetch('/api/holidays/refresh', {method:'POST'});
-    btn.disabled = false;
-    btn.textContent = '📅 Refresh Holidays';
-    btn.style.opacity = '1';
-    if(!res) return;
-    if(!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
-    var d = await res.json();
-    if(d.success){
-      await showAlert({icon:'✅',title:'Holidays Refreshed',message:'Fetched ' + d.count + ' holidays from NSE API.\\nCache updated. Trading status check will use the updated list.',btnClass:'modal-btn-success'});
-      checkTradingStatus();
-    } else {
-      await showAlert({icon:'⚠️',title:'NSE API Unavailable',message:'NSE API is currently blocking requests or unavailable.\\n\\nUsing fallback holiday list (' + (d.count||17) + ' holidays for 2026).\\nYour trading bot will continue working normally.',btnClass:'modal-btn-primary'});
-      checkTradingStatus();
-    }
-  } catch(err){
-    btn.disabled = false;
-    btn.textContent = '📅 Refresh Holidays';
-    btn.style.opacity = '1';
-    showAlert({icon:'❌',title:'Network Error',message:err.message+'\\n\\nPlease check your internet connection and try again.',btnClass:'modal-btn-danger'});
-  }
-}
-
-// ── Sync to Local — one-shot tar.gz download of ~/trading-data/ from server ──
-function fmtBytes(n){
-  if(!n) return '0 B';
-  var u=['B','KB','MB','GB']; var i=0;
-  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
-  return n.toFixed(n<10?2:1)+' '+u[i];
-}
-async function syncToLocal(){
-  var btn = document.getElementById('sync-local-btn');
-  if(!btn) return;
-  btn.disabled = true;
-  var orig = btn.textContent;
-  btn.textContent = '⏳ Checking…';
-  btn.style.opacity = '0.6';
-
-  // 1) Fetch size preview
-  var info;
-  try {
-    var r = await secretFetch('/sync/info');
-    if(!r) { btn.disabled=false; btn.textContent=orig; btn.style.opacity='1'; return; }
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    info = await r.json();
-  } catch(err){
-    btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
-    showAlert({icon:'❌',title:'Could not read server data',message:err.message,btnClass:'modal-btn-danger'});
-    return;
-  }
-
-  btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
-
-  if(!info.exists){
-    showAlert({icon:'📭',title:'Nothing to sync',message:'~/trading-data/ does not exist on the server yet.\\nRun a paper or live session first.',btnClass:'modal-btn-primary'});
-    return;
-  }
-
-  // 2) Confirm with user
-  var ageMin = info.newestMtimeMs ? Math.round((Date.now()-info.newestMtimeMs)/60000) : null;
-  var ageStr = ageMin === null ? '' : (ageMin < 60 ? ageMin+' min ago' : ageMin < 1440 ? Math.round(ageMin/60)+' h ago' : Math.round(ageMin/1440)+' d ago');
-  var msg = 'Download a snapshot of the server\\'s ~/trading-data/ folder.\\n\\n' +
-            '• Files: ' + info.fileCount + '\\n' +
-            '• Size:  ' + fmtBytes(info.totalBytes) + ' (uncompressed)\\n' +
-            (ageStr ? '• Newest: ' + ageStr + '\\n' : '') +
-            '\\nFormat: .tar.gz — unpack with: tar -xzf <file>';
-  var ok = await showConfirm({
-    icon:'📦', title:'Sync to Local',
-    message: msg,
-    confirmText:'Download', confirmClass:'modal-btn-primary'
-  });
-  if(!ok) return;
-
-  // 3) Trigger download via hidden link. Pass API secret as query param if set
-  // (browser navigation can't carry the x-api-secret header).
-  var url = '/sync/download-all';
-  try {
-    var s = sessionStorage.getItem('__api_secret');
-    if(s) url += '?secret=' + encodeURIComponent(s);
-  } catch(_){}
-  var a = document.createElement('a');
-  a.href = url;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(function(){ document.body.removeChild(a); }, 1000);
-}
+// refreshHolidays() moved to Settings → Expiry & Holidays modal
+// syncToLocal() moved to /docs page
 </script>
 </div></div>
 </body>

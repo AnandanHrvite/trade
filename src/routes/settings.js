@@ -324,6 +324,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Dashboard' menu in the sidebar. When off, '/' redirects to Settings.", default: "false" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Backtest' (all-strategy) menu in the sidebar", default: "true" },
       { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, the Dashboard ('/') auto-swaps to the Real-Time monitor whenever any paper/live session is running, and back to the normal dashboard when nothing is running.", default: "true" },
+      { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the bottom analytics panel on the Dashboard. Market hours: live session P&L per strategy + next expiry. After-hours: last-session breakdown, 7-day rolling stats, next holiday/expiry.", default: "true" },
       { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Replay' menu in the sidebar (deterministic tick-replay backtest of recorded paper sessions)", default: "true" },
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Paper Traded History' menu in the sidebar", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Live Traded History' menu in the sidebar", default: "true" },
@@ -352,7 +353,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Price Action group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── System submenu (Settings is always shown) ──
-      { key: "UI_SHOW_LOGS",       label: "System → Logs",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Logs' inside the System group",       default: "true" },
+      { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true" },
       { key: "UI_SHOW_TRADE_LOGS", label: "System → Trade Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Trade Logs' inside the System group", default: "true" },
     ],
   },
@@ -913,6 +914,7 @@ router.get("/", (req, res) => {
   // ── Hide strategy sections when their master toggle is off ──
   const swingModeOn = (envData["SWING_MODE_ENABLED"] ?? process.env.SWING_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const paModeOn    = (envData["PA_MODE_ENABLED"]    ?? process.env.PA_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
     "SWING STRATEGY (5-min) — Zerodha":              swingModeOn,
@@ -1078,6 +1080,34 @@ router.get("/", (req, res) => {
       max-height: 5000px;
       opacity: 1;
     }
+
+    /* ── Search bar ─────────────────────────────────────── */
+    .settings-search-bar {
+      position: sticky; top: 0; z-index: 30;
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 14px; margin-bottom: 16px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    }
+    .ssb-icon { font-size: 0.95rem; opacity: 0.7; flex-shrink: 0; }
+    #settingsSearchInput {
+      flex: 1; background: transparent; border: none; outline: none;
+      color: var(--text2); font-family: inherit; font-size: 0.88rem; padding: 4px 2px;
+    }
+    #settingsSearchInput::placeholder { color: var(--dim); }
+    .ssb-count { font-size: 0.7rem; color: var(--muted); font-family: 'JetBrains Mono', monospace; min-width: 0; flex-shrink: 0; }
+    .ssb-clear {
+      background: transparent; border: 1px solid var(--border2); color: var(--muted);
+      padding: 2px 8px; border-radius: 5px; font-size: 0.75rem; cursor: pointer;
+      display: none; font-family: inherit;
+    }
+    .ssb-clear:hover { color: var(--text2); border-color: var(--accent); }
+    .settings-search-bar.active .ssb-clear { display: inline-flex; }
+    .settings-search-bar.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15), 0 4px 14px rgba(0,0,0,0.18); }
+    .setting-row.search-hit { box-shadow: inset 3px 0 0 var(--accent); }
+    .setting-row.search-miss { display: none !important; }
+    .settings-section.search-hidden { display: none !important; }
+    .ssb-empty { color: var(--yellow); font-style: italic; }
 
     /* ── Setting row ─────────────────────────────────────── */
     .setting-row {
@@ -1418,6 +1448,7 @@ router.get("/", (req, res) => {
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
         <a href="/pnl-history" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">💰 P&amp;L HISTORY</a>
         <a href="/login-logs" style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🔐 LOGIN LOGS</a>
+        ${showLogsBtn ? `<a href="/logs" style="padding:6px 14px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📜 LOGS</a>` : ''}
         <button onclick="showExpiryHolidaysModal()" title="View NIFTY weekly/monthly expiry calendar and NSE trading holidays" style="padding:6px 14px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📅 EXPIRY &amp; HOLIDAYS</button>
         <button onclick="showHealthModal()" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">HEALTH CHECK</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
@@ -1436,6 +1467,14 @@ router.get("/", (req, res) => {
     </div>
 
     <div class="page">
+      <div class="settings-search-bar" id="settingsSearchBar">
+        <span class="ssb-icon">🔎</span>
+        <input id="settingsSearchInput" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Search settings by label, env key (e.g. UI_SHOW_LOGS), or description…"
+               oninput="filterSettings(this.value)" onkeydown="if(event.key==='Escape'){this.value='';filterSettings('');this.blur();}">
+        <span class="ssb-count" id="settingsSearchCount"></span>
+        <button type="button" class="ssb-clear" id="settingsSearchClear" onclick="document.getElementById('settingsSearchInput').value='';filterSettings('');" title="Clear (Esc)">✕</button>
+      </div>
       ${sectionsHtml}
 
       <!-- Restart Server -->
@@ -1474,6 +1513,87 @@ function toggleSection(titleEl) {
   }
   section.classList.toggle('open');
 }
+
+// ── Settings search: filter rows by label / env key / description ──
+var _ssbPrevOpenIds = null; // snapshot of which sections were open before search began
+function filterSettings(rawQuery) {
+  var q = String(rawQuery || '').trim().toLowerCase();
+  var bar = document.getElementById('settingsSearchBar');
+  var countEl = document.getElementById('settingsSearchCount');
+
+  // Empty query → restore pre-search state
+  if (!q) {
+    bar.classList.remove('active');
+    countEl.textContent = '';
+    countEl.classList.remove('ssb-empty');
+    document.querySelectorAll('.setting-row.search-hit, .setting-row.search-miss').forEach(function(r){
+      r.classList.remove('search-hit', 'search-miss');
+    });
+    document.querySelectorAll('.settings-section.search-hidden').forEach(function(s){
+      s.classList.remove('search-hidden');
+    });
+    if (_ssbPrevOpenIds) {
+      // Restore which sections were open before the search began
+      document.querySelectorAll('.settings-section').forEach(function(s){
+        var id = s.getAttribute('data-section');
+        if (_ssbPrevOpenIds.indexOf(id) !== -1) s.classList.add('open');
+        else s.classList.remove('open');
+      });
+      _ssbPrevOpenIds = null;
+    }
+    return;
+  }
+
+  // First keystroke of a new search → snapshot the currently-open sections
+  if (_ssbPrevOpenIds === null) {
+    _ssbPrevOpenIds = Array.prototype.map.call(
+      document.querySelectorAll('.settings-section.open'),
+      function(s){ return s.getAttribute('data-section'); }
+    );
+  }
+
+  bar.classList.add('active');
+  var totalHits = 0;
+  var sections = document.querySelectorAll('.settings-section');
+  sections.forEach(function(section){
+    if (!section.hasAttribute('data-section')) return; // skip Server-Control section
+    var rows = section.querySelectorAll('.setting-row');
+    var sectionHits = 0;
+    rows.forEach(function(row){
+      var label = (row.querySelector('.setting-label') || {}).textContent || '';
+      var keyTag = (row.querySelector('.env-key-tag') || {}).textContent || '';
+      var desc  = (row.querySelector('.field-desc') || {}).textContent || '';
+      var hay = (label + ' ' + keyTag + ' ' + desc).toLowerCase();
+      if (hay.indexOf(q) !== -1) {
+        row.classList.add('search-hit');
+        row.classList.remove('search-miss');
+        sectionHits++;
+      } else {
+        row.classList.remove('search-hit');
+        row.classList.add('search-miss');
+      }
+    });
+    if (sectionHits > 0) {
+      section.classList.remove('search-hidden');
+      section.classList.add('open'); // auto-expand sections with matches
+    } else {
+      section.classList.add('search-hidden');
+    }
+    totalHits += sectionHits;
+  });
+
+  countEl.classList.toggle('ssb-empty', totalHits === 0);
+  countEl.textContent = totalHits === 0 ? 'no matches' : (totalHits + ' match' + (totalHits === 1 ? '' : 'es'));
+}
+
+// '/' to focus the search box (unless already typing in another input)
+document.addEventListener('keydown', function(e){
+  if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+  var t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+  var input = document.getElementById('settingsSearchInput');
+  if (input) { e.preventDefault(); input.focus(); input.select(); }
+});
 
 (function() {
   // Track original values for dirty detection
@@ -2150,6 +2270,36 @@ function showExpiryHolidaysModal() {
   loadExpiriesTable();
   loadHolidaysTable();
 }
+async function refreshHolidays() {
+  var btn = document.getElementById('holiday-refresh-btn');
+  if (!btn) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ REFRESHING…';
+  btn.style.opacity = '0.6';
+  try {
+    var res = await secretFetch('/api/holidays/refresh', { method: 'POST' });
+    btn.disabled = false;
+    btn.textContent = orig;
+    btn.style.opacity = '1';
+    if (!res) return;
+    if (!res.ok) throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+    var d = await res.json();
+    if (d.success) {
+      await showAlert({ icon:'✅', title:'Holidays Refreshed', message:'Fetched ' + d.count + ' holidays from NSE API.\\nCache updated.', btnClass:'modal-btn-success' });
+    } else {
+      await showAlert({ icon:'⚠️', title:'NSE API Unavailable', message:'NSE API is currently blocking requests or unavailable.\\nUsing fallback holiday list (' + (d.count||17) + ' holidays for 2026).', btnClass:'modal-btn-primary' });
+    }
+    // reload the table data so the modal reflects the refreshed cache
+    loadHolidaysTable();
+    loadExpiriesTable();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = orig;
+    btn.style.opacity = '1';
+    showAlert({ icon:'❌', title:'Network Error', message: err.message + '\\nPlease check your connection and try again.', btnClass:'modal-btn-danger' });
+  }
+}
 function showExpHolTab(tab) {
   var ex = document.getElementById('ehTab-expiry');
   var ho = document.getElementById('ehTab-holiday');
@@ -2264,7 +2414,10 @@ function copySectionSummary() {
   <div style="max-width:640px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
       <span style="font-weight:700;font-size:0.95rem;color:#22d3ee;">📅 NIFTY Expiry &amp; NSE Holidays</span>
-      <button onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="holiday-refresh-btn" type="button" onclick="refreshHolidays()" title="Force-refresh NSE holidays from upstream API" style="padding:5px 12px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.3px;">📅 REFRESH</button>
+        <button onclick="document.getElementById('expiryHolidaysModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+      </div>
     </div>
     <div style="display:flex;gap:6px;padding:10px 16px 0;border-bottom:1px solid #1a2640;">
       <button id="ehBtn-expiry" type="button" onclick="showExpHolTab('expiry')" class="eh-tab-btn eh-tab-active">Expiry Calendar</button>

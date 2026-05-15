@@ -152,10 +152,13 @@ ${buildSidebar("docs", liveActive)}
     <span class="bc-sep">›</span>
     <span class="bc-current">📄 Docs</span>
   </nav>
-  <div class="tabs">
-    <div class="tab active" onclick="showTab(this,'readme')">README</div>
-    <div class="tab" onclick="showTab(this,'changelog')">CHANGELOG</div>
-    <div class="tab" onclick="showTab(this,'guides')">Documents</div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <div class="tabs">
+      <div class="tab active" onclick="showTab(this,'readme')">README</div>
+      <div class="tab" onclick="showTab(this,'changelog')">CHANGELOG</div>
+      <div class="tab" onclick="showTab(this,'guides')">Documents</div>
+    </div>
+    <button id="sync-local-btn" type="button" onclick="syncToLocal()" title="Download ~/trading-data/ from the server as a .tar.gz snapshot" style="padding:8px 16px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.30);border-radius:7px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📦 SYNC TO LOCAL</button>
   </div>
 
   <div id="readme" class="content active">
@@ -183,6 +186,66 @@ function showTab(el, id) {
   el.classList.add('active');
   document.getElementById(id).classList.add('active');
 }
+function fmtBytes(n){
+  if(!n) return '0 B';
+  var u=['B','KB','MB','GB']; var i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return n.toFixed(n<10?2:1)+' '+u[i];
+}
+async function syncToLocal(){
+  var btn = document.getElementById('sync-local-btn');
+  if(!btn) return;
+  var orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ CHECKING…';
+  btn.style.opacity = '0.6';
+
+  var info;
+  try {
+    var r = await secretFetch('/sync/info');
+    if(!r) { btn.disabled=false; btn.textContent=orig; btn.style.opacity='1'; return; }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    info = await r.json();
+  } catch(err){
+    btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
+    showAlert({icon:'❌',title:'Could not read server data',message:err.message,btnClass:'modal-btn-danger'});
+    return;
+  }
+
+  btn.disabled=false; btn.textContent=orig; btn.style.opacity='1';
+
+  if(!info.exists){
+    showAlert({icon:'📭',title:'Nothing to sync',message:'~/trading-data/ does not exist on the server yet.\\nRun a paper or live session first.',btnClass:'modal-btn-primary'});
+    return;
+  }
+
+  var ageMin = info.newestMtimeMs ? Math.round((Date.now()-info.newestMtimeMs)/60000) : null;
+  var ageStr = ageMin === null ? '' : (ageMin < 60 ? ageMin+' min ago' : ageMin < 1440 ? Math.round(ageMin/60)+' h ago' : Math.round(ageMin/1440)+' d ago');
+  var msg = 'Download a snapshot of the server\\'s ~/trading-data/ folder.\\n\\n' +
+            '• Files: ' + info.fileCount + '\\n' +
+            '• Size:  ' + fmtBytes(info.totalBytes) + ' (uncompressed)\\n' +
+            (ageStr ? '• Newest: ' + ageStr + '\\n' : '') +
+            '\\nFormat: .tar.gz — unpack with: tar -xzf <file>';
+  var ok = await showConfirm({
+    icon:'📦', title:'Sync to Local',
+    message: msg,
+    confirmText:'Download', confirmClass:'modal-btn-primary'
+  });
+  if(!ok) return;
+
+  var url = '/sync/download-all';
+  try {
+    var s = sessionStorage.getItem('__api_secret');
+    if(s) url += '?secret=' + encodeURIComponent(s);
+  } catch(_){}
+  var a = document.createElement('a');
+  a.href = url;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); }, 1000);
+}
+
 async function deleteDoc(name) {
   var ok = await showDoubleConfirm({
     icon: '🗑',

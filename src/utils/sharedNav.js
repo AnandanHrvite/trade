@@ -65,7 +65,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
-  const showLogs      = (process.env.UI_SHOW_LOGS       || 'true').toLowerCase() === 'true';
   const showTradeLogs = (process.env.UI_SHOW_TRADE_LOGS || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
@@ -137,7 +136,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        ...(showLogs      ? [{ key: 'logs',       href: '/logs',        icon: '📜', label: 'Logs'       }] : []),
         ...(showTradeLogs ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
@@ -705,6 +703,8 @@ function sidebarCSS() {
     .top-bar-badge{display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:#60a5fa;}
     .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
     .top-bar-badge.paper-active{border-color:rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;animation:pulse 1.2s infinite;}
+    .top-bar-cache{display:inline-flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:600;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(16,185,129,0.25);background:rgba(16,185,129,0.07);color:#10b981;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;white-space:nowrap;}
+    .top-bar-cache.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:#4a6080;}
     .broker-badges{display:flex;gap:6px;padding:8px 24px;background:#040c18;border-bottom:1px solid #0e1e36;flex-wrap:wrap;}
     .broker-badge{font-size:0.65rem;font-weight:600;padding:3px 10px;border-radius:5px;}
     .broker-badge.ok{background:#060e20;border:0.5px solid #0e2850;color:#60a5fa;}
