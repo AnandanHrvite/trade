@@ -19,7 +19,7 @@
 
 const fyers = require("../config/fyers");
 const {
-  guardedCall, withRetry, withCautiousRetry, breakerStatus,
+  guardedCall, withRetry, withCautiousRetry, breakerStatus, safetyConfig,
 } = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -167,7 +167,7 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
         id:        orderId,
         type:      4,         // SL-M (Stop Loss Market)
         stopPrice: newTriggerPrice,
-      }), { attempts: 2, baseMs: 200, label: "fyers.modify_slm" }),
+      }), { attempts: safetyConfig().retryWriteAttempts, baseMs: safetyConfig().retryBaseMs, label: "fyers.modify_slm" }),
     );
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
@@ -187,7 +187,7 @@ async function getOrders() {
   if (!isAuthenticated()) return [];
   try {
     const response = await guardedCall("fyers", () =>
-      withRetry(_getOrders, { attempts: 3, baseMs: 120, label: "fyers.get_orders" }),
+      withRetry(_getOrders, { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "fyers.get_orders" }),
     );
     if (response && response.s === "ok" && response.orderBook) {
       return response.orderBook;
@@ -203,7 +203,7 @@ async function getPositions() {
   if (!isAuthenticated()) return { netPositions: [] };
   try {
     const response = await guardedCall("fyers", () =>
-      withRetry(_getPositions, { attempts: 3, baseMs: 120, label: "fyers.get_positions" }),
+      withRetry(_getPositions, { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "fyers.get_positions" }),
     );
     if (response && response.s === "ok" && response.netPositions) {
       return { netPositions: response.netPositions };

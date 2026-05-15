@@ -15,7 +15,7 @@ require("dotenv").config();
 const fs   = require("fs");
 const path = require("path");
 const {
-  guardedCall, withRetry, withCautiousRetry, breakerStatus,
+  guardedCall, withRetry, withCautiousRetry, breakerStatus, safetyConfig,
 } = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,7 +308,7 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
       withCautiousRetry(() => kite.modifyOrder(kite.VARIETY_REGULAR, orderId, {
         order_type:    kite.ORDER_TYPE_SLM,
         trigger_price: newTriggerPrice,
-      }), { attempts: 2, baseMs: 200, label: "zerodha.modifySLM" }),
+      }), { attempts: safetyConfig().retryWriteAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.modifySLM" }),
     );
     console.log(`[ZerodhaBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
     return { success: true, raw: response };
@@ -347,7 +347,7 @@ async function getOrders() {
   if (!isAuthenticated()) return [];
   try {
     return await guardedCall("zerodha", () =>
-      withRetry(() => getKite().getOrders(), { attempts: 3, baseMs: 120, label: "zerodha.getOrders" }),
+      withRetry(() => getKite().getOrders(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getOrders" }),
     );
   } catch (err) { console.error("Zerodha getOrders error:", err.message); return []; }
 }
@@ -356,7 +356,7 @@ async function getPositions() {
   if (!isAuthenticated()) return { net: [], day: [] };
   try {
     return await guardedCall("zerodha", () =>
-      withRetry(() => getKite().getPositions(), { attempts: 3, baseMs: 120, label: "zerodha.getPositions" }),
+      withRetry(() => getKite().getPositions(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getPositions" }),
     );
   } catch (err) { console.error("Zerodha getPositions error:", err.message); return { net: [], day: [] }; }
 }
@@ -365,7 +365,7 @@ async function getFunds() {
   if (!isAuthenticated()) return null;
   try {
     return await guardedCall("zerodha", () =>
-      withRetry(() => getKite().getMargins(), { attempts: 3, baseMs: 120, label: "zerodha.getMargins" }),
+      withRetry(() => getKite().getMargins(), { attempts: safetyConfig().retryReadAttempts, baseMs: safetyConfig().retryBaseMs, label: "zerodha.getMargins" }),
     );
   } catch (err) { console.error("Zerodha getFunds error:", err.message); return null; }
 }

@@ -358,11 +358,28 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "Security",
+    section: "SECURITY & SAFETY — Auth, Rate Limits, Broker Resilience",
     icon: "🔒",
     fields: [
-      { key: "API_SECRET", label: "App Secret", type: "password", effect: EFFECT.INSTANT, desc: "Protects action routes (start/stop/exit) & settings page. Leave blank to disable" },
+      // ── Credentials ─────────────────────────────────────────────────────────
+      { key: "API_SECRET",   label: "App Secret",     type: "password", effect: EFFECT.INSTANT, desc: "Protects action routes (start/stop/exit) & settings page. Leave blank to disable" },
       { key: "LOGIN_SECRET", label: "Login Password", type: "password", effect: EFFECT.INSTANT, desc: "Page-level password gate. Leave blank for open access" },
+
+      // ── Login / session ─────────────────────────────────────────────────────
+      { key: "LOGIN_SESSION_MIN",     label: "Login Idle Timeout (min)",      type: "number", min: 5,  max: 240, step: 5,  effect: EFFECT.INSTANT, desc: "Idle minutes before the login cookie expires. Each request slides the timer. Default 15.",                       default: "15" },
+      { key: "LOGIN_RATE_MAX",        label: "Login: Max Failed Attempts",    type: "number", min: 1,  max: 50,  step: 1,  effect: EFFECT.INSTANT, desc: "Number of wrong-password attempts allowed per IP before login is rate-limited for the window below. Default 5.", default: "5" },
+      { key: "LOGIN_RATE_WINDOW_MIN", label: "Login: Lockout Window (min)",   type: "number", min: 1,  max: 1440, step: 1, effect: EFFECT.INSTANT, desc: "Length of the failed-attempt window for the cap above. Default 15.",                                          default: "15" },
+
+      // ── Write rate limit (POST/PUT/DELETE/PATCH per IP) ─────────────────────
+      { key: "WRITE_RATE_PER_MIN", label: "Write Rate (req/min/IP)", type: "number", min: 0,   max: 6000, step: 10, effect: EFFECT.INSTANT, desc: "Per-IP cap on state-changing requests (POST/PUT/DELETE/PATCH). 0 = disabled. Login + deploy webhook have their own gates. Default 120.", default: "120" },
+      { key: "WRITE_RATE_BURST",   label: "Write Rate Burst",        type: "number", min: 1,   max: 500,  step: 1,  effect: EFFECT.INSTANT, desc: "Burst bucket size for write rate limit — short spikes up to this many requests are allowed before throttling kicks in. Default 30.",  default: "30"  },
+
+      // ── Broker resilience (circuit breaker + retry) ─────────────────────────
+      { key: "BROKER_CB_FAIL_THRESHOLD",     label: "Broker Circuit: Fail Threshold",      type: "number", min: 2, max: 30,  step: 1,  effect: EFFECT.INSTANT, desc: "Consecutive thrown failures (per broker) before the circuit OPENs and calls fail fast. Default 5.",                                       default: "5"  },
+      { key: "BROKER_CB_OPEN_SEC",           label: "Broker Circuit: Open Duration (sec)", type: "number", min: 5, max: 600, step: 5,  effect: EFFECT.INSTANT, desc: "Seconds the circuit stays OPEN before allowing a single HALF-OPEN probe. If the probe succeeds it CLOSEs. Default 30.",                    default: "30" },
+      { key: "BROKER_RETRY_WRITE_ATTEMPTS",  label: "Order Retry Attempts (writes)",       type: "number", min: 1, max: 4,   step: 1,  effect: EFFECT.INSTANT, desc: "Total attempts for non-idempotent writes (place/modify/cancel/exit). Only retries pre-flight network errors — never double-places an order. Set 1 to disable retry. Default 2.", default: "2" },
+      { key: "BROKER_RETRY_READ_ATTEMPTS",   label: "Query Retry Attempts (reads)",        type: "number", min: 1, max: 6,   step: 1,  effect: EFFECT.INSTANT, desc: "Total attempts for idempotent reads (getOrders/getPositions/getFunds) on transient errors. Default 3.",                                  default: "3"  },
+      { key: "BROKER_RETRY_BASE_MS",         label: "Retry Base Delay (ms)",               type: "number", min: 50, max: 2000, step: 50, effect: EFFECT.INSTANT, desc: "Base backoff between retries; reads use exp backoff, writes use linear. Default 150.",                                                 default: "150" },
     ],
   },
 ];

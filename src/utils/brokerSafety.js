@@ -34,6 +34,26 @@ let _telegramSync = null;
 try { _telegramSync = require("./notify").sendTelegramSync; } catch (_) { _telegramSync = null; }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Runtime config — read from process.env on each access so Settings page
+// edits take effect without a server restart.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _num(v, fallback, min = 1) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= min ? n : fallback;
+}
+
+function safetyConfig() {
+  return {
+    cbFailThreshold:    _num(process.env.BROKER_CB_FAIL_THRESHOLD,     5, 1),
+    cbOpenMs:           _num(process.env.BROKER_CB_OPEN_SEC,          30, 1) * 1000,
+    retryReadAttempts:  _num(process.env.BROKER_RETRY_READ_ATTEMPTS,   3, 1),
+    retryWriteAttempts: _num(process.env.BROKER_RETRY_WRITE_ATTEMPTS,  2, 1),
+    retryBaseMs:        _num(process.env.BROKER_RETRY_BASE_MS,       150, 10),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Transient-error classifier
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -63,8 +83,8 @@ const STATE = { CLOSED: "CLOSED", OPEN: "OPEN", HALF_OPEN: "HALF_OPEN" };
 class CircuitBreaker {
   constructor(name, opts = {}) {
     this.name              = name;
-    this.failureThreshold  = opts.failureThreshold || 5;
-    this.openMs            = opts.openMs           || 30000;
+    this._optFail          = opts.failureThreshold; // optional override (testing)
+    this._optOpenMs        = opts.openMs;           // optional override (testing)
     this.halfOpenMaxCalls  = opts.halfOpenMaxCalls || 1;
 
     this.state            = STATE.CLOSED;
@@ -73,6 +93,10 @@ class CircuitBreaker {
     this.halfOpenInFlight = 0;
     this._notified        = false; // dedupe telegram per open-cycle
   }
+
+  // Read thresholds live from env so Settings changes take effect immediately.
+  get failureThreshold() { return this._optFail   != null ? this._optFail   : safetyConfig().cbFailThreshold; }
+  get openMs()           { return this._optOpenMs != null ? this._optOpenMs : safetyConfig().cbOpenMs; }
 
   /** Returns true if call may pass; decrements half-open budget if so. */
   canPass() {
@@ -134,10 +158,11 @@ class CircuitBreaker {
   }
 }
 
-// One breaker per broker; shared across all order/query paths.
+// One breaker per broker; shared across all order/query paths. Thresholds are
+// pulled live from process.env via safetyConfig() — see CircuitBreaker getters.
 const breakers = {
-  fyers:   new CircuitBreaker("fyers",   { failureThreshold: 5, openMs: 30000 }),
-  zerodha: new CircuitBreaker("zerodha", { failureThreshold: 5, openMs: 30000 }),
+  fyers:   new CircuitBreaker("fyers"),
+  zerodha: new CircuitBreaker("zerodha"),
 };
 
 class CircuitOpenError extends Error {
@@ -244,4 +269,5 @@ module.exports = {
   withRetry,
   withCautiousRetry,
   isTransientNetwork,
+  safetyConfig,
 };

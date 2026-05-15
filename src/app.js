@@ -26,7 +26,12 @@ app.use(express.json());
 // Set LOGIN_SECRET in .env. If set, every page requires a login cookie first.
 // If empty/unset, all pages are open normally.
 const LOGIN_COOKIE = "__trade_login";
-const LOGIN_MAX_AGE = 900; // 15 minutes idle timeout (seconds)
+// Idle-timeout (seconds) before the login cookie is rejected. Read live from
+// env so Settings edits to LOGIN_SESSION_MIN take effect on the next request.
+function loginMaxAge() {
+  const m = Number(process.env.LOGIN_SESSION_MIN);
+  return Number.isFinite(m) && m >= 1 ? m * 60 : 900; // default 15 min
+}
 function loginPageHTML(error) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Login — Trading Bot</title>
@@ -103,9 +108,10 @@ app.get("/login", (req, res) => {
 });
 
 // ── Login rate limiting — brute-force protection ─────────────────────────────
+// Limits are read live from env so Settings edits take effect on the next attempt.
 const _loginAttempts = {};  // { ip: { count, firstAttempt } }
-const LOGIN_RATE_MAX     = 5;       // max failed attempts per window
-const LOGIN_RATE_WINDOW  = 15 * 60 * 1000;  // 15 minutes
+function _loginRateMax()    { const n = Number(process.env.LOGIN_RATE_MAX);        return Number.isFinite(n) && n >= 1 ? n : 5; }
+function _loginRateWindow() { const m = Number(process.env.LOGIN_RATE_WINDOW_MIN); return (Number.isFinite(m) && m >= 1 ? m : 15) * 60 * 1000; }
 
 app.post("/login", (req, res) => {
   const secret = process.env.LOGIN_SECRET;
@@ -115,14 +121,16 @@ app.post("/login", (req, res) => {
            || req.socket?.remoteAddress || "unknown";
 
   // Rate limit check
-  const now = Date.now();
+  const now    = Date.now();
+  const winMs  = _loginRateWindow();
+  const maxTry = _loginRateMax();
   if (_loginAttempts[ip]) {
     const entry = _loginAttempts[ip];
-    if (now - entry.firstAttempt > LOGIN_RATE_WINDOW) {
+    if (now - entry.firstAttempt > winMs) {
       // Window expired — reset
       _loginAttempts[ip] = { count: 0, firstAttempt: now };
-    } else if (entry.count >= LOGIN_RATE_MAX) {
-      const waitMin = Math.ceil((LOGIN_RATE_WINDOW - (now - entry.firstAttempt)) / 60000);
+    } else if (entry.count >= maxTry) {
+      const waitMin = Math.ceil((winMs - (now - entry.firstAttempt)) / 60000);
       console.warn(`🚫 [LOGIN] Rate limited IP ${ip} — ${entry.count} failed attempts. Wait ${waitMin}min.`);
       res.setHeader("Content-Type", "text/html");
       return res.status(429).send(loginPageHTML(`Too many attempts. Try again in ${waitMin} minutes.`));
@@ -134,7 +142,7 @@ app.post("/login", (req, res) => {
     // Successful login — clear rate limit counter for this IP
     delete _loginAttempts[ip];
     const token = crypto.createHash("sha256").update(secret).digest("hex");
-    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     // '/' auto-swaps to Real-Time when any session is active (UI_SHOW_REALTIME),
     // so a single redirect target now covers both cases.
     return res.redirect("/");
@@ -205,7 +213,7 @@ app.use((req, res, next) => {
   const expectedToken = crypto.createHash("sha256").update(secret).digest("hex");
   if (cookies[LOGIN_COOKIE] === expectedToken) {
     // Sliding expiry — refresh cookie on every request to reset the 15-min timer
-    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
+    res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${expectedToken}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${loginMaxAge()}`);
     return next();
   }
   // Not authenticated — redirect HTML pages, block API calls
@@ -297,16 +305,22 @@ app.use((req, res, next) => {
 // Defends against accidental loops or brute-force on write endpoints (start,
 // stop, exit, settings/save, etc.). UI-driven writes are well below this cap;
 // the deploy webhook and SSE streams are GETs and unaffected.
+// Limits are read live from env (WRITE_RATE_PER_MIN, WRITE_RATE_BURST) so
+// Settings edits take effect on the next request. Setting WRITE_RATE_PER_MIN=0
+// disables the limiter entirely.
 const _writeBuckets = new Map(); // ip -> { tokens, lastRefillMs }
-const WRITE_RATE_PER_MIN = Number(process.env.WRITE_RATE_PER_MIN) || 120;
-const WRITE_RATE_BURST   = Number(process.env.WRITE_RATE_BURST)   || 30;
+function _writeRatePerMin() { const n = Number(process.env.WRITE_RATE_PER_MIN); return Number.isFinite(n) && n >= 0 ? n : 120; }
+function _writeRateBurst()  { const n = Number(process.env.WRITE_RATE_BURST);   return Number.isFinite(n) && n >= 1 ? n : 30;  }
 function _rateLimitOk(ip) {
+  const perMin = _writeRatePerMin();
+  if (perMin === 0) return true; // limiter disabled
+  const burst  = _writeRateBurst();
   const now = Date.now();
   let b = _writeBuckets.get(ip);
-  if (!b) { b = { tokens: WRITE_RATE_BURST, lastRefillMs: now }; _writeBuckets.set(ip, b); }
+  if (!b) { b = { tokens: burst, lastRefillMs: now }; _writeBuckets.set(ip, b); }
   const elapsedMs = now - b.lastRefillMs;
-  const refill = (elapsedMs / 60000) * WRITE_RATE_PER_MIN;
-  if (refill > 0) { b.tokens = Math.min(WRITE_RATE_BURST, b.tokens + refill); b.lastRefillMs = now; }
+  const refill = (elapsedMs / 60000) * perMin;
+  if (refill > 0) { b.tokens = Math.min(burst, b.tokens + refill); b.lastRefillMs = now; }
   if (b.tokens < 1) return false;
   b.tokens -= 1;
   return true;
