@@ -135,11 +135,8 @@ app.post("/login", (req, res) => {
     delete _loginAttempts[ip];
     const token = crypto.createHash("sha256").update(secret).digest("hex");
     res.setHeader("Set-Cookie", `${LOGIN_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${LOGIN_MAX_AGE}`);
-    // Land on /realtime when a paper/live trade is running during NSE hours (9:15–15:30 IST).
-    const istMin = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
-    if (istMin >= 555 && istMin < 930 && sharedSocketState.isAnyActive()) {
-      return res.redirect("/realtime");
-    }
+    // '/' auto-swaps to Real-Time when any session is active (UI_SHOW_REALTIME),
+    // so a single redirect target now covers both cases.
     return res.redirect("/");
   }
 
@@ -411,11 +408,25 @@ app.get("/api/cache-info", (req, res) => {
   }
 });
 
+// Lightweight liveness probe so the dashboard can auto-swap to/from realtime view.
+app.get("/api/session-active", (req, res) => {
+  res.json({ active: !!sharedSocketState.isAnyActive() });
+});
+
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   // Redirect to Settings when Dashboard menu is hidden (user can re-enable from Settings → MENU VISIBILITY)
   const showDashboard = (process.env.UI_SHOW_DASHBOARD || 'false').toLowerCase() === 'true';
   if (!showDashboard) return res.redirect("/settings");
+
+  // When any paper/live session is active, show the unified Real-Time monitor in place
+  // of the normal dashboard (gated by UI_SHOW_REALTIME, default on).
+  const showRealtime = (process.env.UI_SHOW_REALTIME || 'true').toLowerCase() === 'true';
+  if (showRealtime && sharedSocketState.isAnyActive()) {
+    const { renderRealtimePage } = require("./routes/realtime");
+    const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+    return res.send(renderRealtimePage({ liveActive, sidebarKey: "dashboard", autoFlipBack: true }));
+  }
   try {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
@@ -1670,6 +1681,17 @@ async function checkTradingStatus(){
 checkTradingStatus();
 setInterval(checkTradingStatus, 60000); // Check every minute
 /* setInterval(pollDashboardStatus, 4000); — disabled (no realtime data on dashboard) */
+
+// Auto-swap to Real-Time view as soon as a session starts (UI_SHOW_REALTIME).
+async function pollSessionActiveSwap(){
+  try {
+    var r = await fetch('/api/session-active', { cache:'no-store' });
+    if (!r.ok) return;
+    var j = await r.json();
+    if (j && j.active === true) location.replace('/');
+  } catch(e){}
+}
+setInterval(pollSessionActiveSwap, 5000);
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function hardReset(){

@@ -15,11 +15,11 @@ const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
-  res.send(renderPage(liveActive));
+  res.send(renderPage({ liveActive, sidebarKey: "dashboard", autoFlipBack: false }));
 });
 
-function renderPage(liveActive) {
-  const sidebar = buildSidebar("realtime", liveActive);
+function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false } = {}) {
+  const sidebar = buildSidebar(sidebarKey, liveActive);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -485,9 +485,23 @@ async function copyDayLog(strategy, btn) {
 updateOpenLinks();
 poll();
 timer = setInterval(poll, 4000);
+
+// When rendered at /, flip back to normal dashboard the moment no session is active.
+const AUTO_FLIP_BACK = ${autoFlipBack ? "true" : "false"};
+if (AUTO_FLIP_BACK) {
+  setInterval(async () => {
+    try {
+      const r = await fetch('/api/session-active', { cache:'no-store' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j && j.active === false) location.replace('/');
+    } catch {}
+  }, 5000);
+}
 </script>
 </body>
 </html>`;
 }
 
 module.exports = router;
+module.exports.renderRealtimePage = renderPage;

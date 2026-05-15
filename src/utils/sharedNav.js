@@ -47,7 +47,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── Top-level menu-visibility toggles ──
   const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
   const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'true').toLowerCase()  === 'true';
-  const showRealtime    = (process.env.UI_SHOW_REALTIME      || 'true').toLowerCase()  === 'true';
   const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true';
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
@@ -110,7 +109,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
     ...(showAllBacktest ? [{ key: 'allBacktest',       href: '/all-backtest',       icon: '⏺',  label: 'Backtest' }] : []),
-    ...(showRealtime    ? [{ key: 'realtime',          href: '/realtime',           icon: '📡', label: 'Real-Time' }] : []),
     ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '📼', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),

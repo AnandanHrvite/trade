@@ -323,7 +323,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Dashboard' menu in the sidebar. When off, '/' redirects to Settings.", default: "false" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Backtest' (all-strategy) menu in the sidebar", default: "true" },
-      { key: "UI_SHOW_REALTIME",       label: "Show Real-Time",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Real-Time' menu in the sidebar", default: "true" },
+      { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, the Dashboard ('/') auto-swaps to the Real-Time monitor whenever any paper/live session is running, and back to the normal dashboard when nothing is running.", default: "true" },
       { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Replay' menu in the sidebar (deterministic tick-replay backtest of recorded paper sessions)", default: "true" },
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Paper Traded History' menu in the sidebar", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Live Traded History' menu in the sidebar", default: "true" },
