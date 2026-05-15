@@ -406,12 +406,14 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Price Action group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── ORB submenu ──
-      { key: "UI_SHOW_ORB_PAPER",   label: "ORB → Paper",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
-      { key: "UI_SHOW_ORB_HISTORY", label: "ORB → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
 
       // ── Straddle submenu ──
-      { key: "UI_SHOW_STRADDLE_PAPER",   label: "Straddle → Paper",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
-      { key: "UI_SHOW_STRADDLE_HISTORY", label: "Straddle → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_BACKTEST", label: "Straddle → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_PAPER",    label: "Straddle → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_HISTORY",  label: "Straddle → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true" },

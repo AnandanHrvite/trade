@@ -366,8 +366,10 @@ app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper tra
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
 // ── ORB / Straddle paper-trade routes (parallel new strategies, paper-only v1) ──
-app.use("/orb-paper",      require("./routes/orbPaper"));      // ← ORB paper trade (Opening Range Breakout, 1 trade/day)
-app.use("/straddle-paper", require("./routes/straddlePaper")); // ← Straddle paper trade (long ATM CE+PE paired)
+app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade (Opening Range Breakout, 1 trade/day)
+app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest (delta+theta sim)
+app.use("/straddle-paper",    require("./routes/straddlePaper")); // ← Straddle paper trade (long ATM CE+PE paired)
+app.use("/straddle-backtest", require("./routes/straddleBacktest")); // ← Straddle date-range backtest (paired delta+theta)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
@@ -488,6 +490,10 @@ app.get("/", (req, res) => {
   const paMode      = sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null;
   const paEnabled   = (process.env.PA_ENABLED || 'true').toLowerCase() === 'true';
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const orbMode     = sharedSocketState.getOrbMode ? sharedSocketState.getOrbMode() : null;
+  const orbModeOn   = (process.env.ORB_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const straddleMode   = sharedSocketState.getStraddleMode ? sharedSocketState.getStraddleMode() : null;
+  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -816,9 +822,11 @@ app.get("/", (req, res) => {
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; display:flex; flex-direction:column; }
     .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
     .mm-dot { width:7px; height:7px; border-radius:50%; background:#4a6080; flex-shrink:0; }
-    .mm-card.swing .mm-dot { background:#60a5fa; }
-    .mm-card.scalp .mm-dot { background:#fbbf24; }
-    .mm-card.pa    .mm-dot { background:#a78bfa; }
+    .mm-card.swing    .mm-dot { background:#60a5fa; }
+    .mm-card.scalp    .mm-dot { background:#fbbf24; }
+    .mm-card.pa       .mm-dot { background:#a78bfa; }
+    .mm-card.orb      .mm-dot { background:#10b981; }
+    .mm-card.straddle .mm-dot { background:#ec4899; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     .mm-toggle { margin-left:auto; display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:6px; padding:2px; }
     .mm-tog-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; padding:3px 8px; border-radius:4px; cursor:pointer; transition:all 0.15s; }
@@ -1020,7 +1028,9 @@ ${buildSidebar('dashboard', liveActive)}
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
-      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
+      ${straddleModeOn && straddleMode === 'STRADDLE_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#ec4899;"><span style="width:5px;height:5px;border-radius:50%;background:#ec4899;display:inline-block;"></span>STRADDLE PAPER</span>' : ''}
+      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!straddleModeOn || !straddleMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -1098,6 +1108,36 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-PA">—</div>
       <div class="mm-wrap"><canvas id="mmChart-PA"></canvas></div>
       <div class="mm-empty" id="mm-empty-PA" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${orbModeOn ? `
+    <div class="mm-card orb" data-mode="ORB">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">ORB</span>
+        <div class="mm-toggle">
+          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
+          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
+        </div>
+      </div>
+      <div class="mm-stats" id="mm-stats-ORB">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-ORB"></canvas></div>
+      <div class="mm-empty" id="mm-empty-ORB" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${straddleModeOn ? `
+    <div class="mm-card straddle" data-mode="STRADDLE">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">Straddle</span>
+        <div class="mm-toggle">
+          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
+          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
+        </div>
+      </div>
+      <div class="mm-stats" id="mm-stats-STRADDLE">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-STRADDLE"></canvas></div>
+      <div class="mm-empty" id="mm-empty-STRADDLE" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
   </div>
@@ -1376,7 +1416,7 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}];
+var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${straddleModeOn ? ",'/straddle-paper/start'" : ""}];
 var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}];
 
 function _escHtml(s){
@@ -1472,8 +1512,13 @@ async function _handleStartAllResult(btn, origText, label, result){
 }
 
 async function startAllPaper(btn){
+  var modeList = 'Swing'
+    + (${scalpModeOn ? "' + Scalp'" : "''"})
+    + (${paModeOn ? "' + PA'" : "''"})
+    + (${orbModeOn ? "' + ORB'" : "''"})
+    + (${straddleModeOn ? "' + Straddle'" : "''"});
   var orig = btn.textContent;
-  btn.disabled = true; btn.textContent = '⏳ Starting all paper trades...';
+  btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
   var result = await _startAll(PAPER_ENDPOINTS);
   await _handleStartAllResult(btn, orig, 'All Paper', result);
 }
@@ -1497,6 +1542,8 @@ var ALL_BTN_POLL = [
   { url:'/swing-live/status/data',  kind:'live'  }
   ${scalpModeOn ? ",{ url:'/scalp-paper/status/data', kind:'paper' },{ url:'/scalp-live/status/data', kind:'live' }" : ""}
   ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
+  ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' }" : ""}
+  ${straddleModeOn ? ",{ url:'/straddle-paper/status/data', kind:'paper' }" : ""}
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
@@ -1683,7 +1730,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper' };
+var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper', ORB: 'paper', STRADDLE: 'paper' };
 
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
@@ -1707,7 +1754,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['SWING','SCALP','PA'].forEach(_renderModuleChart);
+  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
 }
 
 document.addEventListener('click', function(e){
@@ -2422,9 +2469,11 @@ async function gracefulShutdown(signal) {
   try {
     // Identify which modes are active
     const activeModes = [];
-    if (sharedSocketState.getMode())      activeModes.push(sharedSocketState.getMode());
-    if (sharedSocketState.getScalpMode()) activeModes.push(sharedSocketState.getScalpMode());
-    if (sharedSocketState.getPAMode())    activeModes.push(sharedSocketState.getPAMode());
+    if (sharedSocketState.getMode())          activeModes.push(sharedSocketState.getMode());
+    if (sharedSocketState.getScalpMode())     activeModes.push(sharedSocketState.getScalpMode());
+    if (sharedSocketState.getPAMode())        activeModes.push(sharedSocketState.getPAMode());
+    if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
+    if (sharedSocketState.getStraddleMode && sharedSocketState.getStraddleMode()) activeModes.push(sharedSocketState.getStraddleMode());
 
     if (activeModes.length === 0) {
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
@@ -2442,10 +2491,12 @@ async function gracefulShutdown(signal) {
 
     // Call stopSession() on each active route — this triggers squareOff for live modes
     const routeMap = {
-      "SCALP_LIVE":  require("./routes/scalpLive"),
-      "SCALP_PAPER": require("./routes/scalpPaper"),
-      "PA_LIVE":     require("./routes/paLive"),
-      "PA_PAPER":    require("./routes/paPaper"),
+      "SCALP_LIVE":     require("./routes/scalpLive"),
+      "SCALP_PAPER":    require("./routes/scalpPaper"),
+      "PA_LIVE":        require("./routes/paLive"),
+      "PA_PAPER":       require("./routes/paPaper"),
+      "ORB_PAPER":      require("./routes/orbPaper"),
+      "STRADDLE_PAPER": require("./routes/straddlePaper"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];

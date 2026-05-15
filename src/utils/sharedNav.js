@@ -69,8 +69,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
   const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
   const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
+  const showOrbBacktest       = (process.env.UI_SHOW_ORB_BACKTEST         || 'true').toLowerCase() === 'true';
   const showOrbPaper          = (process.env.UI_SHOW_ORB_PAPER            || 'true').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
+  const showStraddleBacktest  = (process.env.UI_SHOW_STRADDLE_BACKTEST    || 'true').toLowerCase() === 'true';
   const showStraddlePaper     = (process.env.UI_SHOW_STRADDLE_PAPER       || 'true').toLowerCase() === 'true';
   const showStraddleHistory   = (process.env.UI_SHOW_STRADDLE_HISTORY     || 'true').toLowerCase() === 'true';
 
@@ -81,8 +83,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
-  const orbKeys     = ['orbPaper', 'orbHistory'];
-  const straddleKeys = ['straddlePaper', 'straddleHistory'];
+  const orbKeys     = ['orbBacktest', 'orbPaper', 'orbHistory'];
+  const straddleKeys = ['straddleBacktest', 'straddlePaper', 'straddleHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isScalpOpen    = scalpKeys.includes(activePage);
@@ -119,13 +121,15 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   ];
 
   const orbItems = [
-    ...(showOrbPaper   ? [{ key: 'orbPaper',   href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
-    ...(showOrbHistory ? [{ key: 'orbHistory', href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
+    ...(showOrbBacktest ? [{ key: 'orbBacktest', href: '/orb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
+    ...(showOrbPaper    ? [{ key: 'orbPaper',    href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
+    ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const straddleItems = [
-    ...(showStraddlePaper   ? [{ key: 'straddlePaper',   href: '/straddle-paper/status',  icon: '🎯', label: 'Paper'   }] : []),
-    ...(showStraddleHistory ? [{ key: 'straddleHistory', href: '/straddle-paper/history', icon: '📜', label: 'History' }] : []),
+    ...(showStraddleBacktest ? [{ key: 'straddleBacktest', href: '/straddle-backtest',      icon: '🔍', label: 'Backtest' }] : []),
+    ...(showStraddlePaper    ? [{ key: 'straddlePaper',    href: '/straddle-paper/status',  icon: '🎯', label: 'Paper'   }] : []),
+    ...(showStraddleHistory  ? [{ key: 'straddleHistory',  href: '/straddle-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   // ── Grouped navigation sections (collapsible) ──

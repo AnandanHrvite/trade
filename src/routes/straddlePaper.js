@@ -890,3 +890,4 @@ a{color:#3b82f6;text-decoration:none;border:0.5px solid #0e1e36;padding:8px 14px
 }
 
 module.exports = router;
+module.exports.stopSession = stopSession;
