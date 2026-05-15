@@ -14,6 +14,9 @@
 require("dotenv").config();
 const fs   = require("fs");
 const path = require("path");
+const {
+  guardedCall, withRetry, withCautiousRetry, breakerStatus,
+} = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Token persistence — stored at ~/trading-data/ outside project, survives redeploys
@@ -221,7 +224,11 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
   const sideLabel = transactionType === kite.TRANSACTION_TYPE_BUY ? "BUY" : "SELL";
   console.log(`[ZerodhaBroker] placeMarketOrder: ${sideLabel} ${qty} × ${tradingsymbol} (${exchange}) tag=${orderTag}`);
   try {
-    const response = await kite.placeOrder(kite.VARIETY_REGULAR, orderParams);
+    const response = await guardedCall("zerodha", () =>
+      withCautiousRetry(() => kite.placeOrder(kite.VARIETY_REGULAR, orderParams), {
+        attempts: 2, baseMs: 200, label: "zerodha.placeOrder",
+      }),
+    );
     if (response && response.order_id) {
       console.log(`[ZerodhaBroker] Order SUCCESS — ${sideLabel} ${qty} × ${tradingsymbol} | OrderID: ${response.order_id}`);
       return { success: true,  orderId: response.order_id, raw: response };
@@ -272,7 +279,11 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
   const slSideLabel = transactionType === kite.TRANSACTION_TYPE_BUY ? "BUY" : "SELL";
   console.log(`[ZerodhaBroker] placeSLMOrder: ${slSideLabel} ${qty} × ${tradingsymbol} @ trigger ₹${triggerPrice}`);
   try {
-    const response = await kite.placeOrder(kite.VARIETY_REGULAR, orderParams);
+    const response = await guardedCall("zerodha", () =>
+      withCautiousRetry(() => kite.placeOrder(kite.VARIETY_REGULAR, orderParams), {
+        attempts: 2, baseMs: 200, label: "zerodha.placeSLM",
+      }),
+    );
     if (response && response.order_id) {
       console.log(`[ZerodhaBroker] SL-M placed — ${slSideLabel} ${qty} × ${tradingsymbol} | OrderID: ${response.order_id} | trigger=₹${triggerPrice}`);
       return { success: true, orderId: response.order_id, raw: response };
@@ -293,10 +304,12 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
   console.log(`[ZerodhaBroker] modifySLMOrder: ${orderId} → trigger ₹${newTriggerPrice}`);
   try {
     const kite = getKite();
-    const response = await kite.modifyOrder(kite.VARIETY_REGULAR, orderId, {
-      order_type:    kite.ORDER_TYPE_SLM,
-      trigger_price: newTriggerPrice,
-    });
+    const response = await guardedCall("zerodha", () =>
+      withCautiousRetry(() => kite.modifyOrder(kite.VARIETY_REGULAR, orderId, {
+        order_type:    kite.ORDER_TYPE_SLM,
+        trigger_price: newTriggerPrice,
+      }), { attempts: 2, baseMs: 200, label: "zerodha.modifySLM" }),
+    );
     console.log(`[ZerodhaBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
     return { success: true, raw: response };
   } catch (err) {
@@ -313,7 +326,11 @@ async function cancelOrder(orderId) {
   console.log(`[ZerodhaBroker] cancelOrder: ${orderId}`);
   try {
     const kite = getKite();
-    const response = await kite.cancelOrder(kite.VARIETY_REGULAR, orderId);
+    const response = await guardedCall("zerodha", () =>
+      withCautiousRetry(() => kite.cancelOrder(kite.VARIETY_REGULAR, orderId), {
+        attempts: 2, baseMs: 200, label: "zerodha.cancelOrder",
+      }),
+    );
     console.log(`[ZerodhaBroker] Order cancelled — ${orderId}`);
     return { success: true, raw: response };
   } catch (err) {
@@ -328,20 +345,29 @@ async function cancelOrder(orderId) {
 
 async function getOrders() {
   if (!isAuthenticated()) return [];
-  try { return await getKite().getOrders(); }
-  catch (err) { console.error("Zerodha getOrders error:", err.message); return []; }
+  try {
+    return await guardedCall("zerodha", () =>
+      withRetry(() => getKite().getOrders(), { attempts: 3, baseMs: 120, label: "zerodha.getOrders" }),
+    );
+  } catch (err) { console.error("Zerodha getOrders error:", err.message); return []; }
 }
 
 async function getPositions() {
   if (!isAuthenticated()) return { net: [], day: [] };
-  try { return await getKite().getPositions(); }
-  catch (err) { console.error("Zerodha getPositions error:", err.message); return { net: [], day: [] }; }
+  try {
+    return await guardedCall("zerodha", () =>
+      withRetry(() => getKite().getPositions(), { attempts: 3, baseMs: 120, label: "zerodha.getPositions" }),
+    );
+  } catch (err) { console.error("Zerodha getPositions error:", err.message); return { net: [], day: [] }; }
 }
 
 async function getFunds() {
   if (!isAuthenticated()) return null;
-  try { return await getKite().getMargins(); }
-  catch (err) { console.error("Zerodha getFunds error:", err.message); return null; }
+  try {
+    return await guardedCall("zerodha", () =>
+      withRetry(() => getKite().getMargins(), { attempts: 3, baseMs: 120, label: "zerodha.getMargins" }),
+    );
+  } catch (err) { console.error("Zerodha getFunds error:", err.message); return null; }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -352,4 +378,5 @@ module.exports = {
   convertSymbol, placeMarketOrder,
   placeSLMOrder, modifySLMOrder, cancelOrder,
   getOrders, getPositions, getFunds,
+  breakerStatus,
 };

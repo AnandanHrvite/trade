@@ -293,6 +293,37 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── Write rate limit — per-IP token bucket for state-changing requests ───────
+// Defends against accidental loops or brute-force on write endpoints (start,
+// stop, exit, settings/save, etc.). UI-driven writes are well below this cap;
+// the deploy webhook and SSE streams are GETs and unaffected.
+const _writeBuckets = new Map(); // ip -> { tokens, lastRefillMs }
+const WRITE_RATE_PER_MIN = Number(process.env.WRITE_RATE_PER_MIN) || 120;
+const WRITE_RATE_BURST   = Number(process.env.WRITE_RATE_BURST)   || 30;
+function _rateLimitOk(ip) {
+  const now = Date.now();
+  let b = _writeBuckets.get(ip);
+  if (!b) { b = { tokens: WRITE_RATE_BURST, lastRefillMs: now }; _writeBuckets.set(ip, b); }
+  const elapsedMs = now - b.lastRefillMs;
+  const refill = (elapsedMs / 60000) * WRITE_RATE_PER_MIN;
+  if (refill > 0) { b.tokens = Math.min(WRITE_RATE_BURST, b.tokens + refill); b.lastRefillMs = now; }
+  if (b.tokens < 1) return false;
+  b.tokens -= 1;
+  return true;
+}
+app.use((req, res, next) => {
+  const m = req.method;
+  if (m !== "POST" && m !== "PUT" && m !== "DELETE" && m !== "PATCH") return next();
+  // Login + deploy webhook have their own protections; skip them here.
+  if (req.path === "/login" || req.path === "/deploy/webhook") return next();
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim()
+           || req.socket?.remoteAddress || "unknown";
+  if (_rateLimitOk(ip)) return next();
+  console.warn(`🚫 [RATE] ${m} ${req.path} rate-limited for ${ip}`);
+  res.set("Retry-After", "5");
+  return res.status(429).json({ success: false, error: "Too many requests — slow down." });
+});
+
 
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -2085,9 +2116,36 @@ app.post("/admin/reset", (req, res) => {
 });
 
 // ── Global error handlers ─────────────────────────────────────────────────────
+// Centralized Express error handler. Catches any error thrown (sync or async-
+// via-next(err)) from route handlers. Always responds — never lets the request
+// hang — and never crashes the process. Telegram alerts come from the process-
+// level unhandledRejection/uncaughtException handlers below; this handler stays
+// quiet on telegram to avoid duplicate noise during a broker outage.
 app.use((err, req, res, next) => {
-  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
-  res.status(500).json({ success: false, error: err.message, stack: process.env.NODE_ENV === "development" ? err.stack : undefined });
+  const code = err && err.code === "CIRCUIT_OPEN" ? 503 : 500;
+  console.error(`[ERROR] ${req.method} ${req.path}: ${err && err.message ? err.message : err}`);
+  if (err && err.stack) console.error(err.stack);
+  if (res.headersSent) {
+    // Stream already started — close it; can't send a new status.
+    try { res.end(); } catch (_) {}
+    return;
+  }
+  const wantsHtml = (req.headers.accept || "").includes("text/html");
+  if (wantsHtml) {
+    res.status(code).type("html").send(
+      `<!doctype html><meta charset="utf-8"><title>${code}</title>` +
+      `<pre style="font:14px/1.4 ui-monospace,Menlo,monospace;padding:24px;color:#b91c1c">` +
+      `${code} ${err && err.message ? String(err.message).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])) : "Error"}` +
+      `</pre>`,
+    );
+    return;
+  }
+  res.status(code).json({
+    success: false,
+    error:   err && err.message ? err.message : "Internal error",
+    code:    err && err.code ? err.code : undefined,
+    stack:   process.env.NODE_ENV === "development" && err ? err.stack : undefined,
+  });
 });
 
 // ── Crash marker + Telegram alerts ──────────────────────────────────────────
@@ -2417,6 +2475,7 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
 
 // ── Health Check Endpoint ────────────────────────────────────────────────────
+const { breakerStatus } = require("./utils/brokerSafety");
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -2426,6 +2485,7 @@ app.get("/health", (req, res) => {
     zerodha: zerodha.isAuthenticated(),
     activeMode: sharedSocketState.getMode() || null,
     scalpMode: sharedSocketState.getScalpMode() || null,
+    breakers: breakerStatus(),
     timestamp: new Date().toISOString(),
   });
 });

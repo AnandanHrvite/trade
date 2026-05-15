@@ -5,10 +5,22 @@
  * for data feeds. Exposes order placement, position queries, and order management.
  *
  * Mirrors the zerodhaBroker.js interface so the scalp route can swap brokers easily.
+ *
+ * LIVE-trade safety layer
+ * ───────────────────────
+ *   • Circuit breaker per broker — after 5 consecutive failures, calls fail
+ *     fast for 30s so a broker outage can't trigger a retry storm.
+ *   • Cautious retry on writes — pre-flight network errors only (request never
+ *     reached the broker). Broker-side rejections are NOT retried to avoid
+ *     duplicate fills.
+ *   • Idempotent retry on reads — getOrders / getPositions retry up to 3×.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const fyers = require("../config/fyers");
+const {
+  guardedCall, withRetry, withCautiousRetry, breakerStatus,
+} = require("../utils/brokerSafety");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Auth helpers
@@ -17,6 +29,30 @@ const fyers = require("../config/fyers");
 /** Fyers is authenticated if ACCESS_TOKEN is set (shared with data feed) */
 function isAuthenticated() {
   return !!process.env.ACCESS_TOKEN;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal SDK callers — throw on network errors, return raw response otherwise.
+// These are wrapped with guardedCall + withCautiousRetry by the public methods.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function _placeOrder(orderParams) {
+  return await fyers.place_order(orderParams);
+}
+async function _modifyOrder(params) {
+  return await fyers.modify_order(params);
+}
+async function _cancelOrder(orderId) {
+  return await fyers.cancel_order({ id: orderId });
+}
+async function _exitPosition(symbol) {
+  return await fyers.exit_position({ id: symbol });
+}
+async function _getOrders() {
+  return await fyers.get_orders();
+}
+async function _getPositions() {
+  return await fyers.get_positions();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -57,19 +93,22 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
   const sideLabel = side === 1 ? "BUY" : "SELL";
   console.log(`[FyersBroker] placeMarketOrder: ${sideLabel} ${qty} × ${fyersSymbol} (${orderTag})`);
   try {
-    const response = await fyers.place_order(orderParams);
+    const response = await guardedCall("fyers", () =>
+      withCautiousRetry(() => _placeOrder(orderParams), {
+        attempts: 2, baseMs: 200, label: "fyers.place_order",
+      }),
+    );
 
     if (response && response.s === "ok" && response.id) {
       console.log(`[FyersBroker] Order SUCCESS — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${response.id}`);
       return { success: true, orderId: response.id, raw: response };
-    } else {
-      console.warn(`[FyersBroker] Order FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | response: ${JSON.stringify(response).slice(0, 200)}`);
-      return {
-        success: false,
-        orderId: null,
-        raw: response || { error: "Unknown response from Fyers" },
-      };
     }
+    console.warn(`[FyersBroker] Order FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | response: ${JSON.stringify(response).slice(0, 200)}`);
+    return {
+      success: false,
+      orderId: null,
+      raw: response || { error: "Unknown response from Fyers" },
+    };
   } catch (err) {
     console.error(`[FyersBroker] Order EXCEPTION — ${sideLabel} ${qty} × ${fyersSymbol}: ${err.message}`);
     return {
@@ -102,7 +141,11 @@ async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures =
     orderTag:      "HARD_SL",
   };
   try {
-    const response = await fyers.place_order(orderParams);
+    const response = await guardedCall("fyers", () =>
+      withCautiousRetry(() => _placeOrder(orderParams), {
+        attempts: 2, baseMs: 200, label: "fyers.place_slm",
+      }),
+    );
     if (response && response.s === "ok" && response.id) {
       console.log(`[FyersBroker] SL-M placed — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${response.id} | trigger=₹${triggerPrice}`);
       return { success: true, orderId: response.id, raw: response };
@@ -119,11 +162,13 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
   console.log(`[FyersBroker] modifySLMOrder: ${orderId} → trigger ₹${newTriggerPrice}`);
   try {
-    const response = await fyers.modify_order({
-      id:         orderId,
-      type:       4,         // SL-M (Stop Loss Market)
-      stopPrice:  newTriggerPrice,
-    });
+    const response = await guardedCall("fyers", () =>
+      withCautiousRetry(() => _modifyOrder({
+        id:        orderId,
+        type:      4,         // SL-M (Stop Loss Market)
+        stopPrice: newTriggerPrice,
+      }), { attempts: 2, baseMs: 200, label: "fyers.modify_slm" }),
+    );
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] SL-M modified — ${orderId} → ₹${newTriggerPrice}`);
     else console.warn(`[FyersBroker] SL-M modify FAILED — ${orderId} | ${JSON.stringify(response).slice(0, 200)}`);
@@ -135,13 +180,15 @@ async function modifySLMOrder(orderId, newTriggerPrice) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Queries
+// Queries (idempotent — safe to retry on transient errors)
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function getOrders() {
   if (!isAuthenticated()) return [];
   try {
-    const response = await fyers.get_orders();
+    const response = await guardedCall("fyers", () =>
+      withRetry(_getOrders, { attempts: 3, baseMs: 120, label: "fyers.get_orders" }),
+    );
     if (response && response.s === "ok" && response.orderBook) {
       return response.orderBook;
     }
@@ -155,7 +202,9 @@ async function getOrders() {
 async function getPositions() {
   if (!isAuthenticated()) return { netPositions: [] };
   try {
-    const response = await fyers.get_positions();
+    const response = await guardedCall("fyers", () =>
+      withRetry(_getPositions, { attempts: 3, baseMs: 120, label: "fyers.get_positions" }),
+    );
     if (response && response.s === "ok" && response.netPositions) {
       return { netPositions: response.netPositions };
     }
@@ -170,7 +219,11 @@ async function cancelOrder(orderId) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated");
   console.log(`[FyersBroker] cancelOrder: ${orderId}`);
   try {
-    const response = await fyers.cancel_order({ id: orderId });
+    const response = await guardedCall("fyers", () =>
+      withCautiousRetry(() => _cancelOrder(orderId), {
+        attempts: 2, baseMs: 200, label: "fyers.cancel_order",
+      }),
+    );
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] Order cancelled — ${orderId}`);
     else console.warn(`[FyersBroker] Cancel FAILED — ${orderId} | ${JSON.stringify(response).slice(0, 200)}`);
@@ -185,7 +238,11 @@ async function exitPosition(symbol) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated");
   console.log(`[FyersBroker] exitPosition: ${symbol}`);
   try {
-    const response = await fyers.exit_position({ id: symbol });
+    const response = await guardedCall("fyers", () =>
+      withCautiousRetry(() => _exitPosition(symbol), {
+        attempts: 2, baseMs: 200, label: "fyers.exit_position",
+      }),
+    );
     const ok = response && response.s === "ok";
     if (ok) console.log(`[FyersBroker] Position exited — ${symbol}`);
     else console.warn(`[FyersBroker] Exit FAILED — ${symbol} | ${JSON.stringify(response).slice(0, 200)}`);
@@ -207,4 +264,5 @@ module.exports = {
   getPositions,
   cancelOrder,
   exitPosition,
+  breakerStatus,
 };
