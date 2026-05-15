@@ -359,32 +359,46 @@ function _checkExits(spotPrice) {
 
 // ── Candle close handler ────────────────────────────────────────────────────
 
-async function onCandleClose(_bar) {
+async function onCandleClose(bar) {
   // Already in position? Don't re-evaluate entry — exits run on tick.
   if (state.position) return;
+
+  const _spot = bar && bar.close;
 
   // Daily-loss kill
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) {
-    return; // silent — already logged once
+    skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot });
+    return;
   }
 
   // Max trades guard (default 1 — ORB is 1/day)
   const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-  if (state.tradesTaken >= maxTrades) return;
+  if (state.tradesTaken >= maxTrades) return; // expected, not a skip
 
   // Expiry-day-only filter
-  if (state._expiryDayBlocked) return;
+  if (state._expiryDayBlocked) {
+    skipLogger.appendSkipLog("orb", { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot });
+    return;
+  }
 
   // Evaluate ORB signal
   const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
-  if (sig.signal === "NONE" || !sig.side) return;
+  if (sig.signal === "NONE" || !sig.side) {
+    // Only log when the signal actually evaluated (range formed) — pre-range
+    // candles produce "waiting for OR" noise.
+    if (sig.orh != null && sig.orl != null) {
+      skipLogger.appendSkipLog("orb", { gate: "signal_none", reason: sig.reason || "no signal", spot: _spot, orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts });
+    }
+    return;
+  }
 
   // VIX gate
   if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     const vixCheck = await checkLiveVix(sig.signalStrength, { mode: "orb" });
     if (!vixCheck.allowed) {
       log(`⏸️ [ORB-PAPER] VIX gate blocked: ${vixCheck.reason}`);
+      skipLogger.appendSkipLog("orb", { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });
       return;
     }
   }
@@ -645,6 +659,46 @@ router.get("/exit", (req, res) => {
   res.redirect("/orb-paper/status");
 });
 
+// ── Manual CE/PE entry — bypasses ORB break, useful when user reads the
+//    market manually and wants to take a trade. Reuses the same simulateBuy
+//    path so all the standard SL/target/charges/logging applies. ───────────
+router.post("/manualEntry", async (req, res) => {
+  if (!state.running)  return res.status(400).json({ success: false, error: "ORB paper is not running." });
+  if (state.position)  return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
+  const { side } = req.body || {};
+  if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
+
+  const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
+  if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
+
+  // Build a synthetic ORB signal snapshot — use current OR if formed, else
+  // synthesize a small range around spot so SL/target math still works.
+  let or = null;
+  try { or = orbStrategy.computeOpeningRange(state.candles); } catch (_) {}
+  const rangePts = or ? Math.round((or.high - or.low) * 100) / 100 : 50;
+  const orh = or ? or.high : spot + 25;
+  const orl = or ? or.low  : spot - 25;
+  const slSpot = side === "CE" ? orl : orh;
+  const tgtMult = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
+  const targetSpot = side === "CE" ? orh + rangePts * tgtMult : orl - rangePts * tgtMult;
+
+  const sig = {
+    signal: side === "CE" ? "BUY_CE" : "BUY_PE",
+    side, orh, orl, rangePts,
+    entrySpot: spot, slSpot, targetSpot,
+    signalStrength: "MANUAL",
+    reason: `🖐️ MANUAL ${side} entry @ spot ₹${spot} (range ${rangePts}pt)`,
+  };
+  log(`🖐️ [ORB-PAPER] MANUAL ${side} entry triggered by user @ spot ₹${spot}`);
+  try {
+    await simulateBuy(side, sig);
+    return res.json({ success: true, side, spot, slSpot, targetSpot });
+  } catch (e) {
+    log(`❌ [ORB-PAPER] Manual entry failed: ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Status page ─────────────────────────────────────────────────────────────
 
 // ── /status/chart-data — feeds Lightweight Charts live NIFTY view ────────────
@@ -844,6 +898,10 @@ ${buildSidebar('orbPaper', liveActive, state.running, {
   <div class="panel">
     <h3><span>📌 Open Position</span><span id="livePnlBadge" style="font-size:0.85rem;color:#94a3b8;"></span></h3>
     <div id="position-box" class="empty">No open position — waiting for ORB break</div>
+    <div id="manual-entry" style="display:none;margin-top:10px;text-align:right;">
+      <button onclick="doManualEntry('CE')" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.4);padding:6px 14px;border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;margin-right:8px;">🟢 Manual CE Entry</button>
+      <button onclick="doManualEntry('PE')" style="background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.4);padding:6px 14px;border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🔴 Manual PE Entry</button>
+    </div>
   </div>
 
   <!-- Live NIFTY chart with OR overlay + trade markers -->
@@ -964,6 +1022,12 @@ async function refresh() {
       const liveOpt = p.currentOptLtp != null ? p.currentOptLtp : null;
       const liveBadge = (d.livePnl != null) ? '<span class="' + (d.livePnl>=0?'pos':'neg') + '">₹' + d.livePnl.toFixed(0) + '</span>' : '—';
       document.getElementById('livePnlBadge').innerHTML = liveBadge + ' live';
+      document.getElementById('manual-entry').style.display = 'none';
+      // Premium move detail
+      const optMove = (liveOpt != null) ? (liveOpt - p.optionEntryLtp) : null;
+      const optMovePct = (liveOpt != null && p.optionEntryLtp) ? (optMove / p.optionEntryLtp) * 100 : null;
+      const spotMove = (d.lastTickPrice != null) ? (d.lastTickPrice - p.entrySpot) * (p.side === 'CE' ? 1 : -1) : null;
+      const moveCls = optMove != null && optMove >= 0 ? 'pos' : 'neg';
       document.getElementById('position-box').className = '';
       document.getElementById('position-box').innerHTML =
         '<div class="pos-row" style="margin-bottom:10px;">' +
@@ -973,17 +1037,23 @@ async function refresh() {
         '  <div class="pos-cell"><div class="pos-cell-l">Qty</div><div class="pos-cell-v">' + p.qty + '</div></div>' +
         '  <div class="pos-cell"><div class="pos-cell-l">OR Range</div><div class="pos-cell-v">' + p.orl + '/' + p.orh + ' (' + p.rangePts + 'pt)</div></div>' +
         '</div>' +
-        '<div class="pos-row">' +
+        '<div class="pos-row" style="margin-bottom:10px;">' +
         '  <div class="pos-cell"><div class="pos-cell-l">Entry Option LTP</div><div class="pos-cell-v">₹' + p.optionEntryLtp + '</div></div>' +
         '  <div class="pos-cell"><div class="pos-cell-l">Current Option LTP</div><div class="pos-cell-v ' + (liveOpt != null && liveOpt >= p.optionEntryLtp ? 'pos' : 'neg') + '">' + (liveOpt != null ? '₹' + liveOpt : '—') + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Option Move ₹ · %</div><div class="pos-cell-v ' + moveCls + '">' + (optMove != null ? (optMove>=0?'+':'') + '₹' + optMove.toFixed(2) + ' · ' + (optMovePct>=0?'+':'') + optMovePct.toFixed(1) + '%' : '—') + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Spot Move (favour)</div><div class="pos-cell-v ' + (spotMove != null && spotMove >= 0 ? 'pos' : 'neg') + '">' + (spotMove != null ? (spotMove>=0?'+':'') + spotMove.toFixed(1) + 'pt' : '—') + '</div></div>' +
+        '  <div class="pos-cell"><div class="pos-cell-l">Live P&amp;L</div><div class="pos-cell-v ' + (d.livePnl != null && d.livePnl >= 0 ? 'pos' : d.livePnl != null ? 'neg' : 'muted') + '">' + (d.livePnl != null ? '₹' + d.livePnl.toFixed(2) : '—') + '</div></div>' +
+        '</div>' +
+        '<div class="pos-row">' +
         '  <div class="pos-cell"><div class="pos-cell-l">Premium Target / Stop</div><div class="pos-cell-v"><span class="pos">₹' + p.targetPremium + '</span> / <span class="neg">₹' + p.stopPremium + '</span></div></div>' +
         '  <div class="pos-cell"><div class="pos-cell-l">Spot Target / SL</div><div class="pos-cell-v"><span class="pos">' + p.targetSpot + '</span> / <span class="neg">' + p.slSpot + '</span></div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Live P&amp;L</div><div class="pos-cell-v ' + (d.livePnl != null && d.livePnl >= 0 ? 'pos' : d.livePnl != null ? 'neg' : 'muted') + '">' + (d.livePnl != null ? '₹' + d.livePnl.toFixed(2) : '—') + '</div></div>' +
         '</div>';
     } else {
       document.getElementById('position-box').className = 'empty';
       document.getElementById('position-box').textContent = d.running ? 'No open position — waiting for ORB break' : 'No open position';
       document.getElementById('livePnlBadge').textContent = '';
+      // Only show manual entry buttons when running and flat (and entry window still open)
+      document.getElementById('manual-entry').style.display = d.running ? 'block' : 'none';
     }
 
     // Trades table
@@ -1012,6 +1082,16 @@ function filterLog(){
   var q = (document.getElementById('logSearch').value || '').toLowerCase();
   var lines = q ? _rawLog.filter(function(l){ return l.toLowerCase().indexOf(q) >= 0; }) : _rawLog;
   document.getElementById('log').textContent = lines.join('\\n');
+}
+
+async function doManualEntry(side){
+  if (!confirm('Place a MANUAL ' + side + ' entry? This bypasses the ORB break filter.')) return;
+  try {
+    const r = await fetch('/orb-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ side: side }) });
+    const j = await r.json();
+    if (!j.success) { alert('Manual entry failed: ' + (j.error || 'unknown')); return; }
+    refresh();
+  } catch (e) { alert('Manual entry error: ' + e.message); }
 }
 
 function renderChart(points){

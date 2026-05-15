@@ -21,9 +21,11 @@ const DATA_DIR  = path.join(_HOME, "trading-data");
 const SKIPS_DIR = path.join(DATA_DIR, "skips");
 
 const FILE_PREFIX_BY_MODE = {
-  swing: "swing_paper_skips_",
-  scalp: "scalp_paper_skips_",
-  pa:    "pa_paper_skips_",
+  swing:    "swing_paper_skips_",
+  scalp:    "scalp_paper_skips_",
+  pa:       "pa_paper_skips_",
+  orb:      "orb_paper_skips_",
+  straddle: "straddle_paper_skips_",
 };
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}

@@ -40,6 +40,7 @@ const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { getISTMinutes, getBucketStart } = require("../utils/tradeUtils");
+const skipLogger = require("../utils/skipLogger");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "straddlePaper";
@@ -395,17 +396,25 @@ function _checkExits() {
 
 // ── Candle close handler ────────────────────────────────────────────────────
 
-async function onCandleClose(_bar) {
+async function onCandleClose(bar) {
   if (state.position) return;
-  if (state._expiryDayBlocked) return;
+  const _spot = bar && bar.close;
+
+  if (state._expiryDayBlocked) {
+    skipLogger.appendSkipLog("straddle", { gate: "expiry_day_only", reason: "Not an expiry day", spot: _spot });
+    return;
+  }
 
   // Daily loss kill
   const maxLoss = parseFloat(process.env.STRADDLE_MAX_DAILY_LOSS || "3000");
-  if (state.sessionPnl <= -maxLoss) return;
+  if (state.sessionPnl <= -maxLoss) {
+    skipLogger.appendSkipLog("straddle", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot });
+    return;
+  }
 
   // Max pairs per day (default 1)
   const maxPairs = parseInt(process.env.STRADDLE_MAX_DAILY_PAIRS || "1", 10);
-  if (state.pairsTaken >= maxPairs) return;
+  if (state.pairsTaken >= maxPairs) return; // expected, not a skip
 
   // Get current VIX (cached or fetch)
   let vix = getCachedVix();
@@ -414,7 +423,13 @@ async function onCandleClose(_bar) {
   }
 
   const sig = straddleStrategy.getSignal(state.candles, { alreadyOpen: !!state.position, vix });
-  if (sig.signal !== "ENTER_STRADDLE") return;
+  if (sig.signal !== "ENTER_STRADDLE") {
+    // Only log when we have meaningful BB data — pre-warm-up "Warming up" lines are noise
+    if (sig.bbWidth != null) {
+      skipLogger.appendSkipLog("straddle", { gate: "signal_none", reason: sig.reason, spot: _spot, vix, bbWidth: sig.bbWidth, bbWidthAvg: sig.bbWidthAvg });
+    }
+    return;
+  }
 
   await simulateEntry(sig);
 }
@@ -660,6 +675,33 @@ router.get("/exit", (req, res) => {
   res.redirect("/straddle-paper/status");
 });
 
+// ── Manual straddle entry — bypasses BB-squeeze/VIX triggers and opens a
+//    paired ATM CE+PE position right now. Useful for event-day discretionary
+//    entries (RBI, results, etc.). Reuses simulateEntry for full parity. ──
+router.post("/manualEntry", async (req, res) => {
+  if (!state.running) return res.status(400).json({ success: false, error: "Straddle paper is not running." });
+  if (state.position) return res.status(400).json({ success: false, error: "Already in a pair. Exit first." });
+
+  const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
+  if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
+
+  const sig = {
+    signal: "ENTER_STRADDLE",
+    trigger: "MANUAL",
+    bbWidth: null, bbWidthAvg: null,
+    signalStrength: "MANUAL",
+    reason: `🖐️ MANUAL straddle entry @ spot ₹${spot}`,
+  };
+  log(`🖐️ [STRADDLE-PAPER] MANUAL entry triggered by user @ spot ₹${spot}`);
+  try {
+    await simulateEntry(sig);
+    return res.json({ success: true, spot });
+  } catch (e) {
+    log(`❌ [STRADDLE-PAPER] Manual entry failed: ${e.message}`);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Status page ─────────────────────────────────────────────────────────────
 
 // ── /status/chart-data — Lightweight Charts feed with BB bands ───────────────
@@ -856,6 +898,9 @@ ${buildSidebar('straddlePaper', liveActive, state.running, {
   <div class="panel">
     <h3><span>📌 Open Pair</span><span id="livePnlBadge" style="font-size:0.85rem;color:#94a3b8;"></span></h3>
     <div id="position-box" class="empty">No open pair — waiting for volatility trigger</div>
+    <div id="manual-entry" style="display:none;margin-top:10px;text-align:right;">
+      <button onclick="doManualEntry()" style="background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.4);padding:6px 14px;border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🎯 Manual Straddle Entry (force CE+PE)</button>
+    </div>
   </div>
 
   <!-- Live NIFTY chart with BB squeeze overlay -->
@@ -992,7 +1037,9 @@ async function refresh() {
       document.getElementById('position-box').className = 'empty';
       document.getElementById('position-box').textContent = d.running ? 'No open pair — waiting for volatility trigger' : 'No open pair';
       document.getElementById('livePnlBadge').textContent = '';
+      document.getElementById('manual-entry').style.display = d.running ? 'block' : 'none';
     }
+    if (d.position) document.getElementById('manual-entry').style.display = 'none';
 
     const trades = d.sessionTrades || [];
     document.getElementById('tradesHint').textContent = trades.length + ' row' + (trades.length===1?'':'s');
@@ -1019,6 +1066,16 @@ function filterLog(){
   var q = (document.getElementById('logSearch').value || '').toLowerCase();
   var lines = q ? _rawLog.filter(function(l){ return l.toLowerCase().indexOf(q) >= 0; }) : _rawLog;
   document.getElementById('log').textContent = lines.join('\\n');
+}
+
+async function doManualEntry(){
+  if (!confirm('Force a MANUAL straddle entry (CE+PE pair)? This bypasses the BB-squeeze / VIX triggers.')) return;
+  try {
+    const r = await fetch('/straddle-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: '{}' });
+    const j = await r.json();
+    if (!j.success) { alert('Manual entry failed: ' + (j.error || 'unknown')); return; }
+    refresh();
+  } catch (e) { alert('Manual entry error: ' + e.message); }
 }
 
 function renderChart(points){
