@@ -962,6 +962,11 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="top-bar-meta">System overview · Broker connections · Session status</div>
     </div>
     <div class="top-bar-right">
+      <button id="btn-all-paper" class="top-bar-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
+      <button id="btn-all-live"  class="top-bar-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
+      <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
+      <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
+      <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
       <span id="cache-info-pill" class="top-bar-cache empty" title="NIFTY candle cache built from Fyers history">📦 Candle cache: checking…</span>
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
@@ -1000,12 +1005,7 @@ ${buildSidebar('dashboard', liveActive)}
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
   </div>
 
-  <!-- ① b — Compact utility strip -->
-  <div class="util-strip">
-    <button id="btn-all-paper" class="util-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
-    <button id="btn-all-live"  class="util-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
-    <button onclick="hardReset()" class="util-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
-  </div>
+  <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
   <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Paper/Live toggle, all-time) -->
   <div class="mm-grid">
@@ -1697,6 +1697,64 @@ async function loadCacheInfo(){
 loadCacheInfo();
 setInterval(loadCacheInfo, 60000); // refresh once a minute
 
+// ── Market schedule pills (top bar) — independent of analytics panel ─────────
+async function loadMarketSchedulePills(){
+  function istDateISO(){ return new Date().toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' }); }
+  function diffDays(iso){
+    var parts = iso.split('-');
+    var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
+    var today = istDateISO().split('-');
+    var nowDt = new Date(Date.UTC(+today[0], +today[1]-1, +today[2]));
+    return Math.round((dt - nowDt) / 86400000);
+  }
+  var expEl = document.getElementById('expiry-info-pill');
+  var holEl = document.getElementById('holiday-info-pill');
+  if (!expEl || !holEl) return;
+  try {
+    var [hr, er] = await Promise.all([
+      fetch('/api/holidays',     { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/expiry-dates', { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+    ]);
+    var todayIso = istDateISO();
+    // Next expiry
+    var expiries = (er && er.expiries) || [];
+    var nextExp = null;
+    for (var i = 0; i < expiries.length; i++) {
+      var e = expiries[i];
+      var d = e.actual || e.date;
+      if (d >= todayIso) { nextExp = { date:d, monthly:e.monthly, preponed:e.preponed }; break; }
+    }
+    if (nextExp) {
+      var d = diffDays(nextExp.date);
+      var typeLbl = nextExp.monthly ? 'Mo' : 'Wk';
+      var pre = nextExp.preponed ? '*' : '';
+      var when = d === 0 ? 'today' : d + 'd';
+      expEl.classList.remove('empty');
+      expEl.textContent = '📅 Expiry ' + nextExp.date + ' · ' + typeLbl + pre + ' · ' + when;
+    } else {
+      expEl.classList.add('empty');
+      expEl.textContent = '📅 No upcoming expiry';
+    }
+    // Next holiday
+    var holidays = ((hr && hr.holidays) || []).slice().sort();
+    var nextHol = null;
+    for (var j = 0; j < holidays.length; j++) {
+      if (holidays[j] >= todayIso) { nextHol = holidays[j]; break; }
+    }
+    if (nextHol) {
+      var hd = diffDays(nextHol);
+      var hwhen = hd === 0 ? 'today' : hd + 'd';
+      holEl.classList.remove('empty');
+      holEl.textContent = '🎉 Holiday ' + nextHol + ' · ' + hwhen;
+    } else {
+      holEl.classList.add('empty');
+      holEl.textContent = '🎉 No upcoming holiday';
+    }
+  } catch(_){}
+}
+loadMarketSchedulePills();
+setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily at most
+
 // ── Dashboard Analytics Panel ─────────────────────────────────────────────────
 // Live view (market hours) vs Post-market view (last session only).
 (function initAnalyticsPanel(){
@@ -1769,18 +1827,6 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
     return html;
   }
 
-  function renderInfoStrip(expiryInfo, nextHoliday){
-    var items = [];
-    if (expiryInfo) {
-      items.push('<div class="da-tile info"><div class="da-tile-hdr">Next NIFTY Expiry</div><div class="da-big flat">' + expiryInfo.label + '</div><div class="da-sub-line">' + expiryInfo.daysAway + '</div></div>');
-    }
-    if (nextHoliday) {
-      items.push('<div class="da-tile info"><div class="da-tile-hdr">Next NSE Holiday</div><div class="da-big flat">' + nextHoliday.label + '</div><div class="da-sub-line">' + nextHoliday.daysAway + '</div></div>');
-    }
-    if (!items.length) return '';
-    return '<div class="da-grid cols-' + items.length + '">' + items.join('') + '</div>';
-  }
-
   function aggregateTrades(trades, fromIso, toIso) {
     // Returns { byStrategy: {SWING:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
     var bys = { SWING:{net:0,t:0,w:0,l:0}, SCALP:{net:0,t:0,w:0,l:0}, PA:{net:0,t:0,w:0,l:0} };
@@ -1818,11 +1864,10 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
     return tot === 0 ? 0 : Math.round(100 * w / tot);
   }
 
-  function renderPostMarket(paperTrades, liveTrades, expiryInfo, nextHoliday) {
+  function renderPostMarket(paperTrades, liveTrades) {
     var combined = (paperTrades || []).concat(liveTrades || []);
     if (!combined.length) {
-      return renderInfoStrip(expiryInfo, nextHoliday) +
-        '<div class="da-empty">No trade history yet. Run a paper or live session — analytics appears here after-hours.</div>';
+      return '<div class="da-empty">No trade history yet. Run a paper or live session — analytics appears here after-hours.</div>';
     }
     // Last completed trading day across paper+live
     var combinedAgg = aggregateTrades(combined);
@@ -1862,44 +1907,7 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
     var html = '';
     html += '<div class="da-tile-hdr" style="margin-top:2px;">Last trading day' + (lastDay ? ' &middot; ' + lastDay : '') + '</div>';
     html += lastHtml;
-    var infoStrip = renderInfoStrip(expiryInfo, nextHoliday);
-    if (infoStrip) html += '<div class="da-tile-hdr" style="margin-top:6px;">Market schedule</div>' + infoStrip;
     return html;
-  }
-
-  function buildExpiryInfo(expiries){
-    if (!expiries || !expiries.length) return null;
-    var todayIso = istDateISO();
-    var next = null;
-    for (var i = 0; i < expiries.length; i++) {
-      var e = expiries[i];
-      var dateStr = e.actual || e.date;
-      if (dateStr >= todayIso) { next = { dateStr: dateStr, monthly: e.monthly, preponed: e.preponed }; break; }
-    }
-    if (!next) return null;
-    var parts = next.dateStr.split('-');
-    var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
-    var nowDt = new Date(Date.UTC(+todayIso.split('-')[0], +todayIso.split('-')[1]-1, +todayIso.split('-')[2]));
-    var days = Math.round((dt - nowDt) / 86400000);
-    var typeLbl = next.monthly ? 'Monthly' : 'Weekly';
-    var preLbl  = next.preponed ? ' (preponed)' : '';
-    return { label: next.dateStr, daysAway: typeLbl + preLbl + ' &middot; ' + (days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's')) };
-  }
-
-  function buildNextHoliday(holidays){
-    if (!holidays || !holidays.length) return null;
-    var todayIso = istDateISO();
-    var sorted = holidays.slice().sort();
-    for (var i = 0; i < sorted.length; i++) {
-      if (sorted[i] >= todayIso) {
-        var parts = sorted[i].split('-');
-        var dt = new Date(Date.UTC(+parts[0], +parts[1]-1, +parts[2]));
-        var nowDt = new Date(Date.UTC(+todayIso.split('-')[0], +todayIso.split('-')[1]-1, +todayIso.split('-')[2]));
-        var days = Math.round((dt - nowDt) / 86400000);
-        return { label: sorted[i], daysAway: (days === 0 ? 'today' : days + ' day' + (days === 1 ? '' : 's') + ' away') };
-      }
-    }
-    return null;
   }
 
   // Tag the title & badge based on mode
@@ -1922,15 +1930,10 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
 
   async function refresh(){
     var body = document.getElementById('da-body');
-    // Fetch shared info (holidays + expiries) once per refresh
-    var [holRes, expRes] = await Promise.all([
-      fetchJSON('/api/holidays'),
-      fetchJSON('/api/expiry-dates'),
-    ]);
+    // Only need holidays here (for the market-open check). Expiry data is
+    // surfaced in the top-bar pills, populated independently.
+    var holRes = await fetchJSON('/api/holidays');
     var holidays = (holRes && holRes.holidays) || [];
-    var expiries = (expRes && expRes.expiries) || [];
-    var expiryInfo = buildExpiryInfo(expiries);
-    var nextHol    = buildNextHoliday(holidays);
     var marketOpen = isMarketOpenNow(holidays);
 
     if (marketOpen) {
@@ -1940,10 +1943,7 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
         fetchJSON('/scalp-paper/status/data'),
         fetchJSON('/pa-paper/status/data'),
       ]);
-      var html = renderLive({ swing: swing, scalp: scalp, pa: pa });
-      var infoStrip = renderInfoStrip(expiryInfo, nextHol);
-      if (infoStrip) html += '<div class="da-tile-hdr" style="margin-top:6px;">Market schedule</div>' + infoStrip;
-      body.innerHTML = html;
+      body.innerHTML = renderLive({ swing: swing, scalp: scalp, pa: pa });
 
       clearPoll();
       _pollTimer = setInterval(refresh, 8000);
@@ -1955,7 +1955,7 @@ setInterval(loadCacheInfo, 60000); // refresh once a minute
       ]);
       var paperTrades = (paper && paper.trades) || [];
       var liveTrades  = (live  && live.trades)  || [];
-      body.innerHTML = renderPostMarket(paperTrades, liveTrades, expiryInfo, nextHol);
+      body.innerHTML = renderPostMarket(paperTrades, liveTrades);
 
       clearPoll();
       _pollTimer = setInterval(refresh, 60000); // every minute after-hours (covers session end)

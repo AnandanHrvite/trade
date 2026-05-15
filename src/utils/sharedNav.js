@@ -699,12 +699,20 @@ function sidebarCSS() {
     .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:7px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
     .top-bar-title{font-size:0.82rem;font-weight:700;color:#e0eaf8;}
     .top-bar-meta{font-size:0.62rem;color:#2a4060;margin-top:1px;}
-    .top-bar-right{display:flex;align-items:center;gap:8px;}
+    .top-bar-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
     .top-bar-badge{display:flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:700;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:#60a5fa;}
     .top-bar-badge.live-active{border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.1);color:#ef4444;animation:pulse 1.2s infinite;}
     .top-bar-badge.paper-active{border-color:rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:#10b981;animation:pulse 1.2s infinite;}
     .top-bar-cache{display:inline-flex;align-items:center;gap:5px;font-size:0.6rem;font-weight:600;padding:3px 9px;border-radius:4px;border:0.5px solid rgba(16,185,129,0.25);background:rgba(16,185,129,0.07);color:#10b981;font-family:'IBM Plex Mono',monospace;letter-spacing:0.2px;white-space:nowrap;}
     .top-bar-cache.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:#4a6080;}
+    .top-bar-cache.schedule{border-color:rgba(34,211,238,0.25);background:rgba(34,211,238,0.07);color:#22d3ee;}
+    .top-bar-cache.schedule.empty{border-color:rgba(74,96,128,0.3);background:rgba(74,96,128,0.07);color:#4a6080;}
+    .top-bar-cache.schedule:empty{display:none;}
+    .top-bar-btn{display:inline-flex;align-items:center;gap:5px;font-size:0.65rem;font-weight:700;padding:4px 10px;border-radius:5px;border:1px solid #243049;background:#0f1520;color:#a0b0c8;cursor:pointer;font-family:inherit;letter-spacing:0.2px;transition:filter 0.15s;white-space:nowrap;}
+    .top-bar-btn:hover:not(:disabled){filter:brightness(1.25);}
+    .top-bar-btn:disabled{opacity:0.5;cursor:not-allowed;}
+    .top-bar-btn.run-paper{border-color:rgba(16,185,129,0.35);background:rgba(16,185,129,0.10);color:#10b981;}
+    .top-bar-btn.run-live{border-color:rgba(239,68,68,0.35);background:rgba(239,68,68,0.10);color:#ef4444;}
     .broker-badges{display:flex;gap:6px;padding:8px 24px;background:#040c18;border-bottom:1px solid #0e1e36;flex-wrap:wrap;}
     .broker-badge{font-size:0.65rem;font-weight:600;padding:3px 10px;border-radius:5px;}
     .broker-badge.ok{background:#060e20;border:0.5px solid #0e2850;color:#60a5fa;}
