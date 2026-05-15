@@ -1902,10 +1902,12 @@ async function scHandleStop(btn) {
   }
 }
 async function scHandleReset(btn) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '⚠️', title: 'Reset Price Action Live History',
     message: 'Wipe ALL Price Action LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
-    confirmText: 'Reset History', confirmClass: 'modal-btn-danger'
+    confirmText: 'Reset History', confirmClass: 'modal-btn-danger',
+    subject: 'ALL Price Action LIVE trade history',
+    secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
@@ -1927,7 +1929,14 @@ async function scHandleReset(btn) {
   }
 }
 async function scManualEntry(side) {
-  if (!confirm('\u26a0\ufe0f PRICE ACTION LIVE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
+  var ok = await showConfirm({
+    icon: '\u26a0\ufe0f',
+    title: 'Manual LIVE entry',
+    message: 'PRICE ACTION LIVE: Manual ' + side + ' entry with REAL money. Confirm?',
+    confirmText: 'Enter ' + side + ' (LIVE)',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
   try {
     var res = await secretFetch('/pa-live/manualEntry', {
       method: 'POST',

@@ -3225,10 +3225,12 @@ async function ltHandleStop(btn) {
   }
 }
 async function ltHandleReset(btn) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '⚠️', title: 'Reset Swing Live History',
     message: 'Wipe ALL swing LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
-    confirmText: 'Reset History', confirmClass: 'modal-btn-danger'
+    confirmText: 'Reset History', confirmClass: 'modal-btn-danger',
+    subject: 'ALL swing LIVE trade history',
+    secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
@@ -3250,7 +3252,14 @@ async function ltHandleReset(btn) {
   }
 }
 async function manualEntry(side) {
-  if (!confirm('⚠️ LIVE TRADE: Manual ' + side + ' entry with REAL money. Confirm?')) return;
+  var ok = await showConfirm({
+    icon: '⚠️',
+    title: 'Manual LIVE entry',
+    message: 'LIVE TRADE: Manual ' + side + ' entry with REAL money. Confirm?',
+    confirmText: 'Enter ' + side + ' (LIVE)',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
   try {
     var res = await secretFetch('/swing-live/manualEntry', {
       method: 'POST',

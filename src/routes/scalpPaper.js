@@ -1878,35 +1878,57 @@ function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP)
 logFilter();
 
 // ── Manual exit handler ──────────────────────────────────────────────────
-function spHandleExit(btn) {
-  if (!confirm('Exit current position now?')) return;
+async function spHandleExit(btn) {
+  var ok = await showConfirm({
+    icon: '🚪',
+    title: 'Exit position',
+    message: 'Exit current position now?',
+    confirmText: 'Exit',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
   btn.disabled = true;
   btn.textContent = 'Exiting...';
   fetch('/scalp-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
 }
 
 async function spHandleReset(btn) {
-  if (!confirm('Reset ALL scalp paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.')) return;
+  var ok = await showDoubleConfirm({
+    icon: '⚠️',
+    title: 'Reset Scalp Paper Trade',
+    message: 'Reset ALL scalp paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
+    confirmText: 'Reset All',
+    confirmClass: 'modal-btn-danger',
+    subject: 'ALL scalp paper sessions & capital',
+    secondConfirmText: 'Yes, reset all'
+  });
+  if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
     var res = await fetch('/scalp-paper/reset');
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
     if (!data.success) {
-      alert('Reset failed: ' + (data.error || 'Unknown error'));
+      showAlert({icon:'⚠️',title:'Reset failed',message:data.error||'Unknown error',btnClass:'modal-btn-danger'});
       if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
       return;
     }
-    alert('Reset successful! ' + data.message);
+    await showAlert({icon:'✅',title:'Reset successful',message:data.message,btnClass:'modal-btn-success'});
     location.reload();
   } catch(e) {
-    alert('Reset error: ' + e.message);
+    showAlert({icon:'⚠️',title:'Reset error',message:e.message,btnClass:'modal-btn-danger'});
     if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; }
   }
 }
 
 async function spManualEntry(side) {
-  if (!confirm('Manual ' + side + ' entry at current spot?')) return;
+  var ok = await showConfirm({
+    icon: '✋',
+    title: 'Manual entry',
+    message: 'Manual ' + side + ' entry at current spot?',
+    confirmText: 'Enter ' + side
+  });
+  if (!ok) return;
   try {
     var res = await fetch('/scalp-paper/manualEntry', {
       method: 'POST',
@@ -2907,15 +2929,21 @@ function toggleDailyFiles(){
   if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
 }
 async function restoreSession(date){
-  if (!confirm('Rebuild session for '+date+' from daily JSONL? This will add any trades found there that are not already in a session.')) return;
+  var ok = await showConfirm({
+    icon: '🔄',
+    title: 'Rebuild session',
+    message: 'Rebuild session for '+date+' from daily JSONL?\\nThis will add any trades found there that are not already in a session.',
+    confirmText: 'Rebuild'
+  });
+  if (!ok) return;
   try {
     var res = await fetch('/scalp-paper/restore-session/'+date, { method: 'POST', cache: 'no-store' });
     var d = await res.json();
-    if (!d.success) { alert('Restore failed: ' + (d.error || 'Unknown error')); return; }
-    if (d.restored === 0) { alert(d.message || 'Nothing to restore'); return; }
-    alert('Restored ' + d.restored + ' trade(s) — PnL ₹' + (d.sessionPnl || 0));
+    if (!d.success) { showAlert({icon:'⚠️',title:'Restore failed',message:d.error||'Unknown error',btnClass:'modal-btn-danger'}); return; }
+    if (d.restored === 0) { showAlert({icon:'ℹ️',title:'Nothing to restore',message:d.message||'Nothing to restore',btnClass:'modal-btn-primary'}); return; }
+    await showAlert({icon:'✅',title:'Restored',message:'Restored ' + d.restored + ' trade(s) — PnL ₹' + (d.sessionPnl || 0),btnClass:'modal-btn-success'});
     location.reload();
-  } catch(e) { alert('Restore error: ' + (e && e.message || e)); }
+  } catch(e) { showAlert({icon:'⚠️',title:'Restore error',message:(e && e.message) || String(e),btnClass:'modal-btn-danger'}); }
 }
 loadDailyFiles();
 
@@ -3039,12 +3067,14 @@ async function copyAllJsonl(btn) {
 }
 
 async function confirmReset() {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🗑️',
     title: 'Reset All Scalp Paper History?',
     message: 'This will permanently delete all sessions, trades, and reset capital to ₹${startCap.toLocaleString("en-IN")}. This cannot be undone.',
     confirmText: 'Yes, Reset Everything',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: 'ALL scalp paper sessions, trades & capital',
+    secondConfirmText: 'Yes, reset everything'
   });
   if (!ok) return;
   try {
@@ -3058,12 +3088,14 @@ async function confirmReset() {
 }
 
 async function deleteSession(idx, label) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🗑️',
     title: 'Delete ' + label + '?',
     message: 'This will permanently delete this session and all its trades. Capital and P&L will be recalculated. This cannot be undone.',
     confirmText: 'Yes, Delete',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: label,
+    secondConfirmText: 'Yes, delete session'
   });
   if (!ok) return;
   try {

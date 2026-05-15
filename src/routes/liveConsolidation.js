@@ -873,12 +873,14 @@ async function resetLive(mode){
   const all = (mode === 'all');
   const targets = all ? ['swing','scalp','pa'] : [mode];
   const label = all ? 'ALL Live modes (Swing + Scalp + PA)' : _RESET_TARGETS[mode].label;
-  const ok = await showConfirm({
+  const ok = await showDoubleConfirm({
     icon: '⚠️',
     title: 'Reset ' + label + ' History?',
     message: 'This permanently deletes the stored trade log for ' + label + '.\\n\\nIt does NOT cancel or reverse any real broker orders that were already placed — only the local history file is cleared.\\n\\nThis cannot be undone.',
     confirmText: 'Yes, Reset',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: label + ' history',
+    secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
 

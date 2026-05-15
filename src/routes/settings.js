@@ -1735,10 +1735,12 @@ async function resetAndSaveAll() {
 
 async function restartServer() {
   var btn = document.getElementById('restartBtn');
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🔄', title: 'Restart Server',
     message: 'This will restart the server and stop any active trading sessions.\\n\\nAre you sure?',
-    confirmText: 'Restart', confirmClass: 'modal-btn-danger'
+    confirmText: 'Restart', confirmClass: 'modal-btn-danger',
+    subject: 'Server restart (will kill active sessions)',
+    secondConfirmText: 'Yes, restart'
   });
   if (!ok) return;
   btn.disabled = true;
@@ -1893,12 +1895,14 @@ async function bulkUpdateAndRestart() {
   if (deletes.length) msgHead += ' and remove ' + deletes.length + ' key' + (deletes.length === 1 ? '' : 's');
   msgHead += ' and restart the server?';
 
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🚀',
     title: 'Bulk Update & Restart',
     message: msgHead + '\\n\\n' + previewList + '\\n\\nActive trading sessions will stop. Page will reload.',
     confirmText: 'Update & Restart',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: keys.length + ' update(s)' + (deletes.length ? ' + ' + deletes.length + ' delete(s)' : '') + ' + server restart',
+    secondConfirmText: 'Yes, update & restart'
   });
   if (!ok) return;
 

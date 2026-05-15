@@ -1671,10 +1671,12 @@ setInterval(checkTradingStatus, 60000); // Check every minute
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function hardReset(){
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '⚠️', title: 'Hard Reset',
     message: 'Clear all tokens and restart the server?\\nYou will need to re-login both Fyers and Zerodha after.',
-    confirmText: 'Reset', confirmClass: 'modal-btn-danger'
+    confirmText: 'Reset', confirmClass: 'modal-btn-danger',
+    subject: 'All broker tokens + server restart',
+    secondConfirmText: 'Yes, hard reset'
   });
   if(!ok) return;
   try {

@@ -4061,7 +4061,13 @@ function toggleDailyFiles(){
   if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
 }
 async function restoreSession(date){
-  if (!confirm('Rebuild session for '+date+' from daily JSONL? This will add any trades found there that are not already in a session.')) return;
+  var ok = await showConfirm({
+    icon: '🔄',
+    title: 'Rebuild session',
+    message: 'Rebuild session for '+date+' from daily JSONL?\\nThis will add any trades found there that are not already in a session.',
+    confirmText: 'Rebuild'
+  });
+  if (!ok) return;
   try {
     var res = await fetch('/swing-paper/restore-session/'+date, { method: 'POST', cache: 'no-store' });
     var d = await res.json();
@@ -4173,12 +4179,14 @@ if (document.getElementById('jsonlModal')) {
 }
 
 async function resetHistory() {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🗑️',
     title: 'Reset All Paper Trade History?',
     message: 'This will permanently delete all sessions, trades, and reset capital. This cannot be undone.',
     confirmText: 'Yes, Reset Everything',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: 'ALL swing paper sessions, trades & capital',
+    secondConfirmText: 'Yes, reset everything'
   });
   if (!ok) return;
   try {
@@ -4192,12 +4200,14 @@ async function resetHistory() {
 }
 
 async function deleteSession(idx, label) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🗑️',
     title: 'Delete ' + label + '?',
     message: 'This will permanently delete this session and all its trades. Capital and P&L will be recalculated. This cannot be undone.',
     confirmText: 'Yes, Delete',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: label,
+    secondConfirmText: 'Yes, delete session'
   });
   if (!ok) return;
   try {
@@ -4927,10 +4937,12 @@ async function handleStop(btn) {
   }
 }
 async function ptHandleReset(btn) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '⚠️', title: 'Reset Paper Trade',
     message: 'Reset ALL paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
-    confirmText: 'Reset All', confirmClass: 'modal-btn-danger'
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger',
+    subject: 'ALL swing paper sessions & capital',
+    secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
@@ -5000,7 +5012,13 @@ function showToast(msg, color) {
   setTimeout(() => t.remove(), color === '#ef4444' ? 7000 : 4000);
 }
 async function manualEntry(side) {
-  if (!confirm('Manual ' + side + ' entry at current spot?')) return;
+  var ok = await showConfirm({
+    icon: '✋',
+    title: 'Manual entry',
+    message: 'Manual ' + side + ' entry at current spot?',
+    confirmText: 'Enter ' + side
+  });
+  if (!ok) return;
   try {
     const res = await secretFetch('/swing-paper/manualEntry', {
       method: 'POST',

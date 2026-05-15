@@ -226,8 +226,16 @@ function renderPager(d) {
 
 function go(p) { if (p >= 1) fetchLogs(p); }
 
-function resetLogs() {
-  if (!confirm('Clear all failed login logs?')) return;
+async function resetLogs() {
+  var ok = await showDoubleConfirm({
+    icon: '🧹',
+    title: 'Clear failed login logs',
+    message: 'Clear all failed login logs?\\nThis cannot be undone.',
+    confirmText: 'Clear',
+    confirmClass: 'modal-btn-danger',
+    secondConfirmText: 'Yes, clear all'
+  });
+  if (!ok) return;
   var secret = new URLSearchParams(location.search).get('secret') || '';
   fetch('/login-logs/clear' + (secret ? '?secret=' + secret : ''), { method: 'POST' })
     .then(function() { fetchLogs(1); });

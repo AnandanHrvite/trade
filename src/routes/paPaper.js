@@ -1697,15 +1697,28 @@ function logGo(p){ logPg=Math.max(1,Math.min(Math.ceil(logFiltered.length/logPP)
 logFilter();
 
 // ── Manual exit handler ──────────────────────────────────────────────────
-function spHandleExit(btn) {
-  if (!confirm('Exit current position now?')) return;
+async function spHandleExit(btn) {
+  var ok = await showConfirm({
+    icon: '🚪',
+    title: 'Exit position',
+    message: 'Exit current position now?',
+    confirmText: 'Exit',
+    confirmClass: 'modal-btn-danger'
+  });
+  if (!ok) return;
   btn.disabled = true;
   btn.textContent = 'Exiting...';
   fetch('/pa-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
 }
 
 async function spManualEntry(side) {
-  if (!confirm('Manual ' + side + ' entry at current spot?')) return;
+  var ok = await showConfirm({
+    icon: '✋',
+    title: 'Manual entry',
+    message: 'Manual ' + side + ' entry at current spot?',
+    confirmText: 'Enter ' + side
+  });
+  if (!ok) return;
   try {
     var res = await fetch('/pa-paper/manualEntry', {
       method: 'POST',
@@ -1929,10 +1942,12 @@ function doCopy(text,btn,label){
 }
 
 async function ptHandleReset(btn) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '⚠️', title: 'Reset Price Action Paper Trade',
     message: 'Reset ALL Price Action paper trade history?\\nThis wipes all sessions and restores starting capital.\\nCannot be undone.',
-    confirmText: 'Reset All', confirmClass: 'modal-btn-danger'
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger',
+    subject: 'ALL PA paper sessions & capital',
+    secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
@@ -2861,7 +2876,13 @@ function toggleDailyFiles(){
   if (b.style.display === 'none') { b.style.display = ''; t.textContent = 'Hide'; } else { b.style.display = 'none'; t.textContent = 'Show'; }
 }
 async function restoreSession(date){
-  if (!confirm('Rebuild session for '+date+' from daily JSONL? This will add any trades found there that are not already in a session.')) return;
+  var ok = await showConfirm({
+    icon: '🔄',
+    title: 'Rebuild session',
+    message: 'Rebuild session for '+date+' from daily JSONL?\\nThis will add any trades found there that are not already in a session.',
+    confirmText: 'Rebuild'
+  });
+  if (!ok) return;
   try {
     var res = await fetch('/pa-paper/restore-session/'+date, { method: 'POST', cache: 'no-store' });
     var d = await res.json();
@@ -2973,12 +2994,14 @@ if (document.getElementById('jsonlModal')) {
 }
 
 async function confirmReset() {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '🗑️',
     title: 'Reset All Price Action Paper History?',
     message: 'This will permanently delete all sessions, trades, and reset capital to ₹${startCap.toLocaleString("en-IN")}. This cannot be undone.',
     confirmText: 'Yes, Reset Everything',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: 'ALL PA paper sessions, trades & capital',
+    secondConfirmText: 'Yes, reset everything'
   });
   if (!ok) return;
   try {
@@ -2992,12 +3015,14 @@ async function confirmReset() {
 }
 
 async function deleteSession(idx, label) {
-  var ok = await showConfirm({
+  var ok = await showDoubleConfirm({
     icon: '\\ud83d\\uddd1\\ufe0f',
     title: 'Delete ' + label + '?',
     message: 'This will permanently delete this session and all its trades. Capital and P&L will be recalculated. This cannot be undone.',
     confirmText: 'Yes, Delete',
-    confirmClass: 'modal-btn-danger'
+    confirmClass: 'modal-btn-danger',
+    subject: label,
+    secondConfirmText: 'Yes, delete session'
   });
   if (!ok) return;
   try {

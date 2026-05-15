@@ -581,12 +581,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   function closeTV() { document.getElementById('tvOverlay').classList.remove('visible'); }
 
   async function delFile(mode, date) {
-    var ok = await showConfirm({
+    var ok = await showDoubleConfirm({
       icon: '🗑',
       title: 'Delete trade log',
       message: 'Permanently delete ' + mode.toUpperCase() + ' trade log for ' + date + '?\\n\\nThis removes the daily JSONL file from ~/trading-data/trades/. The cumulative log (separate file) is not affected.',
       confirmText: 'Delete',
       confirmClass: 'modal-btn-danger',
+      subject: mode.toUpperCase() + ' · ' + date,
+      secondConfirmText: 'Yes, delete it',
     });
     if (!ok) return;
     var res = await secretFetch('/trade-logs/delete?mode=' + mode + '&date=' + encodeURIComponent(date), { method: 'POST' });
@@ -598,12 +600,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   }
 
   async function delAllFiles(mode, count) {
-    var ok = await showConfirm({
+    var ok = await showDoubleConfirm({
       icon: '🗑',
       title: 'Delete ALL ' + mode.toUpperCase() + ' trade logs',
       message: 'Permanently delete every ' + mode.toUpperCase() + ' daily trade log (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\nThis cannot be undone. The cumulative log (separate file) is not affected.',
       confirmText: 'Delete All',
       confirmClass: 'modal-btn-danger',
+      subject: 'ALL ' + count + ' ' + mode.toUpperCase() + ' daily file' + (count === 1 ? '' : 's'),
+      secondConfirmText: 'Yes, delete all',
     });
     if (!ok) return;
     var res = await secretFetch('/trade-logs/delete-all?mode=' + mode, { method: 'POST' });
@@ -715,12 +719,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   }
 
   async function delSkipFile(mode, date) {
-    var ok = await showConfirm({
+    var ok = await showDoubleConfirm({
       icon: '🗑',
       title: 'Delete skip log',
       message: 'Permanently delete ' + mode.toUpperCase() + ' SKIP log for ' + date + '?\\n\\nThis removes the daily skip JSONL from ~/trading-data/skips/. Cannot be undone.',
       confirmText: 'Delete',
       confirmClass: 'modal-btn-danger',
+      subject: mode.toUpperCase() + ' SKIP · ' + date,
+      secondConfirmText: 'Yes, delete it',
     });
     if (!ok) return;
     var res = await secretFetch('/trade-logs/skips/delete?mode=' + mode + '&date=' + encodeURIComponent(date), { method: 'POST' });
@@ -732,12 +738,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   }
 
   async function delAllSkips(mode, count) {
-    var ok = await showConfirm({
+    var ok = await showDoubleConfirm({
       icon: '🗑',
       title: 'Delete ALL ' + mode.toUpperCase() + ' skip logs',
       message: 'Permanently delete every ' + mode.toUpperCase() + ' daily skip log (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\nThis cannot be undone.',
       confirmText: 'Delete All',
       confirmClass: 'modal-btn-danger',
+      subject: 'ALL ' + count + ' ' + mode.toUpperCase() + ' daily skip file' + (count === 1 ? '' : 's'),
+      secondConfirmText: 'Yes, delete all',
     });
     if (!ok) return;
     var res = await secretFetch('/trade-logs/skips/delete-all?mode=' + mode, { method: 'POST' });

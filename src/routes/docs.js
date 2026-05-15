@@ -80,6 +80,7 @@ router.get("/", (req, res) => {
     html, body { height:100%; }
     body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0; }
     ${sidebarCSS()}
+    ${modalCSS()}
 
     .main { margin-left:160px; padding:20px 28px; min-height:100vh; }
     @media(max-width:768px){ .main{margin-left:0;padding:12px;} }
@@ -174,6 +175,7 @@ ${buildSidebar("docs", liveActive)}
   </div>
 </div>
 <script>
+${modalJS()}
 (function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();
 function showTab(el, id) {
   document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('active'); });
@@ -181,12 +183,21 @@ function showTab(el, id) {
   el.classList.add('active');
   document.getElementById(id).classList.add('active');
 }
-function deleteDoc(name) {
-  if (!confirm('Delete "' + name + '"?')) return;
+async function deleteDoc(name) {
+  var ok = await showDoubleConfirm({
+    icon: '🗑',
+    title: 'Delete document',
+    message: 'Permanently delete "' + name + '"?\\nThis cannot be undone.',
+    confirmText: 'Delete',
+    confirmClass: 'modal-btn-danger',
+    subject: name,
+    secondConfirmText: 'Yes, delete it'
+  });
+  if (!ok) return;
   fetch('/docs/file/' + encodeURIComponent(name), { method: 'DELETE' })
     .then(function(r) { return r.json(); })
-    .then(function(d) { if (d.ok) location.reload(); else alert(d.error || 'Delete failed'); })
-    .catch(function() { alert('Delete failed'); });
+    .then(function(d) { if (d.ok) location.reload(); else showAlert({ icon: '⚠️', title: 'Delete failed', message: d.error || 'Delete failed', btnClass: 'modal-btn-danger' }); })
+    .catch(function() { showAlert({ icon: '⚠️', title: 'Delete failed', message: 'Network error', btnClass: 'modal-btn-danger' }); });
 }
 </script>
 </body></html>`);

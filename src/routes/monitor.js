@@ -222,11 +222,11 @@ ${buildSidebar("monitor", liveActive)}
 <div class="action-bar">
   <div class="action-title">Reduce Resource Usage</div>
   <div class="action-buttons">
-    <button class="act-btn act-blue"   onclick="doAction('gc','Force Node.js garbage collection?')"              title="Trigger V8 garbage collection — reclaims heap held by finished backtests">♻ Force GC</button>
-    <button class="act-btn act-amber"  onclick="doAction('prune-cache','Prune backtest cache files older than 90 days?')" title="Delete cached candle files older than 90 days">🧹 Prune Cache (90d)</button>
-    <button class="act-btn act-amber"  onclick="doAction('clear-cache-all','Delete ALL backtest cache files? Next backtest will refetch from Fyers API.')" title="Delete every cached candle file — backtests will refetch from API">🗑 Clear All Cache</button>
-    <button class="act-btn act-purple" onclick="doAction('clear-jobs','Clear finished backtest jobs from memory?')" title="Drop stored backtest trade arrays from memory">📦 Clear Finished Jobs</button>
-    <button class="act-btn act-red"    onclick="doAction('restart','Restart the Node.js process? Any running backtest will be killed.')" title="Restart the bot via PM2 — blocked when LIVE mode is active">⟳ Restart Node</button>
+    <button class="act-btn act-blue"   onclick="doAction('gc','Force GC','Force Node.js garbage collection?',false)"              title="Trigger V8 garbage collection — reclaims heap held by finished backtests">♻ Force GC</button>
+    <button class="act-btn act-amber"  onclick="doAction('prune-cache','Prune cache (90d)','Prune backtest cache files older than 90 days?',true)" title="Delete cached candle files older than 90 days">🧹 Prune Cache (90d)</button>
+    <button class="act-btn act-amber"  onclick="doAction('clear-cache-all','Clear ALL cache','Delete ALL backtest cache files? Next backtest will refetch from Fyers API.',true)" title="Delete every cached candle file — backtests will refetch from API">🗑 Clear All Cache</button>
+    <button class="act-btn act-purple" onclick="doAction('clear-jobs','Clear finished jobs','Clear finished backtest jobs from memory?',true)" title="Drop stored backtest trade arrays from memory">📦 Clear Finished Jobs</button>
+    <button class="act-btn act-red"    onclick="doAction('restart','Restart Node','Restart the Node.js process? Any running backtest will be killed.',true)" title="Restart the bot via PM2 — blocked when LIVE mode is active">⟳ Restart Node</button>
   </div>
   <div class="action-note">Tip: most memory growth comes from backtest trade arrays. Force GC + Clear Finished Jobs is the safest combo.</div>
 </div>
@@ -364,8 +364,18 @@ function fmtUptime(sec) {
   return (d > 0 ? d + 'd ' : '') + h + 'h ' + m + 'm ' + s + 's';
 }
 
-async function doAction(action, confirmMsg) {
-  if (!window.confirm(confirmMsg)) return;
+async function doAction(action, title, confirmMsg, destructive) {
+  var ok = destructive
+    ? await showDoubleConfirm({
+        icon: '⚠️', title: title || 'Confirm action',
+        message: confirmMsg, confirmText: 'Proceed', confirmClass: 'modal-btn-danger',
+        secondConfirmText: 'Yes, proceed'
+      })
+    : await showConfirm({
+        icon: '⚠️', title: title || 'Confirm action',
+        message: confirmMsg, confirmText: 'Proceed', confirmClass: 'modal-btn-danger'
+      });
+  if (!ok) return;
   const buttons = document.querySelectorAll('.act-btn');
   buttons.forEach(b => b.disabled = true);
   try {

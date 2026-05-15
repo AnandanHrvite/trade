@@ -984,6 +984,27 @@ function showConfirm(opts) {
   });
 }
 
+// Two-step confirmation for irreversible delete / reset actions.
+// First step shows the caller's opts (same shape as showConfirm). If accepted,
+// shows a stricter "Are you absolutely sure?" step before resolving true.
+// A short subject string can be passed in opts.subject to interpolate into
+// the second-step message (e.g. "SWING · 2026-05-12").
+async function showDoubleConfirm(opts) {
+  opts = opts || {};
+  var first = await showConfirm(opts);
+  if (!first) return false;
+  var subject = opts.subject ? '\\n\\n' + opts.subject : '';
+  var second = await showConfirm({
+    icon: '⚠️',
+    title: 'Confirm again',
+    message: 'Are you absolutely sure? This cannot be undone.' + subject,
+    cancelText: 'Cancel',
+    confirmText: opts.secondConfirmText || 'Yes, proceed',
+    confirmClass: 'modal-btn-danger',
+  });
+  return !!second;
+}
+
 function showPrompt(opts) {
   opts = opts || {};
   return new Promise(function(resolve) {

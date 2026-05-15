@@ -19,7 +19,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -390,6 +390,7 @@ router.get("/", (req, res) => {
 </div>
 
 <script>
+${modalJS()}
 const BASELINES = ${JSON.stringify(baselines)};
 let currentBroker = null;
 
@@ -431,7 +432,17 @@ async function saveBaseline(){
 }
 
 async function resetBaseline(broker){
-  if (!confirm('Reset ' + (broker === 'kite' ? 'Kite' : 'Fyers') + ' baseline to ₹0?')) return;
+  const label = broker === 'kite' ? 'Kite' : 'Fyers';
+  const ok = await showDoubleConfirm({
+    icon: '⚠️',
+    title: 'Reset baseline',
+    message: 'Reset ' + label + ' baseline to ₹0?\\nThis cannot be undone.',
+    confirmText: 'Reset',
+    confirmClass: 'modal-btn-danger',
+    subject: label + ' baseline',
+    secondConfirmText: 'Yes, reset'
+  });
+  if (!ok) return;
   try {
     const r = await fetch('/pnl-history/baseline/' + broker + '/reset', { method: 'POST' });
     const j = await r.json();
