@@ -646,6 +646,57 @@ router.get("/exit", (req, res) => {
 
 // ── Status page ─────────────────────────────────────────────────────────────
 
+// ── /status/chart-data — feeds Lightweight Charts live NIFTY view ────────────
+router.get("/status/chart-data", (req, res) => {
+  try {
+    const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    if (state.currentBar) {
+      candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    }
+
+    // Opening Range box overlay — emit two horizontal lines at ORH and ORL
+    let orhLine = [], orlLine = [];
+    try {
+      const or = orbStrategy.computeOpeningRange(state.candles);
+      if (or && candles.length) {
+        const fromTime = candles[0].time;
+        const toTime = candles[candles.length - 1].time;
+        // Lightweight Charts needs sorted ascending values
+        orhLine = [
+          { time: fromTime, value: or.high },
+          { time: toTime,   value: or.high },
+        ];
+        orlLine = [
+          { time: fromTime, value: or.low },
+          { time: toTime,   value: or.low },
+        ];
+      }
+    } catch (_) {}
+
+    const markers = [];
+    for (const t of state.sessionTrades) {
+      // Best-effort marker — entryTime/exitTime are IST strings; we don't have entryBarTime
+      // captured on the trade, so we approximate using the closest candle by spot price.
+      if (t.spotAtEntry != null) {
+        const c = candles.find(c => Math.abs(c.close - t.spotAtEntry) < 1) || candles[0];
+        if (c) markers.push({ time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: (t.side || '') + ' @ ' + t.spotAtEntry });
+      }
+      if (t.spotAtExit != null) {
+        const c = candles.find(c => Math.abs(c.close - t.spotAtExit) < 1) || candles[candles.length - 1];
+        if (c) markers.push({ time: c.time, position: 'aboveBar', color: t.pnl >= 0 ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (t.pnl >= 0 ? '+' : '') + Math.round(t.pnl || 0) });
+      }
+    }
+
+    const stopLoss   = state.position && state.position.slSpot     != null ? state.position.slSpot     : null;
+    const entryPrice = state.position && state.position.entrySpot  != null ? state.position.entrySpot  : null;
+    const target     = state.position && state.position.targetSpot != null ? state.position.targetSpot : null;
+
+    return res.json({ candles, markers, stopLoss, entryPrice, target, orhLine, orlLine });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/status/data", (req, res) => {
   const pos = state.position;
   const optAge = state.optionLtpUpdatedAt ? Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000) : null;
@@ -720,6 +771,7 @@ ${faviconLink()}
 <title>ORB Paper Trade</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -792,6 +844,20 @@ ${buildSidebar('orbPaper', liveActive, state.running, {
     <div id="position-box" class="empty">No open position — waiting for ORB break</div>
   </div>
 
+  <!-- Live NIFTY chart with OR overlay + trade markers -->
+  <div class="panel">
+    <h3><span>📊 Live NIFTY 5-min (Opening Range overlay)</span>
+      <span style="font-size:0.6rem;color:#4a6080;display:flex;gap:10px;">
+        <span><span style="display:inline-block;width:10px;height:2px;background:#10b981;vertical-align:middle;"></span> ORH</span>
+        <span><span style="display:inline-block;width:10px;height:2px;background:#ef4444;vertical-align:middle;"></span> ORL</span>
+        <span><span style="display:inline-block;width:10px;height:1px;background:#3b82f6;border-top:1px dotted #3b82f6;vertical-align:middle;"></span> Entry</span>
+        <span><span style="display:inline-block;width:10px;height:1px;background:#f59e0b;border-top:1px dashed #f59e0b;vertical-align:middle;"></span> SL</span>
+        <span><span style="display:inline-block;width:10px;height:1px;background:#10b981;border-top:1px dashed #10b981;vertical-align:middle;"></span> Target</span>
+      </span>
+    </h3>
+    <div id="niftyChart" style="position:relative;height:340px;"></div>
+  </div>
+
   <!-- Cumulative P&L chart -->
   <div class="panel">
     <h3><span>📈 Today&apos;s Cumulative P&amp;L</span><span id="chartHint" style="font-size:0.6rem;color:#4a6080;">— trades</span></h3>
@@ -816,6 +882,46 @@ ${buildSidebar('orbPaper', liveActive, state.running, {
 ${modalJS()}
 var _pnlChart = null;
 var _rawLog = [];
+
+// ── Lightweight Charts setup (live NIFTY view) ──
+var _niftyChart = null, _csSeries = null, _orhSeries = null, _orlSeries = null;
+var _entryLine = null, _slLine = null, _targetLine = null;
+function ensureNiftyChart(){
+  if (_niftyChart) return;
+  var container = document.getElementById('niftyChart');
+  if (!container || typeof LightweightCharts === 'undefined') return;
+  _niftyChart = LightweightCharts.createChart(container, {
+    layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
+    grid: { vertLines: { color: '#0e1e36' }, horzLines: { color: '#0e1e36' } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#0e1e36' },
+    rightPriceScale: { borderColor: '#0e1e36' },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    width: container.clientWidth, height: 340,
+  });
+  _csSeries = _niftyChart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  _orhSeries = _niftyChart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  _orlSeries = _niftyChart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  window.addEventListener('resize', function(){ if (_niftyChart) _niftyChart.applyOptions({ width: container.clientWidth }); });
+}
+async function refreshChart(){
+  ensureNiftyChart();
+  if (!_csSeries) return;
+  try {
+    var r = await fetch('/orb-paper/status/chart-data', { cache: 'no-store' });
+    var d = await r.json();
+    if (d.candles && d.candles.length) _csSeries.setData(d.candles);
+    if (d.orhLine && d.orhLine.length) _orhSeries.setData(d.orhLine); else _orhSeries.setData([]);
+    if (d.orlLine && d.orlLine.length) _orlSeries.setData(d.orlLine); else _orlSeries.setData([]);
+    if (d.markers) _csSeries.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
+    // Re-create price lines (entry/SL/target) for open position
+    if (_entryLine)  { _csSeries.removePriceLine(_entryLine);  _entryLine = null; }
+    if (_slLine)     { _csSeries.removePriceLine(_slLine);     _slLine = null; }
+    if (_targetLine) { _csSeries.removePriceLine(_targetLine); _targetLine = null; }
+    if (d.entryPrice) _entryLine = _csSeries.createPriceLine({ price: d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
+    if (d.stopLoss)   _slLine    = _csSeries.createPriceLine({ price: d.stopLoss,   color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' });
+    if (d.target)     _targetLine = _csSeries.createPriceLine({ price: d.target,    color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Target' });
+  } catch (e) { /* swallow */ }
+}
 
 async function refresh() {
   try {
@@ -896,6 +1002,7 @@ async function refresh() {
     // Chart
     renderChart(d.cumPnl || []);
     document.getElementById('chartHint').textContent = (d.cumPnl ? d.cumPnl.length : 0) + ' closed';
+    refreshChart();
   } catch (e) {}
 }
 

@@ -662,6 +662,57 @@ router.get("/exit", (req, res) => {
 
 // ── Status page ─────────────────────────────────────────────────────────────
 
+// ── /status/chart-data — Lightweight Charts feed with BB bands ───────────────
+router.get("/status/chart-data", (req, res) => {
+  try {
+    const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    if (state.currentBar) {
+      candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+    }
+
+    // BB overlay — Straddle's primary entry trigger
+    const { BollingerBands } = require("technicalindicators");
+    const BB_PERIOD = parseInt(process.env.STRADDLE_BB_PERIOD || "20", 10);
+    const BB_STDDEV = parseFloat(process.env.STRADDLE_BB_STDDEV || "2");
+    let bbUpper = [], bbMiddle = [], bbLower = [];
+    if (candles.length >= BB_PERIOD) {
+      const closes = candles.map(c => c.close);
+      const bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+      const offset = candles.length - bbArr.length;
+      for (let i = 0; i < bbArr.length; i++) {
+        const t = candles[i + offset].time;
+        bbUpper.push({ time: t, value: parseFloat(bbArr[i].upper.toFixed(2)) });
+        bbMiddle.push({ time: t, value: parseFloat(bbArr[i].middle.toFixed(2)) });
+        bbLower.push({ time: t, value: parseFloat(bbArr[i].lower.toFixed(2)) });
+      }
+    }
+
+    const markers = [];
+    // Build markers by walking the saved session trades (leg-flat, group by pairId)
+    const pairs = new Map();
+    for (const t of state.sessionTrades) {
+      if (!t.pairId) continue;
+      if (!pairs.has(t.pairId)) pairs.set(t.pairId, { entrySpot: t.spotAtEntry, exitSpot: t.spotAtExit, pairPnl: t.pairPnl });
+    }
+    for (const [_pid, p] of pairs) {
+      if (p.entrySpot != null) {
+        const c = candles.find(c => Math.abs(c.close - p.entrySpot) < 1) || candles[0];
+        if (c) markers.push({ time: c.time, position: 'belowBar', color: '#ec4899', shape: 'circle', text: 'STR @ ' + p.entrySpot });
+      }
+      if (p.exitSpot != null) {
+        const c = candles.find(c => Math.abs(c.close - p.exitSpot) < 1) || candles[candles.length - 1];
+        if (c) markers.push({ time: c.time, position: 'aboveBar', color: p.pairPnl >= 0 ? '#10b981' : '#ef4444', shape: 'square', text: 'Exit ' + (p.pairPnl >= 0 ? '+' : '') + Math.round(p.pairPnl || 0) });
+      }
+    }
+
+    const entryPrice = state.position && state.position.entrySpot != null ? state.position.entrySpot : null;
+
+    return res.json({ candles, markers, entryPrice, bbUpper, bbMiddle, bbLower });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/status/data", (req, res) => {
   const pos = state.position;
   const combined = (state.ceLtp != null && state.peLtp != null)
@@ -734,6 +785,7 @@ ${faviconLink()}
 <title>Straddle Paper Trade</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -805,6 +857,18 @@ ${buildSidebar('straddlePaper', liveActive, state.running, {
     <div id="position-box" class="empty">No open pair — waiting for volatility trigger</div>
   </div>
 
+  <!-- Live NIFTY chart with BB squeeze overlay -->
+  <div class="panel">
+    <h3><span>📊 Live NIFTY 5-min (BB ${process.env.STRADDLE_BB_PERIOD || "20"}/${process.env.STRADDLE_BB_STDDEV || "2"} overlay — squeeze trigger)</span>
+      <span style="font-size:0.6rem;color:#4a6080;display:flex;gap:10px;">
+        <span><span style="display:inline-block;width:10px;height:1px;background:rgba(74,156,245,0.7);vertical-align:middle;"></span> BB Upper/Lower</span>
+        <span><span style="display:inline-block;width:10px;height:1px;background:rgba(148,163,184,0.55);border-top:1px dashed;vertical-align:middle;"></span> BB Mid</span>
+        <span><span style="display:inline-block;width:10px;height:1px;background:#3b82f6;border-top:1px dotted #3b82f6;vertical-align:middle;"></span> Entry Spot</span>
+      </span>
+    </h3>
+    <div id="niftyChart" style="position:relative;height:340px;"></div>
+  </div>
+
   <div class="panel">
     <h3><span>📈 Today&apos;s Cumulative P&amp;L (per pair)</span><span id="chartHint" style="font-size:0.6rem;color:#4a6080;">— pairs</span></h3>
     <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
@@ -826,6 +890,43 @@ ${buildSidebar('straddlePaper', liveActive, state.running, {
 ${modalJS()}
 var _pnlChart = null;
 var _rawLog = [];
+
+// ── Lightweight Charts setup (live NIFTY + BB overlay) ──
+var _niftyChart = null, _csSeries = null, _bbU = null, _bbM = null, _bbL = null;
+var _entryLine = null;
+function ensureNiftyChart(){
+  if (_niftyChart) return;
+  var container = document.getElementById('niftyChart');
+  if (!container || typeof LightweightCharts === 'undefined') return;
+  _niftyChart = LightweightCharts.createChart(container, {
+    layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
+    grid: { vertLines: { color: '#0e1e36' }, horzLines: { color: '#0e1e36' } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#0e1e36' },
+    rightPriceScale: { borderColor: '#0e1e36' },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    width: container.clientWidth, height: 340,
+  });
+  _csSeries = _niftyChart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  _bbU = _niftyChart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  _bbM = _niftyChart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  _bbL = _niftyChart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  window.addEventListener('resize', function(){ if (_niftyChart) _niftyChart.applyOptions({ width: container.clientWidth }); });
+}
+async function refreshChart(){
+  ensureNiftyChart();
+  if (!_csSeries) return;
+  try {
+    var r = await fetch('/straddle-paper/status/chart-data', { cache: 'no-store' });
+    var d = await r.json();
+    if (d.candles && d.candles.length) _csSeries.setData(d.candles);
+    if (d.bbUpper && d.bbUpper.length) _bbU.setData(d.bbUpper);
+    if (d.bbMiddle && d.bbMiddle.length) _bbM.setData(d.bbMiddle);
+    if (d.bbLower && d.bbLower.length) _bbL.setData(d.bbLower);
+    if (d.markers) _csSeries.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
+    if (_entryLine) { _csSeries.removePriceLine(_entryLine); _entryLine = null; }
+    if (d.entryPrice) _entryLine = _csSeries.createPriceLine({ price: d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
+  } catch (e) { /* swallow */ }
+}
 
 async function refresh() {
   try {
@@ -909,6 +1010,7 @@ async function refresh() {
 
     renderChart(d.cumPnl || []);
     document.getElementById('chartHint').textContent = (d.cumPnl ? d.cumPnl.length : 0) + ' pair' + ((d.cumPnl && d.cumPnl.length===1)?'':'s');
+    refreshChart();
   } catch (e) {}
 }
 
