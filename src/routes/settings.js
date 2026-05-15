@@ -219,6 +219,57 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "ORB STRATEGY (Opening Range Breakout) — Fyers",
+    icon: "📋",
+    fields: [
+      { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow ORB entries on weekly expiry day (Tuesday)", default: "false" },
+      { key: "ORB_VIX_ENABLED", label: "VIX Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block ORB entries when VIX is high (scope: ORB only)", default: "false" },
+      { key: "ORB_VIX_MAX_ENTRY", label: "ORB VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "ORB only: block entries above this VIX", default: "22" },
+      { key: "ORB_VIX_STRONG_ONLY", label: "ORB VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ORB only: above this VIX allow only STRONG signals", default: "18" },
+      { key: "ORB_RANGE_START", label: "OR Window Start", type: "time", effect: EFFECT.SESSION, desc: "Opening range start (HH:MM IST)", default: "09:15" },
+      { key: "ORB_RANGE_END", label: "OR Window End", type: "time", effect: EFFECT.SESSION, desc: "Opening range end (HH:MM IST). 15-min ORB = 09:15→09:30", default: "09:30" },
+      { key: "ORB_ENTRY_END", label: "Latest Entry Time", type: "time", effect: EFFECT.SESSION, desc: "No new ORB entries after this time (stale-breakout cutoff)", default: "12:00" },
+      { key: "ORB_FORCED_EXIT", label: "Forced Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard exit time for any open ORB position", default: "15:15" },
+      { key: "ORB_MIN_RANGE_PTS", label: "Min OR Width (pts)", type: "number", min: 10, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Skip when opening range is too tight — noise filter", default: "25" },
+      { key: "ORB_MAX_RANGE_PTS", label: "Max OR Width (pts)", type: "number", min: 50, max: 300, step: 10, effect: EFFECT.INSTANT, desc: "Skip when opening range is too wide — exhausted move", default: "120" },
+      { key: "ORB_MIN_BODY", label: "Min Break Candle Body (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Require the breakout candle's body to be at least this many points", default: "8" },
+      { key: "ORB_TARGET_RANGE_MULT", label: "Spot Target (× range)", type: "number", min: 0.5, max: 3, step: 0.1, effect: EFFECT.INSTANT, desc: "Spot target = ORH/ORL ± (range × this multiplier)", default: "1.5" },
+      { key: "ORB_TARGET_PCT", label: "Premium Target (%)", type: "number", min: 0.1, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Premium target as fraction of entry premium (0.5 = +50%)", default: "0.5" },
+      { key: "ORB_STOP_PCT", label: "Premium SL (%)", type: "number", min: 0.1, max: 0.6, step: 0.05, effect: EFFECT.INSTANT, desc: "Premium SL as fraction of entry premium (0.3 = −30%)", default: "0.3" },
+      { key: "ORB_SWEET_MIN", label: "Sweet-Spot Min (pts)", type: "number", min: 20, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Range below this = MARGINAL (still allowed)", default: "30" },
+      { key: "ORB_SWEET_MAX", label: "Sweet-Spot Max (pts)", type: "number", min: 40, max: 150, step: 5, effect: EFFECT.INSTANT, desc: "Range above this = MARGINAL (still allowed)", default: "80" },
+      { key: "ORB_STRONG_BODY", label: "STRONG Body Min (pts)", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Breakout body >= this AND range in sweet spot → STRONG", default: "15" },
+      { key: "ORB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "ORB is textbook 1 trade/day — cap higher only if you accept the chop", default: "1" },
+      { key: "ORB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "ORB daily loss kill-switch", default: "3000" },
+      { key: "ORB_PAPER_CAPITAL", label: "ORB Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for ORB paper trading", default: "100000" },
+    ],
+  },
+  {
+    section: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
+    icon: "🎯",
+    fields: [
+      { key: "STRADDLE_EXPIRY_DAY_ONLY", label: "Straddle Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow straddle entries on weekly expiry day", default: "false" },
+      { key: "STRADDLE_VIX_ENABLED", label: "VIX Filter (Straddle)", type: "toggle", effect: EFFECT.INSTANT, desc: "Use VIX gating for straddle entries", default: "true" },
+      { key: "STRADDLE_VIX_MAX_ENTRY", label: "Straddle VIX Max Entry", type: "number", min: 12, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block when VIX > this (premium pumped, poor R:R)", default: "22" },
+      { key: "STRADDLE_VIX_STRONG_ONLY", label: "Straddle VIX Strong Only", type: "number", min: 10, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX only STRONG signals fire", default: "18" },
+      { key: "STRADDLE_VIX_CHEAP", label: "VIX Cheap-Premium Threshold", type: "number", min: 10, max: 18, step: 1, effect: EFFECT.INSTANT, desc: "VIX below this triggers the low-VIX cheap-premium entry path", default: "14" },
+      { key: "STRADDLE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest straddle entry (HH:MM IST)", default: "09:30" },
+      { key: "STRADDLE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "Latest straddle entry (HH:MM IST). Late straddles bleed theta", default: "11:00" },
+      { key: "STRADDLE_FORCED_EXIT", label: "Forced Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard EOD exit for an open pair", default: "15:15" },
+      { key: "STRADDLE_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period for squeeze detection", default: "20" },
+      { key: "STRADDLE_BB_STDDEV", label: "BB Std Dev", type: "number", min: 1, max: 3, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band std deviation", default: "2" },
+      { key: "STRADDLE_BB_AVG_LOOKBACK", label: "BB Width Avg Lookback", type: "number", min: 10, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Bars to average BB width over (squeeze comparison baseline)", default: "20" },
+      { key: "STRADDLE_SQUEEZE_RATIO", label: "Squeeze Ratio (× avg)", type: "number", min: 0.5, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Current BB width <= this × avg = squeeze trigger fires", default: "0.85" },
+      { key: "STRADDLE_TARGET_PCT", label: "Target (% of net debit)", type: "number", min: 0.2, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit when combined premium >= netDebit × (1 + this)", default: "0.4" },
+      { key: "STRADDLE_STOP_PCT", label: "SL (% of net debit)", type: "number", min: 0.1, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit when combined premium <= netDebit × (1 − this)", default: "0.25" },
+      { key: "STRADDLE_MAX_HOLD_DAYS", label: "Max Hold (days)", type: "number", min: 0.5, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Time stop — force exit after this many days", default: "3" },
+      { key: "STRADDLE_FORCE_ENTRY_NEXT", label: "Force Next Entry (event day)", type: "toggle", effect: EFFECT.INSTANT, desc: "One-shot override — force an entry on the next candle close regardless of BB/VIX triggers. Auto-resets after firing. Use for RBI/budget/results days.", default: "false" },
+      { key: "STRADDLE_MAX_DAILY_PAIRS", label: "Max Pairs/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Cap on straddle pair entries per day", default: "1" },
+      { key: "STRADDLE_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Straddle daily loss kill-switch", default: "3000" },
+      { key: "STRADDLE_PAPER_CAPITAL", label: "Straddle Paper Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Starting capital for straddle paper trading", default: "100000" },
+    ],
+  },
+  {
     section: "COMMON — Instrument & Backtest",
     icon: "📈",
     fields: [
@@ -331,6 +382,8 @@ const SETTINGS_SCHEMA = [
       { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "false" },
+      { key: "STRADDLE_MODE_ENABLED",  label: "Straddle Mode (Long Straddle Volatility)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the STRADDLE sidebar group AND the STRADDLE strategy section in Settings. When off, both are hidden.", default: "false" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
@@ -351,6 +404,14 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Price Action group",        default: "true" },
       { key: "UI_SHOW_PA_LIVE",             label: "PA → Live (legacy)",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show legacy 'Live' inside the Price Action group (separate code from paper)", default: "true" },
       { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Price Action group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions", default: "false" },
+
+      // ── ORB submenu ──
+      { key: "UI_SHOW_ORB_PAPER",   label: "ORB → Paper",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_HISTORY", label: "ORB → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
+
+      // ── Straddle submenu ──
+      { key: "UI_SHOW_STRADDLE_PAPER",   label: "Straddle → Paper",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_HISTORY", label: "Straddle → History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true" },
@@ -391,16 +452,18 @@ const SETTINGS_SCHEMA = [
 // trade behaviour (strategy + instrument/backtest + charges) — credentials,
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
-  swing: "SWING STRATEGY (5-min) — Zerodha",
-  scalp: "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
-  pa:    "PRICE ACTION STRATEGY (5-min) — Fyers",
+  swing:    "SWING STRATEGY (5-min) — Zerodha",
+  scalp:    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
+  pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
+  orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
+  straddle: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "COMMON — Instrument & Backtest",
   "CHARGES & STT — Trading Costs",
 ]);
 
-const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set() };
+const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set(), straddle: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -929,14 +992,18 @@ router.get("/", (req, res) => {
   }));
 
   // ── Hide strategy sections when their master toggle is off ──
-  const swingModeOn = (envData["SWING_MODE_ENABLED"] ?? process.env.SWING_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const paModeOn    = (envData["PA_MODE_ENABLED"]    ?? process.env.PA_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  const swingModeOn    = (envData["SWING_MODE_ENABLED"]    ?? process.env.SWING_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
+  const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "false").toLowerCase() === "true";
+  const straddleModeOn = (envData["STRADDLE_MODE_ENABLED"] ?? process.env.STRADDLE_MODE_ENABLED ?? "false").toLowerCase() === "true";
   const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
-    "SWING STRATEGY (5-min) — Zerodha":              swingModeOn,
-    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers":           scalpModeOn,
-    "PRICE ACTION STRATEGY (5-min) — Fyers":          paModeOn,
+    "SWING STRATEGY (5-min) — Zerodha":                            swingModeOn,
+    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers":                         scalpModeOn,
+    "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
+    "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
+    "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers":       straddleModeOn,
   };
 
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {

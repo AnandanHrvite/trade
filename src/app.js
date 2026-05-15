@@ -365,6 +365,9 @@ app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live v
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
+// ── ORB / Straddle paper-trade routes (parallel new strategies, paper-only v1) ──
+app.use("/orb-paper",      require("./routes/orbPaper"));      // ← ORB paper trade (Opening Range Breakout, 1 trade/day)
+app.use("/straddle-paper", require("./routes/straddlePaper")); // ← Straddle paper trade (long ATM CE+PE paired)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics

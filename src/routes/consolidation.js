@@ -20,9 +20,11 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
-  { mode: "SWING", file: path.join(DATA_DIR, "paper_trades.json"),       color: "#3b82f6" },
-  { mode: "SCALP", file: path.join(DATA_DIR, "scalp_paper_trades.json"), color: "#f59e0b" },
-  { mode: "PA",    file: path.join(DATA_DIR, "pa_paper_trades.json"),    color: "#a855f7" },
+  { mode: "SWING",    file: path.join(DATA_DIR, "paper_trades.json"),          color: "#3b82f6" },
+  { mode: "SCALP",    file: path.join(DATA_DIR, "scalp_paper_trades.json"),    color: "#f59e0b" },
+  { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       color: "#a855f7" },
+  { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
+  { mode: "STRADDLE", file: path.join(DATA_DIR, "straddle_paper_trades.json"), color: "#ec4899" },
 ];
 
 function safeRead(p) {
@@ -77,7 +79,7 @@ function loadAllTrades() {
 router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
-  const modeCounts = { SWING: 0, SCALP: 0, PA: 0 };
+  const modeCounts = { SWING: 0, SCALP: 0, PA: 0, ORB: 0, STRADDLE: 0 };
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
     modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
@@ -107,8 +109,9 @@ router.get("/", (req, res) => {
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
-    .stat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px;}
-    @media(max-width:1100px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
+    .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px;}
+    @media(max-width:1400px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
+    @media(max-width:900px){.stat-grid{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
     .sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
     .sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:var(--accent,#3b82f6);}
@@ -279,6 +282,16 @@ router.get("/", (req, res) => {
         <div class="sc-sub">trades</div>
       </div>
       <div class="sc" style="--accent:#10b981;">
+        <div class="sc-label">ORB</div>
+        <div class="sc-val">${modeCounts.ORB}</div>
+        <div class="sc-sub">trades</div>
+      </div>
+      <div class="sc" style="--accent:#ec4899;">
+        <div class="sc-label">Straddle</div>
+        <div class="sc-val">${modeCounts.STRADDLE}</div>
+        <div class="sc-sub">leg trades</div>
+      </div>
+      <div class="sc" style="--accent:#10b981;">
         <div class="sc-label">Wins</div>
         <div class="sc-val" style="color:#10b981;">${wins}</div>
         <div class="sc-sub">profitable</div>
@@ -298,6 +311,8 @@ router.get("/", (req, res) => {
         <option value="SWING">Swing</option>
         <option value="SCALP">Scalp</option>
         <option value="PA">Price Action</option>
+        <option value="ORB">ORB</option>
+        <option value="STRADDLE">Straddle</option>
       </select>
       <label>Side</label>
       <select id="fSide">
@@ -1012,7 +1027,7 @@ function buildDayView(){
   const map = new Map();
   for (const t of _lastFiltered){
     const d = t.date || 'Unknown';
-    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0 });
+    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0, ORB: 0, STRADDLE: 0 });
     const b = map.get(d);
     b.trades++;
     b.pnl += (t.pnl || 0);

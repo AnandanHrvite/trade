@@ -11,15 +11,19 @@
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
-  // Import scalp/primary/PA state inline to avoid circular dependency issues
+  // Import scalp/primary/PA/ORB/Straddle state inline to avoid circular dependency issues
   let _scalpMode = null;
   let _primaryMode = null;
   let _paMode = null;
+  let _orbMode = null;
+  let _straddleMode = null;
   try {
     const sss = require('./sharedSocketState');
     _scalpMode = sss.getScalpMode();
     _primaryMode = sss.getMode();
     _paMode = sss.getPAMode();
+    _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
+    _straddleMode = sss.getStraddleMode ? sss.getStraddleMode() : null;
   } catch (_) {}
 
   const {
@@ -35,9 +39,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     statusLabel  = isRunning ? 'RUNNING' : 'STOPPED',
   } = opts;
 
-  const swingModeOn = (process.env.SWING_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const scalpModeOn = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const swingModeOn    = (process.env.SWING_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const scalpModeOn    = (process.env.SCALP_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
+  const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'false').toLowerCase() === 'true';
+  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'false').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -63,6 +69,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
   const showPaLive            = (process.env.UI_SHOW_PA_LIVE             || 'true').toLowerCase() === 'true';
   const showPaLiveHarness     = (process.env.UI_SHOW_PA_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
+  const showOrbPaper          = (process.env.UI_SHOW_ORB_PAPER            || 'true').toLowerCase() === 'true';
+  const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
+  const showStraddlePaper     = (process.env.UI_SHOW_STRADDLE_PAPER       || 'true').toLowerCase() === 'true';
+  const showStraddleHistory   = (process.env.UI_SHOW_STRADDLE_HISTORY     || 'true').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs = (process.env.UI_SHOW_TRADE_LOGS || 'true').toLowerCase() === 'true';
@@ -71,10 +81,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
+  const orbKeys     = ['orbPaper', 'orbHistory'];
+  const straddleKeys = ['straddlePaper', 'straddleHistory'];
 
-  const isTradingOpen = tradingKeys.includes(activePage);
-  const isScalpOpen   = scalpKeys.includes(activePage);
-  const isPAOpen      = paKeys.includes(activePage);
+  const isTradingOpen  = tradingKeys.includes(activePage);
+  const isScalpOpen    = scalpKeys.includes(activePage);
+  const isPAOpen       = paKeys.includes(activePage);
+  const isOrbOpen      = orbKeys.includes(activePage);
+  const isStraddleOpen = straddleKeys.includes(activePage);
 
   // Build a swing items list with per-feature toggle
   const swingItems = [
@@ -102,6 +116,16 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
     ...(showPaLive            ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
     ...(showPaLiveHarness     ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
+  ];
+
+  const orbItems = [
+    ...(showOrbPaper   ? [{ key: 'orbPaper',   href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
+    ...(showOrbHistory ? [{ key: 'orbHistory', href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
+  const straddleItems = [
+    ...(showStraddlePaper   ? [{ key: 'straddlePaper',   href: '/straddle-paper/status',  icon: '🎯', label: 'Paper'   }] : []),
+    ...(showStraddleHistory ? [{ key: 'straddleHistory', href: '/straddle-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   // ── Grouped navigation sections (collapsible) ──
@@ -132,6 +156,16 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'PRICE ACTION', collapsible: true, collapsed: !isPAOpen,
       groupId: 'nav-pa',
       items: paItems,
+    }] : []),
+    ...(orbModeOn ? [{
+      header: 'ORB', collapsible: true, collapsed: !isOrbOpen,
+      groupId: 'nav-orb',
+      items: orbItems,
+    }] : []),
+    ...(straddleModeOn ? [{
+      header: 'STRADDLE', collapsible: true, collapsed: !isStraddleOpen,
+      groupId: 'nav-straddle',
+      items: straddleItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -181,9 +215,17 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
+    const orbPaperBadge = p.key === 'orbPaper' && _orbMode === 'ORB_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
+    const straddlePaperBadge = p.key === 'straddlePaper' && _straddleMode === 'STRADDLE_PAPER'
+      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
+      : '';
+
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}
+      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}${straddlePaperBadge}
     </a>`;
   }
 

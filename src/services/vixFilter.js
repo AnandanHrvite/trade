@@ -30,26 +30,33 @@ const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 
 // ── Per-mode config readers (live — never cached, so toggles apply instantly) ─
 function getVixEnabled(mode = "swing") {
-  if (mode === "scalp") return process.env.SCALP_VIX_ENABLED === "true";
-  if (mode === "pa")    return process.env.PA_VIX_ENABLED    === "true";
+  if (mode === "scalp")    return process.env.SCALP_VIX_ENABLED    === "true";
+  if (mode === "pa")       return process.env.PA_VIX_ENABLED       === "true";
+  if (mode === "orb")      return process.env.ORB_VIX_ENABLED      === "true";
+  if (mode === "straddle") return process.env.STRADDLE_VIX_ENABLED === "true";
   // swing default: on unless explicitly disabled
   return process.env.VIX_FILTER_ENABLED !== "false";
 }
 
 function getVixMaxEntry(mode = "swing") {
-  if (mode === "scalp") return parseFloat(process.env.SCALP_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "20");
-  if (mode === "pa")    return parseFloat(process.env.PA_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
+  if (mode === "scalp")    return parseFloat(process.env.SCALP_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
+  if (mode === "pa")       return parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20");
+  if (mode === "orb")      return parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22");
+  if (mode === "straddle") return parseFloat(process.env.STRADDLE_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22");
   return parseFloat(process.env.VIX_MAX_ENTRY || "20");
 }
 
 function getVixStrongOnly(mode = "swing") {
-  if (mode === "scalp") return parseFloat(process.env.SCALP_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "16");
-  if (mode === "pa")    return parseFloat(process.env.PA_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
+  if (mode === "scalp")    return parseFloat(process.env.SCALP_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
+  if (mode === "pa")       return parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16");
+  if (mode === "orb")      return parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18");
+  if (mode === "straddle") return parseFloat(process.env.STRADDLE_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18");
   return parseFloat(process.env.VIX_STRONG_ONLY || "16");
 }
 
 function anyVixEnabled() {
-  return getVixEnabled("swing") || getVixEnabled("scalp") || getVixEnabled("pa");
+  return getVixEnabled("swing") || getVixEnabled("scalp") || getVixEnabled("pa") ||
+         getVixEnabled("orb")   || getVixEnabled("straddle");
 }
 
 // ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────
@@ -102,7 +109,7 @@ async function fetchLiveVix({ force = false } = {}) {
  * Check if entry is allowed based on current live VIX (for the given module).
  * @param {string} signalStrength - "STRONG" or "MARGINAL" (swing only; scalp/PA pass "STRONG")
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"} [opts.mode="swing"]
+ * @param {"swing"|"scalp"|"pa"|"orb"|"straddle"} [opts.mode="swing"]
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
 async function checkLiveVix(signalStrength, { mode = "swing" } = {}) {
@@ -170,7 +177,7 @@ function buildVixLookup(vixCandles) {
  * @param {number|null} vix
  * @param {string} signalStrength
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"} [opts.mode="swing"]
+ * @param {"swing"|"scalp"|"pa"|"orb"|"straddle"} [opts.mode="swing"]
  * @param {boolean} [opts.force=false] — skip enabled check (used by scalp/PA backtests which gate outside)
  */
 function checkBacktestVix(vix, signalStrength, { mode = "swing", force = false } = {}) {

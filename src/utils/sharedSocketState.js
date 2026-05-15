@@ -24,6 +24,12 @@ let scalpMode = null;
 // Price Action mode: "PA_LIVE" | "PA_PAPER" | null
 let paMode = null;
 
+// ORB (Opening Range Breakout) mode: "ORB_PAPER" | null
+let orbMode = null;
+
+// Straddle (Long Straddle) mode: "STRADDLE_PAPER" | null
+let straddleMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -78,11 +84,48 @@ function getPAMode() {
   return paMode;
 }
 
+// ── ORB mode (paper only for v1) ──────────────────────────────────────────
+
+function setOrbActive(mode) {
+  orbMode = mode;
+}
+
+function clearOrb() {
+  orbMode = null;
+}
+
+function isOrbActive() {
+  return orbMode !== null;
+}
+
+function getOrbMode() {
+  return orbMode;
+}
+
+// ── Straddle mode (paper only for v1) ─────────────────────────────────────
+
+function setStraddleActive(mode) {
+  straddleMode = mode;
+}
+
+function clearStraddle() {
+  straddleMode = null;
+}
+
+function isStraddleActive() {
+  return straddleMode !== null;
+}
+
+function getStraddleMode() {
+  return straddleMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
-  return primaryMode !== null || scalpMode !== null || paMode !== null;
+  return primaryMode !== null || scalpMode !== null || paMode !== null ||
+         orbMode !== null || straddleMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -112,6 +155,12 @@ function canStart(mode) {
       if (paMode === "PA_LIVE")  return { allowed: false, reason: "Price Action Live is running — stop it first" };
       if (paMode === "PA_PAPER") return { allowed: false, reason: "Price Action Paper is already running" };
       return { allowed: true };
+    case "ORB_PAPER":
+      if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is already running" };
+      return { allowed: true };
+    case "STRADDLE_PAPER":
+      if (straddleMode === "STRADDLE_PAPER") return { allowed: false, reason: "Straddle Paper is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -124,6 +173,10 @@ module.exports = {
   setScalpActive, clearScalp, isScalpActive, getScalpMode,
   // Price Action
   setPAActive, clearPA, isPAActive, getPAMode,
+  // ORB
+  setOrbActive, clearOrb, isOrbActive, getOrbMode,
+  // Straddle
+  setStraddleActive, clearStraddle, isStraddleActive, getStraddleMode,
   // Combined
   isAnyActive, canStart,
 };
