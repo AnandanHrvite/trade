@@ -25,7 +25,7 @@ const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
 const settingsAudit = require("../utils/settingsAudit");
 
-const MODES = ["swing", "scalp", "pa"];
+const MODES = ["swing", "scalp", "pa", "orb", "straddle"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -304,9 +304,11 @@ router.get("/", (req, res) => {
     .mode-section { margin-bottom:22px; background:#0a1018; border:1px solid #1a2236; border-radius:8px; overflow:hidden; }
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
-    .mode-swing { color:#60a5fa; }
-    .mode-scalp { color:#fbbf24; }
-    .mode-pa    { color:#a78bfa; }
+    .mode-swing    { color:#60a5fa; }
+    .mode-scalp    { color:#fbbf24; }
+    .mode-pa       { color:#a78bfa; }
+    .mode-orb      { color:#10b981; }
+    .mode-straddle { color:#ec4899; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
@@ -505,9 +507,11 @@ ${buildSidebar('tradeLogs', liveActive)}
   function renderFiles() {
     if (!_files) return;
     var modes = [
-      { key: 'swing', label: 'SWING', cls: 'mode-swing' },
-      { key: 'scalp', label: 'SCALP', cls: 'mode-scalp' },
-      { key: 'pa',    label: 'PRICE ACTION', cls: 'mode-pa' },
+      { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
+      { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
+      { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
+      { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
+      { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
     ];
     var totalFiles = 0;
     var html = '';
@@ -639,9 +643,11 @@ ${buildSidebar('tradeLogs', liveActive)}
   function renderSkips() {
     if (!_skips) return;
     var modes = [
-      { key: 'swing', label: 'SWING', cls: 'mode-swing' },
-      { key: 'scalp', label: 'SCALP', cls: 'mode-scalp' },
-      { key: 'pa',    label: 'PRICE ACTION', cls: 'mode-pa' },
+      { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
+      { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
+      { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
+      { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
+      { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
     ];
     var totalFiles = 0;
     var html = '';
