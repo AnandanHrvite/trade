@@ -10,9 +10,12 @@ const express = require("express");
 const router  = express.Router();
 const straddleStrategy = require("../strategies/straddle_volatility");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
+const vixFilter = require("../services/vixFilter");
+const { getLotSize } = require("../config/instrument");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
+const { isExpiryDate } = require("../utils/nseHolidays");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
 
@@ -33,18 +36,25 @@ function istDateOf(unixSec) {
   const d = new Date((unixSec + 19800) * 1000);
   return `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
 }
+function istDateKeyOf(unixSec) {
+  const d = new Date((unixSec + 19800) * 1000);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+function _minToHHMM(m) {
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
 function istHHMMSS(unixSec) {
   const d = new Date((unixSec + 19800) * 1000);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}:${String(d.getUTCSeconds()).padStart(2, "0")}`;
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-function runStraddleBacktest(allCandles) {
+function runStraddleBacktest(allCandles, lookupVix, expiryDates) {
   if (!allCandles || allCandles.length < 30) return [];
 
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE   = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10);
+  const LOT_SIZE   = getLotSize().NIFTY_OPTIONS;
   const TARGET_PCT = parseFloat(process.env.STRADDLE_TARGET_PCT || "0.4");
   const STOP_PCT   = parseFloat(process.env.STRADDLE_STOP_PCT   || "0.25");
   const MAX_HOLD_D = parseFloat(process.env.STRADDLE_MAX_HOLD_DAYS || "3");
@@ -53,13 +63,28 @@ function runStraddleBacktest(allCandles) {
   const ENTRY_END_MIN   = _parseMin("STRADDLE_ENTRY_END",   "11:00");
   const SEED_CE = parseFloat(process.env.STRADDLE_BT_SEED_CE || "120");
   const SEED_PE = parseFloat(process.env.STRADDLE_BT_SEED_PE || "120");
+  const MAX_PAIRS = parseInt(process.env.STRADDLE_MAX_DAILY_PAIRS || "1", 10);
+  const MAX_LOSS  = parseFloat(process.env.STRADDLE_MAX_DAILY_LOSS || "3000");
+  const EXPIRY_ONLY = (process.env.STRADDLE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
 
   const trades = [];
   let position = null;
 
+  // Per-day counters (reset on date change)
+  let curDate = null;
+  let dayPairs = 0;
+  let dayPnl   = 0;
+
   for (let i = 30; i < allCandles.length; i++) {
     const c = allCandles[i];
     const istMin = _utcSecToIstMins(c.time);
+    const dateKey = istDateKeyOf(c.time);
+
+    if (curDate !== dateKey) {
+      curDate = dateKey;
+      dayPairs = 0;
+      dayPnl   = 0;
+    }
 
     if (position) {
       const heldDays = (c.time - position.entryTime) / 86400;
@@ -72,29 +97,40 @@ function runStraddleBacktest(allCandles) {
 
       if (combined >= position.targetNet) {
         closePair(position, c.time, c.close, cePrem, pePrem, `Combined target (₹${combined.toFixed(1)} >= ₹${position.targetNet})`);
+        dayPnl += position.pnl;
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
       if (combined <= position.stopNet) {
         closePair(position, c.time, c.close, cePrem, pePrem, `Combined SL (₹${combined.toFixed(1)} <= ₹${position.stopNet})`);
+        dayPnl += position.pnl;
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
       if (heldDays > MAX_HOLD_D) {
-        closePair(position, c.time, c.close, cePrem, pePrem, `Time stop (held ${heldDays.toFixed(1)}d > ${MAX_HOLD_D}d)`);
+        closePair(position, c.time, c.close, cePrem, pePrem, `Time stop (held ${heldDays.toFixed(2)}d > ${MAX_HOLD_D}d)`);
+        dayPnl += position.pnl;
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
-      if (heldDays >= MAX_HOLD_D - 1 && istMin >= FORCED_EXIT_MIN) {
-        closePair(position, c.time, c.close, cePrem, pePrem, "EOD T-1 (15:15 IST)");
+      if (istMin >= FORCED_EXIT_MIN) {
+        closePair(position, c.time, c.close, cePrem, pePrem, `EOD square-off (${_minToHHMM(FORCED_EXIT_MIN)} IST)`);
+        dayPnl += position.pnl;
         trades.push(buildTradeRecord(position));
         position = null; continue;
       }
     }
 
     if (!position && istMin >= ENTRY_START_MIN && istMin < ENTRY_END_MIN) {
+      // Daily caps gate
+      if (dayPairs >= MAX_PAIRS) continue;
+      if (dayPnl <= -MAX_LOSS) continue;
+      // Expiry-day-only gate
+      if (EXPIRY_ONLY && expiryDates && !expiryDates.has(dateKey)) continue;
+
+      const vix = lookupVix ? lookupVix(c.time) : null;
       const seen = allCandles.slice(Math.max(0, i - 60), i + 1);
-      const sig  = straddleStrategy.getSignal(seen, { silent: true, alreadyOpen: false, vix: null });
+      const sig  = straddleStrategy.getSignal(seen, { silent: true, alreadyOpen: false, vix });
       if (sig.signal === "ENTER_STRADDLE") {
         const netDebit = SEED_CE + SEED_PE;
         position = {
@@ -102,6 +138,7 @@ function runStraddleBacktest(allCandles) {
           entryTime: c.time,
           entrySpot: c.close,
           entryCe: SEED_CE, entryPe: SEED_PE,
+          entryVix: vix,
           netDebit: parseFloat(netDebit.toFixed(2)),
           targetNet: parseFloat((netDebit * (1 + TARGET_PCT)).toFixed(2)),
           stopNet:   parseFloat((netDebit * (1 - STOP_PCT)).toFixed(2)),
@@ -111,6 +148,7 @@ function runStraddleBacktest(allCandles) {
           signalStrength: sig.signalStrength,
           entryReason: sig.reason,
         };
+        dayPairs++;
       }
     }
   }
@@ -186,8 +224,24 @@ router.get("/", async (req, res) => {
   _inflight = true;
   try {
     console.log(`🔍 Straddle Backtest: ${from} → ${to}`);
-    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
-    const trades = runStraddleBacktest(candles || []);
+    const vixEnabled = (process.env.STRADDLE_VIX_ENABLED || "false").toLowerCase() === "true";
+    const expiryOnly = (process.env.STRADDLE_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
+    const [candles, vixCandles] = await Promise.all([
+      fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false),
+      vixEnabled ? fetchCandlesCachedBT(vixFilter.VIX_SYMBOL, "D", from, to, false).catch(() => []) : Promise.resolve([]),
+    ]);
+    const lookupVix = vixFilter.buildVixLookup(vixCandles || []);
+    let expiryDates = null;
+    if (expiryOnly) {
+      const uniqueDates = [...new Set((candles || []).map(c => {
+        const d = new Date((c.time + 19800) * 1000);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+      }))];
+      const expirySet = new Set();
+      for (const d of uniqueDates) { try { if (await isExpiryDate(d)) expirySet.add(d); } catch (_) {} }
+      expiryDates = expirySet;
+    }
+    const trades = runStraddleBacktest(candles || [], lookupVix, expiryDates);
     const stats = computeBacktestStats(trades);
     // P&L is computed in ₹ (premium × LOT_SIZE − charges, both legs). Mark
     // the result so /all-backtest renders it as ₹ instead of "pts".

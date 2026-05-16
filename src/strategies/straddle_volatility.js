@@ -145,6 +145,19 @@ function getSignal(candles, opts) {
                    isForced;
   const strength = isStrong ? "STRONG" : "MARGINAL";
 
+  // ── VIX STRONG_ONLY gate ───────────────────────────────────────────────
+  // When VIX is between STRONG_ONLY and MAX_ENTRY, accept STRONG signals only.
+  // Forced overrides bypass the gate (event-day setups are intentional).
+  const vixStrongOnly = parseFloat(process.env.STRADDLE_VIX_STRONG_ONLY || "18");
+  if (vix != null && vix > vixStrongOnly && strength !== "STRONG" && !isForced) {
+    return Object.assign({}, base, {
+      bbWidth:    Math.round(bbWidthCur * 10000) / 10000,
+      bbWidthAvg: avg != null ? Math.round(avg * 10000) / 10000 : null,
+      signalStrength: strength,
+      reason: `VIX ${vix.toFixed(1)} > ${vixStrongOnly} — elevated regime, only STRONG signals allowed (got ${strength})`,
+    });
+  }
+
   if (!silent) {
     const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
     console.log(`[STRADDLE ${istStr}] TRIGGER=${trigger} | BBwidth=${bbWidthCur.toFixed(4)} vs avg=${avg != null ? avg.toFixed(4) : "n/a"} | VIX=${vix == null ? "n/a" : vix.toFixed(1)} [${strength}]`);
