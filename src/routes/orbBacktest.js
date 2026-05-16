@@ -218,6 +218,11 @@ router.get("/", async (req, res) => {
     const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
     const trades = runOrbBacktest(candles || []);
     const stats = computeBacktestStats(trades);
+    // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
+    // so /all-backtest renders it as ₹ instead of "pts".
+    stats.optionSim   = true;
+    stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
+    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
 
     // Save for /all-backtest dashboard
     try {
