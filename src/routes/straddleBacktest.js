@@ -11,7 +11,7 @@ const router  = express.Router();
 const straddleStrategy = require("../strategies/straddle_volatility");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const vixFilter = require("../services/vixFilter");
-const { getLotSize } = require("../config/instrument");
+const { getLotQty } = require("../config/instrument");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
@@ -54,7 +54,7 @@ function runStraddleBacktest(allCandles, lookupVix, expiryDates) {
 
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE   = getLotSize().NIFTY_OPTIONS;
+  const LOT_SIZE   = getLotQty();
   const TARGET_PCT = parseFloat(process.env.STRADDLE_TARGET_PCT || "0.4");
   const STOP_PCT   = parseFloat(process.env.STRADDLE_STOP_PCT   || "0.25");
   const MAX_HOLD_D = parseFloat(process.env.STRADDLE_MAX_HOLD_DAYS || "3");
