@@ -1100,9 +1100,6 @@ ${scalpCurrentBar({ bar: state.currentBar, resMin: 5 })}
 ${posHtml}
 </div>
 
-<main style="display:contents;">
-</main>
-
 ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY chart -->
 <div style="margin-bottom:18px;">
   <div class="section-title">NIFTY 5-Min Chart (BB ${_bbPeriod}/${_bbStd} squeeze overlay)</div>
