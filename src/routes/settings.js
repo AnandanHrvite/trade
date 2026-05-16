@@ -374,53 +374,53 @@ const SETTINGS_SCHEMA = [
     section: "MENU VISIBILITY — Show / hide sidebar items",
     icon: "👁",
     fields: [
-      { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Dashboard' menu in the sidebar. When off, '/' redirects to Settings.", default: "false" },
+      { key: "UI_SHOW_DASHBOARD",      label: "Show Dashboard",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Dashboard' menu in the sidebar. When off, '/' redirects to Settings.", default: "false", subheader: "Top-level menu items" },
       { key: "UI_SHOW_ALL_BACKTEST",   label: "Show All Backtest",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Backtest' (all-strategy) menu in the sidebar", default: "true" },
       { key: "UI_SHOW_REALTIME",       label: "Real-Time on Dashboard",    type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, the Dashboard ('/') auto-swaps to the Real-Time monitor whenever any paper/live session is running, and back to the normal dashboard when nothing is running.", default: "true" },
       { key: "UI_DASHBOARD_ANALYTICS_PANEL", label: "Dashboard analytics panel", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the bottom analytics panel on the Dashboard. Market hours: live session P&L per strategy + next expiry. After-hours: last-session breakdown, 7-day rolling stats, next holiday/expiry.", default: "true" },
       { key: "UI_SHOW_REPLAY",         label: "Show Replay",               type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Replay' menu in the sidebar (deterministic tick-replay backtest of recorded paper sessions)", default: "true" },
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Paper Traded History' menu in the sidebar", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Live Traded History' menu in the sidebar", default: "true" },
-      { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true", subheader: "Strategy master toggles" },
       { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "STRADDLE_MODE_ENABLED",  label: "Straddle Mode (Long Straddle Volatility)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the STRADDLE sidebar group AND the STRADDLE strategy section in Settings. When off, both are hidden.", default: "true" },
-      { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
 
       // ── Swing submenu ──
-      { key: "UI_SHOW_SWING_BACKTEST", label: "Swing → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Swing group", default: "true" },
+      { key: "UI_SHOW_SWING_BACKTEST", label: "Swing → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Swing group", default: "true", subheader: "Swing sub-menus" },
       { key: "UI_SHOW_SWING_PAPER",    label: "Swing → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Swing group",    default: "true" },
       { key: "UI_SHOW_SWING_LIVE",     label: "Swing → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Swing group",     default: "true" },
 
       // ── Scalp submenu ──
-      { key: "UI_SHOW_SCALP_BACKTEST", label: "Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Scalp group", default: "true" },
+      { key: "UI_SHOW_SCALP_BACKTEST", label: "Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Scalp group", default: "true", subheader: "Scalp sub-menus" },
       { key: "UI_SHOW_SCALP_PAPER",    label: "Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Scalp group",    default: "true" },
       { key: "UI_SHOW_SCALP_LIVE",     label: "Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Scalp group",     default: "true" },
 
       // ── Price Action submenu ──
-      { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Price Action group",     default: "true" },
+      { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Price Action group",     default: "true", subheader: "Price Action sub-menus" },
       { key: "UI_SHOW_PA_PATTERN_BACKTEST", label: "PA → Pattern Test",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Pattern Test' inside the Price Action group", default: "true" },
       { key: "UI_SHOW_PA_PAPER",            label: "PA → Paper",           type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Price Action group",        default: "true" },
       { key: "UI_SHOW_PA_LIVE",             label: "PA → Live (legacy)",   type: "toggle", effect: EFFECT.INSTANT, desc: "Show legacy 'Live' inside the Price Action group (separate code from paper)", default: "true" },
       { key: "UI_SHOW_PA_LIVE_HARNESS",     label: "PA → Live (Harness)",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Price Action group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── ORB submenu ──
-      { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the ORB group", default: "true" },
+      { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the ORB group", default: "true", subheader: "ORB sub-menus" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
       { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the ORB group (needs ORB_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
 
       // ── Straddle submenu ──
-      { key: "UI_SHOW_STRADDLE_BACKTEST", label: "Straddle → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Straddle group", default: "true" },
+      { key: "UI_SHOW_STRADDLE_BACKTEST", label: "Straddle → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Straddle group", default: "true", subheader: "Straddle sub-menus" },
       { key: "UI_SHOW_STRADDLE_PAPER",    label: "Straddle → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
       { key: "UI_SHOW_STRADDLE_LIVE",     label: "Straddle → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Straddle group (needs STRADDLE_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_STRADDLE_HISTORY",  label: "Straddle → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
-      { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true" },
+      { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true", subheader: "System sub-menus" },
       { key: "UI_SHOW_TRADE_LOGS", label: "System → Trade Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Trade Logs' inside the System group", default: "true" },
     ],
   },
@@ -983,6 +983,9 @@ router.get("/", (req, res) => {
         group.push(renderField(f));
       } else {
         flushGroup();
+        if (f.subheader) {
+          out.push(`<div class="subgroup-header">${f.subheader}</div>`);
+        }
         out.push(renderField(f));
       }
     }
@@ -1171,6 +1174,25 @@ router.get("/", (req, res) => {
       opacity: 1;
     }
 
+    /* ── Sub-group header inside a section ─────────────────── */
+    .subgroup-header {
+      font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--text2);
+      padding: 14px 20px 8px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .subgroup-header::before {
+      content:''; display:inline-block;
+      width: 3px; height: 12px; border-radius: 2px;
+      background: var(--accent);
+    }
+    .subgroup-header::after {
+      content:''; flex: 1; height: 1px; background: var(--border);
+    }
+    .setting-row + .subgroup-header { margin-top: 4px; }
+
     /* ── Search bar ─────────────────────────────────────── */
     .settings-search-bar {
       position: sticky; top: 0; z-index: 30;
@@ -1196,6 +1218,7 @@ router.get("/", (req, res) => {
     .settings-search-bar.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(59,130,246,0.15), 0 4px 14px rgba(0,0,0,0.18); }
     .setting-row.search-hit { box-shadow: inset 3px 0 0 var(--accent); }
     .setting-row.search-miss { display: none !important; }
+    .subgroup-header.search-miss { display: none !important; }
     .settings-section.search-hidden { display: none !important; }
     .ssb-empty { color: var(--yellow); font-style: italic; }
 
@@ -1622,6 +1645,9 @@ function filterSettings(rawQuery) {
     document.querySelectorAll('.settings-section.search-hidden').forEach(function(s){
       s.classList.remove('search-hidden');
     });
+    document.querySelectorAll('.subgroup-header.search-miss').forEach(function(h){
+      h.classList.remove('search-miss');
+    });
     if (_ssbPrevOpenIds) {
       // Restore which sections were open before the search began
       document.querySelectorAll('.settings-section').forEach(function(s){
@@ -1669,6 +1695,20 @@ function filterSettings(rawQuery) {
     } else {
       section.classList.add('search-hidden');
     }
+    // Hide subgroup headers whose rows are all misses
+    var headers = section.querySelectorAll('.subgroup-header');
+    headers.forEach(function(h){
+      var anyHit = false;
+      var n = h.nextElementSibling;
+      while (n && !n.classList.contains('subgroup-header')) {
+        if (n.classList.contains('setting-row') && !n.classList.contains('search-miss')) { anyHit = true; break; }
+        // also check nested rows (e.g. inside .pattern-grid)
+        if (n.querySelector && n.querySelector('.setting-row:not(.search-miss)')) { anyHit = true; break; }
+        n = n.nextElementSibling;
+      }
+      if (anyHit) h.classList.remove('search-miss');
+      else h.classList.add('search-miss');
+    });
     totalHits += sectionHits;
   });
 
