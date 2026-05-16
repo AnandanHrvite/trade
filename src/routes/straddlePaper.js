@@ -32,6 +32,7 @@ const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, tableEnhancerCSS } = require("../utils/sharedNav");
+const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurrentBar, scalpActivityLog } = require("../utils/scalpStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
 const { fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -797,6 +798,8 @@ router.get("/status/data", (req, res) => {
     tickCount:      state.tickCount,
     lastTickPrice:  state.lastTickPrice,
     candles:        state.candles.length,
+    currentBar:     state.currentBar,
+    sessionStart:   state.sessionStart,
     ceLtp:          state.ceLtp,
     peLtp:          state.peLtp,
     combined,
@@ -818,286 +821,514 @@ router.get("/status/data", (req, res) => {
   });
 });
 
+function _straddleCapital() {
+  const v = parseFloat(process.env.STRADDLE_PAPER_CAPITAL);
+  return isNaN(v) ? 100000 : v;
+}
+
 router.get("/status", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
-  const html = `<!DOCTYPE html>
+  const data = loadData();
+  const pos  = state.position;
+
+  const _vix = getCachedVix();
+  const _vixEnabled = (process.env.STRADDLE_VIX_ENABLED || "false").toLowerCase() === "true";
+  const _vixMaxEntry = vixFilter.getVixMaxEntry("straddle");
+  const _maxPairs = parseInt(process.env.STRADDLE_MAX_DAILY_PAIRS || "1", 10);
+  const _maxLoss  = parseFloat(process.env.STRADDLE_MAX_DAILY_LOSS || "5000");
+  const _bbPeriod = process.env.STRADDLE_BB_PERIOD || "20";
+  const _bbStd    = process.env.STRADDLE_BB_STDDEV || "2";
+  const _tgtPct   = (parseFloat(process.env.STRADDLE_TARGET_PCT || "0.4") * 100).toFixed(0);
+  const _stpPct   = (parseFloat(process.env.STRADDLE_STOP_PCT   || "0.25") * 100).toFixed(0);
+  const dailyLossHit = state.sessionPnl <= -_maxLoss;
+
+  const pnlColor = (n) => (n || 0) >= 0 ? "#10b981" : "#ef4444";
+
+  // Live PnL
+  let livePnl = null;
+  let combined = null;
+  if (pos && state.ceLtp != null && state.peLtp != null) {
+    combined = parseFloat((state.ceLtp + state.peLtp).toFixed(2));
+    const lot = pos.qty || instrumentConfig.getLotQty();
+    livePnl = parseFloat((((state.ceLtp - pos.ce.entryLtp) + (state.peLtp - pos.pe.entryLtp)) * lot).toFixed(2));
+  }
+
+  // Pair-level stats
+  const pairMap = new Map();
+  for (const t of state.sessionTrades) {
+    if (!t.pairId) continue;
+    if (!pairMap.has(t.pairId)) pairMap.set(t.pairId, 0);
+    pairMap.set(t.pairId, pairMap.get(t.pairId) + (t.pnl || 0));
+  }
+  const pairs = Array.from(pairMap.values());
+  const wins   = pairs.filter(p => p > 0).length;
+  const losses = pairs.filter(p => p < 0).length;
+  const winRate = pairs.length ? ((wins / pairs.length) * 100).toFixed(1) : null;
+  const bestPair  = pairs.length ? Math.max(...pairs) : null;
+  const worstPair = pairs.length ? Math.min(...pairs) : null;
+
+  // Stat cards
+  const statCards = [
+    {
+      label: "Session PnL",
+      value: `<span id="ajax-session-pnl" style="color:${pnlColor(state.sessionPnl)};">${typeof state.sessionPnl === "number" ? (state.sessionPnl >= 0 ? "+" : "") + "₹" + state.sessionPnl.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—"}</span>`,
+      accent: pnlColor(state.sessionPnl),
+    },
+    {
+      label: "Pairs Today",
+      value: `<span id="ajax-pairs-count">${state.pairsTaken || 0}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_maxPairs}</span>`,
+      sub: `<span id="ajax-wl">${wins}W · ${losses}L</span>`,
+      accent: "#ec4899",
+    },
+    {
+      label: "Live PnL",
+      value: `<span id="ajax-live-pnl" style="color:${livePnl == null ? "#c8d8f0" : pnlColor(livePnl)};">${livePnl == null ? "—" : (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</span>`,
+      sub: `<span id="ajax-live-pnl-sub">${pos ? "both legs unrealised" : "no open pair"}</span>`,
+      accent: "#3b82f6",
+    },
+    {
+      label: "Win Rate",
+      value: `<span id="ajax-wr">${winRate != null ? winRate + "%" : "—"}</span>`,
+      sub: `<span id="ajax-wr-sub">best ${bestPair == null ? "—" : "₹" + Math.round(bestPair)} / worst ${worstPair == null ? "—" : "₹" + Math.round(worstPair)}</span>`,
+      accent: "#a07010",
+    },
+    {
+      label: "Combined Premium",
+      value: `<span id="ajax-combined">${combined != null ? "₹" + combined : "—"}</span>`,
+      sub: `<span id="ajax-combined-sub">${pos && pos.netDebit ? "Entry net ₹" + pos.netDebit : "no live combined"}</span>`,
+      accent: "#7c3aed",
+    },
+    {
+      label: "Daily Loss Limit",
+      value: `<span id="ajax-daily-loss-val" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "HIT" : "OK"} <span style="font-size:0.65rem;color:#4a6080;">/ -₹${_maxLoss.toLocaleString("en-IN")}</span></span>`,
+      sub: `<span id="ajax-daily-loss-sub" style="color:${dailyLossHit ? "#ef4444" : "#10b981"};">${dailyLossHit ? "KILLED — no entries" : "Active"}</span>`,
+      accent: dailyLossHit ? "#ef4444" : "#10b981",
+    },
+    {
+      label: "Candles Loaded",
+      value: `<span id="ajax-candle-count" style="color:${state.candles.length >= parseInt(_bbPeriod, 10) ? "#10b981" : "#f59e0b"};">${state.candles.length}</span>`,
+      sub: `<span id="ajax-candle-status" style="color:${state.candles.length >= parseInt(_bbPeriod, 10) ? "#10b981" : "#f59e0b"};">${state.candles.length >= parseInt(_bbPeriod, 10) ? "BB ready" : "Warming up..."}</span>`,
+      accent: "#a07010",
+    },
+    {
+      label: "WebSocket Ticks",
+      value: `<span id="ajax-tick-count">${(state.tickCount || 0).toLocaleString()}</span>`,
+      sub: `Last: <span id="ajax-last-tick">${state.lastTickPrice ? "₹" + state.lastTickPrice.toLocaleString("en-IN") : "—"}</span>`,
+      accent: "#2a6080",
+    },
+    {
+      label: "Session Start",
+      value: `<span style="font-size:0.85rem;color:#c8d8f0;">${state.sessionStart ? fmtISTDateTime(state.sessionStart) : "—"}</span>`,
+      accent: "#2a4020",
+    },
+  ];
+
+  // Position panel — straddle (CE + PE)
+  const posHtml = pos ? (() => {
+    const ceCur = state.ceLtp != null ? state.ceLtp : pos.ce.entryLtp;
+    const peCur = state.peLtp != null ? state.peLtp : pos.pe.entryLtp;
+    const comb  = parseFloat((ceCur + peCur).toFixed(2));
+    const moveCls = comb >= pos.netDebit ? "#10b981" : "#ef4444";
+    const ceMove = ceCur - pos.ce.entryLtp;
+    const peMove = peCur - pos.pe.entryLtp;
+    return `
+    <div style="background:#0a1f0a;border:1px solid #065f46;border-radius:12px;padding:20px 24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:#ec4899;display:inline-block;animation:pulse 1.5s infinite;"></span>
+          <span style="font-size:0.8rem;font-weight:700;color:#ec4899;text-transform:uppercase;letter-spacing:1px;">Open Pair</span>
+          <span style="font-size:0.72rem;color:#4a6080;">Since ${pos.entryTime || "—"}</span>
+        </div>
+        <button onclick="strpHandleExit(this)"
+           style="display:inline-flex;align-items:center;gap:7px;background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;font-size:0.8rem;font-weight:700;padding:9px 18px;border-radius:8px;cursor:pointer;font-family:inherit;">
+          Exit Pair Now
+        </button>
+      </div>
+
+      <!-- Pair identity banner -->
+      <div style="background:#1c0a16;border:1px solid #4a1942;border-radius:10px;padding:14px 18px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Strike</div>
+            <div style="font-size:1.6rem;font-weight:800;color:#fff;font-family:monospace;">${pos.strike}</div>
+          </div>
+          <div style="width:1px;height:44px;background:#4a1942;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Expiry</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#f59e0b;">${pos.expiry || "—"}</div>
+          </div>
+          <div style="width:1px;height:44px;background:#4a1942;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Qty / Leg</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#fff;">${pos.qty}</div>
+          </div>
+          <div style="width:1px;height:44px;background:#4a1942;"></div>
+          <div>
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Trigger</div>
+            <div style="font-size:0.9rem;font-weight:700;color:#fbbf24;">${pos.trigger || "—"} ${pos.signalStrength ? `<span style="font-size:0.65rem;color:#94a3b8;">[${pos.signalStrength}]</span>` : ""}</div>
+          </div>
+          <div style="width:1px;height:44px;background:#4a1942;flex-shrink:0;"></div>
+          <div style="flex:1;min-width:200px;">
+            <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Pair ID</div>
+            <div style="font-size:0.78rem;font-weight:600;color:#c8d8f0;font-family:monospace;">${pos.pairId}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Combined premium -->
+      <div style="background:#0a0f24;border:2px solid #ec4899;border-radius:12px;padding:18px 20px;margin-bottom:14px;">
+        <div style="font-size:0.68rem;font-weight:700;color:#ec4899;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;">Combined Premium (CE + PE)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;align-items:center;">
+          <div style="text-align:center;padding:12px;background:#071a3e;border:1px solid #1e3a5f;border-radius:10px;">
+            <div style="font-size:0.63rem;color:#60a5fa;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Net Debit</div>
+            <div style="font-size:2rem;font-weight:800;color:#60a5fa;font-family:monospace;line-height:1;">₹${pos.netDebit}</div>
+            <div style="font-size:0.68rem;color:#4a6080;margin-top:4px;">paid at entry</div>
+          </div>
+          <div style="text-align:center;font-size:1.8rem;color:${moveCls};">→</div>
+          <div style="text-align:center;padding:12px;background:${comb >= pos.netDebit ? "#071a0f" : "#1a0707"};border:2px solid ${moveCls};border-radius:10px;">
+            <div style="font-size:0.63rem;color:${moveCls};text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Live Combined</div>
+            <div id="ajax-live-combined" style="font-size:2rem;font-weight:800;color:${moveCls};font-family:monospace;line-height:1;">₹${comb}</div>
+            <div id="ajax-live-pct" style="font-size:0.85rem;font-weight:700;margin-top:6px;color:${moveCls};">${((comb - pos.netDebit) / pos.netDebit * 100).toFixed(2)}%</div>
+          </div>
+          <div style="text-align:center;padding:12px;background:${livePnl != null ? (livePnl >= 0 ? "#071a0f" : "#1a0707") : "#0d1320"};border:1px solid ${livePnl != null ? (livePnl >= 0 ? "#065f46" : "#7f1d1d") : "#1a2236"};border-radius:10px;">
+            <div style="font-size:0.63rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Pair P&L</div>
+            <div id="ajax-pair-pnl" style="font-size:1.8rem;font-weight:800;color:${livePnl != null ? (livePnl >= 0 ? "#10b981" : "#ef4444") : "#fff"};font-family:monospace;line-height:1;">${livePnl != null ? (livePnl >= 0 ? "+" : "") + "₹" + livePnl.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2}) : "—"}</div>
+            <div style="font-size:0.65rem;color:#4a6080;margin-top:4px;">${pos.qty} qty per leg</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Per-leg breakdown -->
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px;">
+        <div style="background:#071a12;border:1px solid #134e35;border-left:3px solid #10b981;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#10b981;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">CE Leg</div>
+          <div style="font-size:0.7rem;color:#94a3b8;font-family:monospace;margin-bottom:6px;">${pos.ce.symbol}</div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:0.95rem;font-weight:700;color:#c8d8f0;font-family:monospace;">₹${pos.ce.entryLtp} → <span id="ajax-ce-cur" style="color:${ceCur >= pos.ce.entryLtp ? "#10b981" : "#ef4444"};">₹${ceCur}</span></span>
+            <span id="ajax-ce-move" style="font-size:0.85rem;font-weight:700;color:${ceMove >= 0 ? "#10b981" : "#ef4444"};">${ceMove >= 0 ? "+" : ""}${ceMove.toFixed(2)}</span>
+          </div>
+        </div>
+        <div style="background:#1a0707;border:1px solid #7f1d1d;border-left:3px solid #ef4444;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#ef4444;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">PE Leg</div>
+          <div style="font-size:0.7rem;color:#94a3b8;font-family:monospace;margin-bottom:6px;">${pos.pe.symbol}</div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;">
+            <span style="font-size:0.95rem;font-weight:700;color:#c8d8f0;font-family:monospace;">₹${pos.pe.entryLtp} → <span id="ajax-pe-cur" style="color:${peCur >= pos.pe.entryLtp ? "#10b981" : "#ef4444"};">₹${peCur}</span></span>
+            <span id="ajax-pe-move" style="font-size:0.85rem;font-weight:700;color:${peMove >= 0 ? "#10b981" : "#ef4444"};">${peMove >= 0 ? "+" : ""}${peMove.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Levels -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">
+        <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Target (Combined)</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">₹${pos.targetNet}</div>
+          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">+${_tgtPct}% net</div>
+        </div>
+        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop (Combined)</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">₹${pos.stopNet}</div>
+          <div style="font-size:0.58rem;color:#4a6080;margin-top:2px;">-${_stpPct}% net</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Combined</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">₹${pos.peakCombined || comb}</div>
+        </div>
+        <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Entry Spot</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.entrySpot ? "₹" + pos.entrySpot.toFixed(2) : "—"}</div>
+        </div>
+      </div>
+    </div>`;
+  })() : `
+    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
+      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT — ${state.running ? "Waiting for volatility trigger" : "Session stopped"}</div>
+      ${state.running ? `<button onclick="strpManualEntry()" style="padding:8px 24px;background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🎯 Manual Straddle Entry</button>` : ""}
+    </div>`;
+
+  // Logs JSON
+  const allLogs = [...state.log].reverse();
+  const logsJSON = JSON.stringify(allLogs)
+    .replace(/<\/script>/gi, "<\\/script>")
+    .replace(/`/g, "\\u0060")
+    .replace(/\$/g, "\\u0024");
+
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 ${faviconLink()}
-<title>Straddle Paper Trade</title>
+<title>Straddle Paper — ${straddleStrategy.NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;}
 ${sidebarCSS()}
 ${modalCSS()}
-.main{flex:1;margin-left:200px;padding:16px 22px 40px;min-height:100vh;}
-@media(max-width:900px){.main{margin-left:0;padding:14px;}}
-.crumb{background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 22px;display:flex;align-items:center;gap:7px;margin:-16px -22px 14px;position:sticky;top:0;z-index:90;}
-.crumb span.chip{font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;}
-.page-title{font-size:1.05rem;font-weight:700;margin-bottom:2px;}
-.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:14px;}
-.grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:14px;}
-@media(max-width:1400px){.grid{grid-template-columns:repeat(4,1fr);}}
-@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr);}}
-.sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:11px 13px;position:relative;overflow:hidden;}
-.sc::before{content:'';position:absolute;top:0;left:0;width:3px;height:100%;background:#ec4899;}
-.sc.blue::before{background:#3b82f6;}.sc.red::before{background:#ef4444;}.sc.yellow::before{background:#f59e0b;}.sc.purple::before{background:#8b5cf6;}
-.sc-label{font-size:0.52rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
-.sc-val{font-size:1.1rem;font-weight:700;font-family:'IBM Plex Mono',monospace;}
-.sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;font-family:'IBM Plex Mono',monospace;}
-.panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;margin-bottom:14px;}
-.panel h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;display:flex;align-items:center;justify-content:space-between;}
-.chart-wrap{position:relative;height:240px;}
-.log{background:#040c18;border:0.5px solid #0e1e36;border-radius:6px;padding:8px 10px;font-family:'IBM Plex Mono',monospace;font-size:0.65rem;color:#94a3b8;max-height:280px;overflow-y:auto;white-space:pre-wrap;line-height:1.55;}
-.log-search{background:#040c18;border:0.5px solid #0e1e36;color:#e0eaf8;padding:4px 8px;border-radius:5px;font-size:0.7rem;font-family:inherit;width:160px;}
-table{width:100%;border-collapse:collapse;font-size:0.66rem;font-family:'IBM Plex Mono',monospace;}
-th,td{padding:6px 8px;text-align:left;border-bottom:0.5px solid #0e1e36;}
-th{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;background:#040c18;}
-.pos{color:#10b981;}.neg{color:#ef4444;}.muted{color:#3a5070;}
-.empty{text-align:center;color:#3a5070;padding:18px 0;font-size:0.7rem;}
-.pos-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;}
-.pos-cell{background:#040c18;border:0.5px solid #0e1e36;border-radius:8px;padding:9px 12px;}
-.pos-cell-l{font-size:0.5rem;text-transform:uppercase;color:#3a5070;letter-spacing:1.2px;}
-.pos-cell-v{font-size:0.92rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:2px;}
-.leg-row{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px;}
-@media(max-width:900px){.pos-row,.leg-row{grid-template-columns:1fr;}}
-</style></head><body>
+${scalpStyleCSS()}
+</style></head>
+<body>
 <div class="app-shell">
 ${buildSidebar('straddlePaper', liveActive, state.running, {
   showStartBtn: !state.running, startBtnJs: `location.href='/straddle-paper/start'`, startLabel: '▶ Start Straddle',
   showStopBtn: state.running,   stopBtnJs:  `location.href='/straddle-paper/stop'`,  stopLabel:  '■ Stop Straddle',
   showExitBtn: state.running && !!state.position, exitBtnJs: `location.href='/straddle-paper/exit'`, exitLabel: '🚪 Exit Pair',
 })}
-<main class="main">
-  <div class="crumb">
-    <span class="chip" style="background:rgba(236,72,153,0.1);color:#ec4899;border:0.5px solid rgba(236,72,153,0.3);">🎯 STRADDLE PAPER</span>
-    <span style="color:#1e2a40;font-size:10px;">›</span>
-    <span class="chip" style="background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);">${straddleStrategy.NAME}</span>
-    <span style="color:#1e2a40;font-size:10px;">›</span>
-    <span class="chip" id="crumb-status" style="background:rgba(74,96,128,0.15);color:#94a3b8;border:0.5px solid rgba(74,96,128,0.3);">—</span>
-    <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;" id="crumb-tick">— ticks · — candles</span>
-  </div>
-  <div class="page-title">🎯 Straddle Paper Trade <span style="font-size:0.65rem;color:#4a6080;font-weight:400;margin-left:8px;">paired ATM CE+PE long · volatility play · simulated orders</span></div>
-  <div class="page-sub">BB-squeeze / low-VIX / event-day triggers. Combined-premium ±${((parseFloat(process.env.STRADDLE_TARGET_PCT || "0.4"))*100).toFixed(0)}%/−${((parseFloat(process.env.STRADDLE_STOP_PCT || "0.25"))*100).toFixed(0)}% exits.</div>
+<div class="main-content">
 
-  <div class="grid">
-    <div class="sc"><div class="sc-label">Status</div><div class="sc-val" id="status">—</div><div class="sc-sub" id="status-sub">—</div></div>
-    <div class="sc blue"><div class="sc-label">Session P&L</div><div class="sc-val" id="pnl">—</div><div class="sc-sub" id="pnl-sub">— closed pairs</div></div>
-    <div class="sc"><div class="sc-label">Live PnL</div><div class="sc-val" id="livePnl">—</div><div class="sc-sub" id="livePnl-sub">unrealised</div></div>
-    <div class="sc yellow"><div class="sc-label">Win Rate</div><div class="sc-val" id="wr">—</div><div class="sc-sub" id="wr-sub">— W · — L</div></div>
-    <div class="sc"><div class="sc-label">Best Pair</div><div class="sc-val pos" id="bestT">—</div><div class="sc-sub">single best</div></div>
-    <div class="sc red"><div class="sc-label">Worst Pair</div><div class="sc-val neg" id="worstT">—</div><div class="sc-sub">single worst</div></div>
-    <div class="sc purple"><div class="sc-label">Spot · VIX</div><div class="sc-val" id="spotVix">—</div><div class="sc-sub" id="comb">Live combined —</div></div>
-    <div class="sc"><div class="sc-label">All-Time</div><div class="sc-val" id="totalPnl">—</div><div class="sc-sub">since first session</div></div>
-  </div>
+${scalpTopBar({
+  title: "Straddle Paper Trade",
+  metaLine: `Strategy: ${straddleStrategy.NAME} · ATM CE+PE long · BB ${_bbPeriod}/${_bbStd} squeeze · Target +${_tgtPct}% / Stop -${_stpPct}% net · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
+  running: state.running,
+  vix: { enabled: _vixEnabled, value: _vix, maxEntry: _vixMaxEntry, strongOnly: Infinity },
+  primaryAction: { label: "Start Straddle Paper", href: "/straddle-paper/start", color: "#831843" },
+  stopAction:    { label: "Stop Session",          href: "/straddle-paper/stop" },
+  historyHref: "/straddle-paper/history",
+})}
 
-  <div class="panel">
-    <h3><span>📌 Open Pair</span><span id="livePnlBadge" style="font-size:0.85rem;color:#94a3b8;"></span></h3>
-    <div id="position-box" class="empty">No open pair — waiting for volatility trigger</div>
-    <div id="manual-entry" style="display:none;margin-top:10px;text-align:right;">
-      <button onclick="doManualEntry()" style="background:rgba(236,72,153,0.15);color:#ec4899;border:1px solid rgba(236,72,153,0.4);padding:6px 14px;border-radius:5px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">🎯 Manual Straddle Entry (force CE+PE)</button>
+${scalpCapitalStrip({
+  starting: _straddleCapital(),
+  current:  data.capital,
+  allTime:  data.totalPnl,
+  startingThreshold: _straddleCapital(),
+})}
+
+${scalpStatGrid(statCards)}
+
+${scalpCurrentBar({ bar: state.currentBar, resMin: 5 })}
+
+<div id="ajax-position-section" style="margin-bottom:18px;">
+${posHtml}
+</div>
+
+<main style="display:contents;">
+</main>
+
+${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY chart -->
+<div style="margin-bottom:18px;">
+  <div class="section-title">NIFTY 5-Min Chart (BB ${_bbPeriod}/${_bbStd} squeeze overlay)</div>
+  <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
+    <div id="nifty-chart" style="width:100%;height:100%;"></div>
+    <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
+      <span style="color:rgba(74,156,245,0.9);">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#3b82f6;">-- Entry Spot</span>
     </div>
   </div>
+</div>` : ""}
 
-  <!-- Live NIFTY chart with BB squeeze overlay -->
-  <div class="panel">
-    <h3><span>📊 Live NIFTY 5-min (BB ${process.env.STRADDLE_BB_PERIOD || "20"}/${process.env.STRADDLE_BB_STDDEV || "2"} overlay — squeeze trigger)</span>
-      <span style="font-size:0.6rem;color:#4a6080;display:flex;gap:10px;">
-        <span><span style="display:inline-block;width:10px;height:1px;background:rgba(74,156,245,0.7);vertical-align:middle;"></span> BB Upper/Lower</span>
-        <span><span style="display:inline-block;width:10px;height:1px;background:rgba(148,163,184,0.55);border-top:1px dashed;vertical-align:middle;"></span> BB Mid</span>
-        <span><span style="display:inline-block;width:10px;height:1px;background:#3b82f6;border-top:1px dotted #3b82f6;vertical-align:middle;"></span> Entry Spot</span>
-      </span>
-    </h3>
-    <div id="niftyChart" style="position:relative;height:340px;"></div>
-  </div>
+<!-- Session trades (leg-flat) -->
+<div id="strp-trades-section" style="margin-bottom:18px;">
+  <div class="section-title">Session Trades <span id="strp-trades-hint" style="color:#4a6080;font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} rows</span></div>
+  <div id="strp-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;${state.sessionTrades.length ? "" : "padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;"}">${state.sessionTrades.length ? "" : "No trades yet"}</div>
+</div>
 
-  <div class="panel">
-    <h3><span>📈 Today&apos;s Cumulative P&amp;L (per pair)</span><span id="chartHint" style="font-size:0.6rem;color:#4a6080;">— pairs</span></h3>
-    <div class="chart-wrap"><canvas id="pnlChart"></canvas></div>
-  </div>
+${scalpActivityLog({ logsJSON })}
 
-  <div class="panel">
-    <h3><span>📜 Session Trades (leg-flat, latest first)</span><span id="tradesHint" style="font-size:0.6rem;color:#4a6080;">— rows</span></h3>
-    <div id="trades-box" class="empty">No trades yet</div>
-  </div>
+</div><!-- /main-content -->
+</div><!-- /app-shell -->
 
-  <div class="panel">
-    <h3><span>📓 Activity Log</span>
-      <span><input class="log-search" id="logSearch" placeholder="Search log…" oninput="filterLog()"/></span>
-    </h3>
-    <div id="log" class="log">—</div>
-  </div>
-</main>
 <script>
 ${modalJS()}
-var _pnlChart = null;
-var _rawLog = [];
-
-// ── Lightweight Charts setup (live NIFTY + BB overlay) ──
-var _niftyChart = null, _csSeries = null, _bbU = null, _bbM = null, _bbL = null;
-var _entryLine = null;
-function ensureNiftyChart(){
-  if (_niftyChart) return;
-  var container = document.getElementById('niftyChart');
-  if (!container || typeof LightweightCharts === 'undefined') return;
-  _niftyChart = LightweightCharts.createChart(container, {
-    layout: { background: { color: 'transparent' }, textColor: '#94a3b8' },
-    grid: { vertLines: { color: '#0e1e36' }, horzLines: { color: '#0e1e36' } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#0e1e36' },
-    rightPriceScale: { borderColor: '#0e1e36' },
-    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    width: container.clientWidth, height: 340,
-  });
-  _csSeries = _niftyChart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
-  _bbU = _niftyChart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  _bbM = _niftyChart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  _bbL = _niftyChart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  window.addEventListener('resize', function(){ if (_niftyChart) _niftyChart.applyOptions({ width: container.clientWidth }); });
+async function strpHandleExit(btn){
+  var ok = await showConfirm({ icon:'🚪', title:'Exit pair', message:'Exit current straddle pair now?', confirmText:'Exit', confirmClass:'modal-btn-danger' });
+  if (!ok) return;
+  btn.disabled = true; btn.textContent = 'Exiting...';
+  fetch('/straddle-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
 }
-async function refreshChart(){
-  ensureNiftyChart();
-  if (!_csSeries) return;
+async function strpManualEntry(){
+  var ok = await showConfirm({ icon:'🎯', title:'Manual straddle', message:'Force CE+PE pair at current ATM strike? Bypasses BB-squeeze / VIX triggers.', confirmText:'Enter pair' });
+  if (!ok) return;
   try {
-    var r = await fetch('/straddle-paper/status/chart-data', { cache: 'no-store' });
-    var d = await r.json();
-    if (d.candles && d.candles.length) _csSeries.setData(d.candles);
-    if (d.bbUpper && d.bbUpper.length) _bbU.setData(d.bbUpper);
-    if (d.bbMiddle && d.bbMiddle.length) _bbM.setData(d.bbMiddle);
-    if (d.bbLower && d.bbLower.length) _bbL.setData(d.bbLower);
-    if (d.markers) _csSeries.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
-    if (_entryLine) { _csSeries.removePriceLine(_entryLine); _entryLine = null; }
-    if (d.entryPrice) _entryLine = _csSeries.createPriceLine({ price: d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
-  } catch (e) { /* swallow */ }
+    var r = await fetch('/straddle-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' });
+    var j = await r.json();
+    if (!j.success) { alert('Manual entry failed: '+(j.error||'unknown')); return; }
+    location.reload();
+  } catch (e) { alert('Error: ' + e.message); }
 }
-
-async function refresh() {
-  try {
-    const r = await fetch('/straddle-paper/status/data', {cache:'no-store'});
-    const d = await r.json();
-    var pnlCls = d.sessionPnl > 0 ? 'pos' : d.sessionPnl < 0 ? 'neg' : 'muted';
-
-    document.getElementById('status').innerHTML = d.running ? '<span class="pos">RUNNING</span>' : '<span class="muted">STOPPED</span>';
-    document.getElementById('status-sub').textContent = (d.pairsTaken||0) + ' pairs taken';
-    document.getElementById('crumb-status').innerHTML = d.running ? '<span style="color:#10b981;">● RUNNING</span>' : '<span style="color:#94a3b8;">○ STOPPED</span>';
-    document.getElementById('crumb-tick').textContent = (d.tickCount||0) + ' ticks · ' + (d.candles||0) + ' candles';
-    document.getElementById('pnl').innerHTML = '<span class="' + pnlCls + '">₹' + d.sessionPnl.toFixed(2) + '</span>';
-    document.getElementById('pnl-sub').textContent = (d.pairsTaken||0) + ' pair' + ((d.pairsTaken||0)===1?'':'s');
-    if(d.livePnl != null){
-      var lc = d.livePnl > 0 ? 'pos' : d.livePnl < 0 ? 'neg' : 'muted';
-      document.getElementById('livePnl').innerHTML = '<span class="' + lc + '">₹' + d.livePnl.toFixed(2) + '</span>';
-      document.getElementById('livePnl-sub').textContent = 'unrealised (both legs)';
-    } else {
-      document.getElementById('livePnl').textContent = '—';
-      document.getElementById('livePnl-sub').textContent = 'no open pair';
-    }
-    document.getElementById('wr').textContent = (d.winRate != null ? d.winRate + '%' : '—');
-    document.getElementById('wr-sub').textContent = (d.wins||0) + 'W · ' + (d.losses||0) + 'L';
-    document.getElementById('bestT').textContent = d.bestPair != null ? '₹' + d.bestPair.toFixed(0) : '—';
-    document.getElementById('worstT').textContent = d.worstPair != null ? '₹' + d.worstPair.toFixed(0) : '—';
-    document.getElementById('spotVix').textContent = (d.lastTickPrice ? d.lastTickPrice.toFixed(2) : '—') + ' · VIX ' + (d.vix != null ? d.vix.toFixed(1) : '—');
-    document.getElementById('comb').textContent = d.combined != null ? 'Live combined ₹' + d.combined : 'No live combined';
-    document.getElementById('totalPnl').innerHTML = '<span class="' + (d.totalPnl>=0?'pos':'neg') + '">₹' + (d.totalPnl||0).toLocaleString('en-IN', {maximumFractionDigits:0}) + '</span>';
-
-    _rawLog = d.log || [];
-    filterLog();
-
-    if (d.position) {
-      const p = d.position;
-      const ceCur = p.ce.curLtp != null ? p.ce.curLtp : p.ce.entryLtp;
-      const peCur = p.pe.curLtp != null ? p.pe.curLtp : p.pe.entryLtp;
-      const combined = +(ceCur + peCur).toFixed(2);
-      const liveCls = combined >= p.netDebit ? 'pos' : 'neg';
-      const liveBadge = (d.livePnl != null) ? '<span class="' + (d.livePnl>=0?'pos':'neg') + '">₹' + d.livePnl.toFixed(0) + '</span>' : '—';
-      document.getElementById('livePnlBadge').innerHTML = liveBadge + ' live';
-      document.getElementById('position-box').className = '';
-      document.getElementById('position-box').innerHTML =
-        '<div class="pos-row">' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Pair</div><div class="pos-cell-v" style="font-size:0.72rem;">' + p.pairId + '</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Strike · Expiry</div><div class="pos-cell-v">' + p.strike + ' · ' + p.expiry + '</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Entry Spot · Time</div><div class="pos-cell-v">' + p.entrySpot + '<span style="font-weight:400;color:#94a3b8;font-size:0.7rem;"> · ' + p.entryTime + '</span></div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Trigger</div><div class="pos-cell-v" style="color:#fbbf24;">' + p.trigger + ' [' + (p.signalStrength||'—') + ']</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Qty (per leg)</div><div class="pos-cell-v">' + p.qty + '</div></div>' +
-        '</div>' +
-        '<div class="pos-row" style="margin-top:10px;">' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Net Debit</div><div class="pos-cell-v">₹' + p.netDebit + '</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Live Combined</div><div class="pos-cell-v ' + liveCls + '">₹' + combined + '</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Target / Stop</div><div class="pos-cell-v"><span class="pos">₹' + p.targetNet + '</span> / <span class="neg">₹' + p.stopNet + '</span></div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Peak Combined</div><div class="pos-cell-v">₹' + p.peakCombined + '</div></div>' +
-        '  <div class="pos-cell"><div class="pos-cell-l">Live P&amp;L</div><div class="pos-cell-v ' + (d.livePnl != null && d.livePnl >= 0 ? 'pos' : d.livePnl != null ? 'neg' : 'muted') + '">' + (d.livePnl != null ? '₹' + d.livePnl.toFixed(2) : '—') + '</div></div>' +
-        '</div>' +
-        '<div class="leg-row">' +
-        '  <div class="pos-cell" style="border-left:3px solid #10b981;"><div class="pos-cell-l">CE Leg</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">' + p.ce.symbol + '</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.78rem;font-family:\\'IBM Plex Mono\\',monospace;"><span>₹' + p.ce.entryLtp + ' → ₹' + ceCur + '</span><span class="' + (ceCur >= p.ce.entryLtp ? 'pos' : 'neg') + '">' + (ceCur - p.ce.entryLtp >= 0 ? '+' : '') + (ceCur - p.ce.entryLtp).toFixed(2) + '</span></div></div>' +
-        '  <div class="pos-cell" style="border-left:3px solid #ef4444;"><div class="pos-cell-l">PE Leg</div><div style="font-size:0.7rem;color:#94a3b8;margin-top:4px;">' + p.pe.symbol + '</div><div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.78rem;font-family:\\'IBM Plex Mono\\',monospace;"><span>₹' + p.pe.entryLtp + ' → ₹' + peCur + '</span><span class="' + (peCur >= p.pe.entryLtp ? 'pos' : 'neg') + '">' + (peCur - p.pe.entryLtp >= 0 ? '+' : '') + (peCur - p.pe.entryLtp).toFixed(2) + '</span></div></div>' +
-        '</div>';
-    } else {
-      document.getElementById('position-box').className = 'empty';
-      document.getElementById('position-box').textContent = d.running ? 'No open pair — waiting for volatility trigger' : 'No open pair';
-      document.getElementById('livePnlBadge').textContent = '';
-      document.getElementById('manual-entry').style.display = d.running ? 'block' : 'none';
-    }
-    if (d.position) document.getElementById('manual-entry').style.display = 'none';
-
-    const trades = d.sessionTrades || [];
-    document.getElementById('tradesHint').textContent = trades.length + ' row' + (trades.length===1?'':'s');
-    if (trades.length) {
-      const rows = trades.slice().reverse().map(function(t){
-        var cls = t.pnl > 0 ? 'pos' : (t.pnl < 0 ? 'neg' : 'muted');
-        var legCls = t.leg === 'CE' ? 'pos' : 'neg';
-        return '<tr><td style="font-size:0.62rem;">' + (t.pairId||'') + '</td><td class="' + legCls + '"><b>' + (t.leg||'') + '</b></td><td>' + (t.symbol||'') + '</td><td>' + (t.entryTime||'') + '</td><td>' + (t.exitTime||'') + '</td><td>₹' + (t.optionEntryLtp||'') + '</td><td>₹' + (t.optionExitLtp||'') + '</td><td class="' + cls + '"><b>₹' + (t.pnl != null ? t.pnl.toFixed(2) : '—') + '</b></td><td style="color:#94a3b8;font-size:0.65rem;">' + (t.exitReason||'') + '</td></tr>';
-      }).join('');
-      document.getElementById('trades-box').className = '';
-      document.getElementById('trades-box').innerHTML = '<table><tr><th>Pair</th><th>Leg</th><th>Symbol</th><th>Entry</th><th>Exit</th><th>E.LTP</th><th>X.LTP</th><th>Leg PnL</th><th>Exit Reason</th></tr>' + rows + '</table>';
-    } else {
-      document.getElementById('trades-box').className = 'empty';
-      document.getElementById('trades-box').textContent = 'No trades yet';
-    }
-
-    renderChart(d.cumPnl || []);
-    document.getElementById('chartHint').textContent = (d.cumPnl ? d.cumPnl.length : 0) + ' pair' + ((d.cumPnl && d.cumPnl.length===1)?'':'s');
-    refreshChart();
-  } catch (e) {}
-}
-
-function filterLog(){
-  var q = (document.getElementById('logSearch').value || '').toLowerCase();
-  var lines = q ? _rawLog.filter(function(l){ return l.toLowerCase().indexOf(q) >= 0; }) : _rawLog;
-  document.getElementById('log').textContent = lines.join('\\n');
-}
-
-async function doManualEntry(){
-  if (!confirm('Force a MANUAL straddle entry (CE+PE pair)? This bypasses the BB-squeeze / VIX triggers.')) return;
-  try {
-    const r = await fetch('/straddle-paper/manualEntry', { method:'POST', headers:{'Content-Type':'application/json'}, body: '{}' });
-    const j = await r.json();
-    if (!j.success) { alert('Manual entry failed: ' + (j.error || 'unknown')); return; }
-    refresh();
-  } catch (e) { alert('Manual entry error: ' + e.message); }
-}
-
-function renderChart(points){
-  var ctx = document.getElementById('pnlChart');
-  if(!ctx) return;
-  if(_pnlChart){ _pnlChart.destroy(); _pnlChart = null; }
-  var labels = points.map(function(_, i){ return i+1; });
-  var data = points.map(function(p){ return p.pnl; });
-  var endP = data.length ? data[data.length-1] : 0;
-  var col = endP >= 0 ? '#ec4899' : '#ef4444';
-  _pnlChart = new Chart(ctx, {
-    type:'line',
-    data:{ labels: labels, datasets:[{ data: data, borderColor: col, borderWidth: 2, backgroundColor: col+'22', fill: true, pointRadius: 3, tension: 0.3 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{title:function(ctx){return 'Pair #'+ctx[0].label;}, label:function(ctx){return '₹'+Math.round(ctx.raw).toLocaleString('en-IN');}}}}, scales:{ x:{ticks:{color:'#3a5070',font:{size:9}}, grid:{display:false}}, y:{ticks:{color:'#3a5070',font:{size:9},callback:function(v){return '₹'+Math.round(v/1000)+'k';}}, grid:{color:'#0e1e36'}} } }
-  });
-}
-
-refresh();
-setInterval(refresh, 2000);
 </script>
-</div></body></html>`;
-  res.send(html);
+
+<script>
+// ── NIFTY chart with BB squeeze overlay ──
+(function(){
+  if (typeof LightweightCharts === 'undefined' || '${process.env.CHART_ENABLED}' === 'false') return;
+  var container = document.getElementById('nifty-chart');
+  if (!container) return;
+  var chart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout:{ background:{type:'solid',color:'#0a0f1c'}, textColor:'#4a6080', fontSize:11, fontFamily:"'IBM Plex Mono', monospace" },
+    grid:{ vertLines:{color:'#111827'}, horzLines:{color:'#111827'} },
+    crosshair:{ mode: LightweightCharts.CrosshairMode.Normal },
+    rightPriceScale:{ borderColor:'#1a2236' },
+    timeScale:{ borderColor:'#1a2236', timeVisible:true, secondsVisible:false,
+      tickMarkFormatter:function(t){ var d=new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+    },
+  });
+  var cs  = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var entryLine = null;
+  async function fetchChart(){
+    try {
+      var r = await fetch('/straddle-paper/status/chart-data', { cache:'no-store' });
+      var d = await r.json();
+      if (d.candles && d.candles.length) cs.setData(d.candles);
+      bbU.setData(d.bbUpper  || []);
+      bbM.setData(d.bbMiddle || []);
+      bbL.setData(d.bbLower  || []);
+      if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));
+      if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
+      if (d.entryPrice) entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' });
+    } catch (e) {}
+  }
+  fetchChart();
+  if (${state.running}) setInterval(fetchChart, 4000);
+  window.addEventListener('resize', function(){ chart.applyOptions({ width: container.clientWidth }); });
+})();
+</script>
+
+<script>
+// ── AJAX refresh ──
+(function(){
+  var INR = function(n){ return typeof n==='number' ? '₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; };
+  var PNL_COLOR = function(n){ return (n||0)>=0 ? '#10b981' : '#ef4444'; };
+  var _lastHasPosition = ${pos ? "true" : "false"};
+  var _lastTradeCount  = ${state.sessionTrades.length};
+  var _lastLogCount    = ${state.log.length};
+  var _lastRunning     = ${state.running};
+  var _maxLoss         = ${_maxLoss};
+
+  function setText(id, val){ var el=document.getElementById(id); if(el && el.textContent !== String(val)) el.textContent = val; }
+
+  function renderTrades(trades){
+    var box  = document.getElementById('strp-trades-box');
+    var hint = document.getElementById('strp-trades-hint');
+    if (hint) hint.textContent = trades.length + ' row' + (trades.length===1?'':'s');
+    if (!box) return;
+    if (!trades.length) { box.style.cssText = 'background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;'; box.innerHTML = 'No trades yet'; return; }
+    box.style.cssText = 'background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;';
+    var rows = trades.slice().reverse().map(function(t){
+      var pc = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
+      var lc = t.leg === 'CE' ? '#10b981' : '#ef4444';
+      return '<tr style="border-top:1px solid #1a2236;">' +
+        '<td style="padding:8px 12px;font-size:0.62rem;color:#94a3b8;">' + (t.pairId||'') + '</td>' +
+        '<td style="padding:8px 12px;color:' + lc + ';font-weight:800;">' + (t.leg||'—') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#c8d8f0;">' + (t.symbol||'') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.entryTime||'') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.exitTime||'') + '</td>' +
+        '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionEntryLtp!=null?'₹'+t.optionEntryLtp:'—') + '</td>' +
+        '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionExitLtp!=null?'₹'+t.optionExitLtp:'—') + '</td>' +
+        '<td style="padding:8px 12px;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+'₹'+t.pnl.toFixed(2):'—') + '</td>' +
+        '<td style="padding:8px 12px;font-size:0.65rem;color:#4a6080;">' + (t.exitReason||'') + '</td>' +
+      '</tr>';
+    }).join('');
+    box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-family:monospace;font-size:0.78rem;">' +
+      '<thead><tr style="background:#0a0f1c;">' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Pair</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Leg</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Symbol</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Entry</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">E.LTP</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">X.LTP</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Leg PnL</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  async function fetchAndUpdate(){
+    try {
+      var r = await fetch('/straddle-paper/status/data', { cache:'no-store' });
+      if (!r.ok) return;
+      var d = await r.json();
+
+      var pnlEl = document.getElementById('ajax-session-pnl');
+      if (pnlEl) { pnlEl.textContent = (d.sessionPnl>=0?'+':'') + INR(d.sessionPnl); pnlEl.style.color = PNL_COLOR(d.sessionPnl); var card = pnlEl.closest('.sc'); if (card) card.style.borderTopColor = PNL_COLOR(d.sessionPnl); }
+      setText('ajax-pairs-count', d.pairsTaken || 0);
+      setText('ajax-wl', (d.wins||0) + 'W · ' + (d.losses||0) + 'L');
+
+      var livePnlEl = document.getElementById('ajax-live-pnl');
+      if (livePnlEl) {
+        if (d.livePnl != null) { livePnlEl.textContent = (d.livePnl>=0?'+':'') + INR(d.livePnl); livePnlEl.style.color = PNL_COLOR(d.livePnl); }
+        else { livePnlEl.textContent = '—'; livePnlEl.style.color = '#c8d8f0'; }
+      }
+      setText('ajax-live-pnl-sub', d.position ? 'both legs unrealised' : 'no open pair');
+      setText('ajax-wr', d.winRate != null ? d.winRate + '%' : '—');
+      setText('ajax-wr-sub', 'best ' + (d.bestPair == null ? '—' : '₹'+Math.round(d.bestPair)) + ' / worst ' + (d.worstPair == null ? '—' : '₹'+Math.round(d.worstPair)));
+
+      var combEl = document.getElementById('ajax-combined');
+      if (combEl) combEl.textContent = d.combined != null ? '₹' + d.combined : '—';
+      setText('ajax-combined-sub', d.position && d.position.netDebit ? 'Entry net ₹' + d.position.netDebit : 'no live combined');
+
+      var dlossHit = (d.sessionPnl || 0) <= -_maxLoss;
+      var dlEl = document.getElementById('ajax-daily-loss-val');
+      if (dlEl) dlEl.style.color = dlossHit ? '#ef4444' : '#10b981';
+      var dlSub = document.getElementById('ajax-daily-loss-sub');
+      if (dlSub) { dlSub.textContent = dlossHit ? 'KILLED — no entries' : 'Active'; dlSub.style.color = dlossHit ? '#ef4444' : '#10b981'; }
+
+      var bbThreshold = ${parseInt(_bbPeriod, 10)};
+      var cEl = document.getElementById('ajax-candle-count');
+      if (cEl) { cEl.textContent = d.candles || 0; cEl.style.color = (d.candles||0) >= bbThreshold ? '#10b981' : '#f59e0b'; }
+      var cSub = document.getElementById('ajax-candle-status');
+      if (cSub) { cSub.textContent = (d.candles||0) >= bbThreshold ? 'BB ready' : 'Warming up...'; cSub.style.color = (d.candles||0) >= bbThreshold ? '#10b981' : '#f59e0b'; }
+      setText('ajax-tick-count', (d.tickCount || 0).toLocaleString());
+      setText('ajax-last-tick', d.lastTickPrice ? INR(d.lastTickPrice) : '—');
+
+      var capEl = document.getElementById('ajax-current-capital');
+      if (capEl) { capEl.textContent = INR(d.capital); capEl.style.color = d.capital >= ${_straddleCapital()} ? '#10b981' : '#ef4444'; }
+      var atpEl = document.getElementById('ajax-alltime-pnl');
+      if (atpEl) { atpEl.textContent = (d.totalPnl >= 0 ? '+' : '') + INR(d.totalPnl); atpEl.style.color = PNL_COLOR(d.totalPnl); }
+
+      if (d.currentBar) {
+        ['open','high','low','close'].forEach(function(k){
+          var el = document.getElementById('ajax-bar-' + k);
+          if (el) el.textContent = INR(d.currentBar[k]);
+        });
+      }
+
+      var nowHasPosition = !!d.position;
+      if (nowHasPosition !== _lastHasPosition) { _lastHasPosition = nowHasPosition; window.location.reload(); return; }
+      if (d.position) {
+        var p = d.position;
+        var ceCur = p.ce.curLtp != null ? p.ce.curLtp : p.ce.entryLtp;
+        var peCur = p.pe.curLtp != null ? p.pe.curLtp : p.pe.entryLtp;
+        var comb  = parseFloat((ceCur + peCur).toFixed(2));
+        var combEl2 = document.getElementById('ajax-live-combined');
+        if (combEl2) { combEl2.textContent = '₹' + comb; combEl2.style.color = comb >= p.netDebit ? '#10b981' : '#ef4444'; }
+        var pctEl = document.getElementById('ajax-live-pct');
+        if (pctEl) { var pct = ((comb - p.netDebit) / p.netDebit * 100).toFixed(2); pctEl.textContent = (pct >= 0 ? '+' : '') + pct + '%'; pctEl.style.color = comb >= p.netDebit ? '#10b981' : '#ef4444'; }
+        var pairPnlEl = document.getElementById('ajax-pair-pnl');
+        if (pairPnlEl && d.livePnl != null) { pairPnlEl.textContent = (d.livePnl >= 0 ? '+' : '') + INR(d.livePnl); pairPnlEl.style.color = PNL_COLOR(d.livePnl); }
+
+        var ceEl = document.getElementById('ajax-ce-cur');
+        if (ceEl) { ceEl.textContent = '₹' + ceCur; ceEl.style.color = ceCur >= p.ce.entryLtp ? '#10b981' : '#ef4444'; }
+        var ceMoveEl = document.getElementById('ajax-ce-move');
+        if (ceMoveEl) { var ceMv = ceCur - p.ce.entryLtp; ceMoveEl.textContent = (ceMv >= 0 ? '+' : '') + ceMv.toFixed(2); ceMoveEl.style.color = ceMv >= 0 ? '#10b981' : '#ef4444'; }
+        var peEl = document.getElementById('ajax-pe-cur');
+        if (peEl) { peEl.textContent = '₹' + peCur; peEl.style.color = peCur >= p.pe.entryLtp ? '#10b981' : '#ef4444'; }
+        var peMoveEl = document.getElementById('ajax-pe-move');
+        if (peMoveEl) { var peMv = peCur - p.pe.entryLtp; peMoveEl.textContent = (peMv >= 0 ? '+' : '') + peMv.toFixed(2); peMoveEl.style.color = peMv >= 0 ? '#10b981' : '#ef4444'; }
+      }
+
+      if ((d.sessionTrades || []).length !== _lastTradeCount) {
+        _lastTradeCount = (d.sessionTrades || []).length;
+        renderTrades(d.sessionTrades || []);
+      }
+      if ((d.log || []).length !== _lastLogCount) {
+        _lastLogCount = (d.log || []).length;
+        LOG_ALL.length = 0;
+        (d.log || []).slice().reverse().forEach(function(l){ LOG_ALL.push(l); });
+        if (typeof logFilter === 'function') logFilter();
+      }
+
+      if (_lastRunning && !d.running) { _lastRunning = false; setTimeout(function(){ window.location.reload(); }, 1500); }
+    } catch (e) { console.warn('[straddle-paper] refresh:', e.message); }
+  }
+
+  ${state.running ? "var _it = setInterval(fetchAndUpdate, 2000); fetchAndUpdate();" : ""}
+  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && ${state.running}) fetchAndUpdate(); });
+})();
+</script>
+
+</body></html>`);
 });
 
 // ── History page — session accordion (pair-level rows) ─────────────────────
