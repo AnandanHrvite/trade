@@ -125,11 +125,10 @@ router.get("/", (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const swingRes    = req.query.swingRes    || "15";
-  const scalpRes    = req.query.scalpRes    || "5";
-  const paRes       = req.query.paRes       || "5";
-  const orbRes      = req.query.orbRes      || "5";
-  const straddleRes = req.query.straddleRes || "5";
+  // Resolution is fixed at 5-min for every strategy here — keeps the dashboard
+  // simple and matches the canonical paper-trade timeframe. Override on the
+  // dedicated per-strategy backtest pages if you need a different candle size.
+  const RES = "5";
 
   // Per-strategy mode toggles — gate panels by Settings → Strategy Modes
   const swingOn    = _modeOn("SWING_MODE_ENABLED");
@@ -269,36 +268,7 @@ ${buildSidebar('allBacktest', liveActive)}
   <div class="run-bar">
     <div><label>From</label><input type="date" id="f" value="${from}"/></div>
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
-    ${swingOn ? `<div><label>Swing Candle</label>
-      <select id="swingRes">
-        <option value="5"  ${swingRes==="5" ?"selected":""}>5-min</option>
-        <option value="15" ${swingRes==="15"?"selected":""}>15-min</option>
-        <option value="30" ${swingRes==="30"?"selected":""}>30-min</option>
-        <option value="60" ${swingRes==="60"?"selected":""}>60-min</option>
-      </select>
-    </div>` : ""}
-    ${scalpOn ? `<div><label>Scalp Candle</label>
-      <select id="scalpRes">
-        <option value="3" ${scalpRes==="3"?"selected":""}>3-min</option>
-        <option value="5" ${scalpRes==="5"?"selected":""}>5-min</option>
-      </select>
-    </div>` : ""}
-    ${paOn ? `<div><label>PA Candle</label>
-      <select id="paRes">
-        <option value="3" ${paRes==="3"?"selected":""}>3-min</option>
-        <option value="5" ${paRes==="5"?"selected":""}>5-min</option>
-      </select>
-    </div>` : ""}
-    ${orbOn ? `<div><label>ORB Candle</label>
-      <select id="orbRes">
-        <option value="5" ${orbRes==="5"?"selected":""}>5-min</option>
-      </select>
-    </div>` : ""}
-    ${straddleOn ? `<div><label>Straddle Candle</label>
-      <select id="straddleRes">
-        <option value="5" ${straddleRes==="5"?"selected":""}>5-min</option>
-      </select>
-    </div>` : ""}
+<div style="font-size:0.62rem;color:#3a5070;font-family:'IBM Plex Mono',monospace;align-self:center;">Candles: 5-min for all strategies</div>
     <button class="run-btn" id="runAllBtn">\u25b6\u25b6 Run All</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">\u2715 Cancel</button>
     <span id="runAllStatus" style="font-size:0.68rem;color:#4a6080;margin-left:auto;"></span>
@@ -531,13 +501,7 @@ function runStrategy(panel, opts){
 // ── Run All (sequential) ─────────────────────────────────────────────────────
 var RUN_STATE = { active: false, cancel: false };
 
-var RES_LOOKUP = {
-  '${SWING_KEY}':    function(){ var e=document.getElementById('swingRes');    return e ? e.value : '15'; },
-  '${SCALP_KEY}':    function(){ var e=document.getElementById('scalpRes');    return e ? e.value : '5'; },
-  '${PA_KEY}':       function(){ var e=document.getElementById('paRes');       return e ? e.value : '5'; },
-  '${ORB_KEY}':      function(){ var e=document.getElementById('orbRes');      return e ? e.value : '5'; },
-  '${STRADDLE_KEY}': function(){ var e=document.getElementById('straddleRes'); return e ? e.value : '5'; }
-};
+var RES_FIXED = '${RES}';
 
 document.getElementById('runAllBtn').addEventListener('click', function(){
   if(RUN_STATE.active) return;
@@ -557,9 +521,7 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
 
   // Build job list from panels that are actually on the page (Settings toggles)
   var jobs = Array.prototype.slice.call(panels).map(function(p){
-    var key = p.dataset.key;
-    var resFn = RES_LOOKUP[key];
-    return { panel: p, resolution: resFn ? resFn() : '5' };
+    return { panel: p, resolution: RES_FIXED };
   });
 
   (function next(i, authAborted){
@@ -597,9 +559,7 @@ document.querySelectorAll('[data-run]').forEach(function(btn){
     var from = document.getElementById('f').value;
     var to   = document.getElementById('t').value;
     if(!from || !to){ alert('Pick From and To dates'); return; }
-    var key = panel.dataset.key;
-    var resFn = RES_LOOKUP[key];
-    var res = resFn ? resFn() : '5';
+    var res = RES_FIXED;
 
     RUN_STATE.active = true;
     document.getElementById('runAllBtn').disabled = true;
