@@ -14,10 +14,14 @@ const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
+const { saveResult } = require("../utils/resultStore");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#ec4899";
 const ENDPOINT = "/straddle-backtest";
+const RESULT_KEY = "STRADDLE_BACKTEST";
+
+let _inflight = false;
 
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _parseMin(envKey, fallback) {
@@ -163,7 +167,12 @@ function runStraddleBacktest(allCandles) {
   return trades;
 }
 
-router.get("/idle", (req, res) => res.redirect("/straddle-backtest"));
+router.get("/idle", (req, res) => {
+  if (req.accepts(["json", "html"]) === "json" || req.query.json === "1") {
+    return res.json({ idle: !_inflight });
+  }
+  return res.redirect("/straddle-backtest");
+});
 
 router.get("/", async (req, res) => {
   let { from, to } = req.query;
@@ -174,11 +183,16 @@ router.get("/", async (req, res) => {
     return res.redirect(`/straddle-backtest?from=${fmt(def30)}&to=${fmt(today)}`);
   }
 
+  _inflight = true;
   try {
     console.log(`🔍 Straddle Backtest: ${from} → ${to}`);
     const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
     const trades = runStraddleBacktest(candles || []);
     const stats = computeBacktestStats(trades);
+
+    try {
+      saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
+    } catch (e) { console.warn("[straddle-backtest] saveResult failed:", e.message); }
 
     const html = renderBacktestResults({
       mode: "STRADDLE",
@@ -206,6 +220,8 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("[straddle-backtest] error:", err);
     res.status(500).send(renderErrorPage(err.message, from, to));
+  } finally {
+    _inflight = false;
   }
 });
 

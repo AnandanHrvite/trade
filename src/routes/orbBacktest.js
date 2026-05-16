@@ -19,10 +19,16 @@ const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
+const { saveResult } = require("../utils/resultStore");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
 const ENDPOINT = "/orb-backtest";
+const RESULT_KEY = "ORB_BACKTEST";
+
+// Simple in-flight flag so /all-backtest can poll /idle while the synchronous
+// backtest is running. Set true on entry, false in finally.
+let _inflight = false;
 
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _parseMin(envKey, fallback) {
@@ -188,7 +194,13 @@ function runOrbBacktest(allCandles) {
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 
-router.get("/idle", (req, res) => res.redirect("/orb-backtest"));
+// /idle is polled by /all-backtest to detect when the synchronous backtest finishes.
+router.get("/idle", (req, res) => {
+  if (req.accepts(["json", "html"]) === "json" || req.query.json === "1") {
+    return res.json({ idle: !_inflight });
+  }
+  return res.redirect("/orb-backtest");
+});
 
 router.get("/", async (req, res) => {
   let { from, to } = req.query;
@@ -200,11 +212,17 @@ router.get("/", async (req, res) => {
     const fmt = d => d.toISOString().slice(0, 10);
     return res.redirect(`/orb-backtest?from=${fmt(def30)}&to=${fmt(today)}`);
   }
+  _inflight = true;
   try {
     console.log(`🔍 ORB Backtest: ${from} → ${to}`);
     const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
     const trades = runOrbBacktest(candles || []);
     const stats = computeBacktestStats(trades);
+
+    // Save for /all-backtest dashboard
+    try {
+      saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
+    } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
 
     const html = renderBacktestResults({
       mode: "ORB",
@@ -230,6 +248,8 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("[orb-backtest] error:", err);
     res.status(500).send(renderErrorPage(err.message, from, to));
+  } finally {
+    _inflight = false;
   }
 });
 

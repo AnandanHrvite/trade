@@ -19,11 +19,19 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/shared
 const { ACTIVE } = require("../strategies");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
 const paStrategy    = require("../strategies/price_action");
+const orbStrategy   = require("../strategies/orb_breakout");
+const straddleStrategy = require("../strategies/straddle_volatility");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const SWING_KEY = ACTIVE;
 const SCALP_KEY = "SCALP_BACKTEST";
 const PA_KEY    = "PA_BACKTEST";
+const ORB_KEY   = "ORB_BACKTEST";
+const STRADDLE_KEY = "STRADDLE_BACKTEST";
+
+function _modeOn(envKey) {
+  return (process.env[envKey] || "true").toLowerCase() === "true";
+}
 
 // ── JSON: return just summary/params for a stored strategy result ────────────
 router.get("/stats", (req, res) => {
@@ -117,28 +125,49 @@ router.get("/", (req, res) => {
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const swingRes   = req.query.swingRes   || "15";
-  const scalpRes   = req.query.scalpRes   || "5";
-  const paRes      = req.query.paRes      || "5";
+  const swingRes    = req.query.swingRes    || "15";
+  const scalpRes    = req.query.scalpRes    || "5";
+  const paRes       = req.query.paRes       || "5";
+  const orbRes      = req.query.orbRes      || "5";
+  const straddleRes = req.query.straddleRes || "5";
 
-  const swingResult = loadResult(SWING_KEY);
-  const scalpResult = loadResult(SCALP_KEY);
-  const paResult    = loadResult(PA_KEY);
+  // Per-strategy mode toggles — gate panels by Settings → Strategy Modes
+  const swingOn    = _modeOn("SWING_MODE_ENABLED");
+  const scalpOn    = _modeOn("SCALP_MODE_ENABLED");
+  const paOn       = _modeOn("PA_MODE_ENABLED");
+  const orbOn      = _modeOn("ORB_MODE_ENABLED");
+  const straddleOn = _modeOn("STRADDLE_MODE_ENABLED");
 
-  const swingPanel = renderPanel(
+  const swingResult    = swingOn    ? loadResult(SWING_KEY)    : null;
+  const scalpResult    = scalpOn    ? loadResult(SCALP_KEY)    : null;
+  const paResult       = paOn       ? loadResult(PA_KEY)       : null;
+  const orbResult      = orbOn      ? loadResult(ORB_KEY)      : null;
+  const straddleResult = straddleOn ? loadResult(STRADDLE_KEY) : null;
+
+  const swingPanel = swingOn ? renderPanel(
     "SWING", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
     SWING_KEY, SWING_KEY, "/swing-backtest", swingResult
-  );
-  const scalpPanel = renderPanel(
+  ) : "";
+  const scalpPanel = scalpOn ? renderPanel(
     "SCALP", { bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", border: "rgba(245,158,11,0.25)" },
     scalpStrategy && scalpStrategy.NAME ? scalpStrategy.NAME : "SCALP_BB_RSI_V4",
     SCALP_KEY, "/scalp-backtest", scalpResult
-  );
-  const paPanel = renderPanel(
+  ) : "";
+  const paPanel = paOn ? renderPanel(
     "PRICE ACTION", { bg: "rgba(139,92,246,0.12)", fg: "#a78bfa", border: "rgba(139,92,246,0.25)" },
     paStrategy && paStrategy.NAME ? paStrategy.NAME : "PRICE_ACTION_5M",
     PA_KEY, "/pa-backtest", paResult
-  );
+  ) : "";
+  const orbPanel = orbOn ? renderPanel(
+    "ORB", { bg: "rgba(16,185,129,0.12)", fg: "#10b981", border: "rgba(16,185,129,0.25)" },
+    orbStrategy && orbStrategy.NAME ? orbStrategy.NAME : "ORB_15MIN",
+    ORB_KEY, "/orb-backtest", orbResult
+  ) : "";
+  const straddlePanel = straddleOn ? renderPanel(
+    "STRADDLE", { bg: "rgba(236,72,153,0.12)", fg: "#ec4899", border: "rgba(236,72,153,0.25)" },
+    straddleStrategy && straddleStrategy.NAME ? straddleStrategy.NAME : "STRADDLE_VOL",
+    STRADDLE_KEY, "/straddle-backtest", straddleResult
+  ) : "";
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -240,26 +269,36 @@ ${buildSidebar('allBacktest', liveActive)}
   <div class="run-bar">
     <div><label>From</label><input type="date" id="f" value="${from}"/></div>
     <div><label>To</label><input type="date" id="t" value="${to}"/></div>
-    <div><label>Swing Candle</label>
+    ${swingOn ? `<div><label>Swing Candle</label>
       <select id="swingRes">
         <option value="5"  ${swingRes==="5" ?"selected":""}>5-min</option>
         <option value="15" ${swingRes==="15"?"selected":""}>15-min</option>
         <option value="30" ${swingRes==="30"?"selected":""}>30-min</option>
         <option value="60" ${swingRes==="60"?"selected":""}>60-min</option>
       </select>
-    </div>
-    <div><label>Scalp Candle</label>
+    </div>` : ""}
+    ${scalpOn ? `<div><label>Scalp Candle</label>
       <select id="scalpRes">
         <option value="3" ${scalpRes==="3"?"selected":""}>3-min</option>
         <option value="5" ${scalpRes==="5"?"selected":""}>5-min</option>
       </select>
-    </div>
-    <div><label>PA Candle</label>
+    </div>` : ""}
+    ${paOn ? `<div><label>PA Candle</label>
       <select id="paRes">
         <option value="3" ${paRes==="3"?"selected":""}>3-min</option>
         <option value="5" ${paRes==="5"?"selected":""}>5-min</option>
       </select>
-    </div>
+    </div>` : ""}
+    ${orbOn ? `<div><label>ORB Candle</label>
+      <select id="orbRes">
+        <option value="5" ${orbRes==="5"?"selected":""}>5-min</option>
+      </select>
+    </div>` : ""}
+    ${straddleOn ? `<div><label>Straddle Candle</label>
+      <select id="straddleRes">
+        <option value="5" ${straddleRes==="5"?"selected":""}>5-min</option>
+      </select>
+    </div>` : ""}
     <button class="run-btn" id="runAllBtn">\u25b6\u25b6 Run All</button>
     <button class="run-btn" id="cancelBtn" style="background:#3a1a1a;color:#f87171;border-color:#7f1d1d;display:none;">\u2715 Cancel</button>
     <span id="runAllStatus" style="font-size:0.68rem;color:#4a6080;margin-left:auto;"></span>
@@ -296,6 +335,12 @@ ${buildSidebar('allBacktest', liveActive)}
   ${swingPanel}
   ${scalpPanel}
   ${paPanel}
+  ${orbPanel}
+  ${straddlePanel}
+  ${(!swingOn && !scalpOn && !paOn && !orbOn && !straddleOn) ? `
+  <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
+    No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
+  </div>` : ""}
 
 </div>
 </div>
@@ -449,7 +494,7 @@ function runStrategy(panel, opts){
         resolve({ cancelled: true });
         return;
       }
-      fetch(basePath + '/idle', { cache: 'no-store' })
+      fetch(basePath + '/idle?json=1', { cache: 'no-store', headers: { 'Accept': 'application/json' } })
         .then(function(r){ return r.json(); })
         .then(function(d){
           if(d && d.idle){
@@ -486,14 +531,19 @@ function runStrategy(panel, opts){
 // ── Run All (sequential) ─────────────────────────────────────────────────────
 var RUN_STATE = { active: false, cancel: false };
 
+var RES_LOOKUP = {
+  '${SWING_KEY}':    function(){ var e=document.getElementById('swingRes');    return e ? e.value : '15'; },
+  '${SCALP_KEY}':    function(){ var e=document.getElementById('scalpRes');    return e ? e.value : '5'; },
+  '${PA_KEY}':       function(){ var e=document.getElementById('paRes');       return e ? e.value : '5'; },
+  '${ORB_KEY}':      function(){ var e=document.getElementById('orbRes');      return e ? e.value : '5'; },
+  '${STRADDLE_KEY}': function(){ var e=document.getElementById('straddleRes'); return e ? e.value : '5'; }
+};
+
 document.getElementById('runAllBtn').addEventListener('click', function(){
   if(RUN_STATE.active) return;
   var from = document.getElementById('f').value;
   var to   = document.getElementById('t').value;
   if(!from || !to){ alert('Pick From and To dates'); return; }
-  var swingRes = document.getElementById('swingRes').value;
-  var scalpRes = document.getElementById('scalpRes').value;
-  var paRes    = document.getElementById('paRes').value;
 
   RUN_STATE.active = true; RUN_STATE.cancel = false;
   document.getElementById('runAllBtn').disabled = true;
@@ -505,11 +555,12 @@ document.getElementById('runAllBtn').addEventListener('click', function(){
   // Mark all as queued
   panels.forEach(function(p){ setStatus(p, 'queued', 'queued'); });
 
-  var jobs = [
-    { panel: document.querySelector('.panel[data-key="${SWING_KEY}"]'), resolution: swingRes },
-    { panel: document.querySelector('.panel[data-key="${SCALP_KEY}"]'), resolution: scalpRes },
-    { panel: document.querySelector('.panel[data-key="${PA_KEY}"]'),    resolution: paRes    }
-  ].filter(function(j){ return j.panel; });
+  // Build job list from panels that are actually on the page (Settings toggles)
+  var jobs = Array.prototype.slice.call(panels).map(function(p){
+    var key = p.dataset.key;
+    var resFn = RES_LOOKUP[key];
+    return { panel: p, resolution: resFn ? resFn() : '5' };
+  });
 
   (function next(i, authAborted){
     if(i >= jobs.length || RUN_STATE.cancel || authAborted){
@@ -546,11 +597,9 @@ document.querySelectorAll('[data-run]').forEach(function(btn){
     var from = document.getElementById('f').value;
     var to   = document.getElementById('t').value;
     if(!from || !to){ alert('Pick From and To dates'); return; }
-    var res;
     var key = panel.dataset.key;
-    if(key === '${SWING_KEY}')      res = document.getElementById('swingRes').value;
-    else if(key === '${SCALP_KEY}') res = document.getElementById('scalpRes').value;
-    else                            res = document.getElementById('paRes').value;
+    var resFn = RES_LOOKUP[key];
+    var res = resFn ? resFn() : '5';
 
     RUN_STATE.active = true;
     document.getElementById('runAllBtn').disabled = true;
