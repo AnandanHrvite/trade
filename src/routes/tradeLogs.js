@@ -274,9 +274,22 @@ router.get("/audit", (req, res) => {
   res.json({ success: true, count: entries.length, entries });
 });
 
+// Which strategy sections to show — mirrors sidebar/Settings master toggles.
+function enabledModesFromEnv() {
+  const on = (v) => String(v == null ? "true" : v).toLowerCase() === "true";
+  return {
+    swing:    on(process.env.SWING_MODE_ENABLED),
+    scalp:    on(process.env.SCALP_MODE_ENABLED),
+    pa:       on(process.env.PA_MODE_ENABLED),
+    orb:      on(process.env.ORB_MODE_ENABLED),
+    straddle: on(process.env.STRADDLE_MODE_ENABLED),
+  };
+}
+
 // ── GET /trade-logs — UI page ───────────────────────────────────────────────
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const enabled = enabledModesFromEnv();
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -461,6 +474,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   ${modalJS()}
   ${toastJS()}
 
+  var ENABLED_MODES = ${JSON.stringify(enabled)};
+
   var _files = null;
   var _skips = null;
   var _audit = null;
@@ -512,7 +527,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
       { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
       { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
-    ];
+    ].filter(function(m){ return ENABLED_MODES[m.key] !== false; });
     var totalFiles = 0;
     var html = '';
     modes.forEach(function(m) {
@@ -648,7 +663,7 @@ ${buildSidebar('tradeLogs', liveActive)}
       { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
       { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
       { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
-    ];
+    ].filter(function(m){ return ENABLED_MODES[m.key] !== false; });
     var totalFiles = 0;
     var html = '';
     modes.forEach(function(m){
