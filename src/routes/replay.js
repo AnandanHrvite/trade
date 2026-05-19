@@ -664,7 +664,7 @@ function buildDiagnosticBlob(context, rows) {
     lines.push(text);
   }
 
-  return lines.join('\n');
+  return lines.join('\\n');
 }
 
 async function copyDiagnostic(btn, context, rows) {
