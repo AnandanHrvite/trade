@@ -782,19 +782,34 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // trade. Surfaces every recorded LTP that flowed during the trade so we
     // can verify replay's exit-LTP picks against the raw recording (e.g.,
     // spot the spike that drove an unrealistic exit P&L).
+    //
+    // Trade-record timing fields differ across paper modes:
+    //   scalp/PA: entryTimeMs + exitTimeMs (real wall-clock ms — best)
+    //   swing:    entry/exit (formatted IST strings) + entryBarTime/exitBarTime
+    //             (bar-bucket start in sec) + durationMs (may be null on intra-bar exits)
+    //
+    // We need the ACTUAL exit ms, not the bar-bucket start — a trade that
+    // entered at 10:56:33 and exited at 11:01:25 has exitBarTime = 11:00:00,
+    // 1m25s before the real exit. Parsing the IST string covers that.
+    const _parseIstStr = (s) => {
+      // "DD/MM/YYYY, HH:MM:SS" → epoch ms (interpreted as IST = UTC+5:30)
+      if (typeof s !== "string") return null;
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4}),\s*(\d{2}):(\d{2}):(\d{2})/);
+      if (!m) return null;
+      const [, dd, mm, yyyy, HH, MM, SS] = m;
+      return Date.UTC(+yyyy, +mm - 1, +dd, +HH, +MM, +SS) - 5.5 * 3600 * 1000;
+    };
     for (const t of sessionTrades) {
       if (!t.symbol) continue;
       const arr = optionTimeline.get(t.symbol);
       if (!arr || arr.length === 0) { t._replayOptionWindow = []; continue; }
-      // Resolve entry/exit in ms — paper modes expose different fields, so
-      // try the richest source first and fall back to coarser ones.
       const eMs = t.entryTimeMs
+        || _parseIstStr(t.entry)
         || (t.entryBarTime ? t.entryBarTime * 1000 : null);
-      let xMs = t.exitTimeMs
-        || (t.exitBarTime  ? t.exitBarTime  * 1000 : null);
-      // If exit collapsed to entry bucket (intra-bar exit recorded as the
-      // same 5-min bar), use durationMs to derive a more accurate exit.
-      if (eMs && xMs === eMs && t.durationMs) xMs = eMs + t.durationMs;
+      const xMs = t.exitTimeMs
+        || _parseIstStr(t.exit)
+        || (eMs && t.durationMs ? eMs + t.durationMs : null)
+        || (t.exitBarTime ? t.exitBarTime * 1000 : null);
       if (!eMs || !xMs) { t._replayOptionWindow = []; continue; }
       // Include 2-sec pre-entry and 2-sec post-exit for context
       const lo = eMs - 2000, hi = xMs + 2000;
