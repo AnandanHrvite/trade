@@ -761,6 +761,23 @@ async function copyDiagnostic(btn, context, rows) {
   }
 }
 
+function downloadDiagnostic(btn, context, rows) {
+  const blob = buildDiagnosticBlob(context, rows);
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = 'replay-diagnostic-' + (context.mode || 'session') + '-' + (context.from || '') + '_' + (context.to || '') + '_' + ts + '.txt';
+  const url = URL.createObjectURL(new Blob([blob], { type: 'text/plain' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { try { document.body.removeChild(a); URL.revokeObjectURL(url); } catch (_) {} }, 200);
+  const orig = btn.textContent;
+  btn.textContent = '✓ Downloaded';
+  btn.classList.add('copied');
+  setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2500);
+}
+
 // ── Date-range orchestration ───────────────────────────────────────────────
 let _allSessionsCache = [];
 
@@ -1035,15 +1052,27 @@ async function runRange(btn) {
     stopLogPolling();
   }
 
-  // After the run, attach a "Copy diagnostic data" button so the user can
-  // share the exact trades + activity log when something looks off.
+  // After the run, attach Copy + Download buttons so the user can share
+  // the exact trades + activity log when something looks off. Download is
+  // useful when the diagnostic is too big to paste (long activity logs,
+  // multi-day ranges with option-tick windows).
   if (rows.length > 0) {
     const resultDivAgain = document.getElementById('range-result');
+    const btnRow = document.createElement('div');
+    btnRow.style.display = 'flex';
+    btnRow.style.gap = '8px';
+    btnRow.style.flexWrap = 'wrap';
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
     copyBtn.textContent = '📋 Copy diagnostic data';
     copyBtn.onclick = () => copyDiagnostic(copyBtn, context, rows);
-    resultDivAgain.appendChild(copyBtn);
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'copy-btn';
+    dlBtn.textContent = '⬇ Download diagnostic';
+    dlBtn.onclick = () => downloadDiagnostic(dlBtn, context, rows);
+    btnRow.appendChild(copyBtn);
+    btnRow.appendChild(dlBtn);
+    resultDivAgain.appendChild(btnRow);
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);

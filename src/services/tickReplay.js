@@ -716,8 +716,18 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    collapses to -charges. Yielding per-tick keeps polling fresh so
     //    exit P&L matches live. Cost: ~50μs per yield × ~55k ticks = a
     //    few extra seconds of wall time per session — acceptable.
+    //
+    //    Yield mechanism uses setTimeout(0) rather than setImmediate:
+    //    setImmediate resolves in the check phase which runs AFTER the
+    //    timers phase, so a pending setTimeout(0) from paper's polling
+    //    chain may sit in the timer queue for several iterations before
+    //    firing. setTimeout(0) yield resolves in the timers phase
+    //    alongside paper's pending poll timer, guaranteeing it fires
+    //    before the next tick is pumped. Without this, state.optionLtp
+    //    can freeze for 20+ seconds mid-trade in a long position.
     const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
+    const _yield      = () => new Promise(r => orig.setTimeout_(r, 0));
     let ticksReplayed = 0;
     const startT = data.sessionStart.t;
     const stopT  = data.sessionStop.t;
@@ -736,7 +746,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
         ticksReplayed++;
 
         if (speed > 0) await new Promise(r => setTimeout(r, speed));
-        else if (ticksReplayed % YIELD_EVERY === 0) await new Promise(r => setImmediate(r));
+        else if (ticksReplayed % YIELD_EVERY === 0) await _yield();
         if (global.gc && ticksReplayed % GC_EVERY === 0) global.gc();
       }
     } finally {
