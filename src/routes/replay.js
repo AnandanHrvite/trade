@@ -570,58 +570,23 @@ function renderComparison(content, baseline, sim, header) {
 }
 
 async function runReplay(date, mode, sessionId, btn) {
-  // Fresh authoritative check (not the cached 5s poll) right before launching.
+  // Per-row Replay button. Routes through the same orchestration as the
+  // date-range Run button so the user gets the same UX: streaming activity
+  // log, structured result table, Copy + Download diagnostic buttons.
   const pre = await freshPreflight();
   if (!pre.ok) {
     _preflightOk = false;
-    refreshPreflight(); // refresh the banner too
+    refreshPreflight();
     showBlockAlert(pre.reason || 'A live or paper session is currently active.');
     return;
   }
-  _myReplayRunning = true;
-  refreshPreflight(); // flip banner to neutral "in progress" immediately
   const useCurrentSettings = (getSelectedSettingsSource() === 'current');
-  btn.disabled = true;
-  btn.textContent = '⏳ Running…';
-  const card = document.getElementById('result-card');
-  const content = document.getElementById('result-content');
-  card.style.display = 'block';
-
-  const header = date + ' / ' + mode + ' / <code style="color:#94a3b8;">' + sessionId + '</code>';
-
-  try {
-    if (!useCurrentSettings) {
-      // Snapshot-only mode: single run, single result.
-      content.innerHTML = '<div class="muted">Replaying ' + header + ' — snapshot (deterministic)…</div>';
-      const data = await callReplayApi(date, mode, sessionId, false);
-      btn.disabled = false;
-      btn.textContent = '▶ Replay';
-      if (!data.ok) {
-        content.innerHTML = '<div style="color:#ef4444;">Error: ' + (data.error || 'unknown') + '</div>';
-        return;
-      }
-      renderSingleResult(content, data, 'snapshot (deterministic)');
-      return;
-    }
-
-    // Simulator mode: run baseline FIRST, then your-settings, then compare.
-    content.innerHTML = '<div class="muted">[1/2] Replaying baseline (snapshot settings) for ' + header + '…</div>';
-    const baseline = await callReplayApi(date, mode, sessionId, false);
-
-    content.innerHTML = '<div class="muted">[2/2] Replaying with your current settings…</div>';
-    const sim = await callReplayApi(date, mode, sessionId, true);
-
-    btn.disabled = false;
-    btn.textContent = '▶ Replay';
-    renderComparison(content, baseline, sim, header);
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = '▶ Replay';
-    content.innerHTML = '<div style="color:#ef4444;">Run failed: ' + e.message + '</div>';
-  } finally {
-    _myReplayRunning = false;
-    refreshPreflight(); // flip banner back to green/red authoritative state
-  }
+  const modeLabel = mode === 'swing-paper' ? 'Swing Paper'
+                  : mode === 'scalp-paper' ? 'Scalp Paper'
+                  : mode === 'pa-paper'    ? 'PA Paper' : mode;
+  const session = (_allSessionsCache || []).find(s => s.sessionId === sessionId) || { date, mode, sessionId };
+  const context = { mode, label: modeLabel, from: date, to: date, useCurrentSettings, singleSession: true };
+  await runSessionsBatch([session], context, btn, '▶ Replay');
 }
 
 // ── Live activity log polling ──────────────────────────────────────────────
@@ -967,7 +932,17 @@ async function runRange(btn) {
     if (!confirm('That range has ' + sessions.length + ' sessions (~' + Math.round(sessions.length * 10 / 60) + ' min). Continue?')) return;
   }
 
+  await runSessionsBatch(sessions, context, btn, useCurrentSettings ? '▶ Run range (compare)' : '▶ Run range (snapshot)');
+}
+
+// Shared orchestration: runs N sessions through the replay engine, streams
+// activity log, renders the result table, and attaches Copy/Download
+// diagnostic buttons. Used by both the date-range button AND each per-session
+// Replay button in the Recorded sessions table.
+async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
+  const useCurrentSettings = !!context.useCurrentSettings;
   btn.disabled = true;
+  const _origBtnText = btn.textContent;
   btn.textContent = '⏳ Running…';
   _myReplayRunning = true;
   refreshPreflight(); // flip banner to neutral "in progress" immediately
@@ -976,6 +951,9 @@ async function runRange(btn) {
   progress.style.display = 'block';
   progress.className = 'range-progress';
   resultDiv.innerHTML = '';
+  // Scroll the range card into view so the per-row button user sees the
+  // activity log + result rendering, not just a frozen button at the bottom.
+  document.getElementById('range-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Start live activity log streaming so the user can see strategy output
   // (and capture it via the Copy button after the run).
@@ -1082,7 +1060,7 @@ async function runRange(btn) {
     progress.innerHTML = '✅ Done — ' + sessions.length + ' sessions in ' + total + 's.';
   }
   btn.disabled = false;
-  btn.textContent = useCurrentSettings ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
+  btn.textContent = btnRestoreText || _origBtnText;
   _myReplayRunning = false;
   refreshPreflight(); // flip banner back to green/red authoritative state
   refreshSettingsSourceUi();
