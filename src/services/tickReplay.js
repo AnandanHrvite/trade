@@ -272,6 +272,16 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     // a phantom session to the real paper history file.
     fs_writeFileSync: fs.writeFileSync,
     fs_renameSync:    fs.renameSync,
+    // setTimeout/clearTimeout originals — paper code uses setTimeout-driven
+    // polling (option LTP every 1 sec) to update ptState.optionLtp during a
+    // trade. In replay, the pump processes thousands of ticks in seconds of
+    // real wall-clock time, so the 1-sec polling barely fires — leaving
+    // ptState.optionLtp frozen at the entry-time value. Exit PnL is then
+    // computed against the entry LTP (premium delta = 0), producing a
+    // wrong P&L (just charges). Force every setTimeout to fire ASAP during
+    // replay so polling matches the pump cadence.
+    setTimeout_:   global.setTimeout,
+    clearTimeout_: global.clearTimeout,
   };
 
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
@@ -387,6 +397,21 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
       return orig.fs_renameSync(from, to);
     };
 
+    // setTimeout override — collapse all delays to 0ms during replay so that
+    // setTimeout-chained polling (option LTP every 1s in live) fires on
+    // every event-loop yield instead of every real-time second. With the
+    // pump issuing setImmediate every 200 ticks, this makes the option
+    // poll fire ~once per 200-tick batch — closely matching live's 1-sec
+    // cadence over a recorded session.
+    //
+    // This is global for the duration of the replay but restored on
+    // uninstall. The replay run is the only thing happening in the process
+    // (preflight guard ensures no live/paper sessions are active), so
+    // collapsing delays is safe.
+    global.setTimeout = function (cb, _delay, ...args) {
+      return orig.setTimeout_(cb, 0, ...args);
+    };
+
     // notifications: silence everything during replay
     notify.notifyEntry     = () => {};
     notify.notifyExit      = () => {};
@@ -456,6 +481,8 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     sharedSocketState.clearStraddle     = orig.ss_clearStraddle;
     fs.writeFileSync = orig.fs_writeFileSync;
     fs.renameSync    = orig.fs_renameSync;
+    global.setTimeout   = orig.setTimeout_;
+    global.clearTimeout = orig.clearTimeout_;
     callbacks.length = 0;
   }
 
