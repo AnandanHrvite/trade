@@ -30,7 +30,7 @@
 const express = require("express");
 const router  = express.Router();
 
-const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalJS } = require("../utils/sharedNav");
 const tickReplay = require("../services/tickReplay");
 
 router.get("/list", (req, res) => {
@@ -182,6 +182,43 @@ body[data-source="current"] .source-chip { background:rgba(245,158,11,0.15); col
 body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); box-shadow:0 0 0 1px rgba(245,158,11,0.10); }
 
 .source-chip { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.7rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle; }
+
+/* ── Light-theme overrides (kick in when modalJS sets data-theme="light") ─ */
+:root[data-theme="light"] .sub { color:#64748b !important; }
+:root[data-theme="light"] .muted { color:#94a3b8 !important; }
+:root[data-theme="light"] .card { background:#ffffff !important; border-color:#e2e8f0 !important; }
+:root[data-theme="light"] th, :root[data-theme="light"] td { border-bottom-color:#e2e8f0 !important; }
+:root[data-theme="light"] th { color:#64748b !important; }
+:root[data-theme="light"] tbody tr:hover { background:#f8fafc !important; }
+:root[data-theme="light"] pre { background:#f8fafc !important; color:#334155 !important; border:1px solid #e2e8f0; }
+:root[data-theme="light"] .cmp-col { background:#f8fafc !important; border-color:#e2e8f0 !important; }
+:root[data-theme="light"] .cmp-col.delta { border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .cmp-label { color:#64748b !important; }
+:root[data-theme="light"] .cmp-meta { color:#64748b !important; }
+:root[data-theme="light"] .cmp-meta-row.delta-row { color:#475569 !important; }
+:root[data-theme="light"] .cmp-pnl.neutral { color:#94a3b8 !important; }
+:root[data-theme="light"] .cmp-delta-zero { color:#94a3b8 !important; }
+:root[data-theme="light"] .range-field label { color:#64748b !important; }
+:root[data-theme="light"] .range-field input,
+:root[data-theme="light"] .range-field select { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .range-progress { background:#f8fafc !important; border-color:#e2e8f0 !important; color:#475569 !important; }
+:root[data-theme="light"] .range-table th { color:#64748b !important; }
+:root[data-theme="light"] .range-table th, :root[data-theme="light"] .range-table td { border-bottom-color:#e2e8f0 !important; }
+:root[data-theme="light"] .range-table tr.totals { background:#f1f5f9 !important; color:#1e293b; }
+:root[data-theme="light"] .range-table tr.totals td { border-top-color:#cbd5e1 !important; }
+:root[data-theme="light"] .activity-log { background:#0f172a !important; border-color:#1e293b !important; color:#cbd5e1 !important; }
+:root[data-theme="light"] .activity-log-empty { color:#64748b !important; }
+:root[data-theme="light"] .empty { color:#94a3b8 !important; }
+:root[data-theme="light"] .copy-btn { background:#ecfdf5 !important; color:#047857 !important; border-color:#10b981 !important; }
+:root[data-theme="light"] .copy-btn:hover { background:#a7f3d0 !important; }
+:root[data-theme="light"] .copy-btn.copied { background:#bbf7d0 !important; color:#065f46 !important; border-color:#10b981 !important; }
+:root[data-theme="light"] .mode-toggle label { background:#f8fafc !important; border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .mode-toggle label:hover { border-color:#94a3b8 !important; }
+:root[data-theme="light"] .mode-toggle label:has(input[value="snapshot"]:checked) { background:#eff6ff !important; border-color:#3b82f6 !important; }
+:root[data-theme="light"] .mode-toggle label:has(input[value="current"]:checked)  { background:#fffbeb !important; border-color:#f59e0b !important; }
+:root[data-theme="light"] .mt-title { color:#1e293b !important; }
+:root[data-theme="light"] .mt-desc  { color:#64748b !important; }
+:root[data-theme="light"] body[data-source="current"] #range-run-btn { color:#1f1300 !important; }
 </style>
 </head>
 <body>
@@ -1050,6 +1087,7 @@ document.querySelectorAll('input[name="settings-source"]').forEach(r => {
   r.addEventListener('change', refreshSettingsSourceUi);
 });
 </script>
+<script>${modalJS()}</script>
 </body></html>`;
   res.send(html);
 });
