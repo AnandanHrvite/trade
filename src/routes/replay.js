@@ -140,6 +140,15 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .range-table tr.totals { font-weight:700; background:#0f172a; }
 .range-table tr.totals td { border-top:2px solid #334155; border-bottom:0; }
 .range-table .num { text-align:right; font-variant-numeric: tabular-nums; }
+.activity-log { margin-top:10px; background:#020617; border:1px solid #1e293b; border-radius:6px; padding:8px 10px; max-height:240px; overflow-y:auto; font-family: ui-monospace, Menlo, monospace; font-size:0.72rem; line-height:1.5; color:#94a3b8; }
+.activity-log .log-line { white-space:pre-wrap; word-break:break-word; }
+.activity-log .log-line.err { color:#fca5a5; }
+.activity-log .log-line.warn { color:#fbbf24; }
+.activity-log .log-line.ok { color:#6ee7b7; }
+.activity-log-empty { color:#475569; font-style:italic; }
+.copy-btn { background:#0f766e; color:#ccfbf1; border:1px solid #14b8a6; padding:6px 12px; border-radius:6px; font-size:0.78rem; cursor:pointer; margin-top:10px; }
+.copy-btn:hover { background:#14b8a6; }
+.copy-btn.copied { background:#15803d; border-color:#22c55e; color:#fff; }
 pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-size:0.75rem; color:#cbd5e1; }
 .empty { padding:32px; text-align:center; color:#64748b; }
 .banner { padding:10px 14px; border-radius:6px; font-size:0.85rem; margin-bottom:16px; }
@@ -186,8 +195,8 @@ ${buildSidebar('replay', false)}
   </div>
 
   <div class="card">
-    <strong>Date-range comparison</strong>
-    <div class="muted" style="margin-top:4px;">Replay every recorded session in the range, twice each (snapshot baseline + your current settings), and show an aggregate verdict. Useful for testing config changes across multiple trading days.</div>
+    <strong>Date-range <span id="range-mode-label">replay</span></strong>
+    <div class="muted" id="range-description" style="margin-top:4px;">Replay every recorded session in the range. Description updates based on your Settings source choice above.</div>
     <div class="range-row">
       <div class="range-field">
         <label>From</label>
@@ -211,6 +220,9 @@ ${buildSidebar('replay', false)}
       </div>
     </div>
     <div id="range-progress" style="display:none;"></div>
+    <div id="activity-log" class="activity-log" style="display:none;">
+      <div class="activity-log-empty">Activity log will stream here while the replay runs…</div>
+    </div>
     <div id="range-result" style="margin-top:12px;"></div>
   </div>
 
@@ -334,6 +346,29 @@ async function loadSessions() {
 function getSelectedSettingsSource() {
   const sel = document.querySelector('input[name="settings-source"]:checked');
   return sel ? sel.value : 'snapshot';
+}
+
+// Update the date-range card's labels + button text whenever the user
+// switches the settings-source radio. This makes the UI's intent crystal
+// clear before the user clicks Run.
+function refreshSettingsSourceUi() {
+  const isCurrent = getSelectedSettingsSource() === 'current';
+  const modeLabel = document.getElementById('range-mode-label');
+  const desc      = document.getElementById('range-description');
+  const runBtn    = document.getElementById('range-run-btn');
+  if (modeLabel) modeLabel.textContent = isCurrent ? 'comparison' : 'replay';
+  if (desc) {
+    desc.innerHTML = isCurrent
+      ? 'Replay every recorded session <strong>twice</strong> (snapshot baseline + your current settings), showing the delta. Useful for testing config changes against real ticks.'
+      : 'Replay every recorded session <strong>once</strong> using the exact settings each session was recorded with. Deterministic — same result every time. Useful for verifying paper P&L or code-change impact.';
+  }
+  if (runBtn && !runBtn.disabled) {
+    runBtn.textContent = isCurrent ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
+  }
+  // Also refresh single-row Replay buttons' tooltip so it's obvious which mode they will run in.
+  document.querySelectorAll('button.replay-btn').forEach(b => {
+    if (!b.disabled) b.title = isCurrent ? 'Will run twice: snapshot baseline + your current settings, then compare' : 'Will run once with the session\\'s recorded settings (deterministic)';
+  });
 }
 
 function fmtRupee(v) {
@@ -526,6 +561,143 @@ async function runReplay(date, mode, sessionId, btn) {
   }
 }
 
+// ── Live activity log polling ──────────────────────────────────────────────
+let _logPollTimer    = null;
+let _logPollFromIdx  = null;  // index marker — set on poll start so we only see new entries
+let _logBuf          = [];    // collected log entries for the copy button
+
+function classifyLogLine(text) {
+  if (!text) return '';
+  if (/❌|🚨|error/i.test(text))           return 'err';
+  if (/⚠️|warn|skip/i.test(text))          return 'warn';
+  if (/✅|🛒|🎯|entry|sold|exit|profit/i.test(text)) return 'ok';
+  return '';
+}
+
+async function pollLogs() {
+  try {
+    const r = await fetch('/logs/data?from=' + _logPollFromIdx + '&limit=200', { cache: 'no-store' });
+    const data = await r.json();
+    if (!data || !Array.isArray(data.logs)) return;
+    const pane = document.getElementById('activity-log');
+    if (data.logs.length > 0) {
+      const wasEmpty = pane.querySelector('.activity-log-empty');
+      if (wasEmpty) pane.innerHTML = '';
+      for (const entry of data.logs) {
+        _logBuf.push(entry);
+        const div = document.createElement('div');
+        const text = typeof entry === 'string' ? entry : (entry && entry.msg ? entry.msg : JSON.stringify(entry));
+        div.className = 'log-line ' + classifyLogLine(text);
+        div.textContent = text;
+        pane.appendChild(div);
+      }
+      // Cap at last 500 lines in the DOM to keep it light
+      while (pane.childNodes.length > 500) pane.removeChild(pane.firstChild);
+      pane.scrollTop = pane.scrollHeight;
+    }
+    _logPollFromIdx = data.from + data.logs.length;
+  } catch (_) { /* ignore poll errors */ }
+}
+
+async function startLogPolling() {
+  _logBuf = [];
+  // Get current total so we only see entries from this run forward
+  try {
+    const r = await fetch('/logs/data?from=0&limit=1', { cache: 'no-store' });
+    const data = await r.json();
+    _logPollFromIdx = (data && typeof data.total === 'number') ? data.total : 0;
+  } catch (_) {
+    _logPollFromIdx = 0;
+  }
+  const pane = document.getElementById('activity-log');
+  pane.style.display = 'block';
+  pane.innerHTML = '<div class="activity-log-empty">Waiting for log lines…</div>';
+  if (_logPollTimer) clearInterval(_logPollTimer);
+  _logPollTimer = setInterval(pollLogs, 1000);
+  // Kick one immediately so the user sees something fast
+  pollLogs();
+}
+
+function stopLogPolling() {
+  if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
+  // One final poll so we capture the last few lines
+  pollLogs();
+}
+
+// Builds a single text blob with everything I'd need to debug a divergence:
+// result summary + per-session trade details + recent activity log.
+function buildDiagnosticBlob(context, rows) {
+  const lines = [];
+  lines.push('===== REPLAY DIAGNOSTIC =====');
+  lines.push('Generated: ' + new Date().toISOString());
+  lines.push('Strategy: ' + (context && context.mode));
+  lines.push('Range: ' + (context && context.from) + ' → ' + (context && context.to));
+  lines.push('Sessions: ' + rows.length);
+  lines.push('');
+
+  // Per-session summary + full trade JSON
+  rows.forEach((r, i) => {
+    lines.push('----- SESSION ' + (i + 1) + ' -----');
+    lines.push('Date:       ' + r.session.date);
+    lines.push('Mode:       ' + r.session.mode);
+    lines.push('SessionID:  ' + r.session.sessionId);
+    if (r.baseline && r.baseline.ok) {
+      lines.push('Baseline:   PnL=' + r.baseline.sessionPnl + ' | trades=' + r.baseline.tradeCount + ' | ticks=' + r.baseline.ticksReplayed);
+      lines.push('Baseline trades (full JSON):');
+      lines.push(JSON.stringify(r.baseline.sessionTrades, null, 2));
+    } else {
+      lines.push('Baseline:   FAILED — ' + (r.baseline && r.baseline.error));
+    }
+    if (r.sim && r.sim.ok) {
+      lines.push('YourCfg:    PnL=' + r.sim.sessionPnl + ' | trades=' + r.sim.tradeCount + ' | ticks=' + r.sim.ticksReplayed);
+      lines.push('YourCfg trades (full JSON):');
+      lines.push(JSON.stringify(r.sim.sessionTrades, null, 2));
+    } else {
+      lines.push('YourCfg:    FAILED — ' + (r.sim && r.sim.error));
+    }
+    lines.push('');
+  });
+
+  lines.push('----- ACTIVITY LOG (' + _logBuf.length + ' lines) -----');
+  for (const entry of _logBuf) {
+    const text = typeof entry === 'string' ? entry : (entry && entry.msg ? entry.msg : JSON.stringify(entry));
+    lines.push(text);
+  }
+
+  return lines.join('\n');
+}
+
+async function copyDiagnostic(btn, context, rows) {
+  const blob = buildDiagnosticBlob(context, rows);
+  try {
+    await navigator.clipboard.writeText(blob);
+    btn.textContent = '✓ Copied — paste it back in chat';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '📋 Copy diagnostic data'; btn.classList.remove('copied'); }, 4000);
+  } catch (e) {
+    // Fallback for non-HTTPS contexts (this app runs on http://13.204…)
+    const ta = document.createElement('textarea');
+    ta.value = blob;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      btn.textContent = '✓ Copied — paste it back in chat';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '📋 Copy diagnostic data'; btn.classList.remove('copied'); }, 4000);
+    } catch (_) {
+      alert('Copy failed. Selecting the textarea for manual copy.');
+      ta.style.position = 'static';
+      ta.style.left = '';
+      ta.style.width = '100%';
+      ta.style.height = '300px';
+    }
+    setTimeout(() => { try { document.body.removeChild(ta); } catch (_) {} }, 200);
+  }
+}
+
 // ── Date-range orchestration ───────────────────────────────────────────────
 let _allSessionsCache = [];
 
@@ -691,7 +863,8 @@ async function runRange(btn) {
   if (!from || !to) { alert('Pick both From and To dates.'); return; }
   if (from > to)    { alert('From date must be on or before To date.'); return; }
 
-  const context = { mode, label: modeLabel, from, to };
+  const useCurrentSettings = (getSelectedSettingsSource() === 'current');
+  const context = { mode, label: modeLabel, from, to, useCurrentSettings };
   const sessions = pickSessionsInRange(from, to, mode);
   if (sessions.length === 0) {
     document.getElementById('range-result').innerHTML =
@@ -719,6 +892,10 @@ async function runRange(btn) {
   progress.className = 'range-progress';
   resultDiv.innerHTML = '';
 
+  // Start live activity log streaming so the user can see strategy output
+  // (and capture it via the Copy button after the run).
+  await startLogPolling();
+
   const rows = [];
   const t0 = Date.now();
   let aborted = false;
@@ -745,24 +922,41 @@ async function runRange(btn) {
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const idx = i + 1;
-    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running baseline…';
-    tickProgress();
     let baseline = null, sim = null;
-    try {
-      baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
-    } catch (e) {
-      baseline = { ok: false, error: e.message };
-    }
-    if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
 
-    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running your settings…';
-    tickProgress();
-    try {
-      sim = await callReplayApi(s.date, s.mode, s.sessionId, true);
-    } catch (e) {
-      sim = { ok: false, error: e.message };
+    // Snapshot mode: run ONCE per session (no baseline-vs-sim comparison
+    // needed — baseline IS what we want). Simulator mode: run twice.
+    if (!useCurrentSettings) {
+      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — replaying (snapshot settings)…';
+      tickProgress();
+      try {
+        baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
+      } catch (e) {
+        baseline = { ok: false, error: e.message };
+      }
+      if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
+      // For snapshot mode, sim slot mirrors baseline so the result table
+      // still renders cleanly (delta column will read as zero).
+      sim = baseline;
+    } else {
+      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running baseline (snapshot)…';
+      tickProgress();
+      try {
+        baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
+      } catch (e) {
+        baseline = { ok: false, error: e.message };
+      }
+      if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
+
+      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running your settings…';
+      tickProgress();
+      try {
+        sim = await callReplayApi(s.date, s.mode, s.sessionId, true);
+      } catch (e) {
+        sim = { ok: false, error: e.message };
+      }
+      if (isPreflightReject(sim)) { aborted = true; showBlockAlert(sim.error); break; }
     }
-    if (isPreflightReject(sim)) { aborted = true; showBlockAlert(sim.error); break; }
 
     rows.push({ session: s, baseline, sim });
     // Live partial render after each session so the user sees results stream in.
@@ -770,6 +964,18 @@ async function runRange(btn) {
   }
   } finally {
     clearInterval(progressTimer);
+    stopLogPolling();
+  }
+
+  // After the run, attach a "Copy diagnostic data" button so the user can
+  // share the exact trades + activity log when something looks off.
+  if (rows.length > 0) {
+    const resultDivAgain = document.getElementById('range-result');
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.textContent = '📋 Copy diagnostic data';
+    copyBtn.onclick = () => copyDiagnostic(copyBtn, context, rows);
+    resultDivAgain.appendChild(copyBtn);
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
@@ -779,9 +985,10 @@ async function runRange(btn) {
     progress.innerHTML = '✅ Done — ' + sessions.length + ' sessions in ' + total + 's.';
   }
   btn.disabled = false;
-  btn.textContent = '▶ Run range';
+  btn.textContent = useCurrentSettings ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
   _myReplayRunning = false;
   refreshPreflight(); // flip banner back to green/red authoritative state
+  refreshSettingsSourceUi();
 }
 
 // Patch loadSessions to also cache sessions for the range picker + recompute
@@ -803,8 +1010,14 @@ loadSessions = async function () {
 // before the fetch completes; will be re-set once /replay/list returns.
 setRangeDefaults();
 refreshPreflight();
+refreshSettingsSourceUi();
 loadSessions();
 setInterval(refreshPreflight, 5000);
+
+// React when the user toggles the Settings source radio
+document.querySelectorAll('input[name="settings-source"]').forEach(r => {
+  r.addEventListener('change', refreshSettingsSourceUi);
+});
 </script>
 </body></html>`;
   res.send(html);
