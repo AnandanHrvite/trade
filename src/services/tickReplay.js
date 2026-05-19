@@ -234,6 +234,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     notifyEntry:     notify.notifyEntry,
     notifyExit:      notify.notifyExit,
     notifyStarted:   notify.notifyStarted,
+    notifySignal:    notify.notifySignal,
     notifyDayReport: notify.notifyDayReport,
     sendTelegram:    notify.sendTelegram,
     notifyAuthError: notify.notifyAuthError,
@@ -440,6 +441,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     notify.notifyEntry     = () => {};
     notify.notifyExit      = () => {};
     notify.notifyStarted   = () => {};
+    notify.notifySignal    = () => {};
     notify.notifyDayReport = () => {};
     notify.sendTelegram    = async () => ({ ok: true, replay: true });
     notify.notifyAuthError = () => {};
@@ -481,6 +483,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     notify.notifyEntry              = orig.notifyEntry;
     notify.notifyExit               = orig.notifyExit;
     notify.notifyStarted            = orig.notifyStarted;
+    notify.notifySignal             = orig.notifySignal;
     notify.notifyDayReport          = orig.notifyDayReport;
     notify.sendTelegram             = orig.sendTelegram;
     notify.notifyAuthError          = orig.notifyAuthError;
