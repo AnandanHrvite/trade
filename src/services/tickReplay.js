@@ -186,6 +186,32 @@ function _lookupAtOrBefore(arr, t) {
   return ans >= 0 ? arr[ans] : null;
 }
 
+// Nearest tick to t within ±windowMs. Paper's option polls have 200-500ms
+// network latency, so the recorded LTP for the "first poll after entry"
+// lands AFTER the entry moment — strict at-or-before would miss it and
+// return the previous trade's last polled LTP instead. Falls back to
+// at-or-before when no tick is within the window.
+function _lookupNearest(arr, t, windowMs) {
+  if (!arr || arr.length === 0) return null;
+  // First candidate: largest index with arr[i].t <= t
+  let lo = 0, hi = arr.length - 1, idxBefore = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    if (arr[mid].t <= t) { idxBefore = mid; lo = mid + 1; }
+    else                  hi = mid - 1;
+  }
+  const before = idxBefore >= 0 ? arr[idxBefore] : null;
+  const after  = idxBefore + 1 < arr.length ? arr[idxBefore + 1] : null;
+  const dBefore = before ? Math.abs(t - before.t) : Infinity;
+  const dAfter  = after  ? Math.abs(after.t - t)  : Infinity;
+  const best = dAfter < dBefore ? after : before;
+  if (!best) return null;
+  // Within window → return nearest (may be after t)
+  if (Math.min(dBefore, dAfter) <= windowMs) return best;
+  // Outside window → preserve original at-or-before semantics
+  return before;
+}
+
 // ── Settings override (env snapshot) ────────────────────────────────────────
 function _applySettingsOverride(settings) {
   if (!settings) return () => {};
@@ -327,9 +353,10 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
         return { s: "ok", d: [{ v: { lp: v.l != null ? v.l : v.v } }] };
       }
 
-      // Option path
+      // Option path: ±2s window to absorb paper's option-poll network latency
+      // (200-500ms typical; first poll after entry lands strictly AFTER replayNow)
       const arr = optionTimeline.get(sym);
-      const v = _lookupAtOrBefore(arr, replayNow);
+      const v = _lookupNearest(arr, replayNow, 2000);
       if (!v) return { s: "no_data", d: [] };
       return { s: "ok", d: [{ v: { lp: v.l } }] };
     };
