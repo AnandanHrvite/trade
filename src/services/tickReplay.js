@@ -396,6 +396,15 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
 
   function pumpTick(tick) {
     setNow(tick.t);
+    // CRITICAL: also advance the wall clock to the tick's timestamp.
+    // Strategy entry gates (`isMarketHours()` in swingPaper/paPaper/scalpPaper)
+    // call `Date.now()` directly and reject every entry as "outside market
+    // hours" when replay runs after-hours. Overriding Date.now() per tick
+    // makes those gates see the recorded market-hours timestamp, so entries
+    // fire exactly as they did live. Without this, replays produced 0 trades
+    // for every strategy after-hours — breaking the BACKTEST = PAPER = LIVE
+    // guarantee silently.
+    setWallClock(tick.t);
     for (const cb of callbacks) {
       try { cb.onTick(tick); } catch (e) {
         // Eat errors — replay should continue. Log once per error message.
@@ -601,9 +610,17 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     }
 
     // 7. Call /stop — squares off any open position via paper's own
-    //    simulateSell, finalises the session.
+    //    simulateSell, finalises the session. Wall clock is pinned to the
+    //    recorded session-stop time so any time-based logic inside /stop
+    //    (exit timestamps, end-of-day flags) records the right moment.
     harness.setNow(data.sessionStop.t);
-    const stopResp = await _invokeRoute(routeMod, "GET", "/stop");
+    harness.setWallClock(data.sessionStop.t);
+    let stopResp;
+    try {
+      stopResp = await _invokeRoute(routeMod, "GET", "/stop");
+    } finally {
+      harness.clearWallClock();
+    }
 
     // 8. Read final results from the route's status endpoint. Each paper
     //    mode exposes /status/data returning { trades, sessionPnl, ... }.
