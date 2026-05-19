@@ -52,8 +52,13 @@ function runOrbBacktest(allCandles) {
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE   = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10);
-  const TARGET_PCT = parseFloat(process.env.ORB_TARGET_PCT || "0.5");
-  const STOP_PCT   = parseFloat(process.env.ORB_STOP_PCT   || "0.3");
+  const TARGET_PCT = parseFloat(process.env.ORB_TARGET_PCT || "0.4");
+  const STOP_PCT   = parseFloat(process.env.ORB_STOP_PCT   || "0.25");
+  const LOCKIN_PCT       = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT       || "0.25");
+  const LOCKIN_FLOOR_PCT = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT || "0.05");
+  const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
+  const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
   const TGT_RANGE_MULT = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
   const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "12:00");
@@ -115,8 +120,15 @@ function runOrbBacktest(allCandles) {
         const thetaCost = (THETA_DAY * candlesHeld) / 78;
         const spotMove = position.side === "CE" ? (c.close - position.entrySpot) : (position.entrySpot - c.close);
         const approxPrem = Math.max(0.05, position.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
+        // Premium-lockin trail: ratchet stopPremium up to entry × (1+floor) once +lockinPct hit
+        if (!position.lockinHit && LOCKIN_PCT > 0 && approxPrem >= position.optionEntryLtp * (1 + LOCKIN_PCT)) {
+          position.lockinHit = true;
+          const floor = parseFloat((position.optionEntryLtp * (1 + LOCKIN_FLOOR_PCT)).toFixed(2));
+          if (floor > position.stopPremium) position.stopPremium = floor;
+        }
         if (approxPrem <= position.stopPremium) {
-          closePos(position, c.close, c.time, `Premium SL (~₹${approxPrem.toFixed(1)} <= ₹${position.stopPremium})`);
+          const tag = position.lockinHit ? "lockin floor" : "SL";
+          closePos(position, c.close, c.time, `Premium ${tag} (~₹${approxPrem.toFixed(1)} <= ₹${position.stopPremium})`);
           trades.push(buildTradeRecord(position));
           position = null; continue;
         }
@@ -132,6 +144,12 @@ function runOrbBacktest(allCandles) {
         const seen = dayCandles.slice(0, i + 1);
         const sig  = orbStrategy.getSignal(seen, { silent: true, alreadyTraded: false });
         if (sig.signal === "BUY_CE" || sig.signal === "BUY_PE") {
+          // Premium-range gate — backtest uses SEED_PREMIUM as the entry-premium
+          // proxy, so this gate is effectively a config sanity check (will skip
+          // every trade if SEED_PREMIUM lies outside the band).
+          if (PREM_GATE_ON && (SEED_PREMIUM < PREM_MIN || SEED_PREMIUM > PREM_MAX)) {
+            continue;
+          }
           position = {
             date: istDateOf(c.time),
             side: sig.side,
@@ -142,7 +160,9 @@ function runOrbBacktest(allCandles) {
             slSpot: sig.slSpot, targetSpot: sig.targetSpot,
             targetPremium: parseFloat((SEED_PREMIUM * (1 + TARGET_PCT)).toFixed(2)),
             stopPremium:   parseFloat((SEED_PREMIUM * (1 - STOP_PCT)).toFixed(2)),
+            lockinHit: false,
             signalStrength: sig.signalStrength,
+            vwap: sig.vwap, volRatio: sig.volRatio, wickRatio: sig.wickRatio,
             entryReason: sig.reason,
           };
           tradesTaken++;
@@ -303,7 +323,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Exits mirror the paper-trade route exactly: spot SL = opposite OR edge, spot target = 1.5× range, premium SL/target = ±30%/+50%. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Exits mirror the paper-trade route exactly: spot SL = opposite OR edge, spot target = 1.5× range, premium SL/target = −${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%/+${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%, premium-lockin floor at +${(parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT||"0.25")*100).toFixed(0)}%. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>

@@ -150,6 +150,16 @@ async function placeLiveBuy(side, sigSnapshot) {
   } catch (_) {}
   if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
 
+  // ── Premium-range gate (skip illiquid / deep-OTM / ITM strikes) ─────────
+  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
+  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
+  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
+    log(`⏸️ [ORB-LIVE] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+    skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp, _live: true });
+    return;
+  }
+
   const qty = instrumentConfig.getLotQty();
 
   // ── BROKER CALL ──────────────────────────────────────────────────────────
@@ -172,16 +182,23 @@ async function placeLiveBuy(side, sigSnapshot) {
     }
   }
 
+  const stopPct        = parseFloat(process.env.ORB_STOP_PCT                  || "0.25");
+  const targetPct      = parseFloat(process.env.ORB_TARGET_PCT                || "0.4");
+  const lockinPct      = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT        || "0.25");
+  const lockinFloorPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT  || "0.05");
   const pos = {
     side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
     qty, entrySpot: spot, entryPrice: spot, optionEntryLtp,
     entryTime: istNow(), entryTimeMs: Date.now(),
     orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts,
     targetSpot: sigSnapshot.targetSpot, initialSlSpot: sigSnapshot.slSpot, slSpot: sigSnapshot.slSpot,
-    targetPremium: parseFloat((optionEntryLtp * (1 + parseFloat(process.env.ORB_TARGET_PCT || "0.5"))).toFixed(2)),
-    stopPremium:   parseFloat((optionEntryLtp * (1 - parseFloat(process.env.ORB_STOP_PCT   || "0.3"))).toFixed(2)),
+    targetPremium:      parseFloat((optionEntryLtp * (1 + targetPct)).toFixed(2)),
+    stopPremium:        parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
+    initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
+    lockinPct, lockinFloorPct, lockinHit: false,
     peakPremium: optionEntryLtp, movedToBE: false,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
+    vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
     entryReason: sigSnapshot.reason, entryOrderId,
   };
   state.position = pos;
@@ -277,7 +294,19 @@ function _checkExits(spotPrice) {
     const newSL = pos.side === "CE" ? Math.max(pos.slSpot, pos.entrySpot) : Math.min(pos.slSpot, pos.entrySpot);
     if (newSL !== pos.slSpot) { log(`📐 Move-to-BE: SL ${pos.slSpot} → ${newSL}`); pos.slSpot = newSL; }
   }
-  if (optLtp <= pos.stopPremium) return placeLiveSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium})`);
+  // Premium-lockin trail
+  if (!pos.lockinHit && pos.lockinPct > 0) {
+    const trigger = pos.optionEntryLtp * (1 + pos.lockinPct);
+    if (optLtp >= trigger) {
+      pos.lockinHit = true;
+      const floor = parseFloat((pos.optionEntryLtp * (1 + pos.lockinFloorPct)).toFixed(2));
+      if (floor > pos.stopPremium) {
+        log(`📐 Premium-lockin: stopPremium ₹${pos.stopPremium} → ₹${floor} (LTP ₹${optLtp} hit +${(pos.lockinPct*100).toFixed(0)}%)`);
+        pos.stopPremium = floor;
+      }
+    }
+  }
+  if (optLtp <= pos.stopPremium) return placeLiveSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}${pos.lockinHit ? ", lockin floor" : ""})`);
   if (optLtp >= pos.targetPremium) return placeLiveSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium})`);
   if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} <= ORL ${pos.slSpot})`);
   if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} >= ORH ${pos.slSpot})`);
@@ -330,13 +359,14 @@ function onTick(tick) {
     }
     const bucketSec = Math.floor(bucketMs / 1000);
     const lastPre = state.candles.length ? state.candles[state.candles.length - 1] : null;
-    if (lastPre && lastPre.time === bucketSec) { state.currentBar = state.candles.pop(); state.currentBar.high = Math.max(state.currentBar.high, price); state.currentBar.low = Math.min(state.currentBar.low, price); state.currentBar.close = price; }
-    else state.currentBar = { time: bucketSec, open: price, high: price, low: price, close: price };
+    if (lastPre && lastPre.time === bucketSec) { state.currentBar = state.candles.pop(); state.currentBar.high = Math.max(state.currentBar.high, price); state.currentBar.low = Math.min(state.currentBar.low, price); state.currentBar.close = price; state.currentBar.volume = (state.currentBar.volume || 0) + 1; }
+    else state.currentBar = { time: bucketSec, open: price, high: price, low: price, close: price, volume: 1 };
     state.barStartTime = bucketMs;
   } else {
     state.currentBar.high = Math.max(state.currentBar.high, price);
     state.currentBar.low  = Math.min(state.currentBar.low,  price);
     state.currentBar.close = price;
+    state.currentBar.volume = (state.currentBar.volume || 0) + 1;
   }
   if (state.position) _checkExits(price);
   if (state.position) {

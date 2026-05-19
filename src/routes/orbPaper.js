@@ -176,7 +176,21 @@ async function simulateBuy(side, sigSnapshot) {
     return;
   }
 
+  // ── Premium-range gate (skip illiquid / deep-OTM / ITM strikes) ─────────
+  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
+  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
+  const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
+  if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
+    log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
+    skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp });
+    return;
+  }
+
   const qty = instrumentConfig.getLotQty();
+  const stopPct   = parseFloat(process.env.ORB_STOP_PCT   || "0.25");
+  const targetPct = parseFloat(process.env.ORB_TARGET_PCT || "0.4");
+  const lockinPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT       || "0.25");
+  const lockinFloorPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT || "0.05");
   const pos = {
     side,
     symbol:         optInfo.symbol,
@@ -194,12 +208,18 @@ async function simulateBuy(side, sigSnapshot) {
     targetSpot:     sigSnapshot.targetSpot,
     initialSlSpot:  sigSnapshot.slSpot,
     slSpot:         sigSnapshot.slSpot,
-    targetPremium:  parseFloat((optionEntryLtp * (1 + parseFloat(process.env.ORB_TARGET_PCT || "0.5"))).toFixed(2)),
-    stopPremium:    parseFloat((optionEntryLtp * (1 - parseFloat(process.env.ORB_STOP_PCT   || "0.3"))).toFixed(2)),
+    targetPremium:  parseFloat((optionEntryLtp * (1 + targetPct)).toFixed(2)),
+    stopPremium:    parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
+    initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
+    lockinPct, lockinFloorPct,
+    lockinHit:      false,
     peakPremium:    optionEntryLtp,
     movedToBE:      false,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
+    vwapAtEntry:    sigSnapshot.vwap,
+    volRatio:       sigSnapshot.volRatio,
+    wickRatio:      sigSnapshot.wickRatio,
     entryReason:    sigSnapshot.reason,
   };
 
@@ -315,7 +335,7 @@ function _checkExits(spotPrice) {
   // Track peak option premium for BE-after-1R trail
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
-  // ── Move-to-BE: once spot moves >= 1× range in favour, lift SL to entry ─
+  // ── Move-to-BE (spot-anchored): spot moves >= 1× range in favour ────────
   const moveInFavour = pos.side === "CE" ? (spotPrice - pos.entrySpot) : (pos.entrySpot - spotPrice);
   if (!pos.movedToBE && moveInFavour >= pos.rangePts) {
     pos.movedToBE = true;
@@ -328,14 +348,29 @@ function _checkExits(spotPrice) {
     }
   }
 
+  // ── Premium-lockin trail: once premium hits +lockinPct, ratchet stop ────
+  //    up to entry × (1 + lockinFloorPct). Locks in a small profit floor.
+  if (!pos.lockinHit && pos.lockinPct > 0) {
+    const lockinTrigger = pos.optionEntryLtp * (1 + pos.lockinPct);
+    if (optLtp >= lockinTrigger) {
+      pos.lockinHit = true;
+      const floor = parseFloat((pos.optionEntryLtp * (1 + pos.lockinFloorPct)).toFixed(2));
+      if (floor > pos.stopPremium) {
+        log(`📐 [ORB-PAPER] Premium-lockin: stopPremium ₹${pos.stopPremium} → ₹${floor} (LTP ₹${optLtp} hit +${(pos.lockinPct*100).toFixed(0)}%)`);
+        pos.stopPremium = floor;
+      }
+    }
+  }
+
   // ── Premium SL ───────────────────────────────────────────────────────────
   if (optLtp <= pos.stopPremium) {
-    simulateSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}, −${(parseFloat(process.env.ORB_STOP_PCT||"0.3")*100).toFixed(0)}%)`);
+    const tag = pos.lockinHit ? "lockin floor" : `−${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%`;
+    simulateSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}, ${tag})`);
     return;
   }
   // ── Premium target ───────────────────────────────────────────────────────
   if (optLtp >= pos.targetPremium) {
-    simulateSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium}, +${(parseFloat(process.env.ORB_TARGET_PCT||"0.5")*100).toFixed(0)}%)`);
+    simulateSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium}, +${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%)`);
     return;
   }
   // ── Spot SL (opposite side of OR) ────────────────────────────────────────
@@ -438,14 +473,16 @@ function onTick(tick) {
       state.currentBar.high  = Math.max(state.currentBar.high, price);
       state.currentBar.low   = Math.min(state.currentBar.low, price);
       state.currentBar.close = price;
+      state.currentBar.volume = (state.currentBar.volume || 0) + 1;
     } else {
-      state.currentBar = { time: bucketSec, open: price, high: price, low: price, close: price };
+      state.currentBar = { time: bucketSec, open: price, high: price, low: price, close: price, volume: 1 };
     }
     state.barStartTime = bucketMs;
   } else {
     state.currentBar.high  = Math.max(state.currentBar.high, price);
     state.currentBar.low   = Math.min(state.currentBar.low, price);
     state.currentBar.close = price;
+    state.currentBar.volume = (state.currentBar.volume || 0) + 1;
   }
 
   // In-position exit checks (tick-level)
