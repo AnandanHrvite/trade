@@ -209,15 +209,16 @@ function _applySettingsOverride(settings) {
  * the captured callbacks.
  */
 function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
-  const socketManager   = require("../utils/socketManager");
-  const fyers           = require("../config/fyers");
-  const notify          = require("../utils/notify");
-  const tradeLogger     = require("../utils/tradeLogger");
-  const backtestEngine  = require("./backtestEngine");
-  const candleCache     = require("../utils/candleCache");
-  const fyersAuthCheck  = require("../utils/fyersAuthCheck");
-  const nseHolidays     = require("../utils/nseHolidays");
-  const tickRecorder    = require("../utils/tickRecorder");
+  const socketManager     = require("../utils/socketManager");
+  const fyers             = require("../config/fyers");
+  const notify            = require("../utils/notify");
+  const tradeLogger       = require("../utils/tradeLogger");
+  const backtestEngine    = require("./backtestEngine");
+  const candleCache       = require("../utils/candleCache");
+  const fyersAuthCheck    = require("../utils/fyersAuthCheck");
+  const nseHolidays       = require("../utils/nseHolidays");
+  const tickRecorder      = require("../utils/tickRecorder");
+  const sharedSocketState = require("../utils/sharedSocketState");
 
   const orig = {
     sm_start:        socketManager.start,
@@ -248,6 +249,22 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     tr_recordVix:          tickRecorder.recordVix,
     tr_recordSessionStart: tickRecorder.recordSessionStart,
     tr_recordSessionStop:  tickRecorder.recordSessionStop,
+    // sharedSocketState originals — paper /start handlers call setActive()
+    // (and only some /stop paths call clear()). If the replay's /stop bails
+    // out early — e.g. swing /stop returns 400 when ptState.running became
+    // false mid-replay — the real sharedSocketState gets stuck "active" and
+    // the preflight banner falsely blocks the next replay. Stub the mutators
+    // so replays can't touch real state at all; reads still pass through.
+    ss_setActive:         sharedSocketState.setActive,
+    ss_clear:             sharedSocketState.clear,
+    ss_setScalpActive:    sharedSocketState.setScalpActive,
+    ss_clearScalp:        sharedSocketState.clearScalp,
+    ss_setPAActive:       sharedSocketState.setPAActive,
+    ss_clearPA:           sharedSocketState.clearPA,
+    ss_setOrbActive:      sharedSocketState.setOrbActive,
+    ss_clearOrb:          sharedSocketState.clearOrb,
+    ss_setStraddleActive: sharedSocketState.setStraddleActive,
+    ss_clearStraddle:     sharedSocketState.clearStraddle,
   };
 
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
@@ -334,6 +351,21 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     tickRecorder.recordSessionStart = () => {};
     tickRecorder.recordSessionStop  = () => {};
 
+    // sharedSocketState: stub the mutators so /start's setActive() and
+    // /stop's clear() don't touch real session state. Reads (isActive,
+    // getMode, etc.) are left intact — they return whatever real-process
+    // state actually holds.
+    sharedSocketState.setActive         = () => {};
+    sharedSocketState.clear             = () => {};
+    sharedSocketState.setScalpActive    = () => {};
+    sharedSocketState.clearScalp        = () => {};
+    sharedSocketState.setPAActive       = () => {};
+    sharedSocketState.clearPA           = () => {};
+    sharedSocketState.setOrbActive      = () => {};
+    sharedSocketState.clearOrb          = () => {};
+    sharedSocketState.setStraddleActive = () => {};
+    sharedSocketState.clearStraddle     = () => {};
+
     // notifications: silence everything during replay
     notify.notifyEntry     = () => {};
     notify.notifyExit      = () => {};
@@ -391,6 +423,16 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     tickRecorder.recordVix          = orig.tr_recordVix;
     tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
+    sharedSocketState.setActive         = orig.ss_setActive;
+    sharedSocketState.clear             = orig.ss_clear;
+    sharedSocketState.setScalpActive    = orig.ss_setScalpActive;
+    sharedSocketState.clearScalp        = orig.ss_clearScalp;
+    sharedSocketState.setPAActive       = orig.ss_setPAActive;
+    sharedSocketState.clearPA           = orig.ss_clearPA;
+    sharedSocketState.setOrbActive      = orig.ss_setOrbActive;
+    sharedSocketState.clearOrb          = orig.ss_clearOrb;
+    sharedSocketState.setStraddleActive = orig.ss_setStraddleActive;
+    sharedSocketState.clearStraddle     = orig.ss_clearStraddle;
     callbacks.length = 0;
   }
 
@@ -664,6 +706,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
   } finally {
     try { harness && harness.uninstall(); } catch (_) {}
     try { restoreEnv(); } catch (_) {}
+    // Defensive: if a paper /start ran before the harness fully installed
+    // its sharedSocketState stubs (or any later cleanup failed), real state
+    // could still be left "active". Force-clear so the preflight banner
+    // never gets stuck. Cheap, idempotent — only clears in-memory flags.
+    try { forceClearSharedState(); } catch (_) {}
     // Drop the route module from the cache so the live-trading process can
     // re-require it cleanly without our patched state.
     if (routeMod) {
@@ -737,11 +784,41 @@ function replayPreflight() {
   return { ok: true };
 }
 
+/**
+ * Recovery path: forcibly clear sharedSocketState for every strategy.
+ *
+ * The replay harness now stubs sharedSocketState mutators so replays can no
+ * longer leak state. But before that fix, a replay could leave the real
+ * state stuck "active" — making the preflight banner permanently block all
+ * future replays even though no strategy is actually running. This export
+ * (exposed at POST /replay/force-clear) unsticks that scenario.
+ *
+ * Safe to call any time: it only clears in-memory mutex flags, never touches
+ * trade logs or position files.
+ */
+function forceClearSharedState() {
+  const sharedSocketState = require("../utils/sharedSocketState");
+  const before = {
+    swing:    sharedSocketState.getMode(),
+    scalp:    sharedSocketState.getScalpMode(),
+    pa:       sharedSocketState.getPAMode(),
+    orb:      sharedSocketState.getOrbMode(),
+    straddle: sharedSocketState.getStraddleMode(),
+  };
+  sharedSocketState.clear();
+  sharedSocketState.clearScalp();
+  sharedSocketState.clearPA();
+  sharedSocketState.clearOrb();
+  sharedSocketState.clearStraddle();
+  return { ok: true, cleared: before };
+}
+
 module.exports = {
   loadSessionData,
   listRecordings,
   replaySession,
   replayPreflight,
+  forceClearSharedState,
   // exposed for tests
   _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
 };

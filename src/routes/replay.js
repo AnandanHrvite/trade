@@ -50,6 +50,17 @@ router.get("/preflight", (req, res) => {
   }
 });
 
+// Recovery path for the "preflight blocks but no session is actually running"
+// bug — clears the in-memory sharedSocketState mutex flags. Does NOT touch
+// any persisted data (trade logs, position files, recordings).
+router.post("/force-clear", (req, res) => {
+  try {
+    res.json(tickReplay.forceClearSharedState());
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 router.post("/run", express.json(), async (req, res) => {
   const { date, mode, sessionId, speed, useCurrentSettings } = req.body || {};
   if (!date || !mode) {
@@ -226,7 +237,11 @@ async function refreshPreflight() {
     if (data.ok) {
       banner.innerHTML = '<div class="banner ok">✅ Safe to replay — no live or paper session is active.</div>';
     } else {
-      banner.innerHTML = '<div class="banner warn">⚠️ ' + (data.reason || 'Replay not allowed right now.') + '</div>';
+      banner.innerHTML =
+        '<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
+          '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') + '</div>' +
+          '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;">Force clear (only if no session is actually running)</button>' +
+        '</div>';
     }
     // Reflect on existing buttons
     document.querySelectorAll('button.replay-btn').forEach(b => {
@@ -235,6 +250,31 @@ async function refreshPreflight() {
     });
   } catch (e) {
     banner.innerHTML = '<div class="banner warn">Preflight check failed: ' + e.message + '</div>';
+  }
+}
+
+async function forceClearStuckState(btn) {
+  if (!confirm('Force-clear the in-memory session state?\\n\\n' +
+               'Only do this if you have confirmed on the strategy pages (Swing/Scalp/PA Paper) that NO session is actually running.\\n\\n' +
+               'This only clears the in-memory mutex flag — it does NOT touch trade logs, positions, or recordings.')) return;
+  btn.disabled = true;
+  btn.textContent = 'Clearing…';
+  try {
+    const r = await fetch('/replay/force-clear', { method: 'POST' });
+    const data = await r.json();
+    if (data.ok) {
+      btn.textContent = 'Cleared ✓';
+      // Refresh banner immediately to flip green
+      setTimeout(refreshPreflight, 100);
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Force clear';
+      alert('Force-clear failed: ' + (data.error || 'unknown'));
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Force clear';
+    alert('Force-clear failed: ' + e.message);
   }
 }
 
