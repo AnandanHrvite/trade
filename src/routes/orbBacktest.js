@@ -21,6 +21,7 @@ const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
 const { isExpiryDate } = require("../utils/nseHolidays");
+const instrumentConfig = require("../config/instrument");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
@@ -53,7 +54,9 @@ function runOrbBacktest(allCandles, expirySet) {
   const EXPIRY_ONLY = (process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
-  const LOT_SIZE   = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10);
+  // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
+  // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
+  const LOT_SIZE   = instrumentConfig.getLotQty();
   const TARGET_PCT = parseFloat(process.env.ORB_TARGET_PCT || "0.4");
   const STOP_PCT   = parseFloat(process.env.ORB_STOP_PCT   || "0.25");
   const LOCKIN_PCT       = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT       || "0.25");
@@ -341,7 +344,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Exits mirror the paper-trade route exactly: spot SL = opposite OR edge, spot target = 1.5× range, premium SL/target = −${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%/+${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%, premium-lockin floor at +${(parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT||"0.25")*100).toFixed(0)}%. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route exactly: spot SL = opposite OR edge, spot target = 1.5× range, premium SL/target = −${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%/+${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%, premium-lockin floor at +${(parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT||"0.25")*100).toFixed(0)}%. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>
