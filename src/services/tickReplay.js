@@ -208,7 +208,7 @@ function _applySettingsOverride(settings) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, warmupCandles }) {
+function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
   const socketManager   = require("../utils/socketManager");
   const fyers           = require("../config/fyers");
   const notify          = require("../utils/notify");
@@ -217,6 +217,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles }) {
   const candleCache     = require("../utils/candleCache");
   const fyersAuthCheck  = require("../utils/fyersAuthCheck");
   const nseHolidays     = require("../utils/nseHolidays");
+  const tickRecorder    = require("../utils/tickRecorder");
 
   const orig = {
     sm_start:        socketManager.start,
@@ -239,6 +240,14 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles }) {
     isTradingAllowed: nseHolidays.isTradingAllowed,
     isExpiryDay:      nseHolidays.isExpiryDay,
     DateNow:          Date.now,
+    // tickRecorder originals — replay must NOT write back into the canonical
+    // recording streams (it would create phantom session rows and duplicate
+    // option-LTP entries in the recording the user is replaying from).
+    tr_recordSpotTick:     tickRecorder.recordSpotTick,
+    tr_recordOptionLtp:    tickRecorder.recordOptionLtp,
+    tr_recordVix:          tickRecorder.recordVix,
+    tr_recordSessionStart: tickRecorder.recordSessionStart,
+    tr_recordSessionStop:  tickRecorder.recordSessionStop,
   };
 
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
@@ -303,15 +312,27 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles }) {
     };
 
     // tradeLogger: divert to replay-specific files so we don't pollute the
-    // canonical paper log and can compare side-by-side.
+    // canonical paper log and can compare side-by-side. `outputSubdir` lets
+    // current-settings simulator runs land in a separate folder from
+    // deterministic snapshot replays.
     tradeLogger.appendTradeLog = function (mode, trade) {
       try {
-        const dir  = path.join(ROOT_DIR, "_replay_trades");
+        const dir  = path.join(ROOT_DIR, outputSubdir);
         fs.mkdirSync(dir, { recursive: true });
-        const file = path.join(dir, `${mode}_replay.jsonl`);
-        fs.appendFileSync(file, JSON.stringify({ ...trade, _replay: true }) + "\n");
+        const file = path.join(dir, `${mode}_${outputSuffix}.jsonl`);
+        fs.appendFileSync(file, JSON.stringify({ ...trade, _replay: true, _replayKind: outputSuffix }) + "\n");
       } catch (_) {}
     };
+
+    // tickRecorder: silence ALL recording calls during replay. Paper code
+    // routinely calls recordSessionStart/recordOptionLtp/etc. — without these
+    // stubs, every replay run permanently appends to the canonical recording
+    // streams (phantom session rows in the Replay list, duplicate option LTPs).
+    tickRecorder.recordSpotTick     = () => {};
+    tickRecorder.recordOptionLtp    = () => {};
+    tickRecorder.recordVix          = () => {};
+    tickRecorder.recordSessionStart = () => {};
+    tickRecorder.recordSessionStop  = () => {};
 
     // notifications: silence everything during replay
     notify.notifyEntry     = () => {};
@@ -365,6 +386,11 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles }) {
     nseHolidays.isTradingAllowed    = orig.isTradingAllowed;
     nseHolidays.isExpiryDay         = orig.isExpiryDay;
     Date.now                        = orig.DateNow;
+    tickRecorder.recordSpotTick     = orig.tr_recordSpotTick;
+    tickRecorder.recordOptionLtp    = orig.tr_recordOptionLtp;
+    tickRecorder.recordVix          = orig.tr_recordVix;
+    tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
+    tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
     callbacks.length = 0;
   }
 
@@ -452,18 +478,28 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
 /**
  * Replay one recorded session end-to-end.
  *
- *   date       — "YYYY-MM-DD"
- *   mode       — "pa-paper" | "scalp-paper" | "swing-paper"
- *   sessionId  — optional
- *   speed      — 0 = as fast as possible, >0 = ms delay between ticks
+ *   date                — "YYYY-MM-DD"
+ *   mode                — "pa-paper" | "scalp-paper" | "swing-paper"
+ *   sessionId           — optional
+ *   speed               — 0 = as fast as possible, >0 = ms delay between ticks
+ *   useCurrentSettings  — false (default): apply the recorded session-start
+ *                         settings snapshot → deterministic, identical result.
+ *                         true: skip the snapshot override and run with whatever
+ *                         is currently in process.env (the user's Settings page
+ *                         values) → "simulator" mode for testing config changes
+ *                         after market hours. Output is written to a separate
+ *                         folder so sim runs are not mixed with snapshot runs.
+ *                         NOTE: instrument/expiry/lot in current env must match
+ *                         the recorded session, or results will be nonsense.
  *
  * Returns:
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
  */
-async function replaySession({ date, mode, sessionId, speed = 0 } = {}) {
-  if (_replayInProgress) {
-    throw new Error("Another replay is already running in this process. Wait for it to finish.");
-  }
+async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false } = {}) {
+  // Guard: replay shares the process with live/paper engines via monkey-patches.
+  // Refuse if anything is active so a real trade isn't accidentally silenced.
+  const pre = replayPreflight();
+  if (!pre.ok) throw new Error(pre.reason);
   _replayInProgress = true;
 
   const startWall = Date.now();
@@ -482,14 +518,25 @@ async function replaySession({ date, mode, sessionId, speed = 0 } = {}) {
     const optionTimeline = _buildOptionTimeline(data.optionTicks);
     const vixTimeline    = data.vixTicks.map(v => ({ t: v.t, l: v.v })); // unify field name
 
-    // 2. Apply settings override from session-start snapshot
-    restoreEnv = _applySettingsOverride(data.sessionStart.settings);
+    // 2. Apply settings override from session-start snapshot.
+    //    Skipped in simulator mode so the run uses current process.env
+    //    (the user's Settings page values) — that's the whole point of
+    //    useCurrentSettings: "what would TODAY's settings have done against
+    //    these ticks?".
+    if (!useCurrentSettings) {
+      restoreEnv = _applySettingsOverride(data.sessionStart.settings);
+    }
 
     // 3. Install harness (monkey-patch deps) with recorded warmup so paper's
     //    own preloadHistory returns the snapshot ticks instead of hitting the
-    //    real Fyers REST.
+    //    real Fyers REST. Output dir differs by mode so simulator runs don't
+    //    get mixed with deterministic snapshot runs.
     const warmupCandles = data.sessionStart.warmup || [];
-    harness = _createHarness({ optionTimeline, vixTimeline, warmupCandles });
+    harness = _createHarness({
+      optionTimeline, vixTimeline, warmupCandles,
+      outputSubdir: useCurrentSettings ? "_replay_trades_sim" : "_replay_trades",
+      outputSuffix: useCurrentSettings ? "sim" : "replay",
+    });
     harness.install();
 
     // 4. Load the route module AFTER patches are installed so module-level
@@ -640,10 +687,44 @@ function listRecordings(date) {
   return out;
 }
 
+/**
+ * Pre-flight check the UI calls before letting the user click Replay.
+ *
+ * Replay monkey-patches shared modules (tradeLogger, notify, broker funcs)
+ * for the duration of the run. If a live or paper session is active in this
+ * same Node process at that moment, the patches would briefly affect IT too
+ * — a real trade fired during the replay window could be silenced or written
+ * to the replay folder. The mitigation is simple: don't allow replays while
+ * any strategy is active. After-hours, this is a non-issue.
+ *
+ * Returns { ok: true } if safe, or { ok: false, reason, activeModes } if not.
+ */
+function replayPreflight() {
+  const sharedSocketState = require("../utils/sharedSocketState");
+  const activeModes = [];
+  if (sharedSocketState.isActive())          activeModes.push(sharedSocketState.getMode() || "swing");
+  if (sharedSocketState.isScalpActive())     activeModes.push(sharedSocketState.getScalpMode() || "scalp");
+  if (sharedSocketState.isPAActive())        activeModes.push(sharedSocketState.getPAMode() || "pa");
+  if (sharedSocketState.isOrbActive())       activeModes.push(sharedSocketState.getOrbMode() || "orb");
+  if (sharedSocketState.isStraddleActive())  activeModes.push(sharedSocketState.getStraddleMode() || "straddle");
+  if (activeModes.length > 0) {
+    return {
+      ok: false,
+      reason: `Cannot replay while these are running: ${activeModes.join(", ")}. Stop them first.`,
+      activeModes,
+    };
+  }
+  if (_replayInProgress) {
+    return { ok: false, reason: "Another replay is already running in this process.", activeModes: ["__replay__"] };
+  }
+  return { ok: true };
+}
+
 module.exports = {
   loadSessionData,
   listRecordings,
   replaySession,
+  replayPreflight,
   // exposed for tests
   _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
 };
