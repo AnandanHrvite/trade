@@ -495,11 +495,24 @@ function pickSessionsInRange(from, to, mode) {
     .sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
 }
 
-function renderRangeResult(rows) {
+function renderRangeResult(rows, context) {
   // rows: [{ session, baseline, sim }]
+  // context: { mode, label, from, to } — describes what was run
   const el = document.getElementById('range-result');
+
+  const modeTag = context && context.mode
+    ? (context.mode.startsWith('swing') ? 'swing' : context.mode.startsWith('scalp') ? 'scalp' : 'pa')
+    : 'pa';
+  const headerLine = context
+    ? '<div style="margin-bottom:10px;font-size:0.9rem;">' +
+        'Strategy: <span class="tag ' + modeTag + '">' + context.mode + '</span> ' +
+        '<span class="muted">(' + (context.label || context.mode) + ')</span> · ' +
+        '<span class="muted">Range: ' + context.from + ' → ' + context.to + '</span>' +
+      '</div>'
+    : '';
+
   if (rows.length === 0) {
-    el.innerHTML = '<div class="muted">No sessions completed.</div>';
+    el.innerHTML = headerLine + '<div class="muted">No sessions completed.</div>';
     return;
   }
 
@@ -556,11 +569,12 @@ function renderRangeResult(rows) {
     dPnl > 0 ? 'Across these ' + okCount + ' sessions, your current settings are <strong>better</strong> by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').' :
                 'Across these ' + okCount + ' sessions, your current settings are <strong>worse</strong> by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
 
-  let html = '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
+  let html = headerLine;
+  html += '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
   html += '<div class="muted" style="margin-top:10px;">' + verdict + '</div>';
 
   // Per-session breakdown
-  html += '<table class="range-table"><thead><tr><th>Date</th><th>Session ID</th><th class="num">Baseline P&L</th><th class="num">Trades</th><th class="num">Your P&L</th><th class="num">Trades</th><th class="num">Δ P&L</th><th class="num">Δ Trades</th></tr></thead><tbody>';
+  html += '<table class="range-table"><thead><tr><th>Date</th><th>Strategy</th><th>Session ID</th><th class="num">Baseline P&L</th><th class="num">Trades</th><th class="num">Your P&L</th><th class="num">Trades</th><th class="num">Δ P&L</th><th class="num">Δ Trades</th></tr></thead><tbody>';
   for (const r of rows) {
     const bOk = r.baseline && r.baseline.ok;
     const sOk = r.sim && r.sim.ok;
@@ -570,8 +584,10 @@ function renderRangeResult(rows) {
     const sTrd = sOk ? (r.sim.tradeCount      || 0) : null;
     const dP = (bOk && sOk) ? (sPnl - bPnl) : null;
     const dT = (bOk && sOk) ? (sTrd - bTrd) : null;
+    const rowTag = r.session.mode.startsWith('swing') ? 'swing' : r.session.mode.startsWith('scalp') ? 'scalp' : 'pa';
     html += '<tr>' +
       '<td>' + r.session.date + '</td>' +
+      '<td><span class="tag ' + rowTag + '">' + r.session.mode + '</span></td>' +
       '<td><code style="font-size:0.7rem;color:#94a3b8;">' + r.session.sessionId + '</code></td>' +
       '<td class="num">' + (bOk ? (bPnl >= 0 ? '+' : '') + '₹' + bPnl.toFixed(2) : '<span style="color:#ef4444;">err</span>') + '</td>' +
       '<td class="num">' + (bOk ? bTrd : '–') + '</td>' +
@@ -582,7 +598,7 @@ function renderRangeResult(rows) {
       '</tr>';
   }
   html += '<tr class="totals">' +
-    '<td colspan="2">Totals (' + okCount + ' sessions)</td>' +
+    '<td colspan="3">Totals (' + okCount + ' sessions)</td>' +
     '<td class="num">' + (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) + '</td>' +
     '<td class="num">' + totBTrd + '</td>' +
     '<td class="num">' + (totSPnl >= 0 ? '+' : '') + '₹' + totSPnl.toFixed(2) + '</td>' +
@@ -607,12 +623,19 @@ async function runRange(btn) {
   const from = document.getElementById('range-from').value;
   const to   = document.getElementById('range-to').value;
   const mode = document.getElementById('range-mode').value;
+  const modeSelect = document.getElementById('range-mode');
+  const modeLabel  = modeSelect.options[modeSelect.selectedIndex].text;
   if (!from || !to) { alert('Pick both From and To dates.'); return; }
   if (from > to)    { alert('From date must be on or before To date.'); return; }
 
+  const context = { mode, label: modeLabel, from, to };
   const sessions = pickSessionsInRange(from, to, mode);
   if (sessions.length === 0) {
-    document.getElementById('range-result').innerHTML = '<div class="muted">No recorded ' + mode + ' sessions found between ' + from + ' and ' + to + '.</div>';
+    document.getElementById('range-result').innerHTML =
+      '<div style="margin-bottom:10px;font-size:0.9rem;">Strategy: <span class="tag ' +
+        (mode.startsWith('swing') ? 'swing' : mode.startsWith('scalp') ? 'scalp' : 'pa') +
+        '">' + mode + '</span> <span class="muted">(' + modeLabel + ')</span></div>' +
+      '<div class="muted">No recorded ' + mode + ' sessions found between ' + from + ' and ' + to + '.</div>';
     document.getElementById('range-progress').style.display = 'none';
     return;
   }
@@ -666,7 +689,7 @@ async function runRange(btn) {
 
     rows.push({ session: s, baseline, sim });
     // Live partial render after each session so the user sees results stream in.
-    renderRangeResult(rows);
+    renderRangeResult(rows, context);
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
