@@ -706,7 +706,17 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //      - line-by-line streaming → never materialises the full file
     //      - yield to event loop every YIELD_EVERY ticks → keeps HTTP responsive
     //      - GC every GC_EVERY ticks (if --expose-gc) → bounds heap growth
-    const YIELD_EVERY = 200;
+    //
+    //    YIELD_EVERY=1 is critical for correct exit P&L: paper's option-LTP
+    //    polling is a setTimeout chain. With short-delay collapse to 0ms,
+    //    each poll fires once per outer yield. With YIELD_EVERY=200, a
+    //    short trade (12-15 spot ticks over 60s) may see ZERO polls fire
+    //    between entry and exit — state.optionLtp stays frozen at the
+    //    entry value, simulateSell reads that stale value, and exit P&L
+    //    collapses to -charges. Yielding per-tick keeps polling fresh so
+    //    exit P&L matches live. Cost: ~50μs per yield × ~55k ticks = a
+    //    few extra seconds of wall time per session — acceptable.
+    const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
     let ticksReplayed = 0;
     const startT = data.sessionStart.t;
