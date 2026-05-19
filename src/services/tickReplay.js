@@ -727,7 +727,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    can freeze for 20+ seconds mid-trade in a long position.
     const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
-    const _yield      = () => new Promise(r => orig.setTimeout_(r, 0));
+    // setTimeout(r, 0) goes through the harness override and falls through
+    // unchanged to orig.setTimeout_(r, 0) (0 is not > SHORT_DELAY_CAP_MS),
+    // so this resolves in the timers phase alongside paper's queued polls.
+    const _yield      = () => new Promise(r => setTimeout(r, 0));
     let ticksReplayed = 0;
     const startT = data.sessionStart.t;
     const stopT  = data.sessionStop.t;
