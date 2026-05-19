@@ -273,16 +273,24 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     fs_writeFileSync: fs.writeFileSync,
     fs_renameSync:    fs.renameSync,
     // setTimeout/clearTimeout originals — paper code uses setTimeout-driven
-    // polling (option LTP every 1 sec) to update ptState.optionLtp during a
-    // trade. In replay, the pump processes thousands of ticks in seconds of
-    // real wall-clock time, so the 1-sec polling barely fires — leaving
-    // ptState.optionLtp frozen at the entry-time value. Exit PnL is then
-    // computed against the entry LTP (premium delta = 0), producing a
-    // wrong P&L (just charges). Force every setTimeout to fire ASAP during
-    // replay so polling matches the pump cadence.
+    // polling (option LTP every ~500ms-1s) to update ptState.optionLtp during
+    // a trade. In replay, the pump processes thousands of ticks in seconds
+    // of real wall-clock time, so the 1-sec polling barely fires — leaving
+    // ptState.optionLtp frozen at the entry-time value. Force only short
+    // delays to fire ASAP. Long delays (auto-stop = 395 min) MUST pass
+    // through, otherwise the auto-stop fires on the first event-loop yield
+    // and sets state.running = false before any candle close evaluates.
     setTimeout_:   global.setTimeout,
     clearTimeout_: global.clearTimeout,
   };
+
+  // Threshold above which setTimeout delays pass through unchanged. 30 sec
+  // is well above polling cadences (≤2s) and well below auto-stop / cooldown
+  // ranges (minutes). Pending long-delay handles are tracked so uninstall
+  // can clear them — otherwise after the route-module cache is dropped, the
+  // timer would still fire in real time and reference a dead state object.
+  const SHORT_DELAY_CAP_MS = 30 * 1000;
+  const _pendingLongTimers = new Set();
 
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
   const callbacks = []; // [{ id, onTick, onLog }]
@@ -397,19 +405,35 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
       return orig.fs_renameSync(from, to);
     };
 
-    // setTimeout override — collapse all delays to 0ms during replay so that
-    // setTimeout-chained polling (option LTP every 1s in live) fires on
-    // every event-loop yield instead of every real-time second. With the
+    // setTimeout override — collapse SHORT delays (≤30s) to 0ms so that
+    // setTimeout-chained polling (option LTP every 500ms-1s in live) fires
+    // on every event-loop yield instead of every real-time second. With the
     // pump issuing setImmediate every 200 ticks, this makes the option
     // poll fire ~once per 200-tick batch — closely matching live's 1-sec
     // cadence over a recorded session.
     //
-    // This is global for the duration of the replay but restored on
-    // uninstall. The replay run is the only thing happening in the process
-    // (preflight guard ensures no live/paper sessions are active), so
-    // collapsing delays is safe.
+    // LONG delays (>30s) pass through unchanged. Critically, this preserves
+    // auto-stop timers (395 min) — if we collapsed those too, auto-stop
+    // would fire on the first event-loop yield and set state.running=false
+    // before any candle close could evaluate, producing 0 trades for every
+    // replay. Pending long timers are tracked in _pendingLongTimers so
+    // uninstall can clear them; otherwise after the route module is dropped
+    // from require.cache, the timer would still fire in real time and call
+    // stopSession on a stale state object from the freed closure.
     global.setTimeout = function (cb, _delay, ...args) {
+      const d = typeof _delay === "number" ? _delay : 0;
+      if (d > SHORT_DELAY_CAP_MS) {
+        let handle;
+        const wrapped = (...wargs) => { _pendingLongTimers.delete(handle); try { cb(...wargs); } catch (_) {} };
+        handle = orig.setTimeout_(wrapped, d, ...args);
+        _pendingLongTimers.add(handle);
+        return handle;
+      }
       return orig.setTimeout_(cb, 0, ...args);
+    };
+    global.clearTimeout = function (handle) {
+      _pendingLongTimers.delete(handle);
+      return orig.clearTimeout_(handle);
     };
 
     // notifications: silence everything during replay
@@ -481,6 +505,12 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     sharedSocketState.clearStraddle     = orig.ss_clearStraddle;
     fs.writeFileSync = orig.fs_writeFileSync;
     fs.renameSync    = orig.fs_renameSync;
+    // Clear any pass-through long-delay timers BEFORE restoring originals so
+    // we use our tracked handles with the still-overridden clearTimeout.
+    for (const h of _pendingLongTimers) {
+      try { orig.clearTimeout_(h); } catch (_) {}
+    }
+    _pendingLongTimers.clear();
     global.setTimeout   = orig.setTimeout_;
     global.clearTimeout = orig.clearTimeout_;
     callbacks.length = 0;
