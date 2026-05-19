@@ -296,35 +296,23 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     socketManager.isRunning = () => callbacks.length > 0;
     socketManager.stop = () => { callbacks.length = 0; };
 
-    // fyers.getQuotes: serve recorded option LTP / VIX based on replayNow.
-    //
-    // OPTION PATH — IMPORTANT: we return "no_data" here, NOT the recorded
-    // option LTP. Reasoning: live's option polling is async REST (1-sec
-    // cadence) and frequently does not return a quote before a fast exit
-    // fires, so ptState.optionLtp stays null and simulateSell falls through
-    // to the spot-proxy P&L path. If replay returned recorded option LTPs
-    // synchronously, simulateSell would take the option-premium branch
-    // instead, producing P&L that diverges from what live actually computed.
-    // Returning no_data here forces replay through the same spot-proxy
-    // branch live used, so replay P&L matches paper P&L to the rupee.
-    //
-    // Trade-off: for live trades that DID have a successful option poll
-    // before exit, this loses option-premium accuracy. The user's stated
-    // priority is replay==paper match, so we optimize for that.
+    // fyers.getQuotes: serve recorded option LTP / VIX based on replayNow
     fyers.getQuotes = async function (symbols) {
       const sym = Array.isArray(symbols) ? symbols[0] : symbols;
       if (!sym) return { s: "no_data", d: [] };
 
-      // VIX path — VIX cache fills before any trade decision, so timing
-      // impedance isn't a concern here.
+      // VIX path
       if (sym === "NSE:INDIAVIX-INDEX") {
         const v = _lookupAtOrBefore(vixTimeline, replayNow);
         if (!v) return { s: "no_data", d: [] };
         return { s: "ok", d: [{ v: { lp: v.l != null ? v.l : v.v } }] };
       }
 
-      // Option path — force the same spot-proxy fallback live takes.
-      return { s: "no_data", d: [] };
+      // Option path
+      const arr = optionTimeline.get(sym);
+      const v = _lookupAtOrBefore(arr, replayNow);
+      if (!v) return { s: "no_data", d: [] };
+      return { s: "ok", d: [{ v: { lp: v.l } }] };
     };
 
     // fyers.getHistory + backtestEngine.fetchCandles + candleCache.fetchCandlesCached:
