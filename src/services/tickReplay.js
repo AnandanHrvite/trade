@@ -778,6 +778,24 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       tradeCount    = sessionTrades.length;
     }
 
+    // Attach the recorded option-tick window between entry and exit for each
+    // trade. Surfaces every recorded LTP that flowed during the trade so we
+    // can verify replay's exit-LTP picks against the raw recording (e.g.,
+    // spot the spike that drove an unrealistic exit P&L).
+    for (const t of sessionTrades) {
+      if (!t.symbol) continue;
+      const arr = optionTimeline.get(t.symbol);
+      if (!arr || arr.length === 0) { t._replayOptionWindow = []; continue; }
+      const eMs = t.entryTimeMs || (t.entryBarTime ? t.entryBarTime * 1000 : null);
+      const xMs = t.exitTimeMs  || (t.exitBarTime  ? t.exitBarTime  * 1000 : null);
+      if (!eMs || !xMs) { t._replayOptionWindow = []; continue; }
+      // Include 2-sec pre-entry and 2-sec post-exit for context
+      const lo = eMs - 2000, hi = xMs + 2000;
+      t._replayOptionWindow = arr
+        .filter(r => r.t >= lo && r.t <= hi)
+        .map(r => ({ t: r.t, ms: r.t - eMs, l: r.l }));
+    }
+
     return {
       ok: true,
       mode,
