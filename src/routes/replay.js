@@ -227,9 +227,21 @@ ${buildSidebar('replay', false)}
 
 <script>
 let _preflightOk = true;
+let _myReplayRunning = false; // true while THIS tab is actively running a replay
 
 async function refreshPreflight() {
   const banner = document.getElementById('preflight-banner');
+
+  // If our own tab is running a replay, the backend's _replayInProgress
+  // flag will trip the preflight — but that's not a stuck state, it's our
+  // own healthy run. Show a neutral indicator instead of the alarming
+  // red banner with a "Force clear" button.
+  if (_myReplayRunning) {
+    _preflightOk = false;
+    banner.innerHTML = '<div class="banner ok" style="background:rgba(59,130,246,0.10);border-color:rgba(59,130,246,0.35);color:#93c5fd;">🔄 Replay in progress — running your test…</div>';
+    return;
+  }
+
   try {
     const r = await fetch('/replay/preflight');
     const data = await r.json();
@@ -237,10 +249,16 @@ async function refreshPreflight() {
     if (data.ok) {
       banner.innerHTML = '<div class="banner ok">✅ Safe to replay — no live or paper session is active.</div>';
     } else {
+      // Distinguish "another tab/process is replaying" from "a strategy is
+      // running" — only the second case warrants a Force clear suggestion.
+      const isAnotherReplay = /another replay is already running/i.test(data.reason || '');
       banner.innerHTML =
         '<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
           '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') + '</div>' +
-          '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;">Force clear (only if no session is actually running)</button>' +
+          (isAnotherReplay
+            ? '<span class="muted" style="color:#fca5a5;font-size:0.78rem;">Wait for it to finish, or open the tab that started it.</span>'
+            : '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;">Force clear (only if no session is actually running)</button>'
+          ) +
         '</div>';
     }
     // Reflect on existing buttons
@@ -462,6 +480,8 @@ async function runReplay(date, mode, sessionId, btn) {
     showBlockAlert(pre.reason || 'A live or paper session is currently active.');
     return;
   }
+  _myReplayRunning = true;
+  refreshPreflight(); // flip banner to neutral "in progress" immediately
   const useCurrentSettings = (getSelectedSettingsSource() === 'current');
   btn.disabled = true;
   btn.textContent = '⏳ Running…';
@@ -500,6 +520,9 @@ async function runReplay(date, mode, sessionId, btn) {
     btn.disabled = false;
     btn.textContent = '▶ Replay';
     content.innerHTML = '<div style="color:#ef4444;">Run failed: ' + e.message + '</div>';
+  } finally {
+    _myReplayRunning = false;
+    refreshPreflight(); // flip banner back to green/red authoritative state
   }
 }
 
@@ -688,6 +711,8 @@ async function runRange(btn) {
 
   btn.disabled = true;
   btn.textContent = '⏳ Running…';
+  _myReplayRunning = true;
+  refreshPreflight(); // flip banner to neutral "in progress" immediately
   const progress = document.getElementById('range-progress');
   const resultDiv = document.getElementById('range-result');
   progress.style.display = 'block';
@@ -735,12 +760,13 @@ async function runRange(btn) {
   const total = ((Date.now() - t0) / 1000).toFixed(1);
   if (aborted) {
     progress.innerHTML = '⛔ Aborted at session ' + (rows.length + 1) + '/' + sessions.length + ' — a paper or live session was started during the run. ' + rows.length + ' sessions completed in ' + total + 's.';
-    refreshPreflight();
   } else {
     progress.innerHTML = '✅ Done — ' + sessions.length + ' sessions in ' + total + 's.';
   }
   btn.disabled = false;
   btn.textContent = '▶ Run range';
+  _myReplayRunning = false;
+  refreshPreflight(); // flip banner back to green/red authoritative state
 }
 
 // Patch loadSessions to also cache sessions for the range picker + recompute
