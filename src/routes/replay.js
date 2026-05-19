@@ -367,7 +367,7 @@ function refreshSettingsSourceUi() {
   }
   // Also refresh single-row Replay buttons' tooltip so it's obvious which mode they will run in.
   document.querySelectorAll('button.replay-btn').forEach(b => {
-    if (!b.disabled) b.title = isCurrent ? 'Will run twice: snapshot baseline + your current settings, then compare' : 'Will run once with the session\\'s recorded settings (deterministic)';
+    if (!b.disabled) b.title = isCurrent ? 'Will run twice: snapshot baseline + your current settings, then compare' : 'Will run once using the recorded settings (deterministic)';
   });
 }
 
