@@ -155,12 +155,33 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 .banner.warn { background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; }
 .banner.ok   { background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.35); color:#6ee7b7; }
 .mode-toggle { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-.mode-toggle label { display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border:1px solid #1e293b; border-radius:6px; cursor:pointer; flex:1; min-width:260px; background:#0f172a; }
+.mode-toggle label { display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border:1px solid #1e293b; border-radius:6px; cursor:pointer; flex:1; min-width:260px; background:#0f172a; transition: border-color 0.2s, background 0.2s; }
 .mode-toggle label:hover { border-color:#334155; }
 .mode-toggle input[type="radio"]:checked + .mt-body { color:#f1f5f9; }
-.mode-toggle label:has(input:checked) { border-color:#3b82f6; background:#172033; }
+/* Per-card selected accent — snapshot=blue, current=amber. The has() check
+   keys off the actual radio value so the colour matches the option even
+   before refreshSettingsSourceUi() runs. */
+.mode-toggle label:has(input[value="snapshot"]:checked) { border-color:#3b82f6; background:#172033; box-shadow:0 0 0 1px rgba(59,130,246,0.25); }
+.mode-toggle label:has(input[value="current"]:checked)  { border-color:#f59e0b; background:#1f1a0e; box-shadow:0 0 0 1px rgba(245,158,11,0.30); }
 .mt-title { font-weight:600; font-size:0.85rem; color:#e2e8f0; }
 .mt-desc  { color:#94a3b8; font-size:0.75rem; margin-top:2px; line-height:1.4; }
+
+/* Settings-source-driven theming. The body data-source attribute is set in
+   refreshSettingsSourceUi() based on which radio is checked. Snapshot uses
+   blue (safe/deterministic); current uses amber (experimental/simulator). */
+body[data-source="snapshot"] #range-run-btn { background:#3b82f6; }
+body[data-source="snapshot"] #range-run-btn:hover:not(:disabled) { background:#2563eb; }
+body[data-source="snapshot"] .source-chip { background:rgba(59,130,246,0.15); color:#93c5fd; border:1px solid rgba(59,130,246,0.40); }
+
+body[data-source="current"] #range-run-btn { background:#f59e0b; color:#1a1208; }
+body[data-source="current"] #range-run-btn:hover:not(:disabled) { background:#d97706; color:#fff; }
+body[data-source="current"] .source-chip { background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.40); }
+/* Subtle amber accent on the range card when in simulator mode, so the
+   "this will replay against current settings" intent is visible at a glance
+   even before scrolling up to the radio. */
+body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); box-shadow:0 0 0 1px rgba(245,158,11,0.10); }
+
+.source-chip { display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.7rem; font-weight:600; letter-spacing:0.03em; margin-left:8px; vertical-align:middle; }
 </style>
 </head>
 <body>
@@ -194,8 +215,8 @@ ${buildSidebar('replay', false)}
     </div>
   </div>
 
-  <div class="card">
-    <strong>Date-range <span id="range-mode-label">replay</span></strong>
+  <div class="card" id="range-card">
+    <strong>Date-range <span id="range-mode-label">replay</span></strong><span id="source-chip" class="source-chip">SNAPSHOT</span>
     <div class="muted" id="range-description" style="margin-top:4px;">Replay every recorded session in the range. Description updates based on your Settings source choice above.</div>
     <div class="range-row">
       <div class="range-field">
@@ -356,6 +377,11 @@ function refreshSettingsSourceUi() {
   const modeLabel = document.getElementById('range-mode-label');
   const desc      = document.getElementById('range-description');
   const runBtn    = document.getElementById('range-run-btn');
+  const chip      = document.getElementById('source-chip');
+  // Body-level attribute drives all the colour theming via CSS — set it
+  // first so the rest of the DOM mutations land in the new colour scheme.
+  document.body.setAttribute('data-source', isCurrent ? 'current' : 'snapshot');
+  if (chip) chip.textContent = isCurrent ? 'SIMULATOR · CURRENT SETTINGS' : 'SNAPSHOT · DETERMINISTIC';
   if (modeLabel) modeLabel.textContent = isCurrent ? 'comparison' : 'replay';
   if (desc) {
     desc.innerHTML = isCurrent
