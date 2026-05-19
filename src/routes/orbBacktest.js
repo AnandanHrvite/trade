@@ -20,6 +20,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
+const { isExpiryDate } = require("../utils/nseHolidays");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const ACCENT = "#10b981";
@@ -46,9 +47,10 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
-function runOrbBacktest(allCandles) {
+function runOrbBacktest(allCandles, expirySet) {
   if (!allCandles || !allCandles.length) return [];
 
+  const EXPIRY_ONLY = (process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true";
   const DELTA      = parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY  = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
   const LOT_SIZE   = parseInt(process.env.NIFTY_LOT_SIZE || "65", 10);
@@ -76,6 +78,7 @@ function runOrbBacktest(allCandles) {
 
   for (const [_dateStr, dayCandles] of byDate) {
     if (dayCandles.length < 5) continue;
+    if (EXPIRY_ONLY && expirySet && !expirySet.has(_dateStr)) continue;
     let position = null;
     let tradesTaken = 0;
     const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
@@ -236,7 +239,22 @@ router.get("/", async (req, res) => {
   try {
     console.log(`🔍 ORB Backtest: ${from} → ${to}`);
     const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
-    const trades = runOrbBacktest(candles || []);
+
+    // Pre-compute expiry-day set if ORB_EXPIRY_DAY_ONLY is on
+    let expirySet = null;
+    if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true" && Array.isArray(candles) && candles.length) {
+      const uniqueDates = new Set();
+      for (const c of candles) {
+        const d = new Date((c.time + 19800) * 1000);
+        uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
+      }
+      expirySet = new Set();
+      for (const dt of uniqueDates) {
+        try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
+      }
+      console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
+    }
+    const trades = runOrbBacktest(candles || [], expirySet);
     const stats = computeBacktestStats(trades);
     // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
     // so /all-backtest renders it as ₹ instead of "pts".

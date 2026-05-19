@@ -418,22 +418,41 @@ async function isExpiryDay() {
 /**
  * Check if a given date string (YYYY-MM-DD) is an expiry day.
  * Used by backtest to filter candles to expiry-only days.
- * Tuesday = normal expiry. If Tuesday is an NSE holiday, Monday = preponed expiry.
+ *
+ * NIFTY weekly expiry day changed in April 2025:
+ *   • Before 2025-04-04: Thursday was expiry (preponed to Wednesday if Thu = holiday)
+ *   • 2025-04-04 onwards: Tuesday is expiry (preponed to Monday if Tue = holiday)
+ *
+ * The cutover can be overridden via EXPIRY_DAY_CUTOVER env var (YYYY-MM-DD).
  */
 async function isExpiryDate(dateStr) {
   const d = new Date(dateStr + "T12:00:00+05:30"); // parse in IST
-  const day = d.getDay(); // 0=Sun, 2=Tue
+  const day = d.getDay(); // 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu
 
-  // Tuesday = normal expiry
+  const cutoverStr = process.env.EXPIRY_DAY_CUTOVER || "2025-04-04";
+  const cutover = new Date(cutoverStr + "T00:00:00+05:30");
+  const isPreCutover = d < cutover;
+
+  if (isPreCutover) {
+    // Thursday = normal expiry
+    if (day === 4) return true;
+    // Wednesday = check if next day (Thursday) is a holiday → preponed expiry
+    if (day === 3) {
+      const thu = new Date(d);
+      thu.setDate(thu.getDate() + 1);
+      return await isNSEHoliday(thu);
+    }
+    return false;
+  }
+
+  // Post-cutover: Tuesday
   if (day === 2) return true;
-
   // Monday = check if next day (Tuesday) is a holiday → preponed expiry
   if (day === 1) {
     const tue = new Date(d);
     tue.setDate(tue.getDate() + 1);
     return await isNSEHoliday(tue);
   }
-
   return false;
 }
 
