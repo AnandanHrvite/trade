@@ -751,8 +751,13 @@ function setRangeDefaults() {
 
 function pickSessionsInRange(from, to, mode) {
   // Sessions are deduped by sessionId in listRecordings, sorted newest-first.
+  // We DON'T require durationMs != null. A session that crash-recovered or
+  // was killed mid-flight has no stop record but still has a full spot/option
+  // tick stream — replay synthesises an end-of-window stop and processes
+  // every recorded tick. Excluding these meant 18-may swing was unreachable
+  // even though all its ticks were on disk.
   return _allSessionsCache
-    .filter(s => s.mode === mode && s.date >= from && s.date <= to && s.durationMs != null)
+    .filter(s => s.mode === mode && s.date >= from && s.date <= to)
     .sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
 }
 
