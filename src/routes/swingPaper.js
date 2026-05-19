@@ -2269,6 +2269,12 @@ function _getCachedTradesForPoll() {
     eSl: t.stopLoss || null, xSpot: t.spotAtExit || t.exitPrice || 0,
     xOpt: t.optionExitLtp || null, pnl: typeof t.pnl === "number" ? t.pnl : null,
     reason: t.exitReason || "",
+    // Fields used by tickReplay to attach per-trade option-tick windows.
+    // Cheap (already on the trade record), no extra computation on poll.
+    symbol: t.symbol || null,
+    entryBarTime: t.entryBarTime || null,
+    exitBarTime:  t.exitBarTime  || null,
+    durationMs:   t.durationMs   || null,
   }));
   return _tradesMapCache;
 }

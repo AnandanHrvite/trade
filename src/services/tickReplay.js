@@ -786,8 +786,15 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       if (!t.symbol) continue;
       const arr = optionTimeline.get(t.symbol);
       if (!arr || arr.length === 0) { t._replayOptionWindow = []; continue; }
-      const eMs = t.entryTimeMs || (t.entryBarTime ? t.entryBarTime * 1000 : null);
-      const xMs = t.exitTimeMs  || (t.exitBarTime  ? t.exitBarTime  * 1000 : null);
+      // Resolve entry/exit in ms — paper modes expose different fields, so
+      // try the richest source first and fall back to coarser ones.
+      const eMs = t.entryTimeMs
+        || (t.entryBarTime ? t.entryBarTime * 1000 : null);
+      let xMs = t.exitTimeMs
+        || (t.exitBarTime  ? t.exitBarTime  * 1000 : null);
+      // If exit collapsed to entry bucket (intra-bar exit recorded as the
+      // same 5-min bar), use durationMs to derive a more accurate exit.
+      if (eMs && xMs === eMs && t.durationMs) xMs = eMs + t.durationMs;
       if (!eMs || !xMs) { t._replayOptionWindow = []; continue; }
       // Include 2-sec pre-entry and 2-sec post-exit for context
       const lo = eMs - 2000, hi = xMs + 2000;
