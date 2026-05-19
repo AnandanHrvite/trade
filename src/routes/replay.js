@@ -731,11 +731,22 @@ async function runRange(btn) {
            /cannot replay while|already running/i.test(resp.error);
   }
 
+  // Live-update the elapsed time every second so the user sees progress
+  // even while a single API call is in flight (each baseline+sim pass can
+  // take 15-60s for a full session that actually trades).
+  let _stepLabel = '';
+  const tickProgress = () => {
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    progress.innerHTML = _stepLabel + ' (' + elapsed + 's total elapsed)';
+  };
+  const progressTimer = setInterval(tickProgress, 1000);
+
+  try {
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const idx = i + 1;
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    progress.innerHTML = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running baseline… (' + elapsed + 's elapsed)';
+    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running baseline…';
+    tickProgress();
     let baseline = null, sim = null;
     try {
       baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
@@ -744,7 +755,8 @@ async function runRange(btn) {
     }
     if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
 
-    progress.innerHTML = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running your settings…';
+    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running your settings…';
+    tickProgress();
     try {
       sim = await callReplayApi(s.date, s.mode, s.sessionId, true);
     } catch (e) {
@@ -755,6 +767,9 @@ async function runRange(btn) {
     rows.push({ session: s, baseline, sim });
     // Live partial render after each session so the user sees results stream in.
     renderRangeResult(rows, context);
+  }
+  } finally {
+    clearInterval(progressTimer);
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
