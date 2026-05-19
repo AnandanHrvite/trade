@@ -265,6 +265,13 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     ss_clearOrb:          sharedSocketState.clearOrb,
     ss_setStraddleActive: sharedSocketState.setStraddleActive,
     ss_clearStraddle:     sharedSocketState.clearStraddle,
+    // fs originals — paper /stop calls saveSession() → savePaperData() which
+    // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
+    // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
+    // already stub). Without intercepting these, every replay /stop appends
+    // a phantom session to the real paper history file.
+    fs_writeFileSync: fs.writeFileSync,
+    fs_renameSync:    fs.renameSync,
   };
 
   // Captured callbacks (paper modules call socketManager.addCallback / .start)
@@ -366,6 +373,20 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     sharedSocketState.setStraddleActive = () => {};
     sharedSocketState.clearStraddle     = () => {};
 
+    // fs: intercept writes to canonical paper_trades.json (and its .tmp
+    // sibling used for atomic temp+rename). Anything else passes through
+    // — replay's own JSONL output and the harness internals are untouched.
+    fs.writeFileSync = function (file, data, opts) {
+      const p = typeof file === "string" ? file : String(file);
+      if (/paper_trades\.json(\.tmp)?$/.test(p)) return; // silently drop
+      return orig.fs_writeFileSync(file, data, opts);
+    };
+    fs.renameSync = function (from, to) {
+      const t = typeof to === "string" ? to : String(to);
+      if (/paper_trades\.json$/.test(t)) return; // silently drop
+      return orig.fs_renameSync(from, to);
+    };
+
     // notifications: silence everything during replay
     notify.notifyEntry     = () => {};
     notify.notifyExit      = () => {};
@@ -433,6 +454,8 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     sharedSocketState.clearOrb          = orig.ss_clearOrb;
     sharedSocketState.setStraddleActive = orig.ss_setStraddleActive;
     sharedSocketState.clearStraddle     = orig.ss_clearStraddle;
+    fs.writeFileSync = orig.fs_writeFileSync;
+    fs.renameSync    = orig.fs_renameSync;
     callbacks.length = 0;
   }
 
