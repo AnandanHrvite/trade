@@ -1217,6 +1217,7 @@ async function orbpManualEntry(side) {
   var _lastLogCount    = ${state.log.length};
   var _lastRunning     = ${state.running};
   var _maxLoss         = ${_maxLoss};
+  var _interval        = null;
 
   function setText(id, val){ var el=document.getElementById(id); if(el && el.textContent !== String(val)) el.textContent = val; }
   function setHTML(id, val){ var el=document.getElementById(id); if(el) el.innerHTML = val; }
@@ -1360,12 +1361,22 @@ async function orbpManualEntry(side) {
       }
 
       // Detect stop
-      if (_lastRunning && !d.running) { _lastRunning = false; setTimeout(function(){ window.location.reload(); }, 1500); }
+      if (_lastRunning && !d.running) {
+        _lastRunning = false;
+        if (_interval) { clearInterval(_interval); _interval = null; }
+        setTimeout(function(){ window.location.reload(); }, 1500);
+      }
     } catch (e) { console.warn('[orb-paper] refresh:', e.message); }
   }
 
-  ${state.running ? "var _it = setInterval(fetchAndUpdate, 2000); fetchAndUpdate();" : ""}
-  document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'visible' && ${state.running}) fetchAndUpdate(); });
+  if (${state.running}) { _interval = setInterval(fetchAndUpdate, 2000); fetchAndUpdate(); }
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible' && ${state.running}) {
+      fetchAndUpdate();
+      if (!_interval) _interval = setInterval(fetchAndUpdate, 2000);
+    }
+  });
+  window.addEventListener('focus', function(){ if (${state.running}) fetchAndUpdate(); });
 })();
 </script>
 
