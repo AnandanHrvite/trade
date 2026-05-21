@@ -43,13 +43,16 @@ Key invariants:
 
 ## Route layer convention
 
-Every mode = its own router under [src/routes/](src/routes/), mounted in [src/app.js](src/app.js) at lines ~344–381. Three-route pattern per strategy: `{name}Live.js` / `{name}Paper.js` / `{name}Backtest.js`. Routers render their own HTML (no templating engine) and own their `/status`, `/start`, `/stop`, `/data`, `/reset` sub-paths.
+Every mode = its own router under [src/routes/](src/routes/), mounted in [src/app.js](src/app.js) at lines ~344–381. Three-route pattern per strategy: `{name}Live.js` / `{name}Paper.js` / `{name}Backtest.js` (PA adds `paLiveHarness.js` for the paper-wrapping harness and `paPatternBacktest.js` for per-pattern attribution). Routers render their own HTML (no templating engine) and own their `/status`, `/start`, `/stop`, `/data`, `/reset` sub-paths.
+
+The unified pages live alongside: [realtime.js](src/routes/realtime.js) (Real-Time monitor), [replay.js](src/routes/replay.js) (tick replay), [allBacktest.js](src/routes/allBacktest.js) (unified backtest dashboard), [consolidation.js](src/routes/consolidation.js) / [liveConsolidation.js](src/routes/liveConsolidation.js) (cross-mode history), [tradeLogs.js](src/routes/tradeLogs.js) (per-mode JSONL viewer).
 
 When wiring a **new** strategy or page, you must:
 
 1. Add the router + mount it in `src/app.js` route block.
 2. Add a sidebar entry in [src/utils/sharedNav.js](src/utils/sharedNav.js) — gated by an env-var toggle.
 3. Expose that toggle in the [Settings UI](src/routes/settings.js). **No new menu item ships without a Settings toggle** (see memory: `feedback_new_pages_settings_toggle.md`).
+4. Wire the strategy into [realtime.js](src/routes/realtime.js) and the dashboard rollups, gated by `{STRATEGY}_MODE_ENABLED`. New strategies don't ship invisible from the shared monitors — see memory `feedback_shared_monitor_new_strategy.md`.
 
 ## Paper logic is canonical
 
@@ -59,11 +62,14 @@ Paper routes are treated as the source of truth for decision/fill/exit semantics
 
 Everything stateful lives in `~/trading-data/` — **outside the repo**, so `git pull` and PM2 reloads never wipe it:
 
-- `{strategy}_paper_trades.json` / `_live_trades.json` — session-grouped trades
-- `.active_{trade,scalp,pa}_position.json` — crash-recovery snapshots
-- `trades/{mode}_paper_trades_YYYY-MM-DD.jsonl` — per-day cumulative audit log (canonical export format)
-- `backtest_cache/`, `candle_cache/` — disk caches, auto-pruned
-- `.fyers_token`, `.zerodha_token` — OAuth tokens
+- `{swing,scalp,pa,orb,straddle}_paper_trades.json` / `_live_trades.json` — session-grouped trades
+- `.active_{trade,scalp,pa}_position.json` — crash-recovery snapshots. **ORB and Straddle do not have crash-recovery snapshots yet** — `positionPersist.js` only handles Swing/Scalp/PA. Add helpers there if either strategy needs restart survival of an open position.
+- `trades/{mode}_paper_trades_YYYY-MM-DD.jsonl` — per-day cumulative audit log (canonical export format). Seeded with a settings snapshot + checkpoint note; re-snapshotted whenever a save changes a key that affects that mode.
+- `ticks/YYYY-MM-DD/*.jsonl` — recorded spot/option/VIX ticks, gated by `TICK_RECORDER_ENABLED` (default on). Source of truth for `/replay`. Retention `TICK_RECORDER_RETAIN_DAYS` (default 30).
+- `_replay_trades/` — Replay outputs in snapshot mode (uses recorded session-start settings).
+- `_replay_trades_sim/` — Replay outputs in current-settings mode (uses live `process.env`).
+- `backtest_cache/`, `candle_cache/` — disk caches, auto-pruned.
+- `.fyers_token`, `.zerodha_token` — OAuth tokens.
 
 JSONL day files include settings snapshots written by [settings.js](src/routes/settings.js) on every save (with the checkpoint note the UI prompts for), so each day's log carries the exact config that produced its trades.
 
@@ -74,5 +80,7 @@ JSONL day files include settings snapshots written by [settings.js](src/routes/s
 - **Active paper-trade data-collection window** runs through ~2026-06-02 — during this window: additive logging only, no strategy tuning or backtest-focused changes. See `project_paper_trade_data_collection.md`. Per-strategy post-window observation notes are accumulating in `project_{scalp,pa,swing}_post_window_observations.md` — read those before proposing strategy changes.
 - **README.md is the user-facing spec** for env vars, routes, and per-strategy behaviour. Keep it in sync when adding env keys or routes.
 - **CHANGELOG.md** is hand-maintained; add an entry for user-visible changes.
+- **Live order placement is double-gated**: a strategy's `*_LIVE_ENABLED` toggle plus the global `LIVE_HARNESS_DRY_RUN`. When `LIVE_HARNESS_DRY_RUN=true` (default) the live engines log the broker call they would have made but place no real order. Flip the harness OFF only after the strategy's Paper and Live decisions match on a recorded session via `/replay`.
+- **Tick recorder is the source of truth for Replay** — `TICK_RECORDER_ENABLED` must stay on for any session you want to replay deterministically. The recorder is a pure observer; treat it as additive-logging-only when touching its files.
 - Indicators: use the `technicalindicators` package consistently (EMA/RSI/ADX/SAR/BB) — don't hand-roll new ones.
 - Console output is intercepted by [services/logger.js](src/services/logger.js) (required *first* in `app.js`) and fed to `/logs` SSE — `console.log` is the logging API, not a debug crutch.

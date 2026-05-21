@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Docs — Sync README.md + CLAUDE.md with current app
+
+- **README.md** now reflects the five-strategy reality (Swing / Scalp / PA / **ORB** / **Straddle**). Updated the architecture diagram, the modes table, the strategies section (new ORB and Straddle write-ups, PA breakeven trigger), the env-var tables (added every `ORB_*` / `STRADDLE_*` key with current defaults; corrected stale defaults for `MAX_DAILY_TRADES`, `SCALP_MAX_SL_PTS`, `SCALP_TRAIL_START`, `SCALP_TRAIL_TIERS`, `SCALP_MAX_DAILY_LOSS`, `PA_TRAIL_START`, `PA_TRAIL_TIERS`, `PA_CANDLE_TRAIL_BARS`, `PA_RSI_CAPS_ENABLED`), the routes section (ORB / Straddle / Replay / All-Backtest / paLiveHarness / paPatternBacktest), the persistence layout (per-day `ticks/`, `_replay_trades/`, `_replay_trades_sim/`; gap noted that `.active_orb_position.json` / `.active_straddle_position.json` don't exist yet), the menu-visibility / security tables, and the project structure tree.
+- **CLAUDE.md** routes paragraph now lists the unified pages (Real-Time, Replay, All-Backtest, consolidation, tradeLogs) and adds a 4th step to the "wiring a new strategy" checklist — register with the shared monitors gated by `{STRATEGY}_MODE_ENABLED`. Persistent-data section now includes `ticks/` + `_replay_trades/` and calls out the ORB/Straddle position-persist gap. Added "Live order placement is double-gated" and "Tick recorder is the source of truth for Replay" guidance to the working-in-repo section.
+- Pure docs sync — no code paths touched.
+
 ### Settings — Drop orphan PA_ADX_DIRECTIONAL row
 
 - Removed the `PA_ADX_DIRECTIONAL` toggle from the PA section of the Settings UI ([src/routes/settings.js](src/routes/settings.js)). The row was advertising a directional ADX gate (require `+DI > -DI` for CE / `-DI > +DI` for PE) that the engine never actually enforced — no reader exists in [src/strategies/price_action.js](src/strategies/price_action.js). Removing the UI to stop misleading the operator; the gate itself can be added after the paper-trade data-collection window closes (~2026-06-02) without re-introducing UI drift.
