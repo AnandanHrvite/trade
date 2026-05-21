@@ -2069,8 +2069,8 @@ function triggerServerRestart(btn) {
 }
 
 // Shown after a save returns keys that need a restart. Asks the user whether
-// to auto-restart the server now, or apply the change later via the explicit
-// Restart button / session stop+start. `savedMsg` is the success summary so
+// to auto-restart the server now or apply the change later via the explicit
+// Restart button / session stop+start. savedMsg is the success summary so
 // the modal carries both the save confirmation and the restart prompt.
 async function maybePromptRestart(needsRestart, savedMsg) {
   if (!needsRestart || !needsRestart.length) return;
