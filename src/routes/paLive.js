@@ -58,10 +58,6 @@ const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,10
 const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
 const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
 const _PA_OPT_STOP_PCT        = parseFloat(process.env.PA_OPT_STOP_PCT || "0.15");
-// Breakeven snap — mirrors paPaper. Once peak PnL ≥ TRIGGER, move SL through
-// entry by BUFFER spot pts (CE: entry+buf, PE: entry-buf). TRIGGER=0 disables.
-const _PA_BE_TRIGGER          = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "0");
-const _PA_BE_BUFFER           = parseFloat(process.env.PA_BREAKEVEN_BUFFER  || "1");
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
@@ -593,20 +589,6 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
-
-    // BREAKEVEN SNAP — mirrors paPaper. See paPaper.js for full commentary.
-    if (_PA_BE_TRIGGER > 0 && pos.peakPnl >= _PA_BE_TRIGGER) {
-      const _beSL = parseFloat((pos.side === "CE"
-        ? pos.entryPrice + _PA_BE_BUFFER
-        : pos.entryPrice - _PA_BE_BUFFER).toFixed(2));
-      const _beTightens = (pos.side === "CE" && _beSL > pos.stopLoss)
-                       || (pos.side === "PE" && _beSL < pos.stopLoss);
-      if (_beTightens) {
-        log(`📐 [PA-LIVE] Trail SL (BreakEven): ₹${pos.stopLoss} → ₹${_beSL} (peak ₹${Math.round(pos.peakPnl)})`);
-        pos.stopLoss = _beSL;
-        pos.slSource = "BreakEven";
-      }
-    }
 
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {

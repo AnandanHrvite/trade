@@ -93,11 +93,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false"; // default true
   const PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
 
-  // Breakeven snap — mirrors paPaper. Once peak PnL ≥ TRIGGER, move SL through
-  // entry by BUFFER spot pts (CE: entry+buf, PE: entry-buf). TRIGGER=0 disables.
-  const PA_BE_TRIGGER = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "0");
-  const PA_BE_BUFFER  = parseFloat(process.env.PA_BREAKEVEN_BUFFER  || "1");
-
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
   function getISTDateStr(unixSec) {
@@ -251,21 +246,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
         position.peakPnl = bestPnl;
-      }
-
-      // BREAKEVEN SNAP — mirrors paPaper. Evaluated BEFORE the SL hit check so
-      // the tightened SL applies on the same candle (matches paper, where the
-      // per-tick check moves SL before the same-tick SL trigger evaluation).
-      if (PA_BE_TRIGGER > 0 && position.peakPnl >= PA_BE_TRIGGER) {
-        const _beSL = parseFloat((position.side === "CE"
-          ? position.entryPrice + PA_BE_BUFFER
-          : position.entryPrice - PA_BE_BUFFER).toFixed(2));
-        const _beTightens = (position.side === "CE" && _beSL > position.stopLoss)
-                         || (position.side === "PE" && _beSL < position.stopLoss);
-        if (_beTightens) {
-          position.stopLoss = _beSL;
-          position.slSource = "BreakEven";
-        }
       }
 
       // ──────────────────────────────────────────────────────────────────────
