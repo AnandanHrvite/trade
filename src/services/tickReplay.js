@@ -910,6 +910,19 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 /**
  * List recorded sessions for a given date (or all available dates if none given).
  */
+// PA/Scalp/Swing paper have always recorded option LTPs at the poll site.
+// ORB/Straddle paper only started doing so after the option-LTP recording
+// fix landed — their session-start meta now includes `recordsOptionLtps:true`.
+// Sessions for these modes that lack the flag in meta cannot reproduce
+// trades on replay, so the UI marks them as incomplete and disables Replay.
+const LEGACY_ALWAYS_RECORDED_MODES = new Set(["pa-paper", "scalp-paper", "swing-paper"]);
+
+function _sessionIsReplayable(startEvt) {
+  if (!startEvt || !startEvt.mode) return false;
+  if (LEGACY_ALWAYS_RECORDED_MODES.has(startEvt.mode)) return true;
+  return !!(startEvt.meta && startEvt.meta.recordsOptionLtps);
+}
+
 function listRecordings(date) {
   const out = { dates: [], sessions: [] };
   if (!fs.existsSync(ROOT_DIR)) return out;
@@ -932,6 +945,7 @@ function listRecordings(date) {
         stopTs:    stop ? stop.t : null,
         durationMs: stop ? (stop.t - s.t) : null,
         warmupCandles: s.warmup ? s.warmup.length : 0,
+        replayable: _sessionIsReplayable(s),
       });
     }
   }

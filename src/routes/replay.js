@@ -172,6 +172,9 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.pa       { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.orb      { background:rgba(16,185,129,0.15);  color:#34d399; }
 .tag.straddle { background:rgba(236,72,153,0.15);  color:#f472b6; }
+.tag-incomplete { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.65rem; font-weight:600; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); margin-left:4px; }
+.row-incomplete td { opacity:0.65; }
+.row-incomplete td:last-child { opacity:1; } /* keep actions readable */
 .result-pnl { font-size:1.4rem; font-weight:700; margin:8px 0; }
 .result-pnl.positive { color:#10b981; }
 .result-pnl.negative { color:#ef4444; }
@@ -542,14 +545,24 @@ function renderSessions() {
     const sidJs  = _jsAttr(s.sessionId);
     const dateJs = _jsAttr(s.date);
     const modeJs = _jsAttr(s.mode);
-    const replayDisabled = _preflightOk ? '' : 'disabled';
+    // Replayable: PA/Scalp/Swing always; ORB/Straddle only after the option-LTP
+    // recording fix (session-start meta has recordsOptionLtps:true). Pre-fix
+    // sessions get a yellow "incomplete" chip + disabled Replay button.
+    const isReplayable = s.replayable !== false;
+    const replayDisabled = (!_preflightOk || !isReplayable) ? 'disabled' : '';
     const srcSuffix = (getSelectedSettingsSource() === 'current') ? ' (current)' : ' (snapshot)';
-    const replayTitle = (getSelectedSettingsSource() === 'current')
-      ? 'Replay with your current Settings page values (simulator). Toggle the Settings source above to switch.'
-      : 'Replay with the exact settings recorded with this session. Toggle the Settings source above to switch.';
-    html += '<tr>' +
+    const replayTitle = !isReplayable
+      ? 'This session predates option-LTP recording for ' + s.mode + ' — replay would produce 0 trades. Use the 🗑 button to remove the marker; spot/options/vix files on disk are untouched.'
+      : (getSelectedSettingsSource() === 'current'
+          ? 'Replay with your current Settings page values (simulator). Toggle the Settings source above to switch.'
+          : 'Replay with the exact settings recorded with this session. Toggle the Settings source above to switch.');
+    const modeCell = isReplayable
+      ? '<span class="tag ' + tag + '">' + _escapeHtml(s.mode) + '</span>'
+      : '<span class="tag ' + tag + '">' + _escapeHtml(s.mode) + '</span>' +
+        ' <span class="tag-incomplete" title="No option LTPs were recorded for this session — replay cannot reproduce trades">⚠ incomplete</span>';
+    html += '<tr' + (isReplayable ? '' : ' class="row-incomplete"') + '>' +
       '<td>' + _escapeHtml(s.date) + '</td>' +
-      '<td><span class="tag ' + tag + '">' + _escapeHtml(s.mode) + '</span></td>' +
+      '<td>' + modeCell + '</td>' +
       '<td><code style="font-size:0.7rem;color:#94a3b8;">' + sid + '</code></td>' +
       '<td>' + dur + '</td>' +
       '<td>' + s.warmupCandles + ' candles</td>' +

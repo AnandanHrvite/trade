@@ -611,6 +611,10 @@ router.get("/start", async (req, res) => {
         expiryDayBlocked: _expiryBlocked,
         spotSymbol: NIFTY_INDEX_SYMBOL,
         sessionStartISO: state.sessionStart,
+        // Replay-fidelity marker: true means this session writes option LTPs
+        // to options.jsonl, so tick-replay can reconstruct exit P&L. Pre-fix
+        // sessions are missing the flag → list endpoint marks them "incomplete".
+        recordsOptionLtps: true,
       },
     });
   } catch (_) {}
