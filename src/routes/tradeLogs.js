@@ -30,36 +30,81 @@ const MODES = ["swing", "scalp", "pa", "orb", "straddle"];
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
 
-// ── GET /trade-logs/list — all daily files across all 3 modes ───────────────
+// Parse ?page= / ?pageSize=. Returns null when ?page is absent (legacy callers).
+function parsePaging(req, defaultSize = 10, maxSize = 500) {
+  const rawPage = req.query.page;
+  if (rawPage === undefined || rawPage === null || rawPage === "") return null;
+  const page = Math.max(1, parseInt(rawPage, 10) || 1);
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || defaultSize, 1), maxSize);
+  return { page, pageSize };
+}
+
+// Count trades + checkpoint markers in a daily trade JSONL.
+function countTradesFile(mode, date) {
+  let trades = 0, checkpoints = 0;
+  try {
+    const text = fs.readFileSync(tradeLogger.dailyFilePathFor(mode, date), "utf-8");
+    for (const line of text.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const obj = JSON.parse(t);
+        if (obj && obj.type === "checkpoint") checkpoints++;
+        else trades++;
+      } catch (_) { /* skip bad line */ }
+    }
+  } catch (_) { /* file vanished */ }
+  return { trades, checkpoints };
+}
+
+// ── GET /trade-logs/list — daily files. Supports ?mode= for per-mode paging. ─
+// Legacy shape (no params)        → { success, modes: { swing: [...], ... } }
+// Paged shape (?mode=&page=...)   → { success, mode, page, pageSize, total, count, rows }
 router.get("/list", (req, res) => {
+  const requestedMode = String(req.query.mode || "").toLowerCase();
+  const paging = parsePaging(req, 10);
+
+  if (requestedMode) {
+    if (!validMode(requestedMode)) return res.status(400).json({ success: false, error: "bad mode" });
+    let dates;
+    try { dates = tradeLogger.listDailyDates(requestedMode); }
+    catch (_) { dates = []; }
+    const total = dates.length;
+    const slice = paging
+      ? dates.slice((paging.page - 1) * paging.pageSize, (paging.page - 1) * paging.pageSize + paging.pageSize)
+      : dates;
+    const rows = slice.map(f => {
+      const c = countTradesFile(requestedMode, f.date);
+      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints };
+    });
+    return res.json({
+      success: true,
+      mode: requestedMode,
+      page: paging ? paging.page : 1,
+      pageSize: paging ? paging.pageSize : total,
+      total,
+      count: rows.length,
+      rows,
+    });
+  }
+
+  // Legacy aggregate shape for callers that don't pass ?mode.
   const out = {};
   for (const mode of MODES) {
     let files;
     try { files = tradeLogger.listDailyDates(mode); }
     catch (_) { files = []; }
     out[mode] = files.map(f => {
-      // Count parseable trade lines and any checkpoint markers in this file.
-      // Cheap full-read: these files are at most a few thousand lines.
-      let trades = 0, checkpoints = 0;
-      try {
-        const text = fs.readFileSync(tradeLogger.dailyFilePathFor(mode, f.date), "utf-8");
-        for (const line of text.split(/\r?\n/)) {
-          const t = line.trim();
-          if (!t) continue;
-          try {
-            const obj = JSON.parse(t);
-            if (obj && obj.type === "checkpoint") checkpoints++;
-            else trades++;
-          } catch (_) { /* skip bad line */ }
-        }
-      } catch (_) { /* file vanished — ignore */ }
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades, checkpoints };
+      const c = countTradesFile(mode, f.date);
+      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, trades: c.trades, checkpoints: c.checkpoints };
     });
   }
   res.json({ success: true, modes: out });
 });
 
 // ── GET /trade-logs/view — parsed JSONL for one file ────────────────────────
+// Legacy (no ?page)  → { success, mode, date, count, trades: [all] }
+// Paged (?page=...)  → { success, mode, date, page, pageSize, total, count, trades: [slice] }
 router.get("/view", (req, res) => {
   const mode = String(req.query.mode || "").toLowerCase();
   const date = String(req.query.date || "");
@@ -68,7 +113,20 @@ router.get("/view", (req, res) => {
   let trades;
   try { trades = tradeLogger.readDailyTrades(mode, date); }
   catch (err) { return res.status(500).json({ success: false, error: err.message }); }
-  res.json({ success: true, mode, date, count: trades.length, trades });
+  const paging = parsePaging(req, 25);
+  if (!paging) {
+    return res.json({ success: true, mode, date, count: trades.length, trades });
+  }
+  const total = trades.length;
+  const start = (paging.page - 1) * paging.pageSize;
+  const slice = trades.slice(start, start + paging.pageSize);
+  res.json({
+    success: true,
+    mode, date,
+    page: paging.page, pageSize: paging.pageSize,
+    total, count: slice.length,
+    trades: slice,
+  });
 });
 
 // ── GET /trade-logs/download — raw JSONL stream ─────────────────────────────
@@ -147,31 +205,63 @@ router.post("/delete-all", (req, res) => {
   res.json({ success: failed.length === 0, mode, deleted, failed });
 });
 
-// ── GET /trade-logs/skips/list — all daily skip files across all 3 modes ────
+// Count skip lines + per-gate buckets for a daily skip JSONL.
+function countSkipsFile(mode, date) {
+  let total = 0;
+  const byGate = {};
+  try {
+    const text = fs.readFileSync(skipLogger.filePathFor(mode, date), "utf-8");
+    for (const line of text.split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const obj = JSON.parse(t);
+        total++;
+        const g = obj && obj.gate ? String(obj.gate) : "unknown";
+        byGate[g] = (byGate[g] || 0) + 1;
+      } catch (_) { /* skip bad line */ }
+    }
+  } catch (_) { /* file vanished */ }
+  return { total, byGate };
+}
+
+// ── GET /trade-logs/skips/list — daily skip files. Same paging contract as /list.
 router.get("/skips/list", (req, res) => {
+  const requestedMode = String(req.query.mode || "").toLowerCase();
+  const paging = parsePaging(req, 10);
+
+  if (requestedMode) {
+    if (!validMode(requestedMode)) return res.status(400).json({ success: false, error: "bad mode" });
+    let dates;
+    try { dates = skipLogger.listDates(requestedMode); }
+    catch (_) { dates = []; }
+    const total = dates.length;
+    const slice = paging
+      ? dates.slice((paging.page - 1) * paging.pageSize, (paging.page - 1) * paging.pageSize + paging.pageSize)
+      : dates;
+    const rows = slice.map(f => {
+      const c = countSkipsFile(requestedMode, f.date);
+      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate };
+    });
+    return res.json({
+      success: true,
+      mode: requestedMode,
+      page: paging ? paging.page : 1,
+      pageSize: paging ? paging.pageSize : total,
+      total,
+      count: rows.length,
+      rows,
+    });
+  }
+
   const out = {};
   for (const mode of MODES) {
     let files;
     try { files = skipLogger.listDates(mode); }
     catch (_) { files = []; }
     out[mode] = files.map(f => {
-      // Count lines + per-gate buckets (cheap full-read).
-      let total = 0;
-      const byGate = {};
-      try {
-        const text = fs.readFileSync(skipLogger.filePathFor(mode, f.date), "utf-8");
-        for (const line of text.split(/\r?\n/)) {
-          const t = line.trim();
-          if (!t) continue;
-          try {
-            const obj = JSON.parse(t);
-            total++;
-            const g = obj && obj.gate ? String(obj.gate) : "unknown";
-            byGate[g] = (byGate[g] || 0) + 1;
-          } catch (_) { /* skip bad line */ }
-        }
-      } catch (_) { /* file vanished */ }
-      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total, byGate };
+      const c = countSkipsFile(mode, f.date);
+      return { date: f.date, size: f.size, mtimeMs: f.mtimeMs, total: c.total, byGate: c.byGate };
     });
   }
   res.json({ success: true, modes: out });
@@ -186,7 +276,20 @@ router.get("/skips/view", (req, res) => {
   let skips;
   try { skips = skipLogger.readDailySkips(mode, date); }
   catch (err) { return res.status(500).json({ success: false, error: err.message }); }
-  res.json({ success: true, mode, date, count: skips.length, skips });
+  const paging = parsePaging(req, 25);
+  if (!paging) {
+    return res.json({ success: true, mode, date, count: skips.length, skips });
+  }
+  const total = skips.length;
+  const start = (paging.page - 1) * paging.pageSize;
+  const slice = skips.slice(start, start + paging.pageSize);
+  res.json({
+    success: true,
+    mode, date,
+    page: paging.page, pageSize: paging.pageSize,
+    total, count: slice.length,
+    skips: slice,
+  });
 });
 
 // ── GET /trade-logs/skips/download — raw JSONL stream ───────────────────────
@@ -262,16 +365,35 @@ router.post("/skips/delete-all", (req, res) => {
 });
 
 // ── GET /trade-logs/audit — settings audit entries (newest first) ───────────
+// Filters (key, action, noted) are applied server-side. ?page= enables paging.
 router.get("/audit", (req, res) => {
-  const limit  = Math.min(parseInt(req.query.limit, 10) || 1000, 5000);
   const key    = req.query.key || null;
   const action = req.query.action || null;
   const onlyNoted = String(req.query.noted || "") === "1";
+  const paging = parsePaging(req, 25);
+
+  // When paged, read full filtered set then slice. When not paged, honor legacy ?limit=.
+  const limit = paging
+    ? 100000
+    : Math.min(parseInt(req.query.limit, 10) || 1000, 5000);
+
   let entries;
   try { entries = settingsAudit.readAuditLog({ limit, key, action }); }
   catch (err) { return res.status(500).json({ success: false, error: err.message }); }
   if (onlyNoted) entries = entries.filter(e => typeof e.note === "string" && e.note.trim().length > 0);
-  res.json({ success: true, count: entries.length, entries });
+
+  if (!paging) {
+    return res.json({ success: true, count: entries.length, entries });
+  }
+  const total = entries.length;
+  const start = (paging.page - 1) * paging.pageSize;
+  const slice = entries.slice(start, start + paging.pageSize);
+  res.json({
+    success: true,
+    page: paging.page, pageSize: paging.pageSize,
+    total, count: slice.length,
+    entries: slice,
+  });
 });
 
 // Which strategy sections to show — mirrors sidebar/Settings master toggles.
@@ -308,7 +430,17 @@ router.get("/", (req, res) => {
     .page { padding:22px 28px 80px; max-width:1240px; }
     h1 { font-size:1.05rem; color:#60a5fa; font-weight:600; margin-bottom:4px; }
     .sub { font-size:0.72rem; color:#4a6080; margin-bottom:18px; }
-    .tabs { display:flex; gap:6px; margin-bottom:14px; border-bottom:1px solid #1a2236; }
+    .tabs-row { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; border-bottom:1px solid #1a2236; margin-bottom:14px; flex-wrap:wrap; }
+    .tabs { display:flex; gap:6px; }
+    .page-size-ctrl { display:flex; align-items:center; gap:8px; padding-bottom:6px; font-size:0.66rem; color:#4a6080; text-transform:uppercase; letter-spacing:0.5px; }
+    .page-size-ctrl select { padding:5px 9px; background:#0a1528; border:1px solid #1e3a5a; border-radius:6px; color:#c8d8f0; font-family:inherit; font-size:0.72rem; outline:none; }
+    .pager { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; background:#08111e; border-top:1px solid #121a2a; gap:10px; flex-wrap:wrap; }
+    .pager-info { font-size:0.66rem; color:#64748b; font-family:'IBM Plex Mono',monospace; }
+    .pager-btns { display:flex; align-items:center; gap:6px; }
+    .pager-btns button { font-size:0.66rem; padding:3px 10px; background:#0a1528; border:1px solid #1e3a5a; border-radius:5px; color:#94a3b8; cursor:pointer; font-family:inherit; }
+    .pager-btns button:hover:not(:disabled) { color:#60a5fa; border-color:#3b82f6; }
+    .pager-btns button:disabled { opacity:0.35; cursor:not-allowed; }
+    .pager-btns .pager-page { font-size:0.66rem; color:#94a3b8; font-family:'IBM Plex Mono',monospace; padding:0 4px; }
     .tab { padding:9px 16px; cursor:pointer; font-size:0.74rem; font-weight:600; color:#4a6080; border-bottom:2px solid transparent; user-select:none; }
     .tab.active { color:#60a5fa; border-bottom-color:#3b82f6; }
     .tab .badge { display:inline-block; margin-left:6px; padding:1px 7px; font-size:0.6rem; background:#0a1528; border:1px solid #1e3a5a; border-radius:999px; color:#94a3b8; }
@@ -378,7 +510,13 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] h1 { color:#1e40af; }
     :root[data-theme="light"] .sub { color:#64748b; }
     :root[data-theme="light"] .sub code { background:#f1f5f9; padding:1px 5px; border-radius:3px; color:#475569; }
-    :root[data-theme="light"] .tabs { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .tabs-row { border-bottom-color:#e0e4ea; }
+    :root[data-theme="light"] .page-size-ctrl { color:#64748b; }
+    :root[data-theme="light"] .page-size-ctrl select { background:#fff; border-color:#e0e4ea; color:#334155; }
+    :root[data-theme="light"] .pager { background:#f8fafc; border-top-color:#e0e4ea; }
+    :root[data-theme="light"] .pager-info, :root[data-theme="light"] .pager-btns .pager-page { color:#64748b; }
+    :root[data-theme="light"] .pager-btns button { background:#fff; border-color:#e0e4ea; color:#475569; }
+    :root[data-theme="light"] .pager-btns button:hover:not(:disabled) { color:#1e40af; border-color:#3b82f6; }
     :root[data-theme="light"] .tab { color:#94a3b8; }
     :root[data-theme="light"] .tab.active { color:#1e40af; border-bottom-color:#3b82f6; }
     :root[data-theme="light"] .tab .badge { background:#f1f5f9; border-color:#e0e4ea; color:#64748b; }
@@ -420,10 +558,21 @@ ${buildSidebar('tradeLogs', liveActive)}
 </div>
 
 <div class="page">
-  <div class="tabs">
-    <div class="tab active" data-tab="files" onclick="setTab('files')">📁 Trade Files <span class="badge" id="filesBadge">—</span></div>
-    <div class="tab" data-tab="skips" onclick="setTab('skips')">🚫 Skip Logs <span class="badge" id="skipsBadge">—</span></div>
-    <div class="tab" data-tab="audit" onclick="setTab('audit')">🔖 Checkpoints &amp; Settings Changes <span class="badge" id="auditBadge">—</span></div>
+  <div class="tabs-row">
+    <div class="tabs">
+      <div class="tab active" data-tab="files" onclick="setTab('files')">📁 Trade Files <span class="badge" id="filesBadge">—</span></div>
+      <div class="tab" data-tab="skips" onclick="setTab('skips')">🚫 Skip Logs <span class="badge" id="skipsBadge">—</span></div>
+      <div class="tab" data-tab="audit" onclick="setTab('audit')">🔖 Checkpoints &amp; Settings Changes <span class="badge" id="auditBadge">—</span></div>
+    </div>
+    <div class="page-size-ctrl">
+      <label for="pageSizeSelect">Rows per page</label>
+      <select id="pageSizeSelect" onchange="onPageSizeChange()">
+        <option value="10">10</option>
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
   </div>
 
   <!-- ── FILES TAB ─────────────────────────────────────────────────── -->
@@ -443,15 +592,15 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="sub">Every settings save through <code>/settings</code> writes old→new for each changed key here (with the optional checkpoint note you typed). Use this to correlate trade outcomes with the settings active at the time.</div>
     <div class="filt-bar">
       <label>Filter key</label>
-      <input id="filtKey" type="text" placeholder="e.g. SCALP_ or ADX_MIN" oninput="renderAudit()"/>
+      <input id="filtKey" type="text" placeholder="e.g. SCALP_ or ADX_MIN" oninput="onAuditFilterChange()"/>
       <label>Action</label>
-      <select id="filtAction" onchange="renderAudit()">
+      <select id="filtAction" onchange="onAuditFilterChange()">
         <option value="">all</option>
         <option value="update">update</option>
         <option value="add">add</option>
         <option value="delete">delete</option>
       </select>
-      <label><input id="filtNoted" type="checkbox" onchange="renderAudit()"/> Checkpoints only (have note)</label>
+      <label><input id="filtNoted" type="checkbox" onchange="onAuditFilterChange()"/> Checkpoints only (have note)</label>
       <span style="flex:1"></span>
       <span id="auditCount" style="font-size:0.66rem; color:#4a6080;"></span>
     </div>
@@ -476,9 +625,33 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   var ENABLED_MODES = ${JSON.stringify(enabled)};
 
-  var _files = null;
-  var _skips = null;
-  var _audit = null;
+  var MODE_LIST = [
+    { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
+    { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
+    { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
+    { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
+    { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
+  ];
+  function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
+
+  // Page size is global across all paginated views, persisted in localStorage.
+  var _pageSize = (function(){
+    try {
+      var v = parseInt(localStorage.getItem('tradeLogs_pageSize'), 10);
+      if (v === 10 || v === 25 || v === 50 || v === 100) return v;
+    } catch (_) {}
+    return 10;
+  })();
+
+  // Per-section page state.
+  var _filesPage  = { swing:1, scalp:1, pa:1, orb:1, straddle:1 };
+  var _skipsPage  = { swing:1, scalp:1, pa:1, orb:1, straddle:1 };
+  var _auditPage  = 1;
+  var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
+
+  // Section totals cached so the badge survives prev/next clicks without refetching all modes.
+  var _filesTotals = { swing:0, scalp:0, pa:0, orb:0, straddle:0 };
+  var _skipsTotals = { swing:0, scalp:0, pa:0, orb:0, straddle:0 };
 
   function fmtSize(n) {
     if (n < 1024) return n + ' B';
@@ -495,109 +668,213 @@ ${buildSidebar('tradeLogs', liveActive)}
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  // Initialise the page-size selector to the persisted value before any loads.
+  function initPageSizeSelector() {
+    var el = document.getElementById('pageSizeSelect');
+    if (el) el.value = String(_pageSize);
+  }
+
+  function onPageSizeChange() {
+    var v = parseInt(document.getElementById('pageSizeSelect').value, 10);
+    if (![10, 25, 50, 100].includes(v)) v = 10;
+    _pageSize = v;
+    try { localStorage.setItem('tradeLogs_pageSize', String(v)); } catch (_) {}
+    // Reset every page state to 1 and reload the visible tab.
+    Object.keys(_filesPage).forEach(function(k){ _filesPage[k] = 1; });
+    Object.keys(_skipsPage).forEach(function(k){ _skipsPage[k] = 1; });
+    _auditPage = 1;
+    _view.page = 1;
+    _view.pageSize = v;
+    var active = document.querySelector('.tab.active');
+    var tab = active ? active.dataset.tab : 'files';
+    if (tab === 'files') loadFiles();
+    else if (tab === 'skips') loadSkips();
+    else if (tab === 'audit') loadAudit();
+    // If the modal is open, refresh its current page too.
+    if (document.getElementById('tvOverlay').classList.contains('visible') && _view.mode) {
+      loadViewPage();
+    }
+  }
+
   function setTab(name) {
     document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab === name); });
     document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.toggle('active', p.id === 'pane-' + name); });
-    if (name === 'audit' && _audit === null) loadAudit();
-    if (name === 'skips' && _skips === null) loadSkips();
+    if (name === 'audit') loadAudit();
+    if (name === 'skips') loadSkips();
+  }
+
+  // Render a pagination footer. The "kind" arg decides which JS handler to invoke on click.
+  function pagerHtml(kind, modeKey, page, pageSize, total) {
+    var maxPage = Math.max(1, Math.ceil(total / pageSize));
+    var p = Math.min(page, maxPage);
+    var start = total === 0 ? 0 : (p - 1) * pageSize + 1;
+    var end = Math.min(p * pageSize, total);
+    var modeArg = modeKey ? ("'" + modeKey + "'") : 'null';
+    var prevDisabled = p <= 1 ? ' disabled' : '';
+    var nextDisabled = p >= maxPage ? ' disabled' : '';
+    return '<div class="pager">' +
+      '<div class="pager-info">' + (total === 0 ? '0 rows' : ('Showing ' + start + '–' + end + ' of ' + total)) + '</div>' +
+      '<div class="pager-btns">' +
+        '<button onclick="goPage(\\'' + kind + '\\',' + modeArg + ',-1)"' + prevDisabled + '>‹ Prev</button>' +
+        '<span class="pager-page">Page ' + p + ' / ' + maxPage + '</span>' +
+        '<button onclick="goPage(\\'' + kind + '\\',' + modeArg + ',1)"' + nextDisabled + '>Next ›</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function goPage(kind, modeKey, delta) {
+    if (kind === 'files') {
+      _filesPage[modeKey] = Math.max(1, (_filesPage[modeKey] || 1) + delta);
+      loadFileSection(modeKey);
+    } else if (kind === 'skips') {
+      _skipsPage[modeKey] = Math.max(1, (_skipsPage[modeKey] || 1) + delta);
+      loadSkipSection(modeKey);
+    } else if (kind === 'audit') {
+      _auditPage = Math.max(1, _auditPage + delta);
+      loadAudit();
+    } else if (kind === 'view') {
+      _view.page = Math.max(1, _view.page + delta);
+      loadViewPage();
+    }
   }
 
   // ── FILES tab ───────────────────────────────────────────────────────
   function loadFiles() {
-    fetch('/trade-logs/list', { cache: 'no-store' })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (!data || !data.success) {
-          document.getElementById('filesArea').innerHTML = '<div class="empty">Failed to load.</div>';
+    var modes = enabledModes();
+    if (modes.length === 0) {
+      document.getElementById('filesArea').innerHTML = '<div class="empty">No strategies enabled.</div>';
+      document.getElementById('filesBadge').textContent = '0';
+      return;
+    }
+    // Build empty shells so each section can populate independently.
+    document.getElementById('filesArea').innerHTML = modes.map(function(m){
+      return '<div class="mode-section" id="filesSection-' + m.key + '"><div class="mode-head"><div class="mode-name ' + m.cls + '">' + m.label + '</div><div class="mode-meta">loading…</div></div></div>';
+    }).join('');
+    Promise.all(modes.map(function(m){ return loadFileSection(m.key); })).then(function(){
+      var sum = 0;
+      modes.forEach(function(m){ sum += (_filesTotals[m.key] || 0); });
+      document.getElementById('filesBadge').textContent = sum;
+    });
+  }
+
+  function loadFileSection(modeKey) {
+    var page = _filesPage[modeKey] || 1;
+    var url = '/trade-logs/list?mode=' + modeKey + '&page=' + page + '&pageSize=' + _pageSize;
+    return fetch(url, { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.success) {
+          document.getElementById('filesSection-' + modeKey).innerHTML = '<div class="empty">Failed to load.</div>';
           return;
         }
-        _files = data.modes;
-        renderFiles();
+        _filesTotals[modeKey] = d.total || 0;
+        _filesPage[modeKey] = d.page || 1;
+        var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
+        document.getElementById('filesSection-' + modeKey).innerHTML = renderFileSectionHTML(m, d);
+        // Recompute the badge from cached per-mode totals (works after prev/next too).
+        var sum = 0;
+        enabledModes().forEach(function(em){ sum += (_filesTotals[em.key] || 0); });
+        document.getElementById('filesBadge').textContent = sum;
       })
-      .catch(function() {
-        document.getElementById('filesArea').innerHTML = '<div class="empty">Cannot reach server.</div>';
+      .catch(function(){
+        document.getElementById('filesSection-' + modeKey).innerHTML = '<div class="empty">Cannot reach server.</div>';
       });
   }
 
-  function renderFiles() {
-    if (!_files) return;
-    var modes = [
-      { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
-      { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
-      { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
-      { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
-      { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
-    ].filter(function(m){ return ENABLED_MODES[m.key] !== false; });
-    var totalFiles = 0;
-    var html = '';
-    modes.forEach(function(m) {
-      var rows = (_files[m.key] || []);
-      totalFiles += rows.length;
-      var bodyHtml = rows.length === 0
-        ? '<div class="empty">No JSONL files yet for ' + m.label + '.</div>'
-        : '<table><thead><tr><th>IST Date</th><th>Trades</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
-          rows.map(function(r){
-            var ckBadge = r.checkpoints > 0
-              ? '<span class="badge-ck" title="' + r.checkpoints + ' checkpoint marker(s) in this file">🔖 ' + r.checkpoints + '</span>'
-              : '';
-            return '<tr>' +
-              '<td class="num">' + escHtml(r.date) + ckBadge + '</td>' +
-              '<td class="num">' + r.trades + '</td>' +
-              '<td class="num">' + fmtSize(r.size) + '</td>' +
-              '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
-              '<td><div class="actions">' +
-                '<button class="btn btn-view"     onclick="viewFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
-                '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
-                '<button class="btn btn-delete"   onclick="delFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
-              '</div></td>' +
-            '</tr>';
-          }).join('') + '</tbody></table>';
-      var totalTrades = rows.reduce(function(s,r){ return s + (r.trades || 0); }, 0);
-      var dlAll = rows.length > 0
-        ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
-        : '';
-      var delAll = rows.length > 0
-        ? '<button class="btn btn-delete" onclick="delAllFiles(\\''+m.key+'\\','+rows.length+')" title="Delete every daily file for this mode">🗑 Delete All (' + rows.length + ')</button>'
-        : '';
-      html +=
-        '<div class="mode-section">' +
-          '<div class="mode-head">' +
-            '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-              '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalTrades + ' trade' + (totalTrades === 1 ? '' : 's') + '</div>' +
-              dlAll + delAll +
-            '</div>' +
-          '</div>' +
-          bodyHtml +
-        '</div>';
-    });
-    document.getElementById('filesArea').innerHTML = html;
-    document.getElementById('filesBadge').textContent = totalFiles;
+  function renderFileSectionHTML(m, d) {
+    var rows = d.rows || [];
+    var total = d.total || 0;
+    var totalTrades = rows.reduce(function(s,r){ return s + (r.trades || 0); }, 0);
+    var bodyHtml = rows.length === 0
+      ? '<div class="empty">No JSONL files yet for ' + m.label + '.</div>'
+      : '<table><thead><tr><th>IST Date</th><th>Trades</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+        rows.map(function(r){
+          var ckBadge = r.checkpoints > 0
+            ? '<span class="badge-ck" title="' + r.checkpoints + ' checkpoint marker(s) in this file">🔖 ' + r.checkpoints + '</span>'
+            : '';
+          return '<tr>' +
+            '<td class="num">' + escHtml(r.date) + ckBadge + '</td>' +
+            '<td class="num">' + r.trades + '</td>' +
+            '<td class="num">' + fmtSize(r.size) + '</td>' +
+            '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
+            '<td><div class="actions">' +
+              '<button class="btn btn-view"     onclick="viewFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
+              '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
+              '<button class="btn btn-delete"   onclick="delFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
+            '</div></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+    var dlAll = total > 0
+      ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily files concatenated, oldest first">⬇ Download All (' + total + ')</a>'
+      : '';
+    var delAll = total > 0
+      ? '<button class="btn btn-delete" onclick="delAllFiles(\\''+m.key+'\\','+total+')" title="Delete every daily file for this mode">🗑 Delete All (' + total + ')</button>'
+      : '';
+    return '<div class="mode-head">' +
+        '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<div class="mode-meta">' + total + ' file' + (total === 1 ? '' : 's') + ' · ' + totalTrades + ' trade' + (totalTrades === 1 ? '' : 's') + ' on page</div>' +
+          dlAll + delAll +
+        '</div>' +
+      '</div>' +
+      bodyHtml +
+      (total > _pageSize ? pagerHtml('files', m.key, d.page, d.pageSize, total) : '');
   }
 
   function viewFile(mode, date) {
+    _view = { mode: mode, date: date, kind: 'trades', page: 1, total: 0, pageSize: _pageSize };
     document.getElementById('tvTitle').textContent = mode.toUpperCase() + ' · ' + date;
     document.getElementById('tvBody').innerHTML = 'Loading…';
     document.getElementById('tvOverlay').classList.add('visible');
-    fetch('/trade-logs/view?mode=' + mode + '&date=' + encodeURIComponent(date), { cache: 'no-store' })
+    loadViewPage();
+  }
+
+  function loadViewPage() {
+    if (!_view.mode || !_view.date) return;
+    _view.pageSize = _pageSize;
+    var url = _view.kind === 'skips'
+      ? '/trade-logs/skips/view?mode=' + _view.mode + '&date=' + encodeURIComponent(_view.date) + '&page=' + _view.page + '&pageSize=' + _view.pageSize
+      : '/trade-logs/view?mode=' + _view.mode + '&date=' + encodeURIComponent(_view.date) + '&page=' + _view.page + '&pageSize=' + _view.pageSize;
+    document.getElementById('tvBody').innerHTML = 'Loading…';
+    fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
-      .then(function(d) {
+      .then(function(d){
         if (!d || !d.success) { document.getElementById('tvBody').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
-        if (!d.trades || d.trades.length === 0) { document.getElementById('tvBody').innerHTML = '<div class="empty">Empty file.</div>'; return; }
-        var keysSet = {};
-        d.trades.forEach(function(t){ Object.keys(t).forEach(function(k){ keysSet[k] = true; }); });
-        // Show a compact list — each row is one JSON object pretty-printed.
-        var html = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + d.count + ' record(s) in this file. Showing raw JSON for each line.</div>';
-        html += d.trades.map(function(t, i){
-          var label = t.type === 'checkpoint' ? '🔖 CHECKPOINT' : ('#' + (i+1));
-          return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">' + label + (t.loggedAt ? ' · ' + escHtml(t.loggedAt) : '') + '</div><pre>' + escHtml(JSON.stringify(t, null, 2)) + '</pre></div>';
-        }).join('');
+        var items = _view.kind === 'skips' ? d.skips : d.trades;
+        _view.total = d.total || 0;
+        _view.page = d.page || 1;
+        if (!items || items.length === 0) { document.getElementById('tvBody').innerHTML = '<div class="empty">Empty file.</div>'; return; }
+        var startIdx = (_view.page - 1) * _view.pageSize;
+        var html;
+        if (_view.kind === 'skips') {
+          var byGate = {};
+          items.forEach(function(s){ var g = s.gate || 'unknown'; byGate[g] = (byGate[g] || 0) + 1; });
+          var gateList = Object.keys(byGate).sort(function(a,b){ return byGate[b] - byGate[a]; });
+          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + _view.total + ' skip record(s) · showing page ' + _view.page + '.</div>';
+          html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+            gateList.map(function(g){ return '<span style="font-size:0.66rem;padding:3px 9px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:4px;color:#fbbf24;"><b>' + byGate[g] + '</b> · ' + escHtml(g) + ' (this page)</span>'; }).join('') +
+            '</div>';
+          html += items.map(function(s, i){
+            var when = s.ts || '';
+            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">#' + (startIdx + i + 1) + ' · ' + escHtml(when) + ' · gate=<span style="color:#fbbf24;">' + escHtml(s.gate || '?') + '</span>' + (s.reason ? ' · reason=' + escHtml(s.reason) : '') + '</div><pre>' + escHtml(JSON.stringify(s, null, 2)) + '</pre></div>';
+          }).join('');
+        } else {
+          html = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + _view.total + ' record(s) in this file · showing page ' + _view.page + '.</div>';
+          html += items.map(function(t, i){
+            var label = t.type === 'checkpoint' ? '🔖 CHECKPOINT' : ('#' + (startIdx + i + 1));
+            return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">' + label + (t.loggedAt ? ' · ' + escHtml(t.loggedAt) : '') + '</div><pre>' + escHtml(JSON.stringify(t, null, 2)) + '</pre></div>';
+          }).join('');
+        }
+        html += pagerHtml('view', null, _view.page, _view.pageSize, _view.total);
         document.getElementById('tvBody').innerHTML = html;
       })
       .catch(function(){ document.getElementById('tvBody').innerHTML = '<div class="empty">Network error.</div>'; });
   }
 
-  function closeTV() { document.getElementById('tvOverlay').classList.remove('visible'); }
+  function closeTV() {
+    document.getElementById('tvOverlay').classList.remove('visible');
+    _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:_pageSize };
+  }
 
   async function delFile(mode, date) {
     var ok = await showDoubleConfirm({
@@ -615,7 +892,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     var data = await res.json().catch(function(){ return null; });
     if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), '#f87171'); return; }
     showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), '#10b981');
-    loadFiles();
+    _filesPage[mode] = 1;
+    loadFileSection(mode);
   }
 
   async function delAllFiles(mode, count) {
@@ -639,104 +917,99 @@ ${buildSidebar('tradeLogs', liveActive)}
     } else {
       showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' file' + (n === 1 ? '' : 's'), '#10b981');
     }
-    loadFiles();
+    _filesPage[mode] = 1;
+    loadFileSection(mode);
   }
 
   // ── SKIPS tab ───────────────────────────────────────────────────────
   function loadSkips() {
-    document.getElementById('skipsArea').innerHTML = 'Loading…';
-    fetch('/trade-logs/skips/list', { cache: 'no-store' })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (!d || !d.success) { document.getElementById('skipsArea').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
-        _skips = d.modes;
-        renderSkips();
-      })
-      .catch(function(){ document.getElementById('skipsArea').innerHTML = '<div class="empty">Cannot reach server.</div>'; });
+    var modes = enabledModes();
+    if (modes.length === 0) {
+      document.getElementById('skipsArea').innerHTML = '<div class="empty">No strategies enabled.</div>';
+      document.getElementById('skipsBadge').textContent = '0';
+      return;
+    }
+    document.getElementById('skipsArea').innerHTML = modes.map(function(m){
+      return '<div class="mode-section" id="skipsSection-' + m.key + '"><div class="mode-head"><div class="mode-name ' + m.cls + '">' + m.label + '</div><div class="mode-meta">loading…</div></div></div>';
+    }).join('');
+    Promise.all(modes.map(function(m){ return loadSkipSection(m.key); })).then(function(){
+      var sum = 0;
+      modes.forEach(function(m){ sum += (_skipsTotals[m.key] || 0); });
+      document.getElementById('skipsBadge').textContent = sum;
+    });
   }
 
-  function renderSkips() {
-    if (!_skips) return;
-    var modes = [
-      { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
-      { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
-      { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
-      { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
-      { key: 'straddle', label: 'STRADDLE',     cls: 'mode-straddle' },
-    ].filter(function(m){ return ENABLED_MODES[m.key] !== false; });
-    var totalFiles = 0;
-    var html = '';
-    modes.forEach(function(m){
-      var rows = (_skips[m.key] || []);
-      totalFiles += rows.length;
-      var bodyHtml = rows.length === 0
-        ? '<div class="empty">No skip files yet for ' + m.label + '.</div>'
-        : '<table><thead><tr><th>IST Date</th><th>Skips</th><th>Top Reasons</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
-          rows.map(function(r){
-            var gates = Object.keys(r.byGate || {}).map(function(g){ return [g, r.byGate[g]]; });
-            gates.sort(function(a,b){ return b[1] - a[1]; });
-            var top = gates.slice(0, 3).map(function(g){ return '<span title="' + escHtml(g[0]) + '" style="display:inline-block;margin-right:6px;font-size:0.62rem;color:#94a3b8;"><span style="color:#fbbf24;">' + g[1] + '</span> ' + escHtml(g[0]) + '</span>'; }).join('');
-            if (gates.length > 3) top += '<span style="font-size:0.62rem;color:#4a6080;">+' + (gates.length - 3) + ' more</span>';
-            return '<tr>' +
-              '<td class="num">' + escHtml(r.date) + '</td>' +
-              '<td class="num">' + r.total + '</td>' +
-              '<td>' + (top || '<span style="color:#4a6080;">—</span>') + '</td>' +
-              '<td class="num">' + fmtSize(r.size) + '</td>' +
-              '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
-              '<td><div class="actions">' +
-                '<button class="btn btn-view"     onclick="viewSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
-                '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
-                '<button class="btn btn-delete"   onclick="delSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
-              '</div></td>' +
-            '</tr>';
-          }).join('') + '</tbody></table>';
-      var totalSkips = rows.reduce(function(s,r){ return s + (r.total || 0); }, 0);
-      var dlAll = rows.length > 0
-        ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + rows.length + ' daily skip files concatenated, oldest first">⬇ Download All (' + rows.length + ')</a>'
-        : '';
-      var delAll = rows.length > 0
-        ? '<button class="btn btn-delete" onclick="delAllSkips(\\''+m.key+'\\','+rows.length+')" title="Delete every daily skip file for this mode">🗑 Delete All (' + rows.length + ')</button>'
-        : '';
-      html +=
-        '<div class="mode-section">' +
-          '<div class="mode-head">' +
-            '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
-            '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
-              '<div class="mode-meta">' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ' · ' + totalSkips + ' skip' + (totalSkips === 1 ? '' : 's') + '</div>' +
-              dlAll + delAll +
-            '</div>' +
-          '</div>' +
-          bodyHtml +
-        '</div>';
-    });
-    document.getElementById('skipsArea').innerHTML = html;
-    document.getElementById('skipsBadge').textContent = totalFiles;
+  function loadSkipSection(modeKey) {
+    var page = _skipsPage[modeKey] || 1;
+    var url = '/trade-logs/skips/list?mode=' + modeKey + '&page=' + page + '&pageSize=' + _pageSize;
+    return fetch(url, { cache: 'no-store' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (!d || !d.success) {
+          document.getElementById('skipsSection-' + modeKey).innerHTML = '<div class="empty">Failed to load.</div>';
+          return;
+        }
+        _skipsTotals[modeKey] = d.total || 0;
+        _skipsPage[modeKey] = d.page || 1;
+        var m = MODE_LIST.find(function(x){ return x.key === modeKey; });
+        document.getElementById('skipsSection-' + modeKey).innerHTML = renderSkipSectionHTML(m, d);
+        var sum = 0;
+        enabledModes().forEach(function(em){ sum += (_skipsTotals[em.key] || 0); });
+        document.getElementById('skipsBadge').textContent = sum;
+      })
+      .catch(function(){
+        document.getElementById('skipsSection-' + modeKey).innerHTML = '<div class="empty">Cannot reach server.</div>';
+      });
+  }
+
+  function renderSkipSectionHTML(m, d) {
+    var rows = d.rows || [];
+    var total = d.total || 0;
+    var totalSkips = rows.reduce(function(s,r){ return s + (r.total || 0); }, 0);
+    var bodyHtml = rows.length === 0
+      ? '<div class="empty">No skip files yet for ' + m.label + '.</div>'
+      : '<table><thead><tr><th>IST Date</th><th>Skips</th><th>Top Reasons</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+        rows.map(function(r){
+          var gates = Object.keys(r.byGate || {}).map(function(g){ return [g, r.byGate[g]]; });
+          gates.sort(function(a,b){ return b[1] - a[1]; });
+          var top = gates.slice(0, 3).map(function(g){ return '<span title="' + escHtml(g[0]) + '" style="display:inline-block;margin-right:6px;font-size:0.62rem;color:#94a3b8;"><span style="color:#fbbf24;">' + g[1] + '</span> ' + escHtml(g[0]) + '</span>'; }).join('');
+          if (gates.length > 3) top += '<span style="font-size:0.62rem;color:#4a6080;">+' + (gates.length - 3) + ' more</span>';
+          return '<tr>' +
+            '<td class="num">' + escHtml(r.date) + '</td>' +
+            '<td class="num">' + r.total + '</td>' +
+            '<td>' + (top || '<span style="color:#4a6080;">—</span>') + '</td>' +
+            '<td class="num">' + fmtSize(r.size) + '</td>' +
+            '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
+            '<td><div class="actions">' +
+              '<button class="btn btn-view"     onclick="viewSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
+              '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
+              '<button class="btn btn-delete"   onclick="delSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
+            '</div></td>' +
+          '</tr>';
+        }).join('') + '</tbody></table>';
+    var dlAll = total > 0
+      ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily skip files concatenated, oldest first">⬇ Download All (' + total + ')</a>'
+      : '';
+    var delAll = total > 0
+      ? '<button class="btn btn-delete" onclick="delAllSkips(\\''+m.key+'\\','+total+')" title="Delete every daily skip file for this mode">🗑 Delete All (' + total + ')</button>'
+      : '';
+    return '<div class="mode-head">' +
+        '<div class="mode-name ' + m.cls + '">' + m.label + '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<div class="mode-meta">' + total + ' file' + (total === 1 ? '' : 's') + ' · ' + totalSkips + ' skip' + (totalSkips === 1 ? '' : 's') + ' on page</div>' +
+          dlAll + delAll +
+        '</div>' +
+      '</div>' +
+      bodyHtml +
+      (total > _pageSize ? pagerHtml('skips', m.key, d.page, d.pageSize, total) : '');
   }
 
   function viewSkipFile(mode, date) {
+    _view = { mode: mode, date: date, kind: 'skips', page: 1, total: 0, pageSize: _pageSize };
     document.getElementById('tvTitle').textContent = mode.toUpperCase() + ' SKIPS · ' + date;
     document.getElementById('tvBody').innerHTML = 'Loading…';
     document.getElementById('tvOverlay').classList.add('visible');
-    fetch('/trade-logs/skips/view?mode=' + mode + '&date=' + encodeURIComponent(date), { cache: 'no-store' })
-      .then(function(r){ return r.json(); })
-      .then(function(d){
-        if (!d || !d.success) { document.getElementById('tvBody').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
-        if (!d.skips || d.skips.length === 0) { document.getElementById('tvBody').innerHTML = '<div class="empty">Empty file.</div>'; return; }
-        // Tally per-gate counts for header.
-        var byGate = {};
-        d.skips.forEach(function(s){ var g = s.gate || 'unknown'; byGate[g] = (byGate[g] || 0) + 1; });
-        var gateList = Object.keys(byGate).sort(function(a,b){ return byGate[b] - byGate[a]; });
-        var header = '<div style="margin-bottom:10px;font-size:0.72rem;color:#4a6080;">' + d.count + ' skip record(s).</div>';
-        header += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
-          gateList.map(function(g){ return '<span style="font-size:0.66rem;padding:3px 9px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:4px;color:#fbbf24;"><b>' + byGate[g] + '</b> · ' + escHtml(g) + '</span>'; }).join('') +
-          '</div>';
-        var html = header + d.skips.map(function(s, i){
-          var when = s.ts || '';
-          return '<div style="margin-bottom:9px;"><div style="font-size:0.66rem;color:#64748b;margin-bottom:3px;">#' + (i+1) + ' · ' + escHtml(when) + ' · gate=<span style="color:#fbbf24;">' + escHtml(s.gate || '?') + '</span>' + (s.reason ? ' · reason=' + escHtml(s.reason) : '') + '</div><pre>' + escHtml(JSON.stringify(s, null, 2)) + '</pre></div>';
-        }).join('');
-        document.getElementById('tvBody').innerHTML = html;
-      })
-      .catch(function(){ document.getElementById('tvBody').innerHTML = '<div class="empty">Network error.</div>'; });
+    loadViewPage();
   }
 
   async function delSkipFile(mode, date) {
@@ -755,7 +1028,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     var data = await res.json().catch(function(){ return null; });
     if (!data || !data.success) { showToast('Delete failed: ' + ((data && data.error) || res.status), '#f87171'); return; }
     showToast('Deleted ' + (data.deleted || (mode + ' ' + date)), '#10b981');
-    loadSkips();
+    _skipsPage[mode] = 1;
+    loadSkipSection(mode);
   }
 
   async function delAllSkips(mode, count) {
@@ -779,69 +1053,72 @@ ${buildSidebar('tradeLogs', liveActive)}
     } else {
       showToast('Deleted all ' + n + ' ' + mode.toUpperCase() + ' skip file' + (n === 1 ? '' : 's'), '#10b981');
     }
-    loadSkips();
+    _skipsPage[mode] = 1;
+    loadSkipSection(mode);
   }
 
   // ── AUDIT tab ───────────────────────────────────────────────────────
+  // Filter changes reset the page back to 1 (server filters, so this is correct).
+  function onAuditFilterChange() { _auditPage = 1; loadAudit(); }
+
   function loadAudit() {
+    var fk = (document.getElementById('filtKey').value || '').trim().toUpperCase();
+    var fa = document.getElementById('filtAction').value;
+    var fn = document.getElementById('filtNoted').checked;
+    var qs = 'page=' + _auditPage + '&pageSize=' + _pageSize;
+    if (fk) qs += '&key=' + encodeURIComponent(fk);
+    if (fa) qs += '&action=' + encodeURIComponent(fa);
+    if (fn) qs += '&noted=1';
     document.getElementById('auditArea').innerHTML = 'Loading…';
-    fetch('/trade-logs/audit?limit=2000', { cache: 'no-store' })
+    fetch('/trade-logs/audit?' + qs, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(d){
         if (!d || !d.success) { document.getElementById('auditArea').innerHTML = '<div class="empty">Failed to load.</div>'; return; }
-        _audit = d.entries || [];
-        document.getElementById('auditBadge').textContent = _audit.length;
-        renderAudit();
+        var entries = d.entries || [];
+        var total = d.total || 0;
+        var page = d.page || 1;
+        var pageSize = d.pageSize || _pageSize;
+        _auditPage = page;
+        document.getElementById('auditBadge').textContent = total;
+        document.getElementById('auditCount').textContent =
+          total === 0 ? '0 entries' : ('Showing ' + ((page-1)*pageSize + 1) + '–' + Math.min(page*pageSize, total) + ' of ' + total);
+        if (entries.length === 0) {
+          document.getElementById('auditArea').innerHTML = '<div class="empty">No matching entries.</div>';
+          return;
+        }
+        var fmtTs = function(ts){
+          try { return new Date(ts).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }).replace(',', ''); }
+          catch (_) { return ts; }
+        };
+        var fmtVal = function(v){
+          if (v === null || v === undefined) return '<span style="color:#4a6080;">∅</span>';
+          var s = String(v);
+          if (s.length > 60) return '<span title="' + escHtml(s) + '">' + escHtml(s.slice(0, 60)) + '…</span>';
+          return escHtml(s);
+        };
+        var html = '<table><thead><tr>' +
+          '<th>When (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th>' +
+          '</tr></thead><tbody>' +
+          entries.map(function(e){
+            var hasNote = e.note && String(e.note).trim();
+            return '<tr class="audit-row' + (hasNote ? ' has-note' : '') + '">' +
+              '<td class="num" style="white-space:nowrap;">' + escHtml(fmtTs(e.ts)) + '</td>' +
+              '<td><span class="act-' + (e.action || '') + '" style="font-weight:700;text-transform:uppercase;font-size:0.62rem;">' + escHtml(e.action || '') + '</span></td>' +
+              '<td style="font-weight:600;color:#e2e8f0;">' + escHtml(e.key || '') + '</td>' +
+              '<td class="from-val">' + fmtVal(e.from) + '</td>' +
+              '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
+              '<td style="color:#64748b;font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
+              '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:#2a3a5a;">—</span>') + '</td>' +
+            '</tr>';
+          }).join('') +
+          '</tbody></table>' +
+          (total > pageSize ? pagerHtml('audit', null, page, pageSize, total) : '');
+        document.getElementById('auditArea').innerHTML = html;
       })
       .catch(function(){ document.getElementById('auditArea').innerHTML = '<div class="empty">Cannot reach server.</div>'; });
   }
 
-  function renderAudit() {
-    if (!_audit) return;
-    var fk = (document.getElementById('filtKey').value || '').trim().toUpperCase();
-    var fa = document.getElementById('filtAction').value;
-    var fn = document.getElementById('filtNoted').checked;
-    var rows = _audit.filter(function(e){
-      if (fa && e.action !== fa) return false;
-      if (fk && (!e.key || e.key.indexOf(fk) === -1)) return false;
-      if (fn && !(e.note && String(e.note).trim())) return false;
-      return true;
-    });
-    document.getElementById('auditCount').textContent =
-      rows.length + ' of ' + _audit.length + ' entries';
-    if (rows.length === 0) {
-      document.getElementById('auditArea').innerHTML = '<div class="empty">No matching entries.</div>';
-      return;
-    }
-    var fmtTs = function(ts){
-      try { return new Date(ts).toLocaleString('en-IN', { timeZone:'Asia/Kolkata', hour12:false }).replace(',', ''); }
-      catch (_) { return ts; }
-    };
-    var fmtVal = function(v){
-      if (v === null || v === undefined) return '<span style="color:#4a6080;">∅</span>';
-      var s = String(v);
-      if (s.length > 60) return '<span title="' + escHtml(s) + '">' + escHtml(s.slice(0, 60)) + '…</span>';
-      return escHtml(s);
-    };
-    var html = '<table><thead><tr>' +
-      '<th>When (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th>' +
-      '</tr></thead><tbody>' +
-      rows.map(function(e){
-        var hasNote = e.note && String(e.note).trim();
-        return '<tr class="audit-row' + (hasNote ? ' has-note' : '') + '">' +
-          '<td class="num" style="white-space:nowrap;">' + escHtml(fmtTs(e.ts)) + '</td>' +
-          '<td><span class="act-' + (e.action || '') + '" style="font-weight:700;text-transform:uppercase;font-size:0.62rem;">' + escHtml(e.action || '') + '</span></td>' +
-          '<td style="font-weight:600;color:#e2e8f0;">' + escHtml(e.key || '') + '</td>' +
-          '<td class="from-val">' + fmtVal(e.from) + '</td>' +
-          '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
-          '<td style="color:#64748b;font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
-          '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:#2a3a5a;">—</span>') + '</td>' +
-        '</tr>';
-      }).join('') +
-      '</tbody></table>';
-    document.getElementById('auditArea').innerHTML = html;
-  }
-
+  initPageSizeSelector();
   loadFiles();
 </script>
 
