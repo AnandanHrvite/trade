@@ -567,6 +567,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="page-size-ctrl">
       <label for="pageSizeSelect">Rows per page</label>
       <select id="pageSizeSelect" onchange="onPageSizeChange()">
+        <option value="5">5</option>
         <option value="10">10</option>
         <option value="25">25</option>
         <option value="50">50</option>
@@ -638,7 +639,7 @@ ${buildSidebar('tradeLogs', liveActive)}
   var _pageSize = (function(){
     try {
       var v = parseInt(localStorage.getItem('tradeLogs_pageSize'), 10);
-      if (v === 10 || v === 25 || v === 50 || v === 100) return v;
+      if (v === 5 || v === 10 || v === 25 || v === 50 || v === 100) return v;
     } catch (_) {}
     return 10;
   })();
@@ -676,7 +677,7 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   function onPageSizeChange() {
     var v = parseInt(document.getElementById('pageSizeSelect').value, 10);
-    if (![10, 25, 50, 100].includes(v)) v = 10;
+    if (![5, 10, 25, 50, 100].includes(v)) v = 10;
     _pageSize = v;
     try { localStorage.setItem('tradeLogs_pageSize', String(v)); } catch (_) {}
     // Reset every page state to 1 and reload the visible tab.
