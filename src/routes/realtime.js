@@ -1,17 +1,36 @@
 /**
  * realtime.js — Unified real-time monitor for PAPER or LIVE trades
  * ─────────────────────────────────────────────────────────────────────────────
- * Read-only single screen that shows current state for SWING, SCALP, PA in
- * three side-by-side columns, with a common rollup P&L table below. Toggle
- * at the top switches between PAPER and LIVE data sources. The page polls
- * each strategy's existing /status/data endpoint every 4s — no new backend
- * aggregation; we read from the same source the dedicated pages already use.
+ * Read-only single screen that shows current state for every strategy that is
+ * enabled in Settings (SWING / SCALP / PA / ORB / STRADDLE), side-by-side,
+ * with a common rollup P&L table below. Toggle at the top switches between
+ * PAPER and LIVE data sources. The page polls each strategy's existing
+ * /status/data endpoint every 4s — no new backend aggregation; we read from
+ * the same source the dedicated pages already use.
+ *
+ * The strategy list is gated by {STRATEGY}_MODE_ENABLED (Settings → Menu
+ * Visibility). Field-shape differences between strategies are normalised in
+ * the client (ORB returns `livePnl`/`tradesTaken`; Straddle has CE+PE legs).
  */
 
 const express = require("express");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
+
+// hasDayLog: only strategies that expose /download/{trades,skips}/:date show
+// the Copy Day Log button. ORB/Straddle paper expose cumulative JSONL only.
+const STRATEGY_DEFS = [
+  { key:'SWING',    label:'SWING',        accentClass:'swing',    accent:'#3b82f6', paperPrefix:'/swing-paper',    livePrefix:'/swing-live',    hasDayLog:true,  modeFlag:'SWING_MODE_ENABLED'    },
+  { key:'SCALP',    label:'SCALP',        accentClass:'scalp',    accent:'#f59e0b', paperPrefix:'/scalp-paper',    livePrefix:'/scalp-live',    hasDayLog:true,  modeFlag:'SCALP_MODE_ENABLED'    },
+  { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
+  { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:false, modeFlag:'ORB_MODE_ENABLED'      },
+  { key:'STRADDLE', label:'STRADDLE',     accentClass:'straddle', accent:'#ec4899', paperPrefix:'/straddle-paper', livePrefix:'/straddle-live', hasDayLog:false, modeFlag:'STRADDLE_MODE_ENABLED' },
+];
+
+function enabledStrategies() {
+  return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || 'true').toLowerCase() !== 'false');
+}
 
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
@@ -20,6 +39,41 @@ router.get("/", (req, res) => {
 
 function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const sidebar = buildSidebar(sidebarKey, liveActive);
+  const strategies = enabledStrategies();
+
+  const endpointsJson = JSON.stringify({
+    PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status/data'])),
+  });
+  const statusPagesJson = JSON.stringify({
+    PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status'])),
+    LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status'])),
+  });
+  const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
+  const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
+  const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
+
+  const cardsHtml = strategies.map(s => `
+    <div class="card ${s.accentClass}" id="card-${s.key}">
+      <div class="card-header">
+        <div class="card-title">${s.label}</div>
+        <div class="badge stop" id="badge-${s.key}">—</div>
+      </div>
+      <div id="body-${s.key}"><div class="flat-block">Loading…</div></div>
+      <div class="activity" id="activity-${s.key}"><div class="empty">Waiting for activity…</div></div>
+      <div class="stats-row" id="stats-${s.key}"></div>
+      <div class="footer-meta" id="meta-${s.key}"><span>—</span><span>—</span></div>
+      <div class="actions">
+        ${s.hasDayLog
+          ? `<button type="button" class="act-btn" id="copy-${s.key}" onclick="copyDayLog('${s.key}', this)">📋 Copy Day Log</button>`
+          : `<span class="act-btn act-btn-disabled" title="Per-date JSONL not exposed for this strategy">— No Day Log —</span>`}
+        <a class="act-btn" id="open-${s.key}" href="${s.paperPrefix}/status">Open Status →</a>
+      </div>
+    </div>`).join('\n');
+
+  const rollupRowsHtml = strategies.map(s =>
+    `<tr class="${s.accentClass}" data-key="${s.key}"><td>${s.label}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`
+  ).join('\n      ') + `\n      <tr class="total"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -41,19 +95,22 @@ ${faviconLink()}
   .toggle button.active[data-mode="PAPER"] { background:#3b82f6; color:#fff; }
   .toggle button.active[data-mode="LIVE"]  { background:#ef4444; color:#fff; }
 
-  .cols { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; margin-bottom:18px; }
-  @media (max-width: 1100px) { .cols { grid-template-columns:1fr; } }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:18px; }
 
   .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
-  .card.swing { border-top-color:#3b82f6; }
-  .card.scalp { border-top-color:#f59e0b; }
-  .card.pa    { border-top-color:#a855f7; }
+  .card.swing    { border-top-color:#3b82f6; }
+  .card.scalp    { border-top-color:#f59e0b; }
+  .card.pa       { border-top-color:#a855f7; }
+  .card.orb      { border-top-color:#10b981; }
+  .card.straddle { border-top-color:#ec4899; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
-  .card.swing .card-title { color:#60a5fa; }
-  .card.scalp .card-title { color:#fbbf24; }
-  .card.pa    .card-title { color:#c084fc; }
+  .card.swing    .card-title { color:#60a5fa; }
+  .card.scalp    .card-title { color:#fbbf24; }
+  .card.pa       .card-title { color:#c084fc; }
+  .card.orb      .card-title { color:#34d399; }
+  .card.straddle .card-title { color:#f472b6; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -64,7 +121,9 @@ ${faviconLink()}
   .pos-side { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; letter-spacing:0.5px; margin-right:6px; }
   .pos-side.CE { background:rgba(16,185,129,0.18); color:#10b981; }
   .pos-side.PE { background:rgba(239,68,68,0.18);  color:#ef4444; }
+  .pos-side.STR { background:rgba(236,72,153,0.18); color:#ec4899; }
   .pos-symbol { font-size:0.78rem; color:#cbd5e1; word-break:break-all; }
+  .pos-symbol-line { display:block; }
 
   .pnl-big { font-size:1.5rem; font-weight:700; line-height:1.1; margin-top:4px; }
   .pnl-big .pct { font-size:0.78rem; font-weight:500; color:#94a3b8; margin-left:6px; }
@@ -95,9 +154,13 @@ ${faviconLink()}
   .act-btn { display:inline-flex; align-items:center; justify-content:center; background:#040c18; border:1px solid #1c2c47; color:#cbd5e1; font-size:0.74rem; font-weight:600; padding:8px 10px; border-radius:6px; cursor:pointer; text-align:center; text-decoration:none; transition:all 0.15s; letter-spacing:0.3px; line-height:1.2; font-family:inherit; }
   .act-btn:hover { background:#0e1c33; border-color:#3b82f6; color:#fff; }
   .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
-  .card.swing .act-btn:hover { border-color:#3b82f6; }
-  .card.scalp .act-btn:hover { border-color:#f59e0b; }
-  .card.pa    .act-btn:hover { border-color:#a855f7; }
+  .act-btn-disabled { background:#040c18; border-style:dashed; color:#5d6c87; cursor:default; }
+  .act-btn-disabled:hover { background:#040c18; color:#5d6c87; border-color:#1c2c47; }
+  .card.swing    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
+  .card.scalp    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
+  .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
+  .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
+  .card.straddle .act-btn:not(.act-btn-disabled):hover { border-color:#ec4899; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -106,10 +169,12 @@ ${faviconLink()}
   .rollup td { padding:10px 12px; font-size:0.85rem; text-align:right; border-bottom:1px solid #15243d; font-variant-numeric:tabular-nums; }
   .rollup td:first-child { text-align:left; font-weight:600; }
   .rollup tr:last-child td { border-bottom:none; background:#0e1c33; font-weight:700; }
-  .rollup tr.swing td:first-child { color:#60a5fa; }
-  .rollup tr.scalp td:first-child { color:#fbbf24; }
-  .rollup tr.pa    td:first-child { color:#c084fc; }
-  .rollup tr.total td:first-child { color:#e0eaf8; }
+  .rollup tr.swing    td:first-child { color:#60a5fa; }
+  .rollup tr.scalp    td:first-child { color:#fbbf24; }
+  .rollup tr.pa       td:first-child { color:#c084fc; }
+  .rollup tr.orb      td:first-child { color:#34d399; }
+  .rollup tr.straddle td:first-child { color:#f472b6; }
+  .rollup tr.total    td:first-child { color:#e0eaf8; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
@@ -120,9 +185,11 @@ ${faviconLink()}
   :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .toggle button { color:#64748b; }
   :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .card.swing .card-title { color:#2563eb; }
-  :root[data-theme="light"] .card.scalp .card-title { color:#d97706; }
-  :root[data-theme="light"] .card.pa    .card-title { color:#9333ea; }
+  :root[data-theme="light"] .card.swing    .card-title { color:#2563eb; }
+  :root[data-theme="light"] .card.scalp    .card-title { color:#d97706; }
+  :root[data-theme="light"] .card.pa       .card-title { color:#9333ea; }
+  :root[data-theme="light"] .card.orb      .card-title { color:#059669; }
+  :root[data-theme="light"] .card.straddle .card-title { color:#db2777; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#64748b; }
@@ -140,15 +207,18 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#64748b !important; border-bottom-color:#e0e4ea !important; }
   :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
   :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
-  :root[data-theme="light"] .rollup tr.swing td:first-child { color:#2563eb; }
-  :root[data-theme="light"] .rollup tr.scalp td:first-child { color:#d97706; }
-  :root[data-theme="light"] .rollup tr.pa    td:first-child { color:#9333ea; }
+  :root[data-theme="light"] .rollup tr.swing    td:first-child { color:#2563eb; }
+  :root[data-theme="light"] .rollup tr.scalp    td:first-child { color:#d97706; }
+  :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#9333ea; }
+  :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#059669; }
+  :root[data-theme="light"] .rollup tr.straddle td:first-child { color:#db2777; }
   :root[data-theme="light"] .pos-zero { color:#64748b !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
   :root[data-theme="light"] .act-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#475569; }
   :root[data-theme="light"] .act-btn:hover { background:#fff !important; color:#1e293b; }
   :root[data-theme="light"] .act-btn.copied { background:rgba(16,185,129,0.10) !important; border-color:#10b981 !important; color:#059669; }
+  :root[data-theme="light"] .act-btn-disabled { color:#94a3b8 !important; }
 </style>
 </head>
 <body>
@@ -157,7 +227,7 @@ ${sidebar}
   <div class="top-bar">
     <div>
       <h1>📡 Real-Time Monitor</h1>
-      <div class="sub">Live view of all 3 strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
+      <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
     </div>
     <div class="toggle" id="mode-toggle">
       <button data-mode="PAPER" class="active">PAPER</button>
@@ -166,48 +236,7 @@ ${sidebar}
   </div>
 
   <div class="cols">
-    <div class="card swing" id="card-SWING">
-      <div class="card-header">
-        <div class="card-title">SWING</div>
-        <div class="badge stop" id="badge-SWING">—</div>
-      </div>
-      <div id="body-SWING"><div class="flat-block">Loading…</div></div>
-      <div class="activity" id="activity-SWING"><div class="empty">Waiting for activity…</div></div>
-      <div class="stats-row" id="stats-SWING"></div>
-      <div class="footer-meta" id="meta-SWING"><span>—</span><span>—</span></div>
-      <div class="actions">
-        <button type="button" class="act-btn" id="copy-SWING" onclick="copyDayLog('SWING', this)">📋 Copy Day Log</button>
-        <a class="act-btn" id="open-SWING" href="/swing-paper/status">Open Status →</a>
-      </div>
-    </div>
-    <div class="card scalp" id="card-SCALP">
-      <div class="card-header">
-        <div class="card-title">SCALP</div>
-        <div class="badge stop" id="badge-SCALP">—</div>
-      </div>
-      <div id="body-SCALP"><div class="flat-block">Loading…</div></div>
-      <div class="activity" id="activity-SCALP"><div class="empty">Waiting for activity…</div></div>
-      <div class="stats-row" id="stats-SCALP"></div>
-      <div class="footer-meta" id="meta-SCALP"><span>—</span><span>—</span></div>
-      <div class="actions">
-        <button type="button" class="act-btn" id="copy-SCALP" onclick="copyDayLog('SCALP', this)">📋 Copy Day Log</button>
-        <a class="act-btn" id="open-SCALP" href="/scalp-paper/status">Open Status →</a>
-      </div>
-    </div>
-    <div class="card pa" id="card-PA">
-      <div class="card-header">
-        <div class="card-title">PRICE ACTION</div>
-        <div class="badge stop" id="badge-PA">—</div>
-      </div>
-      <div id="body-PA"><div class="flat-block">Loading…</div></div>
-      <div class="activity" id="activity-PA"><div class="empty">Waiting for activity…</div></div>
-      <div class="stats-row" id="stats-PA"></div>
-      <div class="footer-meta" id="meta-PA"><span>—</span><span>—</span></div>
-      <div class="actions">
-        <button type="button" class="act-btn" id="copy-PA" onclick="copyDayLog('PA', this)">📋 Copy Day Log</button>
-        <a class="act-btn" id="open-PA" href="/pa-paper/status">Open Status →</a>
-      </div>
-    </div>
+${cardsHtml}
   </div>
 
   <table class="rollup">
@@ -223,30 +252,23 @@ ${sidebar}
       </tr>
     </thead>
     <tbody id="rollup-body">
-      <tr class="swing"><td>SWING</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-      <tr class="scalp"><td>SCALP</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-      <tr class="pa"><td>PRICE ACTION</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-      <tr class="total"><td>TOTAL</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      ${rollupRowsHtml}
     </tbody>
   </table>
 </main>
 
 <script>
-const ENDPOINTS = {
-  PAPER: { SWING:'/swing-paper/status/data', SCALP:'/scalp-paper/status/data', PA:'/pa-paper/status/data' },
-  LIVE:  { SWING:'/swing-live/status/data',  SCALP:'/scalp-live/status/data',  PA:'/pa-live/status/data'  }
-};
-const STATUS_PAGES = {
-  PAPER: { SWING:'/swing-paper/status', SCALP:'/scalp-paper/status', PA:'/pa-paper/status' },
-  LIVE:  { SWING:'/swing-live/status',  SCALP:'/scalp-live/status',  PA:'/pa-live/status'  }
-};
-const STRATEGY_LABELS = { SWING:'SWING', SCALP:'SCALP', PA:'PRICE ACTION' };
+const STRATEGY_KEYS    = ${strategyOrder};
+const ENDPOINTS        = ${endpointsJson};
+const STATUS_PAGES     = ${statusPagesJson};
+const STRATEGY_LABELS  = ${labelsJson};
+const JSONL_PREFIX     = ${dayLogPrefixes};
 let mode = 'PAPER';
 let timer = null;
 
 function updateOpenLinks() {
   const pages = STATUS_PAGES[mode];
-  for (const k of ['SWING', 'SCALP', 'PA']) {
+  for (const k of STRATEGY_KEYS) {
     const a = document.getElementById('open-' + k);
     if (a) a.href = pages[k];
   }
@@ -261,8 +283,27 @@ const fmtINR = n => {
 const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-zero' : (+n > 0 ? 'pos-pos' : 'pos-neg');
 
-// Endpoints disagree on key: swing uses unrealisedPnl, scalp/pa use unrealised
-const openPnl = d => d ? (d.unrealisedPnl ?? d.unrealised ?? 0) : 0;
+// SWING uses unrealisedPnl, SCALP/PA use unrealised, ORB/STRADDLE use livePnl.
+function openPnl(d) {
+  if (!d) return 0;
+  const v = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
+          : d.unrealised   !== undefined ? d.unrealised
+          : d.livePnl      !== undefined ? d.livePnl
+          : 0);
+  return v == null ? 0 : v;
+}
+// SWING/SCALP/PA: tradeCount. ORB: tradesTaken. STRADDLE: pairsTaken.
+function tradeCountOf(d) {
+  if (!d) return 0;
+  return d.tradeCount ?? d.tradesTaken ?? d.pairsTaken ?? 0;
+}
+// SWING/SCALP/PA: logs[] + logTotal. ORB/STRADDLE: log[] (strings only).
+function logsOf(d) {
+  if (!d) return { lines: [], total: 0 };
+  if (Array.isArray(d.logs)) return { lines: d.logs, total: d.logTotal ?? d.logs.length };
+  if (Array.isArray(d.log))  return { lines: d.log,  total: d.log.length };
+  return { lines: [], total: 0 };
+}
 
 function escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -273,15 +314,83 @@ function escapeHtml(s) {
 function renderActivity(strategy, d) {
   const el = document.getElementById('activity-' + strategy);
   if (!el) return;
-  if (!d || !Array.isArray(d.logs) || d.logs.length === 0) {
+  const { lines, total } = logsOf(d);
+  if (!lines.length) {
     el.innerHTML = '<div class="empty">' + (d ? 'Waiting for activity…' : 'No data') + '</div>';
     return;
   }
-  const lines = d.logs.slice(0, 5);
-  const total = d.logTotal ?? d.logs.length;
+  const head = lines.slice(0, 5);
   let html = '<div class="ahead"><span>Recent activity</span><span>' + total + ' entries</span></div>';
-  for (const line of lines) html += '<div class="arow">' + escapeHtml(line) + '</div>';
+  for (const line of head) html += '<div class="arow">' + escapeHtml(line) + '</div>';
   el.innerHTML = html;
+}
+
+function renderPositionStraddle(d, pos) {
+  const upnl = openPnl(d);
+  const ceCur = pos.ce && pos.ce.curLtp;
+  const peCur = pos.pe && pos.pe.curLtp;
+  const combined = (ceCur != null && peCur != null) ? (ceCur + peCur) : (d.combined != null ? d.combined : null);
+  const netDebit = pos.netDebit;
+  const pct = (netDebit && combined != null) ? ((combined - netDebit) / netDebit) * 100 : null;
+  return \`
+    <div class="pos-block">
+      <div>
+        <span class="pos-side STR">STR</span>
+        <span class="pos-symbol">
+          <span class="pos-symbol-line">\${(pos.ce && pos.ce.symbol) || ''}</span>
+          <span class="pos-symbol-line">\${(pos.pe && pos.pe.symbol) || ''}</span>
+        </span>
+      </div>
+      <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
+      <div class="pos-grid">
+        <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
+        <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(pos.entrySpot)}</div>
+        <div class="lbl">Net Debit</div><div class="val">\${fmtNum(netDebit)}</div>
+        <div class="lbl">Combined LTP</div><div class="val">\${fmtNum(combined)}</div>
+        <div class="lbl">CE Entry</div><div class="val">\${fmtNum(pos.ce && pos.ce.entryLtp)}</div>
+        <div class="lbl">CE LTP</div><div class="val">\${fmtNum(ceCur)}</div>
+        <div class="lbl">PE Entry</div><div class="val">\${fmtNum(pos.pe && pos.pe.entryLtp)}</div>
+        <div class="lbl">PE LTP</div><div class="val">\${fmtNum(peCur)}</div>
+        <div class="lbl">Target Net</div><div class="val">\${fmtNum(pos.targetNet)}</div>
+        <div class="lbl">Stop Net</div><div class="val">\${fmtNum(pos.stopNet)}</div>
+        <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
+      </div>
+    </div>\`;
+}
+
+function renderPositionStandard(d, pos) {
+  const upnl = openPnl(d);
+  const entryPrice = pos.entryPrice ?? pos.entrySpot ?? null;
+  const optionEntry = pos.optionEntryLtp ?? null;
+  const optionCurrent = pos.optionCurrentLtp ?? pos.currentOptLtp ?? null;
+  const stopLoss = pos.stopLoss ?? pos.slSpot ?? null;
+  const liveClose = pos.liveClose ?? d.lastTickPrice ?? null;
+  const sideMult = pos.side === 'CE' ? 1 : (pos.side === 'PE' ? -1 : 0);
+  const pointsMoved = pos.pointsMoved != null
+    ? pos.pointsMoved
+    : (liveClose != null && entryPrice != null && sideMult ? (liveClose - entryPrice) * sideMult : null);
+  const pct = pos.optPremiumPct != null
+    ? pos.optPremiumPct
+    : (optionEntry && optionCurrent ? ((optionCurrent - optionEntry) / optionEntry) * 100 : null);
+  const sideClass = pos.side === 'CE' || pos.side === 'PE' ? pos.side : '';
+  return \`
+    <div class="pos-block">
+      <div>
+        <span class="pos-side \${sideClass}">\${pos.side || ''}</span>
+        <span class="pos-symbol">\${pos.symbol || ''}</span>
+      </div>
+      <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
+      <div class="pos-grid">
+        <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
+        <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(entryPrice)}</div>
+        <div class="lbl">Entry Opt</div><div class="val">\${fmtNum(optionEntry)}</div>
+        <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(optionCurrent)}</div>
+        <div class="lbl">Live Spot</div><div class="val">\${fmtNum(liveClose)}</div>
+        <div class="lbl">Pts Moved</div><div class="val \${cls(pointsMoved)}">\${fmtNum(pointsMoved)}</div>
+        <div class="lbl">Stop Loss</div><div class="val">\${fmtNum(stopLoss)}</div>
+        <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
+      </div>
+    </div>\`;
 }
 
 function renderColumn(strategy, d) {
@@ -305,33 +414,14 @@ function renderColumn(strategy, d) {
 
   const pos = d.position;
   if (pos) {
-    const upnl = openPnl(d);
-    const pct = pos.optPremiumPct;
-    bodyEl.innerHTML = \`
-      <div class="pos-block">
-        <div>
-          <span class="pos-side \${pos.side}">\${pos.side || ''}</span>
-          <span class="pos-symbol">\${pos.symbol || ''}</span>
-        </div>
-        <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null && pct !== undefined ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
-        <div class="pos-grid">
-          <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
-          <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(pos.entryPrice)}</div>
-          <div class="lbl">Entry Opt</div><div class="val">\${fmtNum(pos.optionEntryLtp)}</div>
-          <div class="lbl">Curr Opt</div><div class="val">\${fmtNum(pos.optionCurrentLtp)}</div>
-          <div class="lbl">Live Spot</div><div class="val">\${fmtNum(pos.liveClose)}</div>
-          <div class="lbl">Pts Moved</div><div class="val \${cls(pos.pointsMoved)}">\${fmtNum(pos.pointsMoved)}</div>
-          <div class="lbl">Stop Loss</div><div class="val">\${fmtNum(pos.stopLoss)}</div>
-          <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
-        </div>
-      </div>\`;
+    bodyEl.innerHTML = (strategy === 'STRADDLE') ? renderPositionStraddle(d, pos) : renderPositionStandard(d, pos);
   } else {
     bodyEl.innerHTML = \`<div class="flat-block">FLAT — no open position</div>\`;
   }
 
   const sessPnl = d.sessionPnl ?? 0;
   statsEl.innerHTML = \`
-    <div class="stat"><div class="lbl">Trades</div><div class="val">\${d.tradeCount ?? 0}</div></div>
+    <div class="stat"><div class="lbl">Trades</div><div class="val">\${tradeCountOf(d)}</div></div>
     <div class="stat"><div class="lbl">W / L</div><div class="val">\${d.wins ?? 0} / \${d.losses ?? 0}</div></div>
     <div class="stat"><div class="lbl">Session P&amp;L</div><div class="val \${cls(sessPnl)}">\${fmtINR(sessPnl)}</div></div>\`;
 
@@ -341,28 +431,24 @@ function renderColumn(strategy, d) {
 }
 
 function renderRollup(all) {
-  const rows = [
-    { key:'SWING', cls:'swing', label:'SWING',         d: all.SWING },
-    { key:'SCALP', cls:'scalp', label:'SCALP',         d: all.SCALP },
-    { key:'PA',    cls:'pa',    label:'PRICE ACTION',  d: all.PA    },
-  ];
-
   let totalOpen = 0, totalClosed = 0, totalTrades = 0, totalW = 0, totalL = 0;
   let anyRunning = false, anyData = false;
 
   const tbody = document.getElementById('rollup-body');
   let html = '';
-  for (const r of rows) {
-    const d = r.d;
+  for (const key of STRATEGY_KEYS) {
+    const d = all[key];
+    const accent = key.toLowerCase();
+    const label = STRATEGY_LABELS[key];
     if (!d) {
-      html += \`<tr class="\${r.cls}"><td>\${r.label}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
+      html += \`<tr class="\${accent}" data-key="\${key}"><td>\${label}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;
       continue;
     }
     anyData = true;
     const open = +openPnl(d) || 0;
     const closed = +(d.sessionPnl ?? 0) || 0;
     const dayTotal = open + closed;
-    const trades = d.tradeCount ?? 0;
+    const trades = tradeCountOf(d) || 0;
     const w = d.wins ?? 0;
     const l = d.losses ?? 0;
     if (d.running) anyRunning = true;
@@ -371,8 +457,8 @@ function renderRollup(all) {
     totalTrades += +trades || 0;
     totalW += +w || 0;
     totalL += +l || 0;
-    html += \`<tr class="\${r.cls}">
-      <td>\${r.label}</td>
+    html += \`<tr class="\${accent}" data-key="\${key}">
+      <td>\${label}</td>
       <td>\${d.running ? 'RUNNING' : 'STOPPED'}</td>
       <td class="\${cls(open)}">\${fmtINR(open)}</td>
       <td class="\${cls(closed)}">\${fmtINR(closed)}</td>
@@ -399,11 +485,10 @@ async function poll() {
   const fetchOne = url => fetch(url, { cache:'no-store' })
     .then(r => r.ok ? r.json() : null)
     .catch(() => null);
-  const [s, sc, p] = await Promise.all([fetchOne(eps.SWING), fetchOne(eps.SCALP), fetchOne(eps.PA)]);
-  renderColumn('SWING', s);
-  renderColumn('SCALP', sc);
-  renderColumn('PA', p);
-  renderRollup({ SWING:s, SCALP:sc, PA:p });
+  const results = await Promise.all(STRATEGY_KEYS.map(k => fetchOne(eps[k])));
+  const all = {};
+  STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
+  renderRollup(all);
 }
 
 document.querySelectorAll('#mode-toggle button').forEach(b => {
@@ -416,10 +501,6 @@ document.querySelectorAll('#mode-toggle button').forEach(b => {
     poll();
   });
 });
-
-// Both trades.jsonl and skips.jsonl live under the paper-prefix endpoint
-// (live + paper share the same daily skip JSONL by design — see v4.4.0 changelog).
-const JSONL_PREFIX = { SWING:'/swing-paper', SCALP:'/scalp-paper', PA:'/pa-paper' };
 
 async function fetchText(url) {
   try {

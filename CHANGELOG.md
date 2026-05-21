@@ -4,6 +4,17 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ---
 
+## Unreleased
+
+### Real-Time Monitor — ORB + Straddle cards
+
+- The Real-Time Monitor ([src/routes/realtime.js](src/routes/realtime.js)) now renders cards and rollup rows for **every strategy enabled in Settings** (SWING, SCALP, PA, ORB, STRADDLE), not just the original three. Each card is gated by `{STRATEGY}_MODE_ENABLED` and disappears when the toggle is off.
+- Field-shape differences are normalised client-side: ORB's `livePnl` / `tradesTaken` / `slSpot` / `currentOptLtp` / `log[]` and Straddle's CE+PE legs (`pos.ce` / `pos.pe`, `netDebit`, `combined`) now render correctly. Straddle gets a tailored position card showing both legs, net debit, target/stop net, and combined LTP.
+- Card grid switched to `auto-fit, minmax(280px, 1fr)` so 4–5 strategies wrap responsively instead of overflowing the 3-column layout. ORB uses emerald, Straddle uses pink accent colours.
+- Strategies without per-date JSONL endpoints (ORB, Straddle) show a disabled "— No Day Log —" placeholder instead of a "Copy Day Log" button that would 404.
+
+---
+
 ## v4.5.0 — 5-Min Swing Default, Scalp Pause Override, PA Reversal Fixes, Trade Logs Manager (2026-05-14)
 
 ### Swing — Default Resolution Changed to 5-Min
