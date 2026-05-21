@@ -1197,12 +1197,17 @@ function renderRangeResult(rows, context) {
   // context: { mode, label, from, to } — describes what was run
   const el = document.getElementById('range-result');
 
-  const modeTag = context && context.mode
+  // NOTE: do not rename this back to modeTag — that shadows the outer
+  // modeTag() helper and the const initializer would call itself before
+  // init (TDZ), crashing renderRangeResult on the first session render.
+  // That crash killed the per-row live partial render and prevented the
+  // loop from advancing to subsequent sessions in a multi-day range.
+  const headerTagClass = context && context.mode
     ? modeTag(context.mode)
     : 'pa';
   const headerLine = context
     ? '<div style="margin-bottom:10px;font-size:0.9rem;">' +
-        'Strategy: <span class="tag ' + modeTag + '">' + context.mode + '</span> ' +
+        'Strategy: <span class="tag ' + headerTagClass + '">' + context.mode + '</span> ' +
         '<span class="muted">(' + (context.label || context.mode) + ')</span> · ' +
         '<span class="muted">Range: ' + context.from + ' → ' + context.to + '</span>' +
       '</div>'

@@ -491,13 +491,21 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     // VIX cache reset is fine; let it pass through.
   }
 
-  // Wall-clock override (used briefly during /start so isStartAllowed sees
-  // the recorded session-start time as "now"). Caller invokes setWallClock(t)
-  // before /start and clearWallClock() right after.
-  let _wallOverride = null;
+  // Wall-clock override. Used during /start and /stop so isStartAllowed() /
+  // exit-time gates see the recorded session boundary as "now", AND advanced
+  // per-tick from pumpTick() so isMarketHours() inside strategies sees the
+  // recorded market-hours timestamp on every tick.
+  //
+  // Perf: pumpTick calls setWallClock once per tick (~55k+ calls/session).
+  // Reassigning Date.now's slot on every call (the prior implementation) made
+  // V8 deopt the global Date.now repeatedly. We now install a stable closure
+  // function ONCE per setWallClock-active window and only mutate `_wallOverride`
+  // on the hot path, so V8 keeps Date.now optimized.
+  let _wallOverride  = null;
+  const _dateNowOverride = function () { return _wallOverride; };
   function setWallClock(t) {
     _wallOverride = t;
-    Date.now = function () { return _wallOverride; };
+    if (Date.now !== _dateNowOverride) Date.now = _dateNowOverride;
   }
   function clearWallClock() {
     _wallOverride = null;

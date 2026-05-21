@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay — Date-range loop fix + pump speedup
+
+- **Bug:** picking a multi-day range on the Replay page only ran the first session and never rendered a result. `renderRangeResult()` in [src/routes/replay.js](src/routes/replay.js) declared a local `const modeTag` that shadowed the outer `modeTag()` helper and called itself in its own initializer — a TDZ ReferenceError thrown on the first per-row "live partial render" tore down the orchestration loop before session 2 began. Renamed the local to `headerTagClass` so the outer helper resolves cleanly at line 1289.
+- **Perf:** `harness.setWallClock()` in [src/services/tickReplay.js](src/services/tickReplay.js) is called once per pumped tick (~55k+ times per session) to keep `Date.now()` inside strategies pinned to the recorded timestamp. It used to reassign `Date.now`'s slot on every call, forcing V8 to deopt the global. Now installs a stable closure function once and only mutates the closure variable on the hot path. Measurable speedup on the date-range view; pure plumbing change — replay results are bit-identical.
+
 ### Real-Time Monitor — ORB + Straddle cards
 
 - The Real-Time Monitor ([src/routes/realtime.js](src/routes/realtime.js)) now renders cards and rollup rows for **every strategy enabled in Settings** (SWING, SCALP, PA, ORB, STRADDLE), not just the original three. Each card is gated by `{STRATEGY}_MODE_ENABLED` and disappears when the toggle is off.
