@@ -502,10 +502,9 @@ async function preloadHistory() {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
     const istToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    // We need ~25+ candles for BB squeeze detection — pull last 3 trading days
-    const from = Math.floor(new Date(istToday + "T03:45:00.000Z").getTime() / 1000) - 3 * 86400;
-    const to   = Math.floor(Date.now() / 1000);
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, RES_MIN, from, to, fetchCandles);
+    // We need ~25+ candles for BB squeeze detection — pull last 7 calendar days (covers weekends/holidays)
+    const lookback = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), lookback, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-200);
       log(`📊 [STRADDLE-PAPER] Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles`);

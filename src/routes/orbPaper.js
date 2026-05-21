@@ -515,9 +515,7 @@ async function preloadHistory() {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
     const istToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const from = Math.floor(new Date(istToday + "T03:45:00.000Z").getTime() / 1000); // 09:15 IST today
-    const to   = Math.floor(Date.now() / 1000);
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, RES_MIN, from, to, fetchCandles);
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), istToday, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length > 0) {
       state.candles = candles.slice(-200);
       log(`📊 [ORB-PAPER] Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles`);

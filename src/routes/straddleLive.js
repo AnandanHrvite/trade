@@ -340,9 +340,8 @@ async function preloadHistory() {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
     const istToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const from = Math.floor(new Date(istToday + "T03:45:00.000Z").getTime() / 1000) - 3*86400;
-    const to   = Math.floor(Date.now() / 1000);
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, RES_MIN, from, to, fetchCandles);
+    const lookback = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), lookback, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length) { state.candles = candles.slice(-200); log(`📊 Preloaded ${state.candles.length} candles`); }
   } catch (e) { log(`⚠️ Preload failed: ${e.message}`); }
 }
