@@ -131,6 +131,7 @@ function startOptionPolling() {
         if (typeof ltp === "number" && ltp > 0) {
           state.optionLtp = ltp;
           state.optionLtpUpdatedAt = Date.now();
+          try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-paper"); } catch (_) {}
         }
       }
     } catch (_) {}
@@ -165,7 +166,10 @@ async function simulateBuy(side, sigSnapshot) {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
       const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-      if (typeof ltp === "number" && ltp > 0) optionEntryLtp = ltp;
+      if (typeof ltp === "number" && ltp > 0) {
+        optionEntryLtp = ltp;
+        try { tickRecorder.recordOptionLtp(optInfo.symbol, ltp, "orb-paper"); } catch (_) {}
+      }
     }
   } catch (e) {
     log(`⚠️ [ORB-PAPER] Option LTP fetch failed: ${e.message} — entry blocked`);

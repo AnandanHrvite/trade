@@ -136,6 +136,7 @@ function startOptionPolling() {
           if (typeof ltp !== "number" || ltp <= 0) continue;
           if (sym === state.position.ce.symbol) state.ceLtp = ltp;
           if (sym === state.position.pe.symbol) state.peLtp = ltp;
+          try { tickRecorder.recordOptionLtp(sym, ltp, "straddle-paper"); } catch (_) {}
         }
         state.optionLtpUpdatedAt = Date.now();
       }
@@ -183,6 +184,7 @@ async function simulateEntry(sigSnapshot) {
         if (typeof ltp !== "number" || ltp <= 0) continue;
         if (sym === ceInfo.symbol) cePrem = ltp;
         if (sym === peInfo.symbol) pePrem = ltp;
+        try { tickRecorder.recordOptionLtp(sym, ltp, "straddle-paper"); } catch (_) {}
       }
     }
   } catch (e) {
