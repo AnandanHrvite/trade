@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Settings — Drop orphan PA_ADX_DIRECTIONAL row
+
+- Removed the `PA_ADX_DIRECTIONAL` toggle from the PA section of the Settings UI ([src/routes/settings.js](src/routes/settings.js)). The row was advertising a directional ADX gate (require `+DI > -DI` for CE / `-DI > +DI` for PE) that the engine never actually enforced — no reader exists in [src/strategies/price_action.js](src/strategies/price_action.js). Removing the UI to stop misleading the operator; the gate itself can be added after the paper-trade data-collection window closes (~2026-06-02) without re-introducing UI drift.
+
 ### Replay — Date-range loop fix + pump speedup
 
 - **Bug:** picking a multi-day range on the Replay page only ran the first session and never rendered a result. `renderRangeResult()` in [src/routes/replay.js](src/routes/replay.js) declared a local `const modeTag` that shadowed the outer `modeTag()` helper and called itself in its own initializer — a TDZ ReferenceError thrown on the first per-row "live partial render" tore down the orchestration loop before session 2 began. Renamed the local to `headerTagClass` so the outer helper resolves cleanly at line 1289.

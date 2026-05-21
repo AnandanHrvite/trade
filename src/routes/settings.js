@@ -179,7 +179,6 @@ const SETTINGS_SCHEMA = [
       { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
       { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
       { key: "PA_ADX_RISING_REQUIRED", label: "ADX Rising (all patterns)", type: "toggle", effect: EFFECT.SESSION, desc: "Require ADX[now] >= ADX[2 bars ago] for EVERY entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading.", default: "true" },
-      { key: "PA_ADX_DIRECTIONAL", label: "ADX Directional (+DI/-DI)", type: "toggle", effect: EFFECT.SESSION, desc: "Require +DI > -DI for CE entries and -DI > +DI for PE entries. Blocks counter-trend bullish/bearish patterns inside a strong opposite-direction trend (key fix for losing on bearish-trend days).", default: "true" },
       // ── Pattern toggles (per-signal) ──
       { key: "PA_PATTERN_ENGULFING",     label: "Engulfing (CE/PE)",        type: "toggle", effect: EFFECT.SESSION, desc: "Bullish/Bearish Engulfing at S/R — STRONG", default: "true" },
       { key: "PA_PATTERN_PINBAR",        label: "Pin Bar (Hammer/Star)",    type: "toggle", effect: EFFECT.SESSION, desc: "Hammer at support / Shooting Star at resistance — MARGINAL", default: "true" },
