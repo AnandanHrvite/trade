@@ -95,7 +95,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
   - **Continuation patterns (BOS, Inside-Bar)**: CE requires RSI > 45 (momentum-aligned), PE requires RSI < 55
   - **Reversal patterns (Engulfing, Pin Bar, Double Top/Bottom)**: RSI logic **inverted** in v4.5.0 — bullish reversal CE looks for *oversold* RSI (< 55), bearish reversal PE looks for *overbought* RSI (> 45). Prior code had the same RSI gate as continuation patterns, which gated out exactly the reversal setups it should have caught.
 - **ADX chop + rising filters** (`PA_ADX_ENABLED` / `PA_ADX_RISING_REQUIRED`): block low-ADX bars and require ADX[now] ≥ ADX[2 bars ago] for every pattern. The historical "ADX directional (+DI/−DI)" toggle was a no-op (no reader in [price_action.js](src/strategies/price_action.js)) and has been removed from the Settings UI.
-- **Breakeven trigger** (`PA_BREAKEVEN_TRIGGER=300` / `PA_BREAKEVEN_BUFFER=1`): once peak P&L ≥ trigger ₹, lift SL to entry ± buffer pts so a winning trade can no longer close red. Set trigger=0 to disable.
+- **Breakeven trigger** (`PA_BREAKEVEN_TRIGGER` / `PA_BREAKEVEN_BUFFER`): **Settings UI knobs only — engine reader was reverted on 2026-05-21** (commit `5f1944d` reverted `c131923`). The UI rows still exist in [settings.js](src/routes/settings.js) but `paPaper.js` / `paLive.js` / `paBacktest.js` no longer read them, so changing the values has no effect on trades. Same zombie state as the old `PA_ADX_DIRECTIONAL` before its UI row was removed.
 - **SL**: Signal candle wick, capped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]`. BOS/Inside-Bar setups are skipped if the raw structural SL exceeds `PA_MAX_STRUCT_SL_PTS=15` (thin-structure / false-breakout guard).
 - **Exit**: Candle trail (prev N-bar H/L, parallel with profit-lock floor) + tiered profit-lock + PA-specific time-stop (3 candles / ±10pts) + breakeven SL + bid-ask spread guard
 - **Restart-survival**: BOS / Inside-Bar pending state is now persisted across process restart (was being lost on `pm2 reload`)
@@ -301,8 +301,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `PA_TRAIL_START` | `600` | Activate trailing after ₹N profit |
 | `PA_TRAIL_PCT` | `40` | Base trail floor |
 | `PA_TRAIL_TIERS` | `1000:50,1500:60,2500:70,4000:80` | Peak:pct ladder |
-| `PA_BREAKEVEN_TRIGGER` | `300` | Once peak P&L ≥ ₹N, lift SL to entry ± buffer pts. `0` disables. |
-| `PA_BREAKEVEN_BUFFER` | `1` | Spot points above (CE) / below (PE) entry for the BE stop |
+| `PA_BREAKEVEN_TRIGGER` | `300` | ⚠ **UI-only, engine reverted on 2026-05-21** (commit `5f1944d`). Setting visible in Settings UI but `paPaper.js` / `paLive.js` / `paBacktest.js` no longer read it. |
+| `PA_BREAKEVEN_BUFFER` | `1` | ⚠ Same status as `PA_BREAKEVEN_TRIGGER` above. |
 | `PA_TIME_STOP_CANDLES` | `3` | Auto-exit flat trades after N candles (PA override of global `4`) |
 | `PA_TIME_STOP_FLAT_PTS` | `10` | "Flat" threshold for time-stop (PA override of global `20`) |
 | `PA_RSI_CAPS_ENABLED` | `true` | Block CE when RSI overbought / PE when oversold |
