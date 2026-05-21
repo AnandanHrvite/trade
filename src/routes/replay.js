@@ -394,8 +394,12 @@ ${buildSidebar('replay', false)}
   </div>
 
   <div class="card" id="result-card" style="display:none;">
-    <strong>Single-session replay result</strong>
-    <div id="result-content"></div>
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+      <strong>Single-session replay result</strong>
+      <span id="result-source-chip" class="source-chip"></span>
+    </div>
+    <div id="result-progress" class="range-progress" style="margin-top:8px; display:none;"></div>
+    <div id="result-content" style="margin-top:12px;"></div>
   </div>
 </div>
 
@@ -539,6 +543,10 @@ function renderSessions() {
     const dateJs = _jsAttr(s.date);
     const modeJs = _jsAttr(s.mode);
     const replayDisabled = _preflightOk ? '' : 'disabled';
+    const srcSuffix = (getSelectedSettingsSource() === 'current') ? ' (current)' : ' (snapshot)';
+    const replayTitle = (getSelectedSettingsSource() === 'current')
+      ? 'Replay with your current Settings page values (simulator). Toggle the Settings source above to switch.'
+      : 'Replay with the exact settings recorded with this session. Toggle the Settings source above to switch.';
     html += '<tr>' +
       '<td>' + _escapeHtml(s.date) + '</td>' +
       '<td><span class="tag ' + tag + '">' + _escapeHtml(s.mode) + '</span></td>' +
@@ -547,7 +555,7 @@ function renderSessions() {
       '<td>' + s.warmupCandles + ' candles</td>' +
       '<td><div class="row-actions">' +
         '<button class="row-btn primary replay-btn" ' + replayDisabled +
-          ' onclick="runReplay(' + dateJs + ',' + modeJs + ',' + sidJs + ',this)" title="Replay this session">▶ Replay</button>' +
+          ' onclick="runReplay(' + dateJs + ',' + modeJs + ',' + sidJs + ',this)" title="' + _escapeHtml(replayTitle) + '">▶ Replay' + srcSuffix + '</button>' +
         '<button class="row-btn" onclick="copySessionId(' + sidJs + ',this)" title="Copy session ID">📋</button>' +
         '<button class="row-btn" onclick="downloadDay(' + dateJs + ')" title="Download whole day\\'s tick folder (zip)">⬇</button>' +
         '<button class="row-btn danger" onclick="deleteSession(' + dateJs + ',' + sidJs + ',this)" title="Remove session marker (raw ticks stay on disk)">🗑</button>' +
@@ -706,9 +714,18 @@ function refreshSettingsSourceUi() {
   if (runBtn && !runBtn.disabled) {
     runBtn.textContent = isCurrent ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
   }
-  // Also refresh single-row Replay buttons' tooltip so it's obvious which mode they will run in.
+  // Also refresh single-row Replay buttons so their label + tooltip reflect
+  // which mode they will run in. The label suffix mirrors the run-btn text.
+  const rowSuffix = isCurrent ? ' (current)' : ' (snapshot)';
+  const rowTitle  = isCurrent
+    ? 'Replay with your current Settings page values (simulator). Toggle the Settings source above to switch.'
+    : 'Replay with the exact settings recorded with this session. Toggle the Settings source above to switch.';
   document.querySelectorAll('button.replay-btn').forEach(b => {
-    if (!b.disabled) b.title = isCurrent ? 'Will run twice: snapshot baseline + your current settings, then compare' : 'Will run once using the recorded settings (deterministic)';
+    if (b.disabled) return;
+    // Don't trample mid-run state — runReplay() sets textContent to '⏳'.
+    if (b.textContent === '⏳') return;
+    b.textContent = '▶ Replay' + rowSuffix;
+    b.title       = rowTitle;
   });
 }
 
@@ -847,10 +864,19 @@ function renderComparison(content, baseline, sim, header) {
   content.innerHTML = html;
 }
 
+function _modeLabel(mode) {
+  return mode === 'swing-paper'    ? 'Swing Paper'
+       : mode === 'scalp-paper'    ? 'Scalp Paper'
+       : mode === 'pa-paper'       ? 'PA Paper'
+       : mode === 'orb-paper'      ? 'ORB Paper'
+       : mode === 'straddle-paper' ? 'Straddle Paper'
+       : mode;
+}
+
+// Per-row Replay button. Drives a dedicated result card directly below the
+// Recorded sessions table so the user sees the output landing right where
+// they clicked, instead of buried under the date-range result panel.
 async function runReplay(date, mode, sessionId, btn) {
-  // Per-row Replay button. Routes through the same orchestration as the
-  // date-range Run button so the user gets the same UX: streaming activity
-  // log, structured result table, Copy + Download diagnostic buttons.
   const pre = await freshPreflight();
   if (!pre.ok) {
     _preflightOk = false;
@@ -858,13 +884,108 @@ async function runReplay(date, mode, sessionId, btn) {
     showBlockAlert(pre.reason || 'A live or paper session is currently active.');
     return;
   }
+
   const useCurrentSettings = (getSelectedSettingsSource() === 'current');
-  const modeLabel = mode === 'swing-paper' ? 'Swing Paper'
-                  : mode === 'scalp-paper' ? 'Scalp Paper'
-                  : mode === 'pa-paper'    ? 'PA Paper' : mode;
-  const session = (_allSessionsCache || []).find(s => s.sessionId === sessionId) || { date, mode, sessionId };
-  const context = { mode, label: modeLabel, from: date, to: date, useCurrentSettings, singleSession: true };
-  await runSessionsBatch([session], context, btn, '▶ Replay');
+  const modeLabel = _modeLabel(mode);
+  const card      = document.getElementById('result-card');
+  const content   = document.getElementById('result-content');
+  const progress  = document.getElementById('result-progress');
+  const chip      = document.getElementById('result-source-chip');
+
+  // Surface the card + show what settings source this run uses.
+  card.style.display = 'block';
+  chip.textContent = useCurrentSettings ? 'SIMULATOR · CURRENT SETTINGS' : 'SNAPSHOT · DETERMINISTIC';
+  progress.style.display = 'block';
+  content.innerHTML = '';
+
+  // Header so the user immediately knows which row they fired.
+  const headerHtml =
+    '<div style="margin-bottom:10px;font-size:0.9rem;">' +
+      'Strategy: <span class="tag ' + modeTag(mode) + '">' + _escapeHtml(mode) + '</span> ' +
+      '<span class="muted">(' + _escapeHtml(modeLabel) + ')</span> · ' +
+      '<span class="muted">' + _escapeHtml(date) + ' · ' + _escapeHtml(sessionId) + '</span>' +
+    '</div>';
+
+  const origBtnLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  _myReplayRunning = true;
+  refreshPreflight();
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const t0 = Date.now();
+  let _stepLabel = useCurrentSettings ? 'Running baseline (snapshot)…' : 'Replaying (snapshot settings)…';
+  const tick = () => {
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    progress.innerHTML = _stepLabel + ' (' + elapsed + 's)';
+  };
+  tick();
+  const progressTimer = setInterval(tick, 1000);
+
+  let baseline = null, sim = null;
+  try {
+    try { baseline = await callReplayApi(date, mode, sessionId, false); }
+    catch (e) { baseline = { ok: false, error: e.message }; }
+
+    if (useCurrentSettings) {
+      _stepLabel = 'Running with your current settings…';
+      tick();
+      try { sim = await callReplayApi(date, mode, sessionId, true); }
+      catch (e) { sim = { ok: false, error: e.message }; }
+    } else {
+      sim = baseline; // single-pass snapshot mode
+    }
+  } finally {
+    clearInterval(progressTimer);
+  }
+
+  const totalSec = ((Date.now() - t0) / 1000).toFixed(1);
+  progress.innerHTML = '✅ Done in ' + totalSec + 's.';
+
+  // Render header + body. renderSingleResult / renderComparison both overwrite
+  // their target's innerHTML, so we give them a dedicated child div and own
+  // the header separately to avoid fighting them over the DOM.
+  content.innerHTML = headerHtml;
+  const body = document.createElement('div');
+  content.appendChild(body);
+  if (useCurrentSettings) {
+    if (!baseline.ok && !sim.ok) {
+      body.innerHTML = '<div class="muted">⚠️ Both runs failed.</div>';
+    } else {
+      renderComparison(body, baseline, sim, '');
+    }
+  } else {
+    if (!baseline.ok) {
+      body.innerHTML = '<div class="muted">⚠️ Replay failed: ' + _escapeHtml(baseline.error || 'unknown') + '</div>';
+    } else {
+      renderSingleResult(body, baseline, modeLabel);
+    }
+  }
+
+  // Copy / Download diagnostic buttons (same shape as the date-range path)
+  if (baseline && (baseline.ok || (sim && sim.ok))) {
+    const session = (_allSessionsCache || []).find(s => s.sessionId === sessionId) || { date, mode, sessionId };
+    const rows    = [{ session, baseline, sim }];
+    const ctx     = { mode, label: modeLabel, from: date, to: date, useCurrentSettings };
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;';
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'copy-btn';
+    copyBtn.textContent = '📋 Copy diagnostic data';
+    copyBtn.onclick = () => copyDiagnostic(copyBtn, ctx, rows);
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'copy-btn';
+    dlBtn.textContent = '⬇ Download diagnostic';
+    dlBtn.onclick = () => downloadDiagnostic(dlBtn, ctx, rows);
+    btnRow.appendChild(copyBtn);
+    btnRow.appendChild(dlBtn);
+    content.appendChild(btnRow);
+  }
+
+  btn.disabled = false;
+  btn.textContent = origBtnLabel;
+  _myReplayRunning = false;
+  refreshPreflight();
 }
 
 // ── Live activity log polling ──────────────────────────────────────────────
