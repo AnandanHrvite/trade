@@ -228,6 +228,47 @@ function _applySettingsOverride(settings) {
   };
 }
 
+// ── Canonical paper-trade lookup ─────────────────────────────────────────────
+// The replay's "baseline" used to be a second replay run with snapshot env.
+// That's wasteful and conflates "did the engine reproduce the recording" with
+// "did the recording match what live actually did." The user wants baseline =
+// the actual recorded live session from ~/trading-data/{strategy}_paper_trades.json,
+// loaded once at the start of each replay run. Matches by closest sessionStart
+// timestamp within a 60-second window — accounts for the ~ms-level skew between
+// state.sessionStart (ISO toISOString()) and state._sessionId (Date.now()).
+const _MODE_TO_CANONICAL_FILE = {
+  "pa-paper":       "pa_paper_trades.json",
+  "scalp-paper":    "scalp_paper_trades.json",
+  "swing-paper":    "paper_trades.json",
+  "orb-paper":      "orb_paper_trades.json",
+  "straddle-paper": "straddle_paper_trades.json",
+};
+function _lookupCanonicalSession(mode, sessionStartTs) {
+  const fname = _MODE_TO_CANONICAL_FILE[mode];
+  if (!fname) return null;
+  const filePath = path.join(require("os").homedir(), "trading-data", fname);
+  if (!fs.existsSync(filePath)) return null;
+  let data;
+  try { data = JSON.parse(fs.readFileSync(filePath, "utf-8")); }
+  catch (_) { return null; }
+  if (!data || !Array.isArray(data.sessions)) return null;
+  const TOL_MS = 60 * 1000;
+  let best = null, bestDelta = Infinity;
+  for (const sess of data.sessions) {
+    const sessTs = Date.parse(sess.date);
+    if (Number.isNaN(sessTs)) continue;
+    const delta = Math.abs(sessTs - sessionStartTs);
+    if (delta < bestDelta) { bestDelta = delta; best = sess; }
+  }
+  if (!best || bestDelta > TOL_MS) return null;
+  return {
+    pnl:        typeof best.pnl === "number" ? best.pnl : 0,
+    tradeCount: Array.isArray(best.trades) ? best.trades.length : 0,
+    matchedAt:  best.date,
+    matchSkewMs: bestDelta,
+  };
+}
+
 // ── Monkey-patch harness ────────────────────────────────────────────────────
 /**
  * Build the harness: install() patches deps, uninstall() restores them.
@@ -880,6 +921,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
         .map(r => ({ t: r.t, ms: r.t - eMs, l: r.l }));
     }
 
+    const canonical = _lookupCanonicalSession(mode, data.sessionStart.t);
     return {
       ok: true,
       mode,
@@ -889,6 +931,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       tradeCount,
       sessionTrades,
       sessionPnl,
+      canonical,  // { pnl, tradeCount, matchedAt, matchSkewMs } or null if no match
     };
   } catch (err) {
     return {

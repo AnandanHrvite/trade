@@ -332,14 +332,14 @@ ${buildSidebar('replay', false)}
         <input type="radio" name="settings-source" value="snapshot" checked>
         <div class="mt-body">
           <div class="mt-title">Snapshot settings (deterministic)</div>
-          <div class="mt-desc">Use the exact settings the session recorded. Same result every time — useful for verifying code changes.</div>
+          <div class="mt-desc">Replay with the exact settings the session recorded. Compared against the live paper-trade result on disk — should match for an unchanged code path.</div>
         </div>
       </label>
       <label>
         <input type="radio" name="settings-source" value="current">
         <div class="mt-body">
           <div class="mt-title">My current settings (simulator)</div>
-          <div class="mt-desc">Use what's in the Settings page right now. Test config tweaks against real ticks after market hours. Keep INSTRUMENT/EXPIRY same as the recorded session.</div>
+          <div class="mt-desc">Replay with whatever is in the Settings page right now. Compared against the live paper-trade result on disk — delta shows how your settings would have changed the day.</div>
         </div>
       </label>
     </div>
@@ -721,8 +721,8 @@ function refreshSettingsSourceUi() {
   if (modeLabel) modeLabel.textContent = isCurrent ? 'comparison' : 'replay';
   if (desc) {
     desc.innerHTML = isCurrent
-      ? 'Replay every recorded session <strong>twice</strong> (snapshot baseline + your current settings), showing the delta. Useful for testing config changes against real ticks.'
-      : 'Replay every recorded session <strong>once</strong> using the exact settings each session was recorded with. Deterministic — same result every time. Useful for verifying paper P&L or code-change impact.';
+      ? 'Replay every recorded session <strong>once</strong> with your current settings. Each result is compared against the live paper-trade record from disk — delta shows the impact of your settings changes.'
+      : 'Replay every recorded session <strong>once</strong> with the exact settings each session was recorded with. Compared against the live paper-trade record from disk — should match exactly for an unchanged code path.';
   }
   if (runBtn && !runBtn.disabled) {
     runBtn.textContent = isCurrent ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
@@ -819,7 +819,7 @@ function renderComparison(content, baseline, sim, header) {
 
   const colSnapshot =
     '<div class="cmp-col ' + (baseline.ok ? '' : 'cmp-err') + '">' +
-      '<div class="cmp-label">Snapshot (baseline)</div>' +
+      '<div class="cmp-label">Live paper trade (baseline)</div>' +
       (baseline.ok
         ? '<div class="cmp-pnl ' + (bPnl >= 0 ? 'positive' : 'negative') + '">' + (bPnl >= 0 ? '+' : '') + '₹' + bPnl.toFixed(2) + '</div>' +
           '<div class="cmp-meta">' +
@@ -832,7 +832,7 @@ function renderComparison(content, baseline, sim, header) {
 
   const colSim =
     '<div class="cmp-col ' + (sim.ok ? '' : 'cmp-err') + '">' +
-      '<div class="cmp-label">Your current settings</div>' +
+      '<div class="cmp-label">Replay result</div>' +
       (sim.ok
         ? '<div class="cmp-pnl ' + (sPnl >= 0 ? 'positive' : 'negative') + '">' + (sPnl >= 0 ? '+' : '') + '₹' + sPnl.toFixed(2) + '</div>' +
           '<div class="cmp-meta">' +
@@ -846,13 +846,13 @@ function renderComparison(content, baseline, sim, header) {
   const verdict =
     (!baseline.ok || !sim.ok) ? '' :
     Math.abs(dPnl) < 0.005 ? 'No change — your settings produce the same result on these ticks.' :
-    dPnl > 0 ? 'Your current settings are <strong>better</strong> on this session by ' + fmtRupee(dPnl) + '.' :
-                'Your current settings are <strong>worse</strong> on this session by ' + fmtRupee(dPnl) + '.';
+    dPnl > 0 ? 'Replay is <strong>better</strong> than live paper trade by ' + fmtRupee(dPnl) + '.' :
+                'Replay is <strong>worse</strong> than live paper trade by ' + fmtRupee(dPnl) + '.';
 
   const colDelta = (!baseline.ok || !sim.ok)
     ? '<div class="cmp-col delta"><div class="cmp-label">Delta</div><div class="cmp-meta">Need both runs to compare.</div></div>'
     : '<div class="cmp-col delta">' +
-        '<div class="cmp-label">Delta (yours − baseline)</div>' +
+        '<div class="cmp-label">Delta (replay − live)</div>' +
         '<div class="cmp-pnl ' + (Math.abs(dPnl) < 0.005 ? 'neutral' : (dPnl > 0 ? 'positive' : 'negative')) + '">' +
           deltaArrow(dPnl) + ' ' + fmtRupee(dPnl) +
         '</div>' +
@@ -927,7 +927,9 @@ async function runReplay(date, mode, sessionId, btn) {
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const t0 = Date.now();
-  let _stepLabel = useCurrentSettings ? 'Running baseline (snapshot)…' : 'Replaying (snapshot settings)…';
+  let _stepLabel = useCurrentSettings
+    ? 'Replaying with your current settings…'
+    : 'Replaying with snapshot settings…';
   const tick = () => {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
     progress.innerHTML = _stepLabel + ' (' + elapsed + 's)';
@@ -935,19 +937,13 @@ async function runReplay(date, mode, sessionId, btn) {
   tick();
   const progressTimer = setInterval(tick, 1000);
 
-  let baseline = null, sim = null;
+  // ONE replay run per session. Baseline (the live paper-trade result) comes
+  // from the canonical paper_trades.json on disk, included in the response as
+  // sim.canonical. The replay-result column is this run's actual output.
+  let sim = null;
   try {
-    try { baseline = await callReplayApi(date, mode, sessionId, false); }
-    catch (e) { baseline = { ok: false, error: e.message }; }
-
-    if (useCurrentSettings) {
-      _stepLabel = 'Running with your current settings…';
-      tick();
-      try { sim = await callReplayApi(date, mode, sessionId, true); }
-      catch (e) { sim = { ok: false, error: e.message }; }
-    } else {
-      sim = baseline; // single-pass snapshot mode
-    }
+    try { sim = await callReplayApi(date, mode, sessionId, useCurrentSettings); }
+    catch (e) { sim = { ok: false, error: e.message }; }
   } finally {
     clearInterval(progressTimer);
   }
@@ -955,24 +951,26 @@ async function runReplay(date, mode, sessionId, btn) {
   const totalSec = ((Date.now() - t0) / 1000).toFixed(1);
   progress.innerHTML = '✅ Done in ' + totalSec + 's.';
 
-  // Render header + body. renderSingleResult / renderComparison both overwrite
-  // their target's innerHTML, so we give them a dedicated child div and own
-  // the header separately to avoid fighting them over the DOM.
+  // Synthesise a "baseline" object from the canonical lookup so the existing
+  // renderComparison() can be re-used unchanged. tradeCount comes through;
+  // sessionTrades stays empty (the trade list is rendered from the replay run).
+  const baseline = (sim && sim.ok && sim.canonical) ? {
+    ok: true,
+    mode: sim.mode,
+    sessionId: sim.sessionId,
+    sessionPnl: sim.canonical.pnl,
+    tradeCount: sim.canonical.tradeCount,
+    sessionTrades: [],
+    _baselineFromCanonical: true,
+  } : { ok: false, error: 'No canonical paper-trade record found for this session' };
+
   content.innerHTML = headerHtml;
   const body = document.createElement('div');
   content.appendChild(body);
-  if (useCurrentSettings) {
-    if (!baseline.ok && !sim.ok) {
-      body.innerHTML = '<div class="muted">⚠️ Both runs failed.</div>';
-    } else {
-      renderComparison(body, baseline, sim, '');
-    }
+  if (!sim.ok) {
+    body.innerHTML = '<div class="muted">⚠️ Replay failed: ' + _escapeHtml(sim.error || 'unknown') + '</div>';
   } else {
-    if (!baseline.ok) {
-      body.innerHTML = '<div class="muted">⚠️ Replay failed: ' + _escapeHtml(baseline.error || 'unknown') + '</div>';
-    } else {
-      renderSingleResult(body, baseline, modeLabel);
-    }
+    renderComparison(body, baseline, sim, '');
   }
 
   // Copy / Download diagnostic buttons (same shape as the date-range path)
@@ -1235,7 +1233,7 @@ function renderRangeResult(rows, context) {
 
   const colSnapshot =
     '<div class="cmp-col">' +
-      '<div class="cmp-label">Snapshot (baseline)</div>' +
+      '<div class="cmp-label">Live paper trade (baseline)</div>' +
       '<div class="cmp-pnl ' + (totBPnl >= 0 ? 'positive' : 'negative') + '">' + (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) + '</div>' +
       '<div class="cmp-meta">' +
         '<div class="cmp-meta-row"><span>Total trades</span><span>' + totBTrd + '</span></div>' +
@@ -1244,7 +1242,7 @@ function renderRangeResult(rows, context) {
     '</div>';
   const colSim =
     '<div class="cmp-col">' +
-      '<div class="cmp-label">Your current settings</div>' +
+      '<div class="cmp-label">Replay result</div>' +
       '<div class="cmp-pnl ' + (totSPnl >= 0 ? 'positive' : 'negative') + '">' + (totSPnl >= 0 ? '+' : '') + '₹' + totSPnl.toFixed(2) + '</div>' +
       '<div class="cmp-meta">' +
         '<div class="cmp-meta-row"><span>Total trades</span><span>' + totSTrd + '</span></div>' +
@@ -1268,15 +1266,15 @@ function renderRangeResult(rows, context) {
   const verdict =
     okCount === 0 ? 'All runs failed — see per-session table below.' :
     Math.abs(dPnl) < 0.005 ? 'No net change — your settings produce the same aggregate P&L on these days.' :
-    dPnl > 0 ? 'Across these ' + okCount + ' sessions, your current settings are <strong>better</strong> by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').' :
-                'Across these ' + okCount + ' sessions, your current settings are <strong>worse</strong> by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
+    dPnl > 0 ? 'Across these ' + okCount + ' sessions, replay is <strong>better</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').' :
+                'Across these ' + okCount + ' sessions, replay is <strong>worse</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
 
   let html = headerLine;
   html += '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
   html += '<div class="muted" style="margin-top:10px;">' + verdict + '</div>';
 
   // Per-session breakdown
-  html += '<table class="range-table"><thead><tr><th>Date</th><th>Strategy</th><th>Session ID</th><th class="num">Baseline P&L</th><th class="num">Trades</th><th class="num">Your P&L</th><th class="num">Trades</th><th class="num">Δ P&L</th><th class="num">Δ Trades</th></tr></thead><tbody>';
+  html += '<table class="range-table"><thead><tr><th>Date</th><th>Strategy</th><th>Session ID</th><th class="num">Live P&L</th><th class="num">Trades</th><th class="num">Replay P&L</th><th class="num">Trades</th><th class="num">Δ P&L</th><th class="num">Δ Trades</th></tr></thead><tbody>';
   for (const r of rows) {
     const bOk = r.baseline && r.baseline.ok;
     const sOk = r.sim && r.sim.ok;
@@ -1402,41 +1400,30 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   for (let i = 0; i < sessions.length; i++) {
     const s = sessions[i];
     const idx = i + 1;
-    let baseline = null, sim = null;
 
-    // Snapshot mode: run ONCE per session (no baseline-vs-sim comparison
-    // needed — baseline IS what we want). Simulator mode: run twice.
-    if (!useCurrentSettings) {
-      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — replaying (snapshot settings)…';
-      tickProgress();
-      try {
-        baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
-      } catch (e) {
-        baseline = { ok: false, error: e.message };
-      }
-      if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
-      // For snapshot mode, sim slot mirrors baseline so the result table
-      // still renders cleanly (delta column will read as zero).
-      sim = baseline;
-    } else {
-      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running baseline (snapshot)…';
-      tickProgress();
-      try {
-        baseline = await callReplayApi(s.date, s.mode, s.sessionId, false);
-      } catch (e) {
-        baseline = { ok: false, error: e.message };
-      }
-      if (isPreflightReject(baseline)) { aborted = true; showBlockAlert(baseline.error); break; }
-
-      _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — running your settings…';
-      tickProgress();
-      try {
-        sim = await callReplayApi(s.date, s.mode, s.sessionId, true);
-      } catch (e) {
-        sim = { ok: false, error: e.message };
-      }
-      if (isPreflightReject(sim)) { aborted = true; showBlockAlert(sim.error); break; }
+    // ONE replay per session (snapshot or simulator). Baseline = live paper
+    // trade from canonical paper_trades.json, loaded server-side and returned
+    // as sim.canonical on the run response.
+    const modeWord = useCurrentSettings ? 'your settings' : 'snapshot settings';
+    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — replaying with ' + modeWord + '…';
+    tickProgress();
+    let sim = null;
+    try {
+      sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings);
+    } catch (e) {
+      sim = { ok: false, error: e.message };
     }
+    if (isPreflightReject(sim)) { aborted = true; showBlockAlert(sim.error); break; }
+
+    const baseline = (sim && sim.ok && sim.canonical) ? {
+      ok: true,
+      mode: sim.mode,
+      sessionId: sim.sessionId,
+      sessionPnl: sim.canonical.pnl,
+      tradeCount: sim.canonical.tradeCount,
+      sessionTrades: [],
+      _baselineFromCanonical: true,
+    } : { ok: false, error: 'No canonical paper-trade record found for this session' };
 
     rows.push({ session: s, baseline, sim });
     // Live partial render after each session so the user sees results stream in.
