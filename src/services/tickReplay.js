@@ -31,7 +31,7 @@
  *   const replay = require("./tickReplay");
  *   const result = await replay.replaySession({
  *     date:      "2026-05-15",
- *     mode:      "pa-paper",     // "pa-paper" | "scalp-paper" | "swing-paper"
+ *     mode:      "pa-paper",     // pa-paper | scalp-paper | swing-paper | orb-paper | straddle-paper
  *     sessionId: undefined,      // optional — defaults to first start of the day
  *     speed:     0,              // 0 = as-fast-as-possible, >0 = ms delay between ticks
  *   });
@@ -234,7 +234,7 @@ function _applySettingsOverride(settings) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
+function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -267,6 +267,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     verifyFyersToken: fyersAuthCheck.verifyFyersToken,
     isTradingAllowed: nseHolidays.isTradingAllowed,
     isExpiryDay:      nseHolidays.isExpiryDay,
+    isExpiryDate:     nseHolidays.isExpiryDate,
     DateNow:          Date.now,
     // tickRecorder originals — replay must NOT write back into the canonical
     // recording streams (it would create phantom session rows and duplicate
@@ -478,7 +479,14 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
     // strategy logic — replaying a recorded session is always "allowed".
     fyersAuthCheck.verifyFyersToken = async () => ({ ok: true, replay: true });
     nseHolidays.isTradingAllowed    = async () => ({ allowed: true, reason: "replay" });
-    nseHolidays.isExpiryDay         = async () => false; // recorded session was already gated correctly
+    // Date-aware: derive expiry status from the recorded session's actual
+    // date so ORB/Straddle expiry-only sessions reproduce their entries.
+    // Falls back to false when the date is unknown (matches legacy behaviour).
+    nseHolidays.isExpiryDay         = async () => {
+      if (!recordedDateStr) return false;
+      try { return await orig.isExpiryDate(recordedDateStr); }
+      catch (_) { return false; }
+    };
 
     // VIX cache reset is fine; let it pass through.
   }
@@ -574,9 +582,11 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, outputSubd
 
 // ── Mode → route module mapping ─────────────────────────────────────────────
 const MODE_TO_MODULE = {
-  "pa-paper":    "../routes/paPaper",
-  "scalp-paper": "../routes/scalpPaper",
-  "swing-paper": "../routes/swingPaper",
+  "pa-paper":       "../routes/paPaper",
+  "scalp-paper":    "../routes/scalpPaper",
+  "swing-paper":    "../routes/swingPaper",
+  "orb-paper":      "../routes/orbPaper",
+  "straddle-paper": "../routes/straddlePaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -640,7 +650,7 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Replay one recorded session end-to-end.
  *
  *   date                — "YYYY-MM-DD"
- *   mode                — "pa-paper" | "scalp-paper" | "swing-paper"
+ *   mode                — pa-paper | scalp-paper | swing-paper | orb-paper | straddle-paper
  *   sessionId           — optional
  *   speed               — 0 = as fast as possible, >0 = ms delay between ticks
  *   useCurrentSettings  — false (default): apply the recorded session-start
@@ -695,6 +705,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     const warmupCandles = data.sessionStart.warmup || [];
     harness = _createHarness({
       optionTimeline, vixTimeline, warmupCandles,
+      recordedDateStr: date,
       outputSubdir: useCurrentSettings ? "_replay_trades_sim" : "_replay_trades",
       outputSuffix: useCurrentSettings ? "sim" : "replay",
     });
@@ -806,7 +817,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     let sessionPnl    = 0;
     let tradeCount    = 0;
     if (statusResp && statusResp.body) {
-      sessionTrades = statusResp.body.trades || [];
+      // /status/data trade field differs by mode:
+      //   pa/scalp/swing → trades
+      //   orb/straddle   → sessionTrades
+      sessionTrades = statusResp.body.trades || statusResp.body.sessionTrades || [];
       sessionPnl    = statusResp.body.sessionPnl != null ? statusResp.body.sessionPnl : 0;
       tradeCount    = statusResp.body.tradeCount != null ? statusResp.body.tradeCount : sessionTrades.length;
     }
@@ -986,12 +1000,46 @@ function forceClearSharedState() {
   return { ok: true, cleared: before };
 }
 
+/**
+ * Remove a session's start+stop markers from sessions.jsonl for the given day.
+ * The raw spot/options/vix tick files are LEFT INTACT (they're shared with
+ * other sessions on the same day) — only the session-discovery markers go
+ * away, so the session disappears from listRecordings().
+ *
+ * Returns { ok, removed } where `removed` is the count of marker lines
+ * filtered out (typically 2 = one start + one stop; may be 1 if the session
+ * was crash-recovered without a stop event).
+ */
+function deleteSessionMarker({ date, sessionId }) {
+  if (!date || !sessionId) {
+    return { ok: false, error: "date and sessionId are required" };
+  }
+  const dir  = path.join(ROOT_DIR, date);
+  const file = path.join(dir, "sessions.jsonl");
+  if (!fs.existsSync(file)) {
+    return { ok: false, error: `No sessions.jsonl for ${date}` };
+  }
+  const events = _readJsonl(file);
+  const kept   = events.filter(e => e.sid !== sessionId);
+  const removed = events.length - kept.length;
+  if (removed === 0) {
+    return { ok: false, error: `Session ${sessionId} not found in ${date}` };
+  }
+  // Atomic rewrite via tmp + rename
+  const tmp = file + ".tmp";
+  const text = kept.map(e => JSON.stringify(e)).join("\n") + (kept.length ? "\n" : "");
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, file);
+  return { ok: true, removed };
+}
+
 module.exports = {
   loadSessionData,
   listRecordings,
   replaySession,
   replayPreflight,
   forceClearSharedState,
+  deleteSessionMarker,
   // exposed for tests
   _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
 };
