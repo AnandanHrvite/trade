@@ -42,23 +42,41 @@ const tickSimulator = require("../services/tickSimulator");
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "PA_PAPER";
 
-// ── Module-level config (read once at module load) ────────────────────────────
-const PA_RES            = parseInt(process.env.PA_RESOLUTION || "5", 10);
-const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
-const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
-const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
-const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
-const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
-const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
-const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+// ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
+// Declared with `let` so _refreshConfig() can update them. Without this, the
+// replay engine's _applySettingsOverride() and the Settings UI's mid-session
+// process.env mutations would never reach the running strategy code.
+let PA_RES;
+let _PA_MAX_TRADES;
+let _PA_MAX_LOSS;
+let _PA_PAUSE_CANDLES;
+let _PA_TRAIL_START;
+let _PA_TRAIL_PCT;
+let _PA_TRAIL_TIERS;
+let _PA_CANDLE_TRAIL;
+let _PA_CANDLE_TRAIL_BARS;
+let _STOP_MINS;
+let _ENTRY_STOP_MINS;
+let _PA_START_MINS;
+function _refreshConfig() {
+  PA_RES               = parseInt(process.env.PA_RESOLUTION || "5", 10);
+  _PA_MAX_TRADES       = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
+  _PA_MAX_LOSS         = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
+  _PA_PAUSE_CANDLES    = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
+  _PA_TRAIL_START      = parseFloat(process.env.PA_TRAIL_START || "350");
+  _PA_TRAIL_PCT        = parseFloat(process.env.PA_TRAIL_PCT || "65");
+  _PA_TRAIL_TIERS      = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
+  _PA_CANDLE_TRAIL     = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
+  _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+  _STOP_MINS           = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  _ENTRY_STOP_MINS     = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
+  _PA_START_MINS       = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
+}
+_refreshConfig();
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
 let _prevPrevDayOHLC = null;  // for prev-prev day reference
-
-const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
 
 function getISTMinutes() {
   if (state._simMode) return _PA_START_MINS + 5; // always "in market hours" during simulation
@@ -134,7 +152,7 @@ function log(msg) {
 
 function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, PA_RES); }
 
-const _PA_START_MINS = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
+// _PA_START_MINS is declared and populated by _refreshConfig() above
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -808,6 +826,10 @@ function _errorPage(title, message, linkHref, linkText) {
 
 router.get("/start", async (req, res) => {
   if (state.running) return res.redirect("/pa-paper/status");
+
+  // Re-read env into module-level config so Settings UI changes and replay
+  // env overrides (snapshot or simulator mode) take effect for this session.
+  _refreshConfig();
 
   const check = sharedSocketState.canStart("PA_PAPER");
   if (!check.allowed) {

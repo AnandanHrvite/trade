@@ -42,39 +42,55 @@ const tickSimulator = require("../services/tickSimulator");
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_PAPER";
 
-// ── Module-level config (read once at module load) ────────────────────────────
-const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
-const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "600");
-const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
-const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93");
-// Trail grace: suppress trail-exits in the first N seconds after entry
-// (prevents first-tick spike → tiny pullback from killing trades immediately)
-const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
-// Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
-const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
-// Pause override — release per-side SL cooldown early if a subsequent candle close
-// proves the original direction resumed past the failed entry spot (retest-and-resume).
-const _SCALP_PAUSE_OVERRIDE_ENABLED = (process.env.SCALP_PAUSE_OVERRIDE_ENABLED || "false").toLowerCase() === "true";
-const _SCALP_PAUSE_OVERRIDE_PTS     = parseFloat(process.env.SCALP_PAUSE_OVERRIDE_PTS || "10");
-// Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
-const _SCALP_TIME_STOP_CANDLES = process.env.SCALP_TIME_STOP_CANDLES != null
-  ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
-const _SCALP_TIME_STOP_FLAT_PTS = process.env.SCALP_TIME_STOP_FLAT_PTS != null
-  ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
-// Breakeven snap — needs to run per-tick (not per-bar) because most trades exit
-// inside the entry candle before updateTrailingSL would be called.
-const _SCALP_BE_TRIGGER_R   = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
-const _SCALP_BE_OFFSET_PTS  = parseFloat(process.env.SCALP_BREAKEVEN_OFFSET_PTS || "1");
+// ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
+// Declared with `let` so _refreshConfig() can update them. Without this, the
+// replay engine's _applySettingsOverride() and the Settings UI's mid-session
+// process.env mutations would never reach the running strategy code.
+let SCALP_RES;
+let _SCALP_MAX_TRADES;
+let _SCALP_MAX_LOSS;
+let _SCALP_PAUSE_CANDLES;
+let _SCALP_TRAIL_START;
+let _SCALP_TRAIL_PCT;
+let _SCALP_TRAIL_TIERS;
+let _SCALP_TRAIL_GRACE_SECS;
+let _SCALP_PER_SIDE_PAUSE;
+let _SCALP_PAUSE_OVERRIDE_ENABLED;
+let _SCALP_PAUSE_OVERRIDE_PTS;
+let _SCALP_TIME_STOP_CANDLES;
+let _SCALP_TIME_STOP_FLAT_PTS;
+let _SCALP_BE_TRIGGER_R;
+let _SCALP_BE_OFFSET_PTS;
+let _STOP_MINS;
+let _ENTRY_STOP_MINS;
+let _SCALP_START_MINS;
+function _refreshConfig() {
+  SCALP_RES                    = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
+  _SCALP_MAX_TRADES            = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
+  _SCALP_MAX_LOSS              = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
+  _SCALP_PAUSE_CANDLES         = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+  _SCALP_TRAIL_START           = parseFloat(process.env.SCALP_TRAIL_START || "600");
+  _SCALP_TRAIL_PCT             = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
+  _SCALP_TRAIL_TIERS           = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93");
+  _SCALP_TRAIL_GRACE_SECS      = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
+  _SCALP_PER_SIDE_PAUSE        = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+  _SCALP_PAUSE_OVERRIDE_ENABLED = (process.env.SCALP_PAUSE_OVERRIDE_ENABLED || "false").toLowerCase() === "true";
+  _SCALP_PAUSE_OVERRIDE_PTS    = parseFloat(process.env.SCALP_PAUSE_OVERRIDE_PTS || "10");
+  _SCALP_TIME_STOP_CANDLES     = process.env.SCALP_TIME_STOP_CANDLES != null
+    ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
+  _SCALP_TIME_STOP_FLAT_PTS    = process.env.SCALP_TIME_STOP_FLAT_PTS != null
+    ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
+  _SCALP_BE_TRIGGER_R          = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
+  _SCALP_BE_OFFSET_PTS         = parseFloat(process.env.SCALP_BREAKEVEN_OFFSET_PTS || "1");
+  _STOP_MINS                   = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
+  _ENTRY_STOP_MINS             = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
+  _SCALP_START_MINS            = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
+}
+_refreshConfig();
 
 // ── Previous day OHLC for CPR (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
 let _prevPrevDayOHLC = null;  // for Inside Value CPR check
-
-const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
 
 function getISTMinutes() {
   if (state._simMode) return _SCALP_START_MINS + 5; // always "in market hours" during simulation
@@ -153,7 +169,7 @@ function log(msg) {
 
 function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, SCALP_RES); }
 
-const _SCALP_START_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
+// _SCALP_START_MINS declared and populated by _refreshConfig() above
 
 function isMarketHours() {
   const total = getISTMinutes();
@@ -980,6 +996,10 @@ function _errorPage(title, message, linkHref, linkText) {
 
 router.get("/start", async (req, res) => {
   if (state.running) return res.redirect("/scalp-paper/status");
+
+  // Re-read env into module-level config so Settings UI changes and replay
+  // env overrides (snapshot or simulator mode) take effect for this session.
+  _refreshConfig();
 
   const check = sharedSocketState.canStart("SCALP_PAPER");
   if (!check.allowed) {

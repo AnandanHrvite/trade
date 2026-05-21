@@ -36,39 +36,54 @@ const skipLogger = require("../utils/skipLogger");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA, PSAR } = require("technicalindicators");
 
-// ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
-const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "5", 10); // candle resolution in minutes
+// ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
+// Declared with `let` so _refreshConfig() can update them. Without this, the
+// replay engine's _applySettingsOverride() and the Settings UI's mid-session
+// process.env mutations would never reach the running strategy code.
+let TRADE_RES;            // candle resolution in minutes
+let _TRAIL_T1_UPTO;
+let _TRAIL_T2_UPTO;
+let _TRAIL_T1_GAP;
+let _TRAIL_T2_GAP;
+let _TRAIL_T3_GAP;
+let _TRAIL_ACTIVATE_PTS;
+let _MAX_DAILY_TRADES;
+let _MAX_DAILY_LOSS;
+let _OPT_STOP_PCT;
+let _SWING_USE_PREV_CANDLE_SL;
+let _SWING_MAX_INITIAL_SL_PTS;
+let _SWING_MIN_INITIAL_SL_PTS;
+let _SWING_STRONG_ONLY;
+let _SWING_PREV_CANDLE_TRAIL_ENABLED;
+let _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS;
+let _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
+let _SWING_PREV_CANDLE_TRAIL_MAX_GAP;
+let _STOP_MINS;
+function _refreshConfig() {
+  TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  _TRAIL_T1_UPTO                         = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
+  _TRAIL_T2_UPTO                         = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
+  _TRAIL_T1_GAP                          = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
+  _TRAIL_T2_GAP                          = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
+  _TRAIL_T3_GAP                          = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
+  _TRAIL_ACTIVATE_PTS                    = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
+  _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
+  _MAX_DAILY_LOSS                        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+  _OPT_STOP_PCT                          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+  _SWING_USE_PREV_CANDLE_SL              = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
+  _SWING_MAX_INITIAL_SL_PTS              = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
+  _SWING_MIN_INITIAL_SL_PTS              = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
+  _SWING_STRONG_ONLY                     = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
+  _SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+  _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
+  _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
+  _SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
+  const raw = process.env.TRADE_STOP_TIME || "15:30";
+  const [h, m] = raw.split(":").map(Number);
+  _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
+}
+_refreshConfig();
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
-
-// ── Trail tier config — cached at module load (never changes at runtime) ─────
-// getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
-// Pre-reading these once eliminates 750+ env reads/min when in position.
-const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
-const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
-const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
-const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
-const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
-const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
-const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-
-// ── Initial SL cap (Hybrid: structural + hard cap, with min floor) ───────────
-// Original SAR-based SL is often 100-130pt wide on young trends — full loss too big.
-// Hybrid takes whichever is TIGHTER: SAR / prev candle structural / hard pts cap,
-// then floors at SWING_MIN_INITIAL_SL_PTS so we never get a sub-bar suicide-tight SL.
-const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
-const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
-const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
-const _SWING_STRONG_ONLY         = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
-
-// ── Prev-candle structural trail (candle-by-candle, profit-only) ──────────────
-// Disabled by default — enable after backtest validation.
-// Composes with SAR + tier trail (tighten-only — never loosens).
-const _SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-const _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
-const _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
-const _SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
 
 function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
   if (!_SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
@@ -88,13 +103,7 @@ function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot
   return currentSL;
 }
 
-// ── EOD stop time — cached at module load ─────────────────────────────────────
-// parseMins("TRADE_STOP_TIME","15:30") was called on every candle close.
-const _STOP_MINS = (function() {
-  const raw = process.env.TRADE_STOP_TIME || "15:30";
-  const [h, m] = raw.split(":").map(Number);
-  return h * 60 + (isNaN(m) ? 0 : m);
-})();
+// _STOP_MINS declared and populated by _refreshConfig() above
 
 // ── isMarketHours() cache (60-second TTL) ────────────────────────────────────
 // Called on every NIFTY tick (100-200/min). Creates a Date object each call.
@@ -1758,6 +1767,10 @@ function generatePaperDailyReport(trades, sessionPnl) {
  * Connects to live Fyers socket and starts simulating trades
  */
 router.get("/start", async (req, res) => {
+  // Re-read env into module-level config so Settings UI changes and replay
+  // env overrides (snapshot or simulator mode) take effect for this session.
+  _refreshConfig();
+
   // Verify the Fyers token actually works before we wire up the socket. Catches
   // the mobile-login-never-completed case where ACCESS_TOKEN is set in env but
   // the token is partial/invalid — would otherwise surface as -15 minutes later.
