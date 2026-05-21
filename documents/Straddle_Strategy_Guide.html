@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY OPTIONS — Long Straddle / Volatility Strategy</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2333;
+    --bg-card: #1a1f2e;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+    --accent-cyan: #39d2c0;
+    --accent-pink: #f778ba;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary); color: var(--text-primary);
+    line-height: 1.7; padding: 0;
+  }
+  @media print {
+    body { background: #fff; color: #111; font-size: 11pt; }
+    .section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; background: #fff !important; }
+    .hero { background: #1a1f2e !important; color: #fff !important; }
+    code, pre { background: #f4f4f4 !important; color: #111 !important; }
+    nav.toc { display: none; }
+  }
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #2d0f24 40%, #0f172a 100%);
+    border-bottom: 3px solid var(--accent-pink);
+    text-align: center; padding: 60px 30px 50px; position: relative; overflow: hidden;
+  }
+  .hero h1 {
+    font-size: 2.6rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 10px;
+    background: linear-gradient(135deg, #f778ba 0%, #bc8cff 50%, #58a6ff 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero .subtitle { font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 18px; }
+  .hero .meta {
+    display: inline-flex; gap: 20px; font-size: 0.85rem; color: var(--text-muted);
+  }
+  .hero .meta span { display: flex; align-items: center; gap: 5px; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .badge-pink { background: rgba(247,120,186,0.15); color: var(--accent-pink); }
+  nav.toc {
+    max-width: 900px; margin: 30px auto; padding: 28px 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  nav.toc h2 {
+    font-size: 1.15rem; margin-bottom: 14px; color: var(--accent-pink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  nav.toc ol {
+    list-style: none; counter-reset: toc;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 30px;
+  }
+  nav.toc li { counter-increment: toc; }
+  nav.toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--accent-pink); font-weight: 700;
+    font-size: 0.8rem; margin-right: 8px;
+  }
+  nav.toc a { color: var(--text-primary); text-decoration: none; font-size: 0.92rem; }
+  nav.toc a:hover { color: var(--accent-pink); }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 20px 60px; }
+  .section {
+    margin: 30px 0; padding: 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); position: relative;
+  }
+  .section::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 3px; border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .section.pink::before    { background: linear-gradient(90deg, var(--accent-pink), transparent); }
+  .section.purple::before  { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .section.green::before   { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .section.blue::before    { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .section.red::before     { background: linear-gradient(90deg, var(--accent-red), transparent); }
+  .section.orange::before  { background: linear-gradient(90deg, var(--accent-orange), transparent); }
+  .section.cyan::before    { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .section-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 8px;
+    font-size: 1.1rem; margin-right: 12px; flex-shrink: 0;
+  }
+  .icon-pink   { background: rgba(247,120,186,0.12); color: var(--accent-pink); }
+  .icon-purple { background: rgba(188,140,255,0.12); color: var(--accent-purple); }
+  .icon-green  { background: rgba(63,185,80,0.12); color: var(--accent-green); }
+  .icon-blue   { background: rgba(88,166,255,0.12); color: var(--accent-blue); }
+  .icon-red    { background: rgba(248,81,73,0.12); color: var(--accent-red); }
+  .icon-orange { background: rgba(210,153,34,0.12); color: var(--accent-orange); }
+  .icon-cyan   { background: rgba(57,210,192,0.12); color: var(--accent-cyan); }
+  h2 { font-size: 1.45rem; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 22px 0 10px; color: var(--accent-pink); }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 8px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  p, li { color: var(--text-primary); }
+  p { margin-bottom: 12px; }
+  ul, ol { margin-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px 20px; overflow-x: auto; margin: 12px 0 16px;
+    font-size: 0.85rem; line-height: 1.6;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    font-size: 0.85rem;
+  }
+  :not(pre) > code {
+    background: rgba(247,120,186,0.1); color: var(--accent-pink);
+    padding: 2px 7px; border-radius: 4px; font-size: 0.83rem;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 0.88rem; }
+  thead th {
+    background: var(--bg-tertiary); color: var(--accent-pink);
+    font-weight: 600; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border);
+  }
+  tbody td {
+    padding: 10px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top;
+  }
+  tbody tr:nth-child(even) td { background: rgba(22,27,34,0.5); }
+  tbody tr:hover td { background: rgba(247,120,186,0.04); }
+  .note { padding: 14px 18px; border-radius: var(--radius-sm); margin: 14px 0; font-size: 0.9rem; border-left: 4px solid; }
+  .note-info    { background: rgba(88,166,255,0.06); border-color: var(--accent-blue); }
+  .note-warn    { background: rgba(210,153,34,0.06); border-color: var(--accent-orange); }
+  .note-danger  { background: rgba(248,81,73,0.06); border-color: var(--accent-red); }
+  .note-success { background: rgba(63,185,80,0.06); border-color: var(--accent-green); }
+  .note strong  { display: block; margin-bottom: 4px; }
+  .env-group {
+    margin-top: 24px; padding: 10px 16px;
+    background: var(--bg-tertiary); border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-pink);
+    font-weight: 700; font-size: 0.92rem; margin-bottom: 2px;
+  }
+  .pillars { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0; }
+  .pillar {
+    background: rgba(247,120,186,0.08); border: 1px solid rgba(247,120,186,0.25);
+    color: var(--accent-pink); padding: 4px 12px;
+    border-radius: 16px; font-size: 0.78rem; font-weight: 600;
+  }
+  .leg-table { width: 100%; margin: 20px 0; border-collapse: separate; border-spacing: 12px; }
+  .leg-table td {
+    background: var(--bg-tertiary); padding: 18px; border-radius: 10px;
+    border: 1px solid var(--border); vertical-align: top;
+  }
+  .leg-table .leg-title {
+    font-size: 0.85rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 10px;
+  }
+  .leg-table .ce { color: var(--accent-green); }
+  .leg-table .pe { color: var(--accent-red); }
+  hr { border: none; height: 1px; background: var(--border); margin: 24px 0; }
+  .page-footer {
+    text-align: center; padding: 30px 20px;
+    border-top: 1px solid var(--border); color: var(--text-muted);
+    font-size: 0.82rem; margin-top: 40px;
+  }
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 1.8rem; }
+    nav.toc ol { grid-template-columns: 1fr; }
+    .section { padding: 22px 18px; }
+    .leg-table { border-spacing: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>Long Straddle &mdash; Volatility Strategy</h1>
+  <p class="subtitle">Paired CE + PE Buy on BB-Squeeze &mdash; Net-Debit Risk, Combined-Premium Exit</p>
+  <div class="meta">
+    <span><span class="badge badge-pink">v4.6.0</span></span>
+    <span>Generated: 2026-05-21</span>
+    <span>NIFTY Options &mdash; Intraday Volatility Expansion</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>&#9776; Table of Contents</h2>
+  <ol>
+    <li><a href="#overview">Strategy Overview</a></li>
+    <li><a href="#trigger">BB-Squeeze Trigger</a></li>
+    <li><a href="#vix">Two Entry Paths &mdash; Squeeze vs Cheap-VIX</a></li>
+    <li><a href="#entry">Entry Mechanics &mdash; Paired CE + PE</a></li>
+    <li><a href="#netdebit">Net-Debit P&amp;L Math</a></li>
+    <li><a href="#exit">Exit Logic &mdash; Combined Premium</a></li>
+    <li><a href="#force">Force-Entry Override</a></li>
+    <li><a href="#risk">Risk Management</a></li>
+    <li><a href="#modes">Operating Modes</a></li>
+    <li><a href="#config">Complete Configuration Reference</a></li>
+    <li><a href="#gaps">Known Gaps &amp; Roadmap</a></li>
+  </ol>
+</nav>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. OVERVIEW                                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section pink" id="overview">
+  <h2><span class="section-icon icon-pink">&#127919;</span> 1. Strategy Overview</h2>
+
+  <p><strong>Long Straddle</strong> is a non-directional intraday volatility strategy. The thesis: when implied volatility is unusually low (BB bands have squeezed below their recent average), or when VIX is at a cheap-premium floor, a directional move &mdash; in <em>either</em> direction &mdash; is more likely to be cheap to play. Buying both the ATM CE and ATM PE simultaneously means the position profits when the underlying moves significantly in either direction, and loses if the underlying chops sideways and theta bleeds both legs.</p>
+
+  <p>This is the only strategy in the suite that <strong>places paired orders</strong>. Both legs (CE + PE) are placed sequentially at strategy fire. P&amp;L is tracked on the <strong>combined premium</strong> against the <strong>net debit</strong> paid (entry sum of both legs). Exits also fire on the combined premium &mdash; never on a single leg.</p>
+
+  <div class="pillars">
+    <div class="pillar">Paired CE + PE Buy</div>
+    <div class="pillar">BB-Squeeze Trigger</div>
+    <div class="pillar">VIX Cheap-Premium Path</div>
+    <div class="pillar">Net-Debit Risk</div>
+    <div class="pillar">Combined-Premium Exit</div>
+    <div class="pillar">Intraday Time-Stop</div>
+    <div class="pillar">1 Pair / Day (default)</div>
+    <div class="pillar">Event-Day Force Override</div>
+  </div>
+
+  <h3>Why a Straddle and Not a Strangle?</h3>
+  <p>A straddle (same strike) has higher net debit but a tighter break-even than a strangle (different strikes). On NIFTY index, intraday moves are typically 50&ndash;100 points; with ATM premiums in the &#8377;80&ndash;150 range each, a straddle's break-even is realistic intraday, while a strangle's wider OTM strikes require larger moves to clear net debit. The strategy's exit is set at a <em>fraction</em> of net debit (default <code>+20%</code>) &mdash; capturing the rare gamma pop early rather than holding for a home run.</p>
+
+  <h3>Routes &amp; Brokers</h3>
+  <table>
+    <thead><tr><th>Mode</th><th>Route</th><th>Broker</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Paper</strong></td><td><code>/straddle-paper</code></td><td>Simulated</td><td>Canonical decision/fill/exit logic. The source of truth for Straddle behaviour.</td></tr>
+      <tr><td><strong>Live</strong></td><td><code>/straddle-live</code></td><td>Fyers (paired)</td><td>Real Fyers orders for both legs sequentially. Double-gated: <code>STRADDLE_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>. Partial-fill protection &mdash; if PE fails after CE fills, a Telegram alert is sent (no auto-unwind).</td></tr>
+      <tr><td><strong>Backtest</strong></td><td><code>/straddle-backtest</code></td><td>Historical</td><td>Date-range backtest. Records option LTP polls so Replay can reproduce the same pair trades.</td></tr>
+      <tr><td><strong>History</strong></td><td><code>/straddle-paper/history</code></td><td>&mdash;</td><td>Per-session delete + view modal. Each entry shows both legs + net debit + combined LTP.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. BB SQUEEZE TRIGGER                                                   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section purple" id="trigger">
+  <h2><span class="section-icon icon-purple">&#128279;</span> 2. BB-Squeeze Trigger</h2>
+
+  <p>The primary entry signal is a <strong>Bollinger Band squeeze</strong>: the current BB width is significantly tighter than its recent average, which mathematically describes a period of compressed realised volatility. Mean reversion of volatility &mdash; on average it expands after compression &mdash; is the directional thesis the straddle exploits.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period (candles)</td></tr>
+      <tr><td><code>STRADDLE_BB_STDDEV</code></td><td><code>2</code></td><td>Bollinger Band std deviation multiplier</td></tr>
+      <tr><td><code>STRADDLE_BB_AVG_LOOKBACK</code></td><td><code>20</code></td><td>Number of bars to average BB width over (squeeze comparison baseline)</td></tr>
+      <tr><td><code>STRADDLE_SQUEEZE_RATIO</code></td><td><code>0.85</code></td><td>Trigger fires when current BB width &le; this fraction of the lookback average</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Squeeze Math</h3>
+  <pre><code>bbWidth(t)    = bbUpper(t) - bbLower(t)
+avgWidth      = SMA(bbWidth, STRADDLE_BB_AVG_LOOKBACK)
+
+squeeze_fires = (bbWidth(t) / avgWidth) &le; STRADDLE_SQUEEZE_RATIO
+
+With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar average.</code></pre>
+
+  <h3>What the squeeze looks like in an entry-reason string</h3>
+  <pre><code>BB squeeze | BBwidth=0.0023 avg=0.0028 | VIX=15.4 [STRONG]</code></pre>
+  <p>The trigger string surfaces the actual current width, the lookback average, and VIX at fire time. This format is the <strong>Straddle fingerprint</strong> &mdash; cross-strategy disambiguation uses this to route the trade to the right analysis bucket.</p>
+
+  <h3>Skip States</h3>
+  <ul>
+    <li><code>"BB indicator not ready"</code> &mdash; warming up, fewer than <code>STRADDLE_BB_PERIOD</code> candles available.</li>
+    <li><code>"Warming up (X/25 candles for BB squeeze detection)"</code> &mdash; have BB but not enough lookback history to compute the average yet.</li>
+    <li><code>"No trigger — BB width X vs avg Y (squeeze&lt;0.85 of avg), VIX Z &gt;= 14 cheap-threshold, force=false"</code> &mdash; primary skip path. Surfaces all three gating conditions at once so the operator can see exactly why nothing fired.</li>
+  </ul>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. TWO ENTRY PATHS                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="vix">
+  <h2><span class="section-icon icon-blue">&#9889;</span> 3. Two Entry Paths &mdash; Squeeze vs Cheap-VIX</h2>
+
+  <p>An entry can fire via two independent paths. <strong>Either is sufficient</strong> on its own &mdash; the strategy ORs the two paths, not ANDs.</p>
+
+  <table>
+    <thead><tr><th>Path</th><th>Condition</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>1. BB Squeeze</strong></td>
+        <td><code>bbWidth &le; STRADDLE_SQUEEZE_RATIO &times; avgWidth</code></td>
+        <td>Realised volatility has compressed. Straddle plays the mean-reversion (expansion).</td>
+      </tr>
+      <tr>
+        <td><strong>2. Cheap VIX</strong></td>
+        <td><code>VIX &lt; STRADDLE_VIX_CHEAP</code> (default <code>14</code>)</td>
+        <td>Implied volatility is at a cheap floor &mdash; option premiums are unusually low. Even without a BB squeeze, the asymmetric R:R of a long straddle becomes attractive.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>The two-path design is deliberate. BB-squeeze captures <em>realised</em> compression but can lag &mdash; by the time the squeeze fires, the move may already be underway. The cheap-VIX path catches <em>implied</em> compression &mdash; you're buying volatility while it's cheap by historical standards, before any structural compression has shown up in the BB envelope.</p>
+
+  <h3>VIX Gating (independent of cheap-VIX path)</h3>
+  <p>Separately, ALL straddle entries are subject to a VIX <em>upper</em> bound. If VIX is too high, premiums are pumped and the long-straddle R:R deteriorates.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_VIX_ENABLED</code></td><td><code>true</code></td><td>Master toggle for the VIX upper bound. Defaults <strong>on</strong> &mdash; the strategy is most exposed to VIX of all five.</td></tr>
+      <tr><td><code>STRADDLE_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, all straddle entries are blocked &mdash; premiums pumped, poor R:R.</td></tr>
+      <tr><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between 18 and 22, only STRONG-classified squeeze triggers fire. MARGINAL squeezes blocked.</td></tr>
+      <tr><td><code>STRADDLE_VIX_CHEAP</code></td><td><code>14</code></td><td>Below this VIX, the cheap-VIX path fires (additionally to BB-squeeze).</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Net VIX behaviour:</strong> the sweet spot for straddle is VIX &asymp; 14&ndash;18. Above 18 you need a STRONG squeeze; above 22 you can't trade at all; below 14 the cheap-premium path opens up additional entries even without a squeeze.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. ENTRY MECHANICS                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section green" id="entry">
+  <h2><span class="section-icon icon-green">&#9654;</span> 4. Entry Mechanics &mdash; Paired CE + PE</h2>
+
+  <p>When all gates pass and a trigger fires, the strategy enters <strong>both legs simultaneously</strong> at the nearest ATM strike (per <code>STRIKE_OFFSET_CE</code> / <code>STRIKE_OFFSET_PE</code> &mdash; defaults <code>0</code> = pure ATM).</p>
+
+  <table class="leg-table">
+    <tr>
+      <td>
+        <div class="leg-title ce">CE Leg (Call)</div>
+        <p>Buy 1 lot ATM CE.</p>
+        <ul style="margin-top:8px;">
+          <li>Strike: ATM + <code>STRIKE_OFFSET_CE</code></li>
+          <li>Side: BUY</li>
+          <li>Qty: <code>NIFTY_LOT_SIZE &times; LOT_MULTIPLIER</code></li>
+          <li>Order type: market (paper) / market (live)</li>
+        </ul>
+      </td>
+      <td>
+        <div class="leg-title pe">PE Leg (Put)</div>
+        <p>Buy 1 lot ATM PE.</p>
+        <ul style="margin-top:8px;">
+          <li>Strike: ATM + <code>STRIKE_OFFSET_PE</code></li>
+          <li>Side: BUY</li>
+          <li>Qty: <code>NIFTY_LOT_SIZE &times; LOT_MULTIPLIER</code></li>
+          <li>Order type: market (paper) / market (live)</li>
+        </ul>
+      </td>
+    </tr>
+  </table>
+
+  <h3>Sequential Order Placement (Live)</h3>
+  <p>In Live mode, the two legs are placed <strong>sequentially</strong> via the Fyers broker, not as a bracket. CE is placed first; on confirmation, PE is placed. The sequence is intentional &mdash; market-orders take ~50&ndash;200 ms each via the Fyers API, so doing them serially gives a clean per-leg confirmation rather than racing them.</p>
+
+  <div class="note note-danger">
+    <strong>Partial-fill protection:</strong> if the PE order fails (broker error, rejection, network) after the CE order has filled, the strategy <strong>does not auto-unwind</strong> the CE leg. Instead it logs an error and sends a Telegram alert that you have a one-sided position open. <em>You</em> decide whether to unwind manually or hold &mdash; the strategy will continue to track the CE as a long call until you handle it. This is intentionally conservative; an auto-unwind path could create double-slippage on a fast-moving market.
+  </div>
+
+  <h3>Entry-Time Constraints</h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest entry (IST). Avoids first-15-min noise.</td></tr>
+      <tr><td><code>STRADDLE_ENTRY_END</code></td><td><code>11:00</code></td><td>Latest entry (IST). Late straddles bleed theta &mdash; by 11:00 there's less than 5 hours of intraday for the move to expand.</td></tr>
+      <tr><td><code>STRADDLE_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard EOD exit for any open pair regardless of P&amp;L.</td></tr>
+      <tr><td><code>STRADDLE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to weekly-expiry day only.</td></tr>
+      <tr><td><code>STRADDLE_MAX_DAILY_PAIRS</code></td><td><code>1</code></td><td>Cap on pair entries per day. After N, the strategy stops entering.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. NET-DEBIT MATH                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="netdebit">
+  <h2><span class="section-icon icon-orange">&#129518;</span> 5. Net-Debit P&amp;L Math</h2>
+
+  <p>The straddle's P&amp;L tracking is different from every other strategy in this suite. It is <strong>not</strong> tracked per-leg; it is tracked on the <strong>combined premium</strong> of both legs against the original <strong>net debit</strong> paid.</p>
+
+  <pre><code>netDebit       = entry_CE_premium + entry_PE_premium
+combined(t)    = current_CE_premium + current_PE_premium
+
+pnl(t)         = (combined(t) &minus; netDebit) &times; lot_qty
+pnl_pct(t)     = (combined(t) / netDebit) &minus; 1</code></pre>
+
+  <h3>Worked Example</h3>
+  <pre><code>NIFTY at 24,000. ATM = 24000. Lot size = 65, multiplier = 2.
+
+CE entry: 100 &#8377; per option
+PE entry: 95 &#8377; per option
+netDebit = 100 + 95 = 195 &#8377;
+qty      = 65 &times; 2 = 130
+
+NIFTY moves to 24,100 (CE = 145, PE = 60):
+combined  = 145 + 60 = 205 &#8377;
+pnl       = (205 &minus; 195) &times; 130 = +&#8377;1,300
+pnl_pct   = (205 / 195) - 1 = +5.1%
+
+The position is profitable even though PE has lost 35 &#8377;/leg, because CE has gained 45 &#8377;/leg.
+This is the volatility-expansion thesis playing out: a unidirectional move that's large enough.
+
+If NIFTY had stayed flat at 24,000 for two hours instead:
+CE = 93, PE = 88, combined = 181 (theta decay on both)
+pnl = (181 &minus; 195) &times; 130 = &minus;&#8377;1,820
+pnl_pct = -7.2%
+
+This is the failure mode: chop kills both legs simultaneously via theta.</code></pre>
+
+  <div class="note note-warn">
+    <strong>Why combined-premium tracking matters:</strong> tracking each leg independently can produce misleading signals (e.g. "the PE is at &minus;30%, exit it"). On a long straddle, the PE losing premium <em>while CE gains more</em> is the desired outcome. Both legs must be evaluated together.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. EXIT LOGIC                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="exit">
+  <h2><span class="section-icon icon-red">&#128205;</span> 6. Exit Logic &mdash; Combined Premium</h2>
+
+  <p>Exits are evaluated every tick on the <strong>combined premium</strong>, with the first matching condition firing the exit.</p>
+
+  <ol style="margin-left:24px;">
+    <li>
+      <strong>Target hit</strong> &mdash; <code>combined &ge; netDebit &times; (1 + STRADDLE_TARGET_PCT)</code><br>
+      Default <code>0.20</code> &rarr; exit at +20% net. Locks the rare gamma pop early.
+    </li>
+    <li>
+      <strong>SL hit</strong> &mdash; <code>combined &le; netDebit &times; (1 &minus; STRADDLE_STOP_PCT)</code><br>
+      Default <code>0.30</code> &rarr; exit at &minus;30% net. Wider SL absorbs intraday noise.
+    </li>
+    <li>
+      <strong>Max hold time</strong> &mdash; <code>holdDays &ge; STRADDLE_MAX_HOLD_DAYS</code><br>
+      Default <code>0.3</code> &rarr; intraday-only (paper trade auto-stops at EOD anyway; this prevents surprise force-close).
+    </li>
+    <li>
+      <strong>Forced EOD exit</strong> &mdash; <code>now &ge; STRADDLE_FORCED_EXIT</code> (default <code>15:15</code>)
+    </li>
+  </ol>
+
+  <h3>Why Target &lt; SL (0.20 &lt; 0.30)?</h3>
+  <p>The default target (+20%) is tighter than the default SL (&minus;30%). On the face of it, this looks like a negative-expectancy setup. But the long-straddle distribution is not symmetric: the <em>probability</em> of hitting +20% is higher than the probability of hitting &minus;30% on the days the strategy actually fires (BB-squeeze + low VIX). Most squeeze breakouts produce a 20&ndash;30% expansion within the first hour; the trade exits with a small win. The &minus;30% SL covers the failure mode where chop continues and theta bleeds both legs &mdash; needing a wider SL is correct precisely because the chop is slow.</p>
+
+  <p>That said, the defaults are conservative for the data-collection window. Once the window closes and you have a population of straddle outcomes to analyse, retune both numbers.</p>
+
+  <div class="note note-info">
+    <strong>No per-leg SL.</strong> Unlike PA / Scalp / Swing, there is no spot-based stop on either leg individually. The CE could be down 50% while the PE is up 80% &mdash; the strategy holds. Combined-premium is the only exit signal.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. FORCE-ENTRY OVERRIDE                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="force">
+  <h2><span class="section-icon icon-cyan">&#9889;</span> 7. Force-Entry Override (Event Days)</h2>
+
+  <p>For RBI policy days, Union Budget, major results, or other scheduled events where you <em>know</em> volatility will expand but the BB squeeze hasn't formed in the data yet, the strategy supports a one-shot manual override.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>STRADDLE_FORCE_ENTRY_NEXT</code></td>
+        <td><code>false</code></td>
+        <td>When set to <code>true</code>, the next candle close inside the entry window triggers an entry <strong>regardless</strong> of BB/VIX gates. The flag is auto-reset to <code>false</code> after firing &mdash; so it's strictly one-shot.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Usage Pattern</h3>
+  <ol>
+    <li>Open Settings before market open on the event day.</li>
+    <li>Toggle <code>STRADDLE_FORCE_ENTRY_NEXT</code> &rarr; <code>true</code>. Save.</li>
+    <li>Start the Straddle Paper or Live session.</li>
+    <li>On the first candle close inside the entry window (09:30 &le; t &lt; 11:00), the strategy enters regardless of BB/VIX state. The override flag flips back to <code>false</code> immediately after firing.</li>
+    <li>The trade proceeds through the normal exit stack (target / SL / time-stop / EOD).</li>
+  </ol>
+
+  <div class="note note-warn">
+    <strong>The override does NOT bypass the entry-time window or the daily pair cap.</strong> If you flip it on outside of 09:30&ndash;11:00, nothing fires until the window opens. If you've already taken your <code>STRADDLE_MAX_DAILY_PAIRS</code> for the day, the override still respects the cap.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. RISK MANAGEMENT                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="risk">
+  <h2><span class="section-icon icon-red">&#128737;</span> 8. Risk Management</h2>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Daily pair cap</td><td><code>STRADDLE_MAX_DAILY_PAIRS</code></td><td><code>1</code></td><td>After N pair entries, no more for the session</td></tr>
+      <tr><td>Daily loss kill-switch</td><td><code>STRADDLE_MAX_DAILY_LOSS</code></td><td><code>3000</code> &#8377;</td><td>Realised loss &ge; threshold halts entries for the day</td></tr>
+      <tr><td>Per-trade SL</td><td><code>STRADDLE_STOP_PCT</code></td><td><code>0.30</code></td><td>Combined-premium SL at &minus;30% of net debit</td></tr>
+      <tr><td>Entry window</td><td><code>STRADDLE_ENTRY_START</code> / <code>END</code></td><td><code>09:30</code> / <code>11:00</code></td><td>No new entries outside this window</td></tr>
+      <tr><td>Max hold time</td><td><code>STRADDLE_MAX_HOLD_DAYS</code></td><td><code>0.3</code></td><td>Intraday-only force exit</td></tr>
+      <tr><td>EOD forced exit</td><td><code>STRADDLE_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Any open pair is squared off at this time</td></tr>
+      <tr><td>VIX upper bound</td><td><code>STRADDLE_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this, all entries blocked (premiums pumped)</td></tr>
+      <tr><td>VIX STRONG-only</td><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and VIX_MAX_ENTRY, only STRONG squeezes fire</td></tr>
+      <tr><td>Expiry-day-only</td><td><code>STRADDLE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
+      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Shared across modes &mdash; blocks entries on wide spreads</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Max-Loss-Per-Pair Worked Example</h3>
+  <pre><code>NIFTY at 24,000. CE entry 100 + PE entry 95 = netDebit 195 &#8377;.
+Lot size 65 &times; LOT_MULTIPLIER 2 = qty 130.
+
+Total capital committed = 195 &times; 130 = &#8377;25,350
+Max loss (SL at &minus;30%) = 195 &times; 0.30 &times; 130 = &#8377;7,605
+
+With STRADDLE_MAX_DAILY_LOSS = 3000 &#8377;, the daily kill-switch will fire
+BEFORE the per-trade SL on a typical NIFTY straddle. The per-trade SL is
+mostly a backstop for unusually large overnight gaps when a trade
+straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pre>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. OPERATING MODES                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="modes">
+  <h2><span class="section-icon icon-blue">&#9881;</span> 9. Operating Modes</h2>
+
+  <h3 style="color:var(--accent-blue);">Paper Mode &mdash; <code>/straddle-paper</code></h3>
+  <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated paired fills. Canonical decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/straddle_paper_trades.json</code>; per-day JSONL audit at <code>~/trading-data/trades/straddle_paper_trades_YYYY-MM-DD.jsonl</code> (seeded with a settings snapshot at session start). Each entry record includes both legs (<code>pos.ce</code> + <code>pos.pe</code>), the net debit, and combined-premium tracking over the life of the trade.</p>
+
+  <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/straddle-live</code></h3>
+  <p>Real Fyers orders, both legs placed sequentially. <strong>Double-gated</strong>: both <code>STRADDLE_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required. With DRY-RUN on (default), the broker calls are logged but no real orders are placed. Switch DRY-RUN off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+
+  <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/straddle-backtest</code></h3>
+  <p>Date-range backtest replaying historical NIFTY candles + option chains. The backtest records option LTP polls during the run so Replay can reproduce the same pair trades deterministically.</p>
+
+  <h3 style="color:var(--accent-orange);">Replay Mode &mdash; <code>/replay</code></h3>
+  <p>Re-runs a recorded paper session through the paper <code>onTick()</code> handler. Useful for tuning straddle parameters (squeeze ratio, target/stop %, VIX cheap threshold) against real recorded ticks after market hours.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. CONFIG REFERENCE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section pink" id="config">
+  <h2><span class="section-icon icon-pink">&#128221;</span> 10. Complete Configuration Reference</h2>
+
+  <div class="env-group">Master toggles</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_MODE_ENABLED</code></td><td><code>true</code></td><td>Show Straddle sidebar group AND Settings section. When off, both are hidden.</td></tr>
+      <tr><td><code>STRADDLE_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for paired-leg Fyers live orders. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
+      <tr><td><code>STRADDLE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow straddle entries on weekly-expiry day (Tuesday)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Entry window</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_ENTRY_START</code></td><td><code>09:30</code></td><td>Earliest straddle entry (IST)</td></tr>
+      <tr><td><code>STRADDLE_ENTRY_END</code></td><td><code>11:00</code></td><td>Latest straddle entry (IST). Late straddles bleed theta.</td></tr>
+      <tr><td><code>STRADDLE_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard EOD exit for an open pair</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">BB squeeze inputs</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
+      <tr><td><code>STRADDLE_BB_STDDEV</code></td><td><code>2</code></td><td>BB standard deviation multiplier</td></tr>
+      <tr><td><code>STRADDLE_BB_AVG_LOOKBACK</code></td><td><code>20</code></td><td>Bars to average BB width over (squeeze comparison baseline)</td></tr>
+      <tr><td><code>STRADDLE_SQUEEZE_RATIO</code></td><td><code>0.85</code></td><td>Current BB width &le; this &times; avg = squeeze trigger fires</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Targets &amp; SL (net-debit fractions)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_TARGET_PCT</code></td><td><code>0.20</code></td><td>Exit when combined premium &ge; netDebit &times; (1 + this). 0.20 = lock the rare gamma pop early.</td></tr>
+      <tr><td><code>STRADDLE_STOP_PCT</code></td><td><code>0.30</code></td><td>Exit when combined premium &le; netDebit &times; (1 &minus; this). 0.30 = wider SL absorbs intraday noise.</td></tr>
+      <tr><td><code>STRADDLE_MAX_HOLD_DAYS</code></td><td><code>0.3</code></td><td>Time stop &mdash; force exit after this many days. 0.3 = intraday-only.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">VIX gating</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_VIX_ENABLED</code></td><td><code>true</code></td><td>Use VIX gating for straddle entries</td></tr>
+      <tr><td><code>STRADDLE_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Block when VIX &gt; this (premium pumped, poor R:R)</td></tr>
+      <tr><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Above this VIX, only STRONG squeeze triggers fire</td></tr>
+      <tr><td><code>STRADDLE_VIX_CHEAP</code></td><td><code>14</code></td><td>VIX below this triggers the low-VIX cheap-premium entry path (independent of BB squeeze)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Override &amp; risk caps</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>STRADDLE_FORCE_ENTRY_NEXT</code></td><td><code>false</code></td><td>One-shot override &mdash; force an entry on the next candle regardless of BB/VIX. Auto-resets.</td></tr>
+      <tr><td><code>STRADDLE_MAX_DAILY_PAIRS</code></td><td><code>1</code></td><td>Cap on straddle pair entries per day</td></tr>
+      <tr><td><code>STRADDLE_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Straddle daily loss kill-switch (&#8377;)</td></tr>
+      <tr><td><code>STRADDLE_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for straddle paper trading (&#8377;)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. KNOWN GAPS                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="gaps">
+  <h2><span class="section-icon icon-red">&#9888;</span> 11. Known Gaps &amp; Roadmap</h2>
+
+  <ul>
+    <li><strong>Crash-recovery gap.</strong> <code>src/utils/positionPersist.js</code> does not yet handle Straddle pairs. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry and reconcile against broker positions on boot; Straddle does not. If a process crash happens with an open Straddle Live pair, <strong>both legs</strong> will be orphaned at the broker and not automatically squared off. <strong>Mitigation:</strong> add <code>saveStraddlePosition()</code> / <code>loadStraddlePosition()</code> / <code>clearStraddlePosition()</code> helpers that persist both legs together (one JSON file with <code>{ ce: {...}, pe: {...}, netDebit, entryTime }</code>), and wire them into <code>straddlePaper.js</code> + <code>straddleLive.js</code> + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended Straddle sessions.</li>
+    <li><strong>Auto-unwind on partial fill not implemented.</strong> When the CE fills but PE fails (or vice versa), the strategy logs an alert but leaves you with a one-sided position. An optional auto-unwind path could try to cancel/exit the filled leg if the second leg fails &mdash; trade-off is potential double-slippage during a fast move. Decision deferred to post-data-collection.</li>
+    <li><strong>Telegram per-strategy toggles not wired.</strong> Straddle session-start / entry / exit / signal alerts currently fire under the master <code>TG_ENABLED</code> gate only. There are no <code>TG_STRADDLE_*</code> toggles in <code>src/utils/notify.js</code>. Adding them mirrors the pattern used for Swing / Scalp / PA.</li>
+    <li><strong>STRONG vs MARGINAL classification is implicit.</strong> The VIX <code>STRONG_ONLY</code> gate references signal strength, but the strategy does not yet attach an explicit STRONG/MARGINAL label to each entry record (other strategies do). Add the classification field to the entry log so post-window analysis can attribute P&amp;L by strength bucket.</li>
+    <li><strong>No per-side leg-specific exit logic.</strong> By design (see &sect;6), exits fire only on the combined premium. If you want to add a per-leg exit (e.g. "if PE has lost 80%, close it and let CE run as a directional bet"), it's an additive change in <code>src/strategies/straddle_volatility.js</code>. The current design intentionally avoids this complexity.</li>
+  </ul>
+
+  <div class="note note-info">
+    <strong>Tuning posture:</strong> Straddle is currently in the active paper-trade data-collection window (through &sim;2026-06-02). During this window: additive logging only, no strategy tuning, no backtest-focused changes. Any of the above gaps should be addressed only as <em>additive</em> features (don't touch existing entry / fill / exit math). See <code>project_paper_trade_data_collection.md</code> for the rationale.
+  </div>
+</section>
+
+</div><!-- /.container -->
+
+<footer class="page-footer">
+  Long Straddle &mdash; Volatility Strategy Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; 2026-05-21
+</footer>
+
+</body>
+</html>

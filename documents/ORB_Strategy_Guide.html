@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY OPTIONS — Opening Range Breakout (ORB) Strategy</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2333;
+    --bg-card: #1a1f2e;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+    --accent-cyan: #39d2c0;
+    --accent-pink: #f778ba;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary); color: var(--text-primary);
+    line-height: 1.7; padding: 0;
+  }
+  @media print {
+    body { background: #fff; color: #111; font-size: 11pt; }
+    .section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; background: #fff !important; }
+    .hero { background: #1a1f2e !important; color: #fff !important; }
+    code, pre { background: #f4f4f4 !important; color: #111 !important; }
+    nav.toc { display: none; }
+  }
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #2d1a08 40%, #0f172a 100%);
+    border-bottom: 3px solid var(--accent-orange);
+    text-align: center; padding: 60px 30px 50px; position: relative; overflow: hidden;
+  }
+  .hero h1 {
+    font-size: 2.6rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 10px;
+    background: linear-gradient(135deg, #d29922 0%, #f778ba 50%, #58a6ff 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero .subtitle { font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 18px; }
+  .hero .meta {
+    display: inline-flex; gap: 20px; font-size: 0.85rem; color: var(--text-muted);
+  }
+  .hero .meta span { display: flex; align-items: center; gap: 5px; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+  .badge-green { background: rgba(63,185,80,0.18); color: var(--accent-green); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+  nav.toc {
+    max-width: 900px; margin: 30px auto; padding: 28px 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  nav.toc h2 {
+    font-size: 1.15rem; margin-bottom: 14px; color: var(--accent-orange);
+    display: flex; align-items: center; gap: 8px;
+  }
+  nav.toc ol {
+    list-style: none; counter-reset: toc;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 30px;
+  }
+  nav.toc li { counter-increment: toc; }
+  nav.toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--accent-orange); font-weight: 700;
+    font-size: 0.8rem; margin-right: 8px;
+  }
+  nav.toc a { color: var(--text-primary); text-decoration: none; font-size: 0.92rem; }
+  nav.toc a:hover { color: var(--accent-orange); }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 20px 60px; }
+  .section {
+    margin: 30px 0; padding: 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); position: relative;
+  }
+  .section::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 3px; border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .section.orange::before { background: linear-gradient(90deg, var(--accent-orange), transparent); }
+  .section.green::before  { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .section.blue::before   { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .section.purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .section.red::before    { background: linear-gradient(90deg, var(--accent-red), transparent); }
+  .section.cyan::before   { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .section-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 8px;
+    font-size: 1.1rem; margin-right: 12px; flex-shrink: 0;
+  }
+  .icon-orange { background: rgba(210,153,34,0.12); color: var(--accent-orange); }
+  .icon-green  { background: rgba(63,185,80,0.12); color: var(--accent-green); }
+  .icon-blue   { background: rgba(88,166,255,0.12); color: var(--accent-blue); }
+  .icon-purple { background: rgba(188,140,255,0.12); color: var(--accent-purple); }
+  .icon-red    { background: rgba(248,81,73,0.12); color: var(--accent-red); }
+  .icon-cyan   { background: rgba(57,210,192,0.12); color: var(--accent-cyan); }
+  h2 { font-size: 1.45rem; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 22px 0 10px; color: var(--accent-orange); }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 8px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  p, li { color: var(--text-primary); }
+  p { margin-bottom: 12px; }
+  ul, ol { margin-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px 20px; overflow-x: auto; margin: 12px 0 16px;
+    font-size: 0.85rem; line-height: 1.6;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    font-size: 0.85rem;
+  }
+  :not(pre) > code {
+    background: rgba(210,153,34,0.1); color: var(--accent-orange);
+    padding: 2px 7px; border-radius: 4px; font-size: 0.83rem;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 0.88rem; }
+  thead th {
+    background: var(--bg-tertiary); color: var(--accent-orange);
+    font-weight: 600; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border);
+  }
+  tbody td {
+    padding: 10px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top;
+  }
+  tbody tr:nth-child(even) td { background: rgba(22,27,34,0.5); }
+  tbody tr:hover td { background: rgba(210,153,34,0.04); }
+  .note { padding: 14px 18px; border-radius: var(--radius-sm); margin: 14px 0; font-size: 0.9rem; border-left: 4px solid; }
+  .note-info    { background: rgba(88,166,255,0.06); border-color: var(--accent-blue); }
+  .note-warn    { background: rgba(210,153,34,0.06); border-color: var(--accent-orange); }
+  .note-danger  { background: rgba(248,81,73,0.06); border-color: var(--accent-red); }
+  .note-success { background: rgba(63,185,80,0.06); border-color: var(--accent-green); }
+  .note strong  { display: block; margin-bottom: 4px; }
+  .env-group {
+    margin-top: 24px; padding: 10px 16px;
+    background: var(--bg-tertiary); border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-orange);
+    font-weight: 700; font-size: 0.92rem; margin-bottom: 2px;
+  }
+  .gate {
+    display: flex; align-items: stretch; border-radius: 8px; overflow: hidden;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    margin: 8px 0; transition: transform 0.15s;
+  }
+  .gate:hover { transform: translateX(4px); }
+  .gate-num {
+    width: 42px; min-width: 42px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 1rem; color: #fff;
+    background: linear-gradient(135deg, var(--accent-orange), #b07b1c);
+  }
+  .gate-content { padding: 10px 16px; flex: 1; }
+  .gate-name { font-weight: 700; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 2px; }
+  .gate-desc { font-size: 0.82rem; color: var(--text-secondary); }
+  .gate-rule { font-size: 0.78rem; color: var(--accent-orange); margin-top: 3px; font-family: 'SF Mono', monospace; }
+  .pillars { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0; }
+  .pillar {
+    background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.25);
+    color: var(--accent-orange); padding: 4px 12px;
+    border-radius: 16px; font-size: 0.78rem; font-weight: 600;
+  }
+  hr { border: none; height: 1px; background: var(--border); margin: 24px 0; }
+  .page-footer {
+    text-align: center; padding: 30px 20px;
+    border-top: 1px solid var(--border); color: var(--text-muted);
+    font-size: 0.82rem; margin-top: 40px;
+  }
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 1.8rem; }
+    nav.toc ol { grid-template-columns: 1fr; }
+    .section { padding: 22px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>Opening Range Breakout (ORB)</h1>
+  <p class="subtitle">Single-Leg CE / PE Breakout of the First 15-Minute Range &mdash; Fyers Orders</p>
+  <div class="meta">
+    <span><span class="badge badge-orange">v4.6.0</span></span>
+    <span>Generated: 2026-05-21</span>
+    <span>NIFTY Options &mdash; 1 Trade / Day (default) &mdash; Premium Lock-In Trail</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>&#9776; Table of Contents</h2>
+  <ol>
+    <li><a href="#overview">Strategy Overview</a></li>
+    <li><a href="#window">Opening Range Window</a></li>
+    <li><a href="#entry">Entry Logic &mdash; 9 Gate Pipeline</a></li>
+    <li><a href="#strength">Sweet-Spot Tiering &mdash; STRONG vs MARGINAL</a></li>
+    <li><a href="#sl">Stop Loss &mdash; Premium %</a></li>
+    <li><a href="#targets">Targets &mdash; Premium % + Spot Multiple</a></li>
+    <li><a href="#lockin">Premium Lock-In Trail</a></li>
+    <li><a href="#exit">Exit Logic</a></li>
+    <li><a href="#vix">VIX Regime Filter</a></li>
+    <li><a href="#risk">Risk Management</a></li>
+    <li><a href="#modes">Operating Modes</a></li>
+    <li><a href="#config">Complete Configuration Reference</a></li>
+    <li><a href="#gaps">Known Gaps &amp; Roadmap</a></li>
+  </ol>
+</nav>
+
+<div class="container">
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. OVERVIEW                                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="overview">
+  <h2><span class="section-icon icon-orange">&#9881;</span> 1. Strategy Overview</h2>
+
+  <p><strong>Opening Range Breakout (ORB)</strong> is a directional intraday strategy that defines the day's "opening range" as the high/low of the first <code>N</code>-minute window after the market open (default <code>09:15</code> &rarr; <code>09:30</code> &mdash; the standard 15-minute ORB). Once the range is closed, the strategy waits for a candle whose <em>close</em> breaks above the Opening Range High (ORH) for a <strong>CE</strong> entry or below the Opening Range Low (ORL) for a <strong>PE</strong> entry. Single-leg buy &mdash; no paired hedge.</p>
+
+  <p>ORB is a <strong>momentum-confirmation</strong> strategy, not a fade. The thesis: directional days often reveal themselves by the first hour. If price has built a real range and then committed beyond it with a clean candle (decent body, aligned with VWAP, adequate volume), the move tends to extend in that direction through the morning session. If the breakout candle is wicky, against VWAP, or on thin volume, the breakout is more likely a fakeout and is skipped.</p>
+
+  <div class="pillars">
+    <div class="pillar">15-Min Opening Range</div>
+    <div class="pillar">Single-Leg CE / PE</div>
+    <div class="pillar">Wick Rejection Filter</div>
+    <div class="pillar">VWAP Alignment</div>
+    <div class="pillar">Volume Confirmation</div>
+    <div class="pillar">Premium Range Gate</div>
+    <div class="pillar">Sweet-Spot Tiering</div>
+    <div class="pillar">Premium Lock-In Trail</div>
+    <div class="pillar">1 Trade / Day (default)</div>
+  </div>
+
+  <h3>Why &ldquo;textbook 1 trade per day&rdquo;</h3>
+  <p>The textbook ORB convention is one entry per session. The reasoning is that the opening range is a <em>once-per-day</em> structural feature &mdash; a second breakout later in the day is usually a different setup entirely (range expansion, news, late momentum). Allowing multiple entries tends to invite chop into the P&amp;L distribution. The default is <code>ORB_MAX_DAILY_TRADES=1</code>; you can raise it via Settings if you accept the chop.</p>
+
+  <h3>Routes &amp; Brokers</h3>
+  <table>
+    <thead><tr><th>Mode</th><th>Route</th><th>Broker</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Paper</strong></td><td><code>/orb-paper</code></td><td>Simulated</td><td>Canonical decision/fill/exit logic. The source of truth for ORB behaviour.</td></tr>
+      <tr><td><strong>Live</strong></td><td><code>/orb-live</code></td><td>Fyers</td><td>Real Fyers orders. Double-gated: <code>ORB_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
+      <tr><td><strong>Backtest</strong></td><td><code>/orb-backtest</code></td><td>Historical</td><td>Date-range backtest. Records option LTP polls so Replay can reproduce.</td></tr>
+      <tr><td><strong>History</strong></td><td><code>/orb-paper/history</code></td><td>&mdash;</td><td>Per-session delete + view modal. Restore from JSONL daily log.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. OPENING RANGE WINDOW                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="window">
+  <h2><span class="section-icon icon-blue">&#128340;</span> 2. Opening Range Window</h2>
+
+  <p>The opening range is defined by two times and observed in real-time as the session opens. Once the window closes, ORH/ORL are frozen for the rest of the day.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>Opening range starts (IST). Aligns with NSE market open.</td></tr>
+      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>Opening range closes. ORH/ORL are now frozen for the session.</td></tr>
+      <tr><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>Stale-breakout cutoff. No new entries past this time even if ORH/ORL is broken.</td></tr>
+      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard square-off for any open ORB position regardless of P&amp;L.</td></tr>
+      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>When <code>true</code>, only allow ORB entries on weekly-expiry day (Tuesday).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Building the Range</h3>
+  <p>From <code>ORB_RANGE_START</code> until <code>ORB_RANGE_END</code>, the strategy tracks the highest high (ORH) and lowest low (ORL) across all candles in the window. Skip states until the range is fully formed:</p>
+  <ul>
+    <li><code>reason: "Building opening range (waiting for 09:30 IST)"</code> &mdash; window still open</li>
+    <li><code>reason: "Opening range not yet formed"</code> &mdash; warming up; not enough candles to compute ORH/ORL yet</li>
+    <li><code>reason: "Warming up (X/4 candles)"</code> &mdash; less than 4 candles available; need indicators to settle</li>
+  </ul>
+
+  <h3>Width Sanity Check &mdash; <code>ORB_MIN_RANGE_PTS</code> / <code>ORB_MAX_RANGE_PTS</code></h3>
+  <p>Once the range is formed, its width (ORH &minus; ORL) is sanity-checked before any breakout can be taken.</p>
+  <ul>
+    <li><strong>Range too tight</strong> (width &lt; <code>ORB_MIN_RANGE_PTS</code>, default <code>25</code> pts) &rarr; likely noise / pre-market indecision. Skip the day.</li>
+    <li><strong>Range too wide</strong> (width &gt; <code>ORB_MAX_RANGE_PTS</code>, default <code>120</code> pts) &rarr; open already moved; the breakout is chasing an exhausted setup. Skip the day.</li>
+  </ul>
+
+  <div class="note note-info">
+    <strong>Sweet spot (sub-tiering):</strong> ranges between <code>ORB_SWEET_MIN=30</code> and <code>ORB_SWEET_MAX=80</code> pts are considered the "sweet spot" and qualify the breakout as <strong>STRONG</strong> when combined with breakout body &ge; <code>ORB_STRONG_BODY=15</code> pts. Ranges outside the sweet spot but still inside the min/max band fire as <strong>MARGINAL</strong> &mdash; still allowed, just classified differently for P&amp;L attribution.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. ENTRY LOGIC                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section green" id="entry">
+  <h2><span class="section-icon icon-green">&#9654;</span> 3. Entry Logic &mdash; 9 Gate Pipeline</h2>
+
+  <p>A candidate breakout candle goes through 9 sequential gates. <strong>All must pass</strong> for an entry to fire. The first failing gate is recorded in the skip log with its specific reason string &mdash; useful for diagnosing "why didn't we enter today?" via <code>/trade-logs</code>.</p>
+
+  <div class="gate">
+    <div class="gate-num">1</div>
+    <div class="gate-content">
+      <div class="gate-name">Time Window</div>
+      <div class="gate-desc">Candle closed after <code>ORB_RANGE_END</code> AND before <code>ORB_ENTRY_END</code></div>
+      <div class="gate-rule">09:30 &le; lastIst &lt; 12:00</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">2</div>
+    <div class="gate-content">
+      <div class="gate-name">Range Width</div>
+      <div class="gate-desc">Opening range width within configured band</div>
+      <div class="gate-rule">ORB_MIN_RANGE_PTS &le; (ORH &minus; ORL) &le; ORB_MAX_RANGE_PTS</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">3</div>
+    <div class="gate-content">
+      <div class="gate-name">Breakout Confirmation</div>
+      <div class="gate-desc">Candle closes beyond the range &mdash; <em>close</em>, not just a high/low touch</div>
+      <div class="gate-rule">CE: close &gt; ORH &nbsp;|&nbsp; PE: close &lt; ORL</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">4</div>
+    <div class="gate-content">
+      <div class="gate-name">Min Breakout Body</div>
+      <div class="gate-desc">The breakout candle must commit &mdash; doji-thin bodies don't count</div>
+      <div class="gate-rule">|close &minus; open| &ge; ORB_MIN_BODY (default 8 pts)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">5</div>
+    <div class="gate-content">
+      <div class="gate-name">Wick Rejection Filter</div>
+      <div class="gate-desc">Opposing wick must not dominate the body &mdash; a long upper wick on a CE break = exhaustion signal</div>
+      <div class="gate-rule">CE: upper_wick &le; ORB_MAX_WICK_RATIO &times; body &nbsp;|&nbsp; PE: lower_wick &le; ...</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">6</div>
+    <div class="gate-content">
+      <div class="gate-name">VWAP Alignment</div>
+      <div class="gate-desc">Trade in the direction the institutional flow is pricing &mdash; CE only above session VWAP, PE only below</div>
+      <div class="gate-rule">CE: close &gt; VWAP &nbsp;|&nbsp; PE: close &lt; VWAP &nbsp;(falls back to TWAP on volumeless candles)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">7</div>
+    <div class="gate-content">
+      <div class="gate-name">Volume Confirmation</div>
+      <div class="gate-desc">Breakout volume must materially exceed the recent average. Auto-skipped on volumeless indices.</div>
+      <div class="gate-rule">vol &ge; ORB_VOL_MULT &times; avg(prior N=ORB_VOL_LOOKBACK candles)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">8</div>
+    <div class="gate-content">
+      <div class="gate-name">Premium-Range Gate</div>
+      <div class="gate-desc">ATM option LTP must sit inside the configured band &mdash; filters out deep-OTM lottery tickets and ITM-acting-like-futures</div>
+      <div class="gate-rule">ORB_PREMIUM_MIN &le; ATM_LTP &le; ORB_PREMIUM_MAX (default 80 &mdash; 250 &#8377;)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">9</div>
+    <div class="gate-content">
+      <div class="gate-name">VIX Regime</div>
+      <div class="gate-desc">Optional &mdash; block entries when implied volatility is too high (premiums pumped, R:R deteriorates)</div>
+      <div class="gate-rule">VIX &le; ORB_VIX_MAX_ENTRY (default 22) &nbsp;|&nbsp; STRONG-only above ORB_VIX_STRONG_ONLY (18)</div>
+    </div>
+  </div>
+
+  <div class="note note-info">
+    <strong>Daily-count gate (pre-filter):</strong> Before any of the 9 gates evaluate, the strategy first checks <code>ORB_MAX_DAILY_TRADES</code>. With the default of <code>1</code>, after the first successful entry the strategy skips all further candles with <code>reason: "Already traded this session — ORB takes only 1 trade/day"</code>.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. SWEET-SPOT TIERING                                                   -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section purple" id="strength">
+  <h2><span class="section-icon icon-purple">&#11088;</span> 4. Sweet-Spot Tiering &mdash; STRONG vs MARGINAL</h2>
+
+  <p>Every passing breakout is classified as <strong>STRONG</strong> or <strong>MARGINAL</strong> based on the range width and breakout body. Both classifications fire entries by default &mdash; the tiering is for P&amp;L attribution and for the VIX <code>STRONG_ONLY</code> gate (under elevated VIX, only STRONG signals are allowed).</p>
+
+  <table>
+    <thead><tr><th>Class</th><th>Condition</th><th>Interpretation</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong style="color:var(--accent-green);">STRONG</strong></td>
+        <td><code>ORB_SWEET_MIN &le; range &le; ORB_SWEET_MAX</code> <br>AND <code>body &ge; ORB_STRONG_BODY</code></td>
+        <td>Range built in the sweet spot (30&ndash;80 pts), and the breakout candle has a real commitment body (&ge; 15 pts). Highest-quality setup.</td>
+      </tr>
+      <tr>
+        <td><strong style="color:var(--accent-orange);">MARGINAL</strong></td>
+        <td>All gates passed but at least one of:<br>&bull; range outside sweet spot (but inside min/max)<br>&bull; body &lt; ORB_STRONG_BODY</td>
+        <td>Valid breakout, but the setup is less optimal. Will be blocked when <code>VIX &gt; ORB_VIX_STRONG_ONLY</code>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Entry-Reason Format</h3>
+  <p>The skip / entry log on each candle uses a consistent format that surfaces all 9 gate values + tier:</p>
+  <pre><code>ORB CE break (close 24350 &gt; ORH 24325, range=45pt, body=18pt, wick=0.32, vwap=24310, vol=1.8&times;) [STRONG]</code></pre>
+  <p>When you analyse a session log, this fingerprint identifies the trade as ORB unambiguously. See the <strong>signal-signatures</strong> memory note for cross-strategy disambiguation.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. STOP LOSS                                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="sl">
+  <h2><span class="section-icon icon-red">&#128683;</span> 5. Stop Loss &mdash; Premium %</h2>
+
+  <p>Unlike Swing or PA which compute SL from <em>spot points</em> (SAR distance, structural wick, etc.), ORB computes SL as a <strong>fraction of entry option premium</strong>. The reasoning: ORB enters at a defined breakout level and the natural retest level is the broken range edge. Sizing the SL off premium gives a consistent &#8377; risk per trade regardless of how cheap or expensive the entry option is, which matches the textbook ORB sizing convention.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Formula</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ORB_STOP_PCT</code></td>
+        <td><code>0.25</code></td>
+        <td>SL premium = entry premium &times; (1 &minus; ORB_STOP_PCT) &mdash; default cuts losses at &minus;25%</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Worked Example</h3>
+  <p>ATM CE entered at &#8377;120 with default <code>ORB_STOP_PCT=0.25</code>:</p>
+  <pre><code>SL premium = 120 &times; (1 &minus; 0.25) = &#8377;90
+Max loss   = (120 &minus; 90) &times; lot_size &times; LOT_MULTIPLIER
+           = 30 &times; 65 &times; 2 (example) = &#8377;3,900</code></pre>
+
+  <div class="note note-warn">
+    <strong>No spot-based SL on ORB.</strong> ORB does not use the broken-range edge (ORH/ORL) as a spot SL. The premium % is the only stop. This is intentional &mdash; option premium decay is the primary risk in a directional intraday buy, and a spot-touch SL at the range edge would frequently exit on noise even when the breakout thesis is still intact.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. TARGETS                                                              -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="targets">
+  <h2><span class="section-icon icon-blue">&#127919;</span> 6. Targets &mdash; Premium % + Spot Multiple</h2>
+
+  <p>ORB exits on <strong>two independent target conditions</strong>, whichever hits first.</p>
+
+  <table>
+    <thead><tr><th>Target</th><th>Variable / Default</th><th>Formula</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><strong>Premium %</strong></td>
+        <td><code>ORB_TARGET_PCT = 0.4</code></td>
+        <td>Exit when option LTP &ge; entry premium &times; (1 + 0.4) &mdash; locks +40% on the option</td>
+      </tr>
+      <tr>
+        <td><strong>Spot Multiple of Range</strong></td>
+        <td><code>ORB_TARGET_RANGE_MULT = 1.5</code></td>
+        <td>CE target = ORH + (range &times; 1.5) &nbsp;|&nbsp; PE target = ORL &minus; (range &times; 1.5)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Why Two Targets?</h3>
+  <p>The premium % target catches the upside on days where the option moves more than the spot (gamma + theta tailwind), while the spot-multiple target catches the upside on slow-grinding days where the option premium lags. With both armed in parallel, ORB exits at whichever path the market favours on the day.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. PREMIUM LOCK-IN TRAIL                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section green" id="lockin">
+  <h2><span class="section-icon icon-green">&#128274;</span> 7. Premium Lock-In Trail</h2>
+
+  <p>The standout feature versus the rest of the strategies in this suite. ORB does not use a percentage-of-peak trail (like Scalp / PA / Swing); instead it does a one-shot <strong>SL ratchet</strong> once the option has gained a meaningful amount &mdash; locking in a hard floor that the trade can no longer fall through.</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>ORB_PREMIUM_LOCKIN_PCT</code></td>
+        <td><code>0.25</code></td>
+        <td>Trigger threshold. Once option LTP gains 25% above entry, the lock-in fires. <code>0</code> disables the trail entirely.</td>
+      </tr>
+      <tr>
+        <td><code>ORB_PREMIUM_LOCKIN_FLOOR_PCT</code></td>
+        <td><code>0.05</code></td>
+        <td>Once triggered, the premium SL ratchets <em>up</em> to <code>entry &times; (1 + 0.05)</code> &mdash; a hard +5% floor that the trade can never fall below.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Worked Example</h3>
+  <p>ATM CE entered at &#8377;120 with defaults:</p>
+  <pre><code>Initial SL  = 120 &times; (1 &minus; 0.25) = &#8377;90    (&minus;25% SL)
+Initial Tgt = 120 &times; (1 + 0.40)  = &#8377;168   (+40% target)
+
+LTP runs up to &#8377;150 (gain of +25%, hits ORB_PREMIUM_LOCKIN_PCT trigger).
+SL ratchets up to entry &times; (1 + 0.05) = &#8377;126 (locks in +5%).
+SL is now MIN(126, current SL) &mdash; it never widens. Same +40% target.
+
+LTP later pulls back to &#8377;140 (still +17% from entry, but below where it was).
+Trade continues holding &mdash; SL at &#8377;126 hasn't been touched.
+
+LTP pulls back further to &#8377;125. SL hit at &#8377;126 &mdash; exit at &#8377;126 (+5%).
+Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
+
+  <div class="note note-success">
+    <strong>One-shot, not progressive.</strong> Unlike Scalp / PA which keep ratcheting the trail tighter as profit grows (50% &rarr; 70% &rarr; 85% &rarr; 90%), ORB does this ratchet exactly once. After lock-in, the SL is fixed at the floor until target hits, forced exit fires, or the SL is touched. The simplicity is intentional &mdash; ORB targets are tight enough (+40%) that a multi-tier trail adds complexity without meaningful capture.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. EXIT LOGIC                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section purple" id="exit">
+  <h2><span class="section-icon icon-purple">&#128205;</span> 8. Exit Logic &mdash; Priority Order</h2>
+
+  <p>On every tick + every candle close, the strategy evaluates exit conditions in this priority order. The first matching condition fires the exit.</p>
+
+  <ol style="margin-left:24px;">
+    <li><strong>Hard SL hit</strong> (every tick) &mdash; option LTP &le; current SL premium. Exits at LTP. Records exit reason <code>sl_hit</code>.</li>
+    <li><strong>Premium target hit</strong> (every tick) &mdash; option LTP &ge; entry &times; (1 + ORB_TARGET_PCT). Records <code>target_premium</code>.</li>
+    <li><strong>Spot target hit</strong> (every tick) &mdash; spot &ge; ORH + (range &times; mult) for CE, or &le; ORL &minus; (range &times; mult) for PE. Records <code>target_spot</code>.</li>
+    <li><strong>Lock-in evaluation</strong> (every tick) &mdash; if option gain &ge; <code>ORB_PREMIUM_LOCKIN_PCT</code> AND SL is still at original level, ratchet SL up. Doesn't exit by itself.</li>
+    <li><strong>Forced square-off</strong> (clock tick) &mdash; current time &ge; <code>ORB_FORCED_EXIT</code> (15:15 IST default). Records <code>forced_eod</code>.</li>
+    <li><strong>Bid-ask spread guard</strong> (every tick when checking exit fills) &mdash; if option spread &gt; <code>MAX_BID_ASK_SPREAD_PTS</code>, exit is rejected with a log warning until spread tightens. Fails open (proceeds with the exit) if quote feed is missing.</li>
+  </ol>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. VIX FILTER                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="vix">
+  <h2><span class="section-icon icon-red">&#128261;</span> 9. India VIX Regime Filter</h2>
+
+  <p>ORB has its own independent VIX gate. The cross-strategy <code>VIX_FAIL_MODE</code> applies (when set to <code>closed</code>, missing VIX data blocks entries; when <code>open</code>, missing VIX data allows entries).</p>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Master toggle. When <code>false</code>, ORB ignores VIX entirely.</td></tr>
+      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, all ORB entries are blocked &mdash; premiums are pumped, R:R deteriorates.</td></tr>
+      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and <code>ORB_VIX_MAX_ENTRY</code>, only STRONG signals fire (MARGINAL blocked).</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Why ORB has its own VIX thresholds:</strong> ORB premiums are most sensitive to VIX of all the strategies in this suite because the trade is held intraday with a +40% target. High VIX days have higher premium ranges but disproportionately bigger drawdowns &mdash; the textbook 1-trade-per-day approach also amplifies single-day variance.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. RISK MANAGEMENT                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="risk">
+  <h2><span class="section-icon icon-orange">&#128737;</span> 10. Risk Management</h2>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Daily trade cap</td><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>After N entries, no more for the session</td></tr>
+      <tr><td>Daily loss kill-switch</td><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code> &#8377;</td><td>Realised loss &ge; threshold halts entries for the day</td></tr>
+      <tr><td>Per-trade SL</td><td><code>ORB_STOP_PCT</code></td><td><code>0.25</code></td><td>Premium-based SL, fires at exchange (paper) / via Fyers SL-M (live + harness)</td></tr>
+      <tr><td>Stale-breakout cutoff</td><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>No new entries after this time even if ORH/ORL is broken</td></tr>
+      <tr><td>EOD forced exit</td><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Any open position is squared off at this time</td></tr>
+      <tr><td>VIX gate</td><td><code>ORB_VIX_*</code></td><td>see &sect;9</td><td>Per-mode VIX regime filter</td></tr>
+      <tr><td>Expiry-day-only</td><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
+      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Shared across modes &mdash; blocks entries/exits on wide spreads</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. OPERATING MODES                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="modes">
+  <h2><span class="section-icon icon-cyan">&#9881;</span> 11. Operating Modes</h2>
+
+  <h3 style="color:var(--accent-blue);">Paper Mode &mdash; <code>/orb-paper</code></h3>
+  <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated fills (no broker round-trip). Canonical decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/orb_paper_trades.json</code>; per-day JSONL audit at <code>~/trading-data/trades/orb_paper_trades_YYYY-MM-DD.jsonl</code> (seeded with a settings snapshot at session start, re-snapshotted on every Settings save during the session). When <code>TICK_RECORDER_ENABLED=true</code> (default), every spot/option/VIX tick is recorded to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code> for Replay.</p>
+
+  <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/orb-live</code></h3>
+  <p>Real Fyers orders. <strong>Double-gated</strong>: both <code>ORB_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required. With DRY-RUN on (default), the broker call is logged but no real order is placed. Switch DRY-RUN off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+
+  <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/orb-backtest</code></h3>
+  <p>Date-range backtest replaying historical 1-minute candles. Records option LTP polls during the run so Replay can reproduce the same trades deterministically. Honors <code>LOT_MULTIPLIER</code> end-to-end and <code>ORB_EXPIRY_DAY_ONLY</code> for expiry-day regime filtering. Result stored under <code>~/trading-data/backtest_cache/</code>.</p>
+
+  <h3 style="color:var(--accent-orange);">Replay Mode &mdash; <code>/replay</code></h3>
+  <p>Re-runs a recorded paper session through the paper <code>onTick()</code> handler. Two sub-modes:</p>
+  <ul>
+    <li><strong>Snapshot</strong> &mdash; applies the recorded session-start settings; deterministic A/A reproduction.</li>
+    <li><strong>Current Settings</strong> &mdash; applies the live <code>process.env</code>; deterministic A/B for tuning settings against real ticks after market hours.</li>
+  </ul>
+  <p>Replay outputs land in <code>~/trading-data/_replay_trades/</code> (snapshot) or <code>_replay_trades_sim/</code> (current settings) &mdash; kept separate from the canonical paper logs.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 12. CONFIG REFERENCE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="config">
+  <h2><span class="section-icon icon-orange">&#128221;</span> 12. Complete Configuration Reference</h2>
+
+  <div class="env-group">Master toggles</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB sidebar group AND Settings section. When off, both are hidden.</td></tr>
+      <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for ORB Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
+      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow ORB entries on weekly expiry day (Tuesday)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Opening range window</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>Opening range start (IST)</td></tr>
+      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>Opening range end (IST). 15-min ORB = 09:15 &rarr; 09:30.</td></tr>
+      <tr><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>Stale-breakout cutoff &mdash; no new entries after this time</td></tr>
+      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard EOD square-off for any open ORB position</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Range &amp; breakout-body sanity</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_MIN_RANGE_PTS</code></td><td><code>25</code></td><td>Skip when opening range is too tight &mdash; likely noise / pre-market indecision</td></tr>
+      <tr><td><code>ORB_MAX_RANGE_PTS</code></td><td><code>120</code></td><td>Skip when opening range is too wide &mdash; exhausted move, breakout is chasing</td></tr>
+      <tr><td><code>ORB_MIN_BODY</code></td><td><code>8</code></td><td>Require the breakout candle's body to be at least this many points (filters doji)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Entry filters</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_WICK_FILTER_ENABLED</code></td><td><code>true</code></td><td>Reject breakout candles with large opposing wick (close near mid-candle = weak break)</td></tr>
+      <tr><td><code>ORB_MAX_WICK_RATIO</code></td><td><code>0.6</code></td><td>Upper wick (CE) or lower wick (PE) must be &le; this fraction of body. 0.6 = wick can be up to 60% of body.</td></tr>
+      <tr><td><code>ORB_VWAP_FILTER_ENABLED</code></td><td><code>true</code></td><td>CE only if breakout close &gt; session VWAP; PE only if close &lt; VWAP. Falls back to TWAP on volumeless candles.</td></tr>
+      <tr><td><code>ORB_VOL_FILTER_ENABLED</code></td><td><code>true</code></td><td>Require breakout volume &ge; multiplier &times; prior N-candle avg. Auto-skipped on volumeless indices.</td></tr>
+      <tr><td><code>ORB_VOL_MULT</code></td><td><code>1.2</code></td><td>Breakout volume must be &ge; this &times; prior-N avg (1.2 = 20% above average)</td></tr>
+      <tr><td><code>ORB_VOL_LOOKBACK</code></td><td><code>5</code></td><td>Number of prior candles in the volume SMA window</td></tr>
+      <tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>true</code></td><td>Skip entries when ATM option LTP is outside the band</td></tr>
+      <tr><td><code>ORB_PREMIUM_MIN</code></td><td><code>80</code></td><td>Skip entry if ATM LTP below this (&#8377;) &mdash; filters out deep-OTM lottery tickets</td></tr>
+      <tr><td><code>ORB_PREMIUM_MAX</code></td><td><code>250</code></td><td>Skip entry if ATM LTP above this (&#8377;) &mdash; filters out ITM-acting-like-futures</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Sweet-spot tiering (STRONG vs MARGINAL)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_SWEET_MIN</code></td><td><code>30</code></td><td>Range below this = MARGINAL (still allowed)</td></tr>
+      <tr><td><code>ORB_SWEET_MAX</code></td><td><code>80</code></td><td>Range above this = MARGINAL (still allowed)</td></tr>
+      <tr><td><code>ORB_STRONG_BODY</code></td><td><code>15</code></td><td>Breakout body &ge; this AND range in sweet spot &rarr; STRONG</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Targets &amp; SL</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_TARGET_PCT</code></td><td><code>0.4</code></td><td>Premium target as fraction of entry premium (0.4 = +40%)</td></tr>
+      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td><code>1.5</code></td><td>Spot target = ORH/ORL &plusmn; (range &times; this multiplier)</td></tr>
+      <tr><td><code>ORB_STOP_PCT</code></td><td><code>0.25</code></td><td>Premium SL as fraction of entry premium (0.25 = &minus;25%)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Premium lock-in trail</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_PREMIUM_LOCKIN_PCT</code></td><td><code>0.25</code></td><td>Lock-in trigger: once option LTP gains 25%, ratchet SL up. <code>0</code> disables the trail entirely.</td></tr>
+      <tr><td><code>ORB_PREMIUM_LOCKIN_FLOOR_PCT</code></td><td><code>0.05</code></td><td>Floor the SL ratchets to once lock-in triggers (entry &times; (1 + 5%))</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">VIX regime filter</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Independent VIX gate for ORB</td></tr>
+      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Block all ORB entries above this VIX</td></tr>
+      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and VIX_MAX_ENTRY, allow only STRONG signals</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Risk caps</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Textbook 1 trade/day &mdash; raise only if you accept the chop</td></tr>
+      <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>ORB daily loss kill-switch (&#8377;)</td></tr>
+      <tr><td><code>ORB_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for ORB paper trading (&#8377;)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 13. KNOWN GAPS                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="gaps">
+  <h2><span class="section-icon icon-red">&#9888;</span> 13. Known Gaps &amp; Roadmap</h2>
+
+  <ul>
+    <li><strong>Crash-recovery gap.</strong> <code>src/utils/positionPersist.js</code> does not yet handle ORB positions. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry and reconcile against broker positions on boot; ORB does not. If a process crash happens with an open ORB Live position, the position will be orphaned at the broker and not automatically squared off. <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into <code>orbPaper.js</code> + <code>orbLive.js</code> + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
+    <li><strong>Telegram per-strategy toggles not wired.</strong> ORB session-start / entry / exit / signal alerts currently fire under the master <code>TG_ENABLED</code> gate only. There are no <code>TG_ORB_*</code> toggles in <code>src/utils/notify.js</code>. Adding them mirrors the pattern used for Swing / Scalp / PA.</li>
+    <li><strong>No <code>STRONG_ONLY</code> standalone toggle.</strong> The strength classification exists (sweet-spot tiering), but only the VIX gate uses it. Other strategies have a stand-alone <code>*_STRONG_ONLY</code> env that blocks MARGINAL regardless of VIX; ORB does not. If you want STRONG-only behaviour without VIX, this would be a small additive change in <code>src/strategies/orb_breakout.js</code>.</li>
+    <li><strong>Spot SL not implemented.</strong> By design (see &sect;5), there is no spot-touch SL at the broken range edge. If the strategy turns out to need one (e.g. on consistently-wicky days where premium decay is masked by trend), add it as an optional gate &mdash; do not change the default behaviour.</li>
+  </ul>
+
+  <div class="note note-info">
+    <strong>Tuning posture:</strong> ORB is currently in the active paper-trade data-collection window (through &sim;2026-06-02). During this window: additive logging only, no strategy tuning, no backtest-focused changes. Any of the above gaps should be addressed only as <em>additive</em> features (don't touch existing fill / exit / SL math). See <code>project_paper_trade_data_collection.md</code> for the rationale.
+  </div>
+</section>
+
+</div><!-- /.container -->
+
+<footer class="page-footer">
+  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; 2026-05-21
+</footer>
+
+</body>
+</html>

@@ -371,14 +371,33 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.5.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter + Pause Override</div>
+  <div class="version">Version 4.6.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter + Pause Override</div>
   <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.5.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.6.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.5.0 (2026-05-14)</h2>
+<h2><span class="sec-num">00</span> What's New in v4.6.0 (2026-05-21)</h2>
+<div class="card card-purple">
+  <p><strong>Defaults tightening sweep + breakeven SL on a multiple-of-risk trigger.</strong> The entry pipeline (BB + RSI + V4 quality filters + trend filter) and PSAR trail are unchanged. The corrections target stale defaults that had drifted from production usage during the data-collection window, plus a new R-multiple breakeven gate.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong><code>SCALP_MAX_SL_PTS</code> tightened from <code>25</code> &rarr; <code>12</code></strong> &mdash; the 25-pt cap was wider than the prev-candle structural SL ever actually generated; the practical max-loss-per-trade is governed by 12 pts &times; lot size, not 25. Tightening the cap to the empirical ceiling stops bad-data days from masking SL distance bugs.</li>
+    <li><strong><code>SCALP_TRAIL_START</code> raised from <code>200</code> &rarr; <code>600</code> (&#8377;)</strong> &mdash; activating the profit trail at &#8377;200 was clipping winners on their first pullback. With <code>SCALP_BREAKEVEN_TRIGGER_R</code> picking up "lock-in BE" duty (see below), the trail can wait for &#8377;600 of peak profit before engaging.</li>
+    <li><strong><code>SCALP_TRAIL_TIERS</code> updated</strong> to <code>600:70,1200:78,2500:85,5000:90,10000:93</code> &mdash; tighter %-lock at lower peaks (was 500:55, 1000:60 in v4.5.0). At &#8377;600 peak, locks 70% (was 55%); at &#8377;1200 peak, locks 78% (was 60%). Net: faster lock at modest wins, same behaviour on big winners.</li>
+    <li><strong>NEW: <code>SCALP_BREAKEVEN_TRIGGER_R</code> + <code>SCALP_BREAKEVEN_OFFSET_PTS</code></strong> (defaults <code>0.7</code> and <code>1</code> pt). Once peak P&amp;L &ge; 0.7 &times; initial risk, move SL to entry + 1 pt offset. Stops winners reversing into losers. <code>R=0</code> disables. Independent of the percentage-trail tiers above &mdash; runs first.</li>
+    <li><strong><code>SCALP_MAX_DAILY_LOSS</code> raised from <code>2000</code> &rarr; <code>4000</code> (&#8377;)</strong> &mdash; the 2000-cap was tripping on normal-loss days and stopping the strategy mid-session. 4000 matches the empirical 2&sigma; daily loss observed during the data-collection window.</li>
+    <li><strong><code>SCALP_SL_PAUSE_CANDLES</code> raised from <code>1</code> &rarr; <code>3</code></strong> &mdash; 1 candle (5 min) was too short to let the post-SL chop clear; 3 candles (15 min) gives the side enough time to reset.</li>
+    <li><strong><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> exposed</strong> (default <code>2</code>) &mdash; extra candles added per consecutive SL after the 2nd (2nd SL = +2, 3rd SL = +4 candles). Was previously hardcoded.</li>
+    <li><strong>Operational additions</strong>: Tick Recorder + Replay (record/replay scalp sessions deterministically via <code>/replay</code>), Live Harness DRY-RUN gate (<code>LIVE_HARNESS_DRY_RUN=true</code> default &mdash; both this AND <code>SCALP_ENABLED</code> must be set correctly for real orders), Real-Time monitor expansion (Scalp card now sits alongside Swing / PA / ORB / Straddle).</li>
+    <li><strong>Sibling strategies launched</strong> &mdash; ORB and Straddle now run on the same Fyers socket fan-out, gated by their own <code>*_MODE_ENABLED</code> toggles. Scalp can run in parallel with both.</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.5.0                                                 -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">00a</span> v4.5.0 Highlights (2026-05-14)</h2>
 <div class="card card-purple">
   <p><strong>Pause override on retest-and-resume</strong>, trail / breakeven fixes, additive per-trade context logging (BB / RSI / trend + MFE), and CPR-narrow filter exposed in Settings. The BB + RSI entry, V4 quality filters, trend filter, PSAR trailing, and trail-tier ladder remain unchanged at the signal layer.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -395,7 +414,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00a</span> v4.4.1 Highlights (2026-05-02)</h2>
+<h2><span class="sec-num">00b</span> v4.4.1 Highlights (2026-05-02)</h2>
 <div class="card card-purple">
   <p>Unified Real-Time Monitor &mdash; one screen to see Scalp alongside Swing and PA. UI / observability only; <strong>no scalp signal-layer, V4 filters, trend filter, SL, or trail-tier changes</strong>.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -408,7 +427,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00b</span> v4.4.0 Highlights (2026-04-27)</h2>
+<h2><span class="sec-num">00c</span> v4.4.0 Highlights (2026-04-27)</h2>
 <div class="card card-purple">
   <p>Paper-parity sweep into Scalp Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No scalp signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -422,7 +441,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00c</span> v4.3.0 Highlights (2026-04-24)</h2>
+<h2><span class="sec-num">00d</span> v4.3.0 Highlights (2026-04-24)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
@@ -437,7 +456,7 @@
   </ul>
 </div>
 
-<h2><span class="sec-num">00d</span> v4.2.0 Highlights (2026-04-20)</h2>
+<h2><span class="sec-num">00e</span> v4.2.0 Highlights (2026-04-20)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
@@ -1324,7 +1343,7 @@
       <tr><th>Setting</th><th>Value</th></tr>
       <tr><td><code>SCALP_ENABLED</code></td><td><code>true</code> (to activate)</td></tr>
       <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;) &mdash; raised from <code>2000</code> in v4.6.0</td></tr>
       <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
     </table>
   </div>
@@ -1342,7 +1361,7 @@
       <tr><th>Setting</th><th>Value</th></tr>
       <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
       <tr><td><code>SCALP_RESOLUTION</code></td><td><code>3</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;) &mdash; raised from <code>2000</code> in v4.6.0</td></tr>
     </table>
   </div>
 </div>
@@ -1496,12 +1515,15 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>25</code></td><td>Hard cap on SL distance (points)</td></tr>
+    <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>12</code></td><td>Hard cap on SL distance (points). Tightened from <code>25</code> in v4.6.0.</td></tr>
     <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Floor on SL distance (prevents too-tight SL)</td></tr>
     <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
     <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp entries per day</td></tr>
-    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
-    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
+    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Kill switch: halt entries at this loss (&#8377;). Raised from <code>2000</code> in v4.6.0.</td></tr>
+    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit. Raised from <code>1</code>/<code>2</code> in v4.6.0.</td></tr>
+    <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
+    <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>0.7</code></td><td>Move SL to entry once peak P&amp;L &ge; N &times; initial risk. <code>0</code> disables.</td></tr>
+    <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
     <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra pause candles per consecutive SL</td></tr>
     <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
     <tr><td><code>SCALP_PAUSE_OVERRIDE_ENABLED</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.5.0</span></td><td><code>false</code></td><td>Release per-side SL cooldown early on retest-and-resume (a candle close &ge; <code>OVERRIDE_PTS</code> past failed-entry spot in original direction)</td></tr>
@@ -1526,9 +1548,9 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_TRAIL_START</code></td><td><code>350</code></td><td>Activate trailing after this profit (&#8377;)</td></tr>
+    <tr><td><code>SCALP_TRAIL_START</code></td><td><code>600</code></td><td>Activate trailing after this profit (&#8377;). Raised from <code>200</code>/<code>350</code> in v4.6.0 (let winners breathe).</td></tr>
     <tr><td><code>SCALP_TRAIL_PCT</code></td><td><code>65</code></td><td>Base exit: P&amp;L drops below X% of peak</td></tr>
-    <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>500:55,1000:60,<br/>3000:70,5000:80,<br/>10000:90</code></td><td>Tiered lock: peak:pct pairs &mdash; higher profit = tighter lock %</td></tr>
+    <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>600:70,1200:78,<br/>2500:85,5000:90,<br/>10000:93</code></td><td>Tiered lock: peak:pct pairs &mdash; updated in v4.6.0 to tighter locks at lower peaks (was 500:55, 1000:60)</td></tr>
   </tbody>
 </table>
 
@@ -1546,7 +1568,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.5.0 &bull; Generated 2026-05-14<br/>
+    SCALP_BB_RSI_V4 &mdash; Version 4.6.0 &bull; Generated 2026-05-21<br/>
     NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
   </p>
 </div>

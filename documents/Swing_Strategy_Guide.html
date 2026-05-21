@@ -426,10 +426,10 @@
 <div class="cover">
   <div class="badge">Complete Strategy Reference</div>
   <h1>SWING STRATEGY</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 5-Min NIFTY Options (default) | v4.5.0</div>
+  <div class="sub">SAR_EMA9_RSI Strategy | 5-Min NIFTY Options (default) | v4.6.0</div>
   <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-05-14 &nbsp;|&nbsp;
+    <strong>Generated:</strong> 2026-05-21 &nbsp;|&nbsp;
     <strong>Timeframe:</strong> 5-minute (default; 15-min via <code>TRADE_RESOLUTION=15</code>) &nbsp;|&nbsp;
     <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
     <strong>Route:</strong> <code>/swing-*</code>
@@ -437,8 +437,9 @@
 
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew50"><span class="num">00</span> What's New in v4.5.0</a>
-    <a href="#whatsnew"><span class="num">00a</span> v4.4.1 Highlights</a>
+    <a href="#whatsnew60"><span class="num">00</span> What's New in v4.6.0</a>
+    <a href="#whatsnew50"><span class="num">00a</span> v4.5.0 Highlights</a>
+    <a href="#whatsnew"><span class="num">00b</span> v4.4.1 Highlights</a>
     <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
     <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
@@ -463,10 +464,30 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.5.0                                                -->
+<!-- 0. WHAT'S NEW IN v4.6.0                                                -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<div class="section page-break" id="whatsnew60">
+  <h2>00 &mdash; What's New in v4.6.0 (2026-05-21)</h2>
+  <p>Risk-controls tightening + new sibling strategies + deterministic Replay. <strong>Swing's signal-layer logic is unchanged</strong> &mdash; the same 9-Gate Pipeline, 3-Tier Trailing SL, Logic 3 override, and Hybrid Initial SL Cap from v4.5.0. The changes are: tighter daily-trade cap, a corrected fallback option-stop default, two new optional features (prev-candle trail + Swing-only expiry override), and broader app-level additions that affect Swing operationally (Tick Recorder, Live Harness DRY-RUN gate, Real-Time monitor expansion).</p>
+  <div class="card">
+    <ul style="padding-left:22px; line-height:1.9;">
+      <li><strong><code>MAX_DAILY_TRADES</code> default lowered from <code>20</code> &rarr; <code>6</code></strong> &mdash; anti-overtrade on chop days. Swing is a momentum-pullback strategy; trade #7+ on the same session almost always coincides with chop, not signal. Override via <code>.env</code> or Settings if your sizing/conviction differs.</li>
+      <li><strong><code>OPT_STOP_PCT</code> default corrected from <code>0.15</code> &rarr; <code>0.25</code></strong> &mdash; the fallback option-premium stop. The 0.15 was a stale default that triggered too eagerly on far-SAR setups where the option had healthy time value but the underlying SL hadn't been touched.</li>
+      <li><strong>Prev-Candle Trail (optional, disabled by default)</strong> &mdash; <code>SWING_PREV_CANDLE_TRAIL_ENABLED</code> (default <code>false</code>) adds a structural trail composed on top of SAR + tier trail (tighten-only). When enabled, the SL is also pulled to prev-candle low (CE) / high (PE) on each candle close once the trade is in profit. Gated by <code>ACTIVATE_PTS=15</code>, padded by <code>BUFFER_PTS=2</code>, and skipped on wide bars (<code>MAX_GAP=35</code>) to avoid loosening on volatile candles. Composes with existing tier trail &mdash; never widens SL.</li>
+      <li><strong>Swing-only option expiry override (renamed)</strong> &mdash; <code>SWING_OPTION_EXPIRY_OVERRIDE</code> + <code>SWING_OPTION_EXPIRY_TYPE</code>. Lets Swing roll to next-week expiry while Scalp / PA stay on current expiry. Blank inherits the common <code>OPTION_EXPIRY_*</code> settings from <code>src/config/instrument.js</code>.</li>
+      <li><strong>Two new sibling strategies launched</strong> &mdash; ORB (Opening Range Breakout) and Straddle (BB-squeeze paired CE+PE). Both run on the same Fyers socket fan-out via <code>socketManager</code> + <code>sharedSocketState</code> with their own <code>*_MODE_ENABLED</code> toggles. Swing remains fully independent and can run alongside both. See the new ORB and Straddle strategy guides under <code>/docs</code>.</li>
+      <li><strong>Real-Time Monitor expanded</strong> &mdash; <code>/realtime</code> now renders a Swing card alongside Scalp / PA / ORB / Straddle (was hardcoded to 3 strategies). Each card is gated by <code>{STRATEGY}_MODE_ENABLED</code>. Swing card content is unchanged.</li>
+      <li><strong>Tick Recorder + Replay</strong> &mdash; <code>TICK_RECORDER_ENABLED=true</code> (default) records every spot / option / VIX tick during Swing paper/live sessions to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code>. The new <code>/replay</code> route re-runs a recorded session through the Swing Paper <code>onTick()</code> handler for deterministic A/B settings comparison. Pure observer at the trade path &mdash; zero impact.</li>
+      <li><strong>Live Harness DRY-RUN gate</strong> &mdash; global <code>LIVE_HARNESS_DRY_RUN</code> (default <code>true</code>) is a master safety. Swing Live still uses its own <code>SWING_LIVE_ENABLED</code> for Zerodha orders &mdash; <em>both</em> must be set correctly for real orders to fire (DRY-RUN must be <code>false</code>).</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.5.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew50">
-  <h2>00 &mdash; What's New in v4.5.0 (2026-05-14)</h2>
+  <h2>00a &mdash; v4.5.0 Highlights (2026-05-14)</h2>
   <p><strong>Default candle resolution changed from 15-min &rarr; 5-min</strong>, plus a STRONG-only entry gate, 0DTE refusal on swing start, and per-mode expiry override. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, Logic 3 override, and Hybrid Initial SL Cap remain unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -489,7 +510,7 @@
 <!-- 0a. WHAT'S NEW IN v4.4.1                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break" id="whatsnew">
-  <h2>00a &mdash; v4.4.1 Highlights (2026-05-02)</h2>
+  <h2>00b &mdash; v4.4.1 Highlights (2026-05-02)</h2>
   <p>Unified Real-Time Monitor &mdash; one screen to see Swing alongside Scalp and PA. UI / observability only; <strong>no swing signal-layer or SL/exit changes</strong>.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -507,7 +528,7 @@
 <!-- 0a. WHAT'S NEW IN v4.4.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <h2>00b &mdash; v4.4.0 Highlights (2026-04-27)</h2>
+  <h2>00c &mdash; v4.4.0 Highlights (2026-04-27)</h2>
   <p>Hybrid initial SL cap, paper-history Restore from append-only JSONL, and a paper-parity sweep into Swing Live (skip-log/near-miss wiring + daily-trades guard on candle-close). The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -527,7 +548,7 @@
 <!-- 0a. WHAT'S NEW IN v4.3.0                                               -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="section page-break">
-  <h2>00c &mdash; v4.3.0 Highlights (2026-04-24)</h2>
+  <h2>00d &mdash; v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remained unchanged at the signal layer.</p>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
@@ -548,7 +569,7 @@
 </div>
 
 <div class="section page-break">
-  <h2>00d &mdash; v4.2.0 Highlights (2026-04-20)</h2>
+  <h2>00e &mdash; v4.2.0 Highlights (2026-04-20)</h2>
   <div class="card">
     <ul style="padding-left:22px; line-height:1.9;">
       <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
@@ -909,7 +930,7 @@
       <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
       <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
       <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
-      <div class="lc-condition">MAX_DAILY_TRADES=20</div>
+      <div class="lc-condition">MAX_DAILY_TRADES=6</div>
       <div class="lc-condition">HARD_SL_ENABLED=false</div>
     </div>
     <div class="logic-card" style="border-top: 3px solid var(--accent);">
@@ -918,7 +939,7 @@
       <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
       <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
       <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
-      <div class="lc-condition">MAX_DAILY_TRADES=20</div>
+      <div class="lc-condition">MAX_DAILY_TRADES=6</div>
       <div class="lc-condition">(Uses same signal filters)</div>
     </div>
     <div class="logic-card" style="border-top: 3px solid var(--purple);">
@@ -1718,7 +1739,7 @@
         <strong style="font-size:1.3rem;color:var(--yellow2);">20 trades</strong><br>
         Prevents overtrading in choppy markets. Once hit, no new entries. Keeps commission costs in check.
       </div>
-      <div class="lc-condition">MAX_DAILY_TRADES = 20</div>
+      <div class="lc-condition">MAX_DAILY_TRADES = 6</div>
     </div>
     <div class="logic-card" style="border-top: 3px solid var(--orange);">
       <div class="lc-num" style="color: var(--orange);">Layer 3</div>
@@ -2129,7 +2150,7 @@
         <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
         <tbody>
           <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily loss limit (INR) &mdash; hard stop</td></tr>
-          <tr><td><code>MAX_DAILY_TRADES</code></td><td>20</td><td>Maximum trades per session</td></tr>
+          <tr><td><code>MAX_DAILY_TRADES</code></td><td>6</td><td>Maximum trades per session &mdash; lowered from <code>20</code> in v4.6.0 (anti-overtrade on chop days)</td></tr>
           <tr><td><code>MAX_LOSS_PAUSE_MS</code></td><td>900000</td><td>Pause after 3+ consecutive losses (15 min)</td></tr>
         </tbody>
       </table>
@@ -2169,7 +2190,7 @@
 <hr>
 <div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
   <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.1</div>
-  <div>SAR_EMA9_RSI | 5-Min NIFTY Options (default; 15-min via env) | Generated 2026-05-14</div>
+  <div>SAR_EMA9_RSI | 5-Min NIFTY Options (default; 15-min via env) | v4.6.0 | Generated 2026-05-21</div>
   <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
 </div>
 

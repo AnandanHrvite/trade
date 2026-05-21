@@ -214,9 +214,9 @@ td.pe { color: var(--red); }
     <h1>NIFTY OPTIONS — <span>Price Action Strategy</span></h1>
     <p class="subtitle">PRICE_ACTION_5M — Pure Price Action Trading on 5-Minute Candles</p>
     <div class="meta">
-      <span>Version 4.5.0</span>
-      <span>2026-05-14</span>
-      <span>8 Patterns | RSI Inversion for Reversals | ADX Exemption (BOS/IB/Reversals) | Restart-Survive | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
+      <span>Version 4.6.0</span>
+      <span>2026-05-21</span>
+      <span>8 Patterns | RSI Inversion for Reversals | ADX Rising-Required | Restart-Survive | Tightened SL | Structural-SL Skip | Time-Stop | Per-Module VIX | Spread Guard | Crash Recovery | Live Chart</span>
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
@@ -237,7 +237,8 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <nav class="no-print">
   <div class="container">
-    <a href="#whatsnew50">What's New (v4.5.0)</a>
+    <a href="#whatsnew60">What's New (v4.6.0)</a>
+    <a href="#whatsnew50">v4.5.0</a>
     <a href="#whatsnew">v4.4.1</a>
     <a href="#overview">Overview</a>
     <a href="#sr">S/R Detection</a>
@@ -260,12 +261,36 @@ td.pe { color: var(--red); }
 </nav>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.5.0                                                  -->
+<!-- 0. WHAT'S NEW IN v4.6.0                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section id="whatsnew60">
+  <div class="container">
+    <div class="section-header">
+      <h2><span class="num">0</span> What's New in v4.6.0 (2026-05-21)</h2>
+      <p><strong>ADX cleanup + PA_BREAKEVEN UI/code drift surfaced + sibling strategies launched.</strong> The 8 patterns, S/R detection, signal-candle-wick SL, candle trail, profit-lock tiers, PSAR, and time-stop are unchanged.</p>
+    </div>
+    <div class="card">
+      <ul style="padding-left:22px; line-height:1.9;">
+        <li><strong><code>PA_ADX_DIRECTIONAL</code> removed from Settings UI</strong> &mdash; the toggle advertised a +DI / &minus;DI directional gate (require <code>+DI &gt; -DI</code> for CE, <code>-DI &gt; +DI</code> for PE) that <code>src/strategies/price_action.js</code> never actually enforced. No reader existed. The UI row was misleading the operator. Removing it; the gate itself can be re-introduced after the data-collection window closes (&sim;2026-06-02).</li>
+        <li><strong>New <code>PA_ADX_RISING_REQUIRED</code> (default <code>true</code>)</strong> &mdash; require <code>ADX[now] &ge; ADX[2 bars ago]</code> for every entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading. Replaces the more aggressive directional gate that was advertised but never wired.</li>
+        <li><strong>⚠ PA_BREAKEVEN_TRIGGER + PA_BREAKEVEN_BUFFER are UI-only, engine reverted.</strong> The feat commit <code>c131923</code> (2026-05-21) wired these into <code>paPaper.js</code> / <code>paLive.js</code> / <code>paBacktest.js</code>, but commit <code>5f1944d</code> later the same day reverted the readers. The Settings UI rows still exist (<code>settings.js:209-210</code>) but changing the values has no effect on trades. <strong>Same zombie state PA_ADX_DIRECTIONAL was in before its UI was removed.</strong> Resolution (re-add readers or drop UI rows) is deferred past 2026-06-02. If you see these rows in Settings and try to use them, they will not behave as the label suggests.</li>
+        <li><strong>Sibling strategies launched</strong> &mdash; ORB (Opening Range Breakout, single-leg CE/PE) and Straddle (BB-squeeze paired CE+PE volatility). Both run on the same Fyers socket fan-out via <code>socketManager</code> + <code>sharedSocketState</code>. PA remains fully independent and can run alongside both. See the new ORB / Straddle guides under <code>/docs</code>.</li>
+        <li><strong>Real-Time Monitor expansion</strong> &mdash; <code>/realtime</code> now renders PA's card alongside Swing / Scalp / ORB / Straddle (was hardcoded to 3 strategies). Gated by <code>PA_MODE_ENABLED</code>.</li>
+        <li><strong>Tick Recorder + Replay</strong> &mdash; <code>TICK_RECORDER_ENABLED=true</code> (default) records every spot / option / VIX tick during PA paper/live sessions to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code>. The new <code>/replay</code> route re-runs a recorded session through the PA Paper <code>onTick()</code> handler for deterministic A/B settings comparison. Pure observer at the trade path &mdash; zero impact.</li>
+        <li><strong>Live Harness DRY-RUN gate</strong> &mdash; global <code>LIVE_HARNESS_DRY_RUN</code> (default <code>true</code>) is a master safety. PA Live order placement requires <em>both</em> <code>PA_ENABLED=true</code> and <code>LIVE_HARNESS_DRY_RUN=false</code>. The legacy <code>/pa-live</code> stays available; the new <code>/pa-live-harness</code> route runs Live by wrapping the Paper engine so decisions match by construction.</li>
+        <li><strong>Stale-default corrections in this guide</strong> (no engine change &mdash; the deployed defaults already matched, the doc was wrong): <code>PA_TRAIL_START=600</code> (was documented as <code>350</code>), <code>PA_TRAIL_TIERS=1000:50,1500:60,2500:70,4000:80</code> (was <code>500:55,...</code>), <code>PA_CANDLE_TRAIL_BARS=3</code> (was <code>2</code>).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. WHAT'S NEW IN v4.5.0                                                 -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section id="whatsnew50">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">0</span> What's New in v4.5.0 (2026-05-14)</h2>
+      <h2><span class="num">0a</span> v4.5.0 Highlights (2026-05-14)</h2>
       <p><strong>Reversal-pattern RSI logic inverted</strong>, BOS / Inside-Bar / reversal patterns exempted from the ADX directional gate, and BOS/IB pending state now survives restart. The 8 patterns, S/R detection, signal candle wick SL, candle trail, profit-lock tiers, PSAR, and time-stop remain in place.</p>
     </div>
     <div class="card">
@@ -284,7 +309,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0a</span> v4.4.1 Highlights (2026-05-02)</h2>
+      <h2><span class="num">0b</span> v4.4.1 Highlights (2026-05-02)</h2>
       <p>Unified Real-Time Monitor &mdash; one screen to see PA alongside Swing and Scalp. UI / observability only; <strong>no PA pattern, S/R, RSI confluence, SL, or exit changes</strong>.</p>
     </div>
     <div class="card">
@@ -299,7 +324,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0b</span> v4.4.0 Highlights (2026-04-27)</h2>
+      <h2><span class="num">0c</span> v4.4.0 Highlights (2026-04-27)</h2>
       <p>Pure additive logging on the PA strategy + paper-parity sweep into PA Live (audit / skip-log wiring shared with PA Paper). The 8 patterns, S/R detection, RSI confluence, and the v4.3.0 SL tightening (8&ndash;12 pt cap + structural-SL skip + time-stop) remain unchanged.</p>
     </div>
     <div class="card">
@@ -315,7 +340,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0c</span> v4.3.0 Highlights (2026-04-24)</h2>
+      <h2><span class="num">0d</span> v4.3.0 Highlights (2026-04-24)</h2>
       <p>PA tightening (capped per-trade loss, structural-SL skip, time-stop), per-module VIX, trade guards, audit trails. The 8 patterns, S/R detection, and RSI confluence remained unchanged.</p>
     </div>
     <div class="card">
@@ -331,7 +356,7 @@ td.pe { color: var(--red); }
     </div>
 
     <div class="section-header" style="margin-top:24px;">
-      <h2><span class="num">0d</span> v4.2.0 Highlights (2026-04-20)</h2>
+      <h2><span class="num">0e</span> v4.2.0 Highlights (2026-04-20)</h2>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
@@ -1341,7 +1366,7 @@ td.pe { color: var(--red); }
         <h3>How It Works</h3>
         <ul>
           <li>Enabled by default: <code>PA_CANDLE_TRAIL_ENABLED = true</code></li>
-          <li>Lookback: <code>PA_CANDLE_TRAIL_BARS = 2</code> (configurable 1-5)</li>
+          <li>Lookback: <code>PA_CANDLE_TRAIL_BARS = 3</code> (configurable 1-5)</li>
           <li>Activates only after position has been held for <strong>N+1 candles</strong> AND peak PnL reaches <code>PA_TRAIL_START</code></li>
           <li>Recalculates on every candle close — level only tightens, never widens</li>
         </ul>
@@ -1895,9 +1920,9 @@ td.pe { color: var(--red); }
     <div class="card">
       <h3 class="mb-2">Trailing &amp; Profit Lock</h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-        <div class="config-card"><span class="key">PA_TRAIL_START</span><span class="val">350</span></div>
+        <div class="config-card"><span class="key">PA_TRAIL_START</span><span class="val">600</span></div>
         <div class="config-card"><span class="key">PA_TRAIL_PCT</span><span class="val">65</span></div>
-        <div class="config-card"><span class="key">PA_TRAIL_TIERS</span><span class="val" style="font-size:0.75rem;">500:55,1000:60,3000:70,5000:80,10000:90</span></div>
+        <div class="config-card"><span class="key">PA_TRAIL_TIERS</span><span class="val" style="font-size:0.75rem;">1000:50,1500:60,2500:70,4000:80</span></div>
       </div>
     </div>
 
@@ -1905,7 +1930,7 @@ td.pe { color: var(--red); }
       <h3 class="mb-2">Candle Trail <span class="badge-new">NEW</span></h3>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
         <div class="config-card"><span class="key">PA_CANDLE_TRAIL_ENABLED</span><span class="val">true</span></div>
-        <div class="config-card"><span class="key">PA_CANDLE_TRAIL_BARS</span><span class="val">2</span></div>
+        <div class="config-card"><span class="key">PA_CANDLE_TRAIL_BARS</span><span class="val">3</span></div>
       </div>
     </div>
 
@@ -2289,7 +2314,7 @@ td.pe { color: var(--red); }
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <footer style="padding: 30px 0; border-top: 1px solid var(--border); text-align: center;">
   <div class="container">
-    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.5.0 | Updated 2026-05-14</p>
+    <p class="text-muted fs-sm">NIFTY OPTIONS — Price Action Strategy Guide v4.6.0 | Updated 2026-05-21</p>
     <p class="text-muted" style="font-size: 0.78rem; margin-top: 6px;">PRICE_ACTION_5M | 8 Patterns | ADX Filter | Candle Trail | VIX Regime | Crash Recovery | RSI Confluence</p>
   </div>
 </footer>
