@@ -55,6 +55,8 @@ let _PA_TRAIL_PCT;
 let _PA_TRAIL_TIERS;
 let _PA_CANDLE_TRAIL;
 let _PA_CANDLE_TRAIL_BARS;
+let _PA_BE_TRIGGER;   // ₹ peak-PnL threshold to arm breakeven (0 = disabled)
+let _PA_BE_BUFFER;    // spot pts past entry to lock in at BE (CE: entry+buf, PE: entry-buf)
 let _STOP_MINS;
 let _ENTRY_STOP_MINS;
 let _PA_START_MINS;
@@ -68,6 +70,8 @@ function _refreshConfig() {
   _PA_TRAIL_TIERS      = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
   _PA_CANDLE_TRAIL     = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
   _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+  _PA_BE_TRIGGER       = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "0");
+  _PA_BE_BUFFER        = parseFloat(process.env.PA_BREAKEVEN_BUFFER  || "1");
   _STOP_MINS           = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
   _ENTRY_STOP_MINS     = parseTimeToMinutes(process.env.PA_ENTRY_END, "14:30");
   _PA_START_MINS       = parseTimeToMinutes(process.env.PA_ENTRY_START, "09:21");
@@ -508,6 +512,26 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
+
+    // BREAKEVEN SNAP — once peak PnL ≥ PA_BREAKEVEN_TRIGGER, move SL through entry
+    // to the profit side by PA_BREAKEVEN_BUFFER spot pts. Tighten-only (fires at
+    // most once per trade — subsequent ticks find SL already past entry on the
+    // profit side, so the tighten check returns false). Evaluated BEFORE the SL
+    // hit check so the new (tighter) SL is used for trigger evaluation on this
+    // same tick — if spot has already pulled back through the BE level, the SL
+    // fires immediately at the BE price (locking in +buffer pts of profit).
+    if (_PA_BE_TRIGGER > 0 && pos.peakPnl >= _PA_BE_TRIGGER) {
+      const _beSL = parseFloat((pos.side === "CE"
+        ? pos.entryPrice + _PA_BE_BUFFER
+        : pos.entryPrice - _PA_BE_BUFFER).toFixed(2));
+      const _beTightens = (pos.side === "CE" && _beSL > pos.stopLoss)
+                       || (pos.side === "PE" && _beSL < pos.stopLoss);
+      if (_beTightens) {
+        log(`📐 [PA-PAPER] Trail SL (BreakEven): ₹${pos.stopLoss} → ₹${_beSL} (peak ₹${Math.round(pos.peakPnl)})`);
+        pos.stopLoss = _beSL;
+        pos.slSource = "BreakEven";
+      }
+    }
 
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
