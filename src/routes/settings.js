@@ -600,6 +600,20 @@ const SESSION_RESTART_KEYS = new Set([
   "PA_OPT_STOP_PCT",
 ]);
 
+// Schema-derived restart set: every field marked EFFECT.SESSION or EFFECT.SERVER
+// in SETTINGS_SCHEMA. The schema drives the badge shown in the UI, so deriving
+// from it keeps the post-save restart prompt in sync with what users see —
+// previously this drifted (e.g. PA_TRAIL_START showed SESSION RESTART but
+// wasn't in the hardcoded list, so the prompt never fired).
+const SCHEMA_RESTART_KEYS = new Set();
+for (const section of SETTINGS_SCHEMA) {
+  for (const f of section.fields || []) {
+    if (f.effect === EFFECT.SESSION || f.effect === EFFECT.SERVER) {
+      SCHEMA_RESTART_KEYS.add(f.key);
+    }
+  }
+}
+
 // ── Write values back to .env file (preserves comments and structure) ───────
 function updateEnvFile(updates, deletes) {
   const deleteSet = new Set(deletes || []);
@@ -654,8 +668,11 @@ function updateEnvFile(updates, deletes) {
     console.log("[settings] Values ARE applied in-memory for this session (process.env updated).");
   }
 
-  // Classify what needs restart
-  const needsRestart = Object.keys(updates).filter(k => SESSION_RESTART_KEYS.has(k));
+  // Classify what needs restart — union of schema-derived (UI badges) and the
+  // legacy hardcoded set (covers keys not in the schema, like custom additions).
+  const needsRestart = Object.keys(updates).filter(
+    k => SCHEMA_RESTART_KEYS.has(k) || SESSION_RESTART_KEYS.has(k)
+  );
 
   return {
     success: true,
@@ -1909,8 +1926,8 @@ async function saveSettings() {
         msg += ' ⚠️ NOT SAVED TO DISK — .env write failed: ' + (data.fileError || 'unknown') + '. Changes will be lost on restart!';
         showToast(msg, 'error');
       } else if (data.needsRestart && data.needsRestart.length > 0) {
-        msg += '. Stop & restart session for: ' + data.needsRestart.join(', ');
-        showToast(msg, 'info');
+        showToast(msg + ' — restart needed for: ' + data.needsRestart.join(', '), 'info');
+        maybePromptRestart(data.needsRestart, msg);
       } else {
         msg += ' — active now';
         showToast(msg, 'success');
@@ -1984,7 +2001,8 @@ async function resetAndSaveAll() {
       if (!data.fileSaved) {
         showToast(msg + ' ⚠️ NOT PERSISTED: ' + (data.fileError || 'unknown'), 'error');
       } else if (data.needsRestart && data.needsRestart.length > 0) {
-        showToast(msg + '. Restart session to pick up: ' + data.needsRestart.join(', '), 'info');
+        showToast(msg + ' — restart needed for: ' + data.needsRestart.join(', '), 'info');
+        maybePromptRestart(data.needsRestart, msg);
       } else {
         showToast(msg + ' — .env now mirrors UI', 'success');
       }
@@ -2008,23 +2026,33 @@ async function restartServer() {
     secondConfirmText: 'Yes, restart'
   });
   if (!ok) return;
-  btn.disabled = true;
-  btn.innerHTML = '<span>⏳</span> Restarting...';
-  showToast('Restarting server — page will reload in 5 seconds...', 'info');
+  triggerServerRestart(btn);
+}
+
+// Kicks the server restart endpoint and polls /settings/data until it's back,
+// then reloads the page. Shared by the explicit Restart button and the
+// post-save auto-restart prompt.
+function triggerServerRestart(btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> Restarting...';
+  }
+  showToast('Restarting server — page will reload when it comes back...', 'info');
 
   secretFetch('/settings/restart', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
   }).catch(function() {}); // will fail when server dies — that's expected
 
-  // Poll until server is back, then reload
   var attempts = 0;
   var poller = setInterval(function() {
     attempts++;
     if (attempts > 30) { // 30 seconds max
       clearInterval(poller);
-      btn.disabled = false;
-      btn.innerHTML = '<span>🔄</span> Restart Server';
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🔄</span> Restart Server';
+      }
       showToast('Server did not come back — check manually', 'error');
       return;
     }
@@ -2038,6 +2066,29 @@ async function restartServer() {
       })
       .catch(function() {}); // still down, keep polling
   }, 1000);
+}
+
+// Shown after a save returns keys that need a restart. Asks the user whether
+// to auto-restart the server now, or apply the change later via the explicit
+// Restart button / session stop+start. `savedMsg` is the success summary so
+// the modal carries both the save confirmation and the restart prompt.
+async function maybePromptRestart(needsRestart, savedMsg) {
+  if (!needsRestart || !needsRestart.length) return;
+  var keys = needsRestart.slice();
+  var preview = keys.slice(0, 8).join(', ') + (keys.length > 8 ? ', +' + (keys.length - 8) + ' more' : '');
+  var ok = await showConfirm({
+    icon: '🔄',
+    title: 'Restart Required',
+    message: savedMsg + '.\\n\\nThese keys are cached at startup and only take effect after a restart:\\n' + preview + '\\n\\nRestart the server now? Active trading sessions will stop and the page will reload.',
+    cancelText: 'Later',
+    confirmText: 'Restart Now',
+    confirmClass: 'modal-btn-danger',
+  });
+  if (!ok) {
+    showToast(savedMsg + ' — restart later to apply: ' + needsRestart.join(', '), 'info');
+    return;
+  }
+  triggerServerRestart();
 }
 
 function showToast(msg, type) {
