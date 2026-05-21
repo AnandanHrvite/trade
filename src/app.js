@@ -2268,39 +2268,69 @@ process.on("exit", (code) => {
 });
 
 // ── EOD Token Auto-Clear Scheduler ──────────────────────────────────────────
-// Clears BOTH Fyers and Zerodha tokens at 3:31 PM IST every day.
+// Clears BOTH Fyers and Zerodha tokens at 4:00 PM IST every day (after market close).
 // This ensures:
 //   (a) Tokens are wiped even if the app ran all day without a manual stop.
 //   (b) Next morning on first startup, loadToken() sees no file → forces fresh login.
 // Re-schedules itself for the same time the next day so it runs perpetually.
 
 function scheduleEODTokenClear() {
-  // IST = UTC+5:30. Target: 3:31 PM IST = 10:01 AM UTC
+  // IST = UTC+5:30. Target: 4:00 PM IST = 10:30 AM UTC
   const now     = new Date();
   const utcH    = now.getUTCHours();
   const utcM    = now.getUTCMinutes();
   const utcNow  = utcH * 60 + utcM;
-  const target  = 10 * 60 + 1;  // 10:01 UTC = 15:31 IST
+  const target  = 10 * 60 + 30;  // 10:30 UTC = 16:00 IST
   let msUntil   = (target - utcNow) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
   if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // if already past, schedule for tomorrow
 
-  console.log(`🕒 EOD token clear scheduled in ${Math.round(msUntil / 60000)} min (at 3:31 PM IST)`);
+  console.log(`🕒 EOD token clear scheduled in ${Math.round(msUntil / 60000)} min (at 4:00 PM IST)`);
 
   setTimeout(() => {
     try {
-      console.log("🔴 [EOD] 3:31 PM IST — auto-clearing Fyers & Zerodha tokens...");
+      console.log("🔴 [EOD] 4:00 PM IST — auto-clearing Fyers & Zerodha tokens...");
       clearFyersToken();
       zerodha.clearZerodhaToken();
       console.log("✅ [EOD] Both tokens cleared. Fresh login required tomorrow morning.");
     } catch (err) {
       console.error(`❌ [EOD] Token clear failed: ${err.message}`);
     } finally {
-      scheduleEODTokenClear(); // always re-schedule for tomorrow's 3:31 PM
+      scheduleEODTokenClear(); // always re-schedule for tomorrow's 4:00 PM
     }
   }, msUntil);
 }
 
 scheduleEODTokenClear();
+
+// ── Pre-Market Hard-Reset Scheduler ─────────────────────────────────────────
+// At 7:00 AM IST every day, clears BOTH tokens AND exits the process so PM2
+// brings it back with fresh SDK singletons before market open. Mirrors the
+// behavior of POST /admin/reset. Re-schedules itself in case the process is
+// running under a supervisor that doesn't restart (e.g., nodemon in dev),
+// though in that case the exit will obviously skip the re-schedule path.
+
+function scheduleMorningHardReset() {
+  // IST = UTC+5:30. Target: 7:00 AM IST = 01:30 AM UTC
+  const now     = new Date();
+  const utcH    = now.getUTCHours();
+  const utcM    = now.getUTCMinutes();
+  const utcNow  = utcH * 60 + utcM;
+  const target  = 1 * 60 + 30;   // 01:30 UTC = 07:00 IST
+  let msUntil   = (target - utcNow) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
+  if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // if already past, schedule for tomorrow
+
+  console.log(`🕒 Pre-market hard reset scheduled in ${Math.round(msUntil / 60000)} min (at 7:00 AM IST)`);
+
+  setTimeout(() => {
+    console.log("🔄 [PRE-MARKET] 7:00 AM IST — clearing tokens & restarting process...");
+    try { clearFyersToken(); }            catch (_) {}
+    try { zerodha.clearZerodhaToken(); }  catch (_) {}
+    // Brief delay so the log line flushes before PM2 reaps the process.
+    setTimeout(() => process.exit(0), 300);
+  }, msUntil);
+}
+
+scheduleMorningHardReset();
 
 // ── HTTPS Server ──────────────────────────────────────────────────────────────
 // Generate cert once on EC2 (never commit certs/ to git):
