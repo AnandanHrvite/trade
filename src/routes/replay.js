@@ -368,6 +368,14 @@ ${buildSidebar('replay', false)}
         <select id="sess-filter-mode" class="sess-input" title="Filter by strategy">
           <option value="">All strategies</option>
         </select>
+        <select id="sess-filter-range" class="sess-input" title="Quick date range">
+          <option value="">Any date</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">This week</option>
+          <option value="month">This month</option>
+          <option value="year">This year</option>
+        </select>
         <input id="sess-filter-from" type="date" class="sess-input" title="Show sessions on or after this date">
         <input id="sess-filter-to" type="date" class="sess-input" title="Show sessions on or before this date">
         <input id="sess-filter-search" type="search" class="sess-input" placeholder="Search ID or date…" title="Search session ID or date (YYYY-MM-DD)">
@@ -1463,6 +1471,34 @@ setInterval(refreshPreflight, 5000);
 const _settingsSourceSel = document.getElementById('settings-source');
 if (_settingsSourceSel) _settingsSourceSel.addEventListener('change', refreshSettingsSourceUi);
 
+// Local-date YYYY-MM-DD (not UTC) so "today" is correct in IST near midnight.
+function _localDateStr(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+// Translate a quick-range shortcut into From/To dates, push them into the
+// filter + the date inputs, and re-render. Empty value clears the range.
+function applySessDateShortcut(val) {
+  const fromEl = document.getElementById('sess-filter-from');
+  const toEl   = document.getElementById('sess-filter-to');
+  const now = new Date();
+  let from = null, to = null;
+  if (val === 'today')        { from = new Date(now); to = new Date(now); }
+  else if (val === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); from = y; to = new Date(y); }
+  else if (val === 'week')    { const s = new Date(now); s.setDate(now.getDate() - ((now.getDay() + 6) % 7)); from = s; to = new Date(now); }
+  else if (val === 'month')   { from = new Date(now.getFullYear(), now.getMonth(), 1); to = new Date(now); }
+  else if (val === 'year')    { from = new Date(now.getFullYear(), 0, 1); to = new Date(now); }
+  const f = from ? _localDateStr(from) : '';
+  const t = to ? _localDateStr(to) : '';
+  _sessFilter.dateFrom = f; _sessFilter.dateTo = t;
+  if (fromEl) fromEl.value = f;
+  if (toEl)   toEl.value = t;
+  _sessFilter.page = 1;
+  renderSessions();
+}
+
 // Wire Recorded-sessions toolbar inputs to filter + re-render in place.
 (function wireSessionsToolbar() {
   const modeSel  = document.getElementById('sess-filter-mode');
@@ -1470,14 +1506,18 @@ if (_settingsSourceSel) _settingsSourceSel.addEventListener('change', refreshSet
   const perPage  = document.getElementById('sess-per-page');
   const dateFrom = document.getElementById('sess-filter-from');
   const dateTo   = document.getElementById('sess-filter-to');
+  const rangeSel = document.getElementById('sess-filter-range');
   if (modeSel) modeSel.addEventListener('change', () => {
     _sessFilter.mode = modeSel.value; _sessFilter.page = 1; renderSessions();
   });
+  if (rangeSel) rangeSel.addEventListener('change', () => applySessDateShortcut(rangeSel.value));
+  // Manual edits to either date input fall back to a custom range, so reset
+  // the shortcut select to "Any date" to avoid a misleading label.
   if (dateFrom) dateFrom.addEventListener('change', () => {
-    _sessFilter.dateFrom = dateFrom.value; _sessFilter.page = 1; renderSessions();
+    _sessFilter.dateFrom = dateFrom.value; if (rangeSel) rangeSel.value = ''; _sessFilter.page = 1; renderSessions();
   });
   if (dateTo) dateTo.addEventListener('change', () => {
-    _sessFilter.dateTo = dateTo.value; _sessFilter.page = 1; renderSessions();
+    _sessFilter.dateTo = dateTo.value; if (rangeSel) rangeSel.value = ''; _sessFilter.page = 1; renderSessions();
   });
   if (search) {
     let t = null;
