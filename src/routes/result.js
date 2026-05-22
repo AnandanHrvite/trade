@@ -178,6 +178,15 @@ function shell(title, body) {
     /* ── Trade list ── */
     .trade-row td.side-ce { color: var(--green); font-weight: 700; }
     .trade-row td.side-pe { color: var(--red);   font-weight: 700; }
+
+    /* ── MOBILE (iPhone 15 = 393px logical width) ── */
+    @media (max-width: 768px) {
+      .page { padding: 18px 12px; }
+      .page-header h1 { font-size: 1.25rem; }
+      nav .nav-links { flex-wrap: wrap; }
+      .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { min-width: 560px; }
+    }
   </style>
 </head>
 <body>

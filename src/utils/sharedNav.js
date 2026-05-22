@@ -837,12 +837,12 @@ function sidebarCSS() {
     .data-table th{padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;background:#0a0f1c;}
     .data-table td{padding:8px 12px;border-top:1px solid #1a2236;font-family:monospace;font-size:0.78rem;vertical-align:top;}
 
-    /* ── MOBILE (iPhone 15 = 393px) ── */
+    /* ── MOBILE (iPhone 15 = 393px logical width) ── */
     @media(max-width:768px){
       /* Sidebar: hidden by default, toggled by hamburger */
-      .sidebar{transform:translateX(-100%);transition:transform 0.25s ease;z-index:200;}
+      .sidebar{transform:translateX(-100%);transition:transform 0.25s ease;z-index:200;width:84vw;max-width:300px;}
       .sidebar.mobile-open{transform:translateX(0);}
-      .main-content{margin-left:0;}
+      .main-content{margin-left:0;max-width:100%;}
 
       /* Hamburger button */
       .hamburger{display:flex;flex-direction:column;gap:4px;cursor:pointer;padding:8px;background:none;border:none;position:fixed;top:8px;left:12px;z-index:300;}
@@ -852,21 +852,42 @@ function sidebarCSS() {
       .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:150;}
       .sidebar-overlay.active{display:block;}
 
-      /* Top bar: compress */
-      .top-bar{padding:7px 12px 7px 48px;}
+      /* Top bar: compress + let badges/buttons wrap onto a second line */
+      .top-bar{padding:7px 12px 7px 48px;flex-wrap:wrap;gap:6px 8px;}
       .top-bar-meta{display:none;}
+      .top-bar-title{font-size:0.78rem;}
+      .top-bar-right{gap:4px;}
+      .broker-badges{padding:6px 12px;}
 
-      /* Page padding */
+      /* Page padding + smaller headings */
       .page{padding:14px 12px 60px;}
+      .page-title{font-size:1.15rem;}
 
       /* Stat grid: 2 columns */
       .stat-grid{grid-template-columns:1fr 1fr;gap:8px;}
       .sc{padding:10px 12px;}
       .sc-val{font-size:0.95rem;}
 
-      /* Data table: scrollable */
+      /* Collapse every multi-column grid to a single column.
+         Covers named grids used across pages + any inline grid-template-columns. */
+      .stat-grid-2,.ana-row,.ana-row3,.stats,.stats-row,.roll-grid,.pos-grid,
+      .metric-grid,.compare-grid,.baseline-grid,.actions,.pattern-grid{grid-template-columns:1fr !important;}
+      [style*="grid-template-columns"]{grid-template-columns:1fr !important;}
+
+      /* Tables: keep the shared data-table in a scroll wrapper, and make any
+         stray <table> scroll horizontally instead of overflowing the viewport. */
       .data-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
       .data-table{min-width:600px;}
+      table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+      /* Forms, code blocks, and media never exceed the screen width */
+      input,select,textarea{max-width:100%;}
+      img,canvas,svg,video{max-width:100%;height:auto;}
+      pre{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+      /* Flex rows that can run off-screen wrap instead */
+      .run-bar,.capital-strip,.session-head{flex-wrap:wrap;}
+      .cap-cell{min-width:50%;}
     }
     @media(max-width:400px){
       .stat-grid{grid-template-columns:1fr;}

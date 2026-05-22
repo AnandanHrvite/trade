@@ -150,6 +150,7 @@ router.get("/", (req, res) => {
   const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Replay — Tick-Replay Backtest</title>
 ${faviconLink()}
 <style>

@@ -288,7 +288,7 @@ function renderIdleForm() {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const today = new Date().toISOString().slice(0, 10);
   const def30 = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>${faviconLink()}<title>Straddle Backtest</title>
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>Straddle Backtest</title>
 <script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'IBM Plex Mono',monospace;}
@@ -347,7 +347,7 @@ function goto(p){
 }
 
 function renderErrorPage(msg, from, to) {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>${faviconLink()}<title>Straddle Backtest Error</title>
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>Straddle Backtest Error</title>
 <style>body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;padding:40px;text-align:center;}
 h2{color:#ef4444;margin-bottom:12px;}p{margin-bottom:18px;}
 a{color:${ACCENT};text-decoration:none;border:0.5px solid #0e1428;padding:8px 14px;border-radius:6px;}</style>

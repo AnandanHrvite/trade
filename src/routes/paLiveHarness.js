@@ -160,6 +160,7 @@ router.get("/", (req, res) => {
   const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PA LIVE (Harness) — Real orders via Paper engine</title>
 ${faviconLink()}
 <style>

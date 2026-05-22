@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Mobile responsive — full app usable on a phone (iPhone 15)
+
+- **Every screen now reflows for narrow viewports.** The shared mobile layer in [src/utils/sharedNav.js](src/utils/sharedNav.js) (`sidebarCSS()` `@media(max-width:768px)`) — inherited by all 33 shell pages — was expanded to: collapse multi-column grids to a single column (named grids `.stat-grid-2/.ana-row/.stats/.roll-grid/.pos-grid/.metric-grid/.compare-grid/.baseline-grid/.actions/.pattern-grid` plus any inline `grid-template-columns`), make stray `<table>`s scroll horizontally instead of overflowing, wrap the top bar / run bar / capital strip, and cap inputs, `<pre>`, and media at the screen width. The sidebar already collapsed behind a hamburger; that is unchanged.
+- **Added the `viewport` meta tag** to the four pages that lacked it (`orbBacktest`, `straddleBacktest`, `replay`, `paLiveHarness`) so iOS Safari renders at device width instead of a zoomed-out desktop layout.
+- **Standalone result page** ([src/routes/result.js](src/routes/result.js), no shared shell) got its own `@media(max-width:768px)` block — tighter padding, wrapping nav, and horizontally scrollable trade tables.
+- Presentation only — no strategy, paper/live decision, env, or route changes.
+
 ### Trade Logs — one-click Restore for settings changes
 
 - **Every row in the Checkpoints & Settings Changes tab now has a `↩ Restore` button** ([src/routes/tradeLogs.js](src/routes/tradeLogs.js)) that reverts that key to its prior (`From`) value with a single confirm. If the change was an "add", restoring deletes the key again. After restore, keys that are cached at startup trigger a one-click "Restart now" prompt (polls `/settings/data` and reloads when the server returns).
