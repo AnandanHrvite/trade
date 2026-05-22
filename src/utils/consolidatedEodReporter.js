@@ -1,8 +1,9 @@
 /**
  * consolidatedEodReporter.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Reads today's persisted trades across all 6 sources (swing/scalp/PA × paper/live)
- * and sends one combined end-of-day Telegram report at 15:30 IST.
+ * Reads today's persisted trades across all 10 sources
+ * (swing/scalp/PA/ORB/straddle × paper/live) and sends one combined end-of-day
+ * Telegram report at 15:30 IST.
  *
  * Gated by TG_DAYREPORT_CONSOLIDATED (and master TG_ENABLED) inside notify.js.
  * Schedule is idempotent per day — if the server restarts after 15:30, the report
@@ -17,12 +18,16 @@ const { notifyConsolidatedDayReport } = require("./notify");
 const DATA_DIR = path.join(os.homedir(), "trading-data");
 
 const SOURCES = [
-  { group: "SWING", file: "paper_trades.json"       },
-  { group: "SWING", file: "live_trades.json"        },
-  { group: "SCALP", file: "scalp_paper_trades.json" },
-  { group: "SCALP", file: "scalp_live_trades.json"  },
-  { group: "PA",    file: "pa_paper_trades.json"    },
-  { group: "PA",    file: "pa_live_trades.json"     },
+  { group: "SWING",    file: "paper_trades.json"           },
+  { group: "SWING",    file: "live_trades.json"            },
+  { group: "SCALP",    file: "scalp_paper_trades.json"     },
+  { group: "SCALP",    file: "scalp_live_trades.json"      },
+  { group: "PA",       file: "pa_paper_trades.json"        },
+  { group: "PA",       file: "pa_live_trades.json"         },
+  { group: "ORB",      file: "orb_paper_trades.json"       },
+  { group: "ORB",      file: "orb_live_trades.json"        },
+  { group: "STRADDLE", file: "straddle_paper_trades.json"  },
+  { group: "STRADDLE", file: "straddle_live_trades.json"   },
 ];
 
 function safeRead(fullPath) {
@@ -46,9 +51,11 @@ function toISTDate(input) {
 
 function collectTodayStats(istDate) {
   const byMode = {
-    SWING: { trades: 0, wins: 0, losses: 0, pnl: 0 },
-    SCALP: { trades: 0, wins: 0, losses: 0, pnl: 0 },
-    PA:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    SWING:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    SCALP:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    PA:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    ORB:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    STRADDLE: { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 
   for (const src of SOURCES) {

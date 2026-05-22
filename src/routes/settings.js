@@ -339,14 +339,20 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SWING_STARTED", label: "Swing — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Swing (5-min) paper/live session is started", default: "true" },
       { key: "TG_SCALP_STARTED", label: "Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Scalp paper/live session is started", default: "true" },
       { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action paper/live session is started", default: "true" },
+      { key: "TG_ORB_STARTED",      label: "ORB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ORB paper/live session is started", default: "true" },
+      { key: "TG_STRADDLE_STARTED", label: "Straddle — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Straddle paper/live session is started", default: "true" },
 
       { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade entry (paper + live)", default: "true" },
       { key: "TG_SCALP_ENTRY", label: "Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade entry (paper + live)", default: "true" },
       { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade entry (paper + live)", default: "true" },
+      { key: "TG_ORB_ENTRY",      label: "ORB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade entry (paper + live)", default: "true" },
+      { key: "TG_STRADDLE_ENTRY", label: "Straddle — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Straddle trade entry (paper + live)", default: "true" },
 
       { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade exit (paper + live)", default: "true" },
       { key: "TG_SCALP_EXIT", label: "Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade exit (paper + live)", default: "true" },
       { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade exit (paper + live)", default: "true" },
+      { key: "TG_ORB_EXIT",      label: "ORB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade exit (paper + live)", default: "true" },
+      { key: "TG_STRADDLE_EXIT", label: "Straddle — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Straddle trade exit (paper + live)", default: "true" },
 
       { key: "TG_SWING_SIGNALS", label: "Swing — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Swing trade was/wasn't taken)", default: "true" },
       { key: "TG_SCALP_SIGNALS", label: "Scalp — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Scalp trade was/wasn't taken)", default: "false" },
@@ -355,6 +361,8 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SWING_DAYREPORT", label: "Swing — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Swing day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_SCALP_DAYREPORT", label: "Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Scalp day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send PA day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_ORB_DAYREPORT",      label: "ORB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send ORB day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_STRADDLE_DAYREPORT", label: "Straddle — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Straddle day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary across all modes at 15:30 IST", default: "true" },
     ],

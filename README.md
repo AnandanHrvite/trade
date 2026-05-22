@@ -441,20 +441,18 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `BROKER_CB_FAIL_THRESHOLD` / `BROKER_CB_OPEN_SEC` | `5` / `30` | Broker circuit breaker — opens after N consecutive failures, half-open probe after T sec |
 | `BROKER_RETRY_WRITE_ATTEMPTS` / `BROKER_RETRY_READ_ATTEMPTS` / `BROKER_RETRY_BASE_MS` | `2` / `3` / `150` | Order / query retry — writes use linear backoff and only retry pre-flight errors (never double-place) |
 
-### Telegram Alerts (17 toggles + master gate)
+### Telegram Alerts (master gate + per-mode toggles)
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TELEGRAM_BOT_TOKEN` | — | From @BotFather |
 | `TELEGRAM_CHAT_ID` | — | Your chat ID — leave blank to disable notifications |
 | `TG_ENABLED` | `true` | **Master gate** — when off, no alerts send regardless of below |
-| `TG_{SWING,SCALP,PA}_STARTED` | `true` | Session-start alerts per mode |
-| `TG_{SWING,SCALP,PA}_ENTRY` | `true` | Trade-entry alerts per mode |
-| `TG_{SWING,SCALP,PA}_EXIT` | `true` | Trade-exit alerts per mode |
-| `TG_{SWING,SCALP,PA}_SIGNALS` | `true/false/false` | Candle-close skip/signal reasoning per mode |
-| `TG_{SWING,SCALP,PA}_DAYREPORT` | `true` | Per-mode day-report on session stop |
-| `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all modes |
-
-> The Telegram toggle set still covers Swing/Scalp/PA only — ORB and Straddle reuse the master gate (`TG_ENABLED`) for entry/exit alerts; per-strategy toggles for them have not been wired yet.
+| `TG_{SWING,SCALP,PA,ORB,STRADDLE}_STARTED` | `true` | Session-start alerts per mode |
+| `TG_{SWING,SCALP,PA,ORB,STRADDLE}_ENTRY` | `true` | Trade-entry alerts per mode |
+| `TG_{SWING,SCALP,PA,ORB,STRADDLE}_EXIT` | `true` | Trade-exit alerts per mode |
+| `TG_{SWING,SCALP,PA}_SIGNALS` | `true/false/false` | Candle-close skip/signal reasoning (Swing/Scalp/PA only — ORB/Straddle emit no signal alerts) |
+| `TG_{SWING,SCALP,PA,ORB,STRADDLE}_DAYREPORT` | `true` | Per-mode day-report on session stop |
+| `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all five modes |
 
 ### Charges (April 2026 rates)
 | Key | Default | Notes |

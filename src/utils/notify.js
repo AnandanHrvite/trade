@@ -10,14 +10,16 @@
  *        TELEGRAM_BOT_TOKEN=123456:ABCdef...
  *        TELEGRAM_CHAT_ID=987654321
  *
- * Toggle hierarchy (17 keys):
- *   TG_ENABLED                        — master gate; if false, nothing sends
- *   TG_{SWING|SCALP|PA}_STARTED       — session-start alerts (per mode)
- *   TG_{SWING|SCALP|PA}_ENTRY         — trade entry alerts (per mode)
- *   TG_{SWING|SCALP|PA}_EXIT          — trade exit alerts (per mode)
- *   TG_{SWING|SCALP|PA}_SIGNALS       — candle-close skip/signal alerts (per mode)
- *   TG_{SWING|SCALP|PA}_DAYREPORT     — per-mode day report on session stop
- *   TG_DAYREPORT_CONSOLIDATED         — one combined day report at market close
+ * Toggle hierarchy:
+ *   TG_ENABLED                                  — master gate; if false, nothing sends
+ *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_STARTED    — session-start alerts (per mode)
+ *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_EXIT       — trade exit alerts (per mode)
+ *   TG_{SWING|SCALP|PA}_SIGNALS                 — candle-close skip/signal alerts (Swing/Scalp/PA only)
+ *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_DAYREPORT  — per-mode day report on session stop
+ *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
+ *
+ *   (ORB and Straddle emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -39,14 +41,17 @@ function isMasterEnabled() {
   return !isOff(process.env.TG_ENABLED);
 }
 
-/** Map a mode string ("PAPER", "LIVE", "SCALP-PAPER", "PA-LIVE", ...) to group.
+/** Map a mode string ("PAPER", "LIVE", "SCALP-PAPER", "PA-LIVE", "ORB-LIVE (DRY-RUN)", ...) to group.
  *  The dash in "PA-" matters — plain "PAPER" would otherwise be misread as PA.
+ *  Live modes can carry a " (DRY-RUN)" suffix, so prefix matching (startsWith) is used.
  */
 function modeGroup(mode) {
   if (!mode) return "SWING";
   const m = String(mode).toUpperCase();
-  if (m === "SCALP" || m.startsWith("SCALP-") || m.startsWith("SCALP_")) return "SCALP";
-  if (m === "PA"    || m.startsWith("PA-")    || m.startsWith("PA_"))    return "PA";
+  if (m === "SCALP"    || m.startsWith("SCALP-")    || m.startsWith("SCALP_"))    return "SCALP";
+  if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
+  if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
+  if (m === "STRADDLE" || m.startsWith("STRADDLE-") || m.startsWith("STRADDLE_")) return "STRADDLE";
   return "SWING";
 }
 
@@ -207,6 +212,12 @@ function modeLabel(mode) {
   if (m === "SCALP-LIVE")   return "⚡ SCALP LIVE";
   if (m === "PA-PAPER")     return "📄 PA PAPER";
   if (m === "PA-LIVE")      return "⚡ PA LIVE";
+  // ORB / Straddle live modes may carry a " (DRY-RUN)" suffix — match by prefix
+  // and preserve the suffix so the alert still shows the dry-run flag.
+  if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
+  if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
+  if (m.startsWith("STRADDLE-PAPER"))  return "📄 STRADDLE PAPER" + m.slice("STRADDLE-PAPER".length);
+  if (m.startsWith("STRADDLE-LIVE"))   return "⚡ STRADDLE LIVE" + m.slice("STRADDLE-LIVE".length);
   return m;
 }
 
@@ -355,14 +366,14 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { SWING: {...}, SCALP: {...}, PA: {...} } })
+ * notifyConsolidatedDayReport({ byMode: { SWING, SCALP, PA, ORB, STRADDLE } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  */
 function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return;
 
-  const groups = ["SWING", "SCALP", "PA"];
+  const groups = ["SWING", "SCALP", "PA", "ORB", "STRADDLE"];
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
@@ -376,7 +387,7 @@ function notifyConsolidatedDayReport({ byMode }) {
     totalWins   += wins;
     totalLosses += losses;
     totalPnl    += pnl;
-    rows.push(`${g.padEnd(5)} : ${String(trades).padStart(3)} trades | ${inr(pnl)}`);
+    rows.push(`${g.padEnd(8)} : ${String(trades).padStart(3)} trades | ${inr(pnl)}`);
   }
 
   const { date, time } = nowISTString();

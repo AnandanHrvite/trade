@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Telegram — ORB + Straddle alert toggles + consolidated report coverage
+
+- **Per-strategy toggles for ORB and Straddle.** `modeGroup()` in [src/utils/notify.js](src/utils/notify.js) previously had no ORB/Straddle branch, so their `ORB-*` / `STRADDLE-*` mode strings fell through to the `SWING` default — meaning ORB/Straddle entry/exit/started/day-report alerts were silently controlled by the `TG_SWING_*` toggles and couldn't be muted independently. Added `ORB` and `STRADDLE` groups (prefix-matched so the live `(DRY-RUN)` suffix still resolves) plus matching `modeLabel()` cases for clean message headers. New Settings toggles: `TG_{ORB,STRADDLE}_{STARTED,ENTRY,EXIT,DAYREPORT}` (all default `true`, preserving prior always-on behaviour). No `_SIGNALS` toggle — neither strategy emits candle-close signal alerts.
+- **Consolidated EOD report now includes ORB + Straddle.** [src/utils/consolidatedEodReporter.js](src/utils/consolidatedEodReporter.js) read only the 6 swing/scalp/PA files; added `orb_{paper,live}_trades.json` and `straddle_{paper,live}_trades.json` (10 sources total) and the two new `byMode` buckets. `notifyConsolidatedDayReport()` now renders all five strategy rows (column padding widened for `STRADDLE`).
+- Additive notification wiring only — no strategy decision/fill/exit logic touched.
+
 ### Docs — Sync README.md + CLAUDE.md with current app
 
 - **README.md** now reflects the five-strategy reality (Swing / Scalp / PA / **ORB** / **Straddle**). Updated the architecture diagram, the modes table, the strategies section (new ORB and Straddle write-ups, PA breakeven trigger), the env-var tables (added every `ORB_*` / `STRADDLE_*` key with current defaults; corrected stale defaults for `MAX_DAILY_TRADES`, `SCALP_MAX_SL_PTS`, `SCALP_TRAIL_START`, `SCALP_TRAIL_TIERS`, `SCALP_MAX_DAILY_LOSS`, `PA_TRAIL_START`, `PA_TRAIL_TIERS`, `PA_CANDLE_TRAIL_BARS`, `PA_RSI_CAPS_ENABLED`), the routes section (ORB / Straddle / Replay / All-Backtest / paLiveHarness / paPatternBacktest), the persistence layout (per-day `ticks/`, `_replay_trades/`, `_replay_trades_sim/`; gap noted that `.active_orb_position.json` / `.active_straddle_position.json` don't exist yet), the menu-visibility / security tables, and the project structure tree.
