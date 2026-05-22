@@ -239,10 +239,12 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 .row-btn.primary { background:#3b82f6; color:#fff; border-color:#3b82f6; }
 .row-btn.primary:hover:not(:disabled) { background:#2563eb; }
 .banner { padding:10px 14px; border-radius:6px; font-size:0.85rem; margin-bottom:16px; }
+#preflight-banner { flex:1; min-width:220px; }
+#preflight-banner .banner { margin-bottom:0; }
 .banner.warn { background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.4); color:#fca5a5; }
 .banner.ok   { background:rgba(16,185,129,0.10); border:1px solid rgba(16,185,129,0.35); color:#6ee7b7; }
-.mode-toggle { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-.mode-toggle label { display:flex; gap:8px; align-items:flex-start; padding:10px 12px; border:1px solid #1e293b; border-radius:6px; cursor:pointer; flex:1; min-width:260px; background:#0f172a; transition: border-color 0.2s, background 0.2s; }
+.mode-toggle { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+.mode-toggle label { display:flex; gap:6px; align-items:center; padding:4px 10px; border:1px solid #1e293b; border-radius:6px; cursor:pointer; flex:0 0 auto; background:#0f172a; transition: border-color 0.2s, background 0.2s; }
 .mode-toggle label:hover { border-color:#334155; }
 .mode-toggle input[type="radio"]:checked + .mt-body { color:#f1f5f9; }
 /* Per-card selected accent — snapshot=blue, current=amber. The has() check
@@ -250,7 +252,7 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
    before refreshSettingsSourceUi() runs. */
 .mode-toggle label:has(input[value="snapshot"]:checked) { border-color:#3b82f6; background:#172033; box-shadow:0 0 0 1px rgba(59,130,246,0.25); }
 .mode-toggle label:has(input[value="current"]:checked)  { border-color:#f59e0b; background:#1f1a0e; box-shadow:0 0 0 1px rgba(245,158,11,0.30); }
-.mt-title { font-weight:600; font-size:0.85rem; color:#e2e8f0; }
+.mt-title { font-weight:600; font-size:0.78rem; color:#e2e8f0; white-space:nowrap; }
 .mt-desc  { color:#94a3b8; font-size:0.75rem; margin-top:2px; line-height:1.4; }
 
 /* Settings-source-driven theming. The body data-source attribute is set in
@@ -317,37 +319,13 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 <body>
 ${buildSidebar('replay', false)}
 <div class="main">
-  <h1>📼 Tick Replay — Deterministic Backtest &amp; After-Hours Simulator</h1>
-  <div class="sub">
-    Re-runs a recorded paper-trade session through the same paper code, using either the recorded settings (deterministic) or your current Settings page values (simulator). Tick recording is enabled by default; sessions appear here automatically after each paper run.
-  </div>
-
-  <div id="preflight-banner"></div>
-
-  <div class="card">
-    <strong>Settings source</strong>
-    <div class="muted" style="margin-top:4px;">Pick once; applies to every Replay click below.</div>
-    <div class="mode-toggle">
-      <label>
-        <input type="radio" name="settings-source" value="snapshot" checked>
-        <div class="mt-body">
-          <div class="mt-title">Snapshot settings (deterministic)</div>
-          <div class="mt-desc">Replay with the exact settings the session recorded. Compared against the live paper-trade result on disk — should match for an unchanged code path.</div>
-        </div>
-      </label>
-      <label>
-        <input type="radio" name="settings-source" value="current">
-        <div class="mt-body">
-          <div class="mt-title">My current settings (simulator)</div>
-          <div class="mt-desc">Replay with whatever is in the Settings page right now. Compared against the live paper-trade result on disk — delta shows how your settings would have changed the day.</div>
-        </div>
-      </label>
-    </div>
+  <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px;">
+    <h1 style="margin:0;">📼 Tick Replay</h1>
+    <div id="preflight-banner"></div>
   </div>
 
   <div class="card" id="range-card">
     <strong>Date-range <span id="range-mode-label">replay</span></strong><span id="source-chip" class="source-chip">SNAPSHOT</span>
-    <div class="muted" id="range-description" style="margin-top:4px;">Replay every recorded session in the range. Description updates based on your Settings source choice above.</div>
     <div class="range-row">
       <div class="range-field">
         <label>From</label>
@@ -364,9 +342,17 @@ ${buildSidebar('replay', false)}
         </select>
       </div>
       <div class="range-field">
+        <label>Settings source</label>
+        <select id="settings-source">
+          <option value="current">My current settings</option>
+          <option value="snapshot">Snapshot settings</option>
+        </select>
+      </div>
+      <div class="range-field">
         <label>&nbsp;</label>
         <button id="range-run-btn" onclick="runRange(this)">▶ Run range</button>
       </div>
+      <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
     </div>
     <div id="range-progress" style="display:none;"></div>
     <div id="activity-log" class="activity-log" style="display:none;">
@@ -382,6 +368,8 @@ ${buildSidebar('replay', false)}
         <select id="sess-filter-mode" class="sess-input" title="Filter by strategy">
           <option value="">All strategies</option>
         </select>
+        <input id="sess-filter-from" type="date" class="sess-input" title="Show sessions on or after this date">
+        <input id="sess-filter-to" type="date" class="sess-input" title="Show sessions on or before this date">
         <input id="sess-filter-search" type="search" class="sess-input" placeholder="Search ID or date…" title="Search session ID or date (YYYY-MM-DD)">
         <select id="sess-per-page" class="sess-input" title="Rows per page">
           <option value="10">10 / page</option>
@@ -488,7 +476,7 @@ async function forceClearStuckState(btn) {
 }
 
 // Filter + pagination state for the Recorded sessions table.
-let _sessFilter = { mode: '', search: '', page: 1, perPage: 25 };
+let _sessFilter = { mode: '', search: '', dateFrom: '', dateTo: '', page: 1, perPage: 25 };
 
 function _escapeHtml(s) {
   return String(s == null ? '' : s)
@@ -505,6 +493,8 @@ function _filteredSessions() {
   const q = (_sessFilter.search || '').trim().toLowerCase();
   return (_allSessionsCache || [])
     .filter(s => !_sessFilter.mode || s.mode === _sessFilter.mode)
+    .filter(s => !_sessFilter.dateFrom || (s.date || '') >= _sessFilter.dateFrom)
+    .filter(s => !_sessFilter.dateTo || (s.date || '') <= _sessFilter.dateTo)
     .filter(s => !q || (s.sessionId || '').toLowerCase().includes(q) || (s.date || '').includes(q))
     .sort((a, b) => (b.startTs || 0) - (a.startTs || 0));
 }
@@ -701,8 +691,8 @@ async function deleteSession(date, sessionId, btn) {
 }
 
 function getSelectedSettingsSource() {
-  const sel = document.querySelector('input[name="settings-source"]:checked');
-  return sel ? sel.value : 'snapshot';
+  const sel = document.getElementById('settings-source');
+  return sel ? sel.value : 'current';
 }
 
 // Update the date-range card's labels + button text whenever the user
@@ -711,7 +701,6 @@ function getSelectedSettingsSource() {
 function refreshSettingsSourceUi() {
   const isCurrent = getSelectedSettingsSource() === 'current';
   const modeLabel = document.getElementById('range-mode-label');
-  const desc      = document.getElementById('range-description');
   const runBtn    = document.getElementById('range-run-btn');
   const chip      = document.getElementById('source-chip');
   // Body-level attribute drives all the colour theming via CSS — set it
@@ -719,11 +708,6 @@ function refreshSettingsSourceUi() {
   document.body.setAttribute('data-source', isCurrent ? 'current' : 'snapshot');
   if (chip) chip.textContent = isCurrent ? 'SIMULATOR · CURRENT SETTINGS' : 'SNAPSHOT · DETERMINISTIC';
   if (modeLabel) modeLabel.textContent = isCurrent ? 'comparison' : 'replay';
-  if (desc) {
-    desc.innerHTML = isCurrent
-      ? 'Replay every recorded session <strong>once</strong> with your current settings. Each result is compared against the live paper-trade record from disk — delta shows the impact of your settings changes.'
-      : 'Replay every recorded session <strong>once</strong> with the exact settings each session was recorded with. Compared against the live paper-trade record from disk — should match exactly for an unchanged code path.';
-  }
   if (runBtn && !runBtn.disabled) {
     runBtn.textContent = isCurrent ? '▶ Run range (compare)' : '▶ Run range (snapshot)';
   }
@@ -1439,11 +1423,9 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   // useful when the diagnostic is too big to paste (long activity logs,
   // multi-day ranges with option-tick windows).
   if (rows.length > 0) {
-    const resultDivAgain = document.getElementById('range-result');
-    const btnRow = document.createElement('div');
+    const btnRow = document.getElementById('range-diag-btns');
+    btnRow.innerHTML = '';
     btnRow.style.display = 'flex';
-    btnRow.style.gap = '8px';
-    btnRow.style.flexWrap = 'wrap';
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
     copyBtn.textContent = '📋 Copy diagnostic data';
@@ -1454,7 +1436,6 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     dlBtn.onclick = () => downloadDiagnostic(dlBtn, context, rows);
     btnRow.appendChild(copyBtn);
     btnRow.appendChild(dlBtn);
-    resultDivAgain.appendChild(btnRow);
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
@@ -1479,17 +1460,24 @@ loadSessions();
 setInterval(refreshPreflight, 5000);
 
 // React when the user toggles the Settings source radio
-document.querySelectorAll('input[name="settings-source"]').forEach(r => {
-  r.addEventListener('change', refreshSettingsSourceUi);
-});
+const _settingsSourceSel = document.getElementById('settings-source');
+if (_settingsSourceSel) _settingsSourceSel.addEventListener('change', refreshSettingsSourceUi);
 
 // Wire Recorded-sessions toolbar inputs to filter + re-render in place.
 (function wireSessionsToolbar() {
   const modeSel  = document.getElementById('sess-filter-mode');
   const search   = document.getElementById('sess-filter-search');
   const perPage  = document.getElementById('sess-per-page');
+  const dateFrom = document.getElementById('sess-filter-from');
+  const dateTo   = document.getElementById('sess-filter-to');
   if (modeSel) modeSel.addEventListener('change', () => {
     _sessFilter.mode = modeSel.value; _sessFilter.page = 1; renderSessions();
+  });
+  if (dateFrom) dateFrom.addEventListener('change', () => {
+    _sessFilter.dateFrom = dateFrom.value; _sessFilter.page = 1; renderSessions();
+  });
+  if (dateTo) dateTo.addEventListener('change', () => {
+    _sessFilter.dateTo = dateTo.value; _sessFilter.page = 1; renderSessions();
   });
   if (search) {
     let t = null;
