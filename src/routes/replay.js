@@ -370,7 +370,7 @@ ${buildSidebar('replay', false)}
         </select>
         <select id="sess-filter-range" class="sess-input" title="Quick date range">
           <option value="">Any date</option>
-          <option value="today">Today</option>
+          <option value="today" selected>Today</option>
           <option value="yesterday">Yesterday</option>
           <option value="week">This week</option>
           <option value="month">This month</option>
@@ -1533,6 +1533,8 @@ function applySessDateShortcut(val) {
     _sessFilter.page = 1;
     renderSessions();
   });
+  // Default the Recorded-sessions list to today's sessions.
+  applySessDateShortcut('today');
 })();
 </script>
 <script>${modalJS()}</script>
