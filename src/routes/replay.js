@@ -574,16 +574,21 @@ async function refreshPreflight() {
     if (data.ok) {
       banner.innerHTML = '<div class="banner ok">✅ Safe to replay — no live or paper session is active.</div>';
     } else {
-      // Distinguish "another tab/process is replaying" from "a strategy is
-      // running" — only the second case warrants a Force clear suggestion.
+      // Two block causes: (1) a strategy (Swing/Scalp/PA…) is actually running,
+      // or (2) a replay flag is set. Case 2 can be a genuine other-tab run OR a
+      // stuck flag left by a run that died mid-flight (e.g. a deploy). Either
+      // way the user needs a way out, so always offer Force clear — with wording
+      // matched to the cause.
       const isAnotherReplay = /another replay is already running/i.test(data.reason || '');
+      const hint = isAnotherReplay
+        ? 'If another tab is genuinely running a replay, wait for it. If a run was interrupted (e.g. by a deploy) and nothing is actually running, force-clear the stuck flag.'
+        : 'Only force-clear if you have confirmed on the strategy pages that NO session is actually running.';
       banner.innerHTML =
         '<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
-          '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') + '</div>' +
-          (isAnotherReplay
-            ? '<span class="muted" style="color:#fca5a5;font-size:0.78rem;">Wait for it to finish, or open the tab that started it.</span>'
-            : '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;">Force clear (only if no session is actually running)</button>'
-          ) +
+          '<div>⚠️ ' + (data.reason || 'Replay not allowed right now.') +
+            '<div class="muted" style="color:#fca5a5;font-size:0.74rem;margin-top:3px;">' + hint + '</div>' +
+          '</div>' +
+          '<button onclick="forceClearStuckState(this)" style="background:#7f1d1d;color:#fecaca;border:1px solid #b91c1c;padding:6px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;white-space:nowrap;">Force clear stuck state</button>' +
         '</div>';
     }
     // Reflect on existing buttons
@@ -598,8 +603,8 @@ async function refreshPreflight() {
 
 async function forceClearStuckState(btn) {
   if (!confirm('Force-clear the in-memory session state?\\n\\n' +
-               'Only do this if you have confirmed on the strategy pages (Swing/Scalp/PA Paper) that NO session is actually running.\\n\\n' +
-               'This only clears the in-memory mutex flag — it does NOT touch trade logs, positions, or recordings.')) return;
+               'Only do this if you have confirmed on the strategy pages (Swing/Scalp/PA Paper) that NO session is actually running, and no other tab is mid-replay.\\n\\n' +
+               'This clears the in-memory strategy mutexes AND the replay-in-progress flag — it does NOT touch trade logs, positions, or recordings.')) return;
   btn.disabled = true;
   btn.textContent = 'Clearing…';
   try {

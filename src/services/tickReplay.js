@@ -1062,6 +1062,12 @@ function replayPreflight() {
  *
  * Safe to call any time: it only clears in-memory mutex flags, never touches
  * trade logs or position files.
+ *
+ * Also resets `_replayInProgress` — the flag behind the "Another replay is
+ * already running in this process" preflight block. When a replay run is killed
+ * mid-flight (e.g. a deploy/PM2 reload before the finally{} resets it), that
+ * flag stays stuck true with no run actually executing, permanently blocking
+ * new replays. This is the only in-process way to unstick it short of a restart.
  */
 function forceClearSharedState() {
   const sharedSocketState = require("../utils/sharedSocketState");
@@ -1071,12 +1077,14 @@ function forceClearSharedState() {
     pa:       sharedSocketState.getPAMode(),
     orb:      sharedSocketState.getOrbMode(),
     straddle: sharedSocketState.getStraddleMode(),
+    replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
   sharedSocketState.clearScalp();
   sharedSocketState.clearPA();
   sharedSocketState.clearOrb();
   sharedSocketState.clearStraddle();
+  _replayInProgress = false;
   return { ok: true, cleared: before };
 }
 
