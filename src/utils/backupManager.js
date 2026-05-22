@@ -20,9 +20,13 @@
  *   (move data/ticks into the repo if you unpacked elsewhere) then restart PM2.
  *
  * Env:
+ * Only the latest snapshot is kept: generating a new one deletes all earlier
+ * dated snapshots. (Hidden pre-restore safety snapshots are pruned by age.)
+ *
+ * Env:
  *   BACKUP_ENABLED       (default true)   master gate — scheduler + banner + routes
  *   BACKUP_HOUR_IST      (default 16)     hour (IST) the daily snapshot is cut, after market close
- *   BACKUP_RETAIN_DAYS   (default 14)     prune snapshots older than this
+ *   BACKUP_RETAIN_DAYS   (default 14)     prune hidden pre-restore safety snapshots older than this
  *   BACKUP_TG_ENABLED    (default false)  Telegram heartbeat when a snapshot is ready
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -136,6 +140,8 @@ function createSnapshot(dateStr = istDateStr(), opts = {}) {
           // A fresh snapshot is "not yet downloaded" — re-arms the nag banner.
           state[dateStr] = { createdAt: new Date().toISOString(), sizeBytes, downloaded: false };
           writeState(state);
+          // Keep only the latest: a new snapshot replaces all earlier dated ones.
+          deleteOtherDailySnapshots(dateStr);
         }
         resolve({ ok: true, file: out, sizeBytes });
       } catch (err) {
@@ -262,20 +268,27 @@ function todayStatus() {
 }
 
 // ── Prune ─────────────────────────────────────────────────────────────────────
-function pruneOld() {
-  const keep = retainDays();
-  const cutoff = Date.now() - keep * 24 * 3600 * 1000;
-  let deleted = 0;
-  for (const b of listBackups()) {
-    const t = new Date(b.date + "T00:00:00+05:30").getTime();
-    if (Number.isFinite(t) && t < cutoff) {
-      try { fs.unlinkSync(path.join(BACKUP_DIR, b.file)); deleted++; } catch (_) {}
-      const state = readState();
-      if (state[b.date]) { delete state[b.date]; writeState(state); }
-    }
+/** Keep only the latest dated snapshot — delete every other backup-YYYY-MM-DD. */
+function deleteOtherDailySnapshots(keepDate) {
+  let deleted = 0, state = null;
+  let names = [];
+  try { names = fs.readdirSync(BACKUP_DIR); } catch (_) { return 0; }
+  for (const n of names) {
+    const m = n.match(/^backup-(\d{4}-\d{2}-\d{2})\.tar\.gz$/);
+    if (!m || m[1] === keepDate) continue;
+    try { fs.unlinkSync(path.join(BACKUP_DIR, n)); deleted++; } catch (_) {}
+    state = state || readState();
+    if (state[m[1]]) delete state[m[1]];
   }
-  // Pre-restore safety snapshots (backup-prerestore-*.tar.gz) aren't in the
-  // dated list — prune them by file mtime instead.
+  if (state) writeState(state);
+  return deleted;
+}
+
+/** Prune the hidden pre-restore safety snapshots by age (dated snapshots are
+ *  kept-latest-only via deleteOtherDailySnapshots, so they need no age prune). */
+function pruneOld() {
+  const cutoff = Date.now() - retainDays() * 24 * 3600 * 1000;
+  let deleted = 0;
   try {
     for (const n of fs.readdirSync(BACKUP_DIR)) {
       if (!/^backup-prerestore-.*\.tar\.gz$/.test(n)) continue;

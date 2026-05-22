@@ -407,7 +407,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `TICK_RECORDER_RETAIN_DAYS` | `30` | Auto-delete tick recordings older than this many days (~10 MB/day across streams) |
 | `BACKUP_ENABLED` | `true` | Cut a daily self-contained `.tar.gz` snapshot of `~/trading-data` + `data/ticks` (caches & OAuth tokens excluded) into `~/trading-data/_backups/`. Download it from Settings → Backup & Restore; a banner nags on every page until the day's copy is downloaded. Pure observer — zero impact on trading. |
 | `BACKUP_HOUR_IST` | `16` | Hour of day (IST) the daily snapshot is cut (after market close). Timer armed at boot — restart to re-arm a changed hour. |
-| `BACKUP_RETAIN_DAYS` | `14` | Prune snapshot files on the server older than this many days. |
+| `BACKUP_RETAIN_DAYS` | `14` | Daily snapshots keep only the latest (a new one deletes the old). This prunes the hidden pre-restore safety snapshots older than this many days. |
 | `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). |
 | `LIVE_HARNESS_DRY_RUN` | `true` | When ON, all live order paths (PA/ORB/Straddle harness routes **and Swing Live**) log the broker call that *would* have been made but place no real order. Switch OFF only after verifying decisions match paper. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |

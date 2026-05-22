@@ -335,7 +335,7 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "BACKUP_ENABLED", label: "Daily Data Backup", type: "toggle", effect: EFFECT.INSTANT, desc: "Cut a daily downloadable .tar.gz snapshot of ~/trading-data + recorded ticks (caches & tokens excluded). Download it from the Backup & Restore card above so an EC2 loss never loses data.", default: "true" },
       { key: "BACKUP_HOUR_IST", label: "Snapshot Hour (IST)", type: "number", min: 0, max: 23, step: 1, effect: EFFECT.SERVER, desc: "Hour of day (IST) the daily snapshot is cut — after market close. Timer is armed at boot; restart to re-arm a changed hour.", default: "16" },
-      { key: "BACKUP_RETAIN_DAYS", label: "Keep Snapshots (days)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Older snapshot files on the server are pruned beyond this many days.", default: "14" },
+      { key: "BACKUP_RETAIN_DAYS", label: "Keep Pre-Restore Snapshots (days)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Daily snapshots keep only the latest (a new one deletes the old). This governs the hidden pre-restore safety snapshots taken before a restore — pruned beyond this many days.", default: "14" },
       { key: "BACKUP_TG_ENABLED", label: "Telegram Backup Heartbeat", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Telegram message when each day's snapshot is ready (or if it fails).", default: "false" },
     ],
   },
@@ -2067,7 +2067,7 @@ async function loadBackups() {
       body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Disabled.</td></tr>';
       return;
     }
-    statusLine.textContent = 'Daily at ' + String(d.hour).padStart(2, '0') + ':00 IST · keeps ' + d.retainDays + ' days · ' + d.backups.length + ' snapshot(s) on server';
+    statusLine.textContent = 'Daily at ' + String(d.hour).padStart(2, '0') + ':00 IST · keeps latest only (new replaces old) · ' + d.backups.length + ' on server';
     if (!d.backups.length) {
       _backupLatestDate = null;
       body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">No snapshots yet — click "Snapshot now".</td></tr>';
