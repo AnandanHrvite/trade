@@ -2084,7 +2084,7 @@ async function loadBackups() {
         '<td style="padding:6px 8px;">' + status + '</td>' +
         '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">' +
           '<a href="/backup/download?date=' + encodeURIComponent(b.date) + '" title="Download" style="color:#60a5fa;text-decoration:none;font-weight:700;margin-right:14px;">⬇</a>' +
-          '<a href="#" onclick="return backupDelete(\'' + b.date + '\')" title="Delete this snapshot" style="color:#f87171;text-decoration:none;font-weight:700;">🗑</a>' +
+          '<a href="#" class="bk-del-btn" data-date="' + b.date + '" title="Delete this snapshot" style="color:#f87171;text-decoration:none;font-weight:700;">🗑</a>' +
         '</td>' +
         '</tr>';
     }).join('');
@@ -2112,6 +2112,13 @@ async function backupCreateNow() {
   if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; }
   loadBackups();
 }
+// Delegated so it survives the table's innerHTML rebuilds (no inline onclick).
+document.addEventListener('click', function(e) {
+  var t = e.target && e.target.closest ? e.target.closest('.bk-del-btn') : null;
+  if (!t) return;
+  e.preventDefault();
+  backupDelete(t.getAttribute('data-date'));
+});
 async function backupDelete(date) {
   var ok = await showDoubleConfirm({
     icon: '🗑', title: 'Delete backup',
