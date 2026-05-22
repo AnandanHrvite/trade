@@ -2109,6 +2109,41 @@ async function backupCreateNow() {
   if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; }
   loadBackups();
 }
+async function backupRestore() {
+  var input = document.getElementById('backupRestoreFile');
+  var file = input && input.files && input.files[0];
+  if (!file) { showToast('Choose a backup .tar.gz file first.', 'info'); return; }
+  var ok = await showDoubleConfirm({
+    icon: '⟲', title: 'Restore data from backup',
+    message: 'This OVERWRITES ~/trading-data and data/ticks on the server with the contents of:\\n\\n' + file.name + '\\n\\nA safety snapshot of current data is taken first. Restore is blocked if a session is running. Continue?',
+    confirmText: 'Restore', confirmClass: 'modal-btn-danger',
+    subject: 'Overwrite server data with uploaded backup',
+    secondConfirmText: 'Yes, restore'
+  });
+  if (!ok) return;
+  var btn = document.getElementById('backupRestoreBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Restoring…'; }
+  try {
+    var r = await fetch('/backup/restore', { method: 'POST', headers: { 'Content-Type': 'application/gzip' }, body: file });
+    var d = await r.json();
+    if (d.ok) {
+      showToast('Restored: ' + d.restored.join(', ') + '. Restart the server to load it.', 'success');
+      loadBackups();
+      var doRestart = await showDoubleConfirm({
+        icon: '🔄', title: 'Restart now?',
+        message: 'Restore complete. The server should restart to load the restored data.\\n\\nRestart now?',
+        confirmText: 'Restart', confirmClass: 'modal-btn-danger',
+        subject: 'Server restart', secondConfirmText: 'Yes, restart'
+      });
+      if (doRestart) triggerServerRestart(null);
+    } else {
+      showToast('Restore failed: ' + (d.error || 'unknown'), 'error');
+    }
+  } catch (e) {
+    showToast('Restore failed: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '⟲ Restore'; }
+}
 function showBackupModal() {
   var m = document.getElementById('backupModal');
   if (!m) return;
@@ -2787,6 +2822,19 @@ tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;rep
 # restart the app:
 pm2 startOrRestart ecosystem.config.js --update-env</pre>
       </details>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid #1a2640;">
+        <div style="font-size:0.78rem;font-weight:700;color:#f59e0b;margin-bottom:6px;">⟲ Restore from a backup file</div>
+        <div style="font-size:0.68rem;color:#7e93b5;line-height:1.5;margin-bottom:10px;">
+          Upload a <code style="color:#9dc1f0;">backup-*.tar.gz</code> to restore it here — no SSH needed.
+          This <b style="color:#f59e0b;">overwrites</b> <code style="color:#9dc1f0;">~/trading-data</code> and <code style="color:#9dc1f0;">data/ticks</code> on the server.
+          A safety snapshot of current data is taken first, and restore is blocked while any session is running.
+          A server restart is recommended afterwards.
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+          <input type="file" id="backupRestoreFile" accept=".gz,.tgz,application/gzip" style="font-size:0.7rem;color:#9db4d6;flex:1;min-width:200px;"/>
+          <button onclick="backupRestore()" id="backupRestoreBtn" style="padding:8px 16px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">⟲ Restore</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>

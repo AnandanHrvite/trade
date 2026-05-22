@@ -98,7 +98,8 @@ function markDownloaded(dateStr) {
  * Build backup-<date>.tar.gz. Writes to a .tmp then renames so a download can
  * never read a half-written archive. Resolves { ok, file, sizeBytes, error }.
  */
-function createSnapshot(dateStr = istDateStr()) {
+function createSnapshot(dateStr = istDateStr(), opts = {}) {
+  const recordState = opts.recordState !== false;
   return new Promise((resolve) => {
     if (!fs.existsSync(DATA_DIR)) {
       return resolve({ ok: false, error: `${DATA_DIR} does not exist` });
@@ -130,16 +131,104 @@ function createSnapshot(dateStr = istDateStr()) {
       try {
         fs.renameSync(tmp, out);
         const sizeBytes = fs.statSync(out).size;
-        const state = readState();
-        // A fresh snapshot is "not yet downloaded" — re-arms the nag banner.
-        state[dateStr] = { createdAt: new Date().toISOString(), sizeBytes, downloaded: false };
-        writeState(state);
+        if (recordState) {
+          const state = readState();
+          // A fresh snapshot is "not yet downloaded" — re-arms the nag banner.
+          state[dateStr] = { createdAt: new Date().toISOString(), sizeBytes, downloaded: false };
+          writeState(state);
+        }
         resolve({ ok: true, file: out, sizeBytes });
       } catch (err) {
         resolve({ ok: false, error: err.message });
       }
     });
   });
+}
+
+// ── Restore (from an uploaded archive) ────────────────────────────────────────
+const RESTORE_PREFIXES = ["trading-data/", "data/ticks/"];
+
+/** List entry names + a verbose dump for type checks. Resolves { names, verbose }. */
+function inspectArchive(file) {
+  return new Promise((resolve) => {
+    const names = spawn("tar", ["tzf", file], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    names.stdout.on("data", (c) => { out += c.toString(); });
+    names.on("error", () => resolve({ ok: false }));
+    names.on("close", (code) => {
+      if (code !== 0) return resolve({ ok: false });
+      // Verbose pass for symlink/hardlink detection (best-effort).
+      const v = spawn("tar", ["tzvf", file], { stdio: ["ignore", "pipe", "ignore"] });
+      let vout = "";
+      v.stdout.on("data", (c) => { vout += c.toString(); });
+      v.on("error", () => resolve({ ok: true, names: out.split("\n").filter(Boolean), verbose: "" }));
+      v.on("close", () => resolve({ ok: true, names: out.split("\n").filter(Boolean), verbose: vout }));
+    });
+  });
+}
+
+/** True if an archive entry name is safe to restore (no traversal, allowed dir). */
+function isSafeEntry(name) {
+  if (!name || name.startsWith("/")) return false;          // no absolute paths
+  if (name.split("/").some((seg) => seg === "..")) return false; // no traversal
+  if (name === "trading-data/" || name === "data/ticks/") return true;
+  return RESTORE_PREFIXES.some((p) => name.startsWith(p));
+}
+
+/**
+ * Restore from an already-uploaded .tar.gz at `file`.
+ *  1. Validate every entry is inside trading-data/ or data/ticks/ (no traversal/symlinks).
+ *  2. Snapshot current data first (pre-restore safety net) so a bad restore is reversible.
+ *  3. Selectively extract each known dir to its target (-C). Members outside the
+ *     two allowed names are never extracted, even if present in the archive.
+ * Resolves { ok, restored:[...], preRestore, error }.
+ */
+async function restoreFromFile(file) {
+  if (!fs.existsSync(file)) return { ok: false, error: "uploaded file not found" };
+
+  const info = await inspectArchive(file);
+  if (!info.ok) return { ok: false, error: "not a valid .tar.gz archive" };
+  if (!info.names.length) return { ok: false, error: "archive is empty" };
+
+  const bad = info.names.find((n) => !isSafeEntry(n));
+  if (bad) return { ok: false, error: `unsafe archive entry: ${bad}` };
+  // Reject symlink (l) / hardlink (h) entries — our backups never contain them.
+  if (info.verbose && /^[lh]/m.test(info.verbose)) {
+    return { ok: false, error: "archive contains link entries (refused)" };
+  }
+
+  const hasTrading = info.names.some((n) => n.startsWith("trading-data/"));
+  const hasTicks   = info.names.some((n) => n.startsWith("data/ticks/"));
+  if (!hasTrading && !hasTicks) return { ok: false, error: "archive has no trading-data or data/ticks" };
+
+  // Pre-restore safety snapshot of whatever is on disk right now.
+  let preRestore = null;
+  try {
+    const stamp = istDateStr().replace(/-/g, "") + "-" + Date.now();
+    const r = await createSnapshot(`prerestore-${stamp}`, { recordState: false });
+    if (r.ok) preRestore = path.basename(r.file);
+  } catch (_) {}
+
+  const extract = (cwd, member) => new Promise((resolve) => {
+    const p = spawn("tar", ["xzf", file, "-C", cwd, member], { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    p.stderr.on("data", (c) => { err += c.toString(); });
+    p.on("error", (e) => resolve({ ok: false, error: e.message }));
+    p.on("close", (code) => resolve(code === 0 || code === 1 ? { ok: true } : { ok: false, error: err.trim().slice(0, 200) }));
+  });
+
+  const restored = [];
+  if (hasTrading) {
+    const r = await extract(HOME, "trading-data");
+    if (!r.ok) return { ok: false, error: `trading-data restore failed: ${r.error}`, preRestore };
+    restored.push("trading-data");
+  }
+  if (hasTicks) {
+    const r = await extract(REPO_ROOT, "data/ticks");
+    if (!r.ok) return { ok: false, error: `ticks restore failed: ${r.error}`, preRestore };
+    restored.push("data/ticks");
+  }
+  return { ok: true, restored, preRestore };
 }
 
 // ── Listing / status ────────────────────────────────────────────────────────
@@ -185,6 +274,15 @@ function pruneOld() {
       if (state[b.date]) { delete state[b.date]; writeState(state); }
     }
   }
+  // Pre-restore safety snapshots (backup-prerestore-*.tar.gz) aren't in the
+  // dated list — prune them by file mtime instead.
+  try {
+    for (const n of fs.readdirSync(BACKUP_DIR)) {
+      if (!/^backup-prerestore-.*\.tar\.gz$/.test(n)) continue;
+      const f = path.join(BACKUP_DIR, n);
+      try { if (fs.statSync(f).mtimeMs < cutoff) { fs.unlinkSync(f); deleted++; } } catch (_) {}
+    }
+  } catch (_) {}
   return deleted;
 }
 
@@ -257,6 +355,7 @@ function start() {
 module.exports = {
   start,
   createSnapshot,
+  restoreFromFile,
   listBackups,
   getBackupFile,
   markDownloaded,

@@ -564,6 +564,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `/backup/data` | List of on-server snapshots + schedule/retention (Settings card) |
 | `/backup/download?date=YYYY-MM-DD` | Streams `backup-<date>.tar.gz` and marks it downloaded |
 | `POST /backup/create` | Cut a snapshot for today now |
+| `POST /backup/restore` | Upload a `backup-*.tar.gz` (raw body) and restore it over `~/trading-data` + `data/ticks`. Takes a pre-restore safety snapshot first; validates entries against path-traversal; refused while a session is active. Restart after. |
 | `POST /{swing|scalp|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
 
 ## Project Structure

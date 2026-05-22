@@ -14,8 +14,10 @@
 
 const express = require("express");
 const fs      = require("fs");
+const path    = require("path");
 const router  = express.Router();
 const backup  = require("../utils/backupManager");
+const sharedSocketState = require("../utils/sharedSocketState");
 
 // ── GET /backup/status — lightweight poll for the download-nag banner ─────────
 router.get("/status", (req, res) => {
@@ -74,6 +76,47 @@ router.get("/download", (req, res) => {
     }
   });
   stream.pipe(res);
+});
+
+// ── POST /backup/restore — upload a .tar.gz and restore it ────────────────────
+// Body = the raw .tar.gz bytes (Content-Type application/gzip). Destructive:
+// overwrites ~/trading-data + data/ticks. Refused while any session is active;
+// a pre-restore safety snapshot is taken automatically inside backupManager.
+router.post("/restore", (req, res) => {
+  if (sharedSocketState.isAnyActive && sharedSocketState.isAnyActive()) {
+    return res.status(409).json({ ok: false, error: "A trading session is active — stop it before restoring." });
+  }
+
+  const tmp = path.join(backup.BACKUP_DIR, `.restore-upload-${Date.now()}.tar.gz`);
+  try { fs.mkdirSync(backup.BACKUP_DIR, { recursive: true }); } catch (_) {}
+
+  const ws = fs.createWriteStream(tmp);
+  const cleanup = () => { try { fs.existsSync(tmp) && fs.unlinkSync(tmp); } catch (_) {} };
+
+  ws.on("error", (err) => {
+    cleanup();
+    if (!res.headersSent) res.status(500).json({ ok: false, error: "upload write failed: " + err.message });
+  });
+  req.on("error", () => { cleanup(); });
+
+  ws.on("finish", async () => {
+    try {
+      const r = await backup.restoreFromFile(tmp);
+      cleanup();
+      if (r.ok) {
+        console.log(`[backup] RESTORE complete: ${r.restored.join(", ")} (pre-restore: ${r.preRestore || "none"})`);
+        res.json({ ok: true, restored: r.restored, preRestore: r.preRestore });
+      } else {
+        console.warn(`[backup] restore rejected: ${r.error}`);
+        res.status(400).json({ ok: false, error: r.error, preRestore: r.preRestore || null });
+      }
+    } catch (err) {
+      cleanup();
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
+  req.pipe(ws);
 });
 
 module.exports = router;
