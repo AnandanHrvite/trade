@@ -405,6 +405,10 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 |-----|---------|-------|
 | `TICK_RECORDER_ENABLED` | `true` | Record spot/option/VIX ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` during every paper/live session. Required for Replay. Pure observer — zero impact on trading. |
 | `TICK_RECORDER_RETAIN_DAYS` | `30` | Auto-delete tick recordings older than this many days (~10 MB/day across streams) |
+| `BACKUP_ENABLED` | `true` | Cut a daily self-contained `.tar.gz` snapshot of `~/trading-data` + `data/ticks` (caches & OAuth tokens excluded) into `~/trading-data/_backups/`. Download it from Settings → Backup & Restore; a banner nags on every page until the day's copy is downloaded. Pure observer — zero impact on trading. |
+| `BACKUP_HOUR_IST` | `16` | Hour of day (IST) the daily snapshot is cut (after market close). Timer armed at boot — restart to re-arm a changed hour. |
+| `BACKUP_RETAIN_DAYS` | `14` | Prune snapshot files on the server older than this many days. |
+| `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). |
 | `LIVE_HARNESS_DRY_RUN` | `true` | When ON, all live order paths (PA/ORB/Straddle harness routes **and Swing Live**) log the broker call that *would* have been made but place no real order. Switch OFF only after verifying decisions match paper. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |
@@ -556,6 +560,10 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `/auth/status/all` | Combined broker auth status |
 | `/sync/info` | Size preview of `~/trading-data/` (used by Sync to Local button) |
 | `/sync/download-all` | Streams `~/trading-data/` as a `tar.gz` (server → client) |
+| `/backup/status` | Today's snapshot state `{enabled, date, exists, downloaded}` — drives the download-nag banner |
+| `/backup/data` | List of on-server snapshots + schedule/retention (Settings card) |
+| `/backup/download?date=YYYY-MM-DD` | Streams `backup-<date>.tar.gz` and marks it downloaded |
+| `POST /backup/create` | Cut a snapshot for today now |
 | `POST /{swing|scalp|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
 
 ## Project Structure

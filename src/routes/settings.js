@@ -330,6 +330,16 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "COMMON — Backup & Restore",
+    icon: "📦",
+    fields: [
+      { key: "BACKUP_ENABLED", label: "Daily Data Backup", type: "toggle", effect: EFFECT.INSTANT, desc: "Cut a daily downloadable .tar.gz snapshot of ~/trading-data + recorded ticks (caches & tokens excluded). Download it from the Backup & Restore card above so an EC2 loss never loses data.", default: "true" },
+      { key: "BACKUP_HOUR_IST", label: "Snapshot Hour (IST)", type: "number", min: 0, max: 23, step: 1, effect: EFFECT.SERVER, desc: "Hour of day (IST) the daily snapshot is cut — after market close. Timer is armed at boot; restart to re-arm a changed hour.", default: "16" },
+      { key: "BACKUP_RETAIN_DAYS", label: "Keep Snapshots (days)", type: "number", min: 1, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "Older snapshot files on the server are pruned beyond this many days.", default: "14" },
+      { key: "BACKUP_TG_ENABLED", label: "Telegram Backup Heartbeat", type: "toggle", effect: EFFECT.INSTANT, desc: "Send a Telegram message when each day's snapshot is ready (or if it fails).", default: "false" },
+    ],
+  },
+  {
     section: "COMMON — Telegram",
     icon: "📱",
     fields: [
@@ -1623,6 +1633,45 @@ router.get("/", (req, res) => {
         <span class="ssb-count" id="settingsSearchCount"></span>
         <button type="button" class="ssb-clear" id="settingsSearchClear" onclick="document.getElementById('settingsSearchInput').value='';filterSettings('');" title="Clear (Esc)">✕</button>
       </div>
+
+      <!-- Backup & Restore -->
+      <div class="settings-section" id="backup-card">
+        <div class="section-title">📦 Backup &amp; Restore</div>
+        <div style="background:rgba(30,58,95,0.18);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:16px 18px;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;">
+            <div style="flex:1;min-width:240px;">
+              <div style="font-size:0.82rem;font-weight:700;color:#cfe0f8;">Daily data snapshot</div>
+              <div style="font-size:0.7rem;color:#7e93b5;margin-top:3px;line-height:1.5;">
+                Self-contained <code style="color:#9dc1f0;">.tar.gz</code> of <code style="color:#9dc1f0;">~/trading-data</code> + recorded ticks
+                (caches &amp; OAuth tokens excluded). Download today's copy locally so an EC2 loss never loses data.
+                A banner nags on every page until you've downloaded the day's file.
+              </div>
+              <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;margin-top:8px;">Loading…</div>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button onclick="backupCreateNow()" id="backupCreateBtn" style="padding:8px 16px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">↻ Snapshot now</button>
+              <a id="backupDownloadLatest" href="#" onclick="return backupDownloadLatest();" style="padding:8px 16px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;text-decoration:none;">⬇ Download latest</a>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+              <thead><tr style="text-align:left;color:#5a80a8;">
+                <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Size</th>
+                <th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;text-align:right;">Download</th>
+              </tr></thead>
+              <tbody id="backupListBody"><tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Loading…</td></tr></tbody>
+            </table>
+          </div>
+          <details style="margin-top:12px;">
+            <summary style="cursor:pointer;font-size:0.72rem;color:#7e93b5;font-weight:700;">How to restore on a fresh EC2 box</summary>
+            <pre style="margin-top:8px;background:#0a1426;border:1px solid #14233c;border-radius:8px;padding:12px;font-size:0.68rem;color:#aac4ea;overflow-x:auto;white-space:pre-wrap;"># copy the downloaded archive to the new instance, then extract each part to its home:
+tar xzf backup-YYYY-MM-DD.tar.gz -C ~        trading-data   # → ~/trading-data
+tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;repo&gt;/data/ticks
+# restart the app:
+pm2 startOrRestart ecosystem.config.js --update-env</pre>
+          </details>
+        </div>
+      </div>
       ${sectionsHtml}
 
       <!-- Restart Server -->
@@ -2036,6 +2085,71 @@ async function restartServer() {
   if (!ok) return;
   triggerServerRestart(btn);
 }
+
+// ── Backup & Restore card ────────────────────────────────────────────────────
+function backupFmtBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1048576).toFixed(2) + ' MB';
+}
+var _backupLatestDate = null;
+async function loadBackups() {
+  var statusLine = document.getElementById('backup-status-line');
+  var body = document.getElementById('backupListBody');
+  if (!body) return;
+  try {
+    var r = await fetch('/backup/data', { cache: 'no-store' });
+    var d = await r.json();
+    if (!d.enabled) {
+      statusLine.innerHTML = '⚠️ Backup is disabled — enable <b>Daily Data Backup</b> below.';
+      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Disabled.</td></tr>';
+      return;
+    }
+    statusLine.textContent = 'Daily at ' + String(d.hour).padStart(2, '0') + ':00 IST · keeps ' + d.retainDays + ' days · ' + d.backups.length + ' snapshot(s) on server';
+    if (!d.backups.length) {
+      _backupLatestDate = null;
+      body.innerHTML = '<tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">No snapshots yet — click "Snapshot now".</td></tr>';
+      return;
+    }
+    _backupLatestDate = d.backups[0].date;
+    body.innerHTML = d.backups.map(function(b) {
+      var status = b.downloaded
+        ? '<span style="color:#10b981;">✓ downloaded</span>'
+        : '<span style="color:#fbbf24;">⏳ not downloaded</span>';
+      return '<tr style="border-top:1px solid rgba(59,130,246,0.12);">' +
+        '<td style="padding:6px 8px;color:#cfe0f8;font-weight:600;">' + b.date + '</td>' +
+        '<td style="padding:6px 8px;color:#9db4d6;">' + backupFmtBytes(b.sizeBytes) + '</td>' +
+        '<td style="padding:6px 8px;">' + status + '</td>' +
+        '<td style="padding:6px 8px;text-align:right;"><a href="/backup/download?date=' + encodeURIComponent(b.date) + '" style="color:#60a5fa;text-decoration:none;font-weight:700;">⬇</a></td>' +
+        '</tr>';
+    }).join('');
+  } catch (e) {
+    statusLine.textContent = 'Failed to load backups: ' + e.message;
+  }
+}
+function backupDownloadLatest() {
+  if (!_backupLatestDate) { showToast('No snapshot yet — click "Snapshot now" first.', 'info'); return false; }
+  window.location = '/backup/download?date=' + encodeURIComponent(_backupLatestDate);
+  setTimeout(loadBackups, 2000);
+  return false;
+}
+async function backupCreateNow() {
+  var btn = document.getElementById('backupCreateBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Creating…'; }
+  try {
+    var r = await fetch('/backup/create', { method: 'POST' });
+    var d = await r.json();
+    if (d.ok) showToast('Snapshot created (' + backupFmtBytes(d.sizeBytes) + ')', 'success');
+    else showToast('Snapshot failed: ' + (d.error || 'unknown'), 'error');
+  } catch (e) {
+    showToast('Snapshot failed: ' + e.message, 'error');
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; }
+  loadBackups();
+}
+loadBackups();
+setInterval(loadBackups, 60000);
 
 // Kicks the server restart endpoint and polls /settings/data until it's back,
 // then reloads the page. Shared by the explicit Restart button and the

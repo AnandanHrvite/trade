@@ -301,6 +301,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   <a href="/auth/login" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">Re-login →</a>
   <button onclick="document.getElementById('socket-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
 </div>
+<div id="backup-nag-banner" role="status" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="backup-nag-msg">📦 Today's data backup is ready</span>
+  <a id="backup-nag-link" href="/backup/download" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">⬇ Download now</a>
+  <span style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
+</div>
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
 (function(){
@@ -488,6 +493,32 @@ function toggleNavGroup(gid){
   }
   poll();
   setInterval(poll, 5000);
+})();
+
+/* ── Backup download-nag banner (stays until today's snapshot is downloaded) ─ */
+(function(){
+  var banner = document.getElementById('backup-nag-banner');
+  var msgEl  = document.getElementById('backup-nag-msg');
+  var linkEl = document.getElementById('backup-nag-link');
+  if(!banner || !msgEl || !linkEl) return;
+
+  function render(d){
+    if(!d || !d.enabled || !d.exists || d.downloaded){ banner.style.display = 'none'; return; }
+    msgEl.textContent = '📦 Data backup for ' + d.date + ' is ready';
+    linkEl.href = '/backup/download?date=' + encodeURIComponent(d.date);
+    banner.style.display = 'block';
+  }
+  // After clicking download, optimistically hide; the next poll confirms via state.
+  linkEl.addEventListener('click', function(){ setTimeout(function(){ banner.style.display='none'; }, 1500); });
+
+  function poll(){
+    fetch('/backup/status', { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(render)
+      .catch(function(){ /* network blip — leave banner state as-is */ });
+  }
+  poll();
+  setInterval(poll, 30000);
 })();
 </script>`;
 }

@@ -350,6 +350,7 @@ app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
+app.use("/backup",      require("./routes/backup"));     // ← daily downloadable data snapshots (Settings card + nag banner)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
@@ -2434,6 +2435,10 @@ server.listen(PORT, HOST, () => {
 
   // ── Schedule consolidated end-of-day report at 15:30 IST daily ─────────────
   consolidatedEodReporter.start();
+
+  // ── Daily downloadable data backup snapshot ────────────────────────────────
+  try { require("./utils/backupManager").start(); }
+  catch (err) { console.warn(`[backup] scheduler start failed: ${err.message}`); }
 });
 
 // ── Position Reconciliation — detect orphaned positions after crash ──────────

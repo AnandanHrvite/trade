@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Backup & Restore — daily downloadable data snapshots
+
+- **New self-contained daily backup so an EC2 loss never loses data.** [src/utils/backupManager.js](src/utils/backupManager.js) cuts a `.tar.gz` of `~/trading-data` **and** the recorded `data/ticks` feed into `~/trading-data/_backups/backup-YYYY-MM-DD.tar.gz`, **excluding** disposable items (`backtest_cache/`, `candle_cache/`, the daily-regenerated `.fyers_token`/`.zerodha_token`, and the `_backups/` store itself). Each archive is a full snapshot — one download fully restores. Written to `.tmp` then renamed so a download never reads a half-written file.
+- **Download it from Settings → Backup & Restore.** A new card lists every on-server snapshot (date, size, downloaded ✓/⏳), with **Download latest**, **Snapshot now**, and copy-paste restore instructions. New routes ([src/routes/backup.js](src/routes/backup.js)): `GET /backup/status`, `GET /backup/data`, `GET /backup/download?date=…` (marks downloaded), `POST /backup/create`.
+- **Nag banner until the day's copy is downloaded.** [src/utils/sharedNav.js](src/utils/sharedNav.js) shows a fixed top banner on every page — "📦 Data backup for &lt;date&gt; is ready — ⬇ Download now" — that polls `/backup/status` and stays until the day's snapshot has actually been downloaded (mirrors the existing broker-socket banner pattern).
+- **Scheduler** mirrors `consolidatedEodReporter` (setTimeout → reschedule): cuts a snapshot daily at `BACKUP_HOUR_IST` (default 16:00 IST, after close), creates one on boot if today's is missing, and prunes files older than `BACKUP_RETAIN_DAYS` (default 14). New env: `BACKUP_ENABLED` (default true), `BACKUP_HOUR_IST`, `BACKUP_RETAIN_DAYS`, `BACKUP_TG_ENABLED` (Telegram heartbeat, default off) — all exposed in Settings under "COMMON — Backup & Restore".
+- Additive observer only — reads data files and shells out to `tar`; no strategy decision/fill/exit logic touched.
+
 ### Replay — candlestick chart + clean trade table + collapsible sessions
 
 - **Replay result now draws the same candlestick chart the paper screen does.** Both the single-session per-row result and the date-range comparison ([src/routes/replay.js](src/routes/replay.js)) render a Lightweight-Charts price chart with entry/exit markers and the per-mode overlays (BB bands, SAR, EMA9, ORH/ORL lines). In the date-range view each session gets its own chart + trade table; a single-session range expands and draws immediately, multi-session ranges draw each chart lazily on first expand. The replay engine ([src/services/tickReplay.js](src/services/tickReplay.js)) harvests the route's in-memory `/status/chart-data` after `/stop` and returns it as `chartData` — the replay's own bars, no disk/broker re-fetch.
