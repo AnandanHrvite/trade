@@ -2082,7 +2082,10 @@ async function loadBackups() {
         '<td style="padding:6px 8px;color:#cfe0f8;font-weight:600;">' + b.date + '</td>' +
         '<td style="padding:6px 8px;color:#9db4d6;">' + backupFmtBytes(b.sizeBytes) + '</td>' +
         '<td style="padding:6px 8px;">' + status + '</td>' +
-        '<td style="padding:6px 8px;text-align:right;"><a href="/backup/download?date=' + encodeURIComponent(b.date) + '" style="color:#60a5fa;text-decoration:none;font-weight:700;">⬇</a></td>' +
+        '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">' +
+          '<a href="/backup/download?date=' + encodeURIComponent(b.date) + '" title="Download" style="color:#60a5fa;text-decoration:none;font-weight:700;margin-right:14px;">⬇</a>' +
+          '<a href="#" onclick="return backupDelete(\'' + b.date + '\')" title="Delete this snapshot" style="color:#f87171;text-decoration:none;font-weight:700;">🗑</a>' +
+        '</td>' +
         '</tr>';
     }).join('');
   } catch (e) {
@@ -2108,6 +2111,24 @@ async function backupCreateNow() {
   }
   if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; }
   loadBackups();
+}
+async function backupDelete(date) {
+  var ok = await showDoubleConfirm({
+    icon: '🗑', title: 'Delete backup',
+    message: 'Delete the snapshot for ' + date + '?\\n\\nThis cannot be undone — make sure you have it downloaded if you still need it.',
+    confirmText: 'Delete', confirmClass: 'modal-btn-danger',
+    subject: 'Delete backup ' + date, secondConfirmText: 'Yes, delete'
+  });
+  if (!ok) return false;
+  try {
+    var r = await fetch('/backup/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: date }) });
+    var d = await r.json();
+    if (d.ok) { showToast('Deleted backup ' + date, 'success'); loadBackups(); }
+    else showToast('Delete failed: ' + (d.error || 'unknown'), 'error');
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+  return false;
 }
 async function backupRestore() {
   var input = document.getElementById('backupRestoreFile');

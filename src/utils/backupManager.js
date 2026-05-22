@@ -253,6 +253,17 @@ function listBackups() {
   }).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
+/** Delete a single dated snapshot + its state entry. */
+function deleteBackup(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return { ok: false, error: "invalid date" };
+  const f = fileFor(dateStr);
+  if (!fs.existsSync(f)) return { ok: false, error: "snapshot not found" };
+  try { fs.unlinkSync(f); } catch (e) { return { ok: false, error: e.message }; }
+  const state = readState();
+  if (state[dateStr]) { delete state[dateStr]; writeState(state); }
+  return { ok: true };
+}
+
 function getBackupFile(dateStr) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateStr))) return null;
   const f = fileFor(dateStr);
@@ -369,6 +380,7 @@ module.exports = {
   start,
   createSnapshot,
   restoreFromFile,
+  deleteBackup,
   listBackups,
   getBackupFile,
   markDownloaded,

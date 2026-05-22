@@ -51,6 +51,18 @@ router.post("/create", async (req, res) => {
   }
 });
 
+// ── POST /backup/delete — remove one dated snapshot ───────────────────────────
+router.post("/delete", (req, res) => {
+  const date = String((req.body && req.body.date) || req.query.date || "");
+  const r = backup.deleteBackup(date);
+  if (r.ok) {
+    console.log(`[backup] deleted snapshot backup-${date}.tar.gz`);
+    res.json({ ok: true, date });
+  } else {
+    res.status(400).json({ ok: false, error: r.error });
+  }
+});
+
 // ── GET /backup/download?date=YYYY-MM-DD — stream + mark downloaded ────────────
 router.get("/download", (req, res) => {
   const date = String(req.query.date || backup.istDateStr());
