@@ -767,9 +767,19 @@ router.post("/save", (req, res) => {
     }
   }
 
+  const result = persistChanges(cleaned, deleteKeys, note, req);
+  res.json({ ...result, envPath: ENV_PATH });
+});
+
+// Apply a validated set of updates/deletes: mutate process.env + .env, write the
+// settings-audit log, and append per-mode daily settings snapshots. Shared by
+// POST /save and POST /audit-restore so both write identical audit trails.
+// Returns the updateEnvFile result (incl. needsRestart).
+function persistChanges(cleaned, deleteKeys, note, req) {
   // Snapshot prior values for audit BEFORE updateEnvFile mutates process.env.
   // Prefer .env on disk; fall back to process.env (covers schema defaults
   // not yet persisted to .env).
+  const envOnDisk = parseEnvFile();
   const auditPrevEnv = {};
   const auditKeys = new Set([...Object.keys(cleaned), ...deleteKeys]);
   for (const k of auditKeys) {
@@ -820,7 +830,66 @@ router.post("/save", (req, res) => {
       console.warn("[settings] daily snapshot append failed:", err.message);
     }
   }
-  res.json({ ...result, envPath: ENV_PATH });
+  return result;
+}
+
+// ── POST /settings/audit-restore — revert key(s) to a prior audited value ────
+// Body: { ts, key, note, allSameNote }
+//   • single key      → revert that key to the matched audit entry's `from`
+//   • allSameNote=true → revert EVERY key ever changed under the same note to
+//                        its earliest `from` (the value before that note's
+//                        first change). Used by the Trade Logs "Restore" button.
+// Reverting a key whose audit action was "add" deletes the key (its prior
+// value was null). API_SECRET-protected (not in app.js open whitelist).
+router.post("/audit-restore", (req, res) => {
+  const { ts, key, note, allSameNote } = req.body || {};
+
+  let all;
+  try { all = settingsAudit.readAuditLog({ limit: 100000 }); } // newest-first
+  catch (err) { return res.status(500).json({ success: false, error: err.message }); }
+  // Walk oldest-first so the FIRST `from` seen per key is the earliest one.
+  const chrono = all.slice().reverse();
+
+  // Build the {key → restore-to value} target map.
+  const targets = new Map();
+  if (allSameNote && typeof note === "string" && note.trim()) {
+    const want = note.trim();
+    for (const e of chrono) {
+      if (typeof e.note === "string" && e.note.trim() === want && !targets.has(e.key)) {
+        targets.set(e.key, e.from);
+      }
+    }
+  } else {
+    const e = chrono.find(x => x.ts === ts && x.key === key);
+    if (!e) return res.status(404).json({ success: false, error: "audit entry not found" });
+    targets.set(e.key, e.from);
+  }
+
+  // Translate targets into updates/deletes, skipping sensitive keys.
+  const hiddenSet = new Set(HIDDEN_KEYS);
+  const cleaned = {};
+  const deleteKeys = [];
+  for (const [k, from] of targets) {
+    if (hiddenSet.has(k)) continue;
+    if (from === null || from === undefined) deleteKeys.push(k); // was an "add" → remove
+    else cleaned[k] = String(from);
+  }
+
+  if (Object.keys(cleaned).length === 0 && deleteKeys.length === 0) {
+    return res.status(400).json({ success: false, error: "nothing to restore" });
+  }
+
+  const restoreNote = (allSameNote && typeof note === "string" && note.trim())
+    ? `↩ restore (same note): ${note.trim()}`.slice(0, 500)
+    : `↩ restore ${[...targets.keys()].join(", ")}`.slice(0, 500);
+
+  const result = persistChanges(cleaned, deleteKeys, restoreNote, req);
+  res.json({
+    ...result,
+    restoredCount: Object.keys(cleaned).length + deleteKeys.length,
+    restoredKeys: [...Object.keys(cleaned), ...deleteKeys],
+    envPath: ENV_PATH,
+  });
 });
 
 // ── POST /settings/restart — Restart the server process ─────────────────────

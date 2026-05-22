@@ -533,7 +533,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `/compare/trading` | Paper vs Backtest comparison (swing) |
 | `/compare/scalping` | Paper vs Backtest comparison (scalping) |
 | `/settings` | All config settings UI + Bulk Edit modal (paste/delete keys) + **checkpoint note prompt on every save** + server restart. Saved notes are appended to that day's trade JSONL alongside a settings snapshot, so the daily log carries the exact config that produced its trades. |
-| `/trade-logs` | **Renamed from JSONL viewer in v4.5.0.** Per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode **Download All** + **Delete All** buttons. JSONL is the canonical export format (CSV/PDF dropped — they were drifting on edge cases). Light-theme aware. |
+| `/trade-logs` | **Renamed from JSONL viewer in v4.5.0.** Per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode **Download All** + **Delete All** buttons. JSONL is the canonical export format (CSV/PDF dropped — they were drifting on edge cases). The **Checkpoints & Settings Changes** tab now has a per-row **↩ Restore** button that reverts a key to its prior value (with a "restore all keys with the same note" checkbox when the entry has a note, and a one-click restart prompt when needed). Light-theme aware. |
 | `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) + maintenance actions |
 | `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / swingLive / swingPaper. |
 | `/docs` | README, CHANGELOG, documents viewer |

@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Trade Logs — one-click Restore for settings changes
+
+- **Every row in the Checkpoints & Settings Changes tab now has a `↩ Restore` button** ([src/routes/tradeLogs.js](src/routes/tradeLogs.js)) that reverts that key to its prior (`From`) value with a single confirm. If the change was an "add", restoring deletes the key again. After restore, keys that are cached at startup trigger a one-click "Restart now" prompt (polls `/settings/data` and reloads when the server returns).
+- **"Restore all keys with the same note" checkbox** appears in the confirm dialog *only* when the audit entry carries a note. When checked, every key ever changed under that exact note is reverted to its **earliest** `From` (the value before that note's first change) — so a whole noted checkpoint can be rolled back at once.
+- New route `POST /settings/audit-restore` ([src/routes/settings.js](src/routes/settings.js)), API_SECRET-protected. It reuses the same apply path as `/settings/save` (extracted into a shared `persistChanges()` helper), so a restore writes an identical settings-audit entry + per-mode daily snapshot and is itself reversible. Restore audit entries are tagged `↩ restore …` notes.
+
 ### Backup & Restore — daily downloadable data snapshots
 
 - **New self-contained daily backup so an EC2 loss never loses data.** [src/utils/backupManager.js](src/utils/backupManager.js) cuts a `.tar.gz` of `~/trading-data` **and** the recorded `data/ticks` feed into `~/trading-data/_backups/backup-YYYY-MM-DD.tar.gz`, **excluding** disposable items (`backtest_cache/`, `candle_cache/`, the daily-regenerated `.fyers_token`/`.zerodha_token`, and the `_backups/` store itself). Each archive is a full snapshot — one download fully restores. Written to `.tmp` then renamed so a download never reads a half-written file.

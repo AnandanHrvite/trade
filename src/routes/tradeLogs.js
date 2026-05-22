@@ -464,6 +464,7 @@ router.get("/", (req, res) => {
     .btn-view     { background:#071428; border-color:#0e2850; color:#60a5fa; }
     .btn-download { background:#060a14; border-color:#0e1a28; color:#818cf8; }
     .btn-delete   { background:#180508; border-color:#401018; color:#f87171; }
+    .btn-restore  { background:#07140a; border-color:#14401f; color:#34d399; }
     .btn:hover { filter:brightness(1.2); }
     .actions { display:flex; gap:5px; }
     .num { font-family:'IBM Plex Mono',monospace; }
@@ -533,6 +534,7 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .btn-view     { background:#eff6ff; border-color:#bfdbfe; color:#1e40af; }
     :root[data-theme="light"] .btn-download { background:#eef2ff; border-color:#c7d2fe; color:#4338ca; }
     :root[data-theme="light"] .btn-delete   { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+    :root[data-theme="light"] .btn-restore  { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
     :root[data-theme="light"] .tv-overlay { background:rgba(15,23,42,0.55); }
     :root[data-theme="light"] .tv-box { background:#fff; border-color:#e0e4ea; }
     :root[data-theme="light"] .tv-head { border-bottom-color:#e0e4ea; }
@@ -1098,10 +1100,17 @@ ${buildSidebar('tradeLogs', liveActive)}
           return escHtml(s);
         };
         var html = '<table><thead><tr>' +
-          '<th>When (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th>' +
+          '<th>When (IST)</th><th>Action</th><th>Key</th><th>From</th><th>To</th><th>Source</th><th>Note</th><th></th>' +
           '</tr></thead><tbody>' +
           entries.map(function(e){
             var hasNote = e.note && String(e.note).trim();
+            // base64-encode the entry (notes may contain quotes) for the onclick payload.
+            var entB64 = btoa(unescape(encodeURIComponent(JSON.stringify({
+              ts: e.ts, key: e.key,
+              from: (e.from === undefined ? null : e.from),
+              to:   (e.to   === undefined ? null : e.to),
+              note: e.note || '', action: e.action || ''
+            }))));
             return '<tr class="audit-row' + (hasNote ? ' has-note' : '') + '">' +
               '<td class="num" style="white-space:nowrap;">' + escHtml(fmtTs(e.ts)) + '</td>' +
               '<td><span class="act-' + (e.action || '') + '" style="font-weight:700;text-transform:uppercase;font-size:0.62rem;">' + escHtml(e.action || '') + '</span></td>' +
@@ -1110,6 +1119,7 @@ ${buildSidebar('tradeLogs', liveActive)}
               '<td class="to-val">'   + fmtVal(e.to)   + '</td>' +
               '<td style="color:#64748b;font-size:0.66rem;">' + escHtml(e.source || '') + '</td>' +
               '<td>' + (hasNote ? '<span class="audit-note">📝 ' + escHtml(e.note) + '</span>' : '<span style="color:#2a3a5a;">—</span>') + '</td>' +
+              '<td><button class="btn btn-restore" title="Revert this key to its previous value" onclick="restoreAudit(\\'' + entB64 + '\\')">↩ Restore</button></td>' +
             '</tr>';
           }).join('') +
           '</tbody></table>' +
@@ -1117,6 +1127,69 @@ ${buildSidebar('tradeLogs', liveActive)}
         document.getElementById('auditArea').innerHTML = html;
       })
       .catch(function(){ document.getElementById('auditArea').innerHTML = '<div class="empty">Cannot reach server.</div>'; });
+  }
+
+  // ── Restore (revert a settings change to its prior value) ─────────────
+  function decodeEntry(b64) {
+    try { return JSON.parse(decodeURIComponent(escape(atob(b64)))); }
+    catch (_) { return null; }
+  }
+
+  async function restoreAudit(b64) {
+    var e = decodeEntry(b64);
+    if (!e) { showToast('Bad audit entry', '#f87171'); return; }
+    var hasNote = e.note && String(e.note).trim();
+    var toTxt   = (e.to === null || e.to === undefined || e.to === '') ? '∅' : String(e.to);
+    var fromTxt = (e.from === null || e.from === undefined) ? '∅ (delete key — it was added)' : String(e.from);
+    var msg = 'Revert <b>' + escHtml(e.key) + '</b> to its previous value?' +
+      '<div style="margin-top:8px;font-family:monospace;font-size:0.7rem;">' +
+      '<span style="color:#fca5a5;">' + escHtml(toTxt) + '</span> → <span style="color:#86efac;">' + escHtml(fromTxt) + '</span></div>';
+    if (hasNote) {
+      msg += '<div style="margin-top:12px;padding:10px;border:1px solid #1e3a5a;border-radius:6px;text-align:left;">' +
+        '<label style="display:flex;gap:8px;align-items:flex-start;font-size:0.72rem;cursor:pointer;">' +
+        '<input type="checkbox" id="restoreSameNote" style="margin-top:2px;flex:none;">' +
+        '<span>Restore <b>all keys</b> with the same note<br><i style="color:#94a3b8;">"' + escHtml(String(e.note).trim()) + '"</i></span>' +
+        '</label></div>';
+    }
+    var ok = await showConfirm({ icon:'↩', title:'Restore setting', message: msg, confirmText:'Restore', confirmClass:'modal-btn-primary', cancelText:'Cancel' });
+    if (!ok) return;
+    // Read the checkbox while the (now-hidden) modal DOM is still intact.
+    var allSameNote = false;
+    if (hasNote) { var cb = document.getElementById('restoreSameNote'); allSameNote = !!(cb && cb.checked); }
+    var res = await secretFetch('/settings/audit-restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts: e.ts, key: e.key, note: hasNote ? String(e.note).trim() : null, allSameNote: allSameNote }),
+    });
+    if (!res) return;
+    var data = await res.json().catch(function(){ return null; });
+    if (!data || !data.success) { showToast('Restore failed: ' + ((data && data.error) || res.status), '#f87171'); return; }
+    showToast('Restored ' + data.restoredCount + ' key' + (data.restoredCount === 1 ? '' : 's'), '#10b981');
+    loadAudit();
+    if (data.needsRestart && data.needsRestart.length) restoreRestartPrompt(data.needsRestart);
+  }
+
+  // Some restored keys are cached at startup — offer a one-click server restart.
+  async function restoreRestartPrompt(keys) {
+    var preview = keys.slice(0, 8).join(', ') + (keys.length > 8 ? ', +' + (keys.length - 8) + ' more' : '');
+    var ok = await showConfirm({
+      icon: '🔄', title: 'Restart required',
+      message: 'Restored key' + (keys.length > 1 ? 's are' : ' is') + ' cached at startup — restart to apply:' +
+        '<div style="margin-top:6px;font-family:monospace;font-size:0.7rem;">' + escHtml(preview) + '</div>' +
+        '<div style="margin-top:10px;">Restart the server now? Active trading sessions will stop and the page will reload.</div>',
+      cancelText: 'Later', confirmText: 'Restart now', confirmClass: 'modal-btn-danger',
+    });
+    if (!ok) { showToast('Restart later to apply: ' + keys.join(', '), '#f59e0b'); return; }
+    showToast('Restarting server — page reloads when it returns…', '#f59e0b');
+    secretFetch('/settings/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' } }).catch(function(){});
+    var attempts = 0;
+    var poller = setInterval(function(){
+      attempts++;
+      if (attempts > 30) { clearInterval(poller); showToast('Server did not come back — check manually', '#f87171'); return; }
+      fetch('/settings/data', { cache: 'no-store' })
+        .then(function(r){ if (r.ok) { clearInterval(poller); showToast('Server restarted!', '#10b981'); setTimeout(function(){ window.location.reload(); }, 600); } })
+        .catch(function(){});
+    }, 1000);
   }
 
   initPageSizeSelector();
