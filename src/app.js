@@ -499,6 +499,31 @@ app.get("/", (req, res) => {
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
+  // ── Cumulative P&L placement ─────────────────────────────────────────────
+  // The strategy grid is 3 columns (Swing is always shown). When the enabled
+  // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
+  // tucks into that gap beside the last card; otherwise it falls back to a
+  // full-width band below the grid (the default for any other card count).
+  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (straddleModeOn ? 1 : 0);
+  const cumInlineInGrid = (dashCardCount % 3) === 1;
+  const cumCardInner = `
+    <div class="dash-chart-hdr">
+      <div class="dash-chart-title">
+        <span class="dash-chart-dot" id="dashCumDot" style="background:#3b82f6;"></span>
+        <span>Cumulative P&amp;L</span>
+      </div>
+      <div class="mm-toggle dc-toggle">
+        <button type="button" class="mm-tog-btn dc-tog-btn active" data-src="paper">Paper</button>
+        <button type="button" class="mm-tog-btn dc-tog-btn" data-src="live">Live</button>
+      </div>
+      <div class="dash-chart-stats" id="dash-cum-stats">—</div>
+      <a href="/consolidation" id="dashCumLink" class="dash-chart-link">View →</a>
+    </div>
+    <div class="dash-chart-wrap"><canvas id="dashCumChart"></canvas></div>
+    <div id="dashCumEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>`;
+  const cumCardInline = `<div class="dash-chart-card dash-cum-inline" id="dashCumCard">${cumCardInner}</div>`;
+  const cumCardBelow  = `<div class="dash-chart-card" id="dashCumCard" style="margin-top:4px;">${cumCardInner}</div>`;
+
   // ── Token expiry warning ─────────────────────────────────────────────────
   const nowIST     = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const istHour    = nowIST.getHours();
@@ -938,6 +963,9 @@ app.get("/", (req, res) => {
     .dash-chart-link { font-size:0.66rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 9px; border-radius:5px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; margin-left:auto; }
     .dash-chart-link:hover { filter:brightness(1.25); }
     .dash-chart-wrap { position:relative; height:clamp(140px, 26vh, 360px); }
+    /* Cumulative card tucked into the strategy grid: span the 2-col gap, match card chart height */
+    .dash-cum-inline { grid-column:span 2; }
+    .dash-cum-inline .dash-chart-wrap { height:130px; }
     .dash-chart-empty { text-align:center; padding:46px 20px 14px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .dash-chart-card { background:#ffffff; border-color:#e0e4ea; }
@@ -1142,25 +1170,11 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-empty" id="mm-empty-STRADDLE" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
+    ${cumInlineInGrid ? cumCardInline : ''}
   </div>
 
-  <!-- ⑤ CUMULATIVE P&L CHART (Paper/Live toggle, all-time) -->
-  <div class="dash-chart-card" id="dashCumCard" style="margin-top:4px;">
-    <div class="dash-chart-hdr">
-      <div class="dash-chart-title">
-        <span class="dash-chart-dot" id="dashCumDot" style="background:#3b82f6;"></span>
-        <span>Cumulative P&amp;L</span>
-      </div>
-      <div class="mm-toggle dc-toggle">
-        <button type="button" class="mm-tog-btn dc-tog-btn active" data-src="paper">Paper</button>
-        <button type="button" class="mm-tog-btn dc-tog-btn" data-src="live">Live</button>
-      </div>
-      <div class="dash-chart-stats" id="dash-cum-stats">—</div>
-      <a href="/consolidation" id="dashCumLink" class="dash-chart-link">View →</a>
-    </div>
-    <div class="dash-chart-wrap"><canvas id="dashCumChart"></canvas></div>
-    <div id="dashCumEmpty" class="dash-chart-empty" style="display:none;">No paper trades yet</div>
-  </div>
+  <!-- ⑤ CUMULATIVE P&L CHART (Paper/Live toggle, all-time) — full-width fallback when it can't tuck into the grid -->
+  ${cumInlineInGrid ? '' : cumCardBelow}
 
   ${analyticsPanelOn ? `
   <!-- ⑥ Dashboard analytics panel — market-hour aware -->
