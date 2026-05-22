@@ -937,7 +937,7 @@ app.get("/", (req, res) => {
     .dash-chart-stats .pnl-flat { color:#4a6080; font-weight:700; }
     .dash-chart-link { font-size:0.66rem; color:#60a5fa; text-decoration:none; font-weight:600; padding:3px 9px; border-radius:5px; border:1px solid #1a3a6a; background:#080e1a; transition:filter 0.15s; margin-left:auto; }
     .dash-chart-link:hover { filter:brightness(1.25); }
-    .dash-chart-wrap { position:relative; height:160px; }
+    .dash-chart-wrap { position:relative; height:clamp(140px, 26vh, 360px); }
     .dash-chart-empty { text-align:center; padding:46px 20px 14px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .dash-chart-card { background:#ffffff; border-color:#e0e4ea; }
