@@ -921,6 +921,20 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
         .map(r => ({ t: r.t, ms: r.t - eMs, l: r.l }));
     }
 
+    // 8b. Harvest the route's chart-data (candles + entry/exit markers +
+    //     per-mode overlays) so the Replay UI can draw the same candlestick
+    //     chart the paper screen does. The route's in-memory state (candles,
+    //     sessionTrades, position) survives /stop, so this is the replay's
+    //     own bars — no disk/broker re-fetch. Each paper mode exposes the
+    //     same /status/chart-data contract: { candles, markers, ...overlays }.
+    let chartData = null;
+    try {
+      const chartResp = await _invokeRoute(routeMod, "GET", "/status/chart-data");
+      if (chartResp && chartResp.status < 400 && chartResp.body && Array.isArray(chartResp.body.candles)) {
+        chartData = chartResp.body;
+      }
+    } catch (_) { /* chart is best-effort; never fail a replay over it */ }
+
     const canonical = _lookupCanonicalSession(mode, data.sessionStart.t);
     return {
       ok: true,
@@ -931,6 +945,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       tradeCount,
       sessionTrades,
       sessionPnl,
+      chartData,  // { candles, markers, ...mode overlays } or null if unavailable
       canonical,  // { pnl, tradeCount, matchedAt, matchSkewMs } or null if no match
     };
   } catch (err) {

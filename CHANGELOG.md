@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay — candlestick chart + clean trade table + collapsible sessions
+
+- **Replay result now draws the same candlestick chart the paper screen does.** The single-session replay result ([src/routes/replay.js](src/routes/replay.js)) renders a Lightweight-Charts price chart with entry/exit markers and the per-mode overlays (BB bands, SAR, EMA9, ORH/ORL lines). The replay engine ([src/services/tickReplay.js](src/services/tickReplay.js)) harvests the route's in-memory `/status/chart-data` after `/stop` and returns it as `chartData` — the replay's own bars, no disk/broker re-fetch.
+- **Entry/exit reasons shown in a clean table.** Replay trades render in a proper table (side, entry/exit time, prices, P&L, entry reason, exit reason) instead of a raw-JSON dump. The raw JSON stays available in a collapsed `<details>` for debugging.
+- **Recorded sessions card is collapsible.** Click the "Recorded sessions" header to collapse/expand the filters + table + pager.
+- **0-result replay no longer counted as an improvement.** When a replay produces ₹0 (0 trades / no setup / data hole), the comparison previously credited it as beating a live loss (e.g. live −₹732 → delta +₹732, "improved"). A 0 replay is no result, not a deliberate win — the per-session and aggregate delta now treat it as a neutral 0. Applied to both single-session and date-range views.
+- Additive UI + best-effort chart harvest only — no strategy decision/fill/exit logic touched.
+
 ### Swing Live — DRY-RUN harness gate
 
 - **Swing Live now honours `LIVE_HARNESS_DRY_RUN`.** Previously Swing Live ([src/routes/swingLive.js](src/routes/swingLive.js)) called Zerodha directly the moment `SWING_LIVE_ENABLED=true` — it had no dry-run safety net, unlike the Fyers strategies (PA/ORB/Straddle). All four real-order paths — market entry/exit (`placeMarketOrder`), hard SL-M placement (`placeHardSL`), trail modify (`updateHardSL`), and SL cancel (`cancelHardSL`) — are now gated: when `LIVE_HARNESS_DRY_RUN=true` (default) each logs the broker call it *would* make and returns a simulated success against a `DRYRUN-*` virtual order ID, placing no real order. The engine's position / hard-SL / trail / P&L bookkeeping runs end-to-end against virtual fills so decisions can be validated before flipping to real money. Fill-verification polling (`verifyOrderFill`) is skipped in dry-run (no real order to poll).

@@ -314,7 +314,31 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .row-btn { background:#f8fafc !important; color:#334155 !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .row-btn:hover:not(:disabled) { background:#e2e8f0 !important; color:#0f172a !important; }
 :root[data-theme="light"] .row-btn.danger:hover:not(:disabled) { background:#dc2626 !important; color:#fff !important; border-color:#b91c1c !important; }
+/* Collapsible section header (Recorded sessions) */
+.collapse-toggle { cursor:pointer; user-select:none; display:inline-flex; align-items:center; gap:6px; }
+.collapse-toggle .chev { display:inline-block; transition:transform 0.15s ease; font-size:0.7rem; color:#94a3b8; }
+#sessions-card.collapsed .chev { transform:rotate(-90deg); }
+#sessions-card.collapsed .sess-toolbar,
+#sessions-card.collapsed #sessions-meta,
+#sessions-card.collapsed #sessions-table,
+#sessions-card.collapsed #sessions-pager { display:none; }
+/* Replay-result candlestick chart + clean trades table */
+.replay-chart { width:100%; height:360px; margin-top:14px; border:1px solid #1e293b; border-radius:8px; background:#0a0f1c; }
+.trades-table { width:100%; border-collapse:collapse; font-size:0.78rem; margin-top:12px; }
+.trades-table th, .trades-table td { padding:6px 9px; text-align:left; border-bottom:1px solid #1e293b; white-space:nowrap; }
+.trades-table th { color:#94a3b8; font-weight:600; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.04em; }
+.trades-table td.num { text-align:right; font-variant-numeric:tabular-nums; }
+.trades-table td.reason { white-space:normal; color:#cbd5e1; font-size:0.74rem; max-width:280px; }
+.trades-table .pnl-pos { color:#10b981; font-weight:600; }
+.trades-table .pnl-neg { color:#ef4444; font-weight:600; }
+.trades-table .side-ce { color:#34d399; font-weight:600; }
+.trades-table .side-pe { color:#f472b6; font-weight:600; }
+:root[data-theme="light"] .replay-chart { background:#f8fafc !important; border-color:#e2e8f0 !important; }
+:root[data-theme="light"] .trades-table th { color:#64748b !important; }
+:root[data-theme="light"] .trades-table th, :root[data-theme="light"] .trades-table td { border-bottom-color:#e2e8f0 !important; }
+:root[data-theme="light"] .trades-table td.reason { color:#475569 !important; }
 </style>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 ${buildSidebar('replay', false)}
@@ -363,7 +387,7 @@ ${buildSidebar('replay', false)}
 
   <div class="card" id="sessions-card">
     <div class="sess-header">
-      <strong>Recorded sessions</strong>
+      <strong class="collapse-toggle" onclick="toggleSessionsCollapse()" title="Collapse / expand"><span class="chev">▼</span> Recorded sessions</strong>
       <div class="sess-toolbar">
         <select id="sess-filter-mode" class="sess-input" title="Filter by strategy">
           <option value="">All strategies</option>
@@ -414,6 +438,105 @@ function modeTag(mode) {
   if (mode.startsWith('orb'))      return 'orb';
   if (mode.startsWith('straddle')) return 'straddle';
   return 'pa';
+}
+
+// Collapse / expand the Recorded sessions card body (toolbar + table + pager).
+function toggleSessionsCollapse() {
+  const card = document.getElementById('sessions-card');
+  if (card) card.classList.toggle('collapsed');
+}
+
+// Draw the replay's candlestick chart + entry/exit markers into the given el,
+// using the
+// same chart-data contract the paper screen consumes (candles, markers, and
+// per-mode line overlays). Best-effort: silently no-ops if the library or data
+// is missing so a chart hiccup never blanks the result card.
+function drawReplayChart(el, cd) {
+  if (!el) return;
+  if (!window.LightweightCharts || !cd || !Array.isArray(cd.candles) || !cd.candles.length) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
+  el.innerHTML = '';
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const chart = LightweightCharts.createChart(el, {
+    width: el.clientWidth, height: 360,
+    layout: { background: { color: 'transparent' }, textColor: isLight ? '#475569' : '#94a3b8' },
+    grid: { vertLines: { color: isLight ? '#e2e8f0' : '#1e293b' }, horzLines: { color: isLight ? '#e2e8f0' : '#1e293b' } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#334155' },
+    rightPriceScale: { borderColor: '#334155' },
+    crosshair: { mode: 0 },
+  });
+  const cs = chart.addCandlestickSeries({
+    upColor: '#10b981', downColor: '#ef4444', borderVisible: false,
+    wickUpColor: '#10b981', wickDownColor: '#ef4444',
+  });
+  cs.setData(cd.candles);
+  // Line overlays differ by mode; draw whichever the payload carries.
+  const overlays = [
+    ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
+    ['sar', '#f472b6'], ['ema9', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
+  ];
+  for (const [key, color] of overlays) {
+    const arr = cd[key];
+    if (Array.isArray(arr) && arr.length) {
+      const ls = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      ls.setData(arr);
+    }
+  }
+  // Markers must be sorted ascending by time or the library throws.
+  if (Array.isArray(cd.markers) && cd.markers.length) {
+    cs.setMarkers(cd.markers.slice().sort((a, b) => a.time - b.time));
+  }
+  chart.timeScale().fitContent();
+  try {
+    const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
+    ro.observe(el);
+  } catch (_) {}
+}
+
+// Read a trade field across the per-mode naming variants (entry/exit reasons,
+// spot prices, side) so one table renders cleanly for every strategy.
+function _tradeField(t, keys) {
+  for (const k of keys) { if (t[k] != null && t[k] !== '') return t[k]; }
+  return null;
+}
+
+// Clean trades table (replaces the raw-JSON dump) — surfaces entry/exit reason
+// per trade alongside side, prices, and P&L.
+function renderTradesTable(trades) {
+  if (!trades || !trades.length) return '<div class="muted" style="margin-top:10px;">No trades.</div>';
+  let h = '<table class="trades-table"><thead><tr>' +
+    '<th>#</th><th>Side</th><th>Entry</th><th class="num">Entry px</th>' +
+    '<th>Exit</th><th class="num">Exit px</th><th class="num">P&L</th>' +
+    '<th>Entry reason</th><th>Exit reason</th></tr></thead><tbody>';
+  trades.forEach((t, i) => {
+    const side    = _tradeField(t, ['side', 'optionType']) || '–';
+    const sideCls = /ce/i.test(side) ? 'side-ce' : (/pe/i.test(side) ? 'side-pe' : '');
+    const entry   = _tradeField(t, ['entry']) || '–';
+    const exit    = _tradeField(t, ['exit']) || '–';
+    const ePx     = _tradeField(t, ['eSpot', 'spotAtEntry', 'entryPrice', 'entrySpot']);
+    const xPx     = _tradeField(t, ['xSpot', 'spotAtExit', 'exitPrice', 'exitSpot']);
+    const pnl     = (typeof t.pnl === 'number') ? t.pnl : (typeof t.pairPnl === 'number' ? t.pairPnl : null);
+    const eR      = _tradeField(t, ['entryReason']) || '–';
+    const xR      = _tradeField(t, ['reason', 'exitReason']) || '–';
+    const pnlCls  = pnl == null ? '' : (pnl >= 0 ? 'pnl-pos' : 'pnl-neg');
+    const pnlTxt  = pnl == null ? '–' : (pnl >= 0 ? '+' : '−') + '₹' + Math.abs(pnl).toFixed(2);
+    h += '<tr>' +
+      '<td class="num">' + (i + 1) + '</td>' +
+      '<td class="' + sideCls + '">' + _escapeHtml(String(side)) + '</td>' +
+      '<td>' + _escapeHtml(String(entry)) + '</td>' +
+      '<td class="num">' + (ePx != null ? Number(ePx).toFixed(2) : '–') + '</td>' +
+      '<td>' + _escapeHtml(String(exit)) + '</td>' +
+      '<td class="num">' + (xPx != null ? Number(xPx).toFixed(2) : '–') + '</td>' +
+      '<td class="num ' + pnlCls + '">' + pnlTxt + '</td>' +
+      '<td class="reason">' + _escapeHtml(String(eR)) + '</td>' +
+      '<td class="reason">' + _escapeHtml(String(xR)) + '</td>' +
+      '</tr>';
+  });
+  h += '</tbody></table>';
+  return h;
 }
 
 async function refreshPreflight() {
@@ -871,13 +994,32 @@ function renderComparison(content, baseline, sim, header) {
   html += '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
   if (verdict) html += '<div class="muted" style="margin-top:10px;">' + verdict + '</div>';
 
-  if (baseline.ok && baseline.sessionTrades && baseline.sessionTrades.length) {
-    html += '<details style="margin-top:12px;"><summary class="muted">Baseline trade details (' + baseline.sessionTrades.length + ')</summary><pre>' + JSON.stringify(baseline.sessionTrades, null, 2) + '</pre></details>';
+  // Candlestick chart of the replay run (price + entry/exit markers), drawn
+  // after innerHTML is set since the library needs a live DOM node.
+  const hasChart = sim.ok && sim.chartData && Array.isArray(sim.chartData.candles) && sim.chartData.candles.length;
+  if (hasChart) {
+    html += '<div class="replay-chart" id="replay-result-chart"></div>';
   }
+
+  // Clean trades table (entry/exit reason per trade) replaces the raw JSON.
   if (sim.ok && sim.sessionTrades && sim.sessionTrades.length) {
-    html += '<details style="margin-top:6px;"><summary class="muted">Your-settings trade details (' + sim.sessionTrades.length + ')</summary><pre>' + JSON.stringify(sim.sessionTrades, null, 2) + '</pre></details>';
+    html += '<div class="muted" style="margin-top:14px;">Replay trades (' + sim.sessionTrades.length + ')</div>';
+    html += renderTradesTable(sim.sessionTrades);
+  }
+
+  // Raw JSON kept available but collapsed, for debugging the wire shape.
+  if (sim.ok && sim.sessionTrades && sim.sessionTrades.length) {
+    html += '<details style="margin-top:8px;"><summary class="muted">Raw trade JSON (' + sim.sessionTrades.length + ')</summary><pre>' + JSON.stringify(sim.sessionTrades, null, 2) + '</pre></details>';
+  }
+  if (baseline.ok && baseline.sessionTrades && baseline.sessionTrades.length) {
+    html += '<details style="margin-top:6px;"><summary class="muted">Baseline trade details (' + baseline.sessionTrades.length + ')</summary><pre>' + JSON.stringify(baseline.sessionTrades, null, 2) + '</pre></details>';
   }
   content.innerHTML = html;
+
+  if (hasChart) {
+    // Defer to next frame so the container has its measured width.
+    requestAnimationFrame(() => drawReplayChart(document.getElementById('replay-result-chart'), sim.chartData));
+  }
 }
 
 function _modeLabel(mode) {
