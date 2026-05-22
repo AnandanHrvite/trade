@@ -638,6 +638,21 @@ function clearEODBackupTimer() {
 let _orderInFlight    = false; // prevent duplicate ENTRY orders on rapid ticks
 let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ticks in-flight)
 
+// ── DRY-RUN harness ───────────────────────────────────────────────────────
+// When LIVE_HARNESS_DRY_RUN=true (default), Swing Live logs the Zerodha call it
+// WOULD make and returns a simulated success, placing NO real order. This gives
+// Swing the same dry-run safety net the Fyers strategies (PA/ORB/Straddle) have:
+// the engine's position / hard-SL / trail bookkeeping runs end-to-end against
+// virtual order IDs so decisions can be validated before flipping to real money.
+// Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper.
+function isDryRun() {
+  return (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "false";
+}
+let _dryRunSeq = 0;
+function _simOrder(prefix) {
+  return { success: true, orderId: `DRYRUN-${prefix}-${Date.now()}-${++_dryRunSeq}`, dryRun: true };
+}
+
 async function placeMarketOrder(fyersSymbol, side, qty) {
   if (_orderInFlight) {
     log(`⚠️  Order already in flight — skipping duplicate ${side === 1 ? "BUY" : "SELL"} ${fyersSymbol}`);
@@ -647,14 +662,20 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
   const sideLabel = side === 1 ? "BUY" : "SELL";
   log(`📤 [LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Zerodha...`);
   try {
-    const result = await zerodha.placeMarketOrder(
-      fyersSymbol, side, qty, `${ACTIVE}_LIVE`.substring(0, 20),
-      { isFutures: instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" }
-    );
-    if (result.success) {
+    let result;
+    if (isDryRun()) {
+      result = _simOrder("ENTRY");
+      log(`🧪 [DRY-RUN] No real order placed (LIVE_HARNESS_DRY_RUN=true) — would ${sideLabel} ${qty} × ${fyersSymbol} via Zerodha | virtual OrderID: ${result.orderId}`);
+    } else {
+      result = await zerodha.placeMarketOrder(
+        fyersSymbol, side, qty, `${ACTIVE}_LIVE`.substring(0, 20),
+        { isFutures: instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" }
+      );
+    }
+    if (result.success && !result.dryRun) {
       log(`✅ [LIVE] Zerodha order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
       verifyOrderFill(result.orderId, `${sideLabel} ${qty} × ${fyersSymbol}`);
-    } else {
+    } else if (!result.success) {
       log(`❌ [LIVE] Zerodha order FAILED — ${sideLabel} ${qty} × ${fyersSymbol} | ${JSON.stringify(result.raw)}`);
     }
     return result;
@@ -674,6 +695,7 @@ async function placeMarketOrder(fyersSymbol, side, qty) {
  */
 function verifyOrderFill(orderId, label) {
   if (!orderId) return;
+  if (isDryRun()) return; // no real order to verify in dry-run
   setTimeout(async () => {
     try {
       const orders = await zerodha.getOrders();
@@ -746,10 +768,16 @@ async function placeHardSL() {
   const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const result = await zerodha.placeSLMOrder(pos.symbol, slSide, qty, triggerPrice, { isFutures: isFut });
+      let result;
+      if (isDryRun()) {
+        result = _simOrder("SLM");
+        log(`🧪 [DRY-RUN] No real order placed — would place Hard SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice} | virtual OrderID: ${result.orderId}`);
+      } else {
+        result = await zerodha.placeSLMOrder(pos.symbol, slSide, qty, triggerPrice, { isFutures: isFut });
+      }
       if (result.success) {
         _hardSLOrderId = result.orderId;
-        log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
+        if (!result.dryRun) log(`✅ [HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
         return;
       } else {
         log(`⚠️ [HARD SL] SL-M placement failed (attempt ${attempt}/${MAX_RETRIES}): ${JSON.stringify(result.raw)}`);
@@ -778,10 +806,16 @@ async function updateHardSL(newSpotSL) {
   const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
 
   try {
-    const result = await zerodha.modifySLMOrder(_hardSLOrderId, newTrigger);
-    if (result.success) {
-      log(`🔄 [HARD SL] Modified trigger → ₹${newTrigger} (spotSL=₹${newSpotSL})`);
+    let result;
+    if (isDryRun()) {
+      log(`🧪 [DRY-RUN] No real modify — would move Hard SL trigger → ₹${newTrigger} (spotSL=₹${newSpotSL}, order ${_hardSLOrderId})`);
+      result = { success: true, dryRun: true };
     } else {
+      result = await zerodha.modifySLMOrder(_hardSLOrderId, newTrigger);
+    }
+    if (result.success && !result.dryRun) {
+      log(`🔄 [HARD SL] Modified trigger → ₹${newTrigger} (spotSL=₹${newSpotSL})`);
+    } else if (!result.success) {
       log(`⚠️ [HARD SL] Modify failed: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
@@ -797,10 +831,16 @@ async function cancelHardSL() {
   const orderId = _hardSLOrderId;
   _hardSLOrderId = null;
   try {
-    const result = await zerodha.cancelOrder(orderId);
-    if (result.success) {
-      log(`🗑️ [HARD SL] Cancelled SL-M order ${orderId}`);
+    let result;
+    if (isDryRun()) {
+      log(`🧪 [DRY-RUN] No real cancel — would cancel Hard SL-M order ${orderId}`);
+      result = { success: true, dryRun: true };
     } else {
+      result = await zerodha.cancelOrder(orderId);
+    }
+    if (result.success && !result.dryRun) {
+      log(`🗑️ [HARD SL] Cancelled SL-M order ${orderId}`);
+    } else if (!result.success) {
       log(`⚠️ [HARD SL] Cancel failed for ${orderId}: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
@@ -1987,6 +2027,7 @@ router.get("/start", async (req, res) => {
   }
 
   log(`🟢 [LIVE] Live trading started`);
+  log(`   Order mode : ${isDryRun() ? "🧪 DRY-RUN — broker calls logged only, NO real orders (LIVE_HARNESS_DRY_RUN=true)" : "🔴 LIVE — real Zerodha orders WILL be placed"}`);
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
   log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Lot Qty    : ${getLotQty()}`);
@@ -2444,6 +2485,7 @@ router.get("/status/data", (req, res) => {
       losses:            tradeState._losses || 0,
       fyersOk,
       zerodhaOk,
+      dryRun:            isDryRun(),
       // Position block
       position: pos ? {
         side:              pos.side,
@@ -2790,6 +2832,10 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
     <span class="broker-badge ${fyersOk ? 'ok' : 'err'}">${fyersOk ? '● Fyers · Data' : '✕ Fyers · Data'}</span>
     <span class="broker-badge ${zerodhaOk ? 'ok' : 'err'}">${zerodhaOk ? '● Zerodha · Orders' : '✕ Zerodha · Orders'}</span>
   </div>
+  ${isDryRun()
+    ? `<div style="background:#78350f;border:1px solid #92400e;border-radius:9px;padding:10px 16px;margin-bottom:16px;font-size:0.78rem;color:#fef3c7;">🧪 <strong>DRY-RUN mode</strong> — Zerodha calls are logged but <strong>no real orders</strong> are placed. Verify decisions match paper, then set <code>LIVE_HARNESS_DRY_RUN=false</code> in Settings to enable real orders.</div>`
+    : `<div style="background:#7f1d1d;border:1px solid #991b1b;border-radius:9px;padding:10px 16px;margin-bottom:16px;font-size:0.78rem;color:#fee2e2;">🔴 <strong>LIVE mode</strong> — real Zerodha orders WILL be placed. Set <code>LIVE_HARNESS_DRY_RUN=true</code> in Settings to return to dry-run.</div>`
+  }
   <div class="page">
     <div class="page-header">
       <div class="page-status-row">

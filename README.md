@@ -227,7 +227,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `TRADE_RESOLUTION` | `5` | Candle size in minutes (changed from `15` in v4.5.0). Set to `15` to restore prior 15-min behavior — strategy code branches on `TRADE_RES === 5` vs `>= 15`. |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
 | `MAX_DAILY_TRADES` | `6` | Daily entry cap — anti-overtrade on chop days |
-| `SWING_LIVE_ENABLED` | `false` | Must be `true` for Zerodha orders |
+| `SWING_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), Swing Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `EMA30_FILTER` | `true` | Medium-term trend gate |
 | `SWING_STRONG_ONLY` | `false` | Block MARGINAL signals on the candle-close entry path (intra-candle was already STRONG-only). Logged to skipLogger as `gate: "strong_only"`. |
@@ -405,7 +405,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 |-----|---------|-------|
 | `TICK_RECORDER_ENABLED` | `true` | Record spot/option/VIX ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` during every paper/live session. Required for Replay. Pure observer — zero impact on trading. |
 | `TICK_RECORDER_RETAIN_DAYS` | `30` | Auto-delete tick recordings older than this many days (~10 MB/day across streams) |
-| `LIVE_HARNESS_DRY_RUN` | `true` | When ON, Live (Harness) routes log the broker call that *would* have been made but place no real order. Switch OFF only after verifying decisions match paper. |
+| `LIVE_HARNESS_DRY_RUN` | `true` | When ON, all live order paths (PA/ORB/Straddle harness routes **and Swing Live**) log the broker call that *would* have been made but place no real order. Switch OFF only after verifying decisions match paper. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |
 
@@ -478,7 +478,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `/swing-paper/status` | Paper trade live view + NIFTY chart |
 | `/swing-paper/history` | Past paper sessions (per-session delete + view modal) |
 | `/swing-paper/simulate` | Market scenario simulator |
-| `/swing-live/status` | Live trade status + NIFTY chart |
+| `/swing-live/status` | Live trade status + NIFTY chart (Zerodha; gated by `SWING_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
 | `/tracker/status` | Manual trade tracker |
 
 ### Scalp

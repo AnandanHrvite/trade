@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Swing Live — DRY-RUN harness gate
+
+- **Swing Live now honours `LIVE_HARNESS_DRY_RUN`.** Previously Swing Live ([src/routes/swingLive.js](src/routes/swingLive.js)) called Zerodha directly the moment `SWING_LIVE_ENABLED=true` — it had no dry-run safety net, unlike the Fyers strategies (PA/ORB/Straddle). All four real-order paths — market entry/exit (`placeMarketOrder`), hard SL-M placement (`placeHardSL`), trail modify (`updateHardSL`), and SL cancel (`cancelHardSL`) — are now gated: when `LIVE_HARNESS_DRY_RUN=true` (default) each logs the broker call it *would* make and returns a simulated success against a `DRYRUN-*` virtual order ID, placing no real order. The engine's position / hard-SL / trail / P&L bookkeeping runs end-to-end against virtual fills so decisions can be validated before flipping to real money. Fill-verification polling (`verifyOrderFill`) is skipped in dry-run (no real order to poll).
+- **Visibility:** the `/swing-live/status` page shows a server-rendered DRY-RUN (amber) / LIVE (red) banner under the broker badges, the start-up log prints the active order mode, and `/swing-live/status/data` exposes a `dryRun` flag. No new env key or Settings toggle — reuses the existing `LIVE_HARNESS_DRY_RUN` switch already in Settings.
+- Additive gating + logging only — no strategy decision/fill/exit logic touched; Swing Paper untouched.
+
 ### Telegram — ORB + Straddle alert toggles + consolidated report coverage
 
 - **Per-strategy toggles for ORB and Straddle.** `modeGroup()` in [src/utils/notify.js](src/utils/notify.js) previously had no ORB/Straddle branch, so their `ORB-*` / `STRADDLE-*` mode strings fell through to the `SWING` default — meaning ORB/Straddle entry/exit/started/day-report alerts were silently controlled by the `TG_SWING_*` toggles and couldn't be muted independently. Added `ORB` and `STRADDLE` groups (prefix-matched so the live `(DRY-RUN)` suffix still resolves) plus matching `modeLabel()` cases for clean message headers. New Settings toggles: `TG_{ORB,STRADDLE}_{STARTED,ENTRY,EXIT,DAYREPORT}` (all default `true`, preserving prior always-on behaviour). No `_SIGNALS` toggle — neither strategy emits candle-close signal alerts.
