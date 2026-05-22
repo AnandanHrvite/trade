@@ -17,6 +17,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _paMode = null;
   let _orbMode = null;
   let _straddleMode = null;
+  let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
     _scalpMode = sss.getScalpMode();
@@ -24,7 +25,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _paMode = sss.getPAMode();
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
     _straddleMode = sss.getStraddleMode ? sss.getStraddleMode() : null;
+    _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
+
+  // During market hours, hide Replay while any paper/live trade is running.
+  // Replay is for post-session analysis; keep the menu clean while a session is live.
+  // IST = UTC+5:30 (+19800s); market window 09:15–15:20 = minutes [555, 920).
+  const _istMin = ((Math.floor(Date.now() / 1000) + 19800) / 60 | 0) % 1440;
+  const _hideReplayLive = (_istMin >= 555 && _istMin < 920) && _anyTradeActive;
 
   const {
     showStopBtn  = false,
@@ -53,7 +61,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // ── Top-level menu-visibility toggles ──
   const showDashboard   = (process.env.UI_SHOW_DASHBOARD     || 'false').toLowerCase() === 'true';
   const showAllBacktest = (process.env.UI_SHOW_ALL_BACKTEST  || 'true').toLowerCase()  === 'true';
-  const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true';
+  const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true' && !_hideReplayLive;
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
 
