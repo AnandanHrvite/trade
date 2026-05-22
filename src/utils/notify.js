@@ -55,6 +55,35 @@ function modeGroup(mode) {
   return "SWING";
 }
 
+/**
+ * Straddle persists one record per leg (CE/PE) that share a `pairId` and a
+ * combined `pairPnl`. Collapse legs to pairs so trade counts and win/loss
+ * tallies reflect pair outcomes, not individual legs (a winning pair otherwise
+ * shows as 1 win + 1 loss). Mirrors the pairing the Straddle history page does;
+ * legs without a pairId are ignored, same as the page.
+ */
+function straddlePairStats(trades) {
+  const seen = new Set();
+  let count = 0, wins = 0, losses = 0, pnl = 0;
+  for (const t of (Array.isArray(trades) ? trades : [])) {
+    if (!t || !t.pairId || seen.has(t.pairId)) continue;
+    seen.add(t.pairId);
+    const p = Number(t.pairPnl) || 0;
+    count++;
+    pnl += p;
+    if (p > 0) wins++;
+    else if (p < 0) losses++;
+  }
+  return { count, wins, losses, pnl };
+}
+
+/** Is a strategy group enabled? Gated by {GROUP}_MODE_ENABLED (default on).
+ *  When a strategy is disabled in Settings, none of its alerts should fire and
+ *  it should not appear in the consolidated report. */
+function isModeEnabled(group) {
+  return !isOff(process.env[`${group}_MODE_ENABLED`]);
+}
+
 /** Central gate — checks master + specific toggle key. Returns true if allowed. */
 function canSend(toggleKey) {
   if (!isConfigured())    return false;
@@ -235,8 +264,9 @@ function nowISTString() {
  * Gated by TG_{group}_STARTED. Caller pre-composes `text`.
  */
 function notifyStarted({ mode, text }) {
-  const key = `TG_${modeGroup(mode)}_STARTED`;
-  if (!canSend(key)) return;
+  const group = modeGroup(mode);
+  if (!isModeEnabled(group)) return;
+  if (!canSend(`TG_${group}_STARTED`)) return;
   sendTelegram(text);
 }
 
@@ -245,8 +275,9 @@ function notifyStarted({ mode, text }) {
  *               optionEntryLtp, stopLoss, qty, reason })
  */
 function notifyEntry(p) {
-  const key = `TG_${modeGroup(p.mode)}_ENTRY`;
-  if (!canSend(key)) return;
+  const group = modeGroup(p.mode);
+  if (!isModeEnabled(group)) return;
+  if (!canSend(`TG_${group}_ENTRY`)) return;
 
   const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
   const strikeStr = p.strike ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
@@ -276,8 +307,9 @@ function notifyEntry(p) {
  *              pnl, sessionPnl, exitReason, entryTime, exitTime, qty })
  */
 function notifyExit(p) {
-  const key = `TG_${modeGroup(p.mode)}_EXIT`;
-  if (!canSend(key)) return;
+  const group = modeGroup(p.mode);
+  if (!isModeEnabled(group)) return;
+  if (!canSend(`TG_${group}_EXIT`)) return;
 
   const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
   const pnlLine   = `PnL (net)      : ${inr(p.pnl)}  ${pnlArrow(p.pnl)}`;
@@ -311,8 +343,9 @@ function notifyExit(p) {
  * Sent on candle close when flat — explains why a trade was or wasn't taken.
  */
 function notifySignal({ mode, signal, reason, strength, spot, time }) {
-  const key = `TG_${modeGroup(mode)}_SIGNALS`;
-  if (!canSend(key)) return;
+  const group = modeGroup(mode);
+  if (!isModeEnabled(group)) return;
+  if (!canSend(`TG_${group}_SIGNALS`)) return;
 
   const lines = [
     `${modeLabel(mode)} — SIGNAL`,
@@ -332,19 +365,26 @@ function notifySignal({ mode, signal, reason, strength, spot, time }) {
  * Fires per-mode when that mode's session stops. Gated by TG_{group}_DAYREPORT.
  */
 function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessionEnd }) {
-  const key = `TG_${modeGroup(mode)}_DAYREPORT`;
-  if (!canSend(key)) return;
+  const group = modeGroup(mode);
+  if (!isModeEnabled(group)) return;
+  if (!canSend(`TG_${group}_DAYREPORT`)) return;
 
-  const trades = Array.isArray(sessionTrades) ? sessionTrades : [];
-  let wins = 0, losses = 0, grossPnl = 0;
-  for (const t of trades) {
-    const pnl = Number(t.pnl) || 0;
-    grossPnl += pnl;
-    if (pnl > 0) wins++;
-    else if (pnl < 0) losses++;
+  const list = Array.isArray(sessionTrades) ? sessionTrades : [];
+  let count, wins = 0, losses = 0, grossPnl = 0;
+  if (group === "STRADDLE") {
+    // Straddle records are per-leg; collapse to pairs so counts/win-rate are correct.
+    ({ count, wins, losses, pnl: grossPnl } = straddlePairStats(list));
+  } else {
+    count = list.length;
+    for (const t of list) {
+      const pnl = Number(t.pnl) || 0;
+      grossPnl += pnl;
+      if (pnl > 0) wins++;
+      else if (pnl < 0) losses++;
+    }
   }
   const totalPnl = (sessionPnl != null) ? Number(sessionPnl) : grossPnl;
-  const winRate = trades.length ? ((wins / trades.length) * 100).toFixed(1) + "%" : "—";
+  const winRate = count ? ((wins / count) * 100).toFixed(1) + "%" : "—";
 
   const { date, time } = nowISTString();
   const lines = [
@@ -354,7 +394,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
     `🕐 Ended ${time} IST`,
     sessionStart ? `Started  : ${new Date(sessionStart).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST` : null,
     ``,
-    `Trades   : ${trades.length}`,
+    `Trades   : ${count}`,
     `Wins     : ${wins}`,
     `Losses   : ${losses}`,
     `Win rate : ${winRate}`,
@@ -373,7 +413,8 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return;
 
-  const groups = ["SWING", "SCALP", "PA", "ORB", "STRADDLE"];
+  // Only include strategies that are currently enabled in Settings.
+  const groups = ["SWING", "SCALP", "PA", "ORB", "STRADDLE"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
@@ -419,6 +460,8 @@ module.exports = {
   sendIfMaster,
   canSend,
   modeGroup,
+  isModeEnabled,
+  straddlePairStats,
   notifyStarted,
   notifyEntry,
   notifyExit,

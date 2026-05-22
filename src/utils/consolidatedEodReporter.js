@@ -13,7 +13,7 @@
 const fs   = require("fs");
 const path = require("path");
 const os   = require("os");
-const { notifyConsolidatedDayReport } = require("./notify");
+const { notifyConsolidatedDayReport, straddlePairStats } = require("./notify");
 
 const DATA_DIR = path.join(os.homedir(), "trading-data");
 
@@ -65,12 +65,22 @@ function collectTodayStats(istDate) {
     for (const session of data.sessions) {
       if (toISTDate(session.date) !== istDate) continue;
       const trades = Array.isArray(session.trades) ? session.trades : [];
-      for (const t of trades) {
-        const pnl = Number(t.pnl) || 0;
-        byMode[src.group].trades++;
-        byMode[src.group].pnl += pnl;
-        if (pnl > 0) byMode[src.group].wins++;
-        else if (pnl < 0) byMode[src.group].losses++;
+      const bucket = byMode[src.group];
+      if (src.group === "STRADDLE") {
+        // Straddle records are per-leg; collapse to pairs for correct counts.
+        const s = straddlePairStats(trades);
+        bucket.trades += s.count;
+        bucket.wins   += s.wins;
+        bucket.losses += s.losses;
+        bucket.pnl    += s.pnl;
+      } else {
+        for (const t of trades) {
+          const pnl = Number(t.pnl) || 0;
+          bucket.trades++;
+          bucket.pnl += pnl;
+          if (pnl > 0) bucket.wins++;
+          else if (pnl < 0) bucket.losses++;
+        }
       }
     }
   }

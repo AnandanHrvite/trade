@@ -454,6 +454,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `TG_{SWING,SCALP,PA,ORB,STRADDLE}_DAYREPORT` | `true` | Per-mode day-report on session stop |
 | `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all five modes |
 
+> All alerts and the consolidated report also respect the strategy master toggles (`{SWING,SCALP,PA,ORB,STRADDLE}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
+
 ### Charges (April 2026 rates)
 | Key | Default | Notes |
 |-----|---------|-------|
