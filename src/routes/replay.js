@@ -333,6 +333,9 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 .trades-table .pnl-neg { color:#ef4444; font-weight:600; }
 .trades-table .side-ce { color:#34d399; font-weight:600; }
 .trades-table .side-pe { color:#f472b6; font-weight:600; }
+.sess-chart { margin-top:10px; border:1px solid #1e293b; border-radius:8px; padding:10px 12px; background:#0f172a; }
+.sess-chart > summary { cursor:pointer; font-size:0.8rem; }
+:root[data-theme="light"] .sess-chart { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .replay-chart { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .trades-table th { color:#64748b !important; }
 :root[data-theme="light"] .trades-table th, :root[data-theme="light"] .trades-table td { border-bottom-color:#e2e8f0 !important; }
@@ -385,7 +388,7 @@ ${buildSidebar('replay', false)}
     <div id="range-result" style="margin-top:12px;"></div>
   </div>
 
-  <div class="card" id="sessions-card">
+  <div class="card collapsed" id="sessions-card">
     <div class="sess-header">
       <strong class="collapse-toggle" onclick="toggleSessionsCollapse()" title="Collapse / expand"><span class="chev">▼</span> Recorded sessions</strong>
       <div class="sess-toolbar">
@@ -494,6 +497,18 @@ function drawReplayChart(el, cd) {
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
   } catch (_) {}
+}
+
+// Date-range path: per-session charts draw lazily when their <details> opens
+// (a chart in a collapsed details has 0 width and renders blank). chartData is
+// stashed by container id so the ontoggle handler can fetch it on first expand.
+let _rangeChartData = {};
+function lazyDrawSessionChart(detailsEl, cid) {
+  if (!detailsEl || !detailsEl.open) return;
+  const el = document.getElementById(cid);
+  if (!el || el.dataset.drawn === '1') return;
+  el.dataset.drawn = '1';
+  requestAnimationFrame(() => drawReplayChart(el, _rangeChartData[cid]));
 }
 
 // Read a trade field across the per-mode naming variants (entry/exit reasons,
@@ -1457,7 +1472,44 @@ function renderRangeResult(rows, context) {
   '</tr>';
   html += '</tbody></table>';
 
+  // Per-session candlestick chart + clean trade table (same as the per-row
+  // single-session result). Single ok session → expanded + drawn immediately;
+  // multiple → collapsed, each chart drawn lazily on first expand.
+  _rangeChartData = {};
+  const okRows = rows.filter(r => r.sim && r.sim.ok);
+  const drawNow = [];
+  let chartsHtml = '';
+  rows.forEach((r, idx) => {
+    if (!r.sim || !r.sim.ok) return;
+    const cid = 'rng-chart-' + idx;
+    const cd = r.sim.chartData;
+    const hasChart = cd && Array.isArray(cd.candles) && cd.candles.length;
+    const trades = r.sim.sessionTrades || [];
+    if (hasChart) _rangeChartData[cid] = cd;
+    const open = okRows.length === 1;
+    const inner =
+      (hasChart ? '<div class="replay-chart" id="' + cid + '"></div>'
+                : '<div class="muted" style="margin-top:10px;">No chart data for this session.</div>') +
+      (trades.length ? '<div class="muted" style="margin-top:10px;">Replay trades (' + trades.length + ')</div>' + renderTradesTable(trades)
+                     : '<div class="muted" style="margin-top:10px;">No trades.</div>');
+    chartsHtml +=
+      '<details class="sess-chart"' + (open ? ' open' : '') + ' ontoggle="lazyDrawSessionChart(this,\\'' + cid + '\\')">' +
+        '<summary class="muted">' + r.session.date + ' · ' + r.session.mode + ' — chart + trades</summary>' +
+        inner +
+      '</details>';
+    if (open && hasChart) drawNow.push(cid);
+  });
+  if (chartsHtml) {
+    html += '<div style="margin-top:16px;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.04em;color:#94a3b8;">Per-session charts</div>' + chartsHtml;
+  }
+
   el.innerHTML = html;
+
+  // Draw the auto-opened single-session chart now that the DOM exists.
+  for (const cid of drawNow) {
+    const cel = document.getElementById(cid);
+    if (cel) { cel.dataset.drawn = '1'; requestAnimationFrame(() => drawReplayChart(cel, _rangeChartData[cid])); }
+  }
 }
 
 async function runRange(btn) {
