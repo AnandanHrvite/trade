@@ -750,6 +750,17 @@ function deltaArrow(d) {
   return d > 0 ? '▲' : '▼';
 }
 
+// Comparison delta (replay − live), with one guard: a replay P&L of exactly 0
+// almost always means the session produced NO replay result (0 trades / no
+// setup fired / data hole), not that the settings deliberately avoided a live
+// loss. Crediting that as an improvement (e.g. live −₹732 → delta +₹732) is
+// misleading, so when replay P&L is 0 we treat the delta as neutral (0) rather
+// than the inverse of the live result.
+function cmpDelta(bPnl, sPnl) {
+  if (Math.abs(sPnl || 0) < 0.005) return 0;
+  return (sPnl || 0) - (bPnl || 0);
+}
+
 async function callReplayApi(date, mode, sessionId, useCurrentSettings) {
   const r = await fetch('/replay/run', {
     method: 'POST',
@@ -806,7 +817,7 @@ function renderComparison(content, baseline, sim, header) {
   const sPnl = sim.ok      ? (sim.sessionPnl      || 0) : 0;
   const bTrd = baseline.ok ? (baseline.tradeCount || 0) : 0;
   const sTrd = sim.ok      ? (sim.tradeCount      || 0) : 0;
-  const dPnl = sPnl - bPnl;
+  const dPnl = cmpDelta(bPnl, sPnl);
   const dTrd = sTrd - bTrd;
 
   const colSnapshot =
@@ -1208,7 +1219,7 @@ function renderRangeResult(rows, context) {
     return;
   }
 
-  let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0, okCount = 0, simBetter = 0, simWorse = 0;
+  let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0, okCount = 0, simBetter = 0, simWorse = 0, totDPnl = 0;
   for (const r of rows) {
     if (!r.baseline || !r.baseline.ok || !r.sim || !r.sim.ok) continue;
     okCount++;
@@ -1216,11 +1227,15 @@ function renderRangeResult(rows, context) {
     totSPnl += (r.sim.sessionPnl      || 0);
     totBTrd += (r.baseline.tradeCount || 0);
     totSTrd += (r.sim.tradeCount      || 0);
-    const d = (r.sim.sessionPnl || 0) - (r.baseline.sessionPnl || 0);
+    const d = cmpDelta(r.baseline.sessionPnl, r.sim.sessionPnl);
+    totDPnl += d;
     if (d >  0.005) simBetter++;
     else if (d < -0.005) simWorse++;
   }
-  const dPnl = totSPnl - totBPnl;
+  // Aggregate delta is the sum of per-session deltas (so 0-result replays
+  // contribute 0), NOT totSPnl − totBPnl which would re-introduce the
+  // avoided-loss credit cmpDelta() suppresses.
+  const dPnl = totDPnl;
   const dTrd = totSTrd - totBTrd;
 
   const colSnapshot =
@@ -1274,7 +1289,7 @@ function renderRangeResult(rows, context) {
     const sPnl = sOk ? (r.sim.sessionPnl      || 0) : null;
     const bTrd = bOk ? (r.baseline.tradeCount || 0) : null;
     const sTrd = sOk ? (r.sim.tradeCount      || 0) : null;
-    const dP = (bOk && sOk) ? (sPnl - bPnl) : null;
+    const dP = (bOk && sOk) ? cmpDelta(bPnl, sPnl) : null;
     const dT = (bOk && sOk) ? (sTrd - bTrd) : null;
     const rowTag = modeTag(r.session.mode);
     html += '<tr>' +
