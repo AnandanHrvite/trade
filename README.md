@@ -456,6 +456,16 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 > All alerts and the consolidated report also respect the strategy master toggles (`{SWING,SCALP,PA,ORB,STRADDLE}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
 
+### Mobile Push (ntfy) — morning "start the session" reminder
+A **separate** channel from Telegram, used only for one daily push reminding you to log in and start your sessions before market open. Install the free [ntfy](https://ntfy.sh) app on your phone, subscribe to a topic, and set `NTFY_TOPIC` to the same string. None of the Telegram alerts are affected.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `NTFY_TOPIC` | — | Topic you subscribed to in the ntfy app. Use a long, hard-to-guess string (public ntfy.sh topics are unauthenticated). Blank = disabled |
+| `NTFY_ENABLED` | `true` | Master switch for ntfy pushes |
+| `NTFY_SESSION_REMINDER_TIME` | `09:00` | `HH:MM` IST for the daily reminder. Applied on next server restart (auto-applies from the following day otherwise) |
+| `NTFY_SERVER` | `https://ntfy.sh` | Override only if self-hosting ntfy (HTTPS only) |
+
 ### Charges (April 2026 rates)
 | Key | Default | Notes |
 |-----|---------|-------|

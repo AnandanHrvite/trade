@@ -15,7 +15,7 @@ const sharedSocketState = require("./utils/sharedSocketState");
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
-const { sendTelegram, sendTelegramSync } = require("./utils/notify");
+const { sendTelegram, sendTelegramSync, sendNtfy } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
@@ -2331,6 +2331,49 @@ function scheduleMorningHardReset() {
 }
 
 scheduleMorningHardReset();
+
+// ── Morning "Start the Session" Reminder (ntfy push) ─────────────────────────
+// Sends ONE mobile push at a configurable IST time (default 09:00) reminding the
+// user to log in and start their trading sessions before market open. A separate
+// channel from all Telegram alerts — touches none of them. Self-reschedules daily,
+// so a process restart (e.g. the 7 AM hard reset above) just re-arms it for today.
+// Reads NTFY_SESSION_REMINDER_TIME at boot/reschedule; silent no-op if NTFY_TOPIC
+// is unset or NTFY_ENABLED=false (gating lives in notify.sendNtfy).
+function scheduleMorningSessionReminder() {
+  const raw = (process.env.NTFY_SESSION_REMINDER_TIME || "09:00").trim();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(raw);
+  let istH = 9, istM = 0;
+  if (m && +m[1] <= 23 && +m[2] <= 59) { istH = +m[1]; istM = +m[2]; }
+  else console.warn(`⚠️  NTFY_SESSION_REMINDER_TIME="${raw}" invalid — using 09:00 IST`);
+
+  // IST = UTC+5:30 → convert the target IST minute-of-day to UTC minute-of-day.
+  let targetUTCmin = (istH * 60 + istM) - (5 * 60 + 30);
+  if (targetUTCmin < 0) targetUTCmin += 24 * 60;
+
+  const now     = new Date();
+  const utcNow  = now.getUTCHours() * 60 + now.getUTCMinutes();
+  let msUntil   = (targetUTCmin - utcNow) * 60 * 1000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds();
+  if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // already past today → tomorrow
+
+  const hhmm = `${String(istH).padStart(2, "0")}:${String(istM).padStart(2, "0")}`;
+  console.log(`🕒 Morning session reminder (ntfy) scheduled in ${Math.round(msUntil / 60000)} min (at ${hhmm} IST)`);
+
+  setTimeout(() => {
+    try {
+      sendNtfy({
+        title:    "Start the trading session",
+        text:     "Good morning! Log in to the bot and start your trading sessions before market open (9:15 AM IST).",
+        priority: "high",
+        tags:     "bell",
+      });
+      console.log("🔔 [REMINDER] Morning session reminder pushed via ntfy.");
+    } catch (e) {
+      console.error(`[REMINDER] ntfy push failed: ${e.message}`);
+    }
+    scheduleMorningSessionReminder(); // re-arm for tomorrow
+  }, msUntil);
+}
+scheduleMorningSessionReminder();
 
 // ── HTTPS Server ──────────────────────────────────────────────────────────────
 // Generate cert once on EC2 (never commit certs/ to git):

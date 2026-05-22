@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Mobile push (ntfy) — morning "start the session" reminder
+
+- **New, separate notification channel for one daily reminder.** Added `sendNtfy()` to [src/utils/notify.js](src/utils/notify.js) — a best-effort HTTPS push to [ntfy.sh](https://ntfy.sh) (or a self-hosted server via `NTFY_SERVER`), gated by `NTFY_ENABLED` (default on) and silent when `NTFY_TOPIC` is unset. A self-rescheduling timer in [src/app.js](src/app.js) (`scheduleMorningSessionReminder`, mirroring the existing 7 AM hard-reset scheduler) fires one push at `NTFY_SESSION_REMINDER_TIME` (default `09:00` IST) reminding the user to log in and start their sessions before market open. Re-arms daily, so the 7 AM PM2 restart simply rebuilds it for the same day.
+- **Independent of Telegram — no existing alert touched.** This is a parallel channel; none of the `TG_*` alerts, formatters, or gating were modified.
+- **Settings + docs.** New "COMMON — Mobile Push (ntfy)" section in [Settings](src/routes/settings.js) (`NTFY_TOPIC`, `NTFY_ENABLED`, `NTFY_SESSION_REMINDER_TIME`, `NTFY_SERVER`); keys documented in [README.md](README.md) and [.env.example](.env.example). Setup is one-time: install the ntfy app, subscribe to a hard-to-guess topic, set `NTFY_TOPIC` to match.
+
 ### Swing Live — DRY-RUN harness gate
 
 - **Swing Live now honours `LIVE_HARNESS_DRY_RUN`.** Previously Swing Live ([src/routes/swingLive.js](src/routes/swingLive.js)) called Zerodha directly the moment `SWING_LIVE_ENABLED=true` — it had no dry-run safety net, unlike the Fyers strategies (PA/ORB/Straddle). All four real-order paths — market entry/exit (`placeMarketOrder`), hard SL-M placement (`placeHardSL`), trail modify (`updateHardSL`), and SL cancel (`cancelHardSL`) — are now gated: when `LIVE_HARNESS_DRY_RUN=true` (default) each logs the broker call it *would* make and returns a simulated success against a `DRYRUN-*` virtual order ID, placing no real order. The engine's position / hard-SL / trail / P&L bookkeeping runs end-to-end against virtual fills so decisions can be validated before flipping to real money. Fill-verification polling (`verifyOrderFill`) is skipped in dry-run (no real order to poll).

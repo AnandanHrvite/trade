@@ -33,6 +33,10 @@ function isConfigured() {
   return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
 
+function isNtfyConfigured() {
+  return !!process.env.NTFY_TOPIC;
+}
+
 function isOff(v) {
   return v === "false" || v === "0";
 }
@@ -181,6 +185,70 @@ function sendIfMaster(text) {
   if (!isConfigured()) return;
   if (!isMasterEnabled()) return;
   sendTelegram(text);
+}
+
+/**
+ * sendNtfy({ text, title, priority, tags }) — best-effort mobile push via ntfy.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Independent of Telegram — this is a *separate* channel used for the morning
+ * "start the session" reminder. It does NOT touch any Telegram alert.
+ *
+ * Setup (one-time, free):
+ *   1. Install the "ntfy" app (iOS / Android) and open it.
+ *   2. Subscribe to a topic — pick a long, hard-to-guess string (public ntfy.sh
+ *      topics are unauthenticated, so the name is the only secret), e.g.
+ *      "nifty-bot-7f3a9c2e".
+ *   3. Add to .env:  NTFY_TOPIC=nifty-bot-7f3a9c2e
+ *   4. (optional) Self-host: set NTFY_SERVER=https://ntfy.example.com
+ *
+ * Master-gated by NTFY_ENABLED (default on). Silent no-op if NTFY_TOPIC unset.
+ * Returns a Promise that never rejects (errors are logged). HTTPS only.
+ */
+function sendNtfy({ text, title, priority, tags } = {}) {
+  if (!isNtfyConfigured()) return Promise.resolve();
+  if (isOff(process.env.NTFY_ENABLED)) return Promise.resolve();
+
+  const server = (process.env.NTFY_SERVER || "https://ntfy.sh").replace(/\/+$/, "");
+  const topic  = process.env.NTFY_TOPIC;
+
+  let url;
+  try {
+    url = new URL(`${server}/${encodeURIComponent(topic)}`);
+  } catch (e) {
+    console.error(`[NOTIFY] ntfy bad server/topic: ${e.message}`);
+    return Promise.resolve();
+  }
+
+  const body = Buffer.from(String(text == null ? "" : text), "utf-8");
+  // HTTP headers must be ASCII — keep emoji in the body, not the Title header.
+  const headers = { "Content-Length": body.length };
+  if (title)    headers["Title"]    = String(title).replace(/[^\x20-\x7E]/g, "").trim();
+  if (priority) headers["Priority"] = String(priority);
+  if (tags)     headers["Tags"]     = Array.isArray(tags) ? tags.join(",") : String(tags);
+
+  const options = {
+    hostname: url.hostname,
+    port:     url.port || 443,
+    path:     url.pathname,
+    method:   "POST",
+    headers,
+  };
+
+  return new Promise((resolve) => {
+    const req = https.request(options, (res) => {
+      if (res.statusCode !== 200) {
+        let raw = "";
+        res.on("data", d => { raw += d; });
+        res.on("end",  () => { console.error(`[NOTIFY] ntfy error ${res.statusCode}: ${raw.slice(0, 200)}`); resolve(); });
+      } else {
+        res.resume();
+        res.on("end", resolve);
+      }
+    });
+    req.on("error", (e) => { console.error(`[NOTIFY] ntfy send failed: ${e.message}`); resolve(); });
+    req.write(body);
+    req.end();
+  });
 }
 
 // In-memory cooldown for system alerts. Map<key, lastSentMs>. Process-local — resets
@@ -455,9 +523,11 @@ function notifyConsolidatedDayReport({ byMode }) {
 
 module.exports = {
   isConfigured,
+  isNtfyConfigured,
   sendTelegram,
   sendTelegramSync,
   sendIfMaster,
+  sendNtfy,
   canSend,
   modeGroup,
   isModeEnabled,

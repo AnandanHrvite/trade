@@ -368,6 +368,16 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "COMMON — Mobile Push (ntfy)",
+    icon: "🔔",
+    fields: [
+      { key: "NTFY_TOPIC", label: "ntfy Topic", type: "text", effect: EFFECT.INSTANT, desc: "Subscribe to this same topic in the ntfy iOS/Android app. Pick a long, hard-to-guess string (public ntfy.sh topics are unauthenticated). Leave blank to disable." },
+      { key: "NTFY_ENABLED", label: "Mobile Push (Master)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for ntfy mobile pushes. When OFF, no ntfy notifications are sent.", default: "true" },
+      { key: "NTFY_SESSION_REMINDER_TIME", label: "Morning Reminder Time (IST)", type: "text", effect: EFFECT.SERVER, desc: "HH:MM (24h IST) for the daily 'start the session' push reminder. Applied on next server restart (or automatically from tomorrow).", default: "09:00" },
+      { key: "NTFY_SERVER", label: "ntfy Server URL", type: "text", effect: EFFECT.INSTANT, desc: "Override only if self-hosting ntfy. Default https://ntfy.sh", default: "https://ntfy.sh" },
+    ],
+  },
+  {
     section: "CHARGES & STT — Trading Costs",
     icon: "💰",
     fields: [
@@ -563,6 +573,7 @@ const IMMEDIATE_KEYS = new Set([
   "TG_SWING_SIGNALS", "TG_SCALP_SIGNALS", "TG_PA_SIGNALS",
   "TG_SWING_DAYREPORT", "TG_SCALP_DAYREPORT", "TG_PA_DAYREPORT",
   "TG_DAYREPORT_CONSOLIDATED",
+  "NTFY_TOPIC", "NTFY_ENABLED", "NTFY_SERVER",
   "NIFTY_SPOT_FALLBACK", "SCALP_PAPER_CAPITAL", "CACHE_MAX_DAYS",
   "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
