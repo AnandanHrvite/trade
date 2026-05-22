@@ -1604,6 +1604,7 @@ router.get("/", (req, res) => {
       <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
         <a href="/monitor" style="padding:6px 14px;background:rgba(168,139,250,0.12);color:#a78bfa;border:1px solid rgba(168,139,250,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📈 MONITOR</a>
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
+        <button onclick="showBackupModal()" title="Download daily data snapshots so an EC2 loss never loses data" style="padding:6px 14px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📦 BACKUP</button>
         <a href="/pnl-history" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">💰 P&amp;L HISTORY</a>
         <a href="/login-logs" style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🔐 LOGIN LOGS</a>
         ${showLogsBtn ? `<a href="/logs" style="padding:6px 14px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📜 LOGS</a>` : ''}
@@ -1632,45 +1633,6 @@ router.get("/", (req, res) => {
                oninput="filterSettings(this.value)" onkeydown="if(event.key==='Escape'){this.value='';filterSettings('');this.blur();}">
         <span class="ssb-count" id="settingsSearchCount"></span>
         <button type="button" class="ssb-clear" id="settingsSearchClear" onclick="document.getElementById('settingsSearchInput').value='';filterSettings('');" title="Clear (Esc)">✕</button>
-      </div>
-
-      <!-- Backup & Restore -->
-      <div class="settings-section" id="backup-card">
-        <div class="section-title">📦 Backup &amp; Restore</div>
-        <div style="background:rgba(30,58,95,0.18);border:1px solid rgba(59,130,246,0.25);border-radius:10px;padding:16px 18px;">
-          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;">
-            <div style="flex:1;min-width:240px;">
-              <div style="font-size:0.82rem;font-weight:700;color:#cfe0f8;">Daily data snapshot</div>
-              <div style="font-size:0.7rem;color:#7e93b5;margin-top:3px;line-height:1.5;">
-                Self-contained <code style="color:#9dc1f0;">.tar.gz</code> of <code style="color:#9dc1f0;">~/trading-data</code> + recorded ticks
-                (caches &amp; OAuth tokens excluded). Download today's copy locally so an EC2 loss never loses data.
-                A banner nags on every page until you've downloaded the day's file.
-              </div>
-              <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;margin-top:8px;">Loading…</div>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button onclick="backupCreateNow()" id="backupCreateBtn" style="padding:8px 16px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">↻ Snapshot now</button>
-              <a id="backupDownloadLatest" href="#" onclick="return backupDownloadLatest();" style="padding:8px 16px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;text-decoration:none;">⬇ Download latest</a>
-            </div>
-          </div>
-          <div style="overflow-x:auto;">
-            <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
-              <thead><tr style="text-align:left;color:#5a80a8;">
-                <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Size</th>
-                <th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;text-align:right;">Download</th>
-              </tr></thead>
-              <tbody id="backupListBody"><tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Loading…</td></tr></tbody>
-            </table>
-          </div>
-          <details style="margin-top:12px;">
-            <summary style="cursor:pointer;font-size:0.72rem;color:#7e93b5;font-weight:700;">How to restore on a fresh EC2 box</summary>
-            <pre style="margin-top:8px;background:#0a1426;border:1px solid #14233c;border-radius:8px;padding:12px;font-size:0.68rem;color:#aac4ea;overflow-x:auto;white-space:pre-wrap;"># copy the downloaded archive to the new instance, then extract each part to its home:
-tar xzf backup-YYYY-MM-DD.tar.gz -C ~        trading-data   # → ~/trading-data
-tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;repo&gt;/data/ticks
-# restart the app:
-pm2 startOrRestart ecosystem.config.js --update-env</pre>
-          </details>
-        </div>
       </div>
       ${sectionsHtml}
 
@@ -2148,8 +2110,17 @@ async function backupCreateNow() {
   if (btn) { btn.disabled = false; btn.textContent = '↻ Snapshot now'; }
   loadBackups();
 }
-loadBackups();
-setInterval(loadBackups, 60000);
+function showBackupModal() {
+  var m = document.getElementById('backupModal');
+  if (!m) return;
+  m.style.display = 'block';
+  loadBackups();
+}
+// Refresh the list only while the modal is open.
+setInterval(function() {
+  var m = document.getElementById('backupModal');
+  if (m && m.style.display === 'block') loadBackups();
+}, 60000);
 
 // Kicks the server restart endpoint and polls /settings/data until it's back,
 // then reloads the page. Shared by the explicit Restart button and the
@@ -2775,6 +2746,48 @@ function copySectionSummary() {
     </div>
     <div id="envTableWrap" style="padding:16px 20px;max-height:70vh;overflow-y:auto;">
       <div style="color:#4a6080;font-size:0.8rem;">Loading...</div>
+    </div>
+  </div>
+</div>
+<!-- Backup & Restore modal -->
+<div id="backupModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
+  <div style="max-width:720px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#34d399;">📦 Backup &amp; Restore</span>
+      <button onclick="document.getElementById('backupModal').style.display='none'" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div style="padding:18px 20px 20px;max-height:74vh;overflow-y:auto;">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-bottom:12px;">
+        <div style="flex:1;min-width:240px;">
+          <div style="font-size:0.7rem;color:#7e93b5;line-height:1.5;">
+            Self-contained <code style="color:#9dc1f0;">.tar.gz</code> of <code style="color:#9dc1f0;">~/trading-data</code> + recorded ticks
+            (caches &amp; OAuth tokens excluded). Download today's copy locally so an EC2 loss never loses data.
+            A banner nags on every page until you've downloaded the day's file.
+          </div>
+          <div id="backup-status-line" style="font-size:0.7rem;color:#7e93b5;margin-top:8px;">Loading…</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="backupCreateNow()" id="backupCreateBtn" style="padding:8px 16px;background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">↻ Snapshot now</button>
+          <a id="backupDownloadLatest" href="#" onclick="return backupDownloadLatest();" style="padding:8px 16px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:7px;font-size:0.74rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;text-decoration:none;">⬇ Download latest</a>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.72rem;">
+          <thead><tr style="text-align:left;color:#5a80a8;">
+            <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Size</th>
+            <th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;text-align:right;">Download</th>
+          </tr></thead>
+          <tbody id="backupListBody"><tr><td colspan="4" style="padding:10px 8px;color:#5a6c8a;">Loading…</td></tr></tbody>
+        </table>
+      </div>
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer;font-size:0.72rem;color:#7e93b5;font-weight:700;">How to restore on a fresh EC2 box</summary>
+        <pre style="margin-top:8px;background:#0a1426;border:1px solid #14233c;border-radius:8px;padding:12px;font-size:0.68rem;color:#aac4ea;overflow-x:auto;white-space:pre-wrap;"># copy the downloaded archive to the new instance, then extract each part to its home:
+tar xzf backup-YYYY-MM-DD.tar.gz -C ~        trading-data   # → ~/trading-data
+tar xzf backup-YYYY-MM-DD.tar.gz -C &lt;repo&gt;    data/ticks     # → &lt;repo&gt;/data/ticks
+# restart the app:
+pm2 startOrRestart ecosystem.config.js --update-env</pre>
+      </details>
     </div>
   </div>
 </div>
