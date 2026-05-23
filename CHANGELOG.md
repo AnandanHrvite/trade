@@ -23,6 +23,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 - **Baseline PnL is no longer ₹0 on a match.** It read `session.pnl`, but sessions store the field as `sessionPnl` (legacy `pnl` kept as fallback) — so even a matched session showed ₹0. Now reads `sessionPnl` first.
 - Read-only matcher fix — touches no paper/strategy/env logic and never writes the canonical file.
 
+### Replay — diagnostic now shows the baseline (live) trades for a per-trade diff
+
+- **The diagnostic's "Baseline trades (full JSON)" was always `[]`.** `_lookupCanonicalSession` returned only the matched session's summary (pnl, count), so there was nothing to compare YourCfg's per-trade output against. It now also returns the matched live trades, normalised to the same compact shape the replay run emits (`side/strike/expiry/entry/exit/eSpot/eOpt/eSl/xSpot/xOpt/pnl/reason/symbol`, chronological) — wired into the baseline object in [src/routes/replay.js](src/routes/replay.js). The diagnostic now prints baseline trade N alongside YourCfg trade N so a divergence (extra entry, shifted exit, different fill) is visible at a glance.
+- Additive diagnostic only — read-only, no canonical-file writes, no paper/strategy/env logic changed.
+
 ### Mobile responsive — full app usable on a phone (iPhone 15)
 
 - **Every screen now reflows for narrow viewports.** The shared mobile layer in [src/utils/sharedNav.js](src/utils/sharedNav.js) (`sidebarCSS()` `@media(max-width:768px)`) — inherited by all 33 shell pages — was expanded to: collapse multi-column grids to a single column (named grids `.stat-grid-2/.ana-row/.stats/.roll-grid/.pos-grid/.metric-grid/.compare-grid/.baseline-grid/.actions/.pattern-grid` plus any inline `grid-template-columns`), make stray `<table>`s scroll horizontally instead of overflowing, wrap the top bar / run bar / capital strip, and cap inputs, `<pre>`, and media at the screen width. The sidebar already collapsed behind a hamburger; that is unchanged.

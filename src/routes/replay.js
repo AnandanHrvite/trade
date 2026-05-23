@@ -1122,15 +1122,16 @@ async function runReplay(date, mode, sessionId, btn) {
   progress.innerHTML = '✅ Done in ' + totalSec + 's.';
 
   // Synthesise a "baseline" object from the canonical lookup so the existing
-  // renderComparison() can be re-used unchanged. tradeCount comes through;
-  // sessionTrades stays empty (the trade list is rendered from the replay run).
+  // renderComparison() can be re-used unchanged. tradeCount + the matched
+  // live trades (compact shape, chronological) come through so the diagnostic
+  // can do a per-trade baseline-vs-replay diff.
   const baseline = (sim && sim.ok && sim.canonical) ? {
     ok: true,
     mode: sim.mode,
     sessionId: sim.sessionId,
     sessionPnl: sim.canonical.pnl,
     tradeCount: sim.canonical.tradeCount,
-    sessionTrades: [],
+    sessionTrades: sim.canonical.trades || [],
     _baselineFromCanonical: true,
   } : { ok: false, error: 'No canonical paper-trade record found for this session' };
 
@@ -1644,7 +1645,7 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
       sessionId: sim.sessionId,
       sessionPnl: sim.canonical.pnl,
       tradeCount: sim.canonical.tradeCount,
-      sessionTrades: [],
+      sessionTrades: sim.canonical.trades || [],
       _baselineFromCanonical: true,
     } : { ok: false, error: 'No canonical paper-trade record found for this session' };
 

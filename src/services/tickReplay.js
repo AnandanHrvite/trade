@@ -288,10 +288,28 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   const pnl = typeof best.sessionPnl === "number" ? best.sessionPnl
             : typeof best.pnl === "number"        ? best.pnl
             : 0;
+  // Normalise the matched live trades into the same compact shape the replay
+  // run emits (see tradeUtils.mapTradesReversed), kept chronological so the
+  // diagnostic can line baseline trade N up against YourCfg trade N.
+  const trades = (Array.isArray(best.trades) ? best.trades : []).map(t => ({
+    side:   t.side || "",
+    strike: t.optionStrike || "",
+    expiry: t.optionExpiry || "",
+    entry:  t.entryTime || "",
+    exit:   t.exitTime || "",
+    eSpot:  t.spotAtEntry || t.entryPrice || 0,
+    eOpt:   t.optionEntryLtp || null,
+    eSl:    t.stopLoss || t.initialStopLoss || null,
+    xSpot:  t.spotAtExit || t.exitPrice || 0,
+    xOpt:   t.optionExitLtp || null,
+    pnl:    typeof t.pnl === "number" ? t.pnl : null,
+    reason: t.exitReason || "",
+    symbol: t.symbol || "",
+  }));
   return {
     pnl,
-    tradeCount:  Array.isArray(best.trades) ? best.trades.length
-               : (typeof best.totalTrades === "number" ? best.totalTrades : 0),
+    tradeCount:  trades.length || (typeof best.totalTrades === "number" ? best.totalTrades : 0),
+    trades,
     matchedAt:   best.date,
     matchSkewMs: Number.isFinite(bestDelta) ? bestDelta : null,
   };
