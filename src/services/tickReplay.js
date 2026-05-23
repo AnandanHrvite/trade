@@ -259,20 +259,41 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   try { data = JSON.parse(fs.readFileSync(filePath, "utf-8")); }
   catch (_) { return null; }
   if (!data || !Array.isArray(data.sessions)) return null;
-  const TOL_MS = 60 * 1000;
-  let best = null, bestDelta = Infinity;
-  for (const sess of data.sessions) {
-    const sessTs = Date.parse(sess.date);
-    if (Number.isNaN(sessTs)) continue;
-    const delta = Math.abs(sessTs - sessionStartTs);
+  // session.date is a date-only string ("YYYY-MM-DD"), written via
+  // new Date().toISOString().split("T")[0] (UTC date — equals the IST trading
+  // date for any 09:15–15:30 IST session). Match on that calendar date. The
+  // old code did Date.parse(sess.date) (= midnight UTC) and compared it to the
+  // intraday session-start ms within a 60s window — hours apart, so it never
+  // matched any real session. Derive wantDate identically to how date is
+  // written so the comparison is exact.
+  const wantDate = new Date(sessionStartTs).toISOString().split("T")[0];
+  const sameDay = data.sessions.filter(s => s && s.date === wantDate);
+  if (sameDay.length === 0) return null;
+  // Among same-date sessions (rare — usually one/day), pick the one whose
+  // IST-formatted startTime ("DD/MM/YYYY, HH:MM:SS") is closest to the replay's
+  // session start. startTime isn't ISO, so parse it explicitly (IST = UTC+5:30).
+  const parseIst = (s) => {
+    const m = typeof s === "string"
+      && s.match(/^(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2}):(\d{2})/);
+    if (!m) return NaN;
+    return Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]) - 19800000;
+  };
+  let best = sameDay[0], bestDelta = Infinity;
+  for (const sess of sameDay) {
+    const stTs = parseIst(sess.startTime);
+    const delta = Number.isNaN(stTs) ? Infinity : Math.abs(stTs - sessionStartTs);
     if (delta < bestDelta) { bestDelta = delta; best = sess; }
   }
-  if (!best || bestDelta > TOL_MS) return null;
+  // Session PnL is stored as `sessionPnl` (legacy fallback: `pnl`).
+  const pnl = typeof best.sessionPnl === "number" ? best.sessionPnl
+            : typeof best.pnl === "number"        ? best.pnl
+            : 0;
   return {
-    pnl:        typeof best.pnl === "number" ? best.pnl : 0,
-    tradeCount: Array.isArray(best.trades) ? best.trades.length : 0,
-    matchedAt:  best.date,
-    matchSkewMs: bestDelta,
+    pnl,
+    tradeCount:  Array.isArray(best.trades) ? best.trades.length
+               : (typeof best.totalTrades === "number" ? best.totalTrades : 0),
+    matchedAt:   best.date,
+    matchSkewMs: Number.isFinite(bestDelta) ? bestDelta : null,
   };
 }
 

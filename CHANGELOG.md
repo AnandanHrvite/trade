@@ -12,6 +12,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 - **Fix:** when `replayNow` precedes a freshly-subscribed symbol's first recorded tick, `_lookupNearest` now forward-fills that first tick — mirroring live, where the first option websocket tick after subscription fills `optionEntryLtp`. Entry LTP now matches the live recording's first-tick premium; mid-trade and exit lookups are unchanged (they always have a prior tick).
 - Replay/diagnostic correctness only — no paper decision/fill/exit logic, strategy params, or env changed.
 
+### Replay — fix "Baseline FAILED — No canonical paper-trade record found"
+
+- **The baseline (live recording) now matches.** `_lookupCanonicalSession` in [src/services/tickReplay.js](src/services/tickReplay.js) compared `Date.parse(session.date)` — a date-only string parsing to **midnight UTC** — against the intraday session-start timestamp within a **60-second** window. For any 09:15–15:30 IST session that gap is hours, so no real session ever matched and every replay reported "No canonical paper-trade record found". Now it matches on the calendar date (derived identically to how `session.date` is written), with a tiebreak on the closest IST-formatted `startTime` when a date has multiple sessions.
+- **Baseline PnL is no longer ₹0 on a match.** It read `session.pnl`, but sessions store the field as `sessionPnl` (legacy `pnl` kept as fallback) — so even a matched session showed ₹0. Now reads `sessionPnl` first.
+- Read-only matcher fix — touches no paper/strategy/env logic and never writes the canonical file.
+
 ### Mobile responsive — full app usable on a phone (iPhone 15)
 
 - **Every screen now reflows for narrow viewports.** The shared mobile layer in [src/utils/sharedNav.js](src/utils/sharedNav.js) (`sidebarCSS()` `@media(max-width:768px)`) — inherited by all 33 shell pages — was expanded to: collapse multi-column grids to a single column (named grids `.stat-grid-2/.ana-row/.stats/.roll-grid/.pos-grid/.metric-grid/.compare-grid/.baseline-grid/.actions/.pattern-grid` plus any inline `grid-template-columns`), make stray `<table>`s scroll horizontally instead of overflowing, wrap the top bar / run bar / capital strip, and cap inputs, `<pre>`, and media at the screen width. The sidebar already collapsed behind a hamburger; that is unchanged.
