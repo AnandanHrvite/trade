@@ -67,6 +67,16 @@ router.post("/force-clear", (req, res) => {
   }
 });
 
+// Cancel the in-flight replay mid-session. The streaming loop checks the flag
+// each tick, stops early, and squares off via /stop so nothing is left stuck.
+router.post("/cancel", (req, res) => {
+  try {
+    res.json(tickReplay.requestCancel());
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // Stream the entire day's recording folder as a zip download. The day-folder
 // contains spot/options/vix/sessions jsonl files shared by every session on
 // that date. Uses the system `zip` binary (EC2 AL2 + macOS both ship it) and
@@ -1573,15 +1583,17 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   btn.textContent = '⏳ Running…';
   _myReplayRunning = true;
   _cancelRequested = false;
-  // Reveal the Cancel button. It stops the batch after the current session
-  // finishes — there is no mid-session cancel server-side, so letting the
-  // in-flight session complete keeps the replay-in-progress flag clean.
+  // Reveal the Cancel button (signals the server to stop the in-flight
+  // session mid-stream). Hide the prior run's Copy/Download buttons — they
+  // belong to stale results until this run produces fresh ones.
   const cancelBtn = document.getElementById('range-cancel-btn');
   if (cancelBtn) {
     cancelBtn.style.display = '';
     cancelBtn.disabled = false;
     cancelBtn.textContent = '✕ Cancel';
   }
+  const diagBtnsStart = document.getElementById('range-diag-btns');
+  if (diagBtnsStart) { diagBtnsStart.style.display = 'none'; diagBtnsStart.innerHTML = ''; }
   refreshPreflight(); // flip banner to neutral "in progress" immediately
   const progress = document.getElementById('range-progress');
   const resultDiv = document.getElementById('range-result');
@@ -1638,6 +1650,9 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
       sim = { ok: false, error: e.message };
     }
     if (isPreflightReject(sim)) { aborted = true; showBlockAlert(sim.error); break; }
+    // Server stopped this session mid-stream in response to Cancel — don't
+    // render a partial row; just mark the batch cancelled and stop.
+    if (sim && sim.cancelled) { cancelled = true; break; }
 
     const baseline = (sim && sim.ok && sim.canonical) ? {
       ok: true,
@@ -1696,14 +1711,18 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   refreshSettingsSourceUi();
 }
 
-// Cancel a running batch. The current in-flight session is allowed to finish
-// (no server-side mid-session cancel), then the loop stops before the next one.
+// Cancel a running batch. Signals the server to stop the in-flight session
+// mid-stream (it squares off via /stop and returns), and sets the local flag
+// so the batch loop won't start the next session.
 function cancelRange(btn) {
   _cancelRequested = true;
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '🛑 Cancelling… (finishing current session)';
+    btn.textContent = '🛑 Cancelling…';
   }
+  // Fire-and-forget — the in-flight callReplayApi promise resolves once the
+  // server breaks its tick loop and finalises, which unblocks the batch.
+  fetch('/replay/cancel', { method: 'POST' }).catch(() => {});
 }
 
 // Seed inputs with empty constraints first so the elements are usable

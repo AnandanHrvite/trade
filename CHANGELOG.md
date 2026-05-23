@@ -6,10 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### Replay — Cancel button for a running date-range batch
+### Replay — Cancel button for a running replay
 
-- **A running date-range comparison can now be cancelled.** While a batch replays sessions, a red **✕ Cancel** button appears next to the run button (in [src/routes/replay.js](src/routes/replay.js)). Clicking it stops the batch after the current session finishes and reports "🛑 Cancelled — N of M sessions completed". Because there is no server-side mid-session cancel, the in-flight session is allowed to complete so the replay-in-progress flag clears cleanly (no stuck state / force-clear needed).
-- UI-only — no paper decision/fill/exit logic, strategy params, or env changed.
+- **A running replay can now be cancelled mid-session.** While a date-range batch (or single session) replays, a red **✕ Cancel** button appears next to the run button (in [src/routes/replay.js](src/routes/replay.js)). Clicking it POSTs `/replay/cancel`, which sets a flag the spot-tick streaming loop in [src/services/tickReplay.js](src/services/tickReplay.js) checks each tick — the loop stops early, runs `/stop` to square off cleanly, and returns `cancelled: true` so the replay-in-progress flag clears with no stuck state. The batch then halts before the next session and reports "🛑 Cancelled".
+- Diagnostic/UI plumbing only — no paper decision/fill/exit logic, strategy params, or env changed (the cancel path reuses paper's own `/stop` squaring-off).
 
 ### Replay — fix absurd PnL when a trade enters before its first option tick
 

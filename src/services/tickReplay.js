@@ -47,6 +47,16 @@ const { ROOT_DIR } = require("../utils/tickRecorder")._internals;
 
 // ── Process-wide lock so two replays can't trample each other's monkey-patches ─
 let _replayInProgress = false;
+// Set by requestCancel() (POST /replay/cancel). The spot-tick streaming loop
+// in replaySession checks it each tick and stops early, then runs /stop to
+// square off cleanly so no state is left stuck.
+let _cancelRequested = false;
+
+/** Signal the in-flight replay to stop early (mid-session). No-op if idle. */
+function requestCancel() {
+  _cancelRequested = true;
+  return { ok: true, replayInProgress: _replayInProgress };
+}
 
 // ── Loaders ─────────────────────────────────────────────────────────────────
 
@@ -777,6 +787,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
   const pre = replayPreflight();
   if (!pre.ok) throw new Error(pre.reason);
   _replayInProgress = true;
+  _cancelRequested = false;
 
   const startWall = Date.now();
   let restoreEnv  = () => {};
@@ -878,10 +889,14 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     const startT = data.sessionStart.t;
     const stopT  = data.sessionStop.t;
 
+    let cancelled = false;
     const spotStream = fs.createReadStream(data.spotPath, { encoding: "utf8" });
     const rl = readline.createInterface({ input: spotStream, crlfDelay: Infinity });
     try {
       for await (const line of rl) {
+        // Mid-session cancel: stop pumping ticks and fall through to /stop,
+        // which squares off any open position so the run finalises cleanly.
+        if (_cancelRequested) { cancelled = true; break; }
         const trimmed = line.trim();
         if (!trimmed) continue;
         let tick;
@@ -994,6 +1009,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     const canonical = _lookupCanonicalSession(mode, data.sessionStart.t);
     return {
       ok: true,
+      cancelled,  // true if stopped early via requestCancel() mid-session
       mode,
       sessionId: data.sessionStart.sid,
       ticksReplayed,
@@ -1182,6 +1198,7 @@ module.exports = {
   listRecordings,
   replaySession,
   replayPreflight,
+  requestCancel,
   forceClearSharedState,
   deleteSessionMarker,
   // exposed for tests
