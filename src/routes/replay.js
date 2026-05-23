@@ -379,6 +379,7 @@ ${buildSidebar('replay', false)}
       <div class="range-field">
         <label>&nbsp;</label>
         <button id="range-run-btn" onclick="runRange(this)">▶ Run range</button>
+        <button id="range-cancel-btn" onclick="cancelRange(this)" style="display:none; background:#7f1d1d; color:#fecaca;">✕ Cancel</button>
       </div>
       <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
     </div>
@@ -433,6 +434,7 @@ ${buildSidebar('replay', false)}
 <script>
 let _preflightOk = true;
 let _myReplayRunning = false; // true while THIS tab is actively running a replay
+let _cancelRequested = false; // set by Cancel; batch loop stops after the current session finishes
 
 // Mode → CSS tag-class (drives the coloured pill in lists/tables).
 function modeTag(mode) {
@@ -1567,6 +1569,16 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   const _origBtnText = btn.textContent;
   btn.textContent = '⏳ Running…';
   _myReplayRunning = true;
+  _cancelRequested = false;
+  // Reveal the Cancel button. It stops the batch after the current session
+  // finishes — there is no mid-session cancel server-side, so letting the
+  // in-flight session complete keeps the replay-in-progress flag clean.
+  const cancelBtn = document.getElementById('range-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.style.display = '';
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = '✕ Cancel';
+  }
   refreshPreflight(); // flip banner to neutral "in progress" immediately
   const progress = document.getElementById('range-progress');
   const resultDiv = document.getElementById('range-result');
@@ -1603,8 +1615,10 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   };
   const progressTimer = setInterval(tickProgress, 1000);
 
+  let cancelled = false;
   try {
   for (let i = 0; i < sessions.length; i++) {
+    if (_cancelRequested) { cancelled = true; break; }
     const s = sessions[i];
     const idx = i + 1;
 
@@ -1664,14 +1678,29 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   const total = ((Date.now() - t0) / 1000).toFixed(1);
   if (aborted) {
     progress.innerHTML = '⛔ Aborted at session ' + (rows.length + 1) + '/' + sessions.length + ' — a paper or live session was started during the run. ' + rows.length + ' sessions completed in ' + total + 's.';
+  } else if (cancelled) {
+    progress.innerHTML = '🛑 Cancelled — ' + rows.length + ' of ' + sessions.length + ' sessions completed in ' + total + 's.';
   } else {
     progress.innerHTML = '✅ Done — ' + sessions.length + ' sessions in ' + total + 's.';
   }
+  const cancelBtnEnd = document.getElementById('range-cancel-btn');
+  if (cancelBtnEnd) cancelBtnEnd.style.display = 'none';
   btn.disabled = false;
   btn.textContent = btnRestoreText || _origBtnText;
   _myReplayRunning = false;
+  _cancelRequested = false;
   refreshPreflight(); // flip banner back to green/red authoritative state
   refreshSettingsSourceUi();
+}
+
+// Cancel a running batch. The current in-flight session is allowed to finish
+// (no server-side mid-session cancel), then the loop stops before the next one.
+function cancelRange(btn) {
+  _cancelRequested = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '🛑 Cancelling… (finishing current session)';
+  }
 }
 
 // Seed inputs with empty constraints first so the elements are usable

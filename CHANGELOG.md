@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay — Cancel button for a running date-range batch
+
+- **A running date-range comparison can now be cancelled.** While a batch replays sessions, a red **✕ Cancel** button appears next to the run button (in [src/routes/replay.js](src/routes/replay.js)). Clicking it stops the batch after the current session finishes and reports "🛑 Cancelled — N of M sessions completed". Because there is no server-side mid-session cancel, the in-flight session is allowed to complete so the replay-in-progress flag clears cleanly (no stuck state / force-clear needed).
+- UI-only — no paper decision/fill/exit logic, strategy params, or env changed.
+
 ### Replay — fix absurd PnL when a trade enters before its first option tick
 
 - **Replay no longer poisons entry LTP with the spot price.** When a strategy entered slightly before the recorded option timeline's first tick (e.g. swing entering at 09:36:16 while `NIFTY…23700CE`'s first recorded tick is 09:36:26), `_lookupNearest` in [src/services/tickReplay.js](src/services/tickReplay.js) returned `no_data`, so paper's 10s spot-proxy fallback set `optionEntryLtp` to the spot price (~100× the premium). Mixing that with a real exit premium produced six-figure-negative PnL (e.g. −₹1,529,787 on one trade), which then tripped `MAX_DAILY_LOSS` and suppressed every later entry (1 replayed trade vs 5 live).
