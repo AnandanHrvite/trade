@@ -1067,6 +1067,11 @@ app.get("/", (req, res) => {
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
     }
+    /* Dashboard top bar — keep title, toggle, and actions on a single line */
+    .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }
+    .top-bar > div:first-child { flex-shrink:0; }
+    .top-bar-meta { white-space:nowrap; }
+    .top-bar-right { flex-wrap:nowrap !important; flex-shrink:0; }
     ${modalCSS()}
   </style>
 </head>
