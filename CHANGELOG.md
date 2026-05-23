@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay — fix absurd PnL when a trade enters before its first option tick
+
+- **Replay no longer poisons entry LTP with the spot price.** When a strategy entered slightly before the recorded option timeline's first tick (e.g. swing entering at 09:36:16 while `NIFTY…23700CE`'s first recorded tick is 09:36:26), `_lookupNearest` in [src/services/tickReplay.js](src/services/tickReplay.js) returned `no_data`, so paper's 10s spot-proxy fallback set `optionEntryLtp` to the spot price (~100× the premium). Mixing that with a real exit premium produced six-figure-negative PnL (e.g. −₹1,529,787 on one trade), which then tripped `MAX_DAILY_LOSS` and suppressed every later entry (1 replayed trade vs 5 live).
+- **Fix:** when `replayNow` precedes a freshly-subscribed symbol's first recorded tick, `_lookupNearest` now forward-fills that first tick — mirroring live, where the first option websocket tick after subscription fills `optionEntryLtp`. Entry LTP now matches the live recording's first-tick premium; mid-trade and exit lookups are unchanged (they always have a prior tick).
+- Replay/diagnostic correctness only — no paper decision/fill/exit logic, strategy params, or env changed.
+
 ### Mobile responsive — full app usable on a phone (iPhone 15)
 
 - **Every screen now reflows for narrow viewports.** The shared mobile layer in [src/utils/sharedNav.js](src/utils/sharedNav.js) (`sidebarCSS()` `@media(max-width:768px)`) — inherited by all 33 shell pages — was expanded to: collapse multi-column grids to a single column (named grids `.stat-grid-2/.ana-row/.stats/.roll-grid/.pos-grid/.metric-grid/.compare-grid/.baseline-grid/.actions/.pattern-grid` plus any inline `grid-template-columns`), make stray `<table>`s scroll horizontally instead of overflowing, wrap the top bar / run bar / capital strip, and cap inputs, `<pre>`, and media at the screen width. The sidebar already collapsed behind a hamburger; that is unchanged.
