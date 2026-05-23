@@ -1681,7 +1681,21 @@ function _renderDashCumChart(canvasId, emptyId, trades){
   return new Chart(canvas, {
     type: 'line',
     data: { labels: s.labels, datasets: [{
-      data: s.data, borderColor: baseColor, backgroundColor: baseFill,
+      data: s.data, borderColor: baseColor,
+      // Fill is split at the zero line: green above, red below — matches the line colour.
+      backgroundColor: function(ctx){
+        var chart = ctx.chart, area = chart.chartArea;
+        if (!area) return baseFill; // before first layout
+        var zeroPx = chart.scales.y.getPixelForValue(0);
+        var r = (zeroPx - area.top) / (area.bottom - area.top);
+        r = Math.max(0, Math.min(1, r));
+        var g = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        g.addColorStop(0, PNL_GREEN_FILL);
+        g.addColorStop(r, PNL_GREEN_FILL);
+        g.addColorStop(r, PNL_RED_FILL);
+        g.addColorStop(1, PNL_RED_FILL);
+        return g;
+      },
       borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0,
       segment: {
         borderColor: function(ctx){

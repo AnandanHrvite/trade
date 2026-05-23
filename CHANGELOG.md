@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Dashboard — fix P&L chart fill colour above zero
+
+- **The cumulative/module chart fill now splits at the zero line.** Previously the area fill was a single colour keyed off the net total, so a net-negative chart painted the whole area red even where the line ran green above ₹0. The fill ([src/app.js](src/app.js)) is now a vertical gradient — green above the zero baseline, red below — matching the per-segment line colour.
+
 ### Dashboard — one global Paper/Live toggle for all charts
 
 - **Replaced the six per-card Paper/Live toggles with a single top-bar toggle.** Each strategy chart (Swing/Scalp/PA/ORB/Straddle) and the Cumulative P&L card carried its own Paper/Live switch; they're removed in favour of one square PAPER/LIVE toggle in the dashboard top-bar ([src/app.js](src/app.js)), defaulting to PAPER. Flipping it re-renders every module chart and the cumulative chart from the chosen source at once. Dead per-card toggle markup, click handlers, and CSS removed.
