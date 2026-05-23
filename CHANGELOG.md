@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Dashboard — one global Paper/Live toggle for all charts
+
+- **Replaced the six per-card Paper/Live toggles with a single top-bar toggle.** Each strategy chart (Swing/Scalp/PA/ORB/Straddle) and the Cumulative P&L card carried its own Paper/Live switch; they're removed in favour of one square PAPER/LIVE toggle in the dashboard top-bar ([src/app.js](src/app.js)), defaulting to PAPER. Flipping it re-renders every module chart and the cumulative chart from the chosen source at once. Dead per-card toggle markup, click handlers, and CSS removed.
+
 ### Paper capital — broker investment pools replace per-strategy capital
 
 - **Five per-strategy paper-capital settings collapsed into two broker-level pools.** `SWING_PAPER_CAPITAL`, `SCALP_PAPER_CAPITAL`, `PA_PAPER_CAPITAL`, `ORB_PAPER_CAPITAL`, and `STRADDLE_PAPER_CAPITAL` are removed from Settings and replaced by `ZERODHA_INV_AMOUNT` (Swing) and `FYERS_INV_AMOUNT` (Scalp + PA + ORB + Straddle), matching how each strategy is brokered ([src/routes/settings.js](src/routes/settings.js)). Each strategy now reads its broker pool as its starting capital; running capital is still `pool + all-time P&L`, so existing on-disk `totalPnl` is preserved (defaults unchanged at ₹100000).

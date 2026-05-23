@@ -539,10 +539,6 @@ app.get("/", (req, res) => {
         <span class="dash-chart-dot" id="dashCumDot" style="background:#3b82f6;"></span>
         <span>Cumulative P&amp;L</span>
       </div>
-      <div class="mm-toggle dc-toggle">
-        <button type="button" class="mm-tog-btn dc-tog-btn active" data-src="paper">Paper</button>
-        <button type="button" class="mm-tog-btn dc-tog-btn" data-src="live">Live</button>
-      </div>
       <div class="dash-chart-stats" id="dash-cum-stats">—</div>
       <a href="/consolidation" id="dashCumLink" class="dash-chart-link">View →</a>
     </div>
@@ -890,11 +886,17 @@ app.get("/", (req, res) => {
     .mm-card.orb      .mm-dot { background:#10b981; }
     .mm-card.straddle .mm-dot { background:#ec4899; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
-    .mm-toggle { margin-left:auto; display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:6px; padding:2px; }
-    .mm-tog-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; padding:3px 8px; border-radius:4px; cursor:pointer; transition:all 0.15s; }
-    .mm-tog-btn:hover:not(.active) { color:#a0b0c8; }
-    .mm-tog-btn.active { background:#0d1320; color:#e0eaf8; box-shadow:0 0 0 1px #1a3a6a inset; }
-    .mm-tog-btn.active[data-src="live"] { box-shadow:0 0 0 1px #7f1d1d inset; color:#fca5a5; }
+    /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
+    .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
+    .dst-btn { background:transparent; border:none; color:#4a6080; font-family:inherit; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:6px 18px; border-radius:2px; cursor:pointer; transition:all 0.15s; }
+    .dst-btn:hover:not(.active) { color:#a0b0c8; }
+    .dst-btn.active { background:#3b82f6; color:#fff; }
+    .dst-btn.active[data-src="live"] { background:#ef4444; color:#fff; }
+    :root[data-theme="light"] .dash-src-toggle { background:#f1f5f9; border-color:#e0e4ea; }
+    :root[data-theme="light"] .dst-btn { color:#94a3b8; }
+    :root[data-theme="light"] .dst-btn:hover:not(.active) { color:#475569; }
+    :root[data-theme="light"] .dst-btn.active { background:#3b82f6; color:#fff; }
+    :root[data-theme="light"] .dst-btn.active[data-src="live"] { background:#ef4444; color:#fff; }
     .mm-stats { font-size:0.66rem; font-family:'IBM Plex Mono',monospace; color:#4a6080; margin-bottom:4px; }
     .mm-stats .pnl-pos { color:#10b981; font-weight:700; }
     .mm-stats .pnl-neg { color:#ef4444; font-weight:700; }
@@ -906,11 +908,6 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mm-hdr { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .mm-title { color:#475569; }
-    :root[data-theme="light"] .mm-toggle { background:#f1f5f9; border-color:#e0e4ea; }
-    :root[data-theme="light"] .mm-tog-btn { color:#94a3b8; }
-    :root[data-theme="light"] .mm-tog-btn:hover:not(.active) { color:#475569; }
-    :root[data-theme="light"] .mm-tog-btn.active { background:#ffffff; color:#1e293b; box-shadow:0 0 0 1px #bfdbfe inset; }
-    :root[data-theme="light"] .mm-tog-btn.active[data-src="live"] { box-shadow:0 0 0 1px #fca5a5 inset; color:#dc2626; }
     :root[data-theme="light"] .mm-stats { color:#94a3b8; }
     :root[data-theme="light"] .mm-empty { color:#94a3b8; }
 
@@ -1082,6 +1079,10 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="top-bar-title">⌂ Dashboard</div>
       <div class="top-bar-meta">System overview · Broker connections · Session status</div>
     </div>
+    <div class="dash-src-toggle" id="dashSrcToggle" title="Data source for all charts">
+      <button type="button" class="dst-btn active" data-src="paper">PAPER</button>
+      <button type="button" class="dst-btn" data-src="live">LIVE</button>
+    </div>
     <div class="top-bar-right">
       <button id="btn-all-paper" class="top-bar-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
       <button id="btn-all-live"  class="top-bar-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
@@ -1138,10 +1139,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-hdr">
         <span class="mm-dot"></span>
         <span class="mm-title">Swing</span>
-        <div class="mm-toggle">
-          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
-          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
-        </div>
       </div>
       <div class="mm-stats" id="mm-stats-SWING">—</div>
       <div class="mm-wrap"><canvas id="mmChart-SWING"></canvas></div>
@@ -1152,10 +1149,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-hdr">
         <span class="mm-dot"></span>
         <span class="mm-title">Scalp</span>
-        <div class="mm-toggle">
-          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
-          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
-        </div>
       </div>
       <div class="mm-stats" id="mm-stats-SCALP">—</div>
       <div class="mm-wrap"><canvas id="mmChart-SCALP"></canvas></div>
@@ -1167,10 +1160,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-hdr">
         <span class="mm-dot"></span>
         <span class="mm-title">Price Action</span>
-        <div class="mm-toggle">
-          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
-          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
-        </div>
       </div>
       <div class="mm-stats" id="mm-stats-PA">—</div>
       <div class="mm-wrap"><canvas id="mmChart-PA"></canvas></div>
@@ -1182,10 +1171,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-hdr">
         <span class="mm-dot"></span>
         <span class="mm-title">ORB</span>
-        <div class="mm-toggle">
-          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
-          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
-        </div>
       </div>
       <div class="mm-stats" id="mm-stats-ORB">—</div>
       <div class="mm-wrap"><canvas id="mmChart-ORB"></canvas></div>
@@ -1197,10 +1182,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-hdr">
         <span class="mm-dot"></span>
         <span class="mm-title">Straddle</span>
-        <div class="mm-toggle">
-          <button type="button" class="mm-tog-btn active" data-src="paper">Paper</button>
-          <button type="button" class="mm-tog-btn" data-src="live">Live</button>
-        </div>
       </div>
       <div class="mm-stats" id="mm-stats-STRADDLE">—</div>
       <div class="mm-wrap"><canvas id="mmChart-STRADDLE"></canvas></div>
@@ -1767,15 +1748,19 @@ async function loadDashCumCharts(){
   _renderDashTotal();
 }
 
+// Global Paper/Live toggle (top-bar) — one source drives every chart on the dashboard.
+var _dashSrc = 'paper';
 document.addEventListener('click', function(e){
-  var btn = e.target.closest && e.target.closest('.dc-tog-btn');
+  var btn = e.target.closest && e.target.closest('.dst-btn');
   if (!btn) return;
   var src = btn.getAttribute('data-src');
-  if (!src || _dcToggle === src) return;
+  if (!src || _dashSrc === src) return;
+  _dashSrc = src;
   _dcToggle = src;
-  var card = btn.closest('.dash-chart-card');
-  if (card) card.querySelectorAll('.dc-tog-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
+  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(function(m){ _mmToggle[m] = src; });
+  document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
+  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
 });
 
 loadDashCumCharts();
@@ -1809,19 +1794,6 @@ async function loadModuleCharts(){
   } catch(_){ _mmData.live = []; }
   ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
 }
-
-document.addEventListener('click', function(e){
-  var btn = e.target.closest && e.target.closest('.mm-tog-btn');
-  if (!btn) return;
-  var card = btn.closest('.mm-card');
-  if (!card) return;
-  var mode = card.getAttribute('data-mode');
-  var src  = btn.getAttribute('data-src');
-  if (!mode || !src || _mmToggle[mode] === src) return;
-  _mmToggle[mode] = src;
-  card.querySelectorAll('.mm-tog-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
-  _renderModuleChart(mode);
-});
 
 loadModuleCharts();
 
