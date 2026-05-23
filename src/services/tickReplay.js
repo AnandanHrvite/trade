@@ -259,29 +259,39 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   try { data = JSON.parse(fs.readFileSync(filePath, "utf-8")); }
   catch (_) { return null; }
   if (!data || !Array.isArray(data.sessions)) return null;
-  // session.date is a date-only string ("YYYY-MM-DD"), written via
-  // new Date().toISOString().split("T")[0] (UTC date — equals the IST trading
-  // date for any 09:15–15:30 IST session). Match on that calendar date. The
-  // old code did Date.parse(sess.date) (= midnight UTC) and compared it to the
-  // intraday session-start ms within a 60s window — hours apart, so it never
-  // matched any real session. Derive wantDate identically to how date is
-  // written so the comparison is exact.
-  const wantDate = new Date(sessionStartTs).toISOString().split("T")[0];
-  const sameDay = data.sessions.filter(s => s && s.date === wantDate);
+  // session.date is written two ways across modes: swing stores a date-only
+  // string ("YYYY-MM-DD" via toISOString().split); pa/scalp/orb/straddle store
+  // a full ISO timestamp (date: state.sessionStart = new Date().toISOString()).
+  // Normalise both to a UTC calendar day and match on that — Date.parse handles
+  // either form. (The old 60s-window compare matched the ISO form but never the
+  // date-only form; a strict string-equality match would do the reverse.)
+  const _dayOf = (d) => {
+    const t = Date.parse(d);
+    return Number.isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+  };
+  const wantDate = new Date(sessionStartTs).toISOString().slice(0, 10);
+  const sameDay = data.sessions.filter(s => s && _dayOf(s.date) === wantDate);
   if (sameDay.length === 0) return null;
-  // Among same-date sessions (rare — usually one/day), pick the one whose
-  // IST-formatted startTime ("DD/MM/YYYY, HH:MM:SS") is closest to the replay's
-  // session start. startTime isn't ISO, so parse it explicitly (IST = UTC+5:30).
+  // Among same-day sessions (rare — usually one/day), pick the closest start.
+  // A full-ISO `date` is itself the start instant; swing's date-only `date`
+  // relies on its IST-formatted `startTime` ("DD/MM/YYYY, HH:MM:SS").
   const parseIst = (s) => {
     const m = typeof s === "string"
       && s.match(/^(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2}):(\d{2})/);
     if (!m) return NaN;
     return Date.UTC(+m[3], +m[2] - 1, +m[1], +m[4], +m[5], +m[6]) - 19800000;
   };
+  const startMs = (s) => {
+    if (typeof s.date === "string" && s.date.includes("T")) {
+      const d = Date.parse(s.date);
+      if (!Number.isNaN(d)) return d;
+    }
+    return parseIst(s.startTime);
+  };
   let best = sameDay[0], bestDelta = Infinity;
   for (const sess of sameDay) {
-    const stTs = parseIst(sess.startTime);
-    const delta = Number.isNaN(stTs) ? Infinity : Math.abs(stTs - sessionStartTs);
+    const ms = startMs(sess);
+    const delta = Number.isNaN(ms) ? Infinity : Math.abs(ms - sessionStartTs);
     if (delta < bestDelta) { bestDelta = delta; best = sess; }
   }
   // Session PnL is stored as `sessionPnl` (legacy fallback: `pnl`).
