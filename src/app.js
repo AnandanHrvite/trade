@@ -500,6 +500,32 @@ app.get("/", (req, res) => {
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
+  // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
+  // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB + Straddle (enabled only).
+  const _tradingDir = path.join(os.homedir(), "trading-data");
+  const _readPnl = (file) => {
+    try { return Number(JSON.parse(fs.readFileSync(path.join(_tradingDir, file), "utf-8")).totalPnl) || 0; }
+    catch { return 0; }
+  };
+  const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
+  const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
+  const zerodhaPnl = _readPnl("paper_trades.json");
+  let fyersPnl = scalpModeOn ? _readPnl("scalp_paper_trades.json") : 0;
+  if (paModeOn)       fyersPnl += _readPnl("pa_paper_trades.json");
+  if (orbModeOn)      fyersPnl += _readPnl("orb_paper_trades.json");
+  if (straddleModeOn) fyersPnl += _readPnl("straddle_paper_trades.json");
+  const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+  const _walletHtml = (inv, pnl) => {
+    const cls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'zero';
+    const sign = pnl > 0 ? '▲ ' : pnl < 0 ? '▼ ' : '';
+    return `<span class="brk-wallet" title="Investment pool: ${_inr0(inv)} + all-time paper P&L">`
+      + `<span class="brk-wallet-remain">${_inr0(inv + pnl)}</span>`
+      + `<span class="brk-wallet-sub">of ${_inr0(inv)} · <span class="${cls}">${sign}${_inr0(Math.abs(pnl))}</span></span>`
+      + `</span>`;
+  };
+  const fyersWalletHtml   = _walletHtml(fyersInv, fyersPnl);
+  const zerodhaWalletHtml = _walletHtml(zerodhaInv, zerodhaPnl);
+
   // ── Cumulative P&L placement ─────────────────────────────────────────────
   // The strategy grid is 3 columns (Swing is always shown). When the enabled
   // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
@@ -692,13 +718,19 @@ app.get("/", (req, res) => {
     .brokers { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:0; }
     .brokers > .brk-expiry { grid-column:1 / -1; }
     .brk-row {
-      display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-      padding:6px 12px; border-radius:9px;
+      display:flex; align-items:center; gap:10px; flex-wrap:nowrap;
+      padding:5px 12px; border-radius:9px;
       border:1px solid #1a2236; background:#0d1320;
       min-width:0;
     }
     .brk-name { font-size:0.82rem !important; }
-    .brk-role { font-size:0.62rem !important; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .brk-role { font-size:0.62rem !important; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .brk-wallet { margin-left:auto; display:flex; flex-direction:column; align-items:flex-end; line-height:1.1; flex:0 0 auto; }
+    .brk-wallet-remain { font-size:0.92rem; font-weight:800; color:#e0eaf8; font-variant-numeric:tabular-nums; }
+    .brk-wallet-sub { font-size:0.58rem; color:#4a6080; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .brk-wallet-sub .pos { color:#34d399; }
+    .brk-wallet-sub .neg { color:#f87171; }
+    .brk-wallet-sub .zero { color:#7d8aa3; }
     @media (max-width:720px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
@@ -713,7 +745,7 @@ app.get("/", (req, res) => {
     .brk-row.bad .brk-dot { background:#ef4444; }
     .brk-dot.pulse { animation:pulse 1.5s infinite; }
     .brk-name { font-size:0.92rem; font-weight:700; color:#e0eaf8; letter-spacing:-0.2px; }
-    .brk-role { font-size:0.66rem; color:#4a6080; flex:1 0 auto; }
+    .brk-role { font-size:0.66rem; color:#4a6080; flex:0 1 auto; }
     .brk-status {
       font-size:0.58rem; font-weight:700; text-transform:uppercase; letter-spacing:1px;
       padding:3px 9px; border-radius:20px; border:1px solid;
@@ -834,6 +866,8 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .brk-row.muted { background:#f8fafc; border-color:#e2e8f0; }
     :root[data-theme="light"] .brk-name { color:#1e293b; }
     :root[data-theme="light"] .brk-role { color:#94a3b8; }
+    :root[data-theme="light"] .brk-wallet-remain { color:#1e293b; }
+    :root[data-theme="light"] .brk-wallet-sub { color:#94a3b8; }
     :root[data-theme="light"] .brk-status { background:#f1f5f9; border-color:#e2e8f0; color:#94a3b8; }
     :root[data-theme="light"] .brk-row.ok .brk-status { background:#dcfce7; border-color:#86efac; color:#16a34a; }
     :root[data-theme="light"] .brk-row.ok.blue .brk-status { background:#dbeafe; border-color:#93c5fd; color:#2563eb; }
@@ -1075,6 +1109,7 @@ ${buildSidebar('dashboard', liveActive)}
       <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Fyers</span>
       <span class="brk-role">Market Data · WS · REST</span>
+      ${fyersWalletHtml}
       <span class="brk-status">${fyersOk ? 'Connected' : 'Disconnected'}</span>
       ${fyersOk
         ? `<a href="/auth/login" class="brk-action re-login">re-login →</a>`
@@ -1084,6 +1119,7 @@ ${buildSidebar('dashboard', liveActive)}
       <span class="brk-dot ${zerodhaOk ? 'pulse' : ''}"></span>
       <span class="brk-name">Zerodha</span>
       <span class="brk-role">Orders · Live Trade</span>
+      ${zerodhaWalletHtml}
       <span class="brk-status">${zerodhaOk ? 'Connected' : zerodhaConf ? 'Disconnected' : 'Not Configured'}</span>
       ${zerodhaOk
         ? `<a href="/auth/zerodha/login" class="brk-action re-login">re-login →</a>`
