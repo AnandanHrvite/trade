@@ -1084,8 +1084,7 @@ ${buildSidebar('dashboard', liveActive)}
       <button type="button" class="dst-btn" data-src="live">LIVE</button>
     </div>
     <div class="top-bar-right">
-      <button id="btn-all-paper" class="top-bar-btn run-paper" onclick="startAllPaper(this)" title="Start all paper modes">▶ All Paper</button>
-      <button id="btn-all-live"  class="top-bar-btn run-live"  onclick="startAllLive(this)"  title="Start all live modes">▶ All Live</button>
+      <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
@@ -1570,7 +1569,14 @@ async function startAllLive(btn){
   await _handleStartAllResult(btn, orig, 'All Live', result);
 }
 
+// Single Start-All button follows the top-bar PAPER/LIVE toggle.
+function startAll(btn){
+  return _dashSrc === 'live' ? startAllLive(btn) : startAllPaper(btn);
+}
+
 // ── Quick-Action button live state (mutual lock: Paper ↔ Live) ──────────────
+var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
+var _allBtnState = { paperOn:false, liveOn:false };
 var ALL_BTN_POLL = [
   { url:'/swing-paper/status/data', kind:'paper' },
   { url:'/swing-live/status/data',  kind:'live'  }
@@ -1581,41 +1587,36 @@ var ALL_BTN_POLL = [
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
-  var bPaper = document.getElementById('btn-all-paper');
-  var bLive  = document.getElementById('btn-all-live');
-  if(!bPaper || !bLive) return;
-  bPaper.classList.remove('is-active-paper','is-locked');
-  bLive.classList.remove('is-active-live','is-locked');
-  if(paperOn){
-    bPaper.disabled = true;
-    bPaper.classList.add('is-active-paper');
-    bPaper.textContent = '● PAPER ACTIVE';
-    bPaper.title = 'Paper trading is running';
-    bLive.disabled = true;
-    bLive.classList.add('is-locked');
-    bLive.textContent = '🔒 Live locked';
-    bLive.title = 'Stop all paper trades before starting live';
-  } else if(liveOn){
-    bLive.disabled = true;
-    bLive.classList.add('is-active-live');
-    bLive.textContent = '● LIVE ACTIVE';
-    bLive.title = 'Live trading is running';
-    bPaper.disabled = true;
-    bPaper.classList.add('is-locked');
-    bPaper.textContent = '🔒 Paper locked';
-    bPaper.title = 'Stop all live trades before starting paper';
+  var b = document.getElementById('btn-all-start');
+  if(!b) return;
+  b.classList.remove('run-paper','run-live','is-active-paper','is-active-live','is-locked');
+  if(_dashSrc === 'live'){
+    if(liveOn){
+      b.disabled = true; b.classList.add('is-active-live');
+      b.textContent = '● LIVE ACTIVE'; b.title = 'Live trading is running';
+    } else if(paperOn){
+      b.disabled = true; b.classList.add('is-locked');
+      b.textContent = '🔒 Live locked'; b.title = 'Stop all paper trades before starting live';
+    } else {
+      b.disabled = false; b.classList.add('run-live');
+      b.textContent = '▶ Start All (Live)'; b.title = 'Start all live modes';
+    }
   } else {
-    bPaper.disabled = false;
-    bPaper.textContent = '▶ All Paper';
-    bPaper.title = 'Start all paper modes';
-    bLive.disabled = false;
-    bLive.textContent = '▶ All Live';
-    bLive.title = 'Start all live modes';
+    if(paperOn){
+      b.disabled = true; b.classList.add('is-active-paper');
+      b.textContent = '● PAPER ACTIVE'; b.title = 'Paper trading is running';
+    } else if(liveOn){
+      b.disabled = true; b.classList.add('is-locked');
+      b.textContent = '🔒 Paper locked'; b.title = 'Stop all live trades before starting paper';
+    } else {
+      b.disabled = false; b.classList.add('run-paper');
+      b.textContent = '▶ Start All (Paper)'; b.title = 'Start all paper modes';
+    }
   }
 }
 
 async function pollAllBtnsStatus(){
-  if(!document.getElementById('btn-all-paper')) return;
+  if(!document.getElementById('btn-all-start')) return;
   try {
     var results = await Promise.all(ALL_BTN_POLL.map(function(p){
       return fetch(p.url,{cache:'no-store'})
@@ -1627,6 +1628,7 @@ async function pollAllBtnsStatus(){
       if(!results[i] || !results[i].running) continue;
       if(ALL_BTN_POLL[i].kind==='paper') paperOn=true; else liveOn=true;
     }
+    _allBtnState.paperOn = paperOn; _allBtnState.liveOn = liveOn;
     _applyAllBtnState(paperOn, liveOn);
   } catch(_){}
 }
@@ -1762,8 +1764,7 @@ async function loadDashCumCharts(){
   _renderDashTotal();
 }
 
-// Global Paper/Live toggle (top-bar) — one source drives every chart on the dashboard.
-var _dashSrc = 'paper';
+// Global Paper/Live toggle (top-bar) — one source drives every chart AND the Start-All button.
 document.addEventListener('click', function(e){
   var btn = e.target.closest && e.target.closest('.dst-btn');
   if (!btn) return;
@@ -1775,6 +1776,7 @@ document.addEventListener('click', function(e){
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
   ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
+  _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
 loadDashCumCharts();

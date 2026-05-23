@@ -13,6 +13,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 ### Dashboard — one global Paper/Live toggle for all charts
 
 - **Replaced the six per-card Paper/Live toggles with a single top-bar toggle.** Each strategy chart (Swing/Scalp/PA/ORB/Straddle) and the Cumulative P&L card carried its own Paper/Live switch; they're removed in favour of one square PAPER/LIVE toggle in the dashboard top-bar ([src/app.js](src/app.js)), defaulting to PAPER. Flipping it re-renders every module chart and the cumulative chart from the chosen source at once. Dead per-card toggle markup, click handlers, and CSS removed.
+- **The "Start All" quick-action now follows the same toggle.** The separate "▶ All Paper" / "▶ All Live" buttons collapse into one "▶ Start All (Paper/Live)" button that starts whichever mode the toggle selects (PAPER → all paper modes, LIVE → all live modes, with the existing live confirm prompt). The Paper↔Live mutual-lock poller is preserved — it now drives the single button (shows "● PAPER/LIVE ACTIVE" or "🔒 …locked" against the selected mode).
 
 ### Paper capital — broker investment pools replace per-strategy capital
 
