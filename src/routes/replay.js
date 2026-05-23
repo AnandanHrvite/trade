@@ -378,8 +378,10 @@ ${buildSidebar('replay', false)}
       </div>
       <div class="range-field">
         <label>&nbsp;</label>
-        <button id="range-run-btn" onclick="runRange(this)">▶ Run range</button>
-        <button id="range-cancel-btn" onclick="cancelRange(this)" style="display:none; background:#7f1d1d; color:#fecaca;">✕ Cancel</button>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="range-run-btn" onclick="runRange(this)">▶ Run range</button>
+          <button id="range-cancel-btn" onclick="cancelRange(this)" style="display:none; background:#7f1d1d; color:#fecaca; white-space:nowrap;">✕ Cancel</button>
+        </div>
       </div>
       <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
     </div>
