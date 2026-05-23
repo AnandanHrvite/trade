@@ -351,7 +351,6 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `ORB_VIX_MAX_ENTRY` / `ORB_VIX_STRONG_ONLY` | `22` / `18` | Per-mode VIX thresholds |
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |
 | `ORB_MAX_DAILY_LOSS` | `3000` | ORB kill-switch (INR) |
-| `ORB_PAPER_CAPITAL` | `100000` | Starting capital for ORB paper |
 
 ### Straddle Mode (Long Straddle — Volatility, Fyers)
 | Key | Default | Notes |
@@ -372,7 +371,13 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `STRADDLE_VIX_CHEAP` | `14` | Below this VIX → cheap-premium entry path triggers |
 | `STRADDLE_MAX_DAILY_PAIRS` | `1` | Cap on pair entries per day |
 | `STRADDLE_MAX_DAILY_LOSS` | `3000` | Straddle kill-switch (INR) |
-| `STRADDLE_PAPER_CAPITAL` | `100000` | Starting capital for straddle paper |
+
+### Paper Investment Pools (per broker)
+Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
+| Key | Default | Notes |
+|-----|---------|-------|
+| `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (Swing) |
+| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (Scalp + PA + ORB + Straddle) |
 
 ### VIX Filter (per-module)
 | Key | Default | Notes |

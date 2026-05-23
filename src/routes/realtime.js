@@ -32,6 +32,20 @@ function enabledStrategies() {
   return STRATEGY_DEFS.filter(s => (process.env[s.modeFlag] || 'true').toLowerCase() !== 'false');
 }
 
+// Broker investment pools: each strategy's paper P&L draws from one shared pool.
+// Swing trades through Zerodha; Scalp/PA/ORB/Straddle through Fyers.
+const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS', STRADDLE:'FYERS' };
+function brokerPools(strategies) {
+  const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
+  const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
+  const pools = [];
+  if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
+    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'Swing', inv:z });
+  if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
+    pools.push({ id:'FYERS', label:'FYERS', sub:'Scalp · PA · ORB · Straddle', inv:f });
+  return pools;
+}
+
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   res.send(renderPage({ liveActive, sidebarKey: "dashboard", autoFlipBack: false }));
@@ -52,6 +66,17 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
   const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
   const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
+
+  const pools           = brokerPools(strategies);
+  const poolsJson       = JSON.stringify(pools);
+  const brokerOfJson    = JSON.stringify(BROKER_OF);
+  const inrFmt = n => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const walletsHtml = pools.map(p => `
+    <div class="wallet" id="wallet-${p.id}">
+      <div class="w-head"><span class="w-broker">${p.label}</span><span class="w-sub">${p.sub}</span></div>
+      <div class="w-remain" id="wallet-remain-${p.id}">${inrFmt(p.inv)}</div>
+      <div class="w-meta"><span>Invested ${inrFmt(p.inv)}</span><span class="w-delta" id="wallet-delta-${p.id}">—</span></div>
+    </div>`).join('\n');
 
   const cardsHtml = strategies.map(s => `
     <div class="card ${s.accentClass}" id="card-${s.key}">
@@ -94,6 +119,17 @@ ${faviconLink()}
   .toggle button { background:transparent; border:none; color:#9aa9c2; font-size:0.82rem; font-weight:600; padding:7px 18px; border-radius:6px; cursor:pointer; transition:all 0.15s; letter-spacing:0.5px; }
   .toggle button.active[data-mode="PAPER"] { background:#3b82f6; color:#fff; }
   .toggle button.active[data-mode="LIVE"]  { background:#ef4444; color:#fff; }
+
+  /* Broker investment-pool wallets */
+  .wallets { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:18px; }
+  .wallet { background:#0a1628; border:1px solid #1c2c47; border-left-width:4px; border-left-color:#3b82f6; border-radius:10px; padding:12px 16px; }
+  .wallet#wallet-FYERS { border-left-color:#f59e0b; }
+  .w-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+  .w-broker { font-size:0.95rem; font-weight:700; letter-spacing:0.6px; color:#cbd5e1; }
+  .w-sub { font-size:0.66rem; color:#7d8aa3; text-transform:uppercase; letter-spacing:0.4px; }
+  .w-remain { font-size:1.5rem; font-weight:700; line-height:1.2; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .w-meta { display:flex; justify-content:space-between; font-size:0.72rem; color:#7d8aa3; margin-top:4px; }
+  .w-delta { font-variant-numeric:tabular-nums; font-weight:600; }
 
   .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:18px; }
 
@@ -219,6 +255,10 @@ ${faviconLink()}
   :root[data-theme="light"] .act-btn:hover { background:#fff !important; color:#1e293b; }
   :root[data-theme="light"] .act-btn.copied { background:rgba(16,185,129,0.10) !important; border-color:#10b981 !important; color:#059669; }
   :root[data-theme="light"] .act-btn-disabled { color:#94a3b8 !important; }
+  :root[data-theme="light"] .wallet { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+  :root[data-theme="light"] .w-broker { color:#1e293b; }
+  :root[data-theme="light"] .w-sub { color:#94a3b8; }
+  :root[data-theme="light"] .w-meta { color:#64748b; }
 </style>
 </head>
 <body>
@@ -234,6 +274,8 @@ ${sidebar}
       <button data-mode="LIVE">LIVE</button>
     </div>
   </div>
+
+  ${pools.length ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
 
   <div class="cols">
 ${cardsHtml}
@@ -263,6 +305,8 @@ const ENDPOINTS        = ${endpointsJson};
 const STATUS_PAGES     = ${statusPagesJson};
 const STRATEGY_LABELS  = ${labelsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
+const WALLET_POOLS     = ${poolsJson};
+const BROKER_OF        = ${brokerOfJson};
 let mode = 'PAPER';
 let timer = null;
 
@@ -480,6 +524,28 @@ function renderRollup(all) {
   tbody.innerHTML = html;
 }
 
+// Broker wallet = investment pool + all-time P&L of every strategy on that broker.
+// totalPnl is exposed by each /status/data; fall back to (capital - inv) when absent.
+function renderWallets(all) {
+  for (const p of WALLET_POOLS) {
+    let pnl = 0;
+    for (const k of STRATEGY_KEYS) {
+      if (BROKER_OF[k] !== p.id) continue;
+      const d = all[k];
+      if (!d) continue;
+      const tp = (d.totalPnl !== undefined && d.totalPnl !== null) ? +d.totalPnl
+               : (d.capital  !== undefined && d.capital  !== null) ? (+d.capital - p.inv)
+               : 0;
+      pnl += (+tp || 0);
+    }
+    const remain = p.inv + pnl;
+    const remEl = document.getElementById('wallet-remain-' + p.id);
+    const dEl   = document.getElementById('wallet-delta-' + p.id);
+    if (remEl) { remEl.textContent = fmtINR(remain); remEl.className = 'w-remain ' + cls(pnl); }
+    if (dEl)   { dEl.textContent = (pnl >= 0 ? '▲ ' : '▼ ') + fmtINR(Math.abs(pnl)); dEl.className = 'w-delta ' + cls(pnl); }
+  }
+}
+
 async function poll() {
   const eps = ENDPOINTS[mode];
   const fetchOne = url => fetch(url, { cache:'no-store' })
@@ -489,6 +555,7 @@ async function poll() {
   const all = {};
   STRATEGY_KEYS.forEach((k, i) => { all[k] = results[i]; renderColumn(k, results[i]); });
   renderRollup(all);
+  renderWallets(all);
 }
 
 document.querySelectorAll('#mode-toggle button').forEach(b => {

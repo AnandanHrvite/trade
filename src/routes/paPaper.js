@@ -2345,7 +2345,8 @@ function spUpdateBanner() {
 // ── Price Action Paper History ─────────────────────────────────────────────────────
 
 function getPACapitalFromEnv() {
-  const v = parseFloat(process.env.PA_PAPER_CAPITAL);
+  // PA trades through Fyers — its paper capital is the shared Fyers investment pool.
+  const v = parseFloat(process.env.FYERS_INV_AMOUNT);
   return isNaN(v) ? 100000 : v;
 }
 

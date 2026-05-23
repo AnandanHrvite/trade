@@ -146,7 +146,7 @@ function loadPaperData() {
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
     const initial = {
-      capital: parseFloat(process.env.SWING_PAPER_CAPITAL || "100000"),
+      capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"),
       totalPnl: 0,
       sessions: [],
     };
@@ -158,7 +158,7 @@ function loadPaperData() {
     _paperDataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8"));
   } catch (e) {
     console.error("[paperTrade] paper_trades.json corrupt — resetting:", e.message);
-    _paperDataCache = { capital: parseFloat(process.env.SWING_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    _paperDataCache = { capital: parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_paperDataCache, null, 2));
   }
   return _paperDataCache;
@@ -359,7 +359,8 @@ function scheduleAutoStop(stopFn) {
 }
 
 function getCapitalFromEnv() {
-  return parseFloat(process.env.SWING_PAPER_CAPITAL || "100000");
+  // Swing trades through Zerodha — its paper capital is the shared Zerodha investment pool.
+  return parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
 }
 
 // ── 0DTE expiry-day detector ─────────────────────────────────────────────────

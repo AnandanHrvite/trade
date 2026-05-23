@@ -60,7 +60,7 @@ function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
-    const init = { capital: parseFloat(process.env.STRADDLE_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    const init = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(init, null, 2));
     _dataCache = init;
     return init;
@@ -68,7 +68,7 @@ function loadData() {
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
     console.error("[straddle-paper] straddle_paper_trades.json corrupt — resetting:", e.message);
-    _dataCache = { capital: parseFloat(process.env.STRADDLE_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    _dataCache = { capital: parseFloat(process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
   return _dataCache;
@@ -827,7 +827,7 @@ router.get("/status/data", (req, res) => {
 });
 
 function _straddleCapital() {
-  const v = parseFloat(process.env.STRADDLE_PAPER_CAPITAL);
+  const v = parseFloat(process.env.FYERS_INV_AMOUNT);
   return isNaN(v) ? 100000 : v;
 }
 
@@ -1338,7 +1338,7 @@ async function strpManualEntry(){
 router.get("/history", (req, res) => {
   const data = loadData();
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
-  const startCap = parseFloat(process.env.STRADDLE_PAPER_CAPITAL || "100000");
+  const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
 
   const inr = n => typeof n === "number" ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
   const pnlColor = n => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";

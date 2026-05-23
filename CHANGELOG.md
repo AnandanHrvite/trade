@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Paper capital — broker investment pools replace per-strategy capital
+
+- **Five per-strategy paper-capital settings collapsed into two broker-level pools.** `SWING_PAPER_CAPITAL`, `SCALP_PAPER_CAPITAL`, `PA_PAPER_CAPITAL`, `ORB_PAPER_CAPITAL`, and `STRADDLE_PAPER_CAPITAL` are removed from Settings and replaced by `ZERODHA_INV_AMOUNT` (Swing) and `FYERS_INV_AMOUNT` (Scalp + PA + ORB + Straddle), matching how each strategy is brokered ([src/routes/settings.js](src/routes/settings.js)). Each strategy now reads its broker pool as its starting capital; running capital is still `pool + all-time P&L`, so existing on-disk `totalPnl` is preserved (defaults unchanged at ₹100000).
+- **Dashboard shows each broker pool's remaining balance.** The Real-Time Monitor ([src/routes/realtime.js](src/routes/realtime.js)) gains a wallet strip above the strategy cards: ZERODHA and FYERS pools each show invested amount and live remaining (= pool + summed all-time P&L of that broker's enabled strategies), computed client-side from the `totalPnl`/`capital` already returned by each `/status/data`. Pools only appear when at least one strategy on that broker is enabled.
+- Settings/display plumbing only — no paper decision/fill/exit logic or strategy params changed; capital is display-only (kill-switches read session P&L). The `*_LIVE_CAPITAL` fallbacks in [src/routes/orbLive.js](src/routes/orbLive.js) / [src/routes/straddleLive.js](src/routes/straddleLive.js) now fall back to `FYERS_INV_AMOUNT` instead of the removed paper keys.
+
 ### Replay — Cancel button for a running replay
 
 - **A running replay can now be cancelled mid-session.** While a date-range batch (or single session) replays, a red **✕ Cancel** button appears next to the run button (in [src/routes/replay.js](src/routes/replay.js)). Clicking it POSTs `/replay/cancel`, which sets a flag the spot-tick streaming loop in [src/services/tickReplay.js](src/services/tickReplay.js) checks each tick — the loop stops early, runs `/stop` to square off cleanly, and returns `cancelled: true` so the replay-in-progress flag clears with no stuck state. The batch then halts before the next session and reports "🛑 Cancelled".

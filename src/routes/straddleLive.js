@@ -55,14 +55,14 @@ function loadData() {
   if (_dataCache) return _dataCache;
   ensureDir();
   if (!fs.existsSync(PT_FILE)) {
-    const init = { capital: parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.STRADDLE_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    const init = { capital: parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(init, null, 2));
     _dataCache = init; return init;
   }
   try { _dataCache = JSON.parse(fs.readFileSync(PT_FILE, "utf-8")); }
   catch (e) {
     console.error("[straddle-live] file corrupt — resetting:", e.message);
-    _dataCache = { capital: parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.STRADDLE_PAPER_CAPITAL || "100000"), totalPnl: 0, sessions: [] };
+    _dataCache = { capital: parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT || "100000"), totalPnl: 0, sessions: [] };
     fs.writeFileSync(PT_FILE, JSON.stringify(_dataCache, null, 2));
   }
   return _dataCache;
@@ -488,7 +488,7 @@ router.get("/status/chart-data", (req, res) => {
 });
 
 function _straddleLiveCapital() {
-  const v = parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.STRADDLE_PAPER_CAPITAL);
+  const v = parseFloat(process.env.STRADDLE_LIVE_CAPITAL || process.env.FYERS_INV_AMOUNT);
   return isNaN(v) ? 100000 : v;
 }
 
