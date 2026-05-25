@@ -17,6 +17,71 @@ const DATA_DIR = path.join(require("os").homedir(), "trading-data");
 // Ensure directory exists
 try { if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (_) {}
 
+// ── Async atomic persist queue (per-file, coalescing) ───────────────────────
+// Live SL/trail/breakeven updates fire many times per open position. Doing a
+// synchronous writeFileSync on each one blocks the event loop on the tick hot
+// path. Instead we queue the latest desired state per file and write it async
+// (atomic tmp → rename). If newer state arrives while a write is in flight we
+// keep only the newest payload, so a burst of trail updates collapses into one
+// or two disk writes. Crash-recovery semantics are unchanged: the file always
+// ends up holding the most recently requested state (or absent if cleared).
+const _pending = new Map(); // file -> { data: string|null, writing: bool }
+
+function _persistAtomic(file, dataStr /* string to write, or null to delete */) {
+  const p = _pending.get(file);
+  if (p) { p.data = dataStr; return; }      // coalesce onto in-flight write
+  _pending.set(file, { data: dataStr, writing: false });
+  _drain(file);
+}
+
+function _drain(file) {
+  const p = _pending.get(file);
+  if (!p || p.writing) return;
+  p.writing = true;
+  const dataStr = p.data;
+  const done = (err) => {
+    p.writing = false;
+    if (err) { _pending.delete(file); return; }
+    if (p.data !== dataStr) _drain(file);   // newer state arrived mid-write
+    else _pending.delete(file);
+  };
+  if (dataStr === null) {
+    fs.unlink(file, (err) => {
+      if (err && err.code !== "ENOENT") console.warn(`⚠️ [PERSIST] unlink failed: ${err.message}`);
+      done(err && err.code !== "ENOENT" ? err : null);
+    });
+    return;
+  }
+  const tmp = file + ".tmp";
+  fs.writeFile(tmp, dataStr, "utf-8", (err) => {
+    if (err) { console.warn(`⚠️ [PERSIST] write failed: ${err.message}`); return done(err); }
+    fs.rename(tmp, file, (err2) => {
+      if (err2) console.warn(`⚠️ [PERSIST] rename failed: ${err2.message}`);
+      done(err2);
+    });
+  });
+}
+
+// Drain any queued state synchronously. The "exit" event fires right before the
+// process terminates (after gracefulShutdown's squareoff completes), so this
+// guarantees the most recent position state is durably on disk on every graceful
+// shutdown / PM2 restart — matching the old synchronous-write durability.
+function _flushSync() {
+  for (const [file, p] of _pending) {
+    try {
+      if (p.data === null) {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      } else {
+        const tmp = file + ".tmp";
+        fs.writeFileSync(tmp, p.data, "utf-8");
+        fs.renameSync(tmp, file);
+      }
+    } catch (_) { /* best-effort at exit */ }
+  }
+  _pending.clear();
+}
+process.on("exit", _flushSync);
+
 // ── Trade (15-min Zerodha) ────────────────────────────────────────────────────
 
 const TRADE_POS_FILE = path.join(DATA_DIR, ".active_trade_position.json");
@@ -24,8 +89,8 @@ const TRADE_POS_FILE = path.join(DATA_DIR, ".active_trade_position.json");
 function saveTradePosition(position, sessionMeta) {
   try {
     if (!position) {
-      // Position closed — remove file
-      if (fs.existsSync(TRADE_POS_FILE)) fs.unlinkSync(TRADE_POS_FILE);
+      // Position closed — remove file (queued, coalesces with pending writes)
+      _persistAtomic(TRADE_POS_FILE, null);
       return;
     }
     const data = {
@@ -50,9 +115,7 @@ function saveTradePosition(position, sessionMeta) {
       savedAt: Date.now(),
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
-    const tmp = TRADE_POS_FILE + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
-    fs.renameSync(tmp, TRADE_POS_FILE);  // atomic write
+    _persistAtomic(TRADE_POS_FILE, JSON.stringify(data, null, 2));
     console.log(`💾 [PERSIST] Trade position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save trade position: ${err.message}`);
@@ -81,12 +144,8 @@ function loadTradePosition() {
 }
 
 function clearTradePosition() {
-  try {
-    if (fs.existsSync(TRADE_POS_FILE)) {
-      fs.unlinkSync(TRADE_POS_FILE);
-      console.log("[PERSIST] Trade position file cleared.");
-    }
-  } catch (_) {}
+  _persistAtomic(TRADE_POS_FILE, null);  // queued delete — orders after any pending write
+  console.log("[PERSIST] Trade position file cleared.");
 }
 
 // ── Scalp (3-min Fyers) ─────────────────────────────────────────────────────
@@ -96,7 +155,7 @@ const SCALP_POS_FILE = path.join(DATA_DIR, ".active_scalp_position.json");
 function saveScalpPosition(position, sessionMeta) {
   try {
     if (!position) {
-      if (fs.existsSync(SCALP_POS_FILE)) fs.unlinkSync(SCALP_POS_FILE);
+      _persistAtomic(SCALP_POS_FILE, null);
       return;
     }
     const data = {
@@ -120,9 +179,7 @@ function saveScalpPosition(position, sessionMeta) {
       savedAt: Date.now(),
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
-    const tmp = SCALP_POS_FILE + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
-    fs.renameSync(tmp, SCALP_POS_FILE);
+    _persistAtomic(SCALP_POS_FILE, JSON.stringify(data, null, 2));
     console.log(`💾 [PERSIST] Scalp position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save scalp position: ${err.message}`);
@@ -150,12 +207,8 @@ function loadScalpPosition() {
 }
 
 function clearScalpPosition() {
-  try {
-    if (fs.existsSync(SCALP_POS_FILE)) {
-      fs.unlinkSync(SCALP_POS_FILE);
-      console.log("[PERSIST] Scalp position file cleared.");
-    }
-  } catch (_) {}
+  _persistAtomic(SCALP_POS_FILE, null);
+  console.log("[PERSIST] Scalp position file cleared.");
 }
 
 // ── Price Action (5-min Fyers) ──────────────────────────────────────────────
@@ -165,7 +218,7 @@ const PA_POS_FILE = path.join(DATA_DIR, ".active_pa_position.json");
 function savePAPosition(position, sessionMeta) {
   try {
     if (!position) {
-      if (fs.existsSync(PA_POS_FILE)) fs.unlinkSync(PA_POS_FILE);
+      _persistAtomic(PA_POS_FILE, null);
       return;
     }
     const data = {
@@ -189,9 +242,7 @@ function savePAPosition(position, sessionMeta) {
       savedAt: Date.now(),
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
-    const tmp = PA_POS_FILE + ".tmp";
-    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
-    fs.renameSync(tmp, PA_POS_FILE);
+    _persistAtomic(PA_POS_FILE, JSON.stringify(data, null, 2));
     console.log(`💾 [PERSIST] PA position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
     console.warn(`⚠️ [PERSIST] Could not save PA position: ${err.message}`);
@@ -219,12 +270,8 @@ function loadPAPosition() {
 }
 
 function clearPAPosition() {
-  try {
-    if (fs.existsSync(PA_POS_FILE)) {
-      fs.unlinkSync(PA_POS_FILE);
-      console.log("[PERSIST] PA position file cleared.");
-    }
-  } catch (_) {}
+  _persistAtomic(PA_POS_FILE, null);
+  console.log("[PERSIST] PA position file cleared.");
 }
 
 module.exports = {
