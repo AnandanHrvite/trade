@@ -1365,7 +1365,12 @@ function onTick(tick) {
     }
     // Security: never enter outside market hours (e.g. if tick arrives at open/close boundary)
     if (!isMarketHours()) {
-      log(`🚫 [PAPER] Security block — outside market hours. No entry allowed.`);
+      // Log only once per candle to avoid per-tick spam (matches the other guards below)
+      const blockBarTime = ptState.currentBar ? ptState.currentBar.time : null;
+      if (ptState._mktBlockLoggedCandle !== blockBarTime) {
+        log(`🚫 [PAPER] Security block — outside market hours. No entry allowed.`);
+        ptState._mktBlockLoggedCandle = blockBarTime;
+      }
     } else {
     // Block re-entry on the same candle where an SL/50% exit just occurred
     const currentBarTime = ptState.currentBar ? ptState.currentBar.time : null;
