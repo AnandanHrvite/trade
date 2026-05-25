@@ -36,7 +36,25 @@ function safeRead(p) {
   }
 }
 
+// Cache the flattened+sorted trade list. This is hit by the dashboard P&L chart
+// poll every few seconds; re-reading and JSON.parsing all 5 (growing) trade files
+// each time is wasteful. Invalidate by a cheap mtime+size signature so a new trade
+// is picked up immediately without re-parsing when nothing has changed.
+let _allTradesCache = null;
+let _allTradesSig   = null;
+
+function _sourcesSig() {
+  let sig = "";
+  for (const src of SOURCES) {
+    try { const st = fs.statSync(src.file); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
+    catch (_) { sig += `${src.mode}:0|`; }
+  }
+  return sig;
+}
+
 function loadAllTrades() {
+  const sig = _sourcesSig();
+  if (_allTradesCache && sig === _allTradesSig) return _allTradesCache;
   const out = [];
   for (const src of SOURCES) {
     const data = safeRead(src.file);
@@ -73,6 +91,8 @@ function loadAllTrades() {
   }
   // Sort oldest → newest so cumulative curves read left-to-right
   out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  _allTradesCache = out;
+  _allTradesSig   = sig;
   return out;
 }
 
