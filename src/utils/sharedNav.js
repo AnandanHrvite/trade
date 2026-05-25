@@ -449,7 +449,7 @@ function toggleNavGroup(gid){
   }
 
   poll();
-  setInterval(poll,8000);
+  setInterval(poll,20000);
 })();
 
 /* ── Broker socket health banner (auth failures, dropped feed) ────────────── */
@@ -493,7 +493,7 @@ function toggleNavGroup(gid){
       .catch(function(){ /* network blip — leave banner state as-is */ });
   }
   poll();
-  setInterval(poll, 5000);
+  setInterval(poll, 10000);
 })();
 
 /* ── Backup download-nag banner (stays until today's snapshot is downloaded) ─ */

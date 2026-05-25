@@ -449,7 +449,7 @@ async function poll() {
 }
 
 poll();
-setInterval(poll, 2000);
+setInterval(poll, 5000);
 
 ${toastJS()}
 <\/script>

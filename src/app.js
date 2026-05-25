@@ -1649,7 +1649,7 @@ async function pollAllBtnsStatus(){
   } catch(_){}
 }
 pollAllBtnsStatus();
-setInterval(pollAllBtnsStatus, 5000);
+setInterval(pollAllBtnsStatus, 10000);
 
 // ── Dashboard Cumulative P&L Charts (Paper + Live) ───────────────────────────
 function _fmtINR(n){
@@ -2169,7 +2169,7 @@ async function pollSessionActiveSwap(){
     if (j && j.active === true) location.replace('/');
   } catch(e){}
 }
-setInterval(pollSessionActiveSwap, 5000);
+setInterval(pollSessionActiveSwap, 10000);
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function hardReset(){
