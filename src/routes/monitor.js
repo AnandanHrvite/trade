@@ -7,7 +7,7 @@
 
 const express = require("express");
 const os      = require("os");
-const { execSync, exec } = require("child_process");
+const { exec } = require("child_process");
 const router  = express.Router();
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
@@ -40,23 +40,43 @@ function cpuUsage() {
 }
 
 // ── Disk usage (works on Linux & macOS) ─────────────────────────────────────
+// Disk fill changes slowly, but /monitor/data is polled every few seconds.
+// Spawning `df` synchronously on each poll blocked the event loop; instead we
+// cache the last reading and refresh it asynchronously at most every 30s, so
+// the handler never blocks and we spawn df ~once per 30s regardless of polling.
+let _diskCache      = { totalGB: 0, usedGB: 0, availGB: 0, pct: 0 };
+let _diskCacheAt    = 0;
+let _diskRefreshing = false;
+const DISK_TTL_MS   = 30_000;
+
+function refreshDiskAsync() {
+  if (_diskRefreshing || Date.now() - _diskCacheAt < DISK_TTL_MS) return;
+  _diskRefreshing = true;
+  exec("df -k / | tail -1", { encoding: "utf8" }, (err, stdout) => {
+    _diskRefreshing = false;
+    if (err) return;
+    try {
+      const parts = stdout.trim().split(/\s+/);
+      // df -k columns: Filesystem 1K-blocks Used Available Use% Mounted
+      const totalKB = parseInt(parts[1], 10);
+      const usedKB  = parseInt(parts[2], 10);
+      const availKB = parseInt(parts[3], 10);
+      if (!Number.isFinite(totalKB)) return;
+      _diskCache = {
+        totalGB: +(totalKB / 1048576).toFixed(2),
+        usedGB:  +(usedKB  / 1048576).toFixed(2),
+        availGB: +(availKB / 1048576).toFixed(2),
+        pct:     totalKB === 0 ? 0 : +((usedKB / totalKB) * 100).toFixed(1),
+      };
+      _diskCacheAt = Date.now();
+    } catch (_) { /* leave last good value */ }
+  });
+}
+refreshDiskAsync(); // prime at module load so the first poll has real data
+
 function diskUsage() {
-  try {
-    const line = execSync("df -k / | tail -1", { encoding: "utf8" }).trim();
-    const parts = line.split(/\s+/);
-    // df -k columns: Filesystem 1K-blocks Used Available Use% Mounted
-    const totalKB = parseInt(parts[1], 10);
-    const usedKB  = parseInt(parts[2], 10);
-    const availKB = parseInt(parts[3], 10);
-    return {
-      totalGB: +(totalKB / 1048576).toFixed(2),
-      usedGB:  +(usedKB  / 1048576).toFixed(2),
-      availGB: +(availKB / 1048576).toFixed(2),
-      pct:     totalKB === 0 ? 0 : +((usedKB / totalKB) * 100).toFixed(1),
-    };
-  } catch (_) {
-    return { totalGB: 0, usedGB: 0, availGB: 0, pct: 0 };
-  }
+  refreshDiskAsync();  // kick off a refresh if stale; returns immediately
+  return _diskCache;   // serve last known value — never blocks the event loop
 }
 
 // ── Load average (1, 5, 15 min) ─────────────────────────────────────────────
