@@ -305,6 +305,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   <span id="backup-nag-msg">📦 Today's data backup is ready</span>
   <a id="backup-nag-link" href="/backup/download" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">⬇ Download now</a>
   <span style="margin-left:14px;font-size:0.66rem;color:#bcd2f0;">(stays until you download today's copy)</span>
+  <button id="backup-nag-close" type="button" aria-label="Dismiss" title="Dismiss for this session" style="position:absolute;top:50%;right:14px;transform:translateY(-50%);background:transparent;border:none;color:#bcd2f0;font-size:1.1rem;line-height:1;cursor:pointer;padding:2px 6px;">✕</button>
 </div>
 <script>
 window.__LOGIN_GATE_ACTIVE = ${!!process.env.LOGIN_SECRET};
@@ -500,10 +501,25 @@ function toggleNavGroup(gid){
   var banner = document.getElementById('backup-nag-banner');
   var msgEl  = document.getElementById('backup-nag-msg');
   var linkEl = document.getElementById('backup-nag-link');
+  var closeEl= document.getElementById('backup-nag-close');
   if(!banner || !msgEl || !linkEl) return;
+  var dismissedKey = 'backup_nag_dismissed_date';
+
+  function isDismissedNow(d){
+    try { return d && sessionStorage.getItem(dismissedKey) === d.date; } catch(e){ return false; }
+  }
+  // X button: hide for the rest of this browser session (per backup date).
+  if(closeEl){
+    closeEl.addEventListener('click', function(){
+      try { sessionStorage.setItem(dismissedKey, msgEl.dataset.date || ''); } catch(e){}
+      banner.style.display = 'none';
+    });
+  }
 
   function render(d){
     if(!d || !d.enabled || !d.exists || d.downloaded){ banner.style.display = 'none'; return; }
+    if(isDismissedNow(d)){ banner.style.display = 'none'; return; }
+    msgEl.dataset.date = d.date;
     msgEl.textContent = '📦 Data backup for ' + d.date + ' is ready';
     linkEl.href = '/backup/download?date=' + encodeURIComponent(d.date);
     banner.style.display = 'block';
