@@ -186,12 +186,19 @@ function sendIfMaster(text) {
 // In-memory cooldown for system alerts. Map<key, lastSentMs>. Process-local — resets
 // on restart. Used to prevent flooding Telegram if an upstream issue causes the same
 // alert to fire repeatedly within a short window.
-const _alertCooldowns = new Map();
+const _alertCooldowns = new Map(); // key -> { ts, cooldownMs }
 
 function _shouldSendAlert(key, cooldownMs) {
-  const last = _alertCooldowns.get(key) || 0;
-  if (Date.now() - last < cooldownMs) return false;
-  _alertCooldowns.set(key, Date.now());
+  const now = Date.now();
+  // Opportunistic eviction: once an entry's cooldown has elapsed it carries no
+  // information (the next call would fire anyway), so drop it. Keeps the map
+  // bounded to only currently-cooling keys instead of growing forever.
+  for (const [k, e] of _alertCooldowns) {
+    if (now - e.ts >= e.cooldownMs) _alertCooldowns.delete(k);
+  }
+  const e = _alertCooldowns.get(key);
+  if (e && now - e.ts < cooldownMs) return false;
+  _alertCooldowns.set(key, { ts: now, cooldownMs });
   return true;
 }
 

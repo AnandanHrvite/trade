@@ -309,6 +309,8 @@ app.use((req, res, next) => {
 // Settings edits take effect on the next request. Setting WRITE_RATE_PER_MIN=0
 // disables the limiter entirely.
 const _writeBuckets = new Map(); // ip -> { tokens, lastRefillMs }
+let _lastBucketSweep = 0;
+const _BUCKET_IDLE_MS = 10 * 60_000; // a bucket idle this long has fully refilled
 function _writeRatePerMin() { const n = Number(process.env.WRITE_RATE_PER_MIN); return Number.isFinite(n) && n >= 0 ? n : 120; }
 function _writeRateBurst()  { const n = Number(process.env.WRITE_RATE_BURST);   return Number.isFinite(n) && n >= 1 ? n : 30;  }
 function _rateLimitOk(ip) {
@@ -316,6 +318,15 @@ function _rateLimitOk(ip) {
   if (perMin === 0) return true; // limiter disabled
   const burst  = _writeRateBurst();
   const now = Date.now();
+  // Throttled sweep (no standing timer): evict buckets idle long enough to have
+  // fully refilled — recreating them yields identical state, so this is lossless
+  // and keeps the map from growing unbounded across many/rotating IPs.
+  if (now - _lastBucketSweep > 60_000) {
+    _lastBucketSweep = now;
+    for (const [k, v] of _writeBuckets) {
+      if (now - v.lastRefillMs > _BUCKET_IDLE_MS) _writeBuckets.delete(k);
+    }
+  }
   let b = _writeBuckets.get(ip);
   if (!b) { b = { tokens: burst, lastRefillMs: now }; _writeBuckets.set(ip, b); }
   const elapsedMs = now - b.lastRefillMs;
