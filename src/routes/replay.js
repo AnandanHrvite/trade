@@ -366,12 +366,24 @@ ${buildSidebar('replay', false)}
     <strong>Date-range <span id="range-mode-label">replay</span></strong><span id="source-chip" class="source-chip">SNAPSHOT</span>
     <div class="range-row">
       <div class="range-field">
+        <label>Quick range</label>
+        <select id="range-preset" onchange="applyRangePreset(this.value)">
+          <option value="">Custom</option>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="this-week">This week</option>
+          <option value="last-week">Last week</option>
+          <option value="this-month">This month</option>
+          <option value="this-year">This year</option>
+        </select>
+      </div>
+      <div class="range-field">
         <label>From</label>
-        <input type="date" id="range-from">
+        <input type="date" id="range-from" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>To</label>
-        <input type="date" id="range-to">
+        <input type="date" id="range-to" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>Strategy</label>
@@ -1357,6 +1369,47 @@ function setRangeDefaults() {
   // Only set defaults if user hasn't already picked something valid.
   if (!fromEl.value || fromEl.value < earliest || fromEl.value > latest) fromEl.value = earliest;
   if (!toEl.value   || toEl.value   < earliest || toEl.value   > latest) toEl.value   = latest;
+}
+
+// Quick-range presets. Computes [from,to] in local time, then clamps to the
+// recorded-date bounds enforced on the inputs (min/max from setRangeDefaults).
+function applyRangePreset(preset) {
+  if (!preset) return;
+  const fromEl = document.getElementById('range-from');
+  const toEl   = document.getElementById('range-to');
+  const fmt = d => {
+    const x = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return x.toISOString().slice(0, 10);
+  };
+  const now = new Date();
+  let from = new Date(now), to = new Date(now);
+  switch (preset) {
+    case 'today':     break;
+    case 'yesterday': from.setDate(now.getDate() - 1); to = new Date(from); break;
+    case 'this-week': {
+      // Monday as week start.
+      const dow = (now.getDay() + 6) % 7;
+      from.setDate(now.getDate() - dow);
+      break;
+    }
+    case 'last-week': {
+      const dow = (now.getDay() + 6) % 7;
+      to.setDate(now.getDate() - dow - 1);
+      from = new Date(to); from.setDate(to.getDate() - 6);
+      break;
+    }
+    case 'this-month': from = new Date(now.getFullYear(), now.getMonth(), 1); break;
+    case 'this-year':  from = new Date(now.getFullYear(), 0, 1); break;
+    default: return;
+  }
+  let f = fmt(from), t = fmt(to);
+  // Clamp to recorded bounds so we never request dates with no data.
+  if (fromEl.min && f < fromEl.min) f = fromEl.min;
+  if (fromEl.max && f > fromEl.max) f = fromEl.max;
+  if (toEl.min   && t < toEl.min)   t = toEl.min;
+  if (toEl.max   && t > toEl.max)   t = toEl.max;
+  fromEl.value = f;
+  toEl.value   = t;
 }
 
 function pickSessionsInRange(from, to, mode) {
