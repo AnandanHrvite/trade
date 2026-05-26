@@ -2043,3 +2043,7 @@ function fmtINR(n) {
 }
 
 module.exports = router;
+// Exposed so the consolidated EOD Telegram report computes off the exact same
+// paper-only trade set + counting as this page (no parallel source list / no
+// straddle pair-collapse) — keeps the two from drifting. See consolidatedEodReporter.js.
+module.exports.loadAllTrades = loadAllTrades;

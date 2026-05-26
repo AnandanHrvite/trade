@@ -1,53 +1,18 @@
 /**
  * consolidatedEodReporter.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Reads today's persisted trades across all 10 sources
- * (swing/scalp/PA/ORB/straddle × paper/live) and sends one combined end-of-day
- * Telegram report at 15:30 IST.
+ * Sends one combined end-of-day Telegram report at 15:30 IST, mirroring the
+ * Consolidation page (/consolidation) exactly: same paper-only trade set and the
+ * same per-row counting (no live files, no straddle pair-collapse). It computes
+ * off that page's loadAllTrades() so the two can never drift — filtered to today.
  *
  * Gated by TG_DAYREPORT_CONSOLIDATED (and master TG_ENABLED) inside notify.js.
  * Schedule is idempotent per day — if the server restarts after 15:30, the report
  * for today is skipped (the scheduler only fires going forward).
  */
 
-const fs   = require("fs");
-const path = require("path");
-const os   = require("os");
-const { notifyConsolidatedDayReport, straddlePairStats } = require("./notify");
-
-const DATA_DIR = path.join(os.homedir(), "trading-data");
-
-const SOURCES = [
-  { group: "SWING",    file: "paper_trades.json"           },
-  { group: "SWING",    file: "live_trades.json"            },
-  { group: "SCALP",    file: "scalp_paper_trades.json"     },
-  { group: "SCALP",    file: "scalp_live_trades.json"      },
-  { group: "PA",       file: "pa_paper_trades.json"        },
-  { group: "PA",       file: "pa_live_trades.json"         },
-  { group: "ORB",      file: "orb_paper_trades.json"       },
-  { group: "ORB",      file: "orb_live_trades.json"        },
-  { group: "STRADDLE", file: "straddle_paper_trades.json"  },
-  { group: "STRADDLE", file: "straddle_live_trades.json"   },
-];
-
-function safeRead(fullPath) {
-  try {
-    if (!fs.existsSync(fullPath)) return null;
-    return JSON.parse(fs.readFileSync(fullPath, "utf-8"));
-  } catch (_) {
-    return null;
-  }
-}
-
-function toISTDate(input) {
-  if (!input) return "";
-  // Accept "YYYY-MM-DD" already or ISO; normalize to IST YYYY-MM-DD.
-  // If already a plain YYYY-MM-DD, return as-is (saved as local date, treat as IST).
-  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
-  const d = new Date(input);
-  if (isNaN(d)) return "";
-  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-}
+const { notifyConsolidatedDayReport } = require("./notify");
+const { loadAllTrades } = require("../routes/consolidation");
 
 function collectTodayStats(istDate) {
   const byMode = {
@@ -58,31 +23,17 @@ function collectTodayStats(istDate) {
     STRADDLE: { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 
-  for (const src of SOURCES) {
-    const data = safeRead(path.join(DATA_DIR, src.file));
-    if (!data || !Array.isArray(data.sessions)) continue;
-
-    for (const session of data.sessions) {
-      if (toISTDate(session.date) !== istDate) continue;
-      const trades = Array.isArray(session.trades) ? session.trades : [];
-      const bucket = byMode[src.group];
-      if (src.group === "STRADDLE") {
-        // Straddle records are per-leg; collapse to pairs for correct counts.
-        const s = straddlePairStats(trades);
-        bucket.trades += s.count;
-        bucket.wins   += s.wins;
-        bucket.losses += s.losses;
-        bucket.pnl    += s.pnl;
-      } else {
-        for (const t of trades) {
-          const pnl = Number(t.pnl) || 0;
-          bucket.trades++;
-          bucket.pnl += pnl;
-          if (pnl > 0) bucket.wins++;
-          else if (pnl < 0) bucket.losses++;
-        }
-      }
-    }
+  // loadAllTrades() returns flattened paper trades with `date` = session date
+  // sliced to YYYY-MM-DD (IST, as the page stores it) — match it directly.
+  for (const t of loadAllTrades()) {
+    if (t.date !== istDate) continue;
+    const bucket = byMode[t.mode];
+    if (!bucket) continue;
+    const pnl = Number(t.pnl) || 0;
+    bucket.trades++;
+    bucket.pnl += pnl;
+    if (pnl > 0) bucket.wins++;
+    else if (pnl < 0) bucket.losses++;
   }
 
   // Round P&L to 2dp for display.
