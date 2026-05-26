@@ -48,6 +48,7 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "SWING_LIVE_DRY_RUN", label: "Swing Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Swing in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets other strategies trade real money while Swing stays simulated. Default off.", default: "false" },
       { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["5", "15"], effect: EFFECT.SESSION, desc: "Swing candle timeframe (5-min or 15-min). Scalp & PA have their own resolution settings.", default: "5" },
       { key: "SWING_OPTION_EXPIRY_OVERRIDE", label: "Swing Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "Swing-only override. When set, overrides the common Option Expiry. Use to keep swing on next-week expiry while scalp/PA trade current expiry. Leave blank to fall back to common.", default: "" },
       { key: "SWING_OPTION_EXPIRY_TYPE", label: "Swing Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Swing-only expiry type. Blank = inherit from common.", default: "" },
@@ -221,6 +222,7 @@ const SETTINGS_SCHEMA = [
     icon: "📋",
     fields: [
       { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for ORB Live trading. Must be true AND LIVE_HARNESS_DRY_RUN=false for real Fyers orders to fire.", default: "false" },
+      { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets you take Swing/etc. live while ORB stays simulated. Default off.", default: "false" },
       { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow ORB entries on weekly expiry day (Tuesday)", default: "false" },
       { key: "ORB_VIX_ENABLED", label: "VIX Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block ORB entries when VIX is high (scope: ORB only)", default: "false" },
       { key: "ORB_VIX_MAX_ENTRY", label: "ORB VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "ORB only: block entries above this VIX", default: "22" },
@@ -258,6 +260,7 @@ const SETTINGS_SCHEMA = [
     icon: "🎯",
     fields: [
       { key: "STRADDLE_LIVE_ENABLED", label: "Straddle Live Orders (gates /straddle-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for Straddle Live trading. Both legs (CE + PE) are placed sequentially when on. Partial-fill protection: if PE fails after CE fills, a Telegram alert is sent.", default: "false" },
+      { key: "STRADDLE_LIVE_DRY_RUN", label: "Straddle Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Straddle in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
       { key: "STRADDLE_EXPIRY_DAY_ONLY", label: "Straddle Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow straddle entries on weekly expiry day", default: "false" },
       { key: "STRADDLE_VIX_ENABLED", label: "VIX Filter (Straddle)", type: "toggle", effect: EFFECT.INSTANT, desc: "Use VIX gating for straddle entries", default: "true" },
       { key: "STRADDLE_VIX_MAX_ENTRY", label: "Straddle VIX Max Entry", type: "number", min: 12, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block when VIX > this (premium pumped, poor R:R)", default: "22" },
@@ -295,7 +298,8 @@ const SETTINGS_SCHEMA = [
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes.", default: "weekly" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record every spot/option/VIX tick to data/ticks/YYYY-MM-DD/*.jsonl during paper/live sessions. Required for Replay backtest. Pure observer — no impact on trading.", default: "true" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Auto-delete tick recordings older than this many days. ~10 MB/day across all streams — 30 days ≈ 300 MB. Lower if EBS is tight.", default: "30" },
-      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN", type: "toggle", effect: EFFECT.SESSION, desc: "When ON (default), Live (Harness) routes log the broker call that WOULD have been made but place no real order. Switch OFF only after validating decisions match paper.", default: "true" },
+      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "GLOBAL kill-switch. When ON (default), ALL live routes (Swing/ORB/PA/Straddle) log the broker call but place no real order. When OFF, each strategy goes real UNLESS its own {STRATEGY}_LIVE_DRY_RUN override is ON. Switch OFF only after validating decisions match paper.", default: "true" },
+      { key: "PA_LIVE_DRY_RUN", label: "PA Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep the PA Live harness in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta. Used only by the legacy bar-based backtest; the new Replay backtest uses recorded option ticks instead." },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation" },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees" },

@@ -24,6 +24,7 @@ const router       = express.Router();
 const liveHarness  = require("../services/liveHarness");
 const fyersBroker  = require("../services/fyersBroker");
 const paPaperRoute = require("./paPaper");
+const liveDryRun   = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 
@@ -96,7 +97,8 @@ router.get("/start", async (req, res) => {
   }
 
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
-  const dryRun = (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "false";
+  // PA_LIVE_DRY_RUN can independently hold PA in dry-run when the global flag is off.
+  const dryRun = liveDryRun.isDryRun("PA");
 
   let installed;
   try {
@@ -156,7 +158,7 @@ router.get("/stop", async (req, res) => {
 router.get("/", (req, res) => {
   const cfg = liveHarness.getConfig();
   const installed = liveHarness.isInstalled();
-  const dryRunCurrent = (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "false";
+  const dryRunCurrent = liveDryRun.isDryRun("PA");
   const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">

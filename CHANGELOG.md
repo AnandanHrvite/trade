@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Live trading — per-strategy DRY-RUN override (staged real-money rollout)
+
+- **`{STRATEGY}_LIVE_DRY_RUN` per-strategy overrides** added so live strategies can be graduated to real money independently. Previously `LIVE_HARNESS_DRY_RUN` was a single global switch — flipping it OFF made *every* enabled live strategy place real orders at once, so you couldn't run e.g. Swing on real money while keeping ORB simulated.
+- New shared gate [src/utils/liveDryRun.js](src/utils/liveDryRun.js): a strategy is dry-run if the **global** `LIVE_HARNESS_DRY_RUN` is on (forces all), **or** its own `SWING_LIVE_DRY_RUN` / `ORB_LIVE_DRY_RUN` / `PA_LIVE_DRY_RUN` / `STRADDLE_LIVE_DRY_RUN` is on. Overrides can only **add** safety, never remove it. All default `false`, so behaviour is unchanged until explicitly set.
+- Wired into [swingLive.js](src/routes/swingLive.js), [orbLive.js](src/routes/orbLive.js), [straddleLive.js](src/routes/straddleLive.js), [paLiveHarness.js](src/routes/paLiveHarness.js); all four toggles exposed in the [Settings UI](src/routes/settings.js). Example: `LIVE_HARNESS_DRY_RUN=false` + `ORB_LIVE_DRY_RUN=true` → Swing places real orders while ORB stays logged-only.
+- **Note:** Scalp Live has no dry-run guard at all (it places directly) — out of scope here; do not run Scalp Live expecting dry-run protection.
+
 ### Trade logging — uniform entry-context + MFE/MAE + exit VIX across all 5 strategies
 
 - **Every strategy's trade record now captures the signal diagnostics it already computes at entry** but previously discarded ([src/routes/](src/routes/) paper + live for PA, ORB, Straddle, Swing; Scalp already had entry context). PA logs `rsiAtEntry`/`adxAtEntry`/`adxRising`/`isTrending`/`patternAtEntry`/`srLevelAtEntry`; ORB logs `vwapAligned`/`volPass`/`wickPass`; Swing logs `ema9AtEntry`/`ema9Slope`/`sarAtEntry`/`sarTrend`/`adxAtEntry`/`adxTrending`; Straddle already logged `trigger`/`bbWidth`/`bbWidthAvg`.

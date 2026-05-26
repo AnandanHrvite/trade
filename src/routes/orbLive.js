@@ -37,6 +37,7 @@ const orbStrategy        = require("../strategies/orb_breakout");
 const instrumentConfig   = require("../config/instrument");
 const sharedSocketState  = require("../utils/sharedSocketState");
 const socketManager      = require("../utils/socketManager");
+const liveDryRun         = require("../utils/liveDryRun");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -106,8 +107,10 @@ function log(msg) {
 }
 function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }); }
 
+// Per-strategy override ORB_LIVE_DRY_RUN holds ORB in dry-run even when the
+// global LIVE_HARNESS_DRY_RUN flag is off (so Swing can go real independently).
 function isDryRun() {
-  return (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() === "true";
+  return liveDryRun.isDryRun("ORB");
 }
 
 let _optionPollTimer = null;

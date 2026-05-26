@@ -23,6 +23,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/shared
 
 const socketManager     = require("../utils/socketManager");
 const tickRecorder      = require("../utils/tickRecorder");
+const liveDryRun        = require("../utils/liveDryRun");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const fyers             = require("../config/fyers");
 const tradeGuards       = require("../utils/tradeGuards");
@@ -645,8 +646,10 @@ let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ti
 // the engine's position / hard-SL / trail bookkeeping runs end-to-end against
 // virtual order IDs so decisions can be validated before flipping to real money.
 // Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper.
+// Per-strategy override SWING_LIVE_DRY_RUN can hold Swing in dry-run even when
+// the global flag is off (lets ORB/etc. go real while Swing stays simulated).
 function isDryRun() {
-  return (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "false";
+  return liveDryRun.isDryRun("SWING");
 }
 let _dryRunSeq = 0;
 function _simOrder(prefix) {
