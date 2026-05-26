@@ -25,6 +25,7 @@ const socketManager = require("../utils/socketManager"); // ← robust socket wr
 const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
+const { dailyFilesPaginate, dailyFilesSectionHTML } = require("../utils/paperHistoryUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
@@ -3953,19 +3954,7 @@ ${buildSidebar('swingHistory', sharedSocketState.getMode()==='SWING_LIVE', false
     </div>
 
     <!-- Daily Data Files (skip + trade JSONL per IST date) -->
-    <div id="dailyFilesWrap" style="margin-bottom:16px;">
-      <div class="tbar">
-        <span class="tbar-label">📁 Daily Data Files</span>
-        <span class="tbar-count" id="dailyFilesCnt"></span>
-        <button class="copy-btn" onclick="copyAllDailyFiles(this)" style="margin-left:auto;" title="Copy all skip + trade JSONL across all dates">📋 Copy All Data</button>
-        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Hide</button>
-      </div>
-      <div id="dailyFilesBody" style="overflow-x:auto;">
-        <table id="dailyFilesTbl" class="tbl enh-table-full" data-page-size="10" style="width:100%;"><thead><tr>
-          <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th data-no-sort="1">Actions</th>
-        </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
-      </div>
-    </div>
+    ${dailyFilesSectionHTML()}
 
     <!-- Day View (toggleable) -->
     <div id="dayWiseWrap" style="display:none;margin-bottom:16px;">
@@ -4148,32 +4137,58 @@ if (document.getElementById('histModal')) {
 
 // ── Daily Data Files (skip + trade JSONL) ───────────────────────────────────
 function _fmtBytes(n){ if (!n) return '—'; if (n<1024) return n+' B'; if (n<1048576) return (n/1024).toFixed(1)+' KB'; return (n/1048576).toFixed(2)+' MB'; }
+var _DF_PREFIX = '/swing-paper';
+var _dfPage = 1, _dfPageSize = 10;
 async function loadDailyFiles(){
+  var tbody = document.getElementById('dailyFilesRows');
   try {
-    var res = await fetch('/swing-paper/download/daily-files', { cache: 'no-store' });
+    var res = await fetch(_DF_PREFIX + '/download/daily-files?page=' + _dfPage + '&pageSize=' + _dfPageSize, { cache: 'no-store' });
     var d = await res.json();
-    var tbody = document.getElementById('dailyFilesRows');
-    document.getElementById('dailyFilesCnt').textContent = d.rows.length + ' day' + (d.rows.length===1?'':'s');
-    if (!d.rows.length) {
+    var rows = d.rows || [];
+    document.getElementById('dailyFilesCnt').textContent = (d.total||0) + ' day' + ((d.total===1)?'':'s');
+    if (!rows.length) {
       tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">No daily files yet — they\\'ll appear after the next paper session runs.</td></tr>';
-      return;
+    } else {
+      tbody.innerHTML = rows.map(function(r){
+        var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
+        var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
+        var btns  = '';
+        if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
+        if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
+        if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
+        if (!btns) btns = '<span style="color:#4a6080;">—</span>';
+        return '<tr><td>'+r.date+'</td><td>'+sCell+'</td><td>'+tCell+'</td><td>'+btns+'</td></tr>';
+      }).join('');
     }
-    tbody.innerHTML = d.rows.map(function(r){
-      var sCell = r.skipsSize ? _fmtBytes(r.skipsSize) : '<span style="color:#4a6080;">—</span>';
-      var tCell = r.tradesSize ? _fmtBytes(r.tradesSize) : '<span style="color:#4a6080;">—</span>';
-      var btns  = '';
-      if (r.skipsSize)  btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'skips\\',\\''+r.date+'\\')" title="View skip JSONL for '+r.date+'">👁 Skips</button>';
-      if (r.tradesSize) btns += '<button class="export-btn" style="margin-right:4px;" onclick="viewJsonl(\\'trades\\',\\''+r.date+'\\')" title="View trade JSONL for '+r.date+'">👁 Trades</button>';
-      if (r.tradesSize) btns += '<button class="export-btn" style="background:rgba(16,185,129,0.08);color:#10b981;border-color:rgba(16,185,129,0.3);" onclick="restoreSession(\\''+r.date+'\\')" title="Rebuild session from JSONL — recovers deleted/missing trades">♻ Restore</button>';
-      if (!btns) btns = '<span style="color:#4a6080;">—</span>';
-      return '<tr><td data-sort="'+r.date+'">'+r.date+'</td><td data-sort="'+(r.skipsSize||0)+'">'+sCell+'</td><td data-sort="'+(r.tradesSize||0)+'">'+tCell+'</td><td>'+btns+'</td></tr>';
-    }).join('');
-    if (window.enhanceTable) window.enhanceTable(document.getElementById('dailyFilesTbl'), { sort:true, filter:true, paginate:true, pageSize:10 });
+    _dfRenderPager(d);
   } catch(e) {
-    var tbody2 = document.getElementById('dailyFilesRows');
-    if (tbody2) tbody2.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:12px;">Failed to load: '+(e&&e.message||e)+'</td></tr>';
+    if (tbody) tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#e94560;padding:12px;">Failed to load: '+(e&&e.message||e)+'</td></tr>';
   }
 }
+function _dfRenderPager(d){
+  var ps = _dfPageSize, total = d.total||0, totalPages = d.totalPages||1, page = d.page||1;
+  _dfPage = page;
+  var info = document.getElementById('dfPagerInfo');
+  if (info){
+    if (!total) info.textContent = '0 of 0';
+    else if (ps === 0) info.textContent = 'All ' + total;
+    else { var s=(page-1)*ps+1, e=Math.min(total,page*ps); info.textContent = s+'–'+e+' of '+total+' · pg '+page+'/'+totalPages; }
+  }
+  var f=document.getElementById('dfFirst'), p=document.getElementById('dfPrev'), n=document.getElementById('dfNext'), l=document.getElementById('dfLast');
+  if (f) f.disabled = page<=1;
+  if (p) p.disabled = page<=1;
+  if (n) n.disabled = page>=totalPages;
+  if (l) l.disabled = page>=totalPages;
+}
+(function wireDfPager(){
+  var ps=document.getElementById('dfPageSize');
+  if(ps) ps.addEventListener('change', function(e){ _dfPageSize = parseInt(e.target.value,10)||0; _dfPage = 1; loadDailyFiles(); });
+  var b;
+  b=document.getElementById('dfFirst'); if(b) b.addEventListener('click', function(){ if(_dfPage>1){ _dfPage=1; loadDailyFiles(); } });
+  b=document.getElementById('dfPrev');  if(b) b.addEventListener('click', function(){ if(_dfPage>1){ _dfPage--; loadDailyFiles(); } });
+  b=document.getElementById('dfNext');  if(b) b.addEventListener('click', function(){ _dfPage++; loadDailyFiles(); });
+  b=document.getElementById('dfLast');  if(b) b.addEventListener('click', function(){ _dfPage=999999; loadDailyFiles(); });
+})();
 function toggleDailyFiles(){
   var b = document.getElementById('dailyFilesBody');
   var t = document.getElementById('dailyFilesToggle');
@@ -4804,7 +4819,7 @@ router.get("/download/daily-files", (req, res) => {
     byDate.set(t.date, row);
   }
   const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
-  res.json({ rows });
+  res.json(dailyFilesPaginate(rows, req.query));
 });
 
 router.get("/download/skips-all", (req, res) => {

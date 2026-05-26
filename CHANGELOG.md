@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Paper Trade History — unified UI across all 5 strategies + server-side Daily Data Files pagination
+
+- **New shared builder [src/utils/paperHistoryUI.js](src/utils/paperHistoryUI.js)** reproduces the canonical Scalp history page (top-bar actions, summary stat cards, Daily Data Files, Day View, full Analytics + Loss Analysis panels, session cards, trade-detail + JSONL-viewer modals). **ORB and Straddle history pages were rewritten to full parity** — they previously had only session cards + a 4-chart analytics strip and lacked Daily Data Files, Day View, Loss Analysis, the JSONL viewer, and per-date restore. New endpoints added to both: `GET /download/daily-files` (paginated), `GET /download/skips-all`, `GET /view/skips/:date`, `GET /view/trades/:date`, `DELETE /session/:index`, `POST /restore-session/:date`, `GET /reset`.
+- **Daily Data Files table now paginates server-side** on all 5 strategies (Scalp/Swing/PA/ORB/Straddle). The `/download/daily-files` endpoint accepts `?page=&pageSize=` and returns `{ rows, total, page, pageSize, totalPages }` (shared `dailyFilesPaginate()` helper); `pageSize=0` returns all rows (used by "Copy All Data"). Replaces the previous client-side `enhanceTable` pagination that loaded every date row up-front.
+
 ### Live trading — per-strategy DRY-RUN override (staged real-money rollout)
 
 - **`{STRATEGY}_LIVE_DRY_RUN` per-strategy overrides** added so live strategies can be graduated to real money independently. Previously `LIVE_HARNESS_DRY_RUN` was a single global switch — flipping it OFF made *every* enabled live strategy place real orders at once, so you couldn't run e.g. Swing on real money while keeping ORB simulated.

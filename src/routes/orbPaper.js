@@ -30,6 +30,7 @@ const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
+const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurrentBar, scalpActivityLog } = require("../utils/scalpStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
@@ -1425,299 +1426,115 @@ router.get("/history", (req, res) => {
   const data = loadData();
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  res.send(renderHistoryPage({
+    routePrefix: "/orb-paper",
+    sidebarKey: "orbHistory",
+    pageTitle: "🎯 ORB Paper Trade History",
+    pageDocTitle: "ORB Paper — History",
+    modalLabel: "ORB Paper",
+    liveActive,
+    sessions: data.sessions || [],
+    totalPnl: data.totalPnl,
+    startCap,
+    emptyLabel: "Start ORB paper trading to record your first session.",
+  }));
+});
 
-  const inr = n => typeof n === "number" ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
-  const pnlColor = n => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
+// ── Daily JSONL: server-paginated index + viewers + restore + reset ──────────
+const _ORB_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-  const allTrades = data.sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.date })));
-  const totalWins   = allTrades.filter(t => t.pnl > 0).length;
-  const totalLosses = allTrades.filter(t => t.pnl < 0).length;
-  const totalPnl    = allTrades.reduce((a, t) => a + (t.pnl || 0), 0);
+router.get("/download/daily-files", (req, res) => {
+  const skips  = skipLogger.listDates("orb");
+  const trades = tradeLogger.listDailyDates("orb");
+  const byDate = new Map();
+  for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
+  for (const t of trades) {
+    const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 };
+    row.tradesSize = t.size;
+    byDate.set(t.date, row);
+  }
+  const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+  res.json(dailyFilesPaginate(rows, req.query));
+});
 
-  const sessionCards = data.sessions.length === 0
-    ? `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
-        <div style="font-size:3rem;margin-bottom:16px;">📭</div>
-        <div style="font-size:1rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">No sessions yet</div>
-        <div style="font-size:0.82rem;color:#4a6080;">Start ORB paper trading to record your first session.</div>
-       </div>`
-    : data.sessions.slice().reverse().map((s, idx) => {
-        const sIdx = data.sessions.length - idx;
-        const actualIdx = data.sessions.length - 1 - idx;
-        const trades = s.trades || [];
-        const sessionWins   = trades.filter(t => t.pnl > 0).length;
-        const sessionLosses = trades.filter(t => t.pnl < 0).length;
-        const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
+router.get("/download/skips-all", (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="orb_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates("orb").map(d => d.date).sort();
+  let body = "";
+  for (const d of dates) {
+    try { const p = skipLogger.filePathFor("orb", d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {}
+  }
+  res.send(body);
+});
 
-        const tradeRows = trades.map((t, ti) => {
-          const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
-          const entrySpot = inr(t.spotAtEntry || t.entryPrice);
-          const exitSpot  = inr(t.spotAtExit || t.exitPrice);
-          const pnlStr = `<span style="font-weight:800;color:${pnlColor(t.pnl)};">${t.pnl >= 0 ? "+" : ""}${inr(t.pnl)}</span>`;
-          const entryDate = t.entryTime ? t.entryTime.split(",")[0] : "—";
-          const entryTimeOnly = t.entryTime ? (t.entryTime.split(", ")[1] || "—") : "—";
-          const exitTimeOnly = t.exitTime ? (t.exitTime.split(", ")[1] || "—") : "—";
-          const entryReasonShort = (t.entryReason || "—").substring(0, 25) + ((t.entryReason || "").length > 25 ? "…" : "");
-          const exitReasonShort  = (t.exitReason  || "—").substring(0, 25) + ((t.exitReason  || "").length > 25 ? "…" : "");
-          return `<tr>
-            <td><span class="badge ${badgeCls}">${t.side}</span></td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
-            <td style="color:#c8d8f0;">${entrySpot}</td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${entryTimeOnly}</td>
-            <td style="color:#c8d8f0;">${exitSpot}</td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${exitTimeOnly}</td>
-            <td style="color:#f59e0b;">${t.stopLoss != null ? inr(parseFloat(t.stopLoss)) : "—"}</td>
-            <td style="color:#94a3b8;">${t.rangePts != null ? t.rangePts + "pt" : "—"}</td>
-            <td style="color:#94a3b8;">${t.signalStrength || "—"}</td>
-            <td>${pnlStr}</td>
-            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(t.entryReason || "").replace(/"/g, "&quot;")}">${entryReasonShort}</td>
-            <td style="font-size:0.7rem;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(t.exitReason || "").replace(/"/g, "&quot;")}">${exitReasonShort}</td>
-            <td style="text-align:center;padding:4px 8px;"><button onclick="event.stopPropagation();showTradeModal(${actualIdx}, ${ti})" class="copy-btn" style="padding:3px 10px;font-size:0.75rem;">👁 View</button></td>
-          </tr>`;
-        }).join("");
+router.get("/view/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("orb", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
+});
 
-        return `
-        <div class="session-card">
-          <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
-            <div>
-              <div class="session-meta">Session ${sIdx} &middot; ${(s.date || "").slice(0, 10)} &middot; ${s.strategy || "—"}</div>
-              <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
-                <span>${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
-                <span style="color:#10b981;">${sessionWins}W</span>
-                <span style="color:#ef4444;">${sessionLosses}L</span>
-                <span>WR ${winRate}</span>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
-              <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${(s.date || "").slice(0, 10)})')">🗑 Delete</button>
-            </div>
-            <div>
-              <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
-              <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
-            </div>
-          </div>
-          <div class="session-body">
-          ${trades.length > 0 ? `
-          <div style="overflow-x:auto;">
-            <table class="tbl">
-              <thead><tr><th>Side</th><th>Date</th><th>E.Spot</th><th>E.Time</th><th>X.Spot</th><th>X.Time</th><th>SL</th><th>Range</th><th>Sig</th><th>PnL</th><th>Entry Reason</th><th>Exit Reason</th><th style="text-align:center;">Action</th></tr></thead>
-              <tbody>${tradeRows}</tbody>
-            </table>
-          </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No trades in this session.</div>`}
-          </div>
-        </div>`;
-      }).join("");
+router.get("/view/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_ORB_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("orb", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
+});
 
-  const sessionsJSON = JSON.stringify(data.sessions || []).replace(/<\/script>/gi, "<\\/script>");
+// DELETE a session by 0-based index (matches the shared history page)
+router.delete("/session/:index", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop ORB paper trading first before deleting a session." });
+  const data = loadData();
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
+  data.sessions.splice(idx, 1);
+  data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  saveData(data);
+  return res.json({ success: true, message: "Session deleted successfully." });
+});
 
-  res.send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-${faviconLink()}
-<title>ORB Paper — History</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;}
-${sidebarCSS()}
-${modalCSS()}
-.main-content{flex:1;padding:18px 22px 40px;min-height:100vh;}
-@media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
-.page-title{font-size:1.08rem;font-weight:700;margin-bottom:4px;}
-.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:14px;}
-.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
-@media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr);}}
-.sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
-.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:#10b981;}
-.sc-l{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.sc-v{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:3px;}
-.session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:14px;}
-.session-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;cursor:pointer;transition:background 0.15s;}
-.session-head:hover{background:#060e1c;}
-.session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;}
-.session-pnl{font-size:1.3rem;font-weight:800;font-family:'IBM Plex Mono',monospace;text-align:right;}
-.session-wl{font-size:0.66rem;color:#4a6080;text-align:right;margin-top:2px;}
-.session-body{display:none;}
-.session-card.open .session-body{display:block;}
-.tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-.tbl th{padding:8px 10px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;}
-.tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#4a6080;}
-.tbl tr:hover td{background:rgba(16,185,129,0.03);}
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.65rem;font-weight:700;}
-.badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
-.badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
-.copy-btn{background:#0d1320;border:1px solid #1a2236;color:#10b981;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.copy-btn:hover{background:#072a1c;border-color:#10b981;}
-.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
-.reset-btn{background:#1a0508;border:0.5px solid #3b0a0a;color:#ef4444;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.reset-btn:hover{background:#2a0810;border-color:#ef4444;}
-.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
-.tool-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:6px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.tool-btn:hover{border-color:#10b981;color:#10b981;}
-.tool-btn.active{background:#072a1c;border-color:#10b981;color:#10b981;}
-.ana-panel{display:none;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-.ana-panel.open{display:block;}
-.ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
-@media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
-.ana-card{background:#040c18;border:0.5px solid #0e1e36;border-radius:8px;padding:12px;}
-.ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-.ana-chart-wrap{position:relative;height:220px;}
-</style></head><body>
-<div class="app-shell">
-${buildSidebar('orbHistory', liveActive, false)}
-<main class="main-content">
-  <div class="page-title">📜 ORB Paper Trade History</div>
-  <div class="page-sub">All saved sessions · click to expand · per-session copy/delete · analytics panel below</div>
-  <div class="stats">
-    <div class="sc"><div class="sc-l">Total Trades</div><div class="sc-v">${allTrades.length}</div></div>
-    <div class="sc"><div class="sc-l">Total P&L</div><div class="sc-v" style="color:${pnlColor(totalPnl)};">${totalPnl >= 0 ? "+" : ""}${inr(totalPnl)}</div></div>
-    <div class="sc"><div class="sc-l">Wins / Losses</div><div class="sc-v">${totalWins} / ${totalLosses}</div></div>
-    <div class="sc"><div class="sc-l">Win Rate</div><div class="sc-v">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) : "0.0"}%</div></div>
-    <div class="sc"><div class="sc-l">Sessions</div><div class="sc-v">${data.sessions.length}</div></div>
-    <div class="sc"><div class="sc-l">Capital</div><div class="sc-v">${inr(startCap + totalPnl)}<span style="font-size:0.65rem;color:#4a6080;font-weight:400;"> (from ${inr(startCap)})</span></div></div>
-  </div>
-  <div class="toolbar">
-    <button class="tool-btn" id="anaToggle" onclick="toggleAnalytics()">📊 Analytics</button>
-    <button class="tool-btn" onclick="copyAllJsonl(this)">📋 Copy All JSONL</button>
-    <a class="tool-btn" href="/orb-paper/download/trades.jsonl" style="text-decoration:none;">⬇ Download trades.jsonl</a>
-    <span style="margin-left:auto;font-size:0.65rem;color:#4a6080;align-self:center;">All times IST · click session header to expand</span>
-  </div>
-  <div class="ana-panel" id="anaPanel">
-    <div class="ana-row">
-      <div class="ana-card"><h3>📈 All-time Equity Curve</h3><div class="ana-chart-wrap"><canvas id="anaEquity"></canvas></div></div>
-      <div class="ana-card"><h3>📊 Daily P&L</h3><div class="ana-chart-wrap"><canvas id="anaDaily"></canvas></div></div>
-    </div>
-    <div class="ana-row">
-      <div class="ana-card"><h3>⏰ Hourly Performance</h3><div class="ana-chart-wrap"><canvas id="anaHourly"></canvas></div></div>
-      <div class="ana-card"><h3>📉 Drawdown</h3><div class="ana-chart-wrap"><canvas id="anaDD"></canvas></div></div>
-    </div>
-  </div>
-  ${sessionCards}
-
-  <!-- Trade detail modal -->
-  <div id="tradeModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
-    <div style="background:#0d1320;border:1px solid #10b981;border-radius:14px;padding:20px 24px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div id="tmTitle" style="font-weight:700;font-size:0.85rem;">Trade Details</div>
-        <button onclick="document.getElementById('tradeModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;">✕ Close</button>
-      </div>
-      <div id="tmBody"></div>
-    </div>
-  </div>
-</main>
-</div>
-
-<script id="sessions-data" type="application/json">${sessionsJSON}</script>
-<script>
-${modalJS()}
-var SESSIONS = JSON.parse(document.getElementById('sessions-data').textContent);
-var allTrades = SESSIONS.flatMap(function(s){ return (s.trades||[]).map(function(t){ return Object.assign({}, t, { _date: (s.date||'').slice(0,10) }); }); });
-var anaCharts = {};
-
-function fmtINR(n){ return n!=null ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; }
-
-function copySessionLog(btn, idx){
-  var sess = SESSIONS[idx];
-  if (!sess) return;
-  var lines = (sess.trades||[]).map(function(t){ return JSON.stringify(t); });
-  navigator.clipboard.writeText(lines.join('\\n')).then(function(){
-    btn.classList.add('copied'); btn.textContent='✓ Copied'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent='📋 Copy Trade Log'; },1500);
+// Rebuild a session from its daily JSONL (recovers deleted/missing trades)
+router.post("/restore-session/:date", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop ORB paper trading before restoring." });
+  const date = String(req.params.date || "").trim();
+  if (!_ORB_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
+  const allTrades = tradeLogger.readDailyTrades("orb", date);
+  if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
+  const data = loadData();
+  const seen = new Set();
+  for (const s of (data.sessions || [])) for (const t of (s.trades || [])) {
+    const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+    if (key) seen.add(String(key));
+  }
+  const missing = allTrades.filter(t => {
+    const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+    return key && !seen.has(String(key));
   });
-}
+  if (!missing.length) return res.json({ success: true, restored: 0, message: "Nothing to restore — all trades already in sessions." });
+  const sessionPnl = parseFloat(missing.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2));
+  data.sessions.push({ date, strategy: (missing[0] && missing[0].strategy) || "ORB", pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
+  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  saveData(data);
+  return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
+});
 
-function copyAllJsonl(btn){
-  var lines = SESSIONS.flatMap(function(s){ return (s.trades||[]).map(function(t){ return JSON.stringify(Object.assign({}, t, { date: s.date })); }); });
-  navigator.clipboard.writeText(lines.join('\\n')).then(function(){
-    btn.classList.add('active'); btn.textContent='✓ Copied ' + lines.length + ' rows'; setTimeout(function(){ btn.classList.remove('active'); btn.textContent='📋 Copy All JSONL'; },1800);
-  });
-}
-
-async function deleteSession(idx, label){
-  if (!confirm('Delete ' + label + '? This cannot be undone.')) return;
-  try {
-    var r = await fetch('/orb-paper/delete-session/' + idx, { method:'POST' });
-    var j = await r.json();
-    if (j.success) location.reload();
-    else alert('Delete failed: ' + (j.error||'unknown'));
-  } catch (e) { alert('Delete error: ' + e.message); }
-}
-
-function showTradeModal(sIdx, tIdx){
-  var t = (SESSIONS[sIdx] && SESSIONS[sIdx].trades && SESSIONS[sIdx].trades[tIdx]);
-  if (!t) return;
-  var rows = '';
-  function row(k, v){ rows += '<tr><td style="padding:6px 10px;font-size:0.7rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.8px;">' + k + '</td><td style="padding:6px 10px;color:#c8d8f0;font-size:0.78rem;font-weight:600;">' + (v != null ? v : '—') + '</td></tr>'; }
-  row('Date', t.entryTime ? t.entryTime.split(',')[0] : '—');
-  row('Side', t.side);
-  row('Symbol', t.symbol);
-  row('Strike', t.optionStrike);
-  row('Entry Time', t.entryTime);
-  row('Exit Time', t.exitTime);
-  row('Entry Spot', t.spotAtEntry);
-  row('Exit Spot', t.spotAtExit);
-  row('Entry Opt LTP', '₹' + t.optionEntryLtp);
-  row('Exit Opt LTP', '₹' + t.optionExitLtp);
-  row('SL Spot', t.stopLoss);
-  row('Target Spot', t.targetSpot);
-  row('OR Range', t.orl + ' / ' + t.orh + ' (' + t.rangePts + 'pt)');
-  row('Signal Strength', t.signalStrength);
-  row('VIX at Entry', t.vixAtEntry);
-  row('Held (candles)', t.candlesHeld);
-  row('Charges', '₹' + t.charges);
-  row('P&L', '<span style="color:' + (t.pnl>=0?'#10b981':'#ef4444') + ';">' + (t.pnl>=0?'+':'') + '₹' + (t.pnl||0).toFixed(2) + '</span>');
-  rows += '<tr><td colspan="2" style="padding:10px;background:#040c18;border-top:0.5px solid #0e1e36;color:#94a3b8;font-size:0.75rem;white-space:pre-wrap;">' + (t.entryReason || '') + '</td></tr>';
-  rows += '<tr><td colspan="2" style="padding:10px;background:#040c18;color:#94a3b8;font-size:0.75rem;white-space:pre-wrap;">' + (t.exitReason || '') + '</td></tr>';
-  document.getElementById('tmTitle').textContent = t.side + ' · ' + (t.entryTime || '');
-  document.getElementById('tmBody').innerHTML = '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>';
-  document.getElementById('tradeModal').style.display = 'flex';
-}
-
-// ── Analytics ───────────────────────────────────────────────────────────
-function toggleAnalytics(){
-  var p = document.getElementById('anaPanel');
-  var btn = document.getElementById('anaToggle');
-  p.classList.toggle('open');
-  btn.classList.toggle('active');
-  if (p.classList.contains('open')) renderAna();
-}
-function renderAna(){
-  if (!allTrades.length) return;
-  Object.values(anaCharts).forEach(function(c){ if(c) c.destroy(); });
-  var _gc = '#0e1428', _tc = '#3a5070';
-
-  // Equity
-  var cum = 0, labels = [], cumArr = [];
-  allTrades.forEach(function(t,i){ cum += (t.pnl||0); cumArr.push(cum); labels.push(i+1); });
-  anaCharts.eq = new Chart(document.getElementById('anaEquity'), { type:'line', data:{ labels:labels, datasets:[{ data:cumArr, borderColor:'#10b981', borderWidth:1.5, backgroundColor:'rgba(16,185,129,0.1)', fill:true, pointRadius:0, tension:0.3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-
-  // Daily P&L
-  var dailyMap = {};
-  allTrades.forEach(function(t){ var d=t._date; if(!dailyMap[d]) dailyMap[d]=0; dailyMap[d]+=(t.pnl||0); });
-  var dKeys = Object.keys(dailyMap).sort();
-  var dVals = dKeys.map(function(k){ return Math.round(dailyMap[k]); });
-  var dCols = dVals.map(function(v){ return v>=0?'#10b981':'#ef4444'; });
-  anaCharts.daily = new Chart(document.getElementById('anaDaily'), { type:'bar', data:{ labels:dKeys, datasets:[{ data:dVals, backgroundColor:dCols, borderRadius:3, barPercentage:0.8 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{display:false},ticks:{color:_tc,font:{size:9},maxTicksLimit:8}}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-
-  // Hourly
-  var hourMap = {};
-  allTrades.forEach(function(t){ var hM = (t.entryTime||'').match(/(\\d{1,2}):\\d{2}/); if(!hM) return; var h = parseInt(hM[1]); if(!hourMap[h]) hourMap[h]={pnl:0,cnt:0}; hourMap[h].pnl+=(t.pnl||0); hourMap[h].cnt++; });
-  var hKeys = Object.keys(hourMap).map(Number).sort(function(a,b){return a-b;});
-  anaCharts.hr = new Chart(document.getElementById('anaHourly'), { type:'bar', data:{ labels:hKeys.map(function(h){return h+':00';}), datasets:[{ data:hKeys.map(function(h){return Math.round(hourMap[h].pnl);}), backgroundColor:hKeys.map(function(h){return hourMap[h].pnl>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)';}), borderRadius:3, barPercentage:0.7 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{display:false},ticks:{color:_tc,font:{size:10}}}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-
-  // Drawdown
-  var eq2 = 0, peak = 0, ddArr = [];
-  allTrades.forEach(function(t){ eq2+=(t.pnl||0); if(eq2>peak) peak=eq2; ddArr.push(eq2-peak); });
-  anaCharts.dd = new Chart(document.getElementById('anaDD'), { type:'line', data:{ labels:labels, datasets:[{ data:ddArr, borderColor:'#ef4444', borderWidth:1.5, backgroundColor:'rgba(239,68,68,0.12)', fill:true, pointRadius:0, tension:0.3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-}
-
-// Expand the most recent session by default
-(function(){ var first = document.querySelector('.session-card'); if (first) first.classList.add('open'); })();
-</script>
-</body></html>`);
+// Reset ALL ORB paper history + capital
+router.get("/reset", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop ORB paper trading before resetting." });
+  const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  return res.json({ success: true, message: `ORB paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
 // Delete a session by index (newest = last in array)

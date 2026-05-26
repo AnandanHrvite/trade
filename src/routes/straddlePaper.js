@@ -32,6 +32,7 @@ const socketManager      = require("../utils/socketManager");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, tableEnhancerCSS } = require("../utils/sharedNav");
+const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
 const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurrentBar, scalpActivityLog } = require("../utils/scalpStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
@@ -1359,314 +1360,115 @@ router.get("/history", (req, res) => {
   const data = loadData();
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  res.send(renderHistoryPage({
+    routePrefix: "/straddle-paper",
+    sidebarKey: "straddleHistory",
+    pageTitle: "🎯 Straddle Paper Trade History",
+    pageDocTitle: "Straddle Paper — History",
+    modalLabel: "Straddle Paper",
+    liveActive,
+    sessions: data.sessions || [],
+    totalPnl: data.totalPnl,
+    startCap,
+    emptyLabel: "Start Straddle paper trading to record your first session.",
+  }));
+});
 
-  const inr = n => typeof n === "number" ? `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
-  const pnlColor = n => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
+// ── Daily JSONL: server-paginated index + viewers + restore + reset ──────────
+const _STRD_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-  // Group all legs into pairs across all sessions for totals
-  const allPairs = [];
-  for (const s of data.sessions || []) {
-    const pmap = new Map();
-    for (const t of (s.trades || [])) {
-      if (!t.pairId) continue;
-      if (!pmap.has(t.pairId)) pmap.set(t.pairId, { pairId: t.pairId, entryTime: t.entryTime, exitTime: t.exitTime, strike: t.optionStrike, expiry: t.optionExpiry, spotEntry: t.spotAtEntry, spotExit: t.spotAtExit, ce: null, pe: null, pairPnl: t.pairPnl, exitReason: t.exitReason, trigger: t.trigger, strength: t.signalStrength, netDebit: t.netDebit, _sessionDate: s.date });
-      const p = pmap.get(t.pairId);
-      if (t.leg === "CE") p.ce = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
-      if (t.leg === "PE") p.pe = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
-    }
-    allPairs.push.apply(allPairs, Array.from(pmap.values()));
+router.get("/download/daily-files", (req, res) => {
+  const skips  = skipLogger.listDates("straddle");
+  const trades = tradeLogger.listDailyDates("straddle");
+  const byDate = new Map();
+  for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
+  for (const t of trades) {
+    const row = byDate.get(t.date) || { date: t.date, skipsSize: 0, tradesSize: 0 };
+    row.tradesSize = t.size;
+    byDate.set(t.date, row);
   }
-  const totalWins   = allPairs.filter(p => (p.pairPnl || 0) > 0).length;
-  const totalLosses = allPairs.filter(p => (p.pairPnl || 0) < 0).length;
-  const totalPnl    = allPairs.reduce((a, p) => a + (p.pairPnl || 0), 0);
+  const rows = Array.from(byDate.values()).sort((a, b) => b.date.localeCompare(a.date));
+  res.json(dailyFilesPaginate(rows, req.query));
+});
 
-  const sessionCards = data.sessions.length === 0
-    ? `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
-        <div style="font-size:3rem;margin-bottom:16px;">📭</div>
-        <div style="font-size:1rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">No sessions yet</div>
-        <div style="font-size:0.82rem;color:#4a6080;">Start straddle paper trading to record your first session.</div>
-       </div>`
-    : data.sessions.slice().reverse().map((s, idx) => {
-        const sIdx = data.sessions.length - idx;
-        const actualIdx = data.sessions.length - 1 - idx;
+router.get("/download/skips-all", (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="straddle_paper_skips_all_${today}.txt"`);
+  const dates = skipLogger.listDates("straddle").map(d => d.date).sort();
+  let body = "";
+  for (const d of dates) {
+    try { const p = skipLogger.filePathFor("straddle", d); if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8"); } catch (_) {}
+  }
+  res.send(body);
+});
 
-        // Pair-up the legs in this session
-        const pmap = new Map();
-        for (const t of (s.trades || [])) {
-          if (!t.pairId) continue;
-          if (!pmap.has(t.pairId)) pmap.set(t.pairId, { pairId: t.pairId, entryTime: t.entryTime, exitTime: t.exitTime, strike: t.optionStrike, expiry: t.optionExpiry, spotEntry: t.spotAtEntry, spotExit: t.spotAtExit, ce: null, pe: null, pairPnl: t.pairPnl, exitReason: t.exitReason, trigger: t.trigger, strength: t.signalStrength, netDebit: t.netDebit });
-          const p = pmap.get(t.pairId);
-          if (t.leg === "CE") p.ce = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
-          if (t.leg === "PE") p.pe = { entryLtp: t.optionEntryLtp, exitLtp: t.optionExitLtp, pnl: t.pnl, symbol: t.symbol };
-        }
-        const pairs = Array.from(pmap.values());
-        const sessionWins   = pairs.filter(p => (p.pairPnl || 0) > 0).length;
-        const sessionLosses = pairs.filter(p => (p.pairPnl || 0) < 0).length;
-        const winRate = pairs.length ? ((sessionWins / pairs.length) * 100).toFixed(1) + "%" : "—";
+router.get("/view/skips/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_STRD_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = skipLogger.filePathFor("straddle", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
+});
 
-        const pairRows = pairs.map((p, pi) => {
-          const cePnl = p.ce ? p.ce.pnl : 0;
-          const pePnl = p.pe ? p.pe.pnl : 0;
-          const pnlStr = `<span style="font-weight:800;color:${pnlColor(p.pairPnl)};">${(p.pairPnl || 0) >= 0 ? "+" : ""}${inr(p.pairPnl)}</span>`;
-          const entryDate = p.entryTime ? p.entryTime.split(",")[0] : "—";
-          const entryTimeOnly = p.entryTime ? (p.entryTime.split(", ")[1] || "—") : "—";
-          const exitTimeOnly = p.exitTime ? (p.exitTime.split(", ")[1] || "—") : "—";
-          const exitReasonShort = (p.exitReason || "—").substring(0, 30) + ((p.exitReason || "").length > 30 ? "…" : "");
-          return `<tr>
-            <td style="font-size:0.62rem;color:#94a3b8;">${p.pairId}</td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
-            <td style="color:#c8d8f0;">${p.strike || "—"}</td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${entryTimeOnly}</td>
-            <td style="color:#c8d8f0;font-size:0.75rem;">${exitTimeOnly}</td>
-            <td style="color:#10b981;font-size:0.7rem;">${p.ce ? `₹${p.ce.entryLtp}→₹${p.ce.exitLtp} <span style="color:${pnlColor(cePnl)};">(${cePnl>=0?"+":""}${cePnl.toFixed(0)})</span>` : "—"}</td>
-            <td style="color:#ef4444;font-size:0.7rem;">${p.pe ? `₹${p.pe.entryLtp}→₹${p.pe.exitLtp} <span style="color:${pnlColor(pePnl)};">(${pePnl>=0?"+":""}${pePnl.toFixed(0)})</span>` : "—"}</td>
-            <td style="color:#fbbf24;font-size:0.68rem;">${p.trigger || "—"}</td>
-            <td style="color:#94a3b8;">${p.strength || "—"}</td>
-            <td style="color:#94a3b8;">${p.netDebit != null ? "₹" + p.netDebit : "—"}</td>
-            <td>${pnlStr}</td>
-            <td style="font-size:0.7rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${(p.exitReason || "").replace(/"/g, "&quot;")}">${exitReasonShort}</td>
-            <td style="text-align:center;padding:4px 8px;"><button onclick="event.stopPropagation();showPairModal(${actualIdx}, '${p.pairId}')" class="copy-btn" style="padding:3px 10px;font-size:0.75rem;">👁 View</button></td>
-          </tr>`;
-        }).join("");
+router.get("/view/trades/:date", (req, res) => {
+  const date = req.params.date;
+  if (!_STRD_DATE_RE.test(date)) return res.status(400).send("bad date");
+  const p = tradeLogger.dailyFilePathFor("straddle", date);
+  if (!fs.existsSync(p)) return res.status(404).send("not found");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "inline");
+  res.sendFile(p);
+});
 
-        return `
-        <div class="session-card">
-          <div class="session-head" onclick="this.parentElement.classList.toggle('open')">
-            <div>
-              <div class="session-meta">Session ${sIdx} &middot; ${(s.date || "").slice(0, 10)} &middot; ${s.strategy || "—"}</div>
-              <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
-                <span>${pairs.length} pair${pairs.length !== 1 ? "s" : ""}</span>
-                <span style="color:#10b981;">${sessionWins}W</span>
-                <span style="color:#ef4444;">${sessionLosses}L</span>
-                <span>WR ${winRate}</span>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
-              <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${(s.date || "").slice(0, 10)})')">🗑 Delete</button>
-            </div>
-            <div>
-              <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
-              <div class="session-wl">${sessionWins}W / ${sessionLosses}L · ${pairs.length * 2} legs</div>
-            </div>
-          </div>
-          <div class="session-body">
-          ${pairs.length > 0 ? `
-          <div style="overflow-x:auto;">
-            <table class="tbl">
-              <thead><tr><th>Pair ID</th><th>Date</th><th>Strike</th><th>E.Time</th><th>X.Time</th><th>CE Leg</th><th>PE Leg</th><th>Trigger</th><th>Sig</th><th>Debit</th><th>Pair PnL</th><th>Exit Reason</th><th style="text-align:center;">Action</th></tr></thead>
-              <tbody>${pairRows}</tbody>
-            </table>
-          </div>` : `<div style="padding:14px 20px;color:#4a6080;font-size:0.82rem;">No pairs in this session.</div>`}
-          </div>
-        </div>`;
-      }).join("");
+// DELETE a session by 0-based index (matches the shared history page)
+router.delete("/session/:index", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop Straddle paper trading first before deleting a session." });
+  const data = loadData();
+  const idx = parseInt(req.params.index, 10);
+  if (isNaN(idx) || idx < 0 || idx >= (data.sessions || []).length) return res.status(400).json({ success: false, error: "Invalid session index." });
+  data.sessions.splice(idx, 1);
+  data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  saveData(data);
+  return res.json({ success: true, message: "Session deleted successfully." });
+});
 
-  const sessionsJSON = JSON.stringify(data.sessions || []).replace(/<\/script>/gi, "<\\/script>");
-
-  res.send(`<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-${faviconLink()}
-<title>Straddle Paper — History</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>
-<style>
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Inter',sans-serif;background:#040c18;color:#e0eaf8;}
-${sidebarCSS()}
-${modalCSS()}
-.main-content{flex:1;padding:18px 22px 40px;min-height:100vh;}
-@media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
-.page-title{font-size:1.08rem;font-weight:700;margin-bottom:4px;}
-.page-sub{font-size:0.7rem;color:#4a6080;margin-bottom:14px;}
-.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px;}
-@media(max-width:1100px){.stats{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:560px){.stats{grid-template-columns:repeat(2,1fr);}}
-.sc{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:12px 14px;position:relative;overflow:hidden;}
-.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:#ec4899;}
-.sc-l{font-size:0.55rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;}
-.sc-v{font-size:1.05rem;font-weight:700;font-family:'IBM Plex Mono',monospace;margin-top:3px;}
-.session-card{background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;overflow:hidden;margin-bottom:14px;}
-.session-head{padding:14px 18px;display:flex;align-items:center;justify-content:space-between;background:#040c18;border-bottom:0.5px solid #0e1e36;gap:12px;flex-wrap:wrap;cursor:pointer;}
-.session-head:hover{background:#060e1c;}
-.session-meta{font-size:0.62rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;}
-.session-pnl{font-size:1.3rem;font-weight:800;font-family:'IBM Plex Mono',monospace;text-align:right;}
-.session-wl{font-size:0.66rem;color:#4a6080;text-align:right;margin-top:2px;}
-.session-body{display:none;}
-.session-card.open .session-body{display:block;}
-.tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
-.tbl th{padding:8px 10px;text-align:left;font-size:0.55rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;}
-.tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#4a6080;}
-.tbl tr:hover td{background:rgba(236,72,153,0.03);}
-.copy-btn{background:#0d1320;border:1px solid #1a2236;color:#ec4899;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.copy-btn:hover{background:#2a0a1c;border-color:#ec4899;}
-.copy-btn.copied{background:#064e3b;border-color:#10b981;color:#10b981;}
-.reset-btn{background:#1a0508;border:0.5px solid #3b0a0a;color:#ef4444;padding:4px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.reset-btn:hover{background:#2a0810;border-color:#ef4444;}
-.toolbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
-.tool-btn{background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:6px 12px;border-radius:6px;font-size:0.68rem;cursor:pointer;font-family:inherit;}
-.tool-btn:hover{border-color:#ec4899;color:#ec4899;}
-.tool-btn.active{background:#2a0a1c;border-color:#ec4899;color:#ec4899;}
-.ana-panel{display:none;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
-.ana-panel.open{display:block;}
-.ana-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
-@media(max-width:900px){.ana-row{grid-template-columns:1fr;}}
-.ana-card{background:#040c18;border:0.5px solid #0e1e36;border-radius:8px;padding:12px;}
-.ana-card h3{font-size:0.6rem;text-transform:uppercase;letter-spacing:1.2px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-.ana-chart-wrap{position:relative;height:220px;}
-</style></head><body>
-<div class="app-shell">
-${buildSidebar('straddleHistory', liveActive, false)}
-<main class="main-content">
-  <div class="page-title">📜 Straddle Paper Trade History (per-pair)</div>
-  <div class="page-sub">All saved sessions · click to expand · per-session copy/delete</div>
-  <div class="stats">
-    <div class="sc"><div class="sc-l">Total Pairs</div><div class="sc-v">${allPairs.length}</div></div>
-    <div class="sc"><div class="sc-l">Total P&L</div><div class="sc-v" style="color:${pnlColor(totalPnl)};">${totalPnl >= 0 ? "+" : ""}${inr(totalPnl)}</div></div>
-    <div class="sc"><div class="sc-l">Wins / Losses</div><div class="sc-v">${totalWins} / ${totalLosses}</div></div>
-    <div class="sc"><div class="sc-l">Win Rate</div><div class="sc-v">${allPairs.length ? ((totalWins / allPairs.length) * 100).toFixed(1) : "0.0"}%</div></div>
-    <div class="sc"><div class="sc-l">Sessions</div><div class="sc-v">${data.sessions.length}</div></div>
-    <div class="sc"><div class="sc-l">Capital</div><div class="sc-v">${inr(startCap + totalPnl)}<span style="font-size:0.65rem;color:#4a6080;font-weight:400;"> (from ${inr(startCap)})</span></div></div>
-  </div>
-  <div class="toolbar">
-    <button class="tool-btn" id="anaToggle" onclick="toggleAnalytics()">📊 Analytics</button>
-    <button class="tool-btn" onclick="copyAllJsonl(this)">📋 Copy All JSONL</button>
-    <a class="tool-btn" href="/straddle-paper/download/trades.jsonl" style="text-decoration:none;">⬇ Download trades.jsonl</a>
-    <span style="margin-left:auto;font-size:0.65rem;color:#4a6080;align-self:center;">Each row = 1 pair · All times IST</span>
-  </div>
-  <div class="ana-panel" id="anaPanel">
-    <div class="ana-row">
-      <div class="ana-card"><h3>📈 All-time Equity Curve</h3><div class="ana-chart-wrap"><canvas id="anaEquity"></canvas></div></div>
-      <div class="ana-card"><h3>📊 Trigger Breakdown</h3><div class="ana-chart-wrap"><canvas id="anaTrig"></canvas></div></div>
-    </div>
-    <div class="ana-row">
-      <div class="ana-card"><h3>📉 Drawdown</h3><div class="ana-chart-wrap"><canvas id="anaDD"></canvas></div></div>
-      <div class="ana-card"><h3>📅 Daily P&L</h3><div class="ana-chart-wrap"><canvas id="anaDaily"></canvas></div></div>
-    </div>
-  </div>
-  ${sessionCards}
-
-  <!-- Pair detail modal -->
-  <div id="pairModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.8);backdrop-filter:blur(3px);align-items:center;justify-content:center;padding:16px;">
-    <div style="background:#0d1320;border:1px solid #ec4899;border-radius:14px;padding:20px 24px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
-        <div id="pmTitle" style="font-weight:700;font-size:0.85rem;">Pair Details</div>
-        <button onclick="document.getElementById('pairModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;">✕ Close</button>
-      </div>
-      <div id="pmBody"></div>
-    </div>
-  </div>
-</main>
-</div>
-
-<script id="sessions-data" type="application/json">${sessionsJSON}</script>
-<script>
-${modalJS()}
-var SESSIONS = JSON.parse(document.getElementById('sessions-data').textContent);
-var anaCharts = {};
-
-function fmtINR(n){ return n!=null ? Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; }
-
-function copySessionLog(btn, idx){
-  var sess = SESSIONS[idx];
-  if (!sess) return;
-  var lines = (sess.trades||[]).map(function(t){ return JSON.stringify(t); });
-  navigator.clipboard.writeText(lines.join('\\n')).then(function(){
-    btn.classList.add('copied'); btn.textContent='✓ Copied'; setTimeout(function(){ btn.classList.remove('copied'); btn.textContent='📋 Copy Trade Log'; },1500);
+// Rebuild a session from its daily JSONL (recovers deleted/missing trades)
+router.post("/restore-session/:date", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop Straddle paper trading before restoring." });
+  const date = String(req.params.date || "").trim();
+  if (!_STRD_DATE_RE.test(date)) return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
+  const allTrades = tradeLogger.readDailyTrades("straddle", date);
+  if (!allTrades.length) return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
+  const data = loadData();
+  const seen = new Set();
+  for (const s of (data.sessions || [])) for (const t of (s.trades || [])) {
+    const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+    if (key) seen.add(String(key));
+  }
+  const missing = allTrades.filter(t => {
+    const key = t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`;
+    return key && !seen.has(String(key));
   });
-}
-function copyAllJsonl(btn){
-  var lines = SESSIONS.flatMap(function(s){ return (s.trades||[]).map(function(t){ return JSON.stringify(Object.assign({}, t, { date: s.date })); }); });
-  navigator.clipboard.writeText(lines.join('\\n')).then(function(){
-    btn.classList.add('active'); btn.textContent='✓ Copied ' + lines.length + ' rows'; setTimeout(function(){ btn.classList.remove('active'); btn.textContent='📋 Copy All JSONL'; },1800);
-  });
-}
-async function deleteSession(idx, label){
-  if (!confirm('Delete ' + label + '? This cannot be undone.')) return;
-  try {
-    var r = await fetch('/straddle-paper/delete-session/' + idx, { method:'POST' });
-    var j = await r.json();
-    if (j.success) location.reload();
-    else alert('Delete failed: ' + (j.error||'unknown'));
-  } catch (e) { alert('Delete error: ' + e.message); }
-}
-function showPairModal(sIdx, pairId){
-  var sess = SESSIONS[sIdx];
-  if (!sess) return;
-  var legs = (sess.trades||[]).filter(function(t){ return t.pairId === pairId; });
-  if (!legs.length) return;
-  var ce = legs.find(function(t){ return t.leg === 'CE'; });
-  var pe = legs.find(function(t){ return t.leg === 'PE'; });
-  var anyLeg = ce || pe;
-  var rows = '';
-  function row(k, v){ rows += '<tr><td style="padding:6px 10px;font-size:0.7rem;color:#4a6080;text-transform:uppercase;letter-spacing:0.8px;">' + k + '</td><td style="padding:6px 10px;color:#c8d8f0;font-size:0.78rem;font-weight:600;">' + (v != null ? v : '—') + '</td></tr>'; }
-  row('Pair ID', pairId);
-  row('Strike · Expiry', anyLeg.optionStrike + ' · ' + anyLeg.optionExpiry);
-  row('Entry Time', anyLeg.entryTime);
-  row('Exit Time', anyLeg.exitTime);
-  row('Entry Spot', anyLeg.spotAtEntry);
-  row('Exit Spot', anyLeg.spotAtExit);
-  row('Trigger', anyLeg.trigger);
-  row('Sig Strength', anyLeg.signalStrength);
-  row('Net Debit', '₹' + anyLeg.netDebit);
-  row('Net Target', '₹' + anyLeg.netTarget);
-  row('Net Stop', '₹' + anyLeg.netStop);
-  row('CE Leg', ce ? ('₹' + ce.optionEntryLtp + ' → ₹' + ce.optionExitLtp + ' = <span style="color:' + (ce.pnl>=0?'#10b981':'#ef4444') + ';">' + (ce.pnl>=0?'+':'') + '₹' + ce.pnl.toFixed(2) + '</span>') : '—');
-  row('PE Leg', pe ? ('₹' + pe.optionEntryLtp + ' → ₹' + pe.optionExitLtp + ' = <span style="color:' + (pe.pnl>=0?'#10b981':'#ef4444') + ';">' + (pe.pnl>=0?'+':'') + '₹' + pe.pnl.toFixed(2) + '</span>') : '—');
-  row('Pair P&L', '<span style="color:' + (anyLeg.pairPnl>=0?'#10b981':'#ef4444') + ';">' + (anyLeg.pairPnl>=0?'+':'') + '₹' + (anyLeg.pairPnl||0).toFixed(2) + '</span>');
-  rows += '<tr><td colspan="2" style="padding:10px;background:#040c18;border-top:0.5px solid #0e1e36;color:#94a3b8;font-size:0.75rem;white-space:pre-wrap;">' + (anyLeg.entryReason || '') + '</td></tr>';
-  rows += '<tr><td colspan="2" style="padding:10px;background:#040c18;color:#94a3b8;font-size:0.75rem;white-space:pre-wrap;">' + (anyLeg.exitReason || '') + '</td></tr>';
-  document.getElementById('pmTitle').textContent = 'Pair ' + pairId;
-  document.getElementById('pmBody').innerHTML = '<table style="width:100%;border-collapse:collapse;">' + rows + '</table>';
-  document.getElementById('pairModal').style.display = 'flex';
-}
+  if (!missing.length) return res.json({ success: true, restored: 0, message: "Nothing to restore — all trades already in sessions." });
+  const sessionPnl = parseFloat(missing.reduce((s, t) => s + (Number(t.pnl) || 0), 0).toFixed(2));
+  data.sessions.push({ date, strategy: (missing[0] && missing[0].strategy) || "STRADDLE", pnl: sessionPnl, trades: missing, restoredFromJsonl: true });
+  data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  data.totalPnl = parseFloat(data.sessions.reduce((s, x) => s + (x.pnl || 0), 0).toFixed(2));
+  data.capital  = parseFloat((parseFloat(process.env.FYERS_INV_AMOUNT || "100000") + data.totalPnl).toFixed(2));
+  saveData(data);
+  return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
+});
 
-function toggleAnalytics(){
-  var p = document.getElementById('anaPanel');
-  var btn = document.getElementById('anaToggle');
-  p.classList.toggle('open');
-  btn.classList.toggle('active');
-  if (p.classList.contains('open')) renderAna();
-}
-function renderAna(){
-  // Pair-level data across all sessions
-  var allPairs = [];
-  SESSIONS.forEach(function(s){
-    var pmap = {};
-    (s.trades||[]).forEach(function(t){
-      if (!t.pairId) return;
-      if (!pmap[t.pairId]) pmap[t.pairId] = { pairPnl: t.pairPnl || 0, entryTime: t.entryTime, trigger: t.trigger, _date: (s.date||'').slice(0,10) };
-    });
-    Object.values(pmap).forEach(function(p){ allPairs.push(p); });
-  });
-  if (!allPairs.length) return;
-  Object.values(anaCharts).forEach(function(c){ if(c) c.destroy(); });
-  var _gc='#0e1428', _tc='#3a5070';
-  // Equity
-  var cum=0, labels=[], cumArr=[];
-  allPairs.forEach(function(p,i){ cum += (p.pairPnl||0); cumArr.push(cum); labels.push(i+1); });
-  anaCharts.eq = new Chart(document.getElementById('anaEquity'), { type:'line', data:{ labels:labels, datasets:[{ data:cumArr, borderColor:'#ec4899', borderWidth:1.5, backgroundColor:'rgba(236,72,153,0.1)', fill:true, pointRadius:0, tension:0.3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-  // Trigger breakdown
-  var trigMap = {};
-  allPairs.forEach(function(p){ var k = p.trigger || 'UNKNOWN'; if (!trigMap[k]) trigMap[k]={cnt:0,pnl:0}; trigMap[k].cnt++; trigMap[k].pnl += (p.pairPnl||0); });
-  var tKeys = Object.keys(trigMap);
-  anaCharts.trig = new Chart(document.getElementById('anaTrig'), { type:'bar', data:{ labels:tKeys, datasets:[{ data:tKeys.map(function(k){ return Math.round(trigMap[k].pnl); }), backgroundColor:tKeys.map(function(k){ return trigMap[k].pnl>=0?'#10b981':'#ef4444'; }), borderRadius:3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}, tooltip:{callbacks:{afterLabel:function(ctx){var k=tKeys[ctx.dataIndex];return trigMap[k].cnt+' pairs';}}}}, scales:{ x:{grid:{display:false},ticks:{color:_tc,font:{size:10}}}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-  // Drawdown
-  var eq2=0, peak=0, dd=[];
-  allPairs.forEach(function(p){ eq2+=(p.pairPnl||0); if(eq2>peak) peak=eq2; dd.push(eq2-peak); });
-  anaCharts.dd = new Chart(document.getElementById('anaDD'), { type:'line', data:{ labels:labels, datasets:[{ data:dd, borderColor:'#ef4444', borderWidth:1.5, backgroundColor:'rgba(239,68,68,0.12)', fill:true, pointRadius:0, tension:0.3 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{display:false}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-  // Daily
-  var daily={};
-  allPairs.forEach(function(p){ var d=p._date; if(!daily[d]) daily[d]=0; daily[d]+=(p.pairPnl||0); });
-  var dKeys = Object.keys(daily).sort();
-  anaCharts.daily = new Chart(document.getElementById('anaDaily'), { type:'bar', data:{ labels:dKeys, datasets:[{ data:dKeys.map(function(k){ return Math.round(daily[k]); }), backgroundColor:dKeys.map(function(k){ return daily[k]>=0?'#10b981':'#ef4444'; }), borderRadius:3, barPercentage:0.8 }] }, options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ x:{grid:{display:false},ticks:{color:_tc,font:{size:9},maxTicksLimit:8}}, y:{grid:{color:_gc},ticks:{color:_tc,font:{size:10}}} } } });
-}
-
-(function(){ var first = document.querySelector('.session-card'); if (first) first.classList.add('open'); })();
-</script>
-</body></html>`);
+// Reset ALL Straddle paper history + capital
+router.get("/reset", (req, res) => {
+  if (state.running) return res.status(400).json({ success: false, error: "Stop Straddle paper trading before resetting." });
+  const fresh = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
+  saveData({ capital: fresh, totalPnl: 0, sessions: [] });
+  return res.json({ success: true, message: `Straddle paper trade history cleared. Capital reset to ₹${fresh.toLocaleString("en-IN")}` });
 });
 
 // Delete a session by index
