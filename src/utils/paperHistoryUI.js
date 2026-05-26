@@ -1069,6 +1069,11 @@ function buildSessionCards(sessions, opts) {
     const sessionWins   = trades.filter(t => t.pnl > 0).length;
     const sessionLosses = trades.filter(t => t.pnl < 0).length;
     const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
+    // Session PnL field name varies by strategy (scalp/pa/orb/straddle: pnl, swing: sessionPnl);
+    // fall back to summing trade PnL so the header always shows a number.
+    const sPnl = (typeof s.pnl === "number") ? s.pnl
+               : (typeof s.sessionPnl === "number") ? s.sessionPnl
+               : trades.reduce((a, t) => a + (typeof t.pnl === "number" ? t.pnl : 0), 0);
 
     const tradeRows = trades.map((t, ti) => {
       const badgeCls = t.side === "CE" ? "badge-ce" : "badge-pe";
@@ -1113,7 +1118,7 @@ function buildSessionCards(sessions, opts) {
           <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
         </div>
         <div>
-          <div class="session-pnl session-pnl-val" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
+          <div class="session-pnl session-pnl-val" style="color:${pnlColor(sPnl)};">${sPnl >= 0 ? "+" : ""}${inr(sPnl)}</div>
           <div class="session-wl session-wl-val">${sessionWins}W / ${sessionLosses}L</div>
         </div>
       </div>
