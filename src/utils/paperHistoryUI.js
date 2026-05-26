@@ -463,9 +463,10 @@ function dayViewSectionHTML() {
     </div>`;
 }
 
-function analyticsSectionHTML() {
+function analyticsSectionHTML(extraTopHTML) {
   return `
     <div id="anaWrap" style="display:none;margin-bottom:16px;" class="ana-panel">
+      ${extraTopHTML || ""}
       <div class="ana-row">
         <div class="ana-card"><h3>📈 Equity Curve</h3><div class="ana-chart-wrap"><canvas id="anaEquity"></canvas></div></div>
         <div class="ana-card"><h3>📊 Monthly P&L</h3><div class="ana-chart-wrap"><canvas id="anaMonthly"></canvas></div></div>
@@ -578,6 +579,7 @@ if (document.getElementById('histModal')) {
 function dayViewAnalyticsJS(opts) {
   const routePrefix = opts.routePrefix;
   const startCap = opts.startCap;
+  const filter = opts.filter || null; // { field, label } — enables applyHistoryFilter
   return `
 async function confirmReset() {
   var ok = await showDoubleConfirm({
@@ -677,6 +679,9 @@ function copyDayView(btn){
   doCopy(lines.join('\\n'),btn,'Day View');
 }
 
+// Active dataset for Day View + Analytics (narrowed by the optional filter).
+var ACTIVE_TRADES = ALL_TRADES_JSON;
+
 // ── Day View ──────────────────────────────────────────────────────────────
 var dwVisible = false;
 function toggleDayWise(){
@@ -688,7 +693,7 @@ function toggleDayWise(){
 var dwPage = 1, dwPageSize = 10;
 function buildDayView(){
   var dayMap={};
-  ALL_TRADES_JSON.forEach(function(t){
+  ACTIVE_TRADES.forEach(function(t){
     var d = t.date || 'Unknown';
     if(!dayMap[d]) dayMap[d]={date:d,trades:0,wins:0,losses:0,pnl:0};
     dayMap[d].trades++;
@@ -758,8 +763,15 @@ function toggleAnalytics(){
   if(anaVisible) renderAnalytics();
 }
 function renderAnalytics(){
-  var trades = ALL_TRADES_JSON.slice();
-  if(!trades.length) return;
+  if (typeof renderExtraAnalytics === 'function') renderExtraAnalytics();
+  var trades = ACTIVE_TRADES.slice();
+  if(!trades.length){
+    Object.keys(anaCharts).forEach(function(k){ if(anaCharts[k] && anaCharts[k].destroy){ anaCharts[k].destroy(); delete anaCharts[k]; } });
+    ['anaEntryBody','anaExitBody','anaDowBody','anaWorstBody','anaLossStreakBody','anaWorstDayBody','anaLossReasonBody','anaLossHourBody'].forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=''; });
+    var _st=document.getElementById('anaStreaks'); if(_st) _st.innerHTML='';
+    var _rm=document.getElementById('anaRiskMetrics'); if(_rm) _rm.innerHTML='';
+    return;
+  }
   var _gc = '#0e1428';
   var _tc = '#3a5070';
 
@@ -980,13 +992,69 @@ function renderAnalytics(){
     hrs.forEach(function(h){ var d=lhMap[h]; if(d.losses===0)return; var lossPct=((d.losses/d.total)*100).toFixed(0); var dangerColor=parseFloat(lossPct)>=60?'#ef4444':parseFloat(lossPct)>=45?'#f59e0b':'#10b981'; html+='<tr><td style="color:#c8d8f0;font-weight:600;">'+h+':00</td><td>'+d.losses+' / '+d.total+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(d.lossPnl)+'</td><td style="color:#ef4444;">'+fmtAna(Math.round(d.lossPnl/d.losses))+'</td><td style="color:'+dangerColor+';font-weight:700;">'+lossPct+'%</td></tr>'; });
     document.getElementById('anaLossHourBody').innerHTML=html;
   })();
-}`;
+}
+${filter ? `
+// ── History filter (narrows Day View + Analytics + session cards) ───────────
+var FILTER_FIELD = ${JSON.stringify(filter.field)};
+var FILTER_LABEL = ${JSON.stringify(filter.label || "filter")};
+var ACTIVE_FILTER = 'ALL';
+function applyHistoryFilter(g){
+  ACTIVE_FILTER = g || 'ALL';
+  ACTIVE_TRADES = (ACTIVE_FILTER === 'ALL')
+    ? ALL_TRADES_JSON.slice()
+    : ALL_TRADES_JSON.filter(function(t){ return String(t[FILTER_FIELD]==null?'Unknown':t[FILTER_FIELD]) === ACTIVE_FILTER; });
+
+  document.querySelectorAll('.session-card tbody tr').forEach(function(tr){
+    var pg = tr.getAttribute('data-filter-group');
+    tr.style.display = (ACTIVE_FILTER === 'ALL' || pg === ACTIVE_FILTER) ? '' : 'none';
+  });
+  document.querySelectorAll('.session-card').forEach(function(card){
+    var vis = Array.prototype.filter.call(card.querySelectorAll('tbody tr'), function(tr){ return tr.style.display !== 'none'; });
+    var n = vis.length, w = 0, l = 0, pnl = 0;
+    vis.forEach(function(tr){ var p = parseFloat(tr.getAttribute('data-pnl')) || 0; pnl += p; if (p > 0) w++; else if (p < 0) l++; });
+    var wr = n > 0 ? ((w/n)*100).toFixed(1) + '%' : '—';
+    var setText = function(sel, txt){ var el = card.querySelector(sel); if (el) el.textContent = txt; };
+    setText('.sc-trade-count', n + ' trade' + (n!==1 ? 's' : ''));
+    setText('.sc-wins', w + 'W'); setText('.sc-losses', l + 'L'); setText('.sc-wr', 'WR ' + wr);
+    var pe = card.querySelector('.session-pnl-val'); if (pe){ pe.style.color = pnl >= 0 ? '#10b981' : '#ef4444'; pe.textContent = fmtAnaSigned(pnl); }
+    var we = card.querySelector('.session-wl-val'); if (we) we.textContent = w + 'W / ' + l + 'L';
+    card.style.display = (n === 0 && ACTIVE_FILTER !== 'ALL') ? 'none' : '';
+  });
+
+  var tn = ACTIVE_TRADES.length;
+  var tw = ACTIVE_TRADES.filter(function(t){ return (t.pnl||0) > 0; }).length;
+  var tl = ACTIVE_TRADES.filter(function(t){ return (t.pnl||0) < 0; }).length;
+  var tp = ACTIVE_TRADES.reduce(function(s,t){ return s + (t.pnl||0); }, 0);
+  var sumPnl = document.getElementById('sumPnl');
+  if (sumPnl){ sumPnl.style.color = tp >= 0 ? '#10b981' : '#ef4444'; sumPnl.textContent = fmtAnaSigned(tp); }
+  var sumWr = document.getElementById('sumWr'); if (sumWr) sumWr.textContent = tn ? ((tw/tn)*100).toFixed(1) + '%' : '—';
+  var sumWrSub = document.getElementById('sumWrSub'); if (sumWrSub) sumWrSub.textContent = tw + 'W · ' + tl + 'L · ' + tn + ' trades';
+  var suffix = ACTIVE_FILTER === 'ALL' ? '' : ' (' + ACTIVE_FILTER + ')';
+  var sumPnlLabel = document.getElementById('sumPnlLabel'); if (sumPnlLabel) sumPnlLabel.textContent = 'All-Time PnL' + suffix;
+  var sumWrLabel = document.getElementById('sumWrLabel'); if (sumWrLabel) sumWrLabel.textContent = 'Win Rate' + suffix;
+  var sumSessionsSub = document.getElementById('sumSessionsSub');
+  if (sumSessionsSub){
+    var visS = Array.prototype.filter.call(document.querySelectorAll('.session-card'), function(c){ return c.style.display !== 'none'; }).length;
+    sumSessionsSub.textContent = ACTIVE_FILTER === 'ALL' ? 'across all time' : visS + ' session(s) with this ' + FILTER_LABEL.toLowerCase();
+  }
+
+  if (typeof dwVisible !== 'undefined' && dwVisible) buildDayView();
+  if (typeof anaVisible !== 'undefined' && anaVisible) renderAnalytics();
+}
+(function(){
+  try {
+    var u = new URLSearchParams(window.location.search);
+    var g = u.get('filter') || u.get('pattern');
+    if (g){ var sel = document.getElementById('historyFilter'); if (sel) sel.value = g; applyHistoryFilter(g); }
+  } catch(_){}
+})();` : ""}`;
 }
 
 // ── Session cards (canonical Scalp column layout) ────────────────────────────
 function buildSessionCards(sessions, opts) {
   opts = opts || {};
   const emptyLabel = opts.emptyLabel || "Start paper trading to record your first session.";
+  const filterField = opts.filterField || null; // when set, rows carry data-filter-group for live filtering
   if (!sessions || sessions.length === 0) {
     return `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
         <div style="font-size:3rem;margin-bottom:16px;">📭</div>
@@ -1012,7 +1080,8 @@ function buildSessionCards(sessions, opts) {
       const exitTimeOnly = t.exitTime ? (String(t.exitTime).split(', ')[1] || '—') : '—';
       const entryReasonShort = (t.entryReason||'—').substring(0,25) + ((t.entryReason||'').length>25?'…':'');
       const exitReasonShort = (t.exitReason||'—').substring(0,25) + ((t.exitReason||'').length>25?'…':'');
-      return `<tr>
+      const grp = filterField ? String(t[filterField] == null ? 'Unknown' : t[filterField]) : '';
+      return `<tr data-filter-group="${grp.replace(/"/g,'&quot;')}" data-pnl="${typeof t.pnl === 'number' ? t.pnl : 0}">
         <td><span class="badge ${badgeCls}">${t.side}</span></td>
         <td style="color:#c8d8f0;font-size:0.75rem;">${entryDate}</td>
         <td style="color:#c8d8f0;">${entrySpot}</td>
@@ -1033,10 +1102,10 @@ function buildSessionCards(sessions, opts) {
         <div>
           <div class="session-meta">Session ${sIdx} &middot; ${String(s.date || "").slice(0,10)} &middot; ${s.strategy || "—"}</div>
           <div style="margin-top:4px;display:flex;gap:10px;font-size:0.7rem;color:#4a6080;">
-            <span>${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
-            <span style="color:#10b981;">${sessionWins}W</span>
-            <span style="color:#ef4444;">${sessionLosses}L</span>
-            <span>WR ${winRate}</span>
+            <span class="sc-trade-count">${trades.length} trade${trades.length !== 1 ? "s" : ""}</span>
+            <span class="sc-wins" style="color:#10b981;">${sessionWins}W</span>
+            <span class="sc-losses" style="color:#ef4444;">${sessionLosses}L</span>
+            <span class="sc-wr">WR ${winRate}</span>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
@@ -1044,8 +1113,8 @@ function buildSessionCards(sessions, opts) {
           <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
         </div>
         <div>
-          <div class="session-pnl" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
-          <div class="session-wl">${sessionWins}W / ${sessionLosses}L</div>
+          <div class="session-pnl session-pnl-val" style="color:${pnlColor(s.pnl)};">${s.pnl >= 0 ? "+" : ""}${inr(s.pnl)}</div>
+          <div class="session-wl session-wl-val">${sessionWins}W / ${sessionLosses}L</div>
         </div>
       </div>
       <div class="session-body">
@@ -1077,6 +1146,13 @@ function buildSessionCards(sessions, opts) {
  *   totalPnl      all-time net PnL (number)
  *   startCap      starting capital (number)
  *   emptyLabel    empty-state hint
+ *   filter        OPTIONAL { field, label } — adds a top-bar dropdown that
+ *                 narrows session cards + stat cards + Day View + Analytics by
+ *                 a per-trade field (e.g. PA's patternGroup). Groups are
+ *                 auto-derived from the data.
+ *   extraAnalyticsHTML / extraAnalyticsJS  OPTIONAL — injected at the top of
+ *                 the Analytics panel; the JS may define renderExtraAnalytics()
+ *                 (called whenever Analytics renders, always on full data).
  */
 function renderHistoryPage(cfg) {
   const sessions = cfg.sessions || [];
@@ -1087,7 +1163,28 @@ function renderHistoryPage(cfg) {
   const capital  = (typeof cfg.capital === "number") ? cfg.capital : (startCap + (cfg.totalPnl || 0));
   const totalPnl = (typeof cfg.totalPnl === "number") ? cfg.totalPnl : allTrades.reduce((a, t) => a + (t.pnl || 0), 0);
 
-  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel });
+  const filter = cfg.filter || null;
+  // Distinct filter groups, ordered by trade count (desc), for the dropdown.
+  let filterSelectHTML = "";
+  if (filter && filter.field) {
+    const counts = new Map();
+    for (const t of allTrades) {
+      const g = (t[filter.field] == null) ? "Unknown" : String(t[filter.field]);
+      counts.set(g, (counts.get(g) || 0) + 1);
+    }
+    const groups = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    filterSelectHTML = `
+      <label style="display:flex;align-items:center;gap:6px;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-weight:700;font-family:'IBM Plex Mono',monospace;">
+        ${esc(filter.label || "Filter")}
+        <select id="historyFilter" onchange="applyHistoryFilter(this.value)" style="background:#0d1320;border:1px solid #1a2236;color:#c8d8f0;padding:4px 8px;border-radius:6px;font-size:0.7rem;font-family:'IBM Plex Mono',monospace;cursor:pointer;outline:none;">
+          <option value="ALL">All (${allTrades.length})</option>
+          ${groups.map(([g, n]) => `<option value="${esc(g)}">${esc(g)} (${n})</option>`).join("")}
+        </select>
+      </label>`;
+  }
+
+  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel, filterField: filter && filter.field });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1111,6 +1208,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
       <div class="top-bar-meta">${sessions.length} sessions · ${allTrades.length} total trades</div>
     </div>
     <div class="top-bar-right">
+      ${filterSelectHTML}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
       <button onclick="copyAllJsonl(this)" class="export-btn" title="Copy the full per-trade JSONL log to clipboard">📋 Copy JSONL</button>
@@ -1134,18 +1232,18 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
         <div class="sc-sub">${(capital - startCap) >= 0 ? '▲' : '▼'} ${inr(Math.abs(capital - startCap))} vs start</div>
       </div>
       <div class="sc">
-        <div class="sc-label">All-Time PnL</div>
-        <div class="sc-val" style="color:${pnlColor(totalPnl)};">${totalPnl >= 0 ? '+' : ''}${inr(totalPnl)}</div>
+        <div class="sc-label" id="sumPnlLabel">All-Time PnL</div>
+        <div class="sc-val" id="sumPnl" style="color:${pnlColor(totalPnl)};">${totalPnl >= 0 ? '+' : ''}${inr(totalPnl)}</div>
       </div>
       <div class="sc">
-        <div class="sc-label">Overall Win Rate</div>
-        <div class="sc-val">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) + '%' : '—'}</div>
-        <div class="sc-sub">${totalWins}W · ${totalLosses}L · ${allTrades.length} trades</div>
+        <div class="sc-label" id="sumWrLabel">Overall Win Rate</div>
+        <div class="sc-val" id="sumWr">${allTrades.length ? ((totalWins / allTrades.length) * 100).toFixed(1) + '%' : '—'}</div>
+        <div class="sc-sub" id="sumWrSub">${totalWins}W · ${totalLosses}L · ${allTrades.length} trades</div>
       </div>
       <div class="sc">
         <div class="sc-label">Sessions</div>
         <div class="sc-val">${sessions.length}</div>
-        <div class="sc-sub">across all time</div>
+        <div class="sc-sub" id="sumSessionsSub">across all time</div>
       </div>
     </div>
 
@@ -1153,7 +1251,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
 
     ${dayViewSectionHTML()}
 
-    ${analyticsSectionHTML()}
+    ${analyticsSectionHTML(cfg.extraAnalyticsHTML)}
 
     <div class="section-title">Sessions — newest first</div>
     ${sessionCards}
@@ -1172,7 +1270,8 @@ ${jsonlModalHTML()}
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
 ${tradeModalJS()}
-${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap })}
+${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap, filter })}
+${cfg.extraAnalyticsJS || ""}
 ${dailyFilesClusterJS(cfg.routePrefix)}
 ${tableEnhancerJS()}
 </script>
