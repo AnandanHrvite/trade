@@ -801,6 +801,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 
     // 1. Load recorded data (metadata + small streams). Spot ticks are NOT
     //    loaded — they're stream-iterated below to keep memory bounded.
+    //    Crash-recovered sessions (no stop event) trigger a full spot.jsonl
+    //    scan here to find the end bound — log so this isn't a silent gap that
+    //    makes the Replay activity pane look frozen.
+    console.log(`📼 [replay] ${mode} ${sessionId || date}: loading recorded session…`);
     const data = await loadSessionData({ date, mode, sessionId });
     const optionTimeline = _buildOptionTimeline(data.optionTicks);
     const vixTimeline    = data.vixTicks.map(v => ({ t: v.t, l: v.v })); // unify field name
@@ -881,6 +885,15 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    can freeze for 20+ seconds mid-trade in a long position.
     const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
+    // Heartbeat: a swing day is tens of thousands of ticks and, while flat,
+    // the paper engine logs nothing for minutes — making the Replay activity
+    // pane look stopped. Emit a progress line every HEARTBEAT_EVERY ticks so
+    // the run always shows it's alive (additive logging — no effect on result).
+    const HEARTBEAT_EVERY = 5000;
+    const _istHHMM = (t) => new Date(t).toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+    console.log(`📼 [replay] ${mode} ${data.sessionStart.sid}: streaming spot ticks (${data.optionTicks.length} option ticks loaded)…`);
     // setTimeout(r, 0) goes through the harness override and falls through
     // unchanged to orig.setTimeout_(r, 0) (0 is not > SHORT_DELAY_CAP_MS),
     // so this resolves in the timers phase alongside paper's queued polls.
@@ -905,6 +918,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 
         harness.pumpTick(tick);
         ticksReplayed++;
+
+        if (ticksReplayed % HEARTBEAT_EVERY === 0) {
+          console.log(`📼 [replay] ${mode}: pumped ${ticksReplayed} ticks · sim clock ${_istHHMM(tick.t)} IST`);
+        }
 
         if (speed > 0) await new Promise(r => setTimeout(r, speed));
         else if (ticksReplayed % YIELD_EVERY === 0) await _yield();
