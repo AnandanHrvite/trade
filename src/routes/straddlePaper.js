@@ -219,6 +219,9 @@ async function simulateEntry(sigSnapshot) {
     // combined-premium swing, and spot movement (either direction) is the scenario driver.
     troughCombined: netDebit,
     maxSpotMovePts: 0,
+    // Seconds from entry to the combined-premium peak / trough.
+    secsToMFE:      0,
+    secsToMAE:      0,
     ce: {
       symbol:     ceInfo.symbol,
       entryLtp:   cePrem,
@@ -317,6 +320,8 @@ function simulateExit(reason) {
     mfePnl:        parseFloat(((pos.peakCombined   - pos.netDebit) * qty).toFixed(2)),
     maePnl:        parseFloat(((pos.troughCombined - pos.netDebit) * qty).toFixed(2)),
     maxSpotMovePts: pos.maxSpotMovePts || 0,
+    secsToMFE:     pos.secsToMFE || 0,
+    secsToMAE:     pos.secsToMAE || 0,
     durationMs:    Date.now() - pos.entryTimeMs,
     instrument:    "NIFTY_OPTIONS",
     isFutures:     false,
@@ -385,8 +390,8 @@ function _checkExits() {
   const pos = state.position;
   if (state.ceLtp == null || state.peLtp == null) return;
   const combined = parseFloat((state.ceLtp + state.peLtp).toFixed(2));
-  if (combined > pos.peakCombined)   pos.peakCombined   = combined;
-  if (combined < pos.troughCombined) pos.troughCombined = combined;
+  if (combined > pos.peakCombined)   { pos.peakCombined   = combined; pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
+  if (combined < pos.troughCombined) { pos.troughCombined = combined; pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   // Max absolute spot displacement from entry — "how far did the market travel" for the pair.
   if (state.lastTickPrice != null) {
     const _move = Math.abs(state.lastTickPrice - pos.entrySpot);

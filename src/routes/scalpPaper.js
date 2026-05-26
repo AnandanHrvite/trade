@@ -322,6 +322,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     mfePnl:           0,
     maeSpotPts:       0,
     maePnl:           0,
+    // Seconds from entry to the favourable peak / adverse trough — replay-safe
+    // (simNow clock). Distinguishes "peaked early then gave back" from "slow grind".
+    secsToMFE:        0,
+    secsToMAE:        0,
   };
 
   state.optionSymbol = symbol;
@@ -420,6 +424,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     mfePnl:          state.position.mfePnl          || 0,
     maeSpotPts:      state.position.maeSpotPts      || 0,
     maePnl:          state.position.maePnl          || 0,
+    secsToMFE:       state.position.secsToMFE       || 0,
+    secsToMAE:       state.position.secsToMAE       || 0,
     vixAtExit:       getCachedVix(),
     entryTimeMs:     state.position.entryTimeMs     || null,
     exitTimeMs:      _exitMsScalp,
@@ -598,9 +604,9 @@ function onTick(tick) {
     // Mirrors peakPnl but stays in spot-pt units for "how far did it go for me"
     // analysis on losing trades (sizes BE trigger, BB-line SL distance, etc.).
     const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
-    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
-    if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
     // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥

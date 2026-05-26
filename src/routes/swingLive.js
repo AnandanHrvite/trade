@@ -1028,6 +1028,8 @@ async function squareOff(exitPrice, reason) {
     adxTrending:    tradeState.position ? (tradeState.position.adxTrending  != null ? tradeState.position.adxTrending  : null) : null,
     mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
     maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
+    secsToMFE:      tradeState.position ? (tradeState.position.secsToMFE  || 0) : 0,
+    secsToMAE:      tradeState.position ? (tradeState.position.secsToMAE  || 0) : 0,
     vixAtExit:      getCachedVix(),
   });
   tradeState.sessionPnl = parseFloat((tradeState.sessionPnl + netPnl).toFixed(2));
@@ -1457,6 +1459,9 @@ async function onCandleClose(candle) {
         candlesHeld:       0,
         mfeSpotPts:        0,
         maeSpotPts:        0,
+        entryTimeMs:       Date.now(),
+        secsToMFE:         0,
+        secsToMAE:         0,
         orderId:           result.orderId || null,
         entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
         entryPrevMid,
@@ -1779,6 +1784,9 @@ function onSpotTick(tick) {
           candlesHeld:       0,
           mfeSpotPts:        0,
           maeSpotPts:        0,
+          entryTimeMs:       Date.now(),
+          secsToMFE:         0,
+          secsToMAE:         0,
           orderId:           result.orderId || null,
           entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
           entryPrevMid,
@@ -1848,8 +1856,8 @@ function onSpotTick(tick) {
   if (tradeState.position) {
     const _exPos  = tradeState.position;
     const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
-    if (_favPts > (_exPos.mfeSpotPts || 0)) _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
-    if (_favPts < (_exPos.maeSpotPts || 0)) _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts > (_exPos.mfeSpotPts || 0)) { _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMFE = parseFloat(((Date.now() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
+    if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((Date.now() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
   }
 
   // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────

@@ -182,7 +182,7 @@ async function placeLiveEntry(sigSnapshot) {
     entrySpot: spot, entryTime: istNow(), entryTimeMs: Date.now(),
     netDebit, targetNet: parseFloat((netDebit * (1 + targetPct)).toFixed(2)), stopNet: parseFloat((netDebit * (1 - stopPct)).toFixed(2)), peakCombined: netDebit,
     // Excursion tracking — combined-premium swing + max spot travel (delta-neutral).
-    troughCombined: netDebit, maxSpotMovePts: 0,
+    troughCombined: netDebit, maxSpotMovePts: 0, secsToMFE: 0, secsToMAE: 0,
     ce: { symbol: ceInfo.symbol, entryLtp: cePrem, orderId: ceOrderId },
     pe: { symbol: peInfo.symbol, entryLtp: pePrem, orderId: peOrderId },
     trigger: sigSnapshot.trigger, signalStrength: sigSnapshot.signalStrength,
@@ -255,6 +255,7 @@ async function placeLiveExit(reason) {
     mfePnl: parseFloat(((pos.peakCombined - pos.netDebit) * qty).toFixed(2)),
     maePnl: parseFloat(((pos.troughCombined - pos.netDebit) * qty).toFixed(2)),
     maxSpotMovePts: pos.maxSpotMovePts || 0,
+    secsToMFE: pos.secsToMFE || 0, secsToMAE: pos.secsToMAE || 0,
     isLive: !isDryRun(), isDryRun: isDryRun(),
     instrument: "NIFTY_OPTIONS",
   };
@@ -284,8 +285,8 @@ function _checkExits() {
   if (!state.position || state.ceLtp == null || state.peLtp == null) return;
   const pos = state.position;
   const combined = parseFloat((state.ceLtp + state.peLtp).toFixed(2));
-  if (combined > pos.peakCombined)   pos.peakCombined   = combined;
-  if (combined < pos.troughCombined) pos.troughCombined = combined;
+  if (combined > pos.peakCombined)   { pos.peakCombined   = combined; pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
+  if (combined < pos.troughCombined) { pos.troughCombined = combined; pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (state.lastTickPrice != null) {
     const _move = Math.abs(state.lastTickPrice - pos.entrySpot);
     if (_move > (pos.maxSpotMovePts || 0)) pos.maxSpotMovePts = parseFloat(_move.toFixed(2));

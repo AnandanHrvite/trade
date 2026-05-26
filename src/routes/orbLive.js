@@ -205,6 +205,8 @@ async function placeLiveBuy(side, sigSnapshot) {
     wickPass: sigSnapshot.wickPass != null ? sigSnapshot.wickPass : null,
     // Max favorable / adverse excursion — tracked per-tick for post-window analysis.
     mfeSpotPts: 0, mfePnl: 0, maeSpotPts: 0, maePnl: 0,
+    // Seconds from entry to the favourable peak / adverse trough.
+    secsToMFE: 0, secsToMAE: 0,
     entryReason: sigSnapshot.reason, entryOrderId,
   };
   state.position = pos;
@@ -269,6 +271,7 @@ async function placeLiveSell(reason) {
     wickPass: pos.wickPass != null ? pos.wickPass : null,
     mfeSpotPts: pos.mfeSpotPts || 0, mfePnl: pos.mfePnl || 0,
     maeSpotPts: pos.maeSpotPts || 0, maePnl: pos.maePnl || 0,
+    secsToMFE: pos.secsToMFE || 0, secsToMAE: pos.secsToMAE || 0,
     durationMs: Date.now() - pos.entryTimeMs, charges,
     entryOrderId: pos.entryOrderId, exitOrderId,
     isLive: !isDryRun(), isDryRun: isDryRun(),
@@ -302,9 +305,9 @@ function _checkExits(spotPrice) {
   // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
   const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
   const _curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
-  if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+  if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
-  if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+  if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
   const moveInFavour = pos.side === "CE" ? (spotPrice - pos.entrySpot) : (pos.entrySpot - spotPrice);

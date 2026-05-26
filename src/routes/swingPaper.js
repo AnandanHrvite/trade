@@ -702,6 +702,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     // Max favorable / adverse excursion in spot pts — tracked per-tick for post-window analysis.
     mfeSpotPts:        0,
     maeSpotPts:        0,
+    // Entry wall-clock (simNow) + seconds to the favourable peak / adverse trough.
+    entryTimeMs:       simNow(),
+    secsToMFE:         0,
+    secsToMAE:         0,
     // Option metadata
     optionExpiry:      optDetails?.expiry     || null,
     optionStrike:      optDetails?.strike     || null,
@@ -851,6 +855,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     adxTrending:      ptState.position.adxTrending  != null ? ptState.position.adxTrending  : null,
     mfeSpotPts:       ptState.position.mfeSpotPts   || 0,
     maeSpotPts:       ptState.position.maeSpotPts   || 0,
+    secsToMFE:        ptState.position.secsToMFE    || 0,
+    secsToMAE:        ptState.position.secsToMAE    || 0,
     vixAtExit:        getCachedVix(),
     durationMs:       _durationMs,
     pnlPoints:        _pnlPoints,
@@ -1569,8 +1575,8 @@ function onTick(tick) {
   if (ptState.position) {
     const _exPos  = ptState.position;
     const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
-    if (_favPts > (_exPos.mfeSpotPts || 0)) _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
-    if (_favPts < (_exPos.maeSpotPts || 0)) _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts > (_exPos.mfeSpotPts || 0)) { _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMFE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
+    if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((simNow() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
   }
 
   // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────

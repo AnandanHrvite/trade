@@ -273,6 +273,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     mfePnl:           0,
     maeSpotPts:       0,
     maePnl:           0,
+    // Entry wall-clock (simNow) + seconds to the favourable peak / adverse trough.
+    entryTimeMs:      simNow(),
+    secsToMFE:        0,
+    secsToMAE:        0,
 
     entryBarTime:     state.currentBar ? state.currentBar.time : null,
     optionEntryLtp:   null,
@@ -389,6 +393,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     mfePnl:          state.position.mfePnl           || 0,
     maeSpotPts:      state.position.maeSpotPts       || 0,
     maePnl:          state.position.maePnl           || 0,
+    secsToMFE:       state.position.secsToMFE        || 0,
+    secsToMAE:       state.position.secsToMAE        || 0,
     vixAtExit:       getCachedVix(),
     exitTimeMs:      _exitMsPA,
     durationMs:      _durationMsPA,
@@ -536,9 +542,9 @@ function onTick(tick) {
     // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
     // MFE = best the trade ever showed; MAE = worst it dipped. Both for giveback/drawdown analysis.
     const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
-    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
-    if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
     // 1. SL hit (initial or swing-trailed)

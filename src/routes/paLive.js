@@ -474,6 +474,8 @@ async function squareOff(exitPrice, reason) {
     mfePnl:         state.position ? (state.position.mfePnl     || 0) : 0,
     maeSpotPts:     state.position ? (state.position.maeSpotPts || 0) : 0,
     maePnl:         state.position ? (state.position.maePnl     || 0) : 0,
+    secsToMFE:      state.position ? (state.position.secsToMFE  || 0) : 0,
+    secsToMAE:      state.position ? (state.position.secsToMAE  || 0) : 0,
     vixAtExit:      getCachedVix(),
   });
 
@@ -604,9 +606,9 @@ function onTick(tick) {
 
     // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
     const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
-    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts > (pos.mfeSpotPts || 0)) { pos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMFE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
-    if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
     // 1. SL hit (initial or swing-trailed)
@@ -872,6 +874,10 @@ async function resolveAndEnter(side, spot, result) {
       mfePnl:           0,
       maeSpotPts:       0,
       maePnl:           0,
+      // Entry wall-clock + seconds to the favourable peak / adverse trough.
+      entryTimeMs:      Date.now(),
+      secsToMFE:        0,
+      secsToMAE:        0,
       optionStrike:     optionInfo.strike || null,
       optionExpiry:     optionInfo.expiry || null,
       optionType:       side,
