@@ -52,6 +52,53 @@ function dailyFilesPaginate(allRows, query) {
   return { rows: paged, total, page, pageSize, totalPages };
 }
 
+// ── Theme: activation script + light-mode overrides ─────────────────────────
+// The Settings UI writes UI_THEME (dark|light). This <script> flips the
+// data-theme attribute so the :root[data-theme="light"] rules below (and the
+// shared sidebar/top-bar rules in sidebarCSS) take effect.
+function themeInitScript() {
+  return `<script>(function(){ if ('${process.env.UI_THEME || "dark"}' === 'light') document.documentElement.setAttribute('data-theme', 'light'); })();</script>`;
+}
+
+// Light-mode overrides for the history page's own classes (sidebarCSS only
+// themes the shell). Mirrors the Swing history page's light rules so all five
+// strategies look identical in either theme.
+function historyLightCSS() {
+  return `
+    :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
+    :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
+    :root[data-theme="light"] .section-title{color:#475569!important;}
+    :root[data-theme="light"] .session-card{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .session-head{background:#f8fafc!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .session-meta{color:#94a3b8!important;}
+    :root[data-theme="light"] .session-wl{color:#64748b!important;}
+    :root[data-theme="light"] .tbl th{color:#64748b!important;background:#f1f5f9!important;border-bottom-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
+    :root[data-theme="light"] .tbl tr:hover td{background:rgba(59,130,246,0.05)!important;}
+    :root[data-theme="light"] .export-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#64748b!important;}
+    :root[data-theme="light"] .export-btn:hover{border-color:#3b82f6!important;color:#2563eb!important;}
+    :root[data-theme="light"] .copy-btn{background:#f8fafc!important;border-color:#e0e4ea!important;color:#2563eb!important;}
+    :root[data-theme="light"] .copy-btn:hover{background:#eff6ff!important;border-color:#3b82f6!important;}
+    :root[data-theme="light"] .dw-toggle{border-color:#e0e4ea!important;color:#2563eb!important;}
+    :root[data-theme="light"] .dw-toggle:hover,:root[data-theme="light"] .dw-toggle.active{background:#eff6ff!important;border-color:#3b82f6!important;}
+    :root[data-theme="light"] .ana-card{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-card h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-mini{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-mini h3{color:#64748b!important;}
+    :root[data-theme="light"] .ana-tbl th{color:#64748b!important;border-bottom-color:#e0e4ea!important;background:#f1f5f9!important;}
+    :root[data-theme="light"] .ana-tbl td{color:#334155!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .ana-tbl tr:hover{background:#f8fafc!important;}
+    :root[data-theme="light"] .ana-stat-label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .tbar-label{color:#64748b!important;}
+    :root[data-theme="light"] .tbar-count{color:#94a3b8!important;}
+    :root[data-theme="light"] .sc{background:#fff!important;border-color:#e0e4ea!important;}
+    :root[data-theme="light"] .sc-label{color:#64748b!important;}
+    :root[data-theme="light"] .sc-val{color:#1e293b!important;}
+    :root[data-theme="light"] .sc-sub{color:#94a3b8!important;}
+    :root[data-theme="light"] .reset-btn{background:rgba(239,68,68,0.08)!important;color:#dc2626!important;border-color:rgba(239,68,68,0.3)!important;}`;
+}
+
 // ── CSS (mirrors the Scalp history page <style> block) ───────────────────────
 function historyCSS() {
   return `
@@ -1049,9 +1096,10 @@ function renderHistoryPage(cfg) {
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   ${faviconLink()}
   <title>${cfg.pageDocTitle || cfg.modalLabel + " — History"}</title>
+  ${themeInitScript()}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-  <style>${historyCSS()}</style>
+  <style>${historyCSS()}${historyLightCSS()}</style>
 </head>
 <body>
 <div class="app-shell">
@@ -1139,4 +1187,6 @@ module.exports = {
   dailyFilesClusterJS,
   jsonlModalHTML,
   dailyFilesPaginate,
+  themeInitScript,
+  historyLightCSS,
 };

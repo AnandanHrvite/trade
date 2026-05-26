@@ -26,7 +26,7 @@ const socketManager = require("../utils/socketManager");
 const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
-const { dailyFilesPaginate, dailyFilesSectionHTML } = require("../utils/paperHistoryUI");
+const { dailyFilesPaginate, dailyFilesSectionHTML, themeInitScript, historyLightCSS } = require("../utils/paperHistoryUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes, parseTrailTiers } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
@@ -2649,6 +2649,7 @@ router.get("/history", (req, res) => {
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
   <title>Scalp Paper — History</title>
+  ${themeInitScript()}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <style>
@@ -2719,6 +2720,7 @@ router.get("/history", (req, res) => {
       .top-bar-right{gap:4px;}
       .export-btn,.reset-btn{padding:4px 8px;font-size:0.62rem;}
     }
+    ${historyLightCSS()}
   </style>
 </head>
 <body>
