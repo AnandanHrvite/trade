@@ -699,6 +699,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
     candlesHeld:       0,
+    // Max favorable / adverse excursion in spot pts — tracked per-tick for post-window analysis.
+    mfeSpotPts:        0,
+    maeSpotPts:        0,
     // Option metadata
     optionExpiry:      optDetails?.expiry     || null,
     optionStrike:      optDetails?.strike     || null,
@@ -711,6 +714,14 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     vixAtEntry:        _vixAtEntry,
     entryHourIST:      _entryHourIST,
     entryMinuteIST:    _entryMinuteIST,
+    // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
+    rsiAtEntry:        entryMeta.rsiAtEntry  != null ? entryMeta.rsiAtEntry  : null,
+    ema9AtEntry:       entryMeta.ema9AtEntry != null ? entryMeta.ema9AtEntry : null,
+    ema9Slope:         entryMeta.ema9Slope   != null ? entryMeta.ema9Slope   : null,
+    sarAtEntry:        entryMeta.sarAtEntry  != null ? entryMeta.sarAtEntry  : null,
+    sarTrend:          entryMeta.sarTrend    || null,
+    adxAtEntry:        entryMeta.adxAtEntry  != null ? entryMeta.adxAtEntry  : null,
+    adxTrending:       entryMeta.adxTrending != null ? entryMeta.adxTrending : null,
   };
 
   // Set option symbol and start REST polling (no socket changes)
@@ -830,6 +841,17 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryPrevMid:     ptState.position.entryPrevMid     || null,   // 50%-rule reference
     bestPrice:        ptState.position.bestPrice        || null,   // peak favorable price during trade
     candlesHeld:      ptState.position.candlesHeld      || 0,
+    // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
+    rsiAtEntry:       ptState.position.rsiAtEntry   != null ? ptState.position.rsiAtEntry   : null,
+    ema9AtEntry:      ptState.position.ema9AtEntry  != null ? ptState.position.ema9AtEntry  : null,
+    ema9Slope:        ptState.position.ema9Slope    != null ? ptState.position.ema9Slope    : null,
+    sarAtEntry:       ptState.position.sarAtEntry   != null ? ptState.position.sarAtEntry   : null,
+    sarTrend:         ptState.position.sarTrend     || null,
+    adxAtEntry:       ptState.position.adxAtEntry   != null ? ptState.position.adxAtEntry   : null,
+    adxTrending:      ptState.position.adxTrending  != null ? ptState.position.adxTrending  : null,
+    mfeSpotPts:       ptState.position.mfeSpotPts   || 0,
+    maeSpotPts:       ptState.position.maeSpotPts   || 0,
+    vixAtExit:        getCachedVix(),
     durationMs:       _durationMs,
     pnlPoints:        _pnlPoints,
     charges:          charges,
@@ -1249,7 +1271,16 @@ async function onCandleClose(candle) {
         }
       }
 
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, { signalStrength: candleCloseStrength });
+      simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, {
+        signalStrength: candleCloseStrength,
+        rsiAtEntry:  indicators.rsi        != null ? indicators.rsi   : null,
+        ema9AtEntry: indicators.ema9       != null ? indicators.ema9  : null,
+        ema9Slope:   indicators.ema9Slope  != null ? indicators.ema9Slope : null,
+        sarAtEntry:  indicators.sar        != null ? indicators.sar   : null,
+        sarTrend:    indicators.sarTrend   || null,
+        adxAtEntry:  indicators.adx        != null ? indicators.adx   : null,
+        adxTrending: indicators.adxTrending != null ? indicators.adxTrending : null,
+      });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
     }).catch(err => {
@@ -1395,7 +1426,7 @@ function onTick(tick) {
     // This avoids the expensive [...candles, bar] spread AND the duplicate getSignal call.
     // SAR stopLoss: use strategy's LIVE value (includes SAR flips), fallback to cached closed-candle SL.
     ptState.candles.push(bar);
-    const { signal, reason, signalStrength, stopLoss: strategySL } = strategy.getSignal(ptState.candles, { silent: true });
+    const { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(ptState.candles, { silent: true });
     ptState.candles.pop();
     const stopLoss = strategySL || _cachedClosedCandleSL;
     // ── Strength gate: intra-candle entry ONLY for STRONG signals ─────────────
@@ -1501,7 +1532,16 @@ function onTick(tick) {
           }
         }
 
-        simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, { signalStrength }); // isIntraCandle=true
+        simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, {
+          signalStrength,
+          rsiAtEntry:  indicators.rsi        != null ? indicators.rsi   : null,
+          ema9AtEntry: indicators.ema9       != null ? indicators.ema9  : null,
+          ema9Slope:   indicators.ema9Slope  != null ? indicators.ema9Slope : null,
+          sarAtEntry:  indicators.sar        != null ? indicators.sar   : null,
+          sarTrend:    indicators.sarTrend   || null,
+          adxAtEntry:  indicators.adx        != null ? indicators.adx   : null,
+          adxTrending: indicators.adxTrending != null ? indicators.adxTrending : null,
+        }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
       }).catch(err => {
@@ -1525,6 +1565,14 @@ function onTick(tick) {
   // ADDITIONALLY: intra-candle points trail — from the very FIRST favourable tick,
   // trail SL 10 pts behind the best price seen (no minimum trigger distance).
   // This tightens the stop immediately as price moves in our direction.
+  // ── MFE/MAE tracking (spot pts in trade direction) — per tick, for analysis ──
+  if (ptState.position) {
+    const _exPos  = ptState.position;
+    const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
+    if (_favPts > (_exPos.mfeSpotPts || 0)) _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts < (_exPos.maeSpotPts || 0)) _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+  }
+
   // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
   // Once trade moves +25pt in favor, SL moves to entry price = zero risk.
   if (ptState.position && ptState.position.stopLoss !== null) {

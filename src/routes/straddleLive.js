@@ -181,6 +181,8 @@ async function placeLiveEntry(sigSnapshot) {
     pairId, strike: ceInfo.strike, expiry: ceInfo.expiry, qty,
     entrySpot: spot, entryTime: istNow(), entryTimeMs: Date.now(),
     netDebit, targetNet: parseFloat((netDebit * (1 + targetPct)).toFixed(2)), stopNet: parseFloat((netDebit * (1 - stopPct)).toFixed(2)), peakCombined: netDebit,
+    // Excursion tracking — combined-premium swing + max spot travel (delta-neutral).
+    troughCombined: netDebit, maxSpotMovePts: 0,
     ce: { symbol: ceInfo.symbol, entryLtp: cePrem, orderId: ceOrderId },
     pe: { symbol: peInfo.symbol, entryLtp: pePrem, orderId: peOrderId },
     trigger: sigSnapshot.trigger, signalStrength: sigSnapshot.signalStrength,
@@ -247,9 +249,12 @@ async function placeLiveExit(reason) {
     entryTime: pos.entryTime, exitTime,
     optionStrike: pos.strike, optionExpiry: pos.expiry,
     entryReason: pos.entryReason, exitReason: reason,
-    signalStrength: pos.signalStrength, vixAtEntry: pos.vixAtEntry,
+    signalStrength: pos.signalStrength, vixAtEntry: pos.vixAtEntry, vixAtExit: getCachedVix(),
     trigger: pos.trigger, netDebit: pos.netDebit, netTarget: pos.targetNet, netStop: pos.stopNet,
     pairPnl, durationMs: Date.now() - pos.entryTimeMs,
+    mfePnl: parseFloat(((pos.peakCombined - pos.netDebit) * qty).toFixed(2)),
+    maePnl: parseFloat(((pos.troughCombined - pos.netDebit) * qty).toFixed(2)),
+    maxSpotMovePts: pos.maxSpotMovePts || 0,
     isLive: !isDryRun(), isDryRun: isDryRun(),
     instrument: "NIFTY_OPTIONS",
   };
@@ -279,7 +284,12 @@ function _checkExits() {
   if (!state.position || state.ceLtp == null || state.peLtp == null) return;
   const pos = state.position;
   const combined = parseFloat((state.ceLtp + state.peLtp).toFixed(2));
-  if (combined > pos.peakCombined) pos.peakCombined = combined;
+  if (combined > pos.peakCombined)   pos.peakCombined   = combined;
+  if (combined < pos.troughCombined) pos.troughCombined = combined;
+  if (state.lastTickPrice != null) {
+    const _move = Math.abs(state.lastTickPrice - pos.entrySpot);
+    if (_move > (pos.maxSpotMovePts || 0)) pos.maxSpotMovePts = parseFloat(_move.toFixed(2));
+  }
   if (combined >= pos.targetNet) return placeLiveExit(`Combined target hit (₹${combined} >= ₹${pos.targetNet})`);
   if (combined <= pos.stopNet)   return placeLiveExit(`Combined SL hit (₹${combined} <= ₹${pos.stopNet})`);
   const maxHoldDays = parseFloat(process.env.STRADDLE_MAX_HOLD_DAYS || "3");

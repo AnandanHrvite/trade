@@ -463,6 +463,18 @@ async function squareOff(exitPrice, reason) {
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
+    // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
+    rsiAtEntry:     state.position ? (state.position.rsiAtEntry     != null ? state.position.rsiAtEntry     : null) : null,
+    adxAtEntry:     state.position ? (state.position.adxAtEntry     != null ? state.position.adxAtEntry     : null) : null,
+    adxRising:      state.position ? (state.position.adxRising      != null ? state.position.adxRising      : null) : null,
+    isTrending:     state.position ? (state.position.isTrending     != null ? state.position.isTrending     : null) : null,
+    patternAtEntry: state.position ? (state.position.patternAtEntry || null) : null,
+    srLevelAtEntry: state.position ? (state.position.srLevelAtEntry != null ? state.position.srLevelAtEntry : null) : null,
+    mfeSpotPts:     state.position ? (state.position.mfeSpotPts || 0) : 0,
+    mfePnl:         state.position ? (state.position.mfePnl     || 0) : 0,
+    maeSpotPts:     state.position ? (state.position.maeSpotPts || 0) : 0,
+    maePnl:         state.position ? (state.position.maePnl     || 0) : 0,
+    vixAtExit:      getCachedVix(),
   });
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
@@ -589,6 +601,13 @@ function onTick(tick) {
 
     // Track peak PNL
     if (!pos.peakPnl || curPnl > pos.peakPnl) pos.peakPnl = curPnl;
+
+    // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
+    const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
+    if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
+    if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
     // 1. SL hit (initial or swing-trailed)
     if (pos.side === "CE" && price <= pos.stopLoss) {
@@ -848,6 +867,11 @@ async function resolveAndEnter(side, spot, result) {
       bestPrice:        null,
       candlesHeld:      0,
       peakPnl:          0,
+      // Max favorable / adverse excursion — tracked per-tick for post-window analysis.
+      mfeSpotPts:       0,
+      mfePnl:           0,
+      maeSpotPts:       0,
+      maePnl:           0,
       optionStrike:     optionInfo.strike || null,
       optionExpiry:     optionInfo.expiry || null,
       optionType:       side,
@@ -862,6 +886,13 @@ async function resolveAndEnter(side, spot, result) {
       vixAtEntry:       _vixAtEntry,
       entryHourIST:     _entryHourIST,
       entryMinuteIST:   _entryMinuteIST,
+      // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
+      rsiAtEntry:       result.rsi        != null ? result.rsi        : null,
+      adxAtEntry:       result.adx        != null ? result.adx        : null,
+      adxRising:        result.adxRising  != null ? result.adxRising  : null,
+      isTrending:       result.isTrending != null ? result.isTrending : null,
+      patternAtEntry:   result.pattern    || null,
+      srLevelAtEntry:   result.srLevel    != null ? result.srLevel    : null,
     };
 
     state.optionSymbol = symbol;

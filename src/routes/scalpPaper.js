@@ -316,10 +316,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     ptsFromBB:        entryMeta.ptsFromBB       != null ? entryMeta.ptsFromBB       : null,
     trendMomPct:      entryMeta.trendMomPct     != null ? entryMeta.trendMomPct     : null,
     trendSlopeDir:    entryMeta.trendSlopeDir   != null ? entryMeta.trendSlopeDir   : null,
-    // MFE tracking — updated per-tick. Captures the best favourable excursion
-    // before exit (useful to size break-even trigger on losing trades).
+    // MFE/MAE tracking — updated per-tick. Captures best favourable and worst
+    // adverse excursion before exit (sizes break-even trigger / drawdown analysis).
     mfeSpotPts:       0,
     mfePnl:           0,
+    maeSpotPts:       0,
+    maePnl:           0,
   };
 
   state.optionSymbol = symbol;
@@ -416,6 +418,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     trendSlopeDir:   state.position.trendSlopeDir   != null ? state.position.trendSlopeDir   : null,
     mfeSpotPts:      state.position.mfeSpotPts      || 0,
     mfePnl:          state.position.mfePnl          || 0,
+    maeSpotPts:      state.position.maeSpotPts      || 0,
+    maePnl:          state.position.maePnl          || 0,
+    vixAtExit:       getCachedVix(),
     entryTimeMs:     state.position.entryTimeMs     || null,
     exitTimeMs:      _exitMsScalp,
     durationMs:      _durationMsScalp,
@@ -595,6 +600,8 @@ function onTick(tick) {
     const _favPts = (price - pos.entryPrice) * (pos.side === "CE" ? 1 : -1);
     if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
+    if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
     // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥
     //         BE_TRIGGER_R × initial risk. Tighten-only, so it fires at most once.

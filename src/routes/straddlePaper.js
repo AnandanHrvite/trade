@@ -214,7 +214,11 @@ async function simulateEntry(sigSnapshot) {
     netDebit,
     targetNet,
     stopNet,
-    peakCombined:  netDebit,
+    peakCombined:   netDebit,
+    // Excursion tracking — straddle is delta-neutral, so favorable/adverse is the
+    // combined-premium swing, and spot movement (either direction) is the scenario driver.
+    troughCombined: netDebit,
+    maxSpotMovePts: 0,
     ce: {
       symbol:     ceInfo.symbol,
       entryLtp:   cePrem,
@@ -301,6 +305,7 @@ function simulateExit(reason) {
     exitReason:    reason,
     signalStrength: pos.signalStrength,
     vixAtEntry:    pos.vixAtEntry,
+    vixAtExit:     getCachedVix(),
     trigger:       pos.trigger,
     bbWidth:       pos.bbWidth,
     bbWidthAvg:    pos.bbWidthAvg,
@@ -308,6 +313,10 @@ function simulateExit(reason) {
     netTarget:     pos.targetNet,
     netStop:       pos.stopNet,
     pairPnl,
+    // Combined-premium excursion (gross, qty-scaled) + max spot travel for analysis.
+    mfePnl:        parseFloat(((pos.peakCombined   - pos.netDebit) * qty).toFixed(2)),
+    maePnl:        parseFloat(((pos.troughCombined - pos.netDebit) * qty).toFixed(2)),
+    maxSpotMovePts: pos.maxSpotMovePts || 0,
     durationMs:    Date.now() - pos.entryTimeMs,
     instrument:    "NIFTY_OPTIONS",
     isFutures:     false,
@@ -376,7 +385,13 @@ function _checkExits() {
   const pos = state.position;
   if (state.ceLtp == null || state.peLtp == null) return;
   const combined = parseFloat((state.ceLtp + state.peLtp).toFixed(2));
-  if (combined > pos.peakCombined) pos.peakCombined = combined;
+  if (combined > pos.peakCombined)   pos.peakCombined   = combined;
+  if (combined < pos.troughCombined) pos.troughCombined = combined;
+  // Max absolute spot displacement from entry — "how far did the market travel" for the pair.
+  if (state.lastTickPrice != null) {
+    const _move = Math.abs(state.lastTickPrice - pos.entrySpot);
+    if (_move > (pos.maxSpotMovePts || 0)) pos.maxSpotMovePts = parseFloat(_move.toFixed(2));
+  }
 
   // Combined-premium target
   if (combined >= pos.targetNet) {

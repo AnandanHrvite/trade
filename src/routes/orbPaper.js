@@ -224,6 +224,15 @@ async function simulateBuy(side, sigSnapshot) {
     vwapAtEntry:    sigSnapshot.vwap,
     volRatio:       sigSnapshot.volRatio,
     wickRatio:      sigSnapshot.wickRatio,
+    // Entry-context filter outcomes — already computed by getSignal(), captured for analysis.
+    vwapAligned:    sigSnapshot.vwapAligned != null ? sigSnapshot.vwapAligned : null,
+    volPass:        sigSnapshot.volPass     != null ? sigSnapshot.volPass     : null,
+    wickPass:       sigSnapshot.wickPass    != null ? sigSnapshot.wickPass    : null,
+    // Max favorable / adverse excursion — tracked per-tick for post-window analysis.
+    mfeSpotPts:     0,
+    mfePnl:         0,
+    maeSpotPts:     0,
+    maePnl:         0,
     entryReason:    sigSnapshot.reason,
   };
 
@@ -292,10 +301,18 @@ function simulateSell(reason) {
     optionEntrySymbol: pos.symbol,
     signalStrength: pos.signalStrength,
     vixAtEntry:     pos.vixAtEntry,
+    vixAtExit:      getCachedVix(),
     rangePts:       pos.rangePts,
     orh:            pos.orh,
     orl:            pos.orl,
     targetSpot:     pos.targetSpot,
+    vwapAligned:    pos.vwapAligned != null ? pos.vwapAligned : null,
+    volPass:        pos.volPass     != null ? pos.volPass     : null,
+    wickPass:       pos.wickPass    != null ? pos.wickPass    : null,
+    mfeSpotPts:     pos.mfeSpotPts  || 0,
+    mfePnl:         pos.mfePnl      || 0,
+    maeSpotPts:     pos.maeSpotPts  || 0,
+    maePnl:         pos.maePnl      || 0,
     durationMs:     Date.now() - pos.entryTimeMs,
     charges,
     isFutures:      false,
@@ -338,6 +355,14 @@ function _checkExits(spotPrice) {
 
   // Track peak option premium for BE-after-1R trail
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
+
+  // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
+  const _favPts = (spotPrice - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+  const _curPnl = (optLtp - pos.optionEntryLtp) * pos.qty;
+  if (_favPts > (pos.mfeSpotPts || 0)) pos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+  if (_curPnl > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(_curPnl.toFixed(2));
+  if (_favPts < (pos.maeSpotPts || 0)) pos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+  if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
   // ── Move-to-BE (spot-anchored): spot moves >= 1× range in favour ────────
   const moveInFavour = pos.side === "CE" ? (spotPrice - pos.entrySpot) : (pos.entrySpot - spotPrice);

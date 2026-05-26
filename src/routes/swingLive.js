@@ -1018,6 +1018,17 @@ async function squareOff(exitPrice, reason) {
     vixAtEntry:     vixAtEntry       != null ? vixAtEntry       : null,
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
+    // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
+    rsiAtEntry:     tradeState.position ? (tradeState.position.rsiAtEntry   != null ? tradeState.position.rsiAtEntry   : null) : null,
+    ema9AtEntry:    tradeState.position ? (tradeState.position.ema9AtEntry  != null ? tradeState.position.ema9AtEntry  : null) : null,
+    ema9Slope:      tradeState.position ? (tradeState.position.ema9Slope    != null ? tradeState.position.ema9Slope    : null) : null,
+    sarAtEntry:     tradeState.position ? (tradeState.position.sarAtEntry   != null ? tradeState.position.sarAtEntry   : null) : null,
+    sarTrend:       tradeState.position ? (tradeState.position.sarTrend     || null) : null,
+    adxAtEntry:     tradeState.position ? (tradeState.position.adxAtEntry   != null ? tradeState.position.adxAtEntry   : null) : null,
+    adxTrending:    tradeState.position ? (tradeState.position.adxTrending  != null ? tradeState.position.adxTrending  : null) : null,
+    mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
+    maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
+    vixAtExit:      getCachedVix(),
   });
   tradeState.sessionPnl = parseFloat((tradeState.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) tradeState._wins = (tradeState._wins || 0) + 1;
@@ -1444,6 +1455,8 @@ async function onCandleClose(candle) {
         trailActivatePts:  _dynTrailActivate,
         bestPrice:         null,
         candlesHeld:       0,
+        mfeSpotPts:        0,
+        maeSpotPts:        0,
         orderId:           result.orderId || null,
         entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
         entryPrevMid,
@@ -1460,6 +1473,14 @@ async function onCandleClose(candle) {
         vixAtEntry:        _vixAtEntry,
         entryHourIST:      _entryHourIST,
         entryMinuteIST:    _entryMinuteIST,
+        // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
+        rsiAtEntry:        indicators.rsi        != null ? indicators.rsi        : null,
+        ema9AtEntry:       indicators.ema9       != null ? indicators.ema9       : null,
+        ema9Slope:         indicators.ema9Slope  != null ? indicators.ema9Slope  : null,
+        sarAtEntry:        indicators.sar        != null ? indicators.sar        : null,
+        sarTrend:          indicators.sarTrend   || null,
+        adxAtEntry:        indicators.adx        != null ? indicators.adx        : null,
+        adxTrending:       indicators.adxTrending != null ? indicators.adxTrending : null,
       };
 
       tradeState.optionSymbol = symbol;
@@ -1586,7 +1607,7 @@ function onSpotTick(tick) {
     } else {
     const strategy = getActiveStrategy();
     tradeState.candles.push(bar);
-    const { signal, reason, signalStrength, stopLoss: strategySL } = strategy.getSignal(tradeState.candles, { silent: true });
+    const { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(tradeState.candles, { silent: true });
     tradeState.candles.pop();
     const stopLoss = strategySL || _cachedClosedCandleSL;
 
@@ -1756,6 +1777,8 @@ function onSpotTick(tick) {
           trailActivatePts:  _dynTrailActivateIntra,
           bestPrice:         null,
           candlesHeld:       0,
+          mfeSpotPts:        0,
+          maeSpotPts:        0,
           orderId:           result.orderId || null,
           entryBarTime:      tradeState.currentBar ? tradeState.currentBar.time : null,
           entryPrevMid,
@@ -1770,6 +1793,14 @@ function onSpotTick(tick) {
           vixAtEntry:        _vixAtEntryIntra,
           entryHourIST:      _entryHourISTIntra,
           entryMinuteIST:    _entryMinuteISTIntra,
+          // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
+          rsiAtEntry:        indicators.rsi        != null ? indicators.rsi        : null,
+          ema9AtEntry:       indicators.ema9       != null ? indicators.ema9       : null,
+          ema9Slope:         indicators.ema9Slope  != null ? indicators.ema9Slope  : null,
+          sarAtEntry:        indicators.sar        != null ? indicators.sar        : null,
+          sarTrend:          indicators.sarTrend   || null,
+          adxAtEntry:        indicators.adx        != null ? indicators.adx        : null,
+          adxTrending:       indicators.adxTrending != null ? indicators.adxTrending : null,
         };
 
         tradeState.optionSymbol = symbol;
@@ -1812,6 +1843,14 @@ function onSpotTick(tick) {
 
   // Intra-tick 50% rule REMOVED — replaced by breakeven stop at +25pt.
   // The breakeven stop (added above) provides better protection without killing valid trades.
+
+  // ── MFE/MAE tracking (spot pts in trade direction) — per tick, for analysis ──
+  if (tradeState.position) {
+    const _exPos  = tradeState.position;
+    const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
+    if (_favPts > (_exPos.mfeSpotPts || 0)) _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2));
+    if (_favPts < (_exPos.maeSpotPts || 0)) _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2));
+  }
 
   // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
   // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).

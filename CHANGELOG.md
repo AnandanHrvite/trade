@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Trade logging — uniform entry-context + MFE/MAE + exit VIX across all 5 strategies
+
+- **Every strategy's trade record now captures the signal diagnostics it already computes at entry** but previously discarded ([src/routes/](src/routes/) paper + live for PA, ORB, Straddle, Swing; Scalp already had entry context). PA logs `rsiAtEntry`/`adxAtEntry`/`adxRising`/`isTrending`/`patternAtEntry`/`srLevelAtEntry`; ORB logs `vwapAligned`/`volPass`/`wickPass`; Swing logs `ema9AtEntry`/`ema9Slope`/`sarAtEntry`/`sarTrend`/`adxAtEntry`/`adxTrending`; Straddle already logged `trigger`/`bbWidth`/`bbWidthAvg`.
+- **MFE/MAE excursion tracked per-tick on all 5** (max-favorable + max-adverse in spot pts and ₹; Straddle uses combined-premium swing + `maxSpotMovePts` since it's delta-neutral). Scalp gained MAE alongside its existing MFE.
+- **`vixAtExit`** added to every trade record (read from the existing VIX cache — no new network poll), pairing with the existing `vixAtEntry`.
+- **Pure additive logging** — no entry, exit, SL, trail, or fill logic changed on any strategy or mode; paper logic untouched. Within the active paper-trade data-collection window. Lets post-window analysis correlate how each engine reacted to the market conditions present at entry/exit without reconstructing them from raw ticks.
+
 ### Dashboard — fix P&L chart fill colour above zero
 
 - **The cumulative/module chart fill now splits at the zero line.** Previously the area fill was a single colour keyed off the net total, so a net-negative chart painted the whole area red even where the line ran green above ₹0. The fill ([src/app.js](src/app.js)) is now a vertical gradient — green above the zero baseline, red below — matching the per-segment line colour.
