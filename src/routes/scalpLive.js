@@ -32,6 +32,7 @@ const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../u
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, parseTrailTiers, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
+const liveDryRun = require("../utils/liveDryRun");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
 const tradeGuards = require("../utils/tradeGuards");
@@ -367,6 +368,11 @@ function verifyOrderFill(orderId, label) {
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
 
+// DRY-RUN: when the global LIVE_HARNESS_DRY_RUN is on (or SCALP_LIVE_DRY_RUN
+// override is on), log the Fyers call that WOULD be made and place no real order.
+function isDryRun() { return liveDryRun.isDryRun("SCALP"); }
+let _scalpDryRunSeq = 0;
+
 async function placeOrder(fyersSymbol, side, qty) {
   if (_orderInFlight) {
     log(`⚠️ [SCALP-LIVE] Order in flight — skipping duplicate`);
@@ -374,6 +380,12 @@ async function placeOrder(fyersSymbol, side, qty) {
   }
   _orderInFlight = true;
   const sideLabel = side === 1 ? "BUY" : "SELL";
+  if (isDryRun()) {
+    const orderId = `DRYRUN-SCALP-${Date.now()}-${++_scalpDryRunSeq}`;
+    log(`🧪 [SCALP-LIVE DRY-RUN] No real order placed — would ${sideLabel} ${qty} × ${fyersSymbol} via Fyers | virtual OrderID: ${orderId}`);
+    setTimeout(() => { _orderInFlight = false; }, 5000);
+    return { success: true, orderId, dryRun: true };
+  }
   log(`📤 [SCALP-LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Fyers...`);
   try {
     const result = await fyersBroker.placeMarketOrder(

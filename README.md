@@ -419,6 +419,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `ORB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps ORB in dry-run even when the global flag is off. |
 | `PA_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the PA live harness in dry-run even when the global flag is off. |
 | `STRADDLE_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps Straddle in dry-run even when the global flag is off. |
+| `SCALP_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps Scalp in dry-run even when the global flag is off. Scalp Live has no master-enable gate, so this (with the global flag) is its primary safety switch. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |
 

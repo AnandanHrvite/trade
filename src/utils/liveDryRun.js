@@ -19,7 +19,7 @@
  *   global OFF, override unset/false → REAL orders
  *   global OFF, override true        → dry-run (strategy held back)
  *
- * @param {string} [strategyKey] e.g. "SWING", "ORB", "PA", "STRADDLE".
+ * @param {string} [strategyKey] e.g. "SWING", "ORB", "PA", "STRADDLE", "SCALP".
  *        Omit to evaluate the global flag only.
  * @returns {boolean} true ⇒ no real broker order should be placed.
  */
