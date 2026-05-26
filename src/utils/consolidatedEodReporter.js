@@ -1,13 +1,19 @@
 /**
  * consolidatedEodReporter.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Sends one combined end-of-day Telegram report at 15:30 IST, mirroring the
- * Consolidation page (/consolidation) exactly: same paper-only trade set and the
- * same per-row counting (no live files, no straddle pair-collapse). It computes
- * off that page's loadAllTrades() so the two can never drift — filtered to today.
+ * Sends one combined end-of-day Telegram report shortly after market close,
+ * mirroring the Consolidation page (/consolidation) exactly: same paper-only
+ * trade set and the same per-row counting (no live files, no straddle
+ * pair-collapse). It computes off that page's loadAllTrades() so the two can
+ * never drift — filtered to today.
+ *
+ * Fires at 15:32 IST, NOT 15:30: the paper engines do their EOD square-off at
+ * TRADE_STOP_TIME (15:30), so a 15:30:00 snapshot races those trades onto disk
+ * and drops the day's last (often square-off-only) trades. The 2-min buffer lets
+ * every square-off trade persist first. See scalpPaper.js / paPaper.js EOD check.
  *
  * Gated by TG_DAYREPORT_CONSOLIDATED (and master TG_ENABLED) inside notify.js.
- * Schedule is idempotent per day — if the server restarts after 15:30, the report
+ * Schedule is idempotent per day — if the server restarts after 15:32, the report
  * for today is skipped (the scheduler only fires going forward).
  */
 
@@ -55,12 +61,13 @@ function sendConsolidatedReport() {
 
 let _timer = null;
 
-/** Milliseconds until next 15:30 IST. If already past today, schedule for tomorrow. */
-function msUntilNext1530IST() {
+/** Milliseconds until next 15:32 IST. If already past today, schedule for tomorrow.
+ *  Fires 2 min after the 15:30 close so EOD square-off trades are persisted first. */
+function msUntilNextReportIST() {
   const now = new Date();
   const istNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   const target = new Date(istNow);
-  target.setHours(15, 30, 0, 0);
+  target.setHours(15, 32, 0, 0);
   let delta = target.getTime() - istNow.getTime();
   if (delta <= 0) delta += 24 * 60 * 60 * 1000; // tomorrow
   return delta;
@@ -68,7 +75,7 @@ function msUntilNext1530IST() {
 
 function scheduleNext() {
   if (_timer) clearTimeout(_timer);
-  const wait = msUntilNext1530IST();
+  const wait = msUntilNextReportIST();
   _timer = setTimeout(async () => {
     // Only fire on weekdays (Mon–Fri IST). Holidays are a nice-to-have; skipped
     // for now because a muted Telegram toggle already covers them.
