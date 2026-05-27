@@ -511,6 +511,18 @@ app.get("/", (req, res) => {
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
+  // Strategy tiles for the dashboard "Last Session" / "Today So Far" analytics
+  // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
+  // panel only shows currently-enabled strategies (and includes ORB/Straddle).
+  const swingModeOn = (process.env.SWING_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const dashSessionTiles = [
+    { key: 'SWING',    cls: 'swing',    label: 'SWING',        on: swingModeOn },
+    { key: 'SCALP',    cls: 'scalp',    label: 'SCALP',        on: scalpModeOn },
+    { key: 'PA',       cls: 'pa',       label: 'PRICE ACTION', on: paModeOn },
+    { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
+    { key: 'STRADDLE', cls: 'straddle', label: 'STRADDLE',     on: straddleModeOn },
+  ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
+
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
   // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB + Straddle (enabled only).
   const _tradingDir = path.join(os.homedir(), "trading-data");
@@ -1038,6 +1050,8 @@ app.get("/", (req, res) => {
     .da-tile.swing { border-top:2px solid #3b82f6; }
     .da-tile.scalp { border-top:2px solid #f59e0b; }
     .da-tile.pa    { border-top:2px solid #a78bfa; }
+    .da-tile.orb      { border-top:2px solid #10b981; }
+    .da-tile.straddle { border-top:2px solid #ec4899; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
     .da-tile-hdr { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#7d8aa3; margin-bottom:6px; }
     .da-tile-hdr .da-pill { font-size:0.55rem; padding:1px 7px; border-radius:3px; border:1px solid rgba(74,96,128,0.30); color:#7d8aa3; }
@@ -1913,6 +1927,15 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var root = document.getElementById('dashAnalytics');
   if (!root) return;
 
+  // Enabled-strategy tiles (server-rendered from *_MODE_ENABLED). Drives both
+  // the live and post-market views so disabled strategies never appear here.
+  var SESSION_TILES = ${JSON.stringify(dashSessionTiles)};
+  var LIVE_URLS = {
+    SWING:'/swing-paper/status/data', SCALP:'/scalp-paper/status/data',
+    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data',
+    STRADDLE:'/straddle-paper/status/data'
+  };
+
   function fmtINR(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
     var v = +n; var sign = v < 0 ? '-' : '';
@@ -1951,20 +1974,16 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   }
 
   function renderLive(data) {
-    // data: { swing, scalp, pa } each from /{strat}-paper/status/data
-    var tiles = [
-      { key:'SWING', cls:'swing', label:'SWING',         d:data.swing, page:'/swing-paper/status' },
-      { key:'SCALP', cls:'scalp', label:'SCALP',         d:data.scalp, page:'/scalp-paper/status' },
-      { key:'PA',    cls:'pa',    label:'PRICE ACTION',  d:data.pa,    page:'/pa-paper/status' },
-    ];
-    var html = '<div class="da-grid cols-3">';
-    tiles.forEach(function(t){
-      var d = t.d;
+    // data: { SWING, SCALP, ... } keyed by tile, each from /{strat}-paper/status/data
+    var html = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length, 4) + '">';
+    SESSION_TILES.forEach(function(t){
+      var d = data[t.key];
       if (!d) {
         html += '<div class="da-tile ' + t.cls + '"><div class="da-tile-hdr">' + t.label + '<span class="da-pill">OFFLINE</span></div><div class="da-sub-line">No data</div></div>';
         return;
       }
-      var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised || 0);
+      // Field names vary by strategy (ORB uses livePnl/tradesTaken) — fall back.
+      var open = d.unrealisedPnl !== undefined ? d.unrealisedPnl : (d.unrealised !== undefined ? d.unrealised : (d.livePnl || 0));
       var closed = d.sessionPnl || 0;
       var day = (+open || 0) + (+closed || 0);
       var c = cls(day);
@@ -1972,7 +1991,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       html += '<div class="da-tile ' + t.cls + '">' +
         '<div class="da-tile-hdr">' + t.label + '<span class="da-pill ' + pill + '">' + (d.running ? 'RUNNING' : 'STOPPED') + '</span></div>' +
         '<div class="da-big ' + c + '">' + fmtINR(day) + '</div>' +
-        '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount||0) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>' +
+        '<div class="da-sub-line">Open ' + fmtINR(open) + ' &middot; Closed ' + fmtINR(closed) + ' &middot; ' + (d.tradeCount!=null?d.tradeCount:(d.tradesTaken||0)) + 'T (' + (d.wins||0) + 'W/' + (d.losses||0) + 'L)</div>' +
       '</div>';
     });
     html += '</div>';
@@ -1981,7 +2000,11 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
 
   function aggregateTrades(trades, fromIso, toIso) {
     // Returns { byStrategy: {SWING:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
-    var bys = { SWING:{net:0,t:0,w:0,l:0}, SCALP:{net:0,t:0,w:0,l:0}, PA:{net:0,t:0,w:0,l:0} };
+    // Buckets by the trade's reliable mode field (SWING/SCALP/PA/ORB/STRADDLE),
+    // limited to the enabled tiles. Trades are pre-filtered to enabled modes by
+    // the /data?enabledOnly=1 fetch, so the total matches the visible cards.
+    var bys = {};
+    SESSION_TILES.forEach(function(t){ bys[t.key] = {net:0,t:0,w:0,l:0}; });
     var tot = { net:0, t:0, w:0, l:0 };
     var byDate = {};
     var bestDay = null, worstDay = null;
@@ -1989,11 +2012,9 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
       if (!tr || !tr.date) return;
       if (fromIso && tr.date < fromIso) return;
       if (toIso && tr.date > toIso) return;
-      // strategy normalisation
-      var s = String(tr.strategy || '').toUpperCase();
-      var key = s.indexOf('SCALP') !== -1 ? 'SCALP' : (s.indexOf('PRICE') !== -1 || s.indexOf('PA') !== -1 ? 'PA' : 'SWING');
+      var key = String(tr.mode || '').toUpperCase();
       var p = +tr.pnl || 0;
-      bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++;
+      if (bys[key]) { bys[key].net += p; bys[key].t++; if (p > 0) bys[key].w++; else if (p < 0) bys[key].l++; }
       tot.net += p; tot.t++; if (p > 0) tot.w++; else if (p < 0) tot.l++;
       byDate[tr.date] = (byDate[tr.date] || 0) + p;
     });
@@ -2026,14 +2047,9 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     var lastDay = lastTradingDate(combinedAgg.byDate);
     var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
 
-    // ── Last session card (per strategy) ──
-    var lastHtml = '<div class="da-grid cols-4">';
-    var lsTiles = [
-      { key:'SWING', cls:'swing', label:'SWING' },
-      { key:'SCALP', cls:'scalp', label:'SCALP' },
-      { key:'PA',    cls:'pa',    label:'PRICE ACTION' },
-    ];
-    lsTiles.forEach(function(t){
+    // ── Last session card (per strategy) ── enabled tiles + a TOTAL card
+    var lastHtml = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length + 1, 4) + '">';
+    SESSION_TILES.forEach(function(t){
       var s = lastDayAgg ? lastDayAgg.byStrategy[t.key] : null;
       var net = s ? s.net : 0;
       var trades = s ? s.t : 0;
@@ -2090,20 +2106,20 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
 
     if (marketOpen) {
       setMode('live', 'Polling every 8s &middot; ' + istDateISO());
-      var [swing, scalp, pa] = await Promise.all([
-        fetchJSON('/swing-paper/status/data'),
-        fetchJSON('/scalp-paper/status/data'),
-        fetchJSON('/pa-paper/status/data'),
-      ]);
-      body.innerHTML = renderLive({ swing: swing, scalp: scalp, pa: pa });
+      var liveResults = await Promise.all(SESSION_TILES.map(function(t){
+        return fetchJSON(LIVE_URLS[t.key]);
+      }));
+      var liveData = {};
+      SESSION_TILES.forEach(function(t, i){ liveData[t.key] = liveResults[i]; });
+      body.innerHTML = renderLive(liveData);
 
       clearPoll();
       _pollTimer = setInterval(refresh, 8000);
     } else {
       setMode('post', 'Paper + Live combined &middot; refreshed ' + istDateISO());
       var [paper, live] = await Promise.all([
-        fetchJSON('/consolidation/data'),
-        fetchJSON('/live-consolidation/data'),
+        fetchJSON('/consolidation/data?enabledOnly=1'),
+        fetchJSON('/live-consolidation/data?enabledOnly=1'),
       ]);
       var paperTrades = (paper && paper.trades) || [];
       var liveTrades  = (live  && live.trades)  || [];
