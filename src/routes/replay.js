@@ -524,7 +524,7 @@ function drawReplayChart(el, cd) {
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['sar', '#f472b6'], ['ema9', '#fbbf24'], ['ema21', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
+    ['ema9', '#fbbf24'], ['ema21', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
   for (const [key, color] of overlays) {
     const arr = cd[key];
@@ -533,11 +533,20 @@ function drawReplayChart(el, cd) {
       ls.setData(arr);
     }
   }
-  // RSI on its own bottom scale (so it doesn't distort the price axis).
+  // SAR as discrete dots (hide connecting line, show only point markers).
+  if (Array.isArray(cd.sar) && cd.sar.length) {
+    const sarLs = chart.addLineSeries({ color: '#f472b6', lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false });
+    sarLs.setData(cd.sar);
+  }
+  // RSI on its own bottom scale + dashed level lines at the strategy thresholds.
   if (Array.isArray(cd.rsi) && cd.rsi.length) {
     const rsiLs = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceScaleId: 'rsi', priceLineVisible: false, lastValueVisible: true });
     try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch (_) {}
     rsiLs.setData(cd.rsi);
+    try {
+      rsiLs.createPriceLine({ price: cd.rsiCeMin != null ? cd.rsiCeMin : 52, color: '#10b981', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'CE' });
+      rsiLs.createPriceLine({ price: cd.rsiPeMax != null ? cd.rsiPeMax : 48, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'PE' });
+    } catch (_) {}
   }
   // Markers must be sorted ascending by time or the library throws.
   if (Array.isArray(cd.markers) && cd.markers.length) {

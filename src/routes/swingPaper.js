@@ -2326,7 +2326,8 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema21: ema21Series, sar: sarPoints, rsi: rsiSeries });
+    return res.json({ candles, markers, stopLoss, entryPrice, ema21: ema21Series, sar: sarPoints, rsi: rsiSeries,
+      rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -3215,12 +3216,21 @@ ${modalJS()}
     wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
   });
 
-  // EMA21 (strategy's trend line) + PSAR dots + RSI (own bottom scale)
+  // EMA21 (line) + PSAR (dots) + RSI (own bottom scale, with level lines)
   const ema21Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21' });
-  const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle: LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
+  // SAR as discrete dots: hide the connecting line, show only point markers.
+  const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
   const rsiSeries  = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   // Pin RSI to the bottom ~20% of the pane so it doesn't distort the price axis.
   chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  let _rsiLevelsDrawn = false;
+  function drawRsiLevels(ceMin, peMax) {
+    if (_rsiLevelsDrawn) return;
+    _rsiLevelsDrawn = true;
+    const mk = (price, color, title) => rsiSeries.createPriceLine({ price, color, lineWidth:1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title });
+    mk(ceMin != null ? ceMin : 52, '#10b981', 'CE');  // RSI_CE_MIN — CE entry floor
+    mk(peMax != null ? peMax : 48, '#ef4444', 'PE');  // RSI_PE_MAX — PE entry cap
+  }
 
   // SL line
   let slLine = null;
@@ -3262,7 +3272,7 @@ ${modalJS()}
       // Indicator overlays
       if (d.ema21 && d.ema21.length) ema21Series.setData(d.ema21); else ema21Series.setData([]);
       if (d.sar   && d.sar.length)   sarSeries.setData(d.sar);     else sarSeries.setData([]);
-      if (d.rsi   && d.rsi.length)   rsiSeries.setData(d.rsi);     else rsiSeries.setData([]);
+      if (d.rsi   && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
       // Markers (entries & exits)
       if (d.markers && d.markers.length > 0) {
