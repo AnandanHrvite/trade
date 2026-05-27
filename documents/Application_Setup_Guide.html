@@ -688,7 +688,7 @@
     <div class="arch-arrow">&#10145;</div>
     <div class="arch-box arch-engine">
       Strategy Engines
-      <small>Swing (SAR+EMA9+RSI)<br>Scalp (BB+RSI+PSAR)<br>PA (8 Patterns + S/R)<br>ORB (15-min OR breakout)<br>Straddle (BB-squeeze paired)</small>
+      <small>Swing (SAR+EMA9+RSI)<br>Scalp (BB+PSAR+RSI)<br>PA (8 Patterns + S/R)<br>ORB (15-min OR breakout)<br>Straddle (BB-squeeze paired)</small>
     </div>
     <div class="arch-arrow">&#10145;</div>
     <div class="arch-box arch-zerodha">
@@ -804,7 +804,7 @@
 
       <rect x="250" y="82" width="155" height="86" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
       <text x="328" y="98" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Swing: SAR+EMA+RSI</text>
-      <text x="328" y="112" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Scalp: BB+RSI+PSAR</text>
+      <text x="328" y="112" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Scalp: BB+PSAR+RSI</text>
       <text x="328" y="126" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">PA: 8 Patterns+S/R</text>
       <text x="328" y="140" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">ORB: 15-min OR break</text>
       <text x="328" y="154" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Straddle: BB-squeeze pair</text>
@@ -923,7 +923,7 @@
         <td>Zerodha Kite</td>
       </tr>
       <tr>
-        <td><strong>Scalp</strong> (BB+RSI+PSAR V4, 5-min)</td>
+        <td><strong>Scalp</strong> (BB+PSAR+RSI V5, 3/5-min)</td>
         <td><code>/scalp-live</code></td>
         <td><code>/scalp-paper</code></td>
         <td><code>/scalp-backtest</code></td>
@@ -1477,83 +1477,48 @@
   </table>
 
   <!-- ── Scalp ─────────────────────────────────────────── -->
-  <div class="env-group g-cyan">Scalping &mdash; BB+RSI+PSAR V4 Strategy (Fyers Orders)</div>
+  <div class="env-group g-cyan">Scalping &mdash; BB+PSAR+RSI V5 Strategy (Fyers Orders)</div>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide scalp UI and engine in sidebar</td></tr>
       <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Must be <code>true</code> for Fyers scalp orders</td></tr>
-      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes (locked to 5 since v4.2)</td></tr>
+      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes &mdash; <code>3</code> or <code>5</code></td></tr>
       <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
       <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
       <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp V4 Quality Filters + Trend Filter (v4.3.0)</h4>
+  <h4>Scalp Signal Params (BB + PSAR + RSI)</h4>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Entry (at candle close): CE = close &ge; BB upper + PSAR below close + RSI &gt; CE threshold; PE = mirror. Overbought/oversold guards block exhausted moves.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_REQUIRE_APPROACH</code></td><td><code>false</code></td><td>V4: block entry if prev candle was on opposite half of BB</td></tr>
-      <tr><td><code>SCALP_MIN_BODY_RATIO</code></td><td><code>0</code></td><td>V4: min entry-candle body as % of range (0.5 skips doji/wick)</td></tr>
-      <tr><td><code>SCALP_TRAIL_GRACE_SECS</code></td><td><code>0</code></td><td>Suppress trail-exit for first N secs after entry (SL still active)</td></tr>
-      <tr><td><code>SCALP_TREND_FILTER</code></td><td><code>true</code></td><td>Block CE in downtrends / PE in uptrends (BB-mid slope + momentum)</td></tr>
-      <tr><td><code>SCALP_TREND_MOMENTUM_PCT</code></td><td><code>0.15</code></td><td>Min N-candle move (% of price) to call a direction</td></tr>
-      <tr><td><code>SCALP_TREND_MOMENTUM_LOOKBACK</code></td><td><code>5</code></td><td>Candles for momentum measurement</td></tr>
-      <tr><td><code>SCALP_TREND_MID_SLOPE_LOOKBACK</code></td><td><code>3</code></td><td>Candles for BB-mid slope measurement</td></tr>
-      <tr><td><code>SCALP_BB_SQUEEZE_FILTER</code></td><td><code>true</code></td><td>Skip entries when BB bands narrow</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Scalp SL &amp; Trailing</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>12</code></td><td>Max stop loss points (cap) &mdash; tightened from <code>25</code> in v4.6.0</td></tr>
-      <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min stop loss points (floor)</td></tr>
-      <tr><td><code>SCALP_TRAIL_START</code></td><td><code>600</code></td><td>Profit (&#8377;) to activate trailing &mdash; raised from <code>200</code> in v4.6.0 (lets winners breathe; smaller wins reach BE-stop instead)</td></tr>
-      <tr><td><code>SCALP_TRAIL_PCT</code></td><td><code>70</code></td><td>Base trail floor (used between <code>TRAIL_START</code> and the first tier)</td></tr>
-      <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>600:70,1200:78,2500:85,5000:90,10000:93</code></td><td>Tiered trail: peak:pct pairs &mdash; updated in v4.6.0</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Scalp Breakeven SL <span style="font-size:0.7em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.6.0</span></h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Once peak P&amp;L &ge; trigger &times; initial risk, lift SL to entry + offset pts. Stops winners reversing into losers.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td><code>0.7</code></td><td>Multiplier of initial risk. Move SL to entry+offset once peak P&amp;L &ge; this &times; initial risk. <code>0</code> disables.</td></tr>
-      <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (small slippage cushion)</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Scalp Signal Params</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>SCALP_RSI_CE_MIN</code></td><td><code>55</code></td><td>Min RSI for CE scalp entry</td></tr>
-      <tr><td><code>SCALP_RSI_PE_MAX</code></td><td><code>45</code></td><td>Max RSI for PE scalp entry</td></tr>
-      <tr><td><code>SCALP_SL_PTS</code></td><td><code>12</code></td><td>Default SL points</td></tr>
-      <tr><td><code>SCALP_TARGET_PTS</code></td><td><code>18</code></td><td>Target profit points</td></tr>
-      <tr><td><code>SCALP_MIN_BODY</code></td><td><code>5</code></td><td>Min candle body size</td></tr>
-      <tr><td><code>SCALP_MIN_SLOPE</code></td><td><code>2</code></td><td>Min EMA slope</td></tr>
-      <tr><td><code>SCALP_ADX_ENABLED</code></td><td><code>false</code></td><td>Enable ADX filter for scalp</td></tr>
-      <tr><td><code>SCALP_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX threshold</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Scalp BB+CPR Params</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>SCALP_CPR_NARROW_PCT</code></td><td><code>33</code></td><td>CPR narrow zone percentile (now editable via Settings UI in v4.5.0)</td></tr>
       <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
       <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
       <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
-      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>55</code></td><td>CE RSI threshold</td></tr>
-      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>45</code></td><td>PE RSI threshold</td></tr>
+      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>62</code></td><td>RSI above this for CE entry</td></tr>
+      <tr><td><code>SCALP_RSI_CE_MAX</code></td><td><code>78</code></td><td>Block CE above this (overbought guard)</td></tr>
+      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>42</code></td><td>RSI below this for PE entry</td></tr>
+      <tr><td><code>SCALP_RSI_PE_MIN</code></td><td><code>22</code></td><td>Block PE below this (oversold guard)</td></tr>
+      <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
       <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
       <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp SL Source, Stops &amp; Break-even</h4>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);"><code>SCALP_SL_USE_SAR</code> drives BOTH the initial SL and the trail. The break-even snap applies in both modes; there is no %-profit trail or time-stop in V5.</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_SL_USE_SAR</code></td><td><code>false</code></td><td>SL source for init+trail: <code>true</code> = PSAR (+ PSAR-flip exit); <code>false</code> = prev candle (init + per-candle trail)</td></tr>
+      <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>12</code></td><td>Max initial SL distance (cap)</td></tr>
+      <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min initial SL distance (floor)</td></tr>
+      <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td><code>0.7</code></td><td>Move SL to entry+offset once peak P&amp;L &ge; this &times; initial risk. <code>0</code> disables.</td></tr>
+      <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
+      <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
     </tbody>
   </table>
 
@@ -1562,14 +1527,20 @@
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp trades per day</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Max daily scalp loss (&#8377;) &mdash; raised from <code>2000</code> in v4.6.0</td></tr>
-      <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit (5-min candles). Was <code>1</code> in v4.5.0.</td></tr>
-      <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2 = +2 candles on 2nd SL, +4 on 3rd)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Max daily scalp loss (&#8377;) &mdash; kill switch</td></tr>
+      <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit</td></tr>
+      <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd</td></tr>
       <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
-      <tr><td><code>SCALP_PAUSE_OVERRIDE_ENABLED</code></td><td><code>false</code></td><td><strong>v4.5.0</strong> &mdash; release per-side SL cooldown early on retest-and-resume (a candle close &ge; <code>OVERRIDE_PTS</code> past failed-entry spot in original direction)</td></tr>
-      <tr><td><code>SCALP_PAUSE_OVERRIDE_PTS</code></td><td><code>10</code></td><td><strong>v4.5.0</strong> &mdash; spot-delta threshold past failed-entry spot to trigger override</td></tr>
-      <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.</td></tr>
-      <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points added against you)</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Scalp VIX Filter (per-module)</h4>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for scalp (independent toggle)</td></tr>
+      <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode block-entry threshold</td></tr>
+      <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold</td></tr>
     </tbody>
   </table>
 
