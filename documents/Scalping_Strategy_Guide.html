@@ -370,15 +370,36 @@
 <div class="cover">
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
-  <div class="sub">SCALP_BB_RSI_V4 &mdash; 5-Minute Bollinger Band + RSI Scalping</div>
-  <div class="version">Version 4.6.0 &bull; 5-Min Timeframe &bull; BB + RSI Entry &bull; PSAR Trail &bull; V4 Quality Filters + Trend Filter + Pause Override</div>
-  <div class="tags">Bollinger Bands &bull; RSI Momentum &bull; Parabolic SAR &bull; VIX Filter &bull; Trailing Profit Lock &bull; Trail Grace &bull; Dynamic SL &bull; Live Chart</div>
+  <div class="sub">SCALP_BB_PSAR_RSI_V5 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
+  <div class="version">Version 5.0.0 &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; PSAR / Break-Even Exit</div>
+  <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI Momentum &bull; VIX Filter &bull; Break-Even Snap &bull; PSAR Trail &bull; Dynamic SL &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.6.0                                                  -->
+<!-- 0. WHAT'S NEW IN v5.0.0                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v4.6.0 (2026-05-21)</h2>
+<h2><span class="sec-num">00</span> What's New in v5.0.0 (2026-05-28) &mdash; Strategy Redefinition</h2>
+<div class="card card-purple">
+  <p><strong>The scalp strategy was redefined to a clean Bollinger-Band break + PSAR-side + RSI design, with SAR-based exits only.</strong> This supersedes the V4 pipeline described in the older "What's New" notes below (kept as version history). The authoritative current behaviour is in sections 01&ndash;15.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Entry (evaluated at candle close &mdash; all three required):</strong>
+      <ul style="padding-left:20px;">
+        <li><strong>CE</strong>: close &ge; <strong>BB upper</strong> &middot; <strong>PSAR below close</strong> &middot; <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (default raised <code>55 &rarr; 62</code>), blocked above <code>SCALP_RSI_CE_MAX</code> (78).</li>
+        <li><strong>PE</strong>: close &le; <strong>BB lower</strong> &middot; <strong>PSAR above close</strong> &middot; <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (default lowered <code>45 &rarr; 42</code>), blocked below <code>SCALP_RSI_PE_MIN</code> (22).</li>
+      </ul>
+    </li>
+    <li><strong>PSAR is now an entry confirmation</strong> (was exit-only). Optional <code>SCALP_RSI_TURNING</code> still requires RSI momentum to confirm direction.</li>
+    <li><strong>Exit simplified to SAR-based:</strong> initial prev-candle SL &rarr; <strong>break-even snap</strong> (<code>SCALP_BREAKEVEN_TRIGGER_R</code>) &rarr; <strong>PSAR trailing</strong> (tighten-only) &rarr; <strong>PSAR flip</strong> &rarr; bid-ask spread guard &rarr; EOD.</li>
+    <li><strong>Resolution:</strong> <code>SCALP_RESOLUTION</code> now offers <strong>3 or 5-min</strong> (was 5-only).</li>
+    <li><strong>Removed</strong> (code + Settings UI fields): tiered <strong>% profit-trail</strong> (<code>SCALP_TRAIL_START/PCT/TIERS/GRACE</code>), <strong>time-stop</strong> (<code>SCALP_TIME_STOP_*</code>), <strong>pause-override</strong> (<code>SCALP_PAUSE_OVERRIDE_*</code>), <strong>BB squeeze</strong> (<code>SCALP_BB_SQUEEZE_FILTER</code> / <code>SCALP_BB_MIN_WIDTH_PCT</code>), <strong>CPR-narrow</strong> (<code>SCALP_CPR_NARROW_PCT</code>), <strong>approach</strong> (<code>SCALP_REQUIRE_APPROACH</code>), <strong>body-ratio</strong> (<code>SCALP_MIN_BODY_RATIO</code>), <strong>trend filter</strong> (<code>SCALP_TREND_*</code>), and <strong>activity filter</strong> (<code>SCALP_ACTIVITY_*</code>).</li>
+    <li><strong>Guards kept:</strong> VIX gate, per-side SL cooldown (<code>SCALP_SL_PAUSE_CANDLES</code> / <code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> / <code>SCALP_PER_SIDE_PAUSE</code>), daily trade/loss caps, prev-candle SL caps, trading window, expiry-day-only.</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0a. LEGACY: WHAT'S NEW IN v4.6.0 (pre-V5 history)                        -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">00&middot;legacy</span> [Legacy &mdash; pre-V5] What's New in v4.6.0 (2026-05-21)</h2>
 <div class="card card-purple">
   <p><strong>Defaults tightening sweep + breakeven SL on a multiple-of-risk trigger.</strong> The entry pipeline (BB + RSI + V4 quality filters + trend filter) and PSAR trail are unchanged. The corrections target stale defaults that had drifted from production usage during the data-collection window, plus a new R-multiple breakeven gate.</p>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -480,18 +501,17 @@
 <h2><span class="sec-num">01</span> Strategy Overview</h2>
 
 <div class="highlight">
-  <strong>SCALP_BB_RSI_V4</strong> is a 5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
-  It identifies short-term momentum breakouts using Bollinger Bands and RSI, with Parabolic SAR providing dynamic trailing stop-loss management.
-  V4.2 adds opt-in quality filters (approach + body strength) and a trail grace period.
+  <strong>SCALP_BB_PSAR_RSI_V5</strong> is a 3/5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
+  It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum. Exits are SAR-based: a break-even snap, PSAR trailing stop, and a PSAR-flip exit.
 </div>
 
 <div class="metrics">
   <div class="metric purple">
-    <div class="val">5 min</div>
+    <div class="val">3 / 5 min</div>
     <div class="lbl">Candle Timeframe</div>
   </div>
   <div class="metric green">
-    <div class="val">BB+RSI</div>
+    <div class="val">BB+PSAR+RSI</div>
     <div class="lbl">Entry Signal</div>
   </div>
   <div class="metric yellow">
@@ -499,14 +519,14 @@
     <div class="lbl">Trailing SL</div>
   </div>
   <div class="metric red">
-    <div class="val">25 pts</div>
+    <div class="val">12 pts</div>
     <div class="lbl">Max SL Cap</div>
   </div>
 </div>
 
 <div class="card card-purple">
   <h4 class="purple">Core Concept</h4>
-  <p>When price breaks above the upper Bollinger Band with RSI confirming bullish momentum (&gt;55), buy a NIFTY ATM Call option. When price breaks below the lower band with bearish RSI (&lt;45), buy an ATM Put option. PSAR dynamically trails the stop loss — tightening only, never widening — to capture the momentum move while protecting profits.</p>
+  <p>When a candle closes above the upper Bollinger Band with the PSAR below the close and RSI confirming bullish momentum (&gt; 62), buy a NIFTY ATM Call option. When a candle closes below the lower band with the PSAR above the close and bearish RSI (&lt; 42), buy an ATM Put option. PSAR dynamically trails the stop loss — tightening only, never widening — to capture the momentum move while protecting profits.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -613,29 +633,29 @@
 <!-- RSI Section -->
 <h3 class="blue">RSI (14) &mdash; Momentum Confirmation</h3>
 <div class="card card-blue">
-  <h4 class="blue">CE Entry: RSI &gt; 55 | PE Entry: RSI &lt; 45</h4>
-  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above 55), while PE signals need bearish momentum (RSI below 45). The 45-55 "dead zone" avoids entries during indecisive momentum.</p>
+  <h4 class="blue">CE Entry: RSI &gt; 62 | PE Entry: RSI &lt; 42</h4>
+  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>SCALP_RSI_CE_THRESHOLD</code>, default 62), while PE signals need bearish momentum (RSI below <code>SCALP_RSI_PE_THRESHOLD</code>, default 42). Overbought/oversold guards block exhausted moves: CE is rejected above <code>SCALP_RSI_CE_MAX</code> (78), PE below <code>SCALP_RSI_PE_MIN</code> (22). Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
 </div>
 
 <div class="rsi-gauge">
-  <div class="rsi-zone-pe">PE Zone (&lt; 45)</div>
+  <div class="rsi-zone-pe">PE Zone (&lt; 42)</div>
   <div class="rsi-zone-dead">Dead</div>
-  <div class="rsi-zone-ce">CE Zone (&gt; 55)</div>
+  <div class="rsi-zone-ce">CE Zone (&gt; 62)</div>
 </div>
 <div class="rsi-labels">
   <span>0</span>
-  <span>30</span>
-  <span>45</span>
-  <span>55</span>
-  <span>70</span>
+  <span>22</span>
+  <span>42</span>
+  <span>62</span>
+  <span>78</span>
   <span>100</span>
 </div>
 
 <!-- PSAR Section -->
-<h3 class="blue">Parabolic SAR &mdash; Dynamic Trailing SL</h3>
+<h3 class="blue">Parabolic SAR &mdash; Entry Confirmation + Dynamic Trailing SL</h3>
 <div class="card card-blue">
   <h4 class="blue">Parameters: Step 0.02, Max 0.2</h4>
-  <p>PSAR provides adaptive stop levels that accelerate toward price as a trend progresses. In an uptrend, dots appear below price and tighten upward. When SAR flips to the opposite side, it signals trend reversal and triggers an immediate exit.</p>
+  <p>PSAR plays two roles in V5. <strong>At entry</strong> it confirms direction — a CE needs the SAR <em>below</em> the close (bullish), a PE needs it <em>above</em> the close (bearish). <strong>After entry</strong> it provides adaptive stop levels that accelerate toward price; in an uptrend dots appear below price and tighten upward. When SAR flips to the opposite side, it signals trend reversal and triggers an immediate exit.</p>
 </div>
 
 <!-- CSS PSAR diagram -->
@@ -691,13 +711,13 @@
 <!-- 3. HOW BB + RSI SIGNAL WORKS                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="page-break"></div>
-<h2><span class="sec-num">03</span> How BB + RSI Signal Works</h2>
+<h2><span class="sec-num">03</span> How BB + PSAR + RSI Signal Works</h2>
 
 <div class="highlight">
-  <p>Both conditions must be met simultaneously on the same 5-minute candle close:</p>
+  <p>All three conditions must be met on the same candle close (3 or 5-min):</p>
   <ul>
-    <li><strong>BUY CE:</strong> Candle Close &ge; Upper BB <em>AND</em> RSI &gt; 55</li>
-    <li><strong>BUY PE:</strong> Candle Close &le; Lower BB <em>AND</em> RSI &lt; 45</li>
+    <li><strong>BUY CE:</strong> Candle Close &ge; Upper BB <em>AND</em> PSAR below close <em>AND</em> RSI &gt; 62</li>
+    <li><strong>BUY PE:</strong> Candle Close &le; Lower BB <em>AND</em> PSAR above close <em>AND</em> RSI &lt; 42</li>
   </ul>
 </div>
 
@@ -729,7 +749,7 @@
     <div class="wick" style="top:0; height:68px;"></div>
     <div class="body" style="top:5px; height:45px;"></div>
   </div>
-  <div class="signal-marker ce" style="left:22%; top:5%;">BUY CE: Close &ge; Upper BB, RSI &gt; 55</div>
+  <div class="signal-marker ce" style="left:22%; top:5%;">BUY CE: Close &ge; Upper BB, SAR&lt;close, RSI &gt; 62</div>
 
   <!-- Middle range candles -->
   <div class="candle bear" style="left:34%; bottom:52%; height:50px;">
@@ -761,7 +781,7 @@
     <div class="wick" style="top:0; height:70px;"></div>
     <div class="body" style="top:8px; height:45px;"></div>
   </div>
-  <div class="signal-marker pe" style="left:66%; bottom:3%;">BUY PE: Close &le; Lower BB, RSI &lt; 45</div>
+  <div class="signal-marker pe" style="left:66%; bottom:3%;">BUY PE: Close &le; Lower BB, SAR&gt;close, RSI &lt; 42</div>
 
   <div class="candle bear" style="left:78%; bottom:18%; height:48px;">
     <div class="wick" style="top:0; height:48px;"></div>
@@ -773,22 +793,17 @@
   </div>
 </div>
 
-<div class="card card-yellow">
-  <h4 style="color:var(--yellow);">BB Squeeze Filter</h4>
-  <p>When BB width is below <code>0.15%</code> of price (approx &lt;36pts on NIFTY 24000), entries are skipped. Narrow bands indicate consolidation where breakouts are unreliable. Controlled via <code>SCALP_BB_SQUEEZE_FILTER</code> and <code>SCALP_BB_MIN_WIDTH_PCT</code>.</p>
-</div>
-
 <div class="card card-purple">
-  <h4 style="color:var(--purple);">Trend Filter <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h4>
-  <p>Even when BB / RSI both fire, the trend filter rejects entries that lean against the prevailing direction. <code>SCALP_TREND_FILTER</code> defaults to <code>true</code>.</p>
+  <h4 style="color:var(--purple);">PSAR-Side Confirmation (V5)</h4>
+  <p>The PSAR side is the directional confirmation that replaces the old trend / squeeze filters. Even when the BB break and RSI both fire, the trade is taken only if the PSAR agrees with the direction:</p>
   <table>
-    <thead><tr><th>Side</th><th>Blocked when</th></tr></thead>
+    <thead><tr><th>Side</th><th>Required</th></tr></thead>
     <tbody>
-      <tr><td><strong>CE</strong></td><td>BB-mid is sloping down <em>or</em> N-candle momentum is negative beyond threshold</td></tr>
-      <tr><td><strong>PE</strong></td><td>BB-mid is sloping up <em>or</em> N-candle momentum is positive beyond threshold</td></tr>
+      <tr><td><strong>CE</strong></td><td>PSAR <em>below</em> the candle close (bullish)</td></tr>
+      <tr><td><strong>PE</strong></td><td>PSAR <em>above</em> the candle close (bearish)</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:8px;font-size:0.85rem;">Tunables: <code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code> (BB-mid slope window), <code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code> (close momentum window), <code>SCALP_TREND_MOMENTUM_PCT=0.15</code> (min N-candle move as % of price). Reject reasons appear as <code>TREND_BLOCK_CE</code> / <code>TREND_BLOCK_PE</code> in skip logs.</p>
+  <p style="margin-top:8px;font-size:0.85rem;">The V4 BB-squeeze, CPR-narrow, approach, body-ratio, trend and activity filters were removed in V5 &mdash; the PSAR side plus the RSI overbought/oversold guards now do the regime filtering.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -801,17 +816,19 @@
   <div class="card card-green">
     <h4 class="green">BUY CE (Bullish)</h4>
     <div class="step"><div class="step-num green">1</div><div>Candle Close &ge; Bollinger Upper Band</div></div>
-    <div class="step"><div class="step-num green">2</div><div>RSI &gt; 55 (momentum confirmation)</div></div>
-    <div class="step"><div class="step-num green">3</div><div>SL = tighter of (Previous candle LOW, PSAR value), capped at 50pts, floored at 8pts</div></div>
-    <div class="step"><div class="step-num green">4</div><div>Select ATM Call option</div></div>
+    <div class="step"><div class="step-num green">2</div><div>PSAR below the close (bullish)</div></div>
+    <div class="step"><div class="step-num green">3</div><div>RSI &gt; 62 and &le; 78 (momentum, not overbought)</div></div>
+    <div class="step"><div class="step-num green">4</div><div>SL = Previous candle LOW, capped at 12pts, floored at 8pts</div></div>
+    <div class="step"><div class="step-num green">5</div><div>Select ATM Call option</div></div>
   </div>
 
   <div class="card card-red">
     <h4 class="red">BUY PE (Bearish)</h4>
     <div class="step"><div class="step-num red">1</div><div>Candle Close &le; Bollinger Lower Band</div></div>
-    <div class="step"><div class="step-num red">2</div><div>RSI &lt; 45 (momentum confirmation)</div></div>
-    <div class="step"><div class="step-num red">3</div><div>SL = tighter of (Previous candle HIGH, PSAR value), capped at 50pts, floored at 8pts</div></div>
-    <div class="step"><div class="step-num red">4</div><div>Select ATM Put option</div></div>
+    <div class="step"><div class="step-num red">2</div><div>PSAR above the close (bearish)</div></div>
+    <div class="step"><div class="step-num red">3</div><div>RSI &lt; 42 and &ge; 22 (momentum, not oversold)</div></div>
+    <div class="step"><div class="step-num red">4</div><div>SL = Previous candle HIGH, capped at 12pts, floored at 8pts</div></div>
+    <div class="step"><div class="step-num red">5</div><div>Select ATM Put option</div></div>
   </div>
 </div>
 
@@ -827,14 +844,13 @@
   <tbody>
     <tr><td><strong>Market Hours</strong></td><td>9:21 AM &ndash; 2:30 PM IST</td><td>No entries before warm-up or near EOD</td></tr>
     <tr><td><strong>Candle Warmup</strong></td><td>&ge; 30 candles loaded</td><td>BB(20), RSI(14), PSAR all need warm-up data</td></tr>
-    <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -&#8377;2,000</td><td>Kill switch halts all entries for the day</td></tr>
-    <tr><td><strong>Max Daily Trades</strong></td><td>&lt; 30 trades</td><td>Prevents overtrading on choppy days</td></tr>
-    <tr><td><strong>SL Pause Cooldown</strong></td><td>2 candles after SL hit</td><td>Configurable via <code>SCALP_SL_PAUSE_CANDLES</code>; extra candles added per consecutive SL</td></tr>
+    <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -<code>SCALP_MAX_DAILY_LOSS</code></td><td>Kill switch halts all entries for the day</td></tr>
+    <tr><td><strong>Max Daily Trades</strong></td><td>&lt; <code>SCALP_MAX_DAILY_TRADES</code></td><td>Prevents overtrading on choppy days</td></tr>
+    <tr><td><strong>SL Pause Cooldown</strong></td><td>N candles after SL hit</td><td>Configurable via <code>SCALP_SL_PAUSE_CANDLES</code>; <code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> adds candles per consecutive SL (per-side when <code>SCALP_PER_SIDE_PAUSE</code>)</td></tr>
     <tr><td><strong>VIX Filter</strong></td><td>VIX &le; <code>SCALP_VIX_MAX_ENTRY</code> (or inherits <code>VIX_MAX_ENTRY</code>)</td><td>Strong-only band between <code>SCALP_VIX_STRONG_ONLY</code> and the max</td></tr>
-    <tr><td><strong>Trend Filter</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span></td><td>BB-mid slope + momentum match side</td><td>Block CE in downtrend / PE in uptrend (<code>SCALP_TREND_FILTER</code>)</td></tr>
-    <tr><td><strong>Bid-Ask Spread</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span></td><td>Spread &le; <code>MAX_BID_ASK_SPREAD_PTS</code> (default 2)</td><td>Reject wide spreads; fails open if quotes missing</td></tr>
+    <tr><td><strong>PSAR Side</strong></td><td>SAR below close (CE) / above close (PE)</td><td>Directional confirmation; part of the entry rule</td></tr>
+    <tr><td><strong>Bid-Ask Spread</strong></td><td>Spread &le; <code>MAX_BID_ASK_SPREAD_PTS</code> (default 2)</td><td>Reject wide spreads; fails open if quotes missing</td></tr>
     <tr><td><strong>No Open Position</strong></td><td>No active scalp trade</td><td>Only one scalp position at a time</td></tr>
-    <tr><td><strong>BB Squeeze</strong></td><td>BB width &ge; 0.15% of price</td><td>Narrow bands = consolidation, skip entry</td></tr>
   </tbody>
 </table>
 
@@ -848,36 +864,36 @@
   <div class="sl-box" style="background:var(--accent); color:#fff;">Entry Signal</div>
   <div class="sl-arrow">&rarr;</div>
   <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">Prev Candle Low/High</div>
-  <div class="sl-arrow">+</div>
-  <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">PSAR Value</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--yellow); color:#000;">Pick Tighter<br/>(closer to entry)</div>
+  <div class="sl-box" style="background:var(--red); color:#fff;">Cap at 12pts<br/>Floor at 8pts</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--red); color:#fff;">Cap at 50pts<br/>Floor at 8pts</div>
+  <div class="sl-box" style="background:var(--yellow); color:#000;">Initial SL<br/>(then PSAR + BE tighten)</div>
+</div>
+
+<div class="highlight">
+  <p>The <strong>initial</strong> SL is the previous candle's low (CE) / high (PE), clamped to a distance between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close. PSAR and the break-even snap then <em>tighten</em> it after entry (they never set the initial SL).</p>
 </div>
 
 <div class="card card-green">
   <h4 class="green">Example: CE Entry at 22,500</h4>
   <table>
-    <thead><tr><th>Source</th><th>Value</th><th>Distance from Entry</th><th>Selected?</th></tr></thead>
+    <thead><tr><th>Source</th><th>Value</th><th>Raw distance</th><th>After clamp (8&ndash;12pt)</th></tr></thead>
     <tbody>
-      <tr><td>Previous Candle Low</td><td>22,465</td><td>35 pts</td><td>No</td></tr>
-      <tr><td>PSAR Value</td><td>22,470</td><td>30 pts</td><td style="color:var(--green); font-weight:700;">Yes (tighter)</td></tr>
+      <tr><td>Previous Candle Low</td><td>22,465</td><td>35 pts</td><td style="color:var(--green); font-weight:700;">Capped &rarr; SL = 22,488 (12pts)</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:10px;"><strong>Result:</strong> SL = 22,470 (PSAR, 30pts from entry). Within 8&ndash;50pt bounds, so no capping needed.</p>
+  <p style="margin-top:10px;"><strong>Result:</strong> raw 35pt distance exceeds the 12pt cap, so SL = entry &minus; 12 = 22,488.</p>
 </div>
 
 <div class="card card-red">
   <h4 class="red">Example: PE Entry at 22,200</h4>
   <table>
-    <thead><tr><th>Source</th><th>Value</th><th>Distance from Entry</th><th>Selected?</th></tr></thead>
+    <thead><tr><th>Source</th><th>Value</th><th>Raw distance</th><th>After clamp (8&ndash;12pt)</th></tr></thead>
     <tbody>
-      <tr><td>Previous Candle High</td><td>22,260</td><td>60 pts</td><td>No (would be capped)</td></tr>
-      <tr><td>PSAR Value</td><td>22,240</td><td>40 pts</td><td style="color:var(--green); font-weight:700;">Yes (tighter)</td></tr>
+      <tr><td>Previous Candle High</td><td>22,209</td><td>9 pts</td><td style="color:var(--green); font-weight:700;">Within bounds &rarr; SL = 22,209 (9pts)</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:10px;"><strong>Result:</strong> SL = 22,240 (PSAR, 40pts). Even if Prev High was chosen, it would be capped to 50pts = 22,250.</p>
+  <p style="margin-top:10px;"><strong>Result:</strong> raw 9pt distance is between the 8pt floor and 12pt cap, so SL = prev high = 22,209.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -889,38 +905,35 @@
   <div class="exit-item">
     <div class="exit-badge p1">P1</div>
     <div>
-      <strong style="color:var(--red);">PSAR Stop Loss</strong>
-      <p style="font-size:0.85rem;">Price crosses the SL level. SL tightens every candle via PSAR, but never widens. This is the primary risk management exit.</p>
+      <strong style="color:var(--red);">Stop Loss hit</strong>
+      <p style="font-size:0.85rem;">Price crosses the active SL level (initial prev-candle, then PSAR / break-even tightened). The SL only tightens, never widens. Primary risk-management exit.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
-      <strong style="color:var(--orange);">Trailing Profit Lock</strong>
-      <p style="font-size:0.85rem;">When peak P&amp;L reaches &#8377;350, trailing activates. Exit when current P&amp;L drops below 65% of peak (base tier). Higher tiers lock in more: &#8377;500&rarr;55%, &#8377;1000&rarr;60%, &#8377;3000&rarr;70%, &#8377;5000&rarr;80%, &#8377;10000&rarr;90%.</p>
+      <strong style="color:var(--orange);">Break-Even Snap</strong>
+      <p style="font-size:0.85rem;">Once peak P&amp;L &ge; <code>SCALP_BREAKEVEN_TRIGGER_R</code> &times; initial risk (default 0.7), the SL jumps to entry &plusmn; <code>SCALP_BREAKEVEN_OFFSET_PTS</code> (1 pt). Fires per-tick, tighten-only. Stops a winner reversing into a loser. <code>R=0</code> disables.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p3">P3</div>
     <div>
       <strong style="color:var(--yellow);">SAR Flip (Reversal)</strong>
-      <p style="font-size:0.85rem;">PSAR crosses to the opposite side of price. For CE, SAR moves from below to above price. For PE, SAR moves from above to below. Indicates trend reversal.</p>
+      <p style="font-size:0.85rem;">PSAR crosses to the opposite side of price. For CE, SAR moves from below to above price. For PE, SAR moves from above to below. Indicates trend reversal &rarr; immediate exit.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p4">P4</div>
     <div>
-      <strong style="color:var(--accent2);">Time-Stop (theta-bleed guard)</strong> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.3.0</span>
-      <p style="font-size:0.85rem;">Auto-exit any trade that has stayed flat (|PnL| &lt; <code>TIME_STOP_FLAT_PTS</code>, default 20 pts) for <code>TIME_STOP_CANDLES</code> consecutive candles (default 4). Prevents pure theta drain on directionless trades. Reason logged as <code>TIME_STOP</code>.</p>
-    </div>
-  </div>
-  <div class="exit-item">
-    <div class="exit-badge p5">P5</div>
-    <div>
       <strong style="color:var(--text2);">EOD Square-off</strong>
-      <p style="font-size:0.85rem;">All open positions squared off at 3:20 PM IST. No overnight holding for scalp trades.</p>
+      <p style="font-size:0.85rem;">All open positions squared off near 3:20&ndash;3:30 PM IST. No overnight holding for scalp trades.</p>
     </div>
   </div>
+</div>
+
+<div class="card card-purple" style="margin-top:14px;">
+  <p style="font-size:0.85rem;"><strong>Removed in V5:</strong> the tiered <strong>% profit-trail</strong> and the <strong>time-stop</strong> are gone. Profit is protected by the break-even snap + PSAR trail only.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -980,72 +993,30 @@
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. TRAILING PROFIT LOCK MECHANISM                                       -->
+<!-- 9. BREAK-EVEN SNAP MECHANISM                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">09</span> Trailing Profit Lock Mechanism</h2>
+<h2><span class="sec-num">09</span> Break-Even Snap Mechanism</h2>
 
 <div class="card card-yellow">
-  <h4 style="color:var(--yellow);">Tiered % of Peak P&amp;L</h4>
-  <p>Unlike fixed targets, this system locks in a <em>percentage</em> of peak profit. The higher the peak, the higher the lock percentage. This lets winners run while protecting large gains.</p>
-</div>
-
-<div class="trail-chart">
-  <!-- Y-axis labels -->
-  <div style="position:absolute; left:2%; top:8%; font-size:0.6rem; color:var(--text2);">&#8377;800</div>
-  <div style="position:absolute; left:2%; top:25%; font-size:0.6rem; color:var(--text2);">&#8377;600</div>
-  <div style="position:absolute; left:2%; top:42%; font-size:0.6rem; color:var(--text2);">&#8377;400</div>
-  <div style="position:absolute; left:2%; top:60%; font-size:0.6rem; color:var(--text2);">&#8377;200</div>
-  <div style="position:absolute; left:2%; top:78%; font-size:0.6rem; color:var(--text2);">&#8377;0</div>
-
-  <!-- Tier threshold lines -->
-  <div class="trail-line" style="top:55%; border-color:rgba(251,191,36,0.3);"></div>
-  <div class="trail-label" style="top:55%; color:var(--yellow);">&#8377;350 (Trail Activates, Base 65%)</div>
-
-  <div class="trail-line" style="top:43%; border-color:rgba(251,191,36,0.3);"></div>
-  <div class="trail-label" style="top:43%; color:var(--yellow);">&#8377;500 (Lock 55%)</div>
-
-  <div class="trail-line" style="top:18%; border-color:rgba(251,191,36,0.3);"></div>
-  <div class="trail-label" style="top:18%; color:var(--yellow);">&#8377;1000 (Lock 60%)</div>
-
-  <!-- Profit curve going up (green) -->
-  <div style="position:absolute; left:10%; bottom:22%; width:6%; height:3px; background:var(--green); transform:rotate(-15deg);"></div>
-  <div style="position:absolute; left:15%; bottom:28%; width:6%; height:3px; background:var(--green); transform:rotate(-20deg);"></div>
-  <div style="position:absolute; left:20%; bottom:36%; width:6%; height:3px; background:var(--green); transform:rotate(-18deg);"></div>
-  <div style="position:absolute; left:25%; bottom:44%; width:6%; height:3px; background:var(--green); transform:rotate(-15deg);"></div>
-  <div style="position:absolute; left:30%; bottom:50%; width:6%; height:3px; background:var(--green); transform:rotate(-12deg);"></div>
-  <div style="position:absolute; left:35%; bottom:55%; width:6%; height:3px; background:var(--green); transform:rotate(-10deg);"></div>
-  <div style="position:absolute; left:40%; bottom:59%; width:6%; height:3px; background:var(--green); transform:rotate(-8deg);"></div>
-  <div style="position:absolute; left:45%; bottom:62%; width:6%; height:3px; background:var(--green); transform:rotate(-5deg);"></div>
-  <div style="position:absolute; left:50%; bottom:64%; width:6%; height:3px; background:var(--green); transform:rotate(-3deg);"></div>
-  <!-- Peak at ~680 -->
-  <div style="position:absolute; left:55%; bottom:66%; width:6%; height:3px; background:var(--green); transform:rotate(0deg);"></div>
-  <div style="position:absolute; left:55%; bottom:67%; font-size:0.6rem; color:var(--green); font-weight:700; transform:translateY(-12px);">Peak &#8377;680</div>
-
-  <!-- Profit dropping (yellow) -->
-  <div style="position:absolute; left:60%; bottom:64%; width:6%; height:3px; background:var(--yellow); transform:rotate(8deg);"></div>
-  <div style="position:absolute; left:65%; bottom:60%; width:6%; height:3px; background:var(--yellow); transform:rotate(10deg);"></div>
-
-  <!-- Lock level at 55% of 680 = 374, shown as horizontal -->
-  <div style="position:absolute; left:45%; bottom:52%; width:28%; height:0; border-top:2px solid var(--orange);"></div>
-  <div style="position:absolute; left:45%; bottom:53%; font-size:0.55rem; color:var(--orange); font-weight:600; transform:translateY(-10px);">Lock: 55% of &#8377;680 = &#8377;374</div>
-
-  <!-- Exit trigger -->
-  <div style="position:absolute; left:70%; bottom:56%; width:5%; height:3px; background:var(--red); transform:rotate(12deg);"></div>
-  <div style="position:absolute; left:73%; bottom:53%; font-size:0.7rem; color:var(--red); font-weight:700;">EXIT &#8377;370</div>
-  <div style="position:absolute; left:73%; bottom:50%; font-size:0.55rem; color:var(--text2);">P&amp;L &lt; lock level</div>
+  <h4 style="color:var(--yellow);">Lock at entry once the trade has proven itself</h4>
+  <p>V5 has no percentage profit-trail. Instead, once peak P&amp;L reaches a multiple of the initial risk, the SL snaps to break-even &mdash; converting a winner into a free trade. From there, the PSAR trail and a PSAR flip manage the rest of the move.</p>
 </div>
 
 <table>
-  <thead><tr><th>Peak P&amp;L Tier</th><th>Lock %</th><th>Min Locked Profit</th><th>Example Exit Level</th></tr></thead>
+  <thead><tr><th>Parameter</th><th>Default</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td>&#8377;350 (Activation)</td><td>65% (base)</td><td>&#8377;228</td><td>P&amp;L drops to &#8377;227 &rarr; EXIT</td></tr>
-    <tr><td>&#8377;500</td><td>55%</td><td>&#8377;275</td><td>P&amp;L drops to &#8377;274 &rarr; EXIT</td></tr>
-    <tr><td>&#8377;1,000</td><td>60%</td><td>&#8377;600</td><td>P&amp;L drops to &#8377;599 &rarr; EXIT</td></tr>
-    <tr><td>&#8377;3,000</td><td>70%</td><td>&#8377;2,100</td><td>P&amp;L drops to &#8377;2,099 &rarr; EXIT</td></tr>
-    <tr><td>&#8377;5,000</td><td>80%</td><td>&#8377;4,000</td><td>P&amp;L drops to &#8377;3,999 &rarr; EXIT</td></tr>
-    <tr><td>&#8377;10,000</td><td>90%</td><td>&#8377;9,000</td><td>P&amp;L drops to &#8377;8,999 &rarr; EXIT</td></tr>
+    <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td>0.7</td><td>When peak P&amp;L &ge; 0.7 &times; initial risk (&#8377;), snap the SL to break-even. <code>0</code> disables.</td></tr>
+    <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td>1</td><td>SL is set to entry + 1 pt (CE) / entry &minus; 1 pt (PE) &mdash; a small buffer for slippage.</td></tr>
   </tbody>
 </table>
+
+<div class="card card-blue">
+  <p style="font-size:0.85rem;"><strong>Example:</strong> CE entry at 23,500 with a 12pt initial SL (&#8776; &#8377;900 risk on one lot). Once peak P&amp;L reaches &#8776; &#8377;630 (0.7 &times; 900), the SL snaps from 23,488 up to 23,501. The trade can no longer lose; PSAR then trails it higher until a flip or SL exit.</p>
+</div>
+
+<div class="card card-purple">
+  <p style="font-size:0.85rem;">The snap is <strong>tighten-only</strong> and fires <strong>per-tick</strong> (not once per candle), because most scalp trades resolve inside the entry bar.</p>
+</div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 10. VIX MARKET REGIME FILTER                                            -->
@@ -1112,10 +1083,10 @@
   <table>
     <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>PSAR trailing + 50pt hard cap + 8pt floor</td></tr>
-      <tr><td>2. Trailing Profit</td><td>Protect unrealized gains</td><td>Tiered % lock starting at &#8377;350 peak</td></tr>
+      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>Prev-candle SL + PSAR trail + 12pt cap / 8pt floor</td></tr>
+      <tr><td>2. Break-Even Snap</td><td>Protect unrealized gains</td><td>SL to entry once peak &ge; 0.7 &times; risk</td></tr>
       <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
-      <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>2 candle pause after SL, +2 per consecutive SL</td></tr>
+      <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>N candle pause after SL, +2 per consecutive SL (per-side)</td></tr>
       <tr><td>5. Daily Loss Limit</td><td>Session-level risk</td><td>All entries halted at -&#8377;2,000 day P&amp;L</td></tr>
       <tr><td>6. Max Trade Count</td><td>Overtrading prevention</td><td>30 trade cap per session</td></tr>
       <tr><td>7. VIX Filter</td><td>Regime-level risk</td><td>Block entries in high-volatility markets</td></tr>
@@ -1145,8 +1116,8 @@
       <div class="flow-arrow-label" style="color:var(--green); font-weight:700;">YES</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-box process" style="font-size:0.75rem;">
-        Check PSAR SL hit?<br/>
-        Check Trailing Profit Lock?<br/>
+        Check SL hit?<br/>
+        Check Break-Even snap?<br/>
         Check SAR Flip reversal?<br/>
         Tighten SL (PSAR, never widen)<br/>
         EOD check (3:20 PM)?
@@ -1162,7 +1133,7 @@
       <div class="flow-box process" style="font-size:0.75rem;">
         Validate: Hours, Warmup,<br/>
         Daily Loss, Trade Count,<br/>
-        SL Pause, BB Squeeze
+        SL Pause, VIX, Spread
       </div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-box process">VIX Filter Check</div>
@@ -1295,8 +1266,8 @@
 
     <rect x="20" y="228" width="200" height="80" rx="8" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1"/>
     <text x="120" y="248" fill="#10b981" font-size="9" font-weight="600" text-anchor="middle">Check Exits:</text>
-    <text x="120" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">1. PSAR SL hit?</text>
-    <text x="120" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">2. Trailing Profit Lock?</text>
+    <text x="120" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">1. SL hit?</text>
+    <text x="120" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">2. Break-Even snap?</text>
     <text x="120" y="292" fill="#ccc8e8" font-size="8" text-anchor="middle">3. SAR Flip? | 4. EOD 3:20?</text>
     <line x1="120" y1="308" x2="120" y2="332" stroke="#10b981" stroke-width="1.5"/>
 
@@ -1311,7 +1282,7 @@
     <rect x="480" y="228" width="200" height="68" rx="8" fill="rgba(59,130,246,0.08)" stroke="#3b82f6" stroke-width="1"/>
     <text x="580" y="248" fill="#3b82f6" font-size="9" font-weight="600" text-anchor="middle">Pre-Entry Checks:</text>
     <text x="580" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">Hours, Loss Limit, Trade Cap</text>
-    <text x="580" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">SL Pause, BB Squeeze, VIX</text>
+    <text x="580" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">SL Pause, VIX, Spread</text>
     <line x1="580" y1="296" x2="580" y2="316" stroke="#3b82f6" stroke-width="1.5"/>
 
     <rect x="480" y="316" width="200" height="36" rx="8" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1"/>
@@ -1468,46 +1439,21 @@
     <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
     <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
     <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
-    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>55</code></td><td>RSI above this for CE entry</td></tr>
-    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>45</code></td><td>RSI below this for PE entry</td></tr>
+    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>62</code></td><td>RSI above this for CE entry</td></tr>
+    <tr><td><code>SCALP_RSI_CE_MAX</code></td><td><code>78</code></td><td>Block CE when RSI above this (overbought guard)</td></tr>
+    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>42</code></td><td>RSI below this for PE entry</td></tr>
+    <tr><td><code>SCALP_RSI_PE_MIN</code></td><td><code>22</code></td><td>Block PE when RSI below this (oversold guard)</td></tr>
+    <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
     <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
     <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
   </tbody>
 </table>
 
-<h3>BB + Squeeze Filter</h3>
-<table>
-  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td><code>SCALP_BB_SQUEEZE_FILTER</code></td><td><code>true</code></td><td>Skip entries when BB bands are narrow</td></tr>
-    <tr><td><code>SCALP_BB_MIN_WIDTH_PCT</code></td><td><code>0.15</code></td><td>Min BB width as % of price</td></tr>
-    <tr><td><code>SCALP_CPR_NARROW_PCT</code></td><td><code>33</code></td><td>CPR range % threshold (backtest compat)</td></tr>
-    <tr><td><code>SCALP_ACTIVITY_FILTER</code></td><td><code>false</code></td><td>Skip entries on low candle range</td></tr>
-    <tr><td><code>SCALP_ACTIVITY_FILTER_RATIO</code></td><td><code>0.5</code></td><td>Min candle range vs 20-bar average</td></tr>
-  </tbody>
-</table>
-
-<h3>V4 Quality Filters + Trend Filter <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h3>
-<table>
-  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-  <tbody>
-    <tr><td><code>SCALP_REQUIRE_APPROACH</code></td><td><code>false</code></td><td>V4: block entry if prev candle was on opposite half of BB</td></tr>
-    <tr><td><code>SCALP_MIN_BODY_RATIO</code></td><td><code>0</code></td><td>V4: min entry-candle body as % of range</td></tr>
-    <tr><td><code>SCALP_TRAIL_GRACE_SECS</code></td><td><code>0</code></td><td>Suppress trail-exit for first N seconds (SL still active)</td></tr>
-    <tr><td><code>SCALP_TREND_FILTER</code></td><td><code>true</code></td><td>Block CE in downtrends / PE in uptrends</td></tr>
-    <tr><td><code>SCALP_TREND_MOMENTUM_PCT</code></td><td><code>0.15</code></td><td>Min N-candle move (% of price) to call a direction</td></tr>
-    <tr><td><code>SCALP_TREND_MOMENTUM_LOOKBACK</code></td><td><code>5</code></td><td>Candles for momentum measurement</td></tr>
-    <tr><td><code>SCALP_TREND_MID_SLOPE_LOOKBACK</code></td><td><code>3</code></td><td>Candles for BB-mid slope measurement</td></tr>
-  </tbody>
-</table>
-
-<h3>Trade Guards (shared) <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h3>
+<h3>Trade Guards (shared)</h3>
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
     <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Block entry on wide bid-ask spread (fails open if quotes missing)</td></tr>
-    <tr><td><code>TIME_STOP_CANDLES</code></td><td><code>4</code></td><td>Auto-exit a trade flat for N candles</td></tr>
-    <tr><td><code>TIME_STOP_FLAT_PTS</code></td><td><code>20</code></td><td>"Flat" defined as |PnL| &lt; N points</td></tr>
   </tbody>
 </table>
 
@@ -1523,11 +1469,8 @@
     <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit. Raised from <code>1</code>/<code>2</code> in v4.6.0.</td></tr>
     <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
     <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>0.7</code></td><td>Move SL to entry once peak P&amp;L &ge; N &times; initial risk. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
-    <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra pause candles per consecutive SL</td></tr>
+    <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
     <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
-    <tr><td><code>SCALP_PAUSE_OVERRIDE_ENABLED</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.5.0</span></td><td><code>false</code></td><td>Release per-side SL cooldown early on retest-and-resume (a candle close &ge; <code>OVERRIDE_PTS</code> past failed-entry spot in original direction)</td></tr>
-    <tr><td><code>SCALP_PAUSE_OVERRIDE_PTS</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.5.0</span></td><td><code>10</code></td><td>Spot-delta threshold past failed-entry spot to trigger override</td></tr>
   </tbody>
 </table>
 
@@ -1544,13 +1487,13 @@
   </tbody>
 </table>
 
-<h3>Trail Settings</h3>
+<h3>Timing &amp; Resolution</h3>
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_TRAIL_START</code></td><td><code>600</code></td><td>Activate trailing after this profit (&#8377;). Raised from <code>200</code>/<code>350</code> in v4.6.0 (let winners breathe).</td></tr>
-    <tr><td><code>SCALP_TRAIL_PCT</code></td><td><code>65</code></td><td>Base exit: P&amp;L drops below X% of peak</td></tr>
-    <tr><td><code>SCALP_TRAIL_TIERS</code></td><td><code>600:70,1200:78,<br/>2500:85,5000:90,<br/>10000:93</code></td><td>Tiered lock: peak:pct pairs &mdash; updated in v4.6.0 to tighter locks at lower peaks (was 500:55, 1000:60)</td></tr>
+    <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle size &mdash; <code>3</code> or <code>5</code> minutes</td></tr>
+    <tr><td><code>SCALP_ENTRY_START</code> / <code>SCALP_ENTRY_END</code></td><td><code>09:21</code> / <code>14:30</code></td><td>Entry window (IST)</td></tr>
+    <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow scalp entries on weekly-expiry day</td></tr>
   </tbody>
 </table>
 
@@ -1568,8 +1511,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    SCALP_BB_RSI_V4 &mdash; Version 4.6.0 &bull; Generated 2026-05-21<br/>
-    NIFTY Options Scalping Strategy Guide &bull; 5-Minute Bollinger Band + RSI + PSAR + V4 Quality Filters + Trend Filter
+    SCALP_BB_PSAR_RSI_V5 &mdash; Version 5.0.0 &bull; Updated 2026-05-28<br/>
+    NIFTY Options Scalping Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; PSAR / Break-Even exit
   </p>
 </div>
 
