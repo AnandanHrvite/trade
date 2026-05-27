@@ -490,11 +490,28 @@ function drawReplayChart(el, cd) {
   el.style.display = 'block';
   el.innerHTML = '';
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  // Candle/marker times are epoch seconds; lightweight-charts renders the axis
+  // in UTC by default, which puts an IST session 5:30 too far left. Format the
+  // axis ticks and crosshair label in IST (browser-local, en-IN) to match the
+  // paper screen and the IST trade table below it.
+  const _ist2 = (n) => ('0' + n).slice(-2);
   const chart = LightweightCharts.createChart(el, {
     width: el.clientWidth, height: 360,
     layout: { background: { color: 'transparent' }, textColor: isLight ? '#475569' : '#94a3b8' },
     grid: { vertLines: { color: isLight ? '#e2e8f0' : '#1e293b' }, horzLines: { color: isLight ? '#e2e8f0' : '#1e293b' } },
-    timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#334155' },
+    timeScale: {
+      timeVisible: true, secondsVisible: false, borderColor: '#334155',
+      tickMarkFormatter: (time) => {
+        const d = new Date(time * 1000);
+        return _ist2(d.getHours()) + ':' + _ist2(d.getMinutes());
+      },
+    },
+    localization: {
+      timeFormatter: (time) => {
+        const d = new Date(time * 1000);
+        return _ist2(d.getHours()) + ':' + _ist2(d.getMinutes()) + ':' + _ist2(d.getSeconds());
+      },
+    },
     rightPriceScale: { borderColor: '#334155' },
     crosshair: { mode: 0 },
   });
