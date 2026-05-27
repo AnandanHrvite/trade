@@ -43,27 +43,9 @@ const skipLogger = require("../utils/skipLogger");
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "5", 10); // candle resolution in minutes
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
 
-// ── Trail tier config — cached at module load (never changes at runtime) ─────
-// getDynamicTrailGap() was calling parseFloat(process.env.TRAIL_TIER*) on every tick.
-// Pre-reading these once eliminates 750+ env reads/min when in position.
-const _TRAIL_T1_UPTO = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-const _TRAIL_T2_UPTO = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
-const _TRAIL_T1_GAP  = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
-const _TRAIL_T2_GAP  = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-const _TRAIL_T3_GAP  = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
-const _TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
 const _MAX_DAILY_TRADES   = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
 const _MAX_DAILY_LOSS     = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
 const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-
-// ── Initial SL cap (Hybrid: structural + hard cap, with min floor) ───────────
-// Original SAR-based SL is often 100-130pt wide on young trends — full loss too big.
-// Hybrid takes whichever is TIGHTER: SAR / prev candle structural / hard pts cap,
-// then floors at SWING_MIN_INITIAL_SL_PTS so we never get a sub-bar suicide-tight SL.
-const _SWING_USE_PREV_CANDLE_SL  = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
-const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
-const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
-const _SWING_STRONG_ONLY         = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
 
 
 // Same-side SL cooldown config + helper (mirrors paper)
@@ -1249,28 +1231,14 @@ async function onCandleClose(candle) {
       log(`🚫 [LIVE] Daily max trades reached — candle-close entry blocked (${signal})`);
       return;
     }
-    // ── Strong-only gate: block MARGINAL when SWING_STRONG_ONLY=true ─────────
-    if (_SWING_STRONG_ONLY && _ccStrength !== "STRONG") {
-      log(`🚫 [LIVE] STRONG_ONLY mode — MARGINAL entry blocked | Signal: ${signal}`);
-      skipLogger.appendSkipLog("swing", {
-        gate: "strong_only",
-        reason: "MARGINAL blocked by SWING_STRONG_ONLY",
-        spot: candle.close,
-        signalStrength: _ccStrength || "MARGINAL",
-        signal,
-        path: "candle-close",
-      });
-      return;
-    }
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
-    const _vixCheck = await checkLiveVix(_ccStrength || "MARGINAL");
+    const _vixCheck = await checkLiveVix("STRONG");
     if (!_vixCheck.allowed) {
       log(`🌡️ [LIVE] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
       skipLogger.appendSkipLog("swing", {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: candle.close,
-        signalStrength: _ccStrength || "MARGINAL",
         signal,
         path: "candle-close",
       });
@@ -1378,16 +1346,10 @@ async function onCandleClose(candle) {
         ? parseFloat((_ccLastCandle.low + (_ccLastCandle.high - _ccLastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
         : null;
 
-      // ── HYBRID INITIAL SL CAP ─────────────────────────────────────────────
-      // Tighten raw SAR-based stopLoss using prevCandle structural + hard pts cap,
-      // floored at SWING_MIN_INITIAL_SL_PTS. Trail activation uses the FINAL SL gap.
+      // Initial SL = the prev-candle low/high from getSignal, used as-is (no-op cap).
       const _slCapResult = _applyInitialSLCap(stopLoss, candle.close, side, _ccLastCandle);
       const _origSARforPos = _slCapResult.origSAR || stopLoss;
       stopLoss = _slCapResult.stopLoss;
-
-      // Dynamic trail activation: 25% of (capped) SL gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
-      const _initialSARgap = stopLoss ? Math.abs(candle.close - stopLoss) : 0;
-      const _dynTrailActivate = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgap * 0.25)));
 
       // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
       const _entryIstMin     = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -1405,8 +1367,7 @@ async function onCandleClose(candle) {
         reason,
         stopLoss:          stopLoss || null,
         initialStopLoss:   stopLoss || null,
-        sarStopLoss:       _origSARforPos || null,  // raw SAR before hybrid cap
-        trailActivatePts:  _dynTrailActivate,
+        sarStopLoss:       _origSARforPos || null,  // initial SL (prev-candle) at entry
         bestPrice:         null,
         candlesHeld:       0,
         mfeSpotPts:        0,
@@ -1426,7 +1387,7 @@ async function onCandleClose(candle) {
         optionCurrentLtp:  null,
         optionEntryLtpTime: null,
         // Data-collection fields — surfaced on the trade record at exit
-        signalStrength:    _ccStrength || null,
+        signalStrength:    "STRONG",
         vixAtEntry:        _vixAtEntry,
         entryHourIST:      _entryHourIST,
         entryMinuteIST:    _entryMinuteIST,
@@ -1557,55 +1518,20 @@ function onSpotTick(tick) {
     tradeState.candles.pop();
     const stopLoss = strategySL || _cachedClosedCandleSL;
 
-    // 15-min: STRONG signals only (steep slope + committed RSI) → enter intra-candle at EMA touch
-    // 5-min:  all signals enter intra-candle
-    const isStrongSignal = signalStrength === "STRONG";
-
-    // ── Signal Missed Log ────────────────────────────────────────────────────
-    // If strategy fires a valid signal but it can't enter (wrong strength for 15-min,
-    // or signal is NONE), log it once per candle so you can see what was skipped.
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && TRADE_RES >= 15 && !isStrongSignal) {
-      if (!tradeState._missedLoggedCandle || tradeState._missedLoggedCandle !== _currentBarTime) {
-        tradeState._missedLoggedCandle = _currentBarTime;
-        log(`⚠️ [LIVE] Signal MISSED — ${signal} [MARGINAL] @ ₹${ltp} — waiting for candle close | ${reason}`);
-      }
-    }
-
-    // ── Strong-only gate (intra-candle): mirrors candle-close gate (~line 1306) ──
-    // On 5-min the intra-candle path is primary, so without this STRONG_ONLY leaks
-    // every MARGINAL signal (the candle-close gate is rarely reached). Log once/candle.
-    const _strongOnlyBlocks = _SWING_STRONG_ONLY && !isStrongSignal;
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && _strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
-      if (!tradeState._strongOnlyLoggedCandle || tradeState._strongOnlyLoggedCandle !== _currentBarTime) {
-        tradeState._strongOnlyLoggedCandle = _currentBarTime;
-        log(`🚫 [LIVE] STRONG_ONLY mode — MARGINAL intra-candle entry blocked | Signal: ${signal}`);
-        skipLogger.appendSkipLog("swing", {
-          gate: "strong_only",
-          reason: "MARGINAL blocked by SWING_STRONG_ONLY",
-          spot: ltp,
-          signalStrength: signalStrength || "MARGINAL",
-          signal,
-          path: "intra-candle",
-        });
-      }
-    }
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && !_strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
+    // ── Intra-candle entry: enter whenever a BUY signal is live (every tick while flat) ──
+    if (signal === "BUY_CE" || signal === "BUY_PE") {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
-      const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (
-        _vixIntraVal > vixFilter.VIX_MAX_ENTRY ||
-        (_vixIntraVal > vixFilter.VIX_STRONG_ONLY && signalStrength !== "STRONG")
-      );
+      const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && _vixIntraVal > vixFilter.VIX_MAX_ENTRY;
       if (_vixIntraBlocked) {
         if (!tradeState._vixBlockLoggedCandle || tradeState._vixBlockLoggedCandle !== _currentBarTime) {
           tradeState._vixBlockLoggedCandle = _currentBarTime;
-          log(`🌡️ [LIVE] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+          log(`🌡️ [LIVE] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal}`);
           skipLogger.appendSkipLog("swing", {
             gate: "vix",
             reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
             spot: ltp,
             vix: _vixIntraVal,
-            signalStrength,
             signal,
             path: "intra-candle",
           });
@@ -1725,10 +1651,6 @@ function onSpotTick(tick) {
         const _origSARforPosIntra = _slCapResultIntra.origSAR || stopLoss;
         stopLoss = _slCapResultIntra.stopLoss;
 
-        // Dynamic trail activation: 25% of (capped) SL gap, floored at TRAIL_ACTIVATE_PTS, capped at 40pts.
-        const _initialSARgapIntra = stopLoss ? Math.abs(ltp - stopLoss) : 0;
-        const _dynTrailActivateIntra = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapIntra * 0.25)));
-
         // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
         const _entryIstMinIntra    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
         const _entryHourISTIntra   = Math.floor(_entryIstMinIntra / 60);
@@ -1745,8 +1667,7 @@ function onSpotTick(tick) {
           reason,
           stopLoss:          stopLoss || null,
           initialStopLoss:   stopLoss || null,
-          sarStopLoss:       _origSARforPosIntra || null,  // raw SAR before hybrid cap
-          trailActivatePts:  _dynTrailActivateIntra,
+          sarStopLoss:       _origSARforPosIntra || null,  // initial SL (prev-candle) at entry
           bestPrice:         null,
           candlesHeld:       0,
           mfeSpotPts:        0,
@@ -1764,7 +1685,7 @@ function onSpotTick(tick) {
           optionCurrentLtp:  null,
           optionEntryLtpTime: null,
           // Data-collection fields — surfaced on the trade record at exit
-          signalStrength:    signalStrength || null,
+          signalStrength:    "STRONG",
           vixAtEntry:        _vixAtEntryIntra,
           entryHourIST:      _entryHourISTIntra,
           entryMinuteIST:    _entryMinuteISTIntra,
@@ -2284,7 +2205,7 @@ router.post("/manualEntry", async (req, res) => {
   const spot = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // Get SAR for SL from strategy
+  // Initial SL from the strategy = previous-candle low/high
   const candles = tradeState.candles || [];
   let stopLoss = null;
   if (candles.length > 0) {
@@ -2292,13 +2213,13 @@ router.post("/manualEntry", async (req, res) => {
     const result = getActiveStrategy().getSignal(candles, { silent: true });
     if (result && result.stopLoss) stopLoss = result.stopLoss;
   }
-  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
+  const MAX_SL = 80; // fallback SL distance when there's no live signal (manual override)
   if (!stopLoss) stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
 
   // Validate SL is on correct side (CE: below entry, PE: above entry)
   if ((side === "CE" && stopLoss >= spot) || (side === "PE" && stopLoss <= spot)) {
     stopLoss = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-    log(`⚠️ [LIVE] Manual ${side}: SAR on wrong side — using ${MAX_SL}pt fixed SL @ ₹${stopLoss}`);
+    log(`⚠️ [LIVE] Manual ${side}: SL on wrong side — using ${MAX_SL}pt fixed SL @ ₹${stopLoss}`);
   }
 
   const gap = Math.abs(spot - stopLoss);
@@ -2326,7 +2247,6 @@ router.post("/manualEntry", async (req, res) => {
       entryTime: istNow(),
       reason: `Manual ${side} entry by user`,
       stopLoss, initialStopLoss: stopLoss,
-      trailActivatePts: _TRAIL_ACTIVATE_PTS,
       bestPrice: null,
       candlesHeld: 0,
       mfeSpotPts: 0, maeSpotPts: 0,

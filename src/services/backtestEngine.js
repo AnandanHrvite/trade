@@ -468,7 +468,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           pnlMode,
           exitReason,
           entryReason:     position.entryReason,
-          signalStrength:  position.signalStrength || "MARGINAL",
+          signalStrength:  position.signalStrength || "STRONG",
           // indicators field omitted — not read by any route, frees ~50B/trade × 1000s of trades
         });
         if (_verbose) {

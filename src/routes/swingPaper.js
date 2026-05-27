@@ -45,7 +45,6 @@ let TRADE_RES;            // candle resolution in minutes
 let _MAX_DAILY_TRADES;
 let _MAX_DAILY_LOSS;
 let _OPT_STOP_PCT;
-let _SWING_STRONG_ONLY;
 let _STOP_MINS;
 let _SWING_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
 let _SWING_EOD_EXIT_MINS;      // square off any open SWING position at/after this IST time (before day close)
@@ -54,7 +53,6 @@ function _refreshConfig() {
   _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
   _MAX_DAILY_LOSS                        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
   _OPT_STOP_PCT                          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-  _SWING_STRONG_ONLY                     = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
@@ -1080,39 +1078,16 @@ async function onCandleClose(candle) {
   // isMarketHours() guard: prevents entries on 5-min candles closing between TRADE_STOP_TIME-10
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
   if (!ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
-    // ── Strength gate: candle-close entry fires for MARGINAL signals ──────────
-    // STRONG signals are handled intra-candle (better entry price).
-    // If a STRONG signal somehow wasn't caught intra-candle (e.g. first tick of candle
-    // was already at close), allow it here too — don't miss the trade entirely.
-    // MARGINAL signals always wait for candle close — confirmed, not premature.
-    const candleCloseStrength = signalStrength || "MARGINAL";
-    if (candleCloseStrength === "STRONG") {
-      log(`⚡ [PAPER] STRONG signal at candle close (intra-tick missed it) — entering @ ₹${candle.close} | ${reason}`);
-    } else {
-      log(`📋 [PAPER] MARGINAL signal — candle-close entry @ ₹${candle.close} | ${reason}`);
-    }
-    // ── Strong-only gate: block MARGINAL when SWING_STRONG_ONLY=true ─────────
-    if (_SWING_STRONG_ONLY && candleCloseStrength !== "STRONG") {
-      log(`🚫 [PAPER] STRONG_ONLY mode — MARGINAL entry blocked | Signal: ${signal}`);
-      skipLogger.appendSkipLog("swing", {
-        gate: "strong_only",
-        reason: "MARGINAL blocked by SWING_STRONG_ONLY",
-        spot: candle.close,
-        signalStrength: candleCloseStrength,
-        signal,
-        path: "candle-close",
-      });
-      return;
-    }
+    // Candle-close entry — fallback when an intra-candle tick didn't already enter.
+    log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
-    const _vixCheck = await checkLiveVix(candleCloseStrength);
+    const _vixCheck = await checkLiveVix("STRONG");
     if (!_vixCheck.allowed) {
       log(`🌡️ [PAPER] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
       skipLogger.appendSkipLog("swing", {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: candle.close,
-        signalStrength: candleCloseStrength,
         signal,
         path: "candle-close",
       });
@@ -1199,7 +1174,7 @@ async function onCandleClose(candle) {
       }
 
       simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, {
-        signalStrength: candleCloseStrength,
+        signalStrength: "STRONG",
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
         ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
         sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
@@ -1271,7 +1246,7 @@ function onTick(tick) {
   //
   // THROTTLE (15-min only): getSignal runs the full indicator stack (EMA, RSI, SAR).
   // To avoid burning CPU on every tick, we only re-run it when the live bar's high OR low
-  // actually changes — i.e. when a new extreme tick arrives that could newly touch EMA9.
+  // actually changes — i.e. when a new extreme tick arrives that could newly cross EMA21.
   // For 5-min this throttle is skipped (ticks are less frequent, no need).
   //
   // SAFETY: we only allow intra-tick entry if _cachedClosedCandleSL is not null,
@@ -1325,58 +1300,21 @@ function onTick(tick) {
     const { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(ptState.candles, { silent: true });
     ptState.candles.pop();
     const stopLoss = strategySL || _cachedClosedCandleSL;
-    // ── Strength gate: intra-candle entry ONLY for STRONG signals ─────────────
-    // STRONG  = steep EMA slope + committed RSI → enter now at the EMA touch
-    // MARGINAL = borderline slope/RSI → wait for candle close to confirm
-    // This prevents entering on fake EMA touches mid-candle in ranging markets.
-    const isStrongSignal = signalStrength === "STRONG";
-
-    // ── Signal Missed Log ────────────────────────────────────────────────────
-    // If strategy fires a valid signal but it's MARGINAL (15-min waits for candle close),
-    // log it once per candle so you can see what was seen intra-candle vs what entered.
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && TRADE_RES >= 15 && !isStrongSignal) {
-      if (!ptState._missedLoggedCandle || ptState._missedLoggedCandle !== currentBarTime) {
-        ptState._missedLoggedCandle = currentBarTime;
-        log(`⚠️ [PAPER] Signal SEEN intra-candle — ${signal} [MARGINAL] @ ₹${ltp} — waiting for candle close | ${reason}`);
-      }
-    }
-
-    // ── Strong-only gate (intra-candle): mirrors candle-close gate (~line 1175) ──
-    // On 5-min the intra-candle path is primary, so without this STRONG_ONLY leaks
-    // every MARGINAL signal (the candle-close gate is rarely reached). Log once/candle.
-    const _strongOnlyBlocks = _SWING_STRONG_ONLY && !isStrongSignal;
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && _strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
-      if (!ptState._strongOnlyLoggedCandle || ptState._strongOnlyLoggedCandle !== currentBarTime) {
-        ptState._strongOnlyLoggedCandle = currentBarTime;
-        log(`🚫 [PAPER] STRONG_ONLY mode — MARGINAL intra-candle entry blocked | Signal: ${signal}`);
-        skipLogger.appendSkipLog("swing", {
-          gate: "strong_only",
-          reason: "MARGINAL blocked by SWING_STRONG_ONLY",
-          spot: ltp,
-          signalStrength: signalStrength || "MARGINAL",
-          signal,
-          path: "intra-candle",
-        });
-      }
-    }
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && !_strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
+    // ── Intra-candle entry: enter whenever a BUY signal is live (every tick while flat) ──
+    if (signal === "BUY_CE" || signal === "BUY_PE") {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       // Skip VIX filter in simulation mode
       const _vixIntraVal = ptState._simMode ? null : getCachedVix();
-      const _vixIntraBlocked = !ptState._simMode && vixFilter.VIX_ENABLED && _vixIntraVal != null && (
-        _vixIntraVal > vixFilter.VIX_MAX_ENTRY ||
-        (_vixIntraVal > vixFilter.VIX_STRONG_ONLY && signalStrength !== "STRONG")
-      );
+      const _vixIntraBlocked = !ptState._simMode && vixFilter.VIX_ENABLED && _vixIntraVal != null && _vixIntraVal > vixFilter.VIX_MAX_ENTRY;
       if (_vixIntraBlocked) {
         if (!ptState._vixBlockLoggedCandle || ptState._vixBlockLoggedCandle !== currentBarTime) {
           ptState._vixBlockLoggedCandle = currentBarTime;
-          log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal} [${signalStrength}]`);
+          log(`🌡️ [PAPER] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal}`);
           skipLogger.appendSkipLog("swing", {
             gate: "vix",
             reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
             spot: ltp,
             vix: _vixIntraVal,
-            signalStrength,
             signal,
             path: "intra-candle",
           });
@@ -1447,7 +1385,7 @@ function onTick(tick) {
         }
 
         simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, {
-          signalStrength,
+          signalStrength: "STRONG",
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
           ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
           sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
@@ -2051,7 +1989,7 @@ router.get("/exit", (req, res) => {
 /**
  * POST /swing-paper/manualEntry
  * Manually enter a CE or PE trade at current spot price.
- * SL = current SAR value (capped at MAX_SAR_DISTANCE). Trail/breakeven apply normally.
+ * SL = previous-candle low/high from getSignal (80pt fallback if no live signal). Trail/breakeven apply normally.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!ptState.running) {
@@ -2069,7 +2007,7 @@ router.post("/manualEntry", async (req, res) => {
     return res.status(400).json({ success: false, error: "No market data yet." });
   }
 
-  // Get strategy signal to extract SAR value for SL
+  // Initial SL from the strategy = previous-candle low/high
   const candles = ptState.candles || [];
   let sarSL = null;
   if (candles.length > 0) {
@@ -2080,20 +2018,20 @@ router.post("/manualEntry", async (req, res) => {
     }
   }
 
-  // Fallback SL if SAR not available
-  const MAX_SL = parseFloat(process.env.MAX_SAR_DISTANCE || "80");
+  // Fallback SL distance when there's no live signal (manual override entry)
+  const MAX_SL = 80;
   if (!sarSL) {
     sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
   }
 
   // Validate SL is on correct side (CE: SL must be below entry, PE: SL must be above entry)
   if ((side === "CE" && sarSL >= spot) || (side === "PE" && sarSL <= spot)) {
-    // SAR is on wrong side — manual entry against trend, use fixed SL
+    // Prev-candle SL on wrong side — manual entry against trend, use fixed fallback
     sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
-    log(`⚠️ [PAPER] Manual ${side}: SAR on wrong side — using ${MAX_SL}pt fixed SL @ ₹${sarSL}`);
+    log(`⚠️ [PAPER] Manual ${side}: SL on wrong side — using ${MAX_SL}pt fixed SL @ ₹${sarSL}`);
   }
 
-  // Cap SL at MAX_SAR_DISTANCE from entry
+  // Cap the fallback SL distance from entry
   const sarGap = Math.abs(spot - sarSL);
   if (sarGap > MAX_SL) {
     sarSL = side === "CE" ? spot - MAX_SL : spot + MAX_SL;
