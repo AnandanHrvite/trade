@@ -913,9 +913,21 @@ applyFilters();
   res.send(html);
 });
 
-// JSON endpoint — used by dashboard cumulative P&L chart
+// Mirror sharedNav's per-strategy gating so the dashboard chart can show
+// only currently-enabled strategies (default true when the env key is unset).
+function _modeEnabled(mode) {
+  const key = mode + "_MODE_ENABLED";
+  return (process.env[key] || "true").toLowerCase() === "true";
+}
+
+// JSON endpoint — used by dashboard cumulative P&L chart.
+// With ?enabledOnly=1 the dashboard drops trades from strategies that are
+// toggled off in Settings; the full Live Consolidation page shows everything.
 router.get("/data", (req, res) => {
-  const trades = loadAllTrades();
+  let trades = loadAllTrades();
+  if (String(req.query.enabledOnly || "") === "1") {
+    trades = trades.filter((t) => _modeEnabled(t.mode));
+  }
   res.json({ success: true, trades });
 });
 

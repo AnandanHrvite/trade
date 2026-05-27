@@ -1770,11 +1770,11 @@ function _renderDashTotal(){
 
 async function loadDashCumCharts(){
   try {
-    var r = await fetch('/consolidation/data', { cache: 'no-store' });
+    var r = await fetch('/consolidation/data?enabledOnly=1', { cache: 'no-store' });
     if (r.ok){ var d = await r.json(); _dcData.paper = (d && d.trades) || []; }
   } catch(_){ _dcData.paper = []; }
   try {
-    var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
+    var r2 = await fetch('/live-consolidation/data?enabledOnly=1', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _dcData.live = (d2 && d2.trades) || []; }
   } catch(_){ _dcData.live = []; }
   _renderDashTotal();
