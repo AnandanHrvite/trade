@@ -168,7 +168,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Backtest has no live option LTP — approximate the premium stop as an adverse
   // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
   // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
-  const _OPT_STOP_SPOT_PTS = (OPT_STOP_PCT > 0 && DELTA > 0) ? (OPT_STOP_PCT * 200) / DELTA : 0;
+  const _OPT_STOP_SPOT_PTS = (!isFutures && OPT_STOP_PCT > 0 && DELTA > 0) ? (OPT_STOP_PCT * 200) / DELTA : 0;
 
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
