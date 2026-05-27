@@ -986,13 +986,10 @@ async function squareOff(exitPrice, reason) {
     entryHourIST:   entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
-    rsiAtEntry:     tradeState.position ? (tradeState.position.rsiAtEntry   != null ? tradeState.position.rsiAtEntry   : null) : null,
-    ema9AtEntry:    tradeState.position ? (tradeState.position.ema9AtEntry  != null ? tradeState.position.ema9AtEntry  : null) : null,
-    ema9Slope:      tradeState.position ? (tradeState.position.ema9Slope    != null ? tradeState.position.ema9Slope    : null) : null,
-    sarAtEntry:     tradeState.position ? (tradeState.position.sarAtEntry   != null ? tradeState.position.sarAtEntry   : null) : null,
-    sarTrend:       tradeState.position ? (tradeState.position.sarTrend     || null) : null,
-    adxAtEntry:     tradeState.position ? (tradeState.position.adxAtEntry   != null ? tradeState.position.adxAtEntry   : null) : null,
-    adxTrending:    tradeState.position ? (tradeState.position.adxTrending  != null ? tradeState.position.adxTrending  : null) : null,
+    rsiAtEntry:     tradeState.position ? (tradeState.position.rsiAtEntry    != null ? tradeState.position.rsiAtEntry    : null) : null,
+    ema21AtEntry:   tradeState.position ? (tradeState.position.ema21AtEntry  != null ? tradeState.position.ema21AtEntry  : null) : null,
+    sarAtEntry:     tradeState.position ? (tradeState.position.sarAtEntry    != null ? tradeState.position.sarAtEntry    : null) : null,
+    sarTrend:       tradeState.position ? (tradeState.position.sarTrend      || null) : null,
     mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
     maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
     secsToMFE:      tradeState.position ? (tradeState.position.secsToMFE  || 0) : 0,
@@ -1113,18 +1110,14 @@ async function onCandleClose(candle) {
   log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   if (signal === "NONE" && !tradeState.position) {
-    logNearMiss(indicators.filterAudit, "LIVE", log);
     skipLogger.appendSkipLog("swing", {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
-      ema9: indicators.ema9 ?? null,
-      ema9Slope: indicators.ema9Slope ?? null,
+      ema21: indicators.ema21 ?? null,
       rsi: indicators.rsi ?? null,
       sar: indicators.sar ?? null,
       sarTrend: indicators.sarTrend ?? null,
-      adx: indicators.adx ?? null,
-      audit: indicators.filterAudit || null,
     });
   }
 
@@ -1438,13 +1431,10 @@ async function onCandleClose(candle) {
         entryHourIST:      _entryHourIST,
         entryMinuteIST:    _entryMinuteIST,
         // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
-        rsiAtEntry:        indicators.rsi        != null ? indicators.rsi        : null,
-        ema9AtEntry:       indicators.ema9       != null ? indicators.ema9       : null,
-        ema9Slope:         indicators.ema9Slope  != null ? indicators.ema9Slope  : null,
-        sarAtEntry:        indicators.sar        != null ? indicators.sar        : null,
-        sarTrend:          indicators.sarTrend   || null,
-        adxAtEntry:        indicators.adx        != null ? indicators.adx        : null,
-        adxTrending:       indicators.adxTrending != null ? indicators.adxTrending : null,
+        rsiAtEntry:        indicators.rsi    != null ? indicators.rsi   : null,
+        ema21AtEntry:      indicators.ema21  != null ? indicators.ema21 : null,
+        sarAtEntry:        indicators.sar    != null ? indicators.sar   : null,
+        sarTrend:          indicators.sarTrend || null,
       };
 
       tradeState.optionSymbol = symbol;
@@ -1779,13 +1769,10 @@ function onSpotTick(tick) {
           entryHourIST:      _entryHourISTIntra,
           entryMinuteIST:    _entryMinuteISTIntra,
           // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
-          rsiAtEntry:        indicators.rsi        != null ? indicators.rsi        : null,
-          ema9AtEntry:       indicators.ema9       != null ? indicators.ema9       : null,
-          ema9Slope:         indicators.ema9Slope  != null ? indicators.ema9Slope  : null,
-          sarAtEntry:        indicators.sar        != null ? indicators.sar        : null,
-          sarTrend:          indicators.sarTrend   || null,
-          adxAtEntry:        indicators.adx        != null ? indicators.adx        : null,
-          adxTrending:       indicators.adxTrending != null ? indicators.adxTrending : null,
+          rsiAtEntry:        indicators.rsi    != null ? indicators.rsi   : null,
+          ema21AtEntry:      indicators.ema21  != null ? indicators.ema21 : null,
+          sarAtEntry:        indicators.sar    != null ? indicators.sar   : null,
+          sarTrend:          indicators.sarTrend || null,
         };
 
         tradeState.optionSymbol = symbol;

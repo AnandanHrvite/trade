@@ -667,13 +667,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryHourIST:      _entryHourIST,
     entryMinuteIST:    _entryMinuteIST,
     // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
-    rsiAtEntry:        entryMeta.rsiAtEntry  != null ? entryMeta.rsiAtEntry  : null,
-    ema9AtEntry:       entryMeta.ema9AtEntry != null ? entryMeta.ema9AtEntry : null,
-    ema9Slope:         entryMeta.ema9Slope   != null ? entryMeta.ema9Slope   : null,
-    sarAtEntry:        entryMeta.sarAtEntry  != null ? entryMeta.sarAtEntry  : null,
-    sarTrend:          entryMeta.sarTrend    || null,
-    adxAtEntry:        entryMeta.adxAtEntry  != null ? entryMeta.adxAtEntry  : null,
-    adxTrending:       entryMeta.adxTrending != null ? entryMeta.adxTrending : null,
+    rsiAtEntry:        entryMeta.rsiAtEntry   != null ? entryMeta.rsiAtEntry   : null,
+    ema21AtEntry:      entryMeta.ema21AtEntry != null ? entryMeta.ema21AtEntry : null,
+    sarAtEntry:        entryMeta.sarAtEntry   != null ? entryMeta.sarAtEntry   : null,
+    sarTrend:          entryMeta.sarTrend     || null,
   };
 
   // Set option symbol and start REST polling (no socket changes)
@@ -794,13 +791,10 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     bestPrice:        ptState.position.bestPrice        || null,   // peak favorable price during trade
     candlesHeld:      ptState.position.candlesHeld      || 0,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
-    rsiAtEntry:       ptState.position.rsiAtEntry   != null ? ptState.position.rsiAtEntry   : null,
-    ema9AtEntry:      ptState.position.ema9AtEntry  != null ? ptState.position.ema9AtEntry  : null,
-    ema9Slope:        ptState.position.ema9Slope    != null ? ptState.position.ema9Slope    : null,
-    sarAtEntry:       ptState.position.sarAtEntry   != null ? ptState.position.sarAtEntry   : null,
-    sarTrend:         ptState.position.sarTrend     || null,
-    adxAtEntry:       ptState.position.adxAtEntry   != null ? ptState.position.adxAtEntry   : null,
-    adxTrending:      ptState.position.adxTrending  != null ? ptState.position.adxTrending  : null,
+    rsiAtEntry:       ptState.position.rsiAtEntry    != null ? ptState.position.rsiAtEntry    : null,
+    ema21AtEntry:     ptState.position.ema21AtEntry  != null ? ptState.position.ema21AtEntry  : null,
+    sarAtEntry:       ptState.position.sarAtEntry    != null ? ptState.position.sarAtEntry    : null,
+    sarTrend:         ptState.position.sarTrend      || null,
     mfeSpotPts:       ptState.position.mfeSpotPts   || 0,
     maeSpotPts:       ptState.position.maeSpotPts   || 0,
     secsToMFE:        ptState.position.secsToMFE    || 0,
@@ -937,21 +931,17 @@ async function onCandleClose(candle) {
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
-  log(`   EMA9=${indicators.ema9!==undefined?indicators.ema9:"?"} slope=${indicators.ema9Slope!==undefined?indicators.ema9Slope:"?"}pt | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"}) | ADX=${indicators.adx!==undefined?indicators.adx:"?"}${indicators.adxTrending?"✓":"✗"}`);
-  log(`   Signal: ${signal} [${signalStrength||"n/a"}] | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
+  log(`   EMA21=${indicators.ema21!==undefined?indicators.ema21:"?"} | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"})`);
+  log(`   Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
   if (signal === "NONE" && !ptState.position) {
-    logNearMiss(indicators.filterAudit, "PAPER", log);
     skipLogger.appendSkipLog("swing", {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
-      ema9: indicators.ema9 ?? null,
-      ema9Slope: indicators.ema9Slope ?? null,
+      ema21: indicators.ema21 ?? null,
       rsi: indicators.rsi ?? null,
       sar: indicators.sar ?? null,
       sarTrend: indicators.sarTrend ?? null,
-      adx: indicators.adx ?? null,
-      audit: indicators.filterAudit || null,
     });
   }
 
@@ -1210,13 +1200,10 @@ async function onCandleClose(candle) {
 
       simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, {
         signalStrength: candleCloseStrength,
-        rsiAtEntry:  indicators.rsi        != null ? indicators.rsi   : null,
-        ema9AtEntry: indicators.ema9       != null ? indicators.ema9  : null,
-        ema9Slope:   indicators.ema9Slope  != null ? indicators.ema9Slope : null,
-        sarAtEntry:  indicators.sar        != null ? indicators.sar   : null,
-        sarTrend:    indicators.sarTrend   || null,
-        adxAtEntry:  indicators.adx        != null ? indicators.adx   : null,
-        adxTrending: indicators.adxTrending != null ? indicators.adxTrending : null,
+        rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
+        ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
+        sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
+        sarTrend:     indicators.sarTrend || null,
       });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
@@ -1461,13 +1448,10 @@ function onTick(tick) {
 
         simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, {
           signalStrength,
-          rsiAtEntry:  indicators.rsi        != null ? indicators.rsi   : null,
-          ema9AtEntry: indicators.ema9       != null ? indicators.ema9  : null,
-          ema9Slope:   indicators.ema9Slope  != null ? indicators.ema9Slope : null,
-          sarAtEntry:  indicators.sar        != null ? indicators.sar   : null,
-          sarTrend:    indicators.sarTrend   || null,
-          adxAtEntry:  indicators.adx        != null ? indicators.adx   : null,
-          adxTrending: indicators.adxTrending != null ? indicators.adxTrending : null,
+          rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
+          ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
+          sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
+          sarTrend:     indicators.sarTrend || null,
         }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);

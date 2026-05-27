@@ -72,14 +72,36 @@ After an **SL hit or option-stop** on a side, new entries on **that side** are b
 
 ## 8. Expiry & live gating
 
-- **0DTE refusal**: `/start` is blocked when the configured expiry == today (gamma risk).
+- **0DTE refusal**: live/paper `/start` is blocked when the configured expiry == today (gamma risk). **Replay bypasses this** (`force=1`) — a historical replay must not be aborted by a live-trading safety gate.
 - `TRADE_EXPIRY_DAY_ONLY` — when on, only trade on NIFTY expiry day.
 - `SWING_OPTION_EXPIRY_OVERRIDE` / `SWING_OPTION_EXPIRY_TYPE` let Swing run a different expiry from the other strategies; blank inherits the common expiry.
 - **Live order placement is double-gated**: `SWING_LIVE_ENABLED` **and** global `LIVE_HARNESS_DRY_RUN=false`, with a per-strategy `SWING_LIVE_DRY_RUN` override to keep Swing simulated while others go live.
 
-## 9. Removed vs the previous strategy
+## 9. Charts (paper status, live status, replay)
 
-EMA9 touch, EMA30 trend gate, ADX filter, candle-body filter, min/max SAR-distance gates, Logic-3 SAR-lag overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trailing, hybrid initial-SL cap (max/min pts), the optional prev-candle *structural* trail, and the 50% candle rule are all gone. Their Settings fields were removed.
+Every swing chart overlays the indicators the strategy actually decides on:
+- **EMA21** (OHLC4) — solid orange line.
+- **Parabolic SAR** (0.02/0.2) — discrete **dots** (line hidden, point-markers only).
+- **RSI(14)** — its own bottom price-scale, with dashed level lines at `RSI_CE_MIN` (green "CE")
+  and `RSI_PE_MAX` (red "PE") so the entry bands are visible. (Overbought/oversold caps
+  `RSI_CE_MAX`/`RSI_PE_MIN` are enforced in code; the visible band lines are the momentum thresholds.)
+
+Data: `GET /swing-paper/status/chart-data` and `/swing-live/status/chart-data` return
+`{ candles, markers, ema21, sar, rsi, rsiCeMin, rsiPeMax, stopLoss, entryPrice }`. Replay harvests
+the same contract. (Backtest uses Chart.js equity curves, not a candlestick chart — no overlays.)
+
+## 10. Logging
+
+All swing logs reflect this strategy (no EMA9/ADX/STRONG-MARGINAL anywhere):
+- Per-candle decision log: `[STRAT … ] EMA21=… | RSI=… | SAR=…(BULL/BEAR) | C/H/L`.
+- Candle-close summary (paper/live): `EMA21=… | RSI=… | SAR=…(trend)`.
+- Skip log ([skipLogger](src/utils/skipLogger.js)): records `ema21 / rsi / sar / sarTrend` + the block reason.
+- Trade log ([tradeLogger](src/utils/tradeLogger.js)) JSONL: per-trade record carries `rsiAtEntry / ema21AtEntry / sarAtEntry / sarTrend`, MFE/MAE, charges, etc.
+- Startup banner: entry rule + stop/exit + risk-guard summary (see swingPaper/swingLive `/start`).
+
+## 11. Removed vs the previous strategy
+
+EMA9 touch, EMA30 trend gate, ADX filter, candle-body filter, min/max SAR-distance gates, Logic-3 SAR-lag overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trailing, hybrid initial-SL cap (max/min pts), the optional prev-candle *structural* trail, the 50% candle rule, and the near-miss "N/8 filter audit" log are all gone. Their Settings fields were removed.
 
 ---
 
