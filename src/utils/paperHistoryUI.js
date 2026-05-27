@@ -179,9 +179,9 @@ function dailyFilesSectionHTML() {
         <span class="tbar-label">📁 Daily Data Files</span>
         <span class="tbar-count" id="dailyFilesCnt"></span>
         <button class="copy-btn" onclick="copyAllDailyFiles(this)" style="margin-left:auto;" title="Copy all skip + trade JSONL across all dates">📋 Copy All Data</button>
-        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Hide</button>
+        <button class="dw-toggle" onclick="toggleDailyFiles()" id="dailyFilesToggle">Show</button>
       </div>
-      <div id="dailyFilesBody" style="overflow-x:auto;">
+      <div id="dailyFilesBody" style="overflow-x:auto;display:none;">
         <table id="dailyFilesTbl" class="tbl" style="width:100%;"><thead><tr>
           <th>Date (IST)</th><th>Skip JSONL</th><th>Trade JSONL</th><th>Actions</th>
         </tr></thead><tbody id="dailyFilesRows"><tr><td colspan="4" style="text-align:center;color:#4a6080;padding:12px;">Loading…</td></tr></tbody></table>
