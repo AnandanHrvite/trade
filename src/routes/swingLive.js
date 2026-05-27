@@ -1206,9 +1206,16 @@ async function onCandleClose(candle) {
   if (tradeState.position && stopLoss != null) {
     const pos     = tradeState.position;
     const oldSL   = pos.stopLoss;
-    const tighten = pos.side === "CE"
+    // Guard: SAR stop only valid on the PROTECTIVE side of price. For override
+    // entries (SAR not flipped yet) the live SAR is on the wrong side — adopting it
+    // would push the stop beyond price and trigger an instant exit. Only trail off
+    // SAR once it has flipped (CE: SAR below price, PE: SAR above price).
+    const sarOnProtectiveSide = pos.side === "CE"
+      ? stopLoss < candle.close
+      : stopLoss > candle.close;
+    const tighten = sarOnProtectiveSide && (pos.side === "CE"
       ? (oldSL === null || stopLoss > oldSL)
-      : (oldSL === null || stopLoss < oldSL);
+      : (oldSL === null || stopLoss < oldSL));
     if (tighten && oldSL !== stopLoss) {
       pos.stopLoss = stopLoss;
       const _optSAR = tradeState.optionLtp ? ` | opt=₹${tradeState.optionLtp}` : "";
@@ -1633,7 +1640,25 @@ function onSpotTick(tick) {
       }
     }
 
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
+    // ── Strong-only gate (intra-candle): mirrors candle-close gate (~line 1306) ──
+    // On 5-min the intra-candle path is primary, so without this STRONG_ONLY leaks
+    // every MARGINAL signal (the candle-close gate is rarely reached). Log once/candle.
+    const _strongOnlyBlocks = _SWING_STRONG_ONLY && !isStrongSignal;
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && _strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
+      if (!tradeState._strongOnlyLoggedCandle || tradeState._strongOnlyLoggedCandle !== _currentBarTime) {
+        tradeState._strongOnlyLoggedCandle = _currentBarTime;
+        log(`🚫 [LIVE] STRONG_ONLY mode — MARGINAL intra-candle entry blocked | Signal: ${signal}`);
+        skipLogger.appendSkipLog("swing", {
+          gate: "strong_only",
+          reason: "MARGINAL blocked by SWING_STRONG_ONLY",
+          spot: ltp,
+          signalStrength: signalStrength || "MARGINAL",
+          signal,
+          path: "intra-candle",
+        });
+      }
+    }
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && !_strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       const _vixIntraVal = getCachedVix();
       const _vixIntraBlocked = vixFilter.VIX_ENABLED && _vixIntraVal != null && (

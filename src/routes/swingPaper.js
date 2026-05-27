@@ -1066,14 +1066,24 @@ async function onCandleClose(candle) {
   if (ptState.position && stopLoss !== null && stopLoss !== undefined) {
     const pos   = ptState.position;
     const oldSL = pos.stopLoss;
-    const tighten = pos.side === "CE"
+    // Guard: a SAR-based stop is only valid on the PROTECTIVE side of price.
+    // For an override entry (Logic-3: SAR hasn't flipped yet) the live SAR sits on
+    // the WRONG side of price — adopting it would push the stop beyond price and
+    // trigger an instant candle-close exit. Only trail off SAR once it has flipped
+    // to support the trade (CE: SAR below price, PE: SAR above price).
+    const sarOnProtectiveSide = pos.side === "CE"
+      ? stopLoss < candle.close
+      : stopLoss > candle.close;
+    const tighten = sarOnProtectiveSide && (pos.side === "CE"
       ? (oldSL === null || stopLoss > oldSL)   // CE: higher SAR = tighter SL
-      : (oldSL === null || stopLoss < oldSL);  // PE: lower SAR = tighter SL
+      : (oldSL === null || stopLoss < oldSL)); // PE: lower SAR = tighter SL
     if (tighten) {
       pos.stopLoss = stopLoss;
       const _optSARp = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
       const _sarLabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? (pos.side==="CE"?"↑LONG":"↓SHORT") : (pos.side==="CE"?"↑CE":"↓PE");
       log(`🔄 [PAPER] SAR tightened: ₹${oldSL} → ₹${stopLoss} (${_sarLabel})${_optSARp}`);
+    } else if (!sarOnProtectiveSide) {
+      log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} SAR on wrong side of price ₹${candle.close} (not flipped yet — keeping EMA/structural SL)`);
     } else {
       log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} needs ${pos.side==="CE"?"higher":"lower"}`);
     }
@@ -1452,7 +1462,25 @@ function onTick(tick) {
       }
     }
 
-    if ((signal === "BUY_CE" || signal === "BUY_PE") && (TRADE_RES === 5 || isStrongSignal)) {
+    // ── Strong-only gate (intra-candle): mirrors candle-close gate (~line 1175) ──
+    // On 5-min the intra-candle path is primary, so without this STRONG_ONLY leaks
+    // every MARGINAL signal (the candle-close gate is rarely reached). Log once/candle.
+    const _strongOnlyBlocks = _SWING_STRONG_ONLY && !isStrongSignal;
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && _strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
+      if (!ptState._strongOnlyLoggedCandle || ptState._strongOnlyLoggedCandle !== currentBarTime) {
+        ptState._strongOnlyLoggedCandle = currentBarTime;
+        log(`🚫 [PAPER] STRONG_ONLY mode — MARGINAL intra-candle entry blocked | Signal: ${signal}`);
+        skipLogger.appendSkipLog("swing", {
+          gate: "strong_only",
+          reason: "MARGINAL blocked by SWING_STRONG_ONLY",
+          spot: ltp,
+          signalStrength: signalStrength || "MARGINAL",
+          signal,
+          path: "intra-candle",
+        });
+      }
+    }
+    if ((signal === "BUY_CE" || signal === "BUY_PE") && !_strongOnlyBlocks && (TRADE_RES === 5 || isStrongSignal)) {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
       // Skip VIX filter in simulation mode
       const _vixIntraVal = ptState._simMode ? null : getCachedVix();
