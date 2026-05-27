@@ -65,35 +65,6 @@ const _SWING_MAX_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MAX_INITIAL_SL_P
 const _SWING_MIN_INITIAL_SL_PTS  = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
 const _SWING_STRONG_ONLY         = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
 
-// ── Prev-candle structural trail (candle-by-candle, profit-only) ──────────────
-// Disabled by default — enable after backtest validation.
-// Composes with SAR + tier trail (tighten-only — never loosens).
-const _SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-const _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
-const _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
-const _SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
-
-// Tighten-only, profit-gated: returns the proposed SL (or current SL if no change).
-// `lastCandle` = the candle that just closed; `entrySpot` = entry NIFTY level.
-function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
-  if (!_SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
-  if (!lastCandle || currentSL == null || entrySpot == null) return currentSL;
-  const profit = side === "CE"
-    ? (bestPrice || entrySpot) - entrySpot
-    : entrySpot - (bestPrice || entrySpot);
-  if (profit < _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS) return currentSL;
-  const structPx = side === "CE" ? lastCandle.low : lastCandle.high;
-  // Skip wide bars — don't let one outsized candle loosen the structural trail target
-  const gap = side === "CE" ? (lastCandle.close - structPx) : (structPx - lastCandle.close);
-  if (gap > _SWING_PREV_CANDLE_TRAIL_MAX_GAP) return currentSL;
-  const proposed = side === "CE"
-    ? structPx - _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS
-    : structPx + _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
-  // Tighten-only
-  if (side === "CE" && proposed > currentSL) return parseFloat(proposed.toFixed(2));
-  if (side === "PE" && proposed < currentSL) return parseFloat(proposed.toFixed(2));
-  return currentSL;
-}
 
 // Same-side SL cooldown config + helper (mirrors paper)
 const _SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
@@ -546,7 +517,7 @@ function startOptionPolling(symbol) {
       if (!tradeState.position.optionEntryLtp) {
         tradeState.position.optionEntryLtp     = ltp;
         tradeState.position.optionEntryLtpTime = istNow();
-        log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
+        log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss})`);
         placeHardSL();  // Place exchange-level SL-M once we have option premium
       }
     }
@@ -589,7 +560,7 @@ function startOptionPolling(symbol) {
         if (!tradeState.position.optionEntryLtp) {
           tradeState.position.optionEntryLtp     = ltp;
           tradeState.position.optionEntryLtpTime = istNow();
-          log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss} | TrailActivate: +${tradeState.position.trailActivatePts}pt)`);
+          log(`📌 [LIVE] Option entry LTP: ₹${ltp} (SPOT @ ₹${tradeState.position.spotAtEntry} | SL: ₹${tradeState.position.stopLoss})`);
           placeHardSL();  // Place exchange-level SL-M once we have option premium
         }
       }
@@ -1488,7 +1459,7 @@ async function onCandleClose(candle) {
       const entryLabel = INSTR === "NIFTY_FUTURES"
         ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
         : `BUY ${getLotQty()} × ${symbol}`;
-      log(`📝 [LIVE] ${entryLabel} @ SPOT ₹${candle.close} | SL: ₹${stopLoss} | TrailActivate: +${_dynTrailActivate}pt | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
+      log(`📝 [LIVE] ${entryLabel} @ SPOT ₹${candle.close} | SL: ₹${stopLoss} | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
       if (_slCapResult.capLog) log(_slCapResult.capLog);
       // ── Telegram notification ───────────────────────────────────────────────
       notifyEntry({
@@ -1513,14 +1484,6 @@ async function onCandleClose(candle) {
   }
 }
 
-// ── Dynamic trail gap — mirrors paperTrade exactly ───────────────────────────
-// Uses module-level cached constants (parsed once at startup) instead of
-// reading process.env on every tick — eliminates 750+ env reads/min.
-function getDynamicTrailGap(moveInFavour) {
-  if (moveInFavour < _TRAIL_T1_UPTO) return _TRAIL_T1_GAP;
-  if (moveInFavour < _TRAIL_T2_UPTO) return _TRAIL_T2_GAP;
-  return _TRAIL_T3_GAP;
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tick handler — NIFTY spot ticks ONLY
@@ -1837,7 +1800,7 @@ function onSpotTick(tick) {
         const entryLabel2 = INSTR === "NIFTY_FUTURES"
           ? `${side === "CE" ? "LONG" : "SHORT"} ${getLotQty()} × ${symbol}`
           : `BUY ${getLotQty()} × ${symbol}`;
-        log(`📝 [LIVE] ${entryLabel2} @ SPOT ₹${ltp} | SL: ₹${stopLoss} | TrailActivate: +${_dynTrailActivateIntra}pt | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
+        log(`📝 [LIVE] ${entryLabel2} @ SPOT ₹${ltp} | SL: ₹${stopLoss} | Opt: capturing… | OrderID: ${result.orderId || "?"}`);
         if (_slCapResultIntra.capLog) log(_slCapResultIntra.capLog);
         notifyEntry({
           mode:           "LIVE",
@@ -2109,7 +2072,7 @@ router.get("/start", async (req, res) => {
     }
 
     // Check 4: Risk config summary (always logs)
-    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Trail T1=${_TRAIL_T1_GAP}→T2=${_TRAIL_T2_GAP}→T3=${_TRAIL_T3_GAP}pt | ActivateFloor: +${_TRAIL_ACTIVATE_PTS}pt`);
+    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: prev-candle trailing | Breakeven: +${process.env.BREAKEVEN_PTS || "25"}pt | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
     log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
 
     const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
@@ -2756,7 +2719,7 @@ router.get("/status", (req, res) => {
           <div id="ajax-lt-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (SAR)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
           <div id="ajax-lt-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
         </div>
@@ -2765,11 +2728,11 @@ router.get("/status", (req, res) => {
           <div id="ajax-lt-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry ₹" + optEntryLtp.toFixed(2) + " × " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
-        <div id="ajax-trail-card" style="background:#071a12;border:1px solid ${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail Status</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "#8b5cf6" : "#f59e0b"};">${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "🔒 ACTIVE" : "⏳ Waiting"}</div>
+        <div id="ajax-trail-card" data-be="${parseFloat(process.env.BREAKEVEN_PTS || "25")}" style="background:#071a12;border:1px solid ${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
+          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#f59e0b"};">${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "🔒 Breakeven+" : "Prev-candle " + (pos.side === "CE" ? "low" : "high")}</div>
           <div id="ajax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Activates at +${pos.trailActivatePts || 15}pt | Gap: ${_TRAIL_T1_GAP}→${_TRAIL_T2_GAP}→${_TRAIL_T3_GAP}pt</div>
+          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trails prev-candle ${pos.side === "CE" ? "low" : "high"} | Breakeven at +${parseFloat(process.env.BREAKEVEN_PTS || "25")}pt</div>
         </div>
       </div>
 
@@ -3615,15 +3578,16 @@ async function manualEntry(side) {
         if (trailCard && trailStat && trailBest) {
           const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
           const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          const tProfDir    = p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice;
-          const tThreshold  = p.trailActivatePts || 15;
-          const tOn         = tActive && tProfDir >= tThreshold;
-          trailCard.style.borderColor = tOn ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = tOn ? '\uD83D\uDD12 ACTIVE' : '\u23F3 Waiting';
-          trailStat.style.color  = tOn ? '#8b5cf6' : '#f59e0b';
+          const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
+          const bePts       = parseFloat(trailCard.dataset.be || '25');
+          const beOn        = tProfDir >= bePts;
+          const sideRef     = p.side === 'CE' ? 'low' : 'high';
+          trailCard.style.borderColor = beOn ? '#8b5cf6' : '#134e35';
+          trailStat.textContent  = beOn ? '\uD83D\uDD12 Breakeven+' : 'Prev-candle ' + sideRef;
+          trailStat.style.color  = beOn ? '#8b5cf6' : '#f59e0b';
           const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
           trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Activates at +' + tThreshold + 'pt | needs ' + Math.max(0, tThreshold - tProfDir).toFixed(1) + 'pt more';
+          if (trailAct) trailAct.textContent = 'Trails prev-candle ' + sideRef + ' | Breakeven at +' + bePts + 'pt';
         }
       }
 

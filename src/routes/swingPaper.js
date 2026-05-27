@@ -42,45 +42,19 @@ const { EMA, PSAR } = require("technicalindicators");
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
 let TRADE_RES;            // candle resolution in minutes
-let _TRAIL_T1_UPTO;
-let _TRAIL_T2_UPTO;
-let _TRAIL_T1_GAP;
-let _TRAIL_T2_GAP;
-let _TRAIL_T3_GAP;
-let _TRAIL_ACTIVATE_PTS;
 let _MAX_DAILY_TRADES;
 let _MAX_DAILY_LOSS;
 let _OPT_STOP_PCT;
-let _SWING_USE_PREV_CANDLE_SL;
-let _SWING_MAX_INITIAL_SL_PTS;
-let _SWING_MIN_INITIAL_SL_PTS;
 let _SWING_STRONG_ONLY;
-let _SWING_PREV_CANDLE_TRAIL_ENABLED;
-let _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS;
-let _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
-let _SWING_PREV_CANDLE_TRAIL_MAX_GAP;
 let _STOP_MINS;
 let _SWING_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
 let _SWING_EOD_EXIT_MINS;      // square off any open SWING position at/after this IST time (before day close)
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-  _TRAIL_T1_UPTO                         = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-  _TRAIL_T2_UPTO                         = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
-  _TRAIL_T1_GAP                          = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
-  _TRAIL_T2_GAP                          = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-  _TRAIL_T3_GAP                          = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
-  _TRAIL_ACTIVATE_PTS                    = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
   _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
   _MAX_DAILY_LOSS                        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
   _OPT_STOP_PCT                          = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-  _SWING_USE_PREV_CANDLE_SL              = (process.env.SWING_USE_PREV_CANDLE_SL || "true").toLowerCase() === "true";
-  _SWING_MAX_INITIAL_SL_PTS              = parseFloat(process.env.SWING_MAX_INITIAL_SL_PTS || "50");
-  _SWING_MIN_INITIAL_SL_PTS              = parseFloat(process.env.SWING_MIN_INITIAL_SL_PTS || "15");
   _SWING_STRONG_ONLY                     = (process.env.SWING_STRONG_ONLY || "false").toLowerCase() === "true";
-  _SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
-  _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
-  _SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
@@ -93,24 +67,6 @@ function _refreshConfig() {
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
-
-function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
-  if (!_SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
-  if (!lastCandle || currentSL == null || entrySpot == null) return currentSL;
-  const profit = side === "CE"
-    ? (bestPrice || entrySpot) - entrySpot
-    : entrySpot - (bestPrice || entrySpot);
-  if (profit < _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS) return currentSL;
-  const structPx = side === "CE" ? lastCandle.low : lastCandle.high;
-  const gap = side === "CE" ? (lastCandle.close - structPx) : (structPx - lastCandle.close);
-  if (gap > _SWING_PREV_CANDLE_TRAIL_MAX_GAP) return currentSL;
-  const proposed = side === "CE"
-    ? structPx - _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS
-    : structPx + _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
-  if (side === "CE" && proposed > currentSL) return parseFloat(proposed.toFixed(2));
-  if (side === "PE" && proposed < currentSL) return parseFloat(proposed.toFixed(2));
-  return currentSL;
-}
 
 // ── Same-side SL cooldown ───────────────────────────────────────────────────
 // After an SL hit (price SL or option stop), block new entries on THAT side for
@@ -512,7 +468,7 @@ async function _optionPollTick(symbol) {
     if (!ptState.position.optionEntryLtp) {
       ptState.position.optionEntryLtp = ltp;
       ptState.position.optionEntryLtpTime = istNow();
-      log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss} | TrailActivate: +${ptState.position.trailActivatePts}pt)`);
+      log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
     }
 
     // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
@@ -669,11 +625,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   const _origSAR_SL = stopLoss;
   let _capLog = null;
 
-  // Trail activation from env — dynamic: 25% of effective SL gap, floored at env, capped at 40pts
-  // Uses the FINAL (capped) SL gap so trail activation scales with real risk, not original SAR gap.
-  const _initialSARgapPaper = stopLoss ? Math.abs(_entrySpot - stopLoss) : 0;
-  const _dynTrailActivatePaper = Math.min(40, Math.max(_TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapPaper * 0.25)));
-
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
   const _entryIstMin     = Math.floor((Math.floor(simNow() / 1000) + 19800) / 60) % 1440;
   const _entryHourIST    = Math.floor(_entryIstMin / 60);
@@ -691,9 +642,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     reason,
     stopLoss:          stopLoss || null,
     initialStopLoss:   stopLoss || null,
-    sarStopLoss:       _origSAR_SL || null,   // original SAR-based SL before hybrid cap (for analysis)
-    trailActivatePts:  _dynTrailActivatePaper,
-    entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry — for 50% rule
+    sarStopLoss:       _origSAR_SL || null,   // initial SL (prev-candle) at entry, for analysis
+    entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry (retained for trade-record continuity)
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
     candlesHeld:       0,
@@ -739,7 +689,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   }
 
   const slText = stopLoss ? ` | SL: ₹${stopLoss}` : "";
-  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | TrailActivate: +${_dynTrailActivatePaper}pt | Opt: capturing… | Reason: ${reason}`);
+  log(`📝 [PAPER] BUY ${qty} × ${symbol} @ SPOT ₹${price}${slText} | Opt: capturing… | Reason: ${reason}`);
   if (_capLog) log(_capLog);
   if (entryPrevMid !== null) {
     // log(`📐 [PAPER] 50% rule ref fixed: prev candle mid = ₹${entryPrevMid} (exit if ${side}=PE: spot > ₹${entryPrevMid} | CE: spot < ₹${entryPrevMid})`);
@@ -1276,34 +1226,6 @@ async function onCandleClose(candle) {
       clearTimeout(_ptEntryTimer);
     });
   }
-}
-
-// ── Dynamic trail gap — tightens as profit grows ─────────────────────────────
-// Fixed 60pt gap throughout means giving back 65% of any move on reversal.
-// Instead: wide early (noise protection) → tight late (profit lock).
-//
-// Tier thresholds (configurable via .env):
-//   TRAIL_TIER1_UPTO  = 40   pts  → gap = TRAIL_TIER1_GAP  (default 60pt)
-//   TRAIL_TIER2_UPTO  = 70   pts  → gap = TRAIL_TIER2_GAP  (default 40pt)
-//   above TIER2_UPTO         → gap = TRAIL_TIER3_GAP  (default 30pt)
-//
-// Example with today's 92pt PE trade:
-//   0–40pt  move: SL stays 60pt behind best  (early noise buffer)
-//   40–70pt move: SL tightens to 40pt behind (confirmed profit zone)
-//   70pt+   move: SL tightens to 30pt behind (lock in big move)
-//   → At peak 92pt: SL = peak + 30 → exits ~62pt profit vs 32pt with fixed 60pt
-//
-// Why these numbers:
-//   60pt early: Nifty 15-min bars regularly wick 40-50pt — need room to breathe
-//   40pt mid:   After 40pt move we have confirmed momentum, 40pt still safe
-//   30pt late:  After 70pt move, tighten hard — don't give back more than ~30pt
-//
-function getDynamicTrailGap(moveInFavour) {
-  // Uses module-level cached constants (parsed once at startup) instead of
-  // reading process.env on every tick — eliminates 750+ env reads/min.
-  if (moveInFavour < _TRAIL_T1_UPTO) return _TRAIL_T1_GAP;
-  if (moveInFavour < _TRAIL_T2_UPTO) return _TRAIL_T2_GAP;
-  return _TRAIL_T3_GAP;
 }
 
 // ── Tick → candle builder (NIFTY SPOT ONLY) ──────────────────────────────────────────
@@ -2698,7 +2620,7 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "▲" : "▼"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (SAR)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (prev-candle)</div>
           <div id="ajax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "—"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "—"}</div>
         </div>
@@ -2707,11 +2629,11 @@ router.get("/status", (req, res) => {
           <div id="ajax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry 20b9" + optEntryLtp.toFixed(2) + " 2212 " + optStopPct : "awaiting entry LTP"}</div>
         </div>
-        <div id="ajax-trail-card" style="background:#071a12;border:1px solid ${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trail Status</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "#8b5cf6" : "#f59e0b"};">${trailActive && trailProfit >= (pos.trailActivatePts || 15) ? "🔒 ACTIVE" : "⏳ Waiting"}</div>
+        <div id="ajax-trail-card" data-be="${parseFloat(process.env.BREAKEVEN_PTS || "25")}" style="background:#071a12;border:1px solid ${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
+          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#f59e0b"};">${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "🔒 Breakeven+" : "Prev-candle " + (pos.side === "CE" ? "low" : "high")}</div>
           <div id="ajax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Activates at +${pos.trailActivatePts || 15}pt | Gap: ${_TRAIL_T1_GAP}→${_TRAIL_T2_GAP}→${_TRAIL_T3_GAP}pt</div>
+          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trails prev-candle ${pos.side === "CE" ? "low" : "high"} | Breakeven at +${parseFloat(process.env.BREAKEVEN_PTS || "25")}pt</div>
         </div>
       </div>
 
@@ -3560,15 +3482,16 @@ ${modalJS()}
         if (trailCard && trailStat && trailBest) {
           const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
           const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
-          const tProfDir    = p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice;
-          const tThreshold  = p.trailActivatePts || 15;
-          const tOn         = tActive && tProfDir >= tThreshold;
-          trailCard.style.borderColor = tOn ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = tOn ? '\uD83D\uDD12 ACTIVE' : '\u23F3 Waiting';
-          trailStat.style.color  = tOn ? '#8b5cf6' : '#f59e0b';
+          const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
+          const bePts       = parseFloat(trailCard.dataset.be || '25');
+          const beOn        = tProfDir >= bePts;
+          const sideRef     = p.side === 'CE' ? 'low' : 'high';
+          trailCard.style.borderColor = beOn ? '#8b5cf6' : '#134e35';
+          trailStat.textContent  = beOn ? '\uD83D\uDD12 Breakeven+' : 'Prev-candle ' + sideRef;
+          trailStat.style.color  = beOn ? '#8b5cf6' : '#f59e0b';
           const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
           trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Activates at +' + tThreshold + 'pt | needs ' + Math.max(0, tThreshold - tProfDir).toFixed(1) + 'pt more';
+          if (trailAct) trailAct.textContent = 'Trails prev-candle ' + sideRef + ' | Breakeven at +' + bePts + 'pt';
         }
       }
 
