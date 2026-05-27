@@ -5,9 +5,11 @@
  *   1. User takes entry in Zerodha manually
  *   2. Clicks "Fetch & Start Tracking" — zero manual input needed
  *   3. Bot reads open NIFTY position from Zerodha (symbol, qty, avg price)
- *   4. Fetches 15-min candles + runs SAR strategy → gets SAR as initial SL
+ *   4. Fetches candles + runs the swing strategy → initial SL = previous-candle low/high
+ *      (SAR value as fallback when no signal is live)
  *   5. Polls NIFTY spot every 1 second via Fyers REST
- *   6. Trails SL with same tiered logic as paper/live trade
+ *   6. Trails SL the same way as paper/live: tighten to each completed candle's
+ *      low (CE) / high (PE), plus breakeven (SL → entry after +BREAKEVEN_PTS)
  *   7. Sends Telegram alert when SL is hit
  *   8. Marks position closed (user still exits in Zerodha manually)
  */
@@ -19,18 +21,27 @@ const { sendTelegram } = require("../utils/notify");
 const { buildSidebar, sidebarCSS, toastJS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
-// Trail tier config (same as paper/live)
-const _T1_UPTO    = parseFloat(process.env.TRAIL_TIER1_UPTO   || "40");
-const _T2_UPTO    = parseFloat(process.env.TRAIL_TIER2_UPTO   || "70");
-const _T1_GAP     = parseFloat(process.env.TRAIL_TIER1_GAP    || "60");
-const _T2_GAP     = parseFloat(process.env.TRAIL_TIER2_GAP    || "40");
-const _T3_GAP     = parseFloat(process.env.TRAIL_TIER3_GAP    || "30");
-const _TRAIL_ACT  = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "15");
+// Trailing config (mirrors the swing strategy): prev-candle trail + breakeven.
+function _bePts()   { return parseFloat(process.env.BREAKEVEN_PTS || "25"); }
+function _resMin()  { return parseInt(process.env.TRADE_RESOLUTION || "5", 10); }
 
-function getDynamicTrailGap(m) {
-  if (m < _T1_UPTO) return _T1_GAP;
-  if (m < _T2_UPTO) return _T2_GAP;
-  return _T3_GAP;
+// Last FULLY-COMPLETED candle's low (CE) / high (PE) — the prev-candle trail reference.
+async function fetchPrevCandleExtreme(side) {
+  try {
+    const { fetchCandles } = require("../services/backtestEngine");
+    const { fetchCandlesCached } = require("../utils/candleCache");
+    const resMin  = _resMin();
+    const today   = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const from    = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    from.setDate(from.getDate() - 5);
+    const fromStr = from.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candles = await fetchCandlesCached("NSE:NIFTY50-INDEX", String(resMin), fromStr, today, fetchCandles);
+    const nowSec  = Math.floor(Date.now() / 1000);
+    const done    = candles.filter(c => (c.time + resMin * 60) <= nowSec); // fully closed only
+    if (!done.length) return null;
+    const last = done[done.length - 1];
+    return parseFloat((side === "CE" ? last.low : last.high).toFixed(2));
+  } catch (_) { return null; }
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -76,11 +87,16 @@ async function computeSLFromSAR(side) {
     const candles = await fetchCandlesCached("NSE:NIFTY50-INDEX", "15", fromStr, today, fetchCandles);
     if (candles.length < 30) { tlog(`⚠️ Only ${candles.length} candles — using fallback SL`); return null; }
     const result = getActiveStrategy().getSignal(candles.slice(-60), { silent: true });
+    // Prefer the strategy's prev-candle SL; fall back to the SAR value when no signal is live.
     if (result.stopLoss && typeof result.stopLoss === "number") {
-      tlog(`✅ SAR SL: ₹${result.stopLoss} | Signal: ${result.signal}`);
+      tlog(`✅ Initial SL (prev-candle): ₹${result.stopLoss} | Signal: ${result.signal}`);
       return parseFloat(result.stopLoss.toFixed(2));
     }
-    tlog(`⚠️ SAR SL not available (${result.reason ? result.reason.slice(0,60) : "no reason"})`);
+    if (result.sar && typeof result.sar === "number") {
+      tlog(`✅ Initial SL (SAR fallback): ₹${result.sar} | Signal: ${result.signal}`);
+      return parseFloat(result.sar.toFixed(2));
+    }
+    tlog(`⚠️ SL not available (${result.reason ? result.reason.slice(0,60) : "no reason"})`);
     return null;
   } catch (err) {
     tlog(`⚠️ SAR computation error: ${err.message}`);
@@ -107,44 +123,48 @@ async function trackerTick() {
     if (!spot) return;
     tracker.lastSpot = spot; tracker.lastSpotTime = istNow();
     const pos = tracker.position;
-    const ACT = pos.trailActivatePts || _TRAIL_ACT;
+    const bePts = _bePts();
 
-    if (pos.side === "CE") {
-      if (!pos.bestPrice || spot > pos.bestPrice) pos.bestPrice = spot;
-      const move = pos.bestPrice - pos.entrySpot;
-      if (move >= ACT) {
-        const gap = getDynamicTrailGap(move);
-        const trailSL = parseFloat((pos.bestPrice - gap).toFixed(2));
-        const eff = pos.entryPrevMid !== null ? Math.max(trailSL, pos.entryPrevMid) : trailSL;
-        if (eff > pos.stopLoss) {
-          tlog(`📈 Trail CE [T${move<_T1_UPTO?1:move<_T2_UPTO?2:3} gap=${gap}pt]: best=₹${pos.bestPrice} (+${move.toFixed(1)}pt) SL ₹${pos.stopLoss}→₹${eff}`);
-          pos.stopLoss = eff;
-          sendTelegram(`📈 [TRACKER] Trail CE → SL ₹${eff}\nBest: ₹${pos.bestPrice} (+${move.toFixed(1)}pt)`);
+    // Track favourable extreme (for display)
+    if (pos.side === "CE") { if (!pos.bestPrice || spot > pos.bestPrice) pos.bestPrice = spot; }
+    else                   { if (!pos.bestPrice || spot < pos.bestPrice) pos.bestPrice = spot; }
+
+    // ── Prev-candle trailing: once per completed candle, tighten SL to that candle's low/high ──
+    const resMin = _resMin();
+    const bucket = Math.floor(Date.now() / (resMin * 60 * 1000));
+    if (pos._lastTrailBucket == null) pos._lastTrailBucket = bucket;
+    else if (bucket !== pos._lastTrailBucket) {
+      pos._lastTrailBucket = bucket;
+      const ref = await fetchPrevCandleExtreme(pos.side);
+      if (ref != null) {
+        if (pos.side === "CE" && ref > pos.stopLoss) {
+          tlog(`📐 Trail CE → prev-candle low ₹${ref} (was ₹${pos.stopLoss})`);
+          pos.stopLoss = ref;
+          sendTelegram(`📐 [TRACKER] Trail CE → SL ₹${ref} (prev-candle low)`);
+        } else if (pos.side === "PE" && ref < pos.stopLoss) {
+          tlog(`📐 Trail PE → prev-candle high ₹${ref} (was ₹${pos.stopLoss})`);
+          pos.stopLoss = ref;
+          sendTelegram(`📐 [TRACKER] Trail PE → SL ₹${ref} (prev-candle high)`);
         }
       }
-      if (spot <= pos.stopLoss) {
-        tlog(`🛑 SL HIT CE — spot ₹${spot} <= SL ₹${pos.stopLoss}`);
-        sendTelegram(`🚨 [TRACKER] SL HIT — NIFTY ₹${spot} crossed below ₹${pos.stopLoss}\n⚡ Close your CE in Zerodha NOW!`);
-        tracker.status = "sl_hit"; tracker.position = null; stopTracking();
-      }
-    } else {
-      if (!pos.bestPrice || spot < pos.bestPrice) pos.bestPrice = spot;
-      const move = pos.entrySpot - pos.bestPrice;
-      if (move >= ACT) {
-        const gap = getDynamicTrailGap(move);
-        const trailSL = parseFloat((pos.bestPrice + gap).toFixed(2));
-        const eff = pos.entryPrevMid !== null ? Math.min(trailSL, pos.entryPrevMid) : trailSL;
-        if (eff < pos.stopLoss) {
-          tlog(`📉 Trail PE [T${move<_T1_UPTO?1:move<_T2_UPTO?2:3} gap=${gap}pt]: best=₹${pos.bestPrice} (+${move.toFixed(1)}pt) SL ₹${pos.stopLoss}→₹${eff}`);
-          pos.stopLoss = eff;
-          sendTelegram(`📉 [TRACKER] Trail PE → SL ₹${eff}\nBest: ₹${pos.bestPrice} (+${move.toFixed(1)}pt)`);
-        }
-      }
-      if (spot >= pos.stopLoss) {
-        tlog(`🛑 SL HIT PE — spot ₹${spot} >= SL ₹${pos.stopLoss}`);
-        sendTelegram(`🚨 [TRACKER] SL HIT — NIFTY ₹${spot} crossed above ₹${pos.stopLoss}\n⚡ Close your PE in Zerodha NOW!`);
-        tracker.status = "sl_hit"; tracker.position = null; stopTracking();
-      }
+    }
+
+    // ── Breakeven: once +BREAKEVEN_PTS in favour, move SL to entry (tighten-only) ──
+    const move = pos.side === "CE" ? (spot - pos.entrySpot) : (pos.entrySpot - spot);
+    if (move >= bePts) {
+      if (pos.side === "CE" && pos.stopLoss < pos.entrySpot) { pos.stopLoss = parseFloat(pos.entrySpot.toFixed(2)); tlog(`✅ Breakeven CE → SL=entry ₹${pos.entrySpot}`); }
+      if (pos.side === "PE" && pos.stopLoss > pos.entrySpot) { pos.stopLoss = parseFloat(pos.entrySpot.toFixed(2)); tlog(`✅ Breakeven PE → SL=entry ₹${pos.entrySpot}`); }
+    }
+
+    // ── SL hit ──
+    if (pos.side === "CE" && spot <= pos.stopLoss) {
+      tlog(`🛑 SL HIT CE — spot ₹${spot} <= SL ₹${pos.stopLoss}`);
+      sendTelegram(`🚨 [TRACKER] SL HIT — NIFTY ₹${spot} crossed below ₹${pos.stopLoss}\n⚡ Close your CE in Zerodha NOW!`);
+      tracker.status = "sl_hit"; tracker.position = null; stopTracking();
+    } else if (pos.side === "PE" && spot >= pos.stopLoss) {
+      tlog(`🛑 SL HIT PE — spot ₹${spot} >= SL ₹${pos.stopLoss}`);
+      sendTelegram(`🚨 [TRACKER] SL HIT — NIFTY ₹${spot} crossed above ₹${pos.stopLoss}\n⚡ Close your PE in Zerodha NOW!`);
+      tracker.status = "sl_hit"; tracker.position = null; stopTracking();
     }
   } finally { tracker.pollBusy = false; }
 }
@@ -205,16 +225,16 @@ router.get("/fetch-and-start", async (req, res) => {
     if (side === "PE" && sl <= spot) { sl = parseFloat((spot + 60).toFixed(2)); tlog(`⚠️ SAR below spot for PE — corrected to spot+60`); }
 
     const sarGap = Math.abs(spot - sl);
-    const trailActivatePts = Math.min(40, Math.max(_TRAIL_ACT, Math.round(sarGap * 0.25)));
+    const bePts  = _bePts();
 
     tracker.position = {
       side, symbol: sym, strike, expiry, qty,
       entrySpot: spot, stopLoss: sl, initialStopLoss: sl,
-      optionLtp, entryPrevMid: null,
-      trailActivatePts, bestPrice: null, entryTime: istNow(), sarGap,
+      optionLtp, breakevenPts: bePts,
+      bestPrice: null, entryTime: istNow(), sarGap, _lastTrailBucket: null,
     };
 
-    tlog(`✅ TRACKING: ${side} ${sym} | spot=₹${spot} | SL=₹${sl} (${sarGap.toFixed(1)}pt) | trail at +${trailActivatePts}pt`);
+    tlog(`✅ TRACKING: ${side} ${sym} | spot=₹${spot} | SL=₹${sl} (${sarGap.toFixed(1)}pt) | prev-candle trail + breakeven +${bePts}pt`);
     sendTelegram([
       `🎯 [TRACKER] Auto-tracking started`,
       ``, `${side === "CE" ? "📈 CE (Call — Bullish)" : "📉 PE (Put — Bearish)"}`,
@@ -223,13 +243,13 @@ router.get("/fetch-and-start", async (req, res) => {
       `Qty     : ${qty}`,
       ``,
       `NIFTY Spot : ₹${spot}`,
-      `SAR SL     : ₹${sl}  (${sarGap.toFixed(1)}pt gap)`,
-      `Trail at   : +${trailActivatePts}pt`,
+      `Initial SL : ₹${sl}  (${sarGap.toFixed(1)}pt gap)`,
+      `Trail      : prev-candle low/high | breakeven +${bePts}pt`,
       `Opt Avg LTP: ${optionLtp ? "₹" + optionLtp : "—"}`,
     ].join("\n"));
 
     startTracking();
-    return res.json({ success: true, message: `Tracking ${side} ${sym} | SL ₹${sl} | Trail at +${trailActivatePts}pt`, position: tracker.position });
+    return res.json({ success: true, message: `Tracking ${side} ${sym} | SL ₹${sl} | prev-candle trail + BE +${bePts}pt`, position: tracker.position });
   } catch (err) {
     tlog(`❌ fetch-and-start: ${err.message}`);
     return res.status(500).json({ success: false, error: err.message });
@@ -256,7 +276,7 @@ router.get("/status/data", (req, res) => {
     unrealisedPts,
     position: pos ? { side: pos.side, symbol: pos.symbol, strike: pos.strike, expiry: pos.expiry,
       qty: pos.qty, entrySpot: pos.entrySpot, stopLoss: pos.stopLoss, initialStopLoss: pos.initialStopLoss,
-      optionLtp: pos.optionLtp, trailActivatePts: pos.trailActivatePts, bestPrice: pos.bestPrice,
+      optionLtp: pos.optionLtp, breakevenPts: pos.breakevenPts, bestPrice: pos.bestPrice,
       sarGap: pos.sarGap, entryTime: pos.entryTime } : null,
     logs: [...tracker.log].reverse().slice(0, 100),
   });
@@ -268,8 +288,8 @@ router.get("/status", (req, res) => {
   const pc = (n) => n >= 0 ? "#10b981" : "#ef4444";
   let uPts = null;
   if (pos && spot) uPts = parseFloat(((spot - pos.entrySpot) * (pos.side === "CE" ? 1 : -1)).toFixed(2));
-  const move = pos && pos.bestPrice ? (pos.side === "CE" ? pos.bestPrice - pos.entrySpot : pos.entrySpot - pos.bestPrice) : 0;
-  const trailActive = move >= (pos ? pos.trailActivatePts : _TRAIL_ACT);
+  const move = pos && spot ? (pos.side === "CE" ? spot - pos.entrySpot : pos.entrySpot - spot) : 0;
+  const beReached = pos ? move >= (pos.breakevenPts || _bePts()) : false;
   const slGap = pos && spot ? parseFloat((pos.side === "CE" ? spot - pos.stopLoss : pos.stopLoss - spot).toFixed(1)) : null;
 
   const statusBanner = tracker.status === "sl_hit"
@@ -317,7 +337,7 @@ ${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos
   <div class="top-bar">
     <div>
       <div class="top-bar-title">🎯 Auto Trade Tracker</div>
-      <div class="top-bar-meta">Reads your Zerodha entry → SAR Stop Loss → trails automatically</div>
+      <div class="top-bar-meta">Reads your Zerodha entry → prev-candle Stop Loss → trails automatically</div>
     </div>
     <div class="top-bar-right">
       ${pos ? `<span class="top-bar-badge paper-active" style="animation:pulse 1.2s infinite;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>TRACKING</span>`
@@ -330,7 +350,7 @@ ${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos
     <div style="text-align:center;padding:40px 20px 28px;">
       <div style="font-size:0.85rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">Take your entry in Zerodha first, then click below.</div>
       <div style="font-size:0.75rem;color:#4a6080;margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
-        Bot will read your open NIFTY position from Zerodha, compute the current SAR value as your Stop Loss, then trail it automatically using the same tiered logic as the live trade engine.
+        Bot will read your open NIFTY position from Zerodha, set the initial Stop Loss to the previous candle's low/high (SAR fallback), then trail it automatically — tightening to each completed candle's low/high plus breakeven — the same way as the live trade engine.
       </div>
       <button id="fetch-btn" onclick="handleFetch(this)"
         style="background:#0a1e3d;border:1px solid #3b82f6;color:#60a5fa;padding:14px 32px;border-radius:10px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;">
@@ -365,10 +385,10 @@ ${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos
         <div class="sc-val" id="d-pnl" style="color:${pc(uPts||0)};">${uPts!==null?(uPts>=0?"+":"")+uPts+" pt":"—"}</div>
         <div class="sc-sub">${pos.qty} qty × NIFTY pts</div>
       </div>
-      <div class="sc" style="--accent:${trailActive?"#4c1d95":"#1e3080"};">
-        <div class="sc-label">Trail SL</div>
-        <div class="sc-val" id="d-trail" style="color:${trailActive?"#8b5cf6":"#f59e0b"};">${trailActive?"🔒 ACTIVE":"⏳ Waiting"}</div>
-        <div class="sc-sub">Best: <span id="d-best">${pos.bestPrice?"₹"+pos.bestPrice:"—"}</span> | +${pos.trailActivatePts}pt to activate</div>
+      <div class="sc" style="--accent:${beReached?"#4c1d95":"#1e3080"};">
+        <div class="sc-label">Trailing Stop</div>
+        <div class="sc-val" id="d-trail" style="color:${beReached?"#8b5cf6":"#f59e0b"};">${beReached?"🔒 Breakeven+":"Prev-candle "+(pos.side==="CE"?"low":"high")}</div>
+        <div class="sc-sub">Best: <span id="d-best">${pos.bestPrice?"₹"+pos.bestPrice:"—"}</span> | Breakeven at +${pos.breakevenPts||_bePts()}pt</div>
       </div>
       <div class="sc" style="--accent:#1e3080;">
         <div class="sc-label">Strike / Expiry</div>
@@ -416,11 +436,11 @@ function poll(){
       var dp=document.getElementById('d-pnl');
       if(dp&&d.unrealisedPts!==null){dp.textContent=(d.unrealisedPts>=0?'+':'')+d.unrealisedPts+' pt';dp.style.color=d.unrealisedPts>=0?'#10b981':'#ef4444';}
       var dt=document.getElementById('d-trail'),db=document.getElementById('d-best');
-      if(dt&&d.position.bestPrice){
-        var mv=d.position.side==='CE'?d.position.bestPrice-d.position.entrySpot:d.position.entrySpot-d.position.bestPrice;
-        var act=mv>=(d.position.trailActivatePts||15);
-        dt.textContent=act?'🔒 ACTIVE':'⏳ Waiting';dt.style.color=act?'#8b5cf6':'#f59e0b';
-        if(db)db.textContent='₹'+d.position.bestPrice;
+      if(dt){
+        var mv=d.lastSpot?(d.position.side==='CE'?d.lastSpot-d.position.entrySpot:d.position.entrySpot-d.lastSpot):0;
+        var be=mv>=(d.position.breakevenPts||25);
+        dt.textContent=be?'🔒 Breakeven+':'Prev-candle '+(d.position.side==='CE'?'low':'high');dt.style.color=be?'#8b5cf6':'#f59e0b';
+        if(db)db.textContent=d.position.bestPrice?'₹'+d.position.bestPrice:'—';
       }
     }
     if(d.logs)renderLogs(d.logs);
