@@ -141,17 +141,18 @@ router.post("/run", express.json(), async (req, res) => {
 // is on AND that tickReplay's MODE_TO_MODULE actually supports. Order matches
 // the sidebar so the dropdown feels familiar.
 const STRATEGY_OPTIONS = [
-  { mode: "pa-paper",       label: "PA Paper",       envKey: "UI_SHOW_PA_PAPER" },
-  { mode: "scalp-paper",    label: "Scalp Paper",    envKey: "UI_SHOW_SCALP_PAPER" },
-  { mode: "swing-paper",    label: "Swing Paper",    envKey: "UI_SHOW_SWING_PAPER" },
-  { mode: "orb-paper",      label: "ORB Paper",      envKey: "UI_SHOW_ORB_PAPER" },
-  { mode: "straddle-paper", label: "Straddle Paper", envKey: "UI_SHOW_STRADDLE_PAPER" },
+  { mode: "pa-paper",       label: "PA Paper",       envKey: "UI_SHOW_PA_PAPER",       modeKey: "PA_MODE_ENABLED" },
+  { mode: "scalp-paper",    label: "Scalp Paper",    envKey: "UI_SHOW_SCALP_PAPER",    modeKey: "SCALP_MODE_ENABLED" },
+  { mode: "swing-paper",    label: "Swing Paper",    envKey: "UI_SHOW_SWING_PAPER",    modeKey: "SWING_MODE_ENABLED" },
+  { mode: "orb-paper",      label: "ORB Paper",      envKey: "UI_SHOW_ORB_PAPER",      modeKey: "ORB_MODE_ENABLED" },
+  { mode: "straddle-paper", label: "Straddle Paper", envKey: "UI_SHOW_STRADDLE_PAPER", modeKey: "STRADDLE_MODE_ENABLED" },
 ];
 
 function _renderStrategyOptions() {
-  const enabled = STRATEGY_OPTIONS.filter(o =>
-    (process.env[o.envKey] || "true").toLowerCase() === "true"
-  );
+  const on = (k) => (process.env[k] || "true").toLowerCase() === "true";
+  // Gate on the same *_MODE_ENABLED Settings toggle the sidebar uses, AND the
+  // replay-specific UI_SHOW_* toggle, so disabled strategies drop out here too.
+  const enabled = STRATEGY_OPTIONS.filter(o => on(o.modeKey) && on(o.envKey));
   const list = enabled.length ? enabled : STRATEGY_OPTIONS; // never render empty
   return list.map(o => `<option value="${o.mode}">${o.label}</option>`).join("");
 }
