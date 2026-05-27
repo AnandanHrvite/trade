@@ -499,6 +499,11 @@ router.get("/", (req, res) => {
       <div class="chart-wrap"><canvas id="cumChart"></canvas></div>
     </div>
 
+    <div class="panel">
+      <h3>Daily P&amp;L</h3>
+      <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
+    </div>
+
     <div class="roll-grid">
       <div class="panel">
         <h3>Daily Roll-up</h3>
@@ -1008,6 +1013,35 @@ function renderCumChart(rows){
   });
 }
 
+let _dailyChart = null;
+function renderDailyChart(){
+  const ctx = document.getElementById('dailyChart');
+  if (!ctx) return;
+  // _lastRollups.daily is sorted desc by date; chart reads left→right oldest→newest
+  const rows = (_lastRollups.daily || []).slice().sort((a, b) => a.key.localeCompare(b.key));
+  const labels = rows.map(r => r.key);
+  const data   = rows.map(r => r.pnl);
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const gridCol = isLight ? '#e0e4ea' : '#0e1e36';
+  const tickCol = isLight ? '#64748b' : '#3a5070';
+  const GREEN = '#10b981', RED = '#ef4444';
+  const colors = data.map(v => v >= 0 ? GREEN : RED);
+  if (_dailyChart) _dailyChart.destroy();
+  _dailyChart = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { title: function(c){ return c[0].label; }, label: function(ctx){ return fmtINR(ctx.parsed.y); } } } },
+      scales: {
+        x: { ticks: { color: tickCol, font: { size: 9 }, maxRotation: 45, autoSkip: true }, grid: { display: false } },
+        y: { ticks: { color: tickCol, font: { size: 10 }, callback: function(v){ return fmtINR(v); } }, grid: { color: gridCol } },
+      },
+    },
+  });
+}
+
 function applyFilters(){
   const rows = filterTrades();
   _lastFiltered = rows;
@@ -1024,6 +1058,7 @@ function applyFilters(){
   renderRollupTable('yearlyTbl',  _lastRollups.yearly);
   renderTradesTable(rows);
   renderCumChart(rows);
+  renderDailyChart();
   if (_dvVisible) buildDayView();
   if (_anaVisible) renderAnalytics();
 
