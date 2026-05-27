@@ -1,7 +1,7 @@
 require("dotenv").config();
 const strategy1 = require("./strategy1_sar_ema_rsi");
 
-// Only Strategy 1 (SAR + EMA9 + RSI) is active.
+// Only Strategy 1 (EMA21 + RSI + SAR) is active.
 
 
 function getActiveStrategy() {

@@ -28,9 +28,9 @@ All five strategies run **in parallel** on the same WebSocket — different cand
 | **Swing Live** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
 | **Swing Paper** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
 | **Swing Backtest** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
-| **Scalp Live** | BB + RSI + PSAR (V4) | 5-min | Fyers | `/scalp-live` |
-| **Scalp Paper** | BB + RSI + PSAR (V4) | 5-min | Simulated | `/scalp-paper` |
-| **Scalp Backtest** | BB + RSI + PSAR (V4) | 5-min | Historical | `/scalp-backtest` |
+| **Scalp Live** | BB + PSAR + RSI (V5) | 3 / 5-min | Fyers | `/scalp-live` |
+| **Scalp Paper** | BB + PSAR + RSI (V5) | 3 / 5-min | Simulated | `/scalp-paper` |
+| **Scalp Backtest** | BB + PSAR + RSI (V5) | 3 / 5-min | Historical | `/scalp-backtest` |
 | **PA Live (legacy)** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
 | **PA Live (Harness)** | Price Action Patterns | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
 | **PA Paper** | Price Action Patterns | 5-min | Simulated | `/pa-paper` |
@@ -77,18 +77,14 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Removed** vs the old strategy: EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
-### Strategy 2: Scalp — BB + RSI + PSAR V4 (5-min)
-- **Entry**: Close beyond Bollinger Band + RSI confirmation (> 55 for CE, < 45 for PE)
-- **V4 quality filters** (opt-in via Settings): approach filter (reject first-touch breakouts), body-strength filter (reject doji/wick breakouts)
-- **Trend filter** (`SCALP_TREND_FILTER`, default on): block CE in downtrends / PE in uptrends using BB-mid slope + N-candle momentum
-- **Other filters**: BB squeeze filter (skip narrow bands), VIX filter (independent toggle + threshold), activity filter, CPR narrow filter (`SCALP_CPR_NARROW_PCT`, now editable in Settings)
-- **SL**: Previous candle low/high (capped between min/max pts)
-- **Exit**: Initial SL + tiered trailing profit % of peak (PnL-floor model) + PSAR trailing (only tightens) + PSAR flip + bid-ask spread guard + time-stop on flat trades
-- **Trail tiers**: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
-- **Trail grace period**: Suppress trail-exit for first N seconds after entry (SL still active) to protect against first-tick spike + tiny pullback
-- **Breakeven snap fires per-tick** (not per-bar) so the BE jump can fire intra-bar once profit clears the threshold
-- **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free
-- **Pause override on retest-and-resume** (`SCALP_PAUSE_OVERRIDE_ENABLED`, default off; `SCALP_PAUSE_OVERRIDE_PTS=10`): if a candle closes ≥ N pts past the failed-entry spot in the original direction, release the per-side cooldown early and reset the consecutive-SL counter for that side. Only confirmed resumption clears the pause; genuine fails still cool down normally
+### Strategy 2: Scalp — BB + PSAR + RSI V5 (3 / 5-min)
+See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
+- **Entry (at candle close, all three required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(62)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(42)`.
+- **Guards**: RSI overbought/oversold caps (`SCALP_RSI_CE_MAX(78)` / `SCALP_RSI_PE_MIN(22)`), optional `SCALP_RSI_TURNING`, independent VIX filter.
+- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
+- **SL**: Previous candle low/high, capped to `SCALP_MAX_SL_PTS(12)` / floored at `SCALP_MIN_SL_PTS(8)`.
+- **Exit**: Initial SL → **break-even snap** (peak ≥ `SCALP_BREAKEVEN_TRIGGER_R(0.7)` × risk, per-tick) → **PSAR trailing** (tighten-only) → **PSAR flip** → bid-ask spread guard → EOD. No % profit-trail, no time-stop, no pause-override.
+- **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 5 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags; Straddle: trigger/BB-width + combined-premium MFE/MAE + max spot travel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
 ### Strategy 3: Price Action — Patterns + S/R Zones (5-min)
@@ -252,42 +248,31 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 > Common expiry knobs (`OPTION_EXPIRY_OVERRIDE`, `OPTION_EXPIRY_TYPE`) live under **Common — Instrument & Backtest** in Settings and are read by `src/config/instrument.js` for every engine that does not set its own per-mode override.
 
-### Scalp Mode (5-min, Fyers)
+### Scalp Mode (3 / 5-min, Fyers)
+Full spec: [SCALP.md](SCALP.md).
 | Key | Default | Notes |
 |-----|---------|-------|
 | `SCALP_MODE_ENABLED` | `true` | Show/hide scalp menus in sidebar (also hides Scalp section in Settings) |
 | `SCALP_ENABLED` | `false` | Must be `true` for Fyers scalp orders |
-| `SCALP_RESOLUTION` | `5` | Scalp candle size |
-| `SCALP_BB_PERIOD` / `SCALP_BB_STDDEV` | `20` / `1` | Bollinger inputs (narrower bands → more entries) |
-| `SCALP_RSI_CE_THRESHOLD` / `SCALP_RSI_CE_MAX` | `55` / `78` | CE momentum floor and overbought ceiling |
-| `SCALP_RSI_PE_THRESHOLD` / `SCALP_RSI_PE_MIN` | `45` / `22` | PE momentum ceiling and oversold floor |
+| `SCALP_RESOLUTION` | `5` | Scalp candle size — `3` or `5` min |
+| `SCALP_BB_PERIOD` / `SCALP_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
+| `SCALP_RSI_CE_THRESHOLD` / `SCALP_RSI_CE_MAX` | `62` / `78` | CE momentum floor and overbought ceiling |
+| `SCALP_RSI_PE_THRESHOLD` / `SCALP_RSI_PE_MIN` | `42` / `22` | PE momentum ceiling and oversold floor |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
-| `SCALP_MAX_SL_PTS` | `12` | Max SL distance (pts) — tightened from `25` |
+| `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + trailing SL + flip exit |
+| `SCALP_MAX_SL_PTS` | `12` | Max SL distance (pts) |
 | `SCALP_MIN_SL_PTS` | `8` | Min SL distance (pts) |
-| `SCALP_TRAIL_START` | `600` | Activate trailing after ₹N profit |
-| `SCALP_TRAIL_PCT` | `70` | Base trail floor (used between `TRAIL_START` and first tier) |
-| `SCALP_TRAIL_TIERS` | `600:70,1200:78,2500:85,5000:90,10000:93` | Peak:pct ladder |
-| `SCALP_TRAIL_GRACE_SECS` | `0` | Suppress trail-exit for first N secs after entry (SL still active) |
 | `SCALP_BREAKEVEN_TRIGGER_R` | `0.7` | Move SL to entry once peak ≥ N × initial risk. `0` disables. |
 | `SCALP_BREAKEVEN_OFFSET_PTS` | `1` | Spot points above/below entry for the BE stop |
-| `SCALP_REQUIRE_APPROACH` | `false` | V4: block entry if prev candle is on opposite BB half |
-| `SCALP_MIN_BODY_RATIO` | `0` | V4: min entry-candle body as % of range (0.5 skips doji/wick breakouts) |
-| `SCALP_TREND_FILTER` | `true` | Block CE in downtrends / PE in uptrends (BB-mid slope + momentum) |
-| `SCALP_TREND_MOMENTUM_PCT` | `0.15` | Min N-candle move (% of price) to call a direction |
-| `SCALP_TREND_MOMENTUM_LOOKBACK` | `5` | Candles for momentum measurement |
-| `SCALP_TREND_MID_SLOPE_LOOKBACK` | `3` | Candles for BB-mid slope measurement |
+| `SCALP_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & SL exit (pts against you) |
 | `SCALP_MAX_DAILY_TRADES` | `30` | Daily scalp cap |
 | `SCALP_MAX_DAILY_LOSS` | `4000` | Scalp kill-switch in INR |
 | `SCALP_VIX_ENABLED` | `false` | Independent VIX filter for scalp |
 | `SCALP_VIX_MAX_ENTRY` | `20` (`VIX_MAX_ENTRY` fallback) | Per-mode VIX block-entry threshold |
 | `SCALP_VIX_STRONG_ONLY` | `16` (`VIX_STRONG_ONLY` fallback) | Per-mode strong-only threshold |
-| `SCALP_BB_SQUEEZE_FILTER` | `true` | Skip entries when BB bands narrow |
-| `SCALP_CPR_NARROW_PCT` | (code default) | CPR-narrow filter threshold — exposed as a Settings UI knob |
-| `SCALP_SL_PAUSE_CANDLES` | `3` | Pause after SL hit (5-min candles) |
+| `SCALP_SL_PAUSE_CANDLES` | `3` | Pause after SL hit (candles) |
 | `SCALP_CONSEC_SL_EXTRA_PAUSE` | `2` | Extra candles pause per consecutive SL after the 2nd |
 | `SCALP_PER_SIDE_PAUSE` | `true` | An SL on CE only pauses CE entries; PE remains free |
-| `SCALP_PAUSE_OVERRIDE_ENABLED` | `false` | Release per-side SL cooldown early on retest-and-resume |
-| `SCALP_PAUSE_OVERRIDE_PTS` | `10` | Spot-delta threshold past failed-entry spot to trigger override |
 | `SCALP_ENTRY_START` / `SCALP_ENTRY_END` | `09:21` / `14:30` | Entry window (IST) |
 | `SCALP_EXPIRY_DAY_ONLY` | `false` | Only allow scalp entries on weekly-expiry day |
 
@@ -493,7 +478,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | URL | Description |
 |-----|-------------|
 | `/` | Dashboard (with Start-All Paper / Start-All Live buttons) |
-| `/swing-backtest` | Run backtest (15-min SAR+EMA9+RSI) |
+| `/swing-backtest` | Run backtest (3/5/15-min EMA21+RSI+SAR) |
 | `/swing-paper/status` | Paper trade live view + NIFTY chart |
 | `/swing-paper/history` | Past paper sessions (per-session delete + view modal) |
 | `/swing-paper/simulate` | Market scenario simulator |
