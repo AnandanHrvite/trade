@@ -871,7 +871,7 @@
 </div>
 
 <div class="highlight">
-  <p>The <strong>initial</strong> SL source is selectable via <code>SCALP_SL_USE_SAR</code>: <strong>off</strong> (default) uses the previous candle's low (CE) / high (PE); <strong>on</strong> uses the <strong>PSAR value</strong> at entry. Either way the distance is clamped between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close. PSAR and the break-even snap then <em>tighten</em> it after entry (they never set the initial SL).</p>
+  <p><code>SCALP_SL_USE_SAR</code> picks the SL source for <strong>both</strong> the initial SL and the trail: <strong>off</strong> (default) = previous candle's low (CE) / high (PE) for entry, then tighten to each just-closed candle's low/high; <strong>on</strong> = the <strong>PSAR value</strong> at entry, then PSAR trailing + the PSAR-flip exit. Either way the initial distance is clamped between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close, and the break-even snap (both modes) can tighten it afterwards. Trailing never loosens.</p>
 </div>
 
 <div class="card card-green">
@@ -919,8 +919,8 @@
   <div class="exit-item">
     <div class="exit-badge p3">P3</div>
     <div>
-      <strong style="color:var(--yellow);">SAR Flip (Reversal)</strong>
-      <p style="font-size:0.85rem;">PSAR crosses to the opposite side of price. For CE, SAR moves from below to above price. For PE, SAR moves from above to below. Indicates trend reversal &rarr; immediate exit.</p>
+      <strong style="color:var(--yellow);">SAR Flip (Reversal) &mdash; SAR mode only</strong>
+      <p style="font-size:0.85rem;">When <code>SCALP_SL_USE_SAR</code> is ON: PSAR crosses to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) &rarr; immediate exit. In prev-candle mode the per-candle trail manages exits instead, so there is no flip exit.</p>
     </div>
   </div>
   <div class="exit-item">
@@ -933,7 +933,7 @@
 </div>
 
 <div class="card card-purple" style="margin-top:14px;">
-  <p style="font-size:0.85rem;"><strong>Removed in V5:</strong> the tiered <strong>% profit-trail</strong> and the <strong>time-stop</strong> are gone. Profit is protected by the break-even snap + PSAR trail only.</p>
+  <p style="font-size:0.85rem;"><strong>Removed in V5:</strong> the tiered <strong>% profit-trail</strong> and the <strong>time-stop</strong> are gone. Profit is protected by the break-even snap plus the trail of the chosen source (prev-candle or PSAR, per <code>SCALP_SL_USE_SAR</code>).</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->

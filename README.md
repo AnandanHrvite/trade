@@ -82,8 +82,8 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - **Entry (at candle close, all three required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(62)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(42)`.
 - **Guards**: RSI overbought/oversold caps (`SCALP_RSI_CE_MAX(78)` / `SCALP_RSI_PE_MIN(22)`), optional `SCALP_RSI_TURNING`, independent VIX filter.
 - **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
-- **SL**: Previous candle low/high, capped to `SCALP_MAX_SL_PTS(12)` / floored at `SCALP_MIN_SL_PTS(8)`.
-- **Exit**: Initial SL → **break-even snap** (peak ≥ `SCALP_BREAKEVEN_TRIGGER_R(0.7)` × risk, per-tick) → **PSAR trailing** (tighten-only) → **PSAR flip** → bid-ask spread guard → EOD. No % profit-trail, no time-stop, no pause-override.
+- **SL source** (`SCALP_SL_USE_SAR`, default off) drives **both** initial SL and trail: **off** = prev candle low/high + prev-candle trail; **on** = PSAR + PSAR trail + PSAR-flip exit. Initial distance capped to `SCALP_MAX_SL_PTS(12)` / floored at `SCALP_MIN_SL_PTS(8)`.
+- **Exit**: Initial SL → **break-even snap** (peak ≥ `SCALP_BREAKEVEN_TRIGGER_R(0.7)` × risk, per-tick, both modes) → **trail** (prev-candle or PSAR per the toggle) → **PSAR flip** (SAR mode only) → bid-ask spread guard → EOD. No % profit-trail, no time-stop, no pause-override.
 - **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 5 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags; Straddle: trigger/BB-width + combined-premium MFE/MAE + max spot travel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
@@ -260,7 +260,7 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_RSI_PE_THRESHOLD` / `SCALP_RSI_PE_MIN` | `42` / `22` | PE momentum ceiling and oversold floor |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + trailing SL + flip exit |
-| `SCALP_SL_USE_SAR` | `false` | Initial SL source — `true` = PSAR value at entry, `false` = prev candle low/high (both clamped to Min/Max SL) |
+| `SCALP_SL_USE_SAR` | `false` | SL source for **both** initial SL and trail — `true` = PSAR (+ PSAR-flip exit), `false` = prev candle (init + per-candle trail). Initial clamped to Min/Max SL |
 | `SCALP_MAX_SL_PTS` | `12` | Max SL distance (pts) |
 | `SCALP_MIN_SL_PTS` | `8` | Min SL distance (pts) |
 | `SCALP_BREAKEVEN_TRIGGER_R` | `0.7` | Move SL to entry once peak ≥ N × initial risk. `0` disables. |

@@ -42,19 +42,23 @@ Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm
 
 ## 4. Stop loss & trailing
 
-- **Initial SL source** (`SCALP_SL_USE_SAR`, default off): **off** = the prior completed candle's **low (CE) / high (PE)**; **on** = the **PSAR value** at entry. Either way the distance is capped to `SCALP_MAX_SL_PTS(12)` and floored at `SCALP_MIN_SL_PTS(8)` from the close. (PSAR is always on the correct side at entry, since entry requires SAR below close for CE / above close for PE.)
-- **Break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R(0.7)`, `0` disables): once peak P&L ≥ trigger × initial risk, SL jumps to entry ± `SCALP_BREAKEVEN_OFFSET_PTS(1)`. Runs per-tick (most trades resolve inside the entry bar). Tighten-only.
-- **PSAR trail**: at each candle close, tighten SL toward PSAR — only when PSAR is on the favourable side of price. Tighten-only, never loosens.
+**`SCALP_SL_USE_SAR` (default off) picks the SL source for BOTH the initial SL and the trail:**
+
+- **OFF — Prev Candle:** initial SL = the prior completed candle's **low (CE) / high (PE)**; the trail tightens SL to **each just-closed candle's low/high**. No PSAR-flip exit.
+- **ON — SAR:** initial SL = the **PSAR value** at entry; the trail tightens SL toward **PSAR** (only when PSAR is on the favourable side); the **PSAR-flip exit** is active.
+- Either way the initial distance is capped to `SCALP_MAX_SL_PTS(12)` and floored at `SCALP_MIN_SL_PTS(8)` from the close. (At entry PSAR is always on the correct side, since entry requires SAR below close for CE / above for PE.)
+- **Break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R(0.7)`, `0` disables) applies in **both** modes: once peak P&L ≥ trigger × initial risk, SL jumps to entry ± `SCALP_BREAKEVEN_OFFSET_PTS(1)`. Per-tick, tighten-only.
+- All trailing is tighten-only — never loosens.
 
 ## 5. Exit rules
 
-1. **SL hit** — `ltp ≤ SL` (CE) / `ltp ≥ SL` (PE), every tick. Source is labelled Prev-Candle / PSAR / BreakEven.
-2. **PSAR flip** — when PSAR crosses to the wrong side of price, exit immediately.
+1. **SL hit** — `ltp ≤ SL` (CE) / `ltp ≥ SL` (PE), every tick. Source is labelled Prev Candle / PSAR / BreakEven.
+2. **PSAR flip** — when PSAR crosses to the wrong side of price, exit immediately. **(SAR mode only.)**
 3. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
 4. **Daily kill-switch / max trades** — see risk guards.
 5. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
 
-There is **no** percentage profit-trail, no time-stop, and no pause-override — trailing is PSAR + break-even only.
+There is **no** percentage profit-trail, no time-stop, and no pause-override — the trail is the chosen source (prev-candle or PSAR) plus the break-even snap.
 
 ## 6. Same-side cooldown
 

@@ -1284,20 +1284,29 @@ router.post("/manualEntry", async (req, res) => {
 
   // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
   const candles = state.candles || [];
-  const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
+  const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "12");
   const MIN_SL_PTS  = parseFloat(process.env.SCALP_MIN_SL_PTS || "8");
   const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+  // Honor the SL-source toggle; SAR only if it's on the correct side, else prev candle.
+  const _useSar = (process.env.SCALP_SL_USE_SAR || "false") === "true";
+  let slSrcLbl = "PrevCandle";
+  let rawSL = prevCandle ? (side === "CE" ? prevCandle.low : prevCandle.high) : null;
+  if (_useSar && candles.length >= 3) {
+    try {
+      const _sa = PSAR.calculate({ step: parseFloat(process.env.SCALP_PSAR_STEP || "0.02"), max: parseFloat(process.env.SCALP_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
+      const _sar = _sa.length ? _sa[_sa.length - 1] : null;
+      if (_sar != null && (side === "CE" ? _sar < spot : _sar > spot)) { rawSL = _sar; slSrcLbl = "SAR"; }
+    } catch (_) { /* fall back to prev candle */ }
+  }
   let sl;
-  if (prevCandle) {
-    const rawSL = side === "CE" ? prevCandle.low : prevCandle.high;
+  if (rawSL != null) {
     const slPts = Math.max(Math.min(Math.abs(spot - rawSL), MAX_SL_PTS), MIN_SL_PTS);
     sl = side === "CE" ? parseFloat((spot - slPts).toFixed(2)) : parseFloat((spot + slPts).toFixed(2));
   } else {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
-  const sig = candles.length >= 30 ? scalpStrategy.getSignal(candles, { silent: true }) : null;
 
-  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
+  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl}${slSrcLbl === "PrevCandle" && prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
   if (!state.position) return res.status(400).json({ success: false, error: "Entry failed — check logs for details." });
   return res.json({ success: true, spot, side, sl });
@@ -1637,7 +1646,7 @@ router.get("/status", (req, res) => {
           <div id="ax-nifty-move" style="font-size:0.63rem;color:${pointsMoved >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${pointsMoved >= 0 ? "\u25b2" : "\u25bc"} ${Math.abs(pointsMoved).toFixed(1)} pts</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss${pos.slSource ? " (" + pos.slSource + ")" : ""}</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
         </div>
@@ -1804,7 +1813,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: Prev Candle \u2192 PSAR trail + BreakEven \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ${(process.env.SCALP_SL_USE_SAR || "false") === "true" ? "SAR (init+trail+flip)" : "Prev Candle (init+trail)"} + BreakEven \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

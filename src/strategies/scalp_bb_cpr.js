@@ -251,7 +251,10 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Trailing SL update: break-even snap → PSAR — tighten only, never widen ──
+// ── Trailing SL update: break-even snap → (PSAR | prev-candle) — tighten only ──
+// The trail source follows SCALP_SL_USE_SAR, same as the initial SL:
+//   ON  → PSAR trail (dots tighten toward price; PSAR flip exit also active)
+//   OFF → prev-candle trail (tighten to each just-closed candle's low/high; no flip)
 // opts: { peakPnl, initialRiskRupees, entryPrice, slippagePts }
 //   - peakPnl + initialRiskRupees: enable break-even snap when peak ≥ trigger × risk
 //   - entryPrice + slippagePts: target spot price for the break-even SL
@@ -259,10 +262,11 @@ function updateTrailingSL(candles, currentSL, side, opts) {
   opts = opts || {};
   var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
+  var useSar    = cfg("SCALP_SL_USE_SAR", "false") === "true";
 
-  // ── Break-even snap (preempts PSAR — runs first because it's the bigger win) ─
+  // ── Break-even snap (preempts the trail — runs first because it's the bigger win) ─
   // Once peak P&L reaches BE_TRIGGER_R × initial risk, snap SL to entry +/- offset.
-  // Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
+  // Applies in both modes. Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
   var beTriggerR = parseFloat(cfg("SCALP_BREAKEVEN_TRIGGER_R", "0.7"));
   var beOffsetPts = parseFloat(cfg("SCALP_BREAKEVEN_OFFSET_PTS", "1"));
   if (beTriggerR > 0
@@ -282,6 +286,19 @@ function updateTrailingSL(candles, currentSL, side, opts) {
     }
   }
 
+  if (!useSar) {
+    // ── Prev-candle trail — tighten SL to the last closed candle's low/high ──
+    if (candles.length < 1) return { sl: currentSL, source: null };
+    var lc = candles[candles.length - 1];
+    if (side === "CE") {
+      if (lc.low > currentSL) return { sl: parseFloat(lc.low.toFixed(2)), source: "Prev Candle" };
+    } else {
+      if (lc.high < currentSL) return { sl: parseFloat(lc.high.toFixed(2)), source: "Prev Candle" };
+    }
+    return { sl: currentSL, source: null };
+  }
+
+  // ── PSAR trail ──
   var highs = candles.map(function(c) { return c.high; });
   var lows  = candles.map(function(c) { return c.low; });
 
@@ -306,8 +323,11 @@ function updateTrailingSL(candles, currentSL, side, opts) {
   return { sl: currentSL, source: null };
 }
 
-// ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
+// ── PSAR flip detection (SAR crosses price → exit) — PSAR mode only ─────────
 function isPSARFlip(candles, side) {
+  // Flip exit is a PSAR-mode concept; in prev-candle mode the prev-candle trail
+  // manages exits, so disable it there.
+  if (cfg("SCALP_SL_USE_SAR", "false") !== "true") return false;
   var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
 

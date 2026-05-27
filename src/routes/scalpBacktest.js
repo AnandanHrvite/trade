@@ -150,7 +150,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   SL: Prev Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   SL: ${(process.env.SCALP_SL_USE_SAR || "false") === "true" ? "SAR" : "Prev Candle"} | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
