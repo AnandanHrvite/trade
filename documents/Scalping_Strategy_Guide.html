@@ -389,7 +389,7 @@
       </ul>
     </li>
     <li><strong>PSAR is now an entry confirmation</strong> (was exit-only). Optional <code>SCALP_RSI_TURNING</code> still requires RSI momentum to confirm direction.</li>
-    <li><strong>Exit simplified to SAR-based:</strong> initial prev-candle SL &rarr; <strong>break-even snap</strong> (<code>SCALP_BREAKEVEN_TRIGGER_R</code>) &rarr; <strong>PSAR trailing</strong> (tighten-only) &rarr; <strong>PSAR flip</strong> &rarr; bid-ask spread guard &rarr; EOD.</li>
+    <li><strong>Exit simplified:</strong> initial SL &rarr; <strong>break-even snap</strong> (<code>SCALP_BREAKEVEN_TRIGGER_R</code>) &rarr; <strong>trailing stop</strong> (prev-candle or PSAR per <code>SCALP_SL_USE_SAR</code>, tighten-only) &rarr; <strong>PSAR flip</strong> (SAR mode only) &rarr; bid-ask spread guard &rarr; EOD.</li>
     <li><strong>Resolution:</strong> <code>SCALP_RESOLUTION</code> now offers <strong>3 or 5-min</strong> (was 5-only).</li>
     <li><strong>Removed</strong> (code + Settings UI fields): tiered <strong>% profit-trail</strong> (<code>SCALP_TRAIL_START/PCT/TIERS/GRACE</code>), <strong>time-stop</strong> (<code>SCALP_TIME_STOP_*</code>), <strong>pause-override</strong> (<code>SCALP_PAUSE_OVERRIDE_*</code>), <strong>BB squeeze</strong> (<code>SCALP_BB_SQUEEZE_FILTER</code> / <code>SCALP_BB_MIN_WIDTH_PCT</code>), <strong>CPR-narrow</strong> (<code>SCALP_CPR_NARROW_PCT</code>), <strong>approach</strong> (<code>SCALP_REQUIRE_APPROACH</code>), <strong>body-ratio</strong> (<code>SCALP_MIN_BODY_RATIO</code>), <strong>trend filter</strong> (<code>SCALP_TREND_*</code>), and <strong>activity filter</strong> (<code>SCALP_ACTIVITY_*</code>).</li>
     <li><strong>Guards kept:</strong> VIX gate, per-side SL cooldown (<code>SCALP_SL_PAUSE_CANDLES</code> / <code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> / <code>SCALP_PER_SIDE_PAUSE</code>), daily trade/loss caps, prev-candle SL caps, trading window, expiry-day-only.</li>
@@ -502,7 +502,7 @@
 
 <div class="highlight">
   <strong>SCALP_BB_PSAR_RSI_V5</strong> is a 3/5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
-  It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum. Exits are SAR-based: a break-even snap, PSAR trailing stop, and a PSAR-flip exit.
+  It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum. Exits: a break-even snap plus a trailing stop whose source (previous candle or PSAR) follows <code>SCALP_SL_USE_SAR</code>; in SAR mode a PSAR-flip exit also applies.
 </div>
 
 <div class="metrics">
@@ -943,7 +943,8 @@
 <h2><span class="sec-num">08</span> PSAR Trailing SL Visualization</h2>
 
 <div class="highlight">
-  <p><strong>Tightening Only:</strong> PSAR trailing SL can only move in the direction of the trade (up for CE, down for PE). It never widens. Each candle potentially tightens the SL, protecting more of the gains as the trend progresses.</p>
+  <p><em>Applies when <code>SCALP_SL_USE_SAR</code> is ON. In prev-candle mode the trail instead tightens to each just-closed candle's low (CE) / high (PE).</em></p>
+  <p><strong>Tightening Only:</strong> the trailing SL can only move in the direction of the trade (up for CE, down for PE). It never widens. Each candle potentially tightens the SL, protecting more of the gains as the trend progresses.</p>
 </div>
 
 <div class="psar-chart" style="height:260px;">
@@ -999,7 +1000,7 @@
 
 <div class="card card-yellow">
   <h4 style="color:var(--yellow);">Lock at entry once the trade has proven itself</h4>
-  <p>V5 has no percentage profit-trail. Instead, once peak P&amp;L reaches a multiple of the initial risk, the SL snaps to break-even &mdash; converting a winner into a free trade. From there, the PSAR trail and a PSAR flip manage the rest of the move.</p>
+  <p>V5 has no percentage profit-trail. Instead, once peak P&amp;L reaches a multiple of the initial risk, the SL snaps to break-even &mdash; converting a winner into a free trade. From there, the trailing stop (prev-candle or PSAR, per <code>SCALP_SL_USE_SAR</code>) &mdash; and, in SAR mode, a PSAR flip &mdash; manage the rest of the move.</p>
 </div>
 
 <table>
@@ -1083,7 +1084,7 @@
   <table>
     <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>Prev-candle SL + PSAR trail + 12pt cap / 8pt floor</td></tr>
+      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>Initial SL + trail (prev-candle or PSAR) + 12pt cap / 8pt floor</td></tr>
       <tr><td>2. Break-Even Snap</td><td>Protect unrealized gains</td><td>SL to entry once peak &ge; 0.7 &times; risk</td></tr>
       <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
       <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>N candle pause after SL, +2 per consecutive SL (per-side)</td></tr>
@@ -1153,7 +1154,7 @@
 <h2><span class="sec-num">13</span> Operating Modes</h2>
 
 <div class="highlight">
-  <p>The Scalp strategy runs in three modes. All share the <strong>same BB+RSI signal logic, PSAR trailing, and profit lock tiers</strong> but differ in data source, order execution, and persistence.</p>
+  <p>The Scalp strategy runs in three modes. All share the <strong>same BB+PSAR+RSI signal logic and SL/trail behaviour</strong> but differ in data source, order execution, and persistence.</p>
 </div>
 
 <!-- ── Mode Architecture SVG ── -->
@@ -1395,7 +1396,7 @@
 
 <div class="card card-green">
   <h4 class="green">No Fixed Targets</h4>
-  <p>There are no hard profit targets. All exits are dynamic &mdash; PSAR trail, profit lock tiers, or SAR flip. This lets winning trades run as far as the trend carries, rather than cutting winners short at an arbitrary level.</p>
+  <p>There are no hard profit targets. All exits are dynamic &mdash; the trailing stop (prev-candle or PSAR), the break-even snap, or (in SAR mode) a PSAR flip. This lets winning trades run as far as the trend carries, rather than cutting winners short at an arbitrary level.</p>
 </div>
 
 <div class="card card-yellow">
