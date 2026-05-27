@@ -18,7 +18,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
-const { BollingerBands, PSAR } = require("technicalindicators");
+const { BollingerBands, PSAR, RSI } = require("technicalindicators");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -1167,6 +1167,19 @@ router.get("/status/chart-data", (req, res) => {
       }
     }
 
+    // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
+    const RSI_PERIOD = parseInt(process.env.SCALP_RSI_PERIOD || "14", 10);
+    let rsiSeries = [];
+    if (candles.length >= RSI_PERIOD + 1) {
+      try {
+        const arr = RSI.calculate({ period: RSI_PERIOD, values: candles.map(c => c.close) });
+        const off = candles.length - arr.length;
+        for (let i = 0; i < arr.length; i++) {
+          rsiSeries.push({ time: candles[i + off].time, value: parseFloat(arr[i].toFixed(2)) });
+        }
+      } catch (_) { /* ignore */ }
+    }
+
     // PSAR overlay — same params as the strategy. Plotted as dots above/below price
     const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
     const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
@@ -1201,7 +1214,10 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints });
+    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints,
+      rsi: rsiSeries,
+      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
+      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -2138,6 +2154,15 @@ function doCopy(text,btn,label){
   // PSAR rendered as a thin dotted "line" (dot-per-bar look). Lightweight Charts has no scatter
   // primitive, so a Line series with style=Dotted and lineWidth=1 closely approximates SAR dots.
   var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  // RSI on its own bottom price-scale, with dashed CE/PE threshold lines
+  var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
+  try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
+  var _rsiLines = [];
+  function drawRsiLevels(ceMin, peMax) {
+    _rsiLines.forEach(function(l){ try { rsiS.removePriceLine(l); } catch(_){} }); _rsiLines = [];
+    if (ceMin != null) _rsiLines.push(rsiS.createPriceLine({ price: ceMin, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
+    if (peMax != null) _rsiLines.push(rsiS.createPriceLine({ price: peMax, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
+  }
   var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
   chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
   // Robust zoom preservation: capture user-driven range changes (subscription fires on
@@ -2162,6 +2187,7 @@ function doCopy(text,btn,label){
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
       if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
+      if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
       if (_internalTimer) clearTimeout(_internalTimer);
       _internalTimer = setTimeout(function() { _internalUpdate = false; }, 60);

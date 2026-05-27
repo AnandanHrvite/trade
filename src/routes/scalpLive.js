@@ -21,6 +21,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy    = require("../strategies/scalp_bb_cpr");
+const { BollingerBands, PSAR, RSI } = require("technicalindicators");
 const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
@@ -1307,6 +1308,46 @@ router.get("/status/chart-data", (req, res) => {
   try {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
+
+    // BB overlay (same params as the strategy) — aligned with candles
+    const BB_PERIOD = parseInt(process.env.SCALP_BB_PERIOD || "20", 10);
+    const BB_STDDEV = parseFloat(process.env.SCALP_BB_STDDEV || "1");
+    let bbUpper = [], bbMiddle = [], bbLower = [];
+    if (candles.length >= BB_PERIOD) {
+      const closes = candles.map(c => c.close);
+      const bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+      const offset = candles.length - bbArr.length;
+      for (let i = 0; i < bbArr.length; i++) {
+        const t = candles[i + offset].time;
+        bbUpper.push({ time: t, value: parseFloat(bbArr[i].upper.toFixed(2)) });
+        bbMiddle.push({ time: t, value: parseFloat(bbArr[i].middle.toFixed(2)) });
+        bbLower.push({ time: t, value: parseFloat(bbArr[i].lower.toFixed(2)) });
+      }
+    }
+
+    // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
+    const RSI_PERIOD = parseInt(process.env.SCALP_RSI_PERIOD || "14", 10);
+    let rsiSeries = [];
+    if (candles.length >= RSI_PERIOD + 1) {
+      try {
+        const arr = RSI.calculate({ period: RSI_PERIOD, values: candles.map(c => c.close) });
+        const off = candles.length - arr.length;
+        for (let i = 0; i < arr.length; i++) rsiSeries.push({ time: candles[i + off].time, value: parseFloat(arr[i].toFixed(2)) });
+      } catch (_) { /* ignore */ }
+    }
+
+    // PSAR overlay — same params as the strategy
+    const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
+    const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+    let sarPoints = [];
+    if (candles.length >= 3) {
+      try {
+        const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        const off = candles.length - sarArr.length;
+        for (let i = 0; i < sarArr.length; i++) sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+      } catch (_) { /* ignore */ }
+    }
+
     const markers = [];
     for (const t of state.sessionTrades) {
       if (t.entryPrice && t.entryBarTime) markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.entryPrice.toFixed(0) });
@@ -1314,7 +1355,10 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice });
+    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints,
+      rsi: rsiSeries,
+      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
+      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -2288,6 +2332,18 @@ logFilter();
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
+  var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
+  try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
+  var _rsiLines = [];
+  function drawRsiLevels(ceMin, peMax) {
+    _rsiLines.forEach(function(l){ try { rsiS.removePriceLine(l); } catch(_){} }); _rsiLines = [];
+    if (ceMin != null) _rsiLines.push(rsiS.createPriceLine({ price: ceMin, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
+    if (peMax != null) _rsiLines.push(rsiS.createPriceLine({ price: peMax, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
+  }
   var slLine = null, entryLine = null, _lcc = 0;
   function fetchChart() {
     fetch('/scalp-live/status/chart-data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
@@ -2296,6 +2352,10 @@ logFilter();
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
       } else { var l = d.candles[d.candles.length-1]; cs.update({ time:l.time, open:l.open, high:l.high, low:l.low, close:l.close }); }
       _lcc = d.candles.length;
+      if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
+      else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
+      if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
+      if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
       if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
