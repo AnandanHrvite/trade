@@ -848,7 +848,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     harness.setWallClock(data.sessionStart.t);
     let startResp;
     try {
-      startResp = await _invokeRoute(routeMod, "GET", "/start");
+      // force=1 bypasses the swing 0DTE expiry-day refusal — that's a LIVE-trading
+      // safety gate (don't open a same-day-expiry swing). A historical replay must not
+      // be aborted by it (e.g. replaying an expiry-day session, or with an expiry
+      // override equal to the replay date). Other modes ignore the flag.
+      startResp = await _invokeRoute(routeMod, "GET", "/start", { force: "1" });
     } finally {
       harness.clearWallClock();
     }
