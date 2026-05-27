@@ -6,6 +6,19 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SWING strategy — complete entry/exit redefinition (EMA21 + RSI + SAR)
+
+- **New decision logic** in [src/strategies/strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js) (`getSignal`), applied identically across all 5 SWING modes (Backtest, Paper, Live, Replay, Live Harness) since they all call it. Entry (intra-candle, all 3 true):
+  - **CE**: `RSI(14) > RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · price at/above **EMA21 (OHLC4)** (already-above OR crossing up) · SAR below price.
+  - **PE**: mirror — `RSI < RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · price at/below EMA21 · SAR above price.
+- **Stop / exit** is now a **previous-candle trailing stop**: initial SL = the prior completed candle's low (CE) / high (PE); each candle close tightens SL to that candle's low/high (tighten-only). Exits: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · **option-premium stop** (`OPT_STOP_PCT`, now actually wired into the exit check in Paper + Live, previously log-only) · opposite signal · **exit-before-close** (new `SWING_EOD_EXIT_TIME`, default 15:15) · EOD auto-stop.
+- **Same-side SL cooldown** (new `SWING_SL_PAUSE_CANDLES`, default 3): after an SL / option-stop hit on a side, new entries on that side are blocked for N candles (per-side, mirrors SCALP).
+- **RSI overbought/oversold guards** (new `RSI_CE_MAX`=80, `RSI_PE_MIN`=20): don't chase exhausted moves.
+- **Resolution**: `TRADE_RESOLUTION` now offers **3 / 5 / 15-min** (logic is resolution-agnostic).
+- **Removed** from SWING: EMA9 touch, EMA30 trend gate, ADX filter, candle-body filter, SAR-distance gates, Logic-3 SAR-lag overrides, STRONG/MARGINAL strength tiers (entry is always intra-candle now), tiered (T1/T2/T3) trailing, hybrid initial-SL cap, and the 50% candle rule. The corresponding Settings fields were removed; new fields (RSI bands, breakeven, option-stop, cooldown, exit-before-close) added.
+- **Guards kept**: VIX gate (`VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY`), `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, `TRADE_EXPIRY_DAY_ONLY`, Swing expiry override/type, `SWING_LIVE_ENABLED` / `SWING_LIVE_DRY_RUN`.
+- Files touched: [strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js), [backtestEngine.js](src/services/backtestEngine.js), [swingPaper.js](src/routes/swingPaper.js), [swingLive.js](src/routes/swingLive.js), [settings.js](src/routes/settings.js). Replay + Live Harness inherit via the paper/live engines (no duplicated logic).
+
 ### Paper Trade History — unified UI across all 5 strategies + server-side Daily Data Files pagination
 
 - **New shared builder [src/utils/paperHistoryUI.js](src/utils/paperHistoryUI.js)** reproduces the canonical Scalp history page (top-bar actions, summary stat cards, Daily Data Files, Day View, full Analytics + Loss Analysis panels, session cards, trade-detail + JSONL-viewer modals). **ORB and Straddle history pages were rewritten to full parity** — they previously had only session cards + a 4-chart analytics strip and lacked Daily Data Files, Day View, Loss Analysis, the JSONL viewer, and per-date restore. New endpoints added to both: `GET /download/daily-files` (paginated), `GET /download/skips-all`, `GET /view/skips/:date`, `GET /view/trades/:date`, `DELETE /session/:index`, `POST /restore-session/:date`, `GET /reset`.

@@ -93,40 +93,20 @@ function getISTHHMM(unixSec) {
 }
 
 /**
- * BACKTEST ENGINE — mirrors paper trade logic exactly
+ * BACKTEST ENGINE — mirrors paper-trade logic.
  *
- * ENTRY (same as paper trade):
- *   Signal comes from strategy.getSignal(window)
- *   Entry price = candle.close
- *   Stop loss   = from strategy.getSignal(prevWindow) — closed candles only, NOT entry candle
- *                 (mirrors paper/live fix: SL always from last fully closed candle's SAR)
+ * For SWING (redefined 2026-05-27) the entry/exit model is:
+ *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA21 + RSI + SAR rules).
+ *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
+ *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
+ *            Trails the previous completed candle's low/high every candle (tighten-only).
+ *   EXIT   : prev-candle SL hit · option-premium stop (OPT_STOP_PCT, approximated via an
+ *            adverse spot move in backtest) · opposite signal · EOD square-off at 3:20 PM/day.
+ *   RISK   : breakeven (BREAKEVEN_PTS → SL to entry), same-side SL cooldown
+ *            (SWING_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS, 3-consecutive-loss pause.
  *
- * EXIT (same priority as paper trade):
- *   Rule 1 — 50% candle rule (skipped on entry candle itself, same as paper trade)
- *   Rule 2+3 — Intra-candle trail SL simulation (from first favourable move, 40pt gap)
- *              + SAR trailing SL (tighten only on each candle)
- *   Rule 4 — Opposite signal
- *   Rule 5 — EOD square-off at 3:20 PM IST (PER DAY)
- *
- * FIX v20:
- *   - EOD exit now fires per-day at 3:20 PM, not just at the very last candle
- *   - strategy.onTradeClosed() and onStopLossHit() called after every exit
- * FIX v30 (sync with paper/live):
- *   - Trail SL: removed 15pt trigger threshold — trails from first favourable move
- * FIX v53 (sync with paper):
- *   - Backtest trail now applies 50% floor (Math.max/min entryPrevMid) matching paper exactly
- *   - TRAIL_ACTIVATE_PTS=15: trail fires after 15pt move in favour (lowered from 25/50 — locks profit earlier)
- *   - SL at entry: taken from prev window (closed candles only), not entry candle
- *   - 50% rule: skipped on the entry candle itself (applied from next candle onwards)
- * FIX v38 (sync with paper/live):
- *   - TRAIL_GAP_PTS: 10 → 25 → 40 → 60 (15-min optimised)
- *   - Strategy filters (RSI 51/49, dead zone 12-12:30, min SAR dist 20pt) apply
- *     automatically via getSignal() — no backtest changes needed for those
- * FIX v-final (full sync with paper/live — all 3 modes now identical):
- *   - Trail gap: flat 60pt → tiered dynamic (T1/T2/T3, mirrors paper/live exactly)
- *   - Trail activation: dynamic per-trade = 25% of initial SAR gap, min TRAIL_ACTIVATE_PTS
- *   - getDynamicTrailGap() added — same tier logic as paper/live
- *   - initialStopLoss + trailActivatePts stored on position (matches paper/live)
+ * Other strategies that reuse this engine keep their getSignal-driven behaviour; the
+ * 50%-rule pause scaffolding is retained for them but SWING no longer triggers it.
  */
 async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress) {
   const trades    = [];
@@ -177,49 +157,18 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // backtest overstates P&L vs live trading. Applied to BOTH entry and exit.
   const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
 
-  // Trail gap — tiered dynamic (aligned with Settings page defaults):
-  //   T1: 0–TIER1_UPTO pts gain  → TIER1_GAP  (default 40pt — wide early, room to breathe)
-  //   T2: TIER1_UPTO–TIER2_UPTO  → TIER2_GAP  (default 25pt — tightening)
-  //   T3: above TIER2_UPTO        → TIER3_GAP  (default 15pt — locking in large profit)
-  // Activation: 25% of initial SAR gap at entry, floored at TRAIL_ACTIVATE_PTS (default 12pt), capped at 40pt.
-  const TRAIL_T1_UPTO      = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
-  const TRAIL_T2_UPTO      = parseFloat(process.env.TRAIL_TIER2_UPTO || "55");
-  const TRAIL_T1_GAP       = parseFloat(process.env.TRAIL_TIER1_GAP  || "40");
-  const TRAIL_T2_GAP       = parseFloat(process.env.TRAIL_TIER2_GAP  || "25");
-  const TRAIL_T3_GAP       = parseFloat(process.env.TRAIL_TIER3_GAP  || "15");
-  const TRAIL_ACTIVATE_PTS = parseFloat(process.env.TRAIL_ACTIVATE_PTS || "12");
-
-  function getDynamicTrailGap(moveInFavour) {
-    if (moveInFavour < TRAIL_T1_UPTO) return TRAIL_T1_GAP;
-    if (moveInFavour < TRAIL_T2_UPTO) return TRAIL_T2_GAP;
-    return TRAIL_T3_GAP;
-  }
-
-  // ── Prev-candle structural trail (candle-by-candle, profit-only) ─────────────
-  // Disabled by default — enable after validating in backtest before going live.
-  // Composes with SAR + tier trail (tighten-only, never loosens).
-  const SWING_PREV_CANDLE_TRAIL_ENABLED       = (process.env.SWING_PREV_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS  = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS || "15");
-  const SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_BUFFER_PTS    || "2");
-  const SWING_PREV_CANDLE_TRAIL_MAX_GAP       = parseFloat(process.env.SWING_PREV_CANDLE_TRAIL_MAX_GAP       || "35");
-
-  function applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot) {
-    if (!SWING_PREV_CANDLE_TRAIL_ENABLED) return currentSL;
-    if (!lastCandle || currentSL == null || entrySpot == null) return currentSL;
-    const profit = side === "CE"
-      ? (bestPrice || entrySpot) - entrySpot
-      : entrySpot - (bestPrice || entrySpot);
-    if (profit < SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS) return currentSL;
-    const structPx = side === "CE" ? lastCandle.low : lastCandle.high;
-    const gap = side === "CE" ? (lastCandle.close - structPx) : (structPx - lastCandle.close);
-    if (gap > SWING_PREV_CANDLE_TRAIL_MAX_GAP) return currentSL;
-    const proposed = side === "CE"
-      ? structPx - SWING_PREV_CANDLE_TRAIL_BUFFER_PTS
-      : structPx + SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
-    if (side === "CE" && proposed > currentSL) return quantize(proposed, 2);
-    if (side === "PE" && proposed < currentSL) return quantize(proposed, 2);
-    return currentSL;
-  }
+  // ── SWING (redefined): exit/stop model ───────────────────────────────────
+  //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
+  //   Trail       : every completed candle, tighten SL to that candle's low/high.
+  //   Breakeven   : after BREAKEVEN_PTS move in favour, snap SL to entry.
+  //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
+  //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
+  const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
+  const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+  // Backtest has no live option LTP — approximate the premium stop as an adverse
+  // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
+  // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
+  const _OPT_STOP_SPOT_PTS = (OPT_STOP_PCT > 0 && DELTA > 0) ? (OPT_STOP_PCT * 200) / DELTA : 0;
 
   // Clear IST memoization caches so back-to-back backtests don't cross-pollute
   _istDateCache.clear();
@@ -244,10 +193,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
   // ── Optimisation: cache the SL from the previous candle's getSignal ──────────
   // Instead of calling getSignal(prevWindow) on every iteration (O(n²) total),
-  // we save the current SL and reuse it as the 'prev SL' on the next iteration.
-  // This halves getSignal calls and eliminates the redundant prevWindow slice.
-  let _cachedPrevSL = null;  // updated at end of each loop iteration
-
   // ── Optimisation: push/pop window trick (mirrors paper/live onTick) ──────────
   // candles.slice(0, i+1) allocates a new array every iteration — O(n) alloc × n iters = O(n²) mem.
   // Instead: maintain a 'window' array and push/pop the current candle in and out.
@@ -265,10 +210,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   50%-rule pause: ${2 * candleResolutionMins} min (2 candles) after each 50%-rule exit`);
-  console.log(`   TRAIL tiers: T1 0-${TRAIL_T1_UPTO}pt=gap${TRAIL_T1_GAP}pt | T2 ${TRAIL_T1_UPTO}-${TRAIL_T2_UPTO}pt=gap${TRAIL_T2_GAP}pt | T3 ${TRAIL_T2_UPTO}pt+=gap${TRAIL_T3_GAP}pt | activate=25%SARgap(min${TRAIL_ACTIVATE_PTS}pt) | ADX_MIN: 25 | RSI CE>55 PE<45`);
+  console.log(`   SWING(redefined): EMA21+RSI+SAR | prev-candle trailing SL | breakeven ${process.env.BREAKEVEN_PTS || "25"}pt | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
 
-  // 50%-rule exit pause: after a 50%-rule exit, block re-entry for 2 candles.
+  // 50%-rule exit pause: retained for non-SWING strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
   let _fiftyPctPauseUntilTs = 0;
 
@@ -280,7 +224,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   let _dailyLossHit         = false;   // latched true when daily loss >= MAX_DAILY_LOSS
   let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
   let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
-  let _slHitCandleTime      = null;    // block re-entry on same candle where SL was hit
+  const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
@@ -319,7 +263,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _dailyLossHit       = false;
         _consecutiveLosses  = 0;
         _consecPauseUntilTs = 0;
-        _slHitCandleTime    = null;
+        _slPauseUntilBySide.CE = 0;
+        _slPauseUntilBySide.PE = 0;
         if (_verbose) {
           // Count trades for previous day for the daily log
           // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
@@ -348,7 +293,6 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const reason = _sig.reason;
     const signalSL = _sig.stopLoss;
     const signalStrength = _sig.signalStrength;
-    const ema9 = _sig.ema9;
 
     // Debug: log first few signal evaluations so 0-trade runs are diagnosable
     if (_dbgSignalCount < 5) {
@@ -366,70 +310,29 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
-    // ── SL FIX: use cached SL from previous iteration (closed candles only) ───
-    // Mirrors paper/live: SL always taken from last fully closed candle's SAR.
-    // _cachedPrevSL was set at the end of the previous iteration = getSignal(candles[0..i-1]).
-    const prevSignalSL = _cachedPrevSL;
-
-    // ── UPDATE TRAILING SAR SL (tighten only) ────────────────────────────────
-    if (position && signalSL !== null && signalSL !== undefined) {
-      const oldSL   = position.stopLoss;
-      const tighten = position.side === "CE"
-        ? (oldSL === null || signalSL > oldSL)
-        : (oldSL === null || signalSL < oldSL);
-      if (tighten) {
-        if (_verbose) console.log(`  📐 SAR-SL tightened: ${oldSL} → ${signalSL} (${position.side})`);
-        position.stopLoss = signalSL;
-      }
-    }
-
-    // ── SIMULATE INTRA-CANDLE TRAIL ───────────────────────────────────────────
-    // Tiered dynamic gap (mirrors paper/live exactly): gap tightens as profit grows.
-    // 50% floor/ceiling applied: trail cannot cross entryPrevMid until price clears it.
-    // Uses candle high/low as best price proxy (tick-level not available in backtest).
-    // trailActivatePts: dynamic per-trade — 25% of initial SAR gap, min TRAIL_ACTIVATE_PTS.
+    // ── PREV-CANDLE TRAILING STOP (tighten-only) ─────────────────────────────
+    // SL trails the previous completed candle's low (CE) / high (PE).
+    // prevCandle = candles[i-1] = the last fully completed candle before this one,
+    // so on the iteration AFTER entry this tightens to the entry candle's low/high,
+    // then advances candle-by-candle. Never loosens.
     if (position) {
+      const trailRef = position.side === "CE" ? prevCandle.low : prevCandle.high;
       if (position.side === "CE") {
-        const bestThisCandle = candle.high;
-        if (!position.bestPrice || bestThisCandle > position.bestPrice) position.bestPrice = bestThisCandle;
-        const moveInFavour = position.bestPrice - position.entryPrice;
-        const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
-        if (moveInFavour >= activatePts) {
-          const dynamicGap       = getDynamicTrailGap(moveInFavour);
-          const trailSL          = quantize(position.bestPrice - dynamicGap, 2);
-          if (trailSL > position.stopLoss) {
-            if (_verbose) console.log(`  📈 TRAIL CE: bestHigh=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
-            position.stopLoss = trailSL;
-          }
+        if (position.stopLoss == null || trailRef > position.stopLoss) {
+          if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE → prevLow ${trailRef} (was ${position.stopLoss})`);
+          position.stopLoss = quantize(trailRef, 2);
         }
       } else {
-        const bestThisCandle = candle.low;
-        if (!position.bestPrice || bestThisCandle < position.bestPrice) position.bestPrice = bestThisCandle;
-        const moveInFavour = position.entryPrice - position.bestPrice;
-        const activatePts  = position.trailActivatePts || TRAIL_ACTIVATE_PTS;
-        if (moveInFavour >= activatePts) {
-          const dynamicGap       = getDynamicTrailGap(moveInFavour);
-          const trailSL          = quantize(position.bestPrice + dynamicGap, 2);
-          if (trailSL < position.stopLoss) {
-            if (_verbose) console.log(`  📉 TRAIL PE: bestLow=${position.bestPrice} move=+${moveInFavour.toFixed(1)}pt gap=${dynamicGap}pt → trailSL=${trailSL}`);
-            position.stopLoss = trailSL;
-          }
+        if (position.stopLoss == null || trailRef < position.stopLoss) {
+          if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE → prevHigh ${trailRef} (was ${position.stopLoss})`);
+          position.stopLoss = quantize(trailRef, 2);
         }
       }
-    }
-
-    // ── PREV-CANDLE STRUCTURAL TRAIL (candle-by-candle, profit-only) ─────────
-    // After current candle close, if trade is in profit, tighten SL to this candle's
-    // low (CE) / high (PE) ± buffer. Tighten-only; skip wide bars to prevent loosening.
-    if (position && SWING_PREV_CANDLE_TRAIL_ENABLED) {
-      const oldSL = position.stopLoss;
-      const newSL = applyPrevCandleTrail(oldSL, candle, position.side, position.bestPrice, position.entryPrice);
-      if (newSL !== oldSL) {
-        if (_verbose) {
-          const ref = position.side === "CE" ? candle.low : candle.high;
-          console.log(`  📐 PREV-CANDLE TRAIL ${position.side}: ₹${oldSL} → ₹${newSL} | ref ${position.side === "CE" ? "low" : "high"}=${ref} buf=${SWING_PREV_CANDLE_TRAIL_BUFFER_PTS}pt`);
-        }
-        position.stopLoss = newSL;
+      // Track favourable extreme (for breakeven trigger)
+      if (position.side === "CE") {
+        if (!position.bestPrice || candle.high > position.bestPrice) position.bestPrice = candle.high;
+      } else {
+        if (!position.bestPrice || candle.low < position.bestPrice) position.bestPrice = candle.low;
       }
     }
 
@@ -478,6 +381,22 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
           exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
+        }
+      }
+
+      // Rule 1b: Option premium stop — exit if premium drops OPT_STOP_PCT from entry.
+      // Backtest has no live LTP, so approximate via an adverse SPOT move
+      // (_OPT_STOP_SPOT_PTS = OPT_STOP_PCT × est-premium / delta). Usually wider than
+      // the prev-candle SL, so it only binds on a sharp adverse gap.
+      if (!exitReason && _OPT_STOP_SPOT_PTS > 0) {
+        const adverse = position.side === "CE"
+          ? (position.entryPrice - candle.low)
+          : (candle.high - position.entryPrice);
+        if (adverse >= _OPT_STOP_SPOT_PTS) {
+          exitReason = `Option stop ${(OPT_STOP_PCT * 100).toFixed(0)}% (≈${_OPT_STOP_SPOT_PTS.toFixed(0)}pt adverse spot)`;
+          exitPrice  = position.side === "CE"
+            ? quantize(position.entryPrice - _OPT_STOP_SPOT_PTS, 2)
+            : quantize(position.entryPrice + _OPT_STOP_SPOT_PTS, 2);
         }
       }
 
@@ -557,7 +476,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           const pnlLabel = OPTION_SIM ? `₹${pnlRupees}` : `${spotPnlPts}pts`;
           console.log(`  🚪 EXIT ${position.side} @ ${exitPrice}  PnL=${pnlRupees >= 0 ? "+" : ""}${pnlLabel} ${exitIcon}  reason=${exitReason}`);
           if (OPTION_SIM) console.log(`     [${pnlMode}]`);
-          console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice} | entryPrevMid=${position.entryPrevMid}`);
+          console.log(`     Held: ${toIST(position.entryTime)} → ${toIST(candle.time)} | ${position.candlesHeld || 1} candles | Entry=${position.entryPrice}`);
         }
 
         // ── 50%-rule exit → set pause for 2 candles ────────────────────────
@@ -585,18 +504,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           _consecutiveLosses = 0;
         }
 
-        // SL re-entry block: only when initial SL hit (not trailing SL exit)
+        // Same-side SL cooldown: after an SL hit, block new entries on THAT side
+        // for SWING_SL_PAUSE_CANDLES candles (mirrors SCALP per-side pause).
         const isSLExit = exitReason.toLowerCase().includes("sl hit");
         if (isSLExit) {
-          // Only block if trail had NOT activated (pure losing trade)
-          const wasTrailing = position.bestPrice && (
-            position.side === "CE"
-              ? (position.bestPrice - position.entryPrice) >= (position.trailActivatePts || TRAIL_ACTIVATE_PTS)
-              : (position.entryPrice - position.bestPrice) >= (position.trailActivatePts || TRAIL_ACTIVATE_PTS)
-          );
-          if (!wasTrailing) {
-            _slHitCandleTime = candle.time;
-          }
+          _slPauseUntilBySide[position.side] = candle.time + (SWING_SL_PAUSE_CANDLES * candleResolutionMins * 60);
+          if (_verbose) console.log(`  ⏸️ ${position.side} SL pause — no ${position.side} entries for ${SWING_SL_PAUSE_CANDLES} candles`);
         }
 
         // ── Notify strategy: optional exit callbacks
@@ -608,31 +521,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     }
 
     // ── ENTRY ─────────────────────────────────────────────────────────────────
-    // Gate checks: SL re-entry block, consecutive loss pause, daily loss limit
-    const isSLBlocked = _slHitCandleTime !== null && _slHitCandleTime === candle.time;
+    // Gate checks: same-side SL cooldown, consecutive-loss pause, daily loss limit
+    const _sigSide = signal === "BUY_CE" ? "CE" : signal === "BUY_PE" ? "PE" : null;
+    const isSideCoolingDown = _sigSide && _slPauseUntilBySide[_sigSide] > 0 && candle.time < _slPauseUntilBySide[_sigSide];
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
     const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
+    const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
-    if (!position && !isEODcandle && !isConsecPaused && !isDailyLossHit && (signal === "BUY_CE" || signal === "BUY_PE")) {
-      // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
-      if (expiryDates && !expiryDates.has(candleDate)) {
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
-      if (isSLBlocked) {
-        _cachedPrevSL = signalSL ?? null;
-        continue;
-      }
+    if (!position && !isEODcandle && !isConsecPaused && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
+      // Expiry-day-only filter: skip entry on non-expiry days
+      if (expiryDates && !expiryDates.has(candleDate)) continue;
+      // Same-side SL cooldown: skip this side until the pause expires
+      if (isSideCoolingDown) continue;
 
-      const side = signal === "BUY_CE" ? "CE" : "PE";
-      // entryPrevMid: computed from prevCandle with relaxed ratio for more breathing room.
-      // CE: use 35% from low (was 50%) → exit level is lower, more room before exit fires
-      // PE: use 65% from low (was 50%) → exit level is higher, more room before exit fires
-      // This gives ~40% more room vs the old fixed 50% mid.
-      const _prevRange = prevCandle.high - prevCandle.low;
-      const _prevRatio = side === "CE" ? 0.35 : 0.65;
-      const entryPrevMid = quantize(prevCandle.low + _prevRange * _prevRatio, 2);
-      const strength = signalStrength || "MARGINAL";
+      const side     = _sigSide;
+      const strength = signalStrength || "STRONG";
 
       // ── VIX filter: block entry in high-volatility regimes ──────────────────
       const _btVix = lookupVix(candle.time);
@@ -640,63 +543,41 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (!_btVixCheck.allowed) {
         _vixBlockCount++;
         if (_verbose && _vixBlockCount <= 5) {
-          console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} [${strength}] at ${toIST(candle.time)}`);
+          console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} at ${toIST(candle.time)}`);
         } else if (_verbose && _vixBlockCount === 6) {
           console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
         }
-        _cachedPrevSL = signalSL ?? null;
         continue;
       }
 
-      // ── Entry price: STRONG vs MARGINAL ──────────────────────────────────────
+      // Entry at candle close — backtest's candle-granularity proxy for the
+      // live intra-candle entry. Slippage worsens it (CE buy higher, PE buy lower).
       let entryPrice = candle.close;
-      if (strength === "STRONG" && ema9 != null) {
-        if (side === "CE") {
-          entryPrice = quantize(Math.min(candle.close, ema9), 2);
-        } else {
-          entryPrice = quantize(Math.max(candle.close, ema9), 2);
-        }
-      }
-      // Apply slippage: entry is worse (higher for CE buy, lower for PE buy)
       if (SLIPPAGE_PTS > 0) {
         entryPrice = side === "CE"
           ? quantize(entryPrice + SLIPPAGE_PTS, 2)
           : quantize(entryPrice - SLIPPAGE_PTS, 2);
       }
 
-      // ── 50% entry gate (mirrors paper trade) ─────────────────────────────────
-      // If entry price is already on the wrong side of prev candle mid,
-      // 50% entry gate REMOVED — breakeven stop handles protection
-
-      // Trail activation from env directly — dynamic: 25% of SAR gap, floored at env, capped at 40pts
-      const _initialSARgapBT = prevSignalSL ? Math.abs(entryPrice - prevSignalSL) : 0;
-      const _dynTrailActivateBT = Math.min(40, Math.max(TRAIL_ACTIVATE_PTS, Math.round(_initialSARgapBT * 0.25)));
+      // Initial SL = previous completed candle's low (CE) / high (PE), from getSignal.
+      const initSL = signalSL != null ? quantize(signalSL, 2) : null;
 
       position = {
         side,
         entryPrice,
         entryTime:       candle.time,
         entryReason:     reason,
-        stopLoss:        prevSignalSL || null,
-        initialStopLoss: prevSignalSL || null,
-        trailActivatePts: _dynTrailActivateBT,
+        stopLoss:        initSL,
+        initialStopLoss: initSL,
         bestPrice:       null,
-        entryPrevMid,
         signalStrength:  strength,
         candlesHeld:     0,
       };
-      const priceNote = strength === "STRONG"
-        ? `(EMA9=${ema9} < close=${candle.close} → entered at EMA9 touch)`
-        : `(MARGINAL → close confirmation)`;
       if (_verbose) {
-        console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL=${prevSignalSL}  entryPrevMid=${entryPrevMid}  [${strength}]`);
-        console.log(`     ${priceNote}`);
+        console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL(prev-candle)=${initSL}`);
         console.log(`     Reason: ${reason}`);
       }
     }
-
-    // Cache current SL for next iteration's prevSignalSL (avoids redundant getSignal call)
-    _cachedPrevSL = signalSL ?? null;
   }
 
   // Square off any still-open position at end of run

@@ -25,9 +25,9 @@ All five strategies run **in parallel** on the same WebSocket — different cand
 
 | Mode | Strategy | Timeframe | Broker | Route Prefix |
 |------|----------|-----------|--------|-------------|
-| **Swing Live** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Zerodha | `/swing-live` |
-| **Swing Paper** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Simulated | `/swing-paper` |
-| **Swing Backtest** | SAR + EMA9 + RSI | 5-min (default; 15-min via `TRADE_RESOLUTION=15`) | Historical | `/swing-backtest` |
+| **Swing Live** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
+| **Swing Paper** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
+| **Swing Backtest** | EMA21 + RSI + SAR | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
 | **Scalp Live** | BB + RSI + PSAR (V4) | 5-min | Fyers | `/scalp-live` |
 | **Scalp Paper** | BB + RSI + PSAR (V4) | 5-min | Simulated | `/scalp-paper` |
 | **Scalp Backtest** | BB + RSI + PSAR (V4) | 5-min | Historical | `/scalp-backtest` |
@@ -65,14 +65,17 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 ## Strategies
 
-### Strategy 1: Swing — SAR + EMA9 + RSI (5-min default; 15-min via env)
-- **Entry**: EMA9 OHLC4 touch + SAR positioning + RSI momentum + ADX trend + EMA slope
-- **Filters**: ADX chop filter (skip low-ADX), RSI overbought/oversold caps, VIX regime, EMA30 trend gate (optional), body >= 10pt, SAR gap >= 55pt
-- **Initial SL (hybrid cap)**: Tightest of `[SAR, prev-candle structural, entry ± SWING_MAX_INITIAL_SL_PTS]`, floored at `SWING_MIN_INITIAL_SL_PTS` to avoid suicide-tight SLs on doji bars. Trail activation rescales with the capped gap. Wired into Swing Paper + Swing Live.
-- **Strong-only mode** (`SWING_STRONG_ONLY`, default off): blocks MARGINAL signals on the candle-close entry path (intra-candle path was already STRONG-only). Blocked entries are recorded to skipLogger as `gate: "strong_only"`.
-- **Exit**: Tiered trailing SL (T1/T2/T3) + 50% candle rule + opposite signal + EOD
-- **Logic 3 override**: Captures lagging-SAR CE entries that classic logic misses
-- **Default candle resolution changed to 5-min in v4.5.0** (15-min wasn't taking entries during the data-collection window). All `TRADE_RES === 5` vs `>= 15` runtime branches preserved — set `TRADE_RESOLUTION=15` in `.env` (or via Settings) to restore prior behavior.
+### Strategy 1: Swing — EMA21 + RSI + SAR (redefined 2026-05-27; 3 / 5 / 15-min via env)
+- **Entry (intra-candle, all 3 true)**:
+  - **CE**: RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · price at/above EMA21(OHLC4) — fires whether the candle is already above EMA21 or crossing up · SAR below price (uptrend).
+  - **PE**: mirror — RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · price at/below EMA21 · SAR above price.
+- **Initial SL**: previous completed candle's **low (CE) / high (PE)** — used as-is (no hybrid cap).
+- **Trailing**: each candle close, tighten SL to that candle's low (CE) / high (PE) — tighten-only.
+- **Exits**: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`).
+- **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
+- **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
+- **Removed** vs the old strategy: EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
+- **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
 ### Strategy 2: Scalp — BB + RSI + PSAR V4 (5-min)
 - **Entry**: Close beyond Bollinger Band + RSI confirmation (> 55 for CE, < 45 for PE)
@@ -221,23 +224,25 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 ## Key .env Settings
 
-### Swing Strategy (5-min default, Zerodha)
+### Swing Strategy (EMA21 + RSI + SAR, Zerodha)
+**Redefined 2026-05-27.** Entry (intra-candle, all 3 true): **CE** = RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, price at/above EMA21(OHLC4), SAR below price. **PE** = mirror (RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, price at/below EMA21, SAR above). **Stop** = previous candle low (CE) / high (PE), trailed candle-by-candle (tighten-only). **Exits**: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). No EMA9 / ADX / candle-body / SAR-distance / STRONG-MARGINAL gates any more.
+
 | Key | Default | Notes |
 |-----|---------|-------|
-| `TRADE_RESOLUTION` | `5` | Candle size in minutes (changed from `15` in v4.5.0). Set to `15` to restore prior 15-min behavior — strategy code branches on `TRADE_RES === 5` vs `>= 15`. |
+| `TRADE_RESOLUTION` | `5` | Candle size in minutes — `3`, `5`, or `15` (logic is resolution-agnostic). |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
 | `MAX_DAILY_TRADES` | `6` | Daily entry cap — anti-overtrade on chop days |
 | `SWING_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), Swing Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
-| `EMA30_FILTER` | `true` | Medium-term trend gate |
-| `SWING_STRONG_ONLY` | `false` | Block MARGINAL signals on the candle-close entry path (intra-candle was already STRONG-only). Logged to skipLogger as `gate: "strong_only"`. |
-| `SWING_USE_PREV_CANDLE_SL` | `true` | Hybrid initial SL — include prev-candle structural in min-of stack |
-| `SWING_MAX_INITIAL_SL_PTS` | `50` | Hard cap on initial SL distance (pts) — binds when SAR-only would be wider |
-| `SWING_MIN_INITIAL_SL_PTS` | `15` | Floor for initial SL distance (pts) — protects against suicide-tight SLs |
-| `SWING_PREV_CANDLE_TRAIL_ENABLED` | `false` | Optional structure trail (prev-candle low/high) composed on top of SAR + tier trail (tighten-only) |
-| `SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS` | `15` | Min profit before prev-candle trail starts |
-| `SWING_PREV_CANDLE_TRAIL_MAX_GAP` | `35` | Skip wide candles — `close − low > N` disables the trail for that bar |
-| `OPT_STOP_PCT` | `0.25` | Fallback option-premium SL — fires before underlying SL on far-SAR setups |
+| `RSI_CE_MIN` | `52` | CE entry: RSI(14) must be above this (bullish momentum floor) |
+| `RSI_CE_MAX` | `80` | CE blocked when RSI at/above this (overbought guard) |
+| `RSI_PE_MAX` | `48` | PE entry: RSI(14) must be below this (bearish momentum cap) |
+| `RSI_PE_MIN` | `20` | PE blocked when RSI at/below this (oversold guard) |
+| `BREAKEVEN_PTS` | `25` | Move SL to entry once +N spot pts in favour |
+| `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
+| `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
+| `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
+| `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |
 | `TRADE_ENTRY_START` | `09:30` | Earliest entry time (IST) |
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |

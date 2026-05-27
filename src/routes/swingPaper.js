@@ -60,6 +60,8 @@ let _SWING_PREV_CANDLE_TRAIL_ACTIVATE_PTS;
 let _SWING_PREV_CANDLE_TRAIL_BUFFER_PTS;
 let _SWING_PREV_CANDLE_TRAIL_MAX_GAP;
 let _STOP_MINS;
+let _SWING_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
+let _SWING_EOD_EXIT_MINS;      // square off any open SWING position at/after this IST time (before day close)
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
   _TRAIL_T1_UPTO                         = parseFloat(process.env.TRAIL_TIER1_UPTO || "30");
@@ -82,6 +84,12 @@ function _refreshConfig() {
   const raw = process.env.TRADE_STOP_TIME || "15:30";
   const [h, m] = raw.split(":").map(Number);
   _STOP_MINS = h * 60 + (isNaN(m) ? 0 : m);
+  _SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
+  // Exit-before-close: square off open position at this IST time (default 15:15),
+  // ahead of the TRADE_STOP_TIME auto-stop. Blank/invalid → fall back to _STOP_MINS.
+  const _eodRaw = process.env.SWING_EOD_EXIT_TIME || "15:15";
+  const [eh, em] = _eodRaw.split(":").map(Number);
+  _SWING_EOD_EXIT_MINS = (isNaN(eh)) ? _STOP_MINS : (eh * 60 + (isNaN(em) ? 0 : em));
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
@@ -102,6 +110,16 @@ function _applyPrevCandleTrail(currentSL, lastCandle, side, bestPrice, entrySpot
   if (side === "CE" && proposed > currentSL) return parseFloat(proposed.toFixed(2));
   if (side === "PE" && proposed < currentSL) return parseFloat(proposed.toFixed(2));
   return currentSL;
+}
+
+// ── Same-side SL cooldown ───────────────────────────────────────────────────
+// After an SL hit (price SL or option stop), block new entries on THAT side for
+// SWING_SL_PAUSE_CANDLES candles. Mirrors SCALP's per-side pause.
+function _setSlPause(side) {
+  if (!_SWING_SL_PAUSE_CANDLES || _SWING_SL_PAUSE_CANDLES <= 0) return;
+  ptState._slPauseUntilBySide = ptState._slPauseUntilBySide || { CE: 0, PE: 0 };
+  ptState._slPauseUntilBySide[side] = simNow() + _SWING_SL_PAUSE_CANDLES * getTradeResolution() * 60 * 1000;
+  log(`⏸️ [PAPER] ${side} SL cooldown — no new ${side} entries for ${_SWING_SL_PAUSE_CANDLES} candles`);
 }
 
 // _STOP_MINS declared and populated by _refreshConfig() above
@@ -625,6 +643,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     log(`⚠️ [PAPER] simulateBuy called while position already open — ignoring duplicate entry (${side} @ ₹${price})`);
     return;
   }
+  // Same-side SL cooldown: reject re-entry on a side that recently hit SL/option-stop.
+  if (ptState._slPauseUntilBySide && ptState._slPauseUntilBySide[side] > simNow()) {
+    log(`⏸️ [PAPER] ${side} SL cooldown active — entry rejected (${side} @ ₹${price})`);
+    ptState._entryPending = false;
+    return;
+  }
   const optDetails = parseOptionDetails(symbol);
 
   // Capture the prev-candle reference at entry time — tick exit rule uses this FIXED value forever.
@@ -639,38 +663,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // 50% entry gate REMOVED — replaced by breakeven stop at +25pt
   const _entrySpot = spotAtEntry || price;
 
-  // ── HYBRID INITIAL SL CAP ────────────────────────────────────────────────
-  // Tighten the raw SAR-based stopLoss using: prev-candle structural + hard pts cap,
-  // floored at SWING_MIN_INITIAL_SL_PTS so we never get a suicide-tight SL on doji bars.
-  // Result: take the tightest of [SAR, prevCandle structural, entry±MAX], then floor at MIN.
+  // ── INITIAL SL (SWING redefined) ──────────────────────────────────────────
+  // The stop passed in IS the previous-candle low (CE) / high (PE) from getSignal.
+  // Used as-is; the execution layer trails it candle-by-candle from here.
   const _origSAR_SL = stopLoss;
   let _capLog = null;
-  if (stopLoss && _entrySpot) {
-    let _slCandidate = stopLoss; // start with SAR
-    const _sources = [`SAR=₹${stopLoss}`];
-
-    if (_SWING_USE_PREV_CANDLE_SL && _lastCandle) {
-      const _structSL = side === "CE" ? _lastCandle.low : _lastCandle.high;
-      _sources.push(`prev${side === "CE" ? "Low" : "High"}=₹${_structSL}`);
-      _slCandidate = side === "CE" ? Math.max(_slCandidate, _structSL) : Math.min(_slCandidate, _structSL);
-    }
-    if (_SWING_MAX_INITIAL_SL_PTS > 0) {
-      const _capSL = side === "CE" ? _entrySpot - _SWING_MAX_INITIAL_SL_PTS : _entrySpot + _SWING_MAX_INITIAL_SL_PTS;
-      _sources.push(`hardCap=₹${_capSL.toFixed(2)} (${_SWING_MAX_INITIAL_SL_PTS}pt)`);
-      _slCandidate = side === "CE" ? Math.max(_slCandidate, _capSL) : Math.min(_slCandidate, _capSL);
-    }
-    if (_SWING_MIN_INITIAL_SL_PTS > 0) {
-      const _floorSL = side === "CE" ? _entrySpot - _SWING_MIN_INITIAL_SL_PTS : _entrySpot + _SWING_MIN_INITIAL_SL_PTS;
-      _slCandidate = side === "CE" ? Math.min(_slCandidate, _floorSL) : Math.max(_slCandidate, _floorSL);
-    }
-    _slCandidate = parseFloat(_slCandidate.toFixed(2));
-    if (_slCandidate !== stopLoss) {
-      const _newGap = Math.abs(_entrySpot - _slCandidate).toFixed(1);
-      const _oldGap = Math.abs(_entrySpot - stopLoss).toFixed(1);
-      _capLog = `🛡️ [PAPER] Initial SL tightened: ₹${stopLoss} (${_oldGap}pt) → ₹${_slCandidate} (${_newGap}pt) | sources: [${_sources.join(", ")}] | floor=${_SWING_MIN_INITIAL_SL_PTS}pt`;
-      stopLoss = _slCandidate;
-    }
-  }
 
   // Trail activation from env — dynamic: 25% of effective SL gap, floored at env, capped at 40pts
   // Uses the FINAL (capped) SL gap so trail activation scales with real risk, not original SAR gap.
@@ -1059,70 +1056,33 @@ async function onCandleClose(candle) {
   // It is set once in simulateBuy() = mid of the last fully closed candle at entry.
   // The 50% rule reference must not roll forward as new candles close.
 
-  // ── Trailing SAR stop-loss update (candle close) ─────────────────────────
-  // Only tighten the SL — never move it against us.
-  // CE: new SAR must be HIGHER than current SL (dots move up as trend continues)
-  // PE: new SAR must be LOWER than current SL (dots move down as trend continues)
-  if (ptState.position && stopLoss !== null && stopLoss !== undefined) {
-    const pos   = ptState.position;
-    const oldSL = pos.stopLoss;
-    // Guard: a SAR-based stop is only valid on the PROTECTIVE side of price.
-    // For an override entry (Logic-3: SAR hasn't flipped yet) the live SAR sits on
-    // the WRONG side of price — adopting it would push the stop beyond price and
-    // trigger an instant candle-close exit. Only trail off SAR once it has flipped
-    // to support the trade (CE: SAR below price, PE: SAR above price).
-    const sarOnProtectiveSide = pos.side === "CE"
-      ? stopLoss < candle.close
-      : stopLoss > candle.close;
-    const tighten = sarOnProtectiveSide && (pos.side === "CE"
-      ? (oldSL === null || stopLoss > oldSL)   // CE: higher SAR = tighter SL
-      : (oldSL === null || stopLoss < oldSL)); // PE: lower SAR = tighter SL
-    if (tighten) {
-      pos.stopLoss = stopLoss;
-      const _optSARp = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      const _sarLabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? (pos.side==="CE"?"↑LONG":"↓SHORT") : (pos.side==="CE"?"↑CE":"↓PE");
-      log(`🔄 [PAPER] SAR tightened: ₹${oldSL} → ₹${stopLoss} (${_sarLabel})${_optSARp}`);
-    } else if (!sarOnProtectiveSide) {
-      log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} SAR on wrong side of price ₹${candle.close} (not flipped yet — keeping EMA/structural SL)`);
+  // ── Prev-candle trailing stop (SWING redefined) ──────────────────────────
+  // Tighten the SL to THIS just-closed candle's low (CE) / high (PE). It becomes
+  // the stop enforced intra-candle during the NEXT bar (via onTick). Tighten-only.
+  // Then apply breakeven (SL → entry once +BREAKEVEN_PTS in favour).
+  if (ptState.position) {
+    const pos      = ptState.position;
+    const trailRef = pos.side === "CE" ? candle.low : candle.high;
+    if (pos.side === "CE") {
+      if (pos.stopLoss == null || trailRef > pos.stopLoss) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2));
+        log(`📐 [PAPER] Prev-candle trail CE: ₹${_o} → ₹${pos.stopLoss} (just-closed low)`);
+      }
     } else {
-      log(`   SAR NOT tightened: new=₹${stopLoss} current=₹${oldSL} | ${pos.side} needs ${pos.side==="CE"?"higher":"lower"}`);
+      if (pos.stopLoss == null || trailRef < pos.stopLoss) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2));
+        log(`📐 [PAPER] Prev-candle trail PE: ₹${_o} → ₹${pos.stopLoss} (just-closed high)`);
+      }
+    }
+    const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
+    const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
+    if (_beMove >= _bePts) {
+      if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
+      if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
     }
   }
-
-  // ── Prev-candle structural trail (candle-by-candle, profit-only) ───────────
-  if (_SWING_PREV_CANDLE_TRAIL_ENABLED && ptState.position && ptState.position.stopLoss != null) {
-    const _pcPos  = ptState.position;
-    const _oldPCT = _pcPos.stopLoss;
-    const _newPCT = _applyPrevCandleTrail(_oldPCT, candle, _pcPos.side, _pcPos.bestPrice, _pcPos.spotAtEntry);
-    if (_newPCT !== _oldPCT) {
-      _pcPos.stopLoss = _newPCT;
-      const _optPCT = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`📐 [PAPER] PrevCandle trail ${_pcPos.side}: ₹${_oldPCT} → ₹${_newPCT} | ref ${_pcPos.side === "CE" ? "low" : "high"}=₹${_pcPos.side === "CE" ? candle.low : candle.high} buf=${_SWING_PREV_CANDLE_TRAIL_BUFFER_PTS}pt${_optPCT}`);
-    }
-  }
-
-  // ── Exit Rule 1: 50% candle rule (same as backtest) ─────────────────────
-  // Backtest checks this on candle[i+1] after entry at candle[i].
-  // So skip this check on the entry candle itself — only apply from next candle onwards.
-  // 50% candle-close exit REMOVED — replaced by breakeven stop at +25pt
-  // The breakeven stop provides better protection without killing valid trades on noise.
-
-  // ── Exit Rule 2: SAR / trail SL breach at candle close ───────────────────
-  if (ptState.position && ptState.position.stopLoss !== null) {
-    const sl = ptState.position.stopLoss;
-    if (ptState.position.side === "CE" && candle.close < sl) {
-      const _optSlCe = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🚨 [PAPER] SL hit on candle close — spot ₹${candle.close} < SL ₹${sl}${_optSlCe}`);
-      simulateSell(sl, `SL hit — close ₹${candle.close} below SL ₹${sl}`, candle.close);
-      return;
-    }
-    if (ptState.position.side === "PE" && candle.close > sl) {
-      const _optSlPe = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      log(`🚨 [PAPER] SL hit on candle close — spot ₹${candle.close} > SL ₹${sl}${_optSlPe}`);
-      simulateSell(sl, `SL hit — close ₹${candle.close} above SL ₹${sl}`, candle.close);
-      return;
-    }
-  }
+  // SL-hit is enforced intra-candle in onTick against the prev-candle stop set above —
+  // no separate candle-close SL check needed.
 
   // ── Exit Rule 3: Opposite signal ────────────────────────────────────────
   if (ptState.position) {
@@ -1138,6 +1098,16 @@ async function onCandleClose(candle) {
   // Skip EOD exit in simulation mode
   const _eodMinNow  = ptState._simMode ? 0 : getISTMinutes();
   const _stopLabel  = String(Math.floor(_STOP_MINS/60)).padStart(2,"0") + ":" + String(_STOP_MINS%60).padStart(2,"0");
+
+  // ── Exit-before-close: square off any open position at SWING_EOD_EXIT_TIME ──
+  // Fires ahead of the TRADE_STOP_TIME auto-stop; the engine keeps running until _STOP_MINS.
+  if (ptState.position && !ptState._simMode && _eodMinNow >= _SWING_EOD_EXIT_MINS && _eodMinNow < _STOP_MINS) {
+    const _eLbl = String(Math.floor(_SWING_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_SWING_EOD_EXIT_MINS%60).padStart(2,"0");
+    log(`⏰ [PAPER] Exit-before-close ${_eLbl} — squaring off open ${ptState.position.side}`);
+    simulateSell(candle.close, `Exit before day close ${_eLbl}`, candle.close);
+    return;
+  }
+
   if (_eodMinNow >= _STOP_MINS) {
     if (ptState.position) {
       log("⏰ [PAPER] EOD " + _stopLabel + " — auto square off");
@@ -1628,96 +1598,45 @@ function onTick(tick) {
     }
   }
 
+  // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
+  if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp && _OPT_STOP_PCT > 0) {
+    const _pos     = ptState.position;
+    const _stopLtp = parseFloat((_pos.optionEntryLtp * (1 - _OPT_STOP_PCT)).toFixed(2));
+    if (ptState.optionLtp <= _stopLtp) {
+      log(`🛑 [PAPER] OPTION STOP ${(_OPT_STOP_PCT*100).toFixed(0)}% — opt ₹${ptState.optionLtp} <= ₹${_stopLtp} (entry ₹${_pos.optionEntryLtp})`);
+      _setSlPause(_pos.side);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      simulateSell(ltp, `Option stop ${(_OPT_STOP_PCT*100).toFixed(0)}% @ opt ₹${ptState.optionLtp}`, ltp);
+      return;
+    }
+  }
+
+  // ── Prev-candle trailing SL hit ───────────────────────────────────────────
+  // pos.stopLoss is the previous candle's low (CE) / high (PE), set at the last
+  // candle close (or breakeven=entry). Enforced here tick-by-tick.
   // PE: exit when ltp >= stopLoss | CE: exit when ltp <= stopLoss
   if (ptState.position && ptState.position.stopLoss !== null) {
     const pos = ptState.position;
+    // Track favourable extreme (used by the breakeven check above)
+    if (pos.side === "CE") { if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp; }
+    else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
 
-    // ── Intra-candle trailing: dynamic tiered gap (tightens as profit grows) ──
-    // Trail activates after trailActivatePts (dynamic per-trade: 25% of SAR gap, min 15pt).
-    // Gap is NOT fixed — it shrinks in tiers as moveInFavour increases.
-    // 50% rule floor/ceiling still applies — trail never crosses entryPrevMid against us.
-    const TRAIL_ACTIVATE = pos.trailActivatePts || _TRAIL_ACTIVATE_PTS;
-
-    if (pos.side === "CE") {
-      // For CE: profit when price goes UP. Track highest ltp seen.
-      const prevBestCE = pos.bestPrice;
-      if (!pos.bestPrice || ltp > pos.bestPrice) pos.bestPrice = ltp;
-      const moveInFavour = pos.bestPrice - pos.spotAtEntry;
-      if (moveInFavour >= TRAIL_ACTIVATE) {
-        const dynamicGap = getDynamicTrailGap(moveInFavour);
-        const trailSL    = parseFloat((pos.bestPrice - dynamicGap).toFixed(2));
-        // 50% floor REMOVED — breakeven stop handles protection
-        const effectiveTrailSL = trailSL;
-        if (effectiveTrailSL > pos.stopLoss) {
-          const cushion = parseFloat((ltp - effectiveTrailSL).toFixed(1));
-          const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          const _trailCELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "LONG" : "CE";
-          log(`📈 [PAPER] Trail ${_trailCELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}`);
-          pos.stopLoss = effectiveTrailSL;
-        }
-      } else if (pos.bestPrice !== prevBestCE) {
-        // Throttle "waiting" log to once per candle to avoid flooding the log buffer.
-        const _curBarTime = ptState.currentBar ? ptState.currentBar.time : 0;
-        if (!pos._trailWaitLoggedAt || pos._trailWaitLoggedAt !== _curBarTime) {
-          pos._trailWaitLoggedAt = _curBarTime;
-          const needed       = parseFloat((TRAIL_ACTIVATE - moveInFavour).toFixed(1));
-          const _optWtCEp    = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          log(`⏳ [PAPER] Trail CE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate (threshold=${TRAIL_ACTIVATE}pt)${_optWtCEp}`);
-        }
-      }
-    } else {
-      // For PE: profit when price goes DOWN. Track lowest ltp seen.
-      const prevBestPE = pos.bestPrice;
-      if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp;
-      const moveInFavour = pos.spotAtEntry - pos.bestPrice;
-      if (moveInFavour >= TRAIL_ACTIVATE) {
-        const dynamicGap = getDynamicTrailGap(moveInFavour);
-        const trailSL    = parseFloat((pos.bestPrice + dynamicGap).toFixed(2));
-        // 50% ceiling REMOVED — breakeven stop handles protection
-        const effectiveTrailSL = trailSL;
-        if (effectiveTrailSL < pos.stopLoss) {
-          const cushion = parseFloat((effectiveTrailSL - ltp).toFixed(1));
-          const optStr  = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          const _trailPELabel = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" ? "SHORT" : "PE";
-          log(`📉 [PAPER] Trail ${_trailPELabel} [T${moveInFavour<_TRAIL_T1_UPTO?1:moveInFavour<_TRAIL_T2_UPTO?2:3} gap=${dynamicGap}pt]: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) → SL ₹${pos.stopLoss} → ₹${effectiveTrailSL} | cushion=${cushion}pt${optStr}`);
-          pos.stopLoss = effectiveTrailSL;
-        }
-      } else if (pos.bestPrice !== prevBestPE) {
-        // Throttle "waiting" log to once per candle (same fix as CE above).
-        const _curBarTime = ptState.currentBar ? ptState.currentBar.time : 0;
-        if (!pos._trailWaitLoggedAt || pos._trailWaitLoggedAt !== _curBarTime) {
-          pos._trailWaitLoggedAt = _curBarTime;
-          const needed       = parseFloat((TRAIL_ACTIVATE - moveInFavour).toFixed(1));
-          const _optWtPEp    = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-          log(`⏳ [PAPER] Trail PE waiting: best=₹${pos.bestPrice} (+${moveInFavour.toFixed(0)}pt) | need +${needed}pt more to activate (threshold=${TRAIL_ACTIVATE}pt)${_optWtPEp}`);
-        }
-      }
-    }
-
-    // ── Check if current SL is hit ────────────────────────────────────────────
     const updatedSL = pos.stopLoss;
+    const _slType = (sl) => Math.abs(sl - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(sl - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
     if (pos.side === "PE" && ltp >= updatedSL) {
-      const gaveBack  = parseFloat((ltp - pos.bestPrice).toFixed(1));
-      const peakGain  = parseFloat((pos.spotAtEntry - pos.bestPrice).toFixed(1));
-      const optStr    = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      const _slTypePE = Math.abs(updatedSL - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(updatedSL - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
-      log(`🛑 [PAPER] ${_slTypePE} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
-      // Only block re-entry if initial SL was hit before trail activated (pure loss).
-      const wasTrailingPE = pos.bestPrice && (pos.spotAtEntry - pos.bestPrice) >= TRAIL_ACTIVATE;
-      if (!wasTrailingPE) ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(updatedSL, `${_slTypePE} SL hit @ ₹${updatedSL}`, ltp);
+      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
+      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      _setSlPause("PE");
+      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
     if (pos.side === "CE" && ltp <= updatedSL) {
-      const gaveBack = parseFloat((pos.bestPrice - ltp).toFixed(1));
-      const peakGain = parseFloat((pos.bestPrice - pos.spotAtEntry).toFixed(1));
-      const optStr   = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
-      const _slTypeCE = Math.abs(updatedSL - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(updatedSL - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
-      log(`🛑 [PAPER] ${_slTypeCE} SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | peak=₹${pos.bestPrice} (+${peakGain}pt) gave back ${gaveBack}pt${optStr}`);
-      // Only block re-entry if initial SL was hit before trail activated (pure loss).
-      const wasTrailingCE = pos.bestPrice && (pos.bestPrice - pos.spotAtEntry) >= TRAIL_ACTIVATE;
-      if (!wasTrailingCE) ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
-      simulateSell(updatedSL, `${_slTypeCE} SL hit @ ₹${updatedSL}`, ltp);
+      const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
+      log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT CE — ltp ₹${ltp} <= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);
+      ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+      _setSlPause("CE");
+      simulateSell(updatedSL, `${_slType(updatedSL)} SL hit @ ₹${updatedSL}`, ltp);
       return;
     }
   }
@@ -1949,6 +1868,7 @@ router.get("/start", async (req, res) => {
   ptState._cachedPE            = null;
   ptState._maxTradesLoggedCandle = null;
   ptState._slHitCandleTime     = null;
+  ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
@@ -4317,6 +4237,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState._cachedPE            = null;
     ptState._maxTradesLoggedCandle = null;
     ptState._slHitCandleTime     = null;
+    ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
     ptState._missedLoggedCandle  = null;
