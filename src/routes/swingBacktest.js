@@ -1565,7 +1565,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   </div>
   <div class="page">
     <div style="margin-bottom:20px;">
-      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">SAR_EMA9_RSI Backtest</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">Swing (EMA21+RSI+SAR) Backtest</div>
       <div style="font-size:0.78rem;color:#4a6080;">Fix the error above and run again.</div>
     </div>
     <div class="card">
