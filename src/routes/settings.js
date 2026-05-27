@@ -72,7 +72,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
+    section: "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
     icon: "⚡",
     fields: [
       { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
@@ -442,7 +442,7 @@ const SETTINGS_SCHEMA = [
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
   swing:    "SWING STRATEGY (5-min) — Zerodha",
-  scalp:    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers",
+  scalp:    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   straddle: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
@@ -1071,7 +1071,7 @@ router.get("/", (req, res) => {
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
     "SWING STRATEGY (5-min) — Zerodha":                            swingModeOn,
-    "SCALP STRATEGY (BB+RSI+PSAR) — Fyers":                         scalpModeOn,
+    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers":                         scalpModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers":       straddleModeOn,
@@ -2679,7 +2679,7 @@ function showExpHolTab(tab) {
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
 var _schemaDefaults   = ${schemaDefaultsJSON};
-var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'Scalping Strategy (BB+CPR)' };
+var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'Scalping Strategy (BB+PSAR+RSI)' };
 
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,

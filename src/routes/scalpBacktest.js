@@ -1,7 +1,7 @@
 /**
  * SCALP BACKTEST — /scalp-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the scalp strategy (BB + CPR + RSI + PSAR trail) on 3/5-min candles.
+ * Backtests the scalp strategy (BB break + PSAR + RSI) on 3/5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -139,7 +139,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 
   if (typeof scalpStrategy.reset === "function") scalpStrategy.reset();
 
-  // Build daily OHLC for CPR calculation
+  // Build daily OHLC for prev-day reference
   const dailyOHLC = buildDailyOHLC(candles);
   const sortedDates = Object.keys(dailyOHLC).sort();
   // Pre-build date→index map — avoids O(n) indexOf on every candle
@@ -199,7 +199,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 
     const isEOD = candleMin >= 920; // 3:20 PM
 
-    // Get prev day OHLC for CPR
+    // Get prev day OHLC (reference)
     const dateIdx = _dateIdx[candleDate] ?? -1;
     const prevDayOHLC     = dateIdx > 0 ? dailyOHLC[sortedDates[dateIdx - 1]] : null;
     const prevPrevDayOHLC = dateIdx > 1 ? dailyOHLC[sortedDates[dateIdx - 2]] : null;

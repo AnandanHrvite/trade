@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Generates realistic NIFTY tick streams for different market scenarios.
  * Feeds ticks into the existing onTick() pipeline so the full strategy
- * (BB + RSI + PSAR, SL, trailing, etc.) runs exactly as in live mode.
+ * (BB + PSAR + RSI, SL, PSAR trailing, etc.) runs exactly as in live mode.
  *
  * Scenarios:
  *   trending_up    — Steady upward drift with small pullbacks

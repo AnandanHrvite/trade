@@ -149,7 +149,7 @@ router.get("/", (req, res) => {
   ) : "";
   const scalpPanel = scalpOn ? renderPanel(
     "SCALP", { bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", border: "rgba(245,158,11,0.25)" },
-    scalpStrategy && scalpStrategy.NAME ? scalpStrategy.NAME : "SCALP_BB_RSI_V4",
+    scalpStrategy && scalpStrategy.NAME ? scalpStrategy.NAME : "SCALP_BB_PSAR_RSI_V5",
     SCALP_KEY, "/scalp-backtest", scalpResult
   ) : "";
   const paPanel = paOn ? renderPanel(

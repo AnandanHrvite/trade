@@ -2,7 +2,7 @@
  * SCALP LIVE TRADE — /scalp
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
- * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
+ * Runs on 3/5-min candles with the scalp BB+PSAR+RSI strategy.
  * Can run IN PARALLEL with /trade (live Zerodha) or /swing-paper.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
@@ -58,7 +58,7 @@ const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "
 const _SCALP_BE_TRIGGER_R   = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
 const _SCALP_BE_OFFSET_PTS  = parseFloat(process.env.SCALP_BREAKEVEN_OFFSET_PTS || "1");
 
-// ── Previous day OHLC for CPR (fetched on session start) ────────────────────
+// ── Previous day OHLC (reference, fetched on session start) ─────────────────
 let _prevDayOHLC     = null;
 let _prevPrevDayOHLC = null;
 
@@ -482,8 +482,6 @@ async function squareOff(exitPrice, reason) {
     bbMiddleAtEntry: state.position ? (state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null) : null,
     rsiAtEntry:      state.position ? (state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null) : null,
     ptsFromBB:       state.position ? (state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null) : null,
-    trendMomPct:     state.position ? (state.position.trendMomPct     != null ? state.position.trendMomPct     : null) : null,
-    trendSlopeDir:   state.position ? (state.position.trendSlopeDir   != null ? state.position.trendSlopeDir   : null) : null,
     mfeSpotPts:      state.position ? (state.position.mfeSpotPts || 0) : 0,
     mfePnl:          state.position ? (state.position.mfePnl     || 0) : 0,
     maeSpotPts:      state.position ? (state.position.maeSpotPts || 0) : 0,
@@ -943,8 +941,6 @@ async function resolveAndEnter(side, spot, result) {
       bbMiddleAtEntry:  result.bbMiddle != null ? result.bbMiddle : null,
       rsiAtEntry:       result.rsi      != null ? result.rsi      : null,
       ptsFromBB:        _ptsFromBB,
-      trendMomPct:      result.trendMomPct   != null ? result.trendMomPct   : null,
-      trendSlopeDir:    result.trendSlopeDir != null ? result.trendSlopeDir : null,
       // MFE/MAE — updated per-tick, captures best favourable + worst adverse excursion.
       mfeSpotPts:       0,
       mfePnl:           0,
@@ -1014,7 +1010,7 @@ async function preloadHistory() {
     log(`⚠️ [SCALP-LIVE] Pre-load failed: ${err.message}`);
   }
 
-  // Fetch previous day(s) OHLC for CPR calculation
+  // Fetch previous day(s) OHLC (reference)
   try {
     const { fetchCandles } = require("../services/backtestEngine");
     const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -1040,7 +1036,7 @@ async function preloadHistory() {
       log(`⚠️ [SCALP-LIVE] Not enough daily candles for prev day data`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] CPR data fetch failed: ${err.message}`);
+    log(`⚠️ [SCALP-LIVE] Prev-day OHLC fetch failed: ${err.message}`);
   }
 }
 

@@ -2,7 +2,7 @@
  * SCALP PAPER TRADE — /scalp-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
- * Runs on 3-min candles with the scalp BB+RSI+PSAR strategy.
+ * Runs on 3/5-min candles with the scalp BB+PSAR+RSI strategy.
  * Can run IN PARALLEL with /trade (live) or /swing-paper (paper).
  *
  * Routes:
@@ -71,9 +71,9 @@ function _refreshConfig() {
 }
 _refreshConfig();
 
-// ── Previous day OHLC for CPR (fetched on session start) ────────────────────
+// ── Previous day OHLC (reference, fetched on session start) ─────────────────
 let _prevDayOHLC     = null;  // { high, low, close }
-let _prevPrevDayOHLC = null;  // for Inside Value CPR check
+let _prevPrevDayOHLC = null;  // prev-prev day reference
 
 function getISTMinutes() {
   if (state._simMode) return _SCALP_START_MINS + 5; // always "in market hours" during simulation
@@ -295,8 +295,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     bbMiddleAtEntry:  entryMeta.bbMiddleAtEntry != null ? entryMeta.bbMiddleAtEntry : null,
     rsiAtEntry:       entryMeta.rsiAtEntry      != null ? entryMeta.rsiAtEntry      : null,
     ptsFromBB:        entryMeta.ptsFromBB       != null ? entryMeta.ptsFromBB       : null,
-    trendMomPct:      entryMeta.trendMomPct     != null ? entryMeta.trendMomPct     : null,
-    trendSlopeDir:    entryMeta.trendSlopeDir   != null ? entryMeta.trendSlopeDir   : null,
     // MFE/MAE tracking — updated per-tick. Captures best favourable and worst
     // adverse excursion before exit (sizes break-even trigger / drawdown analysis).
     mfeSpotPts:       0,
@@ -399,8 +397,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     bbMiddleAtEntry: state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null,
     rsiAtEntry:      state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null,
     ptsFromBB:       state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null,
-    trendMomPct:     state.position.trendMomPct     != null ? state.position.trendMomPct     : null,
-    trendSlopeDir:   state.position.trendSlopeDir   != null ? state.position.trendSlopeDir   : null,
     mfeSpotPts:      state.position.mfeSpotPts      || 0,
     mfePnl:          state.position.mfePnl          || 0,
     maeSpotPts:      state.position.maeSpotPts      || 0,
@@ -828,8 +824,6 @@ async function resolveAndEnter(side, spot, result) {
       bbMiddleAtEntry: result.bbMiddle != null ? result.bbMiddle : null,
       rsiAtEntry:      result.rsi     != null ? result.rsi     : null,
       ptsFromBB:       _ptsFromBB,
-      trendMomPct:     result.trendMomPct  != null ? result.trendMomPct  : null,
-      trendSlopeDir:   result.trendSlopeDir != null ? result.trendSlopeDir : null,
     });
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
@@ -859,7 +853,7 @@ async function preloadHistory() {
     log(`⚠️ [SCALP-PAPER] Pre-load failed: ${err.message} — will build from ticks`);
   }
 
-  // Fetch previous day(s) OHLC for CPR calculation
+  // Fetch previous day(s) OHLC (reference)
   try {
     const { fetchCandles } = require("../services/backtestEngine");
     // Fetch last 5 days of daily candles to get prev & prev-prev day
@@ -888,7 +882,7 @@ async function preloadHistory() {
       log(`⚠️ [SCALP-PAPER] Not enough daily candles for prev day data`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-PAPER] CPR data fetch failed: ${err.message}`);
+    log(`⚠️ [SCALP-PAPER] Prev-day OHLC fetch failed: ${err.message}`);
   }
 }
 
@@ -2911,7 +2905,7 @@ router.post("/simulate/start", async (req, res) => {
 
       const warmup = warmupCandles.slice(-30);
 
-      // Fetch prev day OHLC for CPR
+      // Fetch prev day OHLC (reference)
       try {
         const dailyCandles = await fetchCandles(NIFTY_INDEX_SYMBOL, "D", fromStr, date);
         const pastDays = dailyCandles.filter(c => {
