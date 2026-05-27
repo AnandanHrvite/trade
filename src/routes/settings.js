@@ -82,25 +82,20 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_VIX_STRONG_ONLY", label: "Scalp VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: above this VIX allow only STRONG signals (RSI beyond threshold by +5)", default: "16" },
       { key: "SCALP_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new scalp entries (HH:MM IST)", default: "09:21" },
       { key: "SCALP_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new scalp entries after this time (HH:MM IST)", default: "14:30" },
-      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (5 min)", default: "5" },
+      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min)", default: "5" },
       // ── Bollinger Bands ──
       { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Min (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (momentum confirmation)", default: "55" },
+      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Min (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (momentum confirmation)", default: "62" },
       { key: "SCALP_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE when RSI above this — overbought / chasing exhausted move", default: "78" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Max (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (momentum confirmation)", default: "45" },
+      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Max (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (momentum confirmation)", default: "42" },
       { key: "SCALP_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 10, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Block PE when RSI below this — oversold / shorting exhausted move", default: "22" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
-      // ── Parabolic SAR (initial SL + trailing) ──
+      // ── Parabolic SAR (entry confirmation + trailing SL + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      // ── Trail profit (tiered % of peak) ──
-      { key: "SCALP_TRAIL_START", label: "Trail Activate (₹)", type: "number", min: 200, max: 3000, step: 50, effect: EFFECT.SESSION, desc: "Activate trailing after this much peak profit. Higher = lets winners breathe, smaller wins reach BE-stop instead.", default: "600" },
-      { key: "SCALP_TRAIL_PCT", label: "Base Trail (%)", type: "number", min: 30, max: 90, step: 5, effect: EFFECT.SESSION, desc: "Base trail floor (used between TRAIL_START and the first tier). Higher = lock more, exit sooner.", default: "70" },
-      { key: "SCALP_TRAIL_TIERS", label: "Trail Tiers", type: "text", effect: EFFECT.SESSION, desc: "peak:pct pairs — keep more as profit grows. Format: '600:70,1200:78,2500:85,5000:90,10000:93'", default: "600:70,1200:78,2500:85,5000:90,10000:93" },
-      { key: "SCALP_TRAIL_GRACE_SECS", label: "Trail Grace (secs)", type: "number", min: 0, max: 300, step: 10, effect: EFFECT.SESSION, desc: "Suppress trail-exit in first N seconds after entry (prevents first-tick spike + tiny pullback from killing trades). SL still active. Set 0 to disable.", default: "0" },
       // ── Break-even SL (move SL to entry once peak ≥ trigger × initial risk) ──
       { key: "SCALP_BREAKEVEN_TRIGGER_R", label: "Break-Even Trigger (R)", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.SESSION, desc: "Move SL to entry+offset once peak P&L ≥ N × initial risk. Stops winners reversing into losers. 0 = disabled.", default: "0.7" },
       { key: "SCALP_BREAKEVEN_OFFSET_PTS", label: "Break-Even Offset (pts)", type: "number", min: 0, max: 5, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above/below entry for the BE stop (small buffer for slippage)", default: "1" },
@@ -113,26 +108,6 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit (5-min candles)", default: "3" },
       { key: "SCALP_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL after the 2nd (e.g. 2 = +2 candles on 2nd SL, +4 on 3rd)", default: "2" },
       { key: "SCALP_PER_SIDE_PAUSE", label: "Per-Side SL Pause", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, an SL on CE only pauses CE entries (PE still allowed) and vice versa. OFF = legacy global pause.", default: "true" },
-      { key: "SCALP_PAUSE_OVERRIDE_ENABLED", label: "Pause Override (retest+resume)", type: "toggle", effect: EFFECT.SESSION, desc: "Release SL cooldown early if a candle closes past the failed-entry spot in the original direction — re-enter when retest completes", default: "false" },
-      { key: "SCALP_PAUSE_OVERRIDE_PTS", label: "Pause Override Threshold (pts)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Min spot delta past failed-entry to trigger override (CE: close >= entry+N, PE: close <= entry-N)", default: "10" },
-      // ── Time-stop (per-mode override of TIME_STOP_* defaults) ──
-      { key: "SCALP_TIME_STOP_CANDLES", label: "Scalp Time-Stop (candles)", type: "number", min: 2, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Exit flat scalp trades after this many 5-min candles (theta bleed guard). Overrides TIME_STOP_CANDLES.", default: "3" },
-      { key: "SCALP_TIME_STOP_FLAT_PTS", label: "Scalp Time-Stop Flat (option pts)", type: "number", min: 2, max: 25, step: 1, effect: EFFECT.SESSION, desc: "Time-stop fires only when |option-premium move| < this. Overrides TIME_STOP_FLAT_PTS.", default: "6" },
-      // ── BB Squeeze filter ──
-      { key: "SCALP_BB_SQUEEZE_FILTER", label: "BB Squeeze Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when BB bands are narrow (consolidation = false breakouts)", default: "true" },
-      { key: "SCALP_BB_MIN_WIDTH_PCT", label: "BB Min Width (%)", type: "number", min: 0.05, max: 0.5, step: 0.01, effect: EFFECT.SESSION, desc: "Min BB width as % of price (0.15 = skip if BB width < 36pts on NIFTY 24000)", default: "0.15" },
-      { key: "SCALP_CPR_NARROW_PCT", label: "CPR Narrow Threshold (%)", type: "number", min: 10, max: 80, step: 1, effect: EFFECT.SESSION, desc: "Today's CPR width as % of yesterday's range — below this = narrow CPR (trend-day signal). Used by BB+CPR strategy to qualify entries.", default: "33" },
-      // ── V4 Quality filters ──
-      { key: "SCALP_REQUIRE_APPROACH", label: "Require Approach", type: "toggle", effect: EFFECT.SESSION, desc: "Block entry if prev candle was on opposite half of BB (CE: prev close < BB middle = first-touch breakout, likely fades)", default: "false" },
-      { key: "SCALP_MIN_BODY_RATIO", label: "Min Body Ratio", type: "number", min: 0, max: 0.9, step: 0.05, effect: EFFECT.SESSION, desc: "Min entry candle body as % of range (0.5 = skip doji/wick breakouts where body < 50% of high-low). Set 0 to disable.", default: "0" },
-      // ── Trend filter (regime guard) ──
-      { key: "SCALP_TREND_FILTER", label: "Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require larger trend to agree with trade direction. PE only when price falling AND BB middle sloping down; CE inverse. Blocks chop-zone entries.", default: "true" },
-      { key: "SCALP_TREND_MOMENTUM_LOOKBACK", label: "Trend Momentum Lookback (candles)", type: "number", min: 3, max: 15, step: 1, effect: EFFECT.SESSION, desc: "How many candles back to measure price momentum (5 = compare close vs close 25 min ago)", default: "5" },
-      { key: "SCALP_TREND_MOMENTUM_PCT", label: "Trend Momentum Min %", type: "number", min: 0.05, max: 1.0, step: 0.05, effect: EFFECT.SESSION, desc: "Min % change required over lookback to call it a trend (0.15 = ~36pts on NIFTY 24000). Lower = more entries, more chop.", default: "0.15" },
-      { key: "SCALP_TREND_MID_SLOPE_LOOKBACK", label: "BB Mid Slope Lookback (candles)", type: "number", min: 2, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Candles back to check BB middle band slope direction (3 = is mid line rising/falling over last 15 min)", default: "3" },
-      // ── Activity filter ──
-      { key: "SCALP_ACTIVITY_FILTER", label: "Activity Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Skip entries when candle range is below average (low activity = false BB breakouts)", default: "false" },
-      { key: "SCALP_ACTIVITY_FILTER_RATIO", label: "Activity Ratio", type: "number", min: 0.2, max: 1.0, step: 0.1, effect: EFFECT.SESSION, desc: "Min candle range vs 20-bar avg (0.5 = skip if range < 50% of avg)", default: "0.5" },
     ],
   },
   {
@@ -581,17 +556,10 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_CE_MAX",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_PE_MIN", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
-  "SCALP_TRAIL_START", "SCALP_TRAIL_PCT", "SCALP_TRAIL_TIERS", "SCALP_TRAIL_GRACE_SECS",
   "SCALP_BREAKEVEN_TRIGGER_R", "SCALP_BREAKEVEN_OFFSET_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
-  "SCALP_PAUSE_OVERRIDE_ENABLED", "SCALP_PAUSE_OVERRIDE_PTS",
-  "SCALP_TIME_STOP_CANDLES", "SCALP_TIME_STOP_FLAT_PTS",
   "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
-  "SCALP_BB_SQUEEZE_FILTER", "SCALP_BB_MIN_WIDTH_PCT", "SCALP_CPR_NARROW_PCT",
-  "SCALP_ACTIVITY_FILTER", "SCALP_ACTIVITY_FILTER_RATIO",
-  "SCALP_REQUIRE_APPROACH", "SCALP_MIN_BODY_RATIO",
-  "SCALP_TREND_FILTER", "SCALP_TREND_MOMENTUM_LOOKBACK", "SCALP_TREND_MOMENTUM_PCT", "SCALP_TREND_MID_SLOPE_LOOKBACK",
   // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
   "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
   "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",

@@ -1,45 +1,26 @@
 /**
- * SCALP V4: Bollinger Bands + RSI + PSAR
+ * SCALP V5: Bollinger Bands + PSAR + RSI (clean BB-break design)
  *
  * ENTRY:
- *   CE: close >= BB upper + RSI > 55
- *   PE: close <= BB lower + RSI < 45
+ *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 62)
+ *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 42)
+ *   Guards: RSI overbought/oversold cap (SCALP_RSI_CE_MAX / SCALP_RSI_PE_MIN), optional RSI-turning.
  *   SL = Previous candle low (CE) / high (PE), capped at SCALP_MAX_SL_PTS, floored at SCALP_MIN_SL_PTS
  *
  * EXIT:
  *   1. Initial SL hit (Prev Candle)
- *   2. Trailing profit: % of peak PnL (exit when profit drops below X% of peak)
+ *   2. Break-even snap (peak ≥ trigger × risk)
  *   3. Trailing SL: PSAR only — tightens only
  *   4. PSAR flip → immediate exit
- *   5. EOD / daily loss / max trades (handled by routes)
+ *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
 const { BollingerBands, RSI, PSAR } = require("technicalindicators");
 
-const NAME        = "SCALP_BB_RSI_V4";
-const DESCRIPTION = "BB + RSI + PSAR trail";
+const NAME        = "SCALP_BB_PSAR_RSI_V5";
+const DESCRIPTION = "BB break + PSAR + RSI";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
-
-// ── CPR helpers (kept for backtest compatibility — not used in entry logic) ──
-function calcCPR(prevHigh, prevLow, prevClose) {
-  const pivot = (prevHigh + prevLow + prevClose) / 3;
-  const bc    = (prevHigh + prevLow) / 2;
-  const tc    = (2 * pivot) - bc;
-  return {
-    pivot:    parseFloat(pivot.toFixed(2)),
-    tc:       parseFloat(Math.max(tc, bc).toFixed(2)),
-    bc:       parseFloat(Math.min(tc, bc).toFixed(2)),
-    rawTC: tc, rawBC: bc,
-    width:    parseFloat(Math.abs(tc - bc).toFixed(2)),
-    prevRange: parseFloat((prevHigh - prevLow).toFixed(2)),
-  };
-}
-function isNarrowCPR(cpr) {
-  const narrowPct = parseFloat(cfg("SCALP_CPR_NARROW_PCT", "33"));
-  if (cpr.prevRange === 0) return false;
-  return (cpr.width / cpr.prevRange) * 100 < narrowPct;
-}
 
 // ── Trading window ───────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -85,8 +66,8 @@ function getSignal(candles, opts) {
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
   var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "55"));
-  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "45"));
+  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "62"));
+  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "42"));
   var RSI_CE_MAX  = parseFloat(cfg("SCALP_RSI_CE_MAX", "78"));   // overbought guard — block CE above
   var RSI_PE_MIN  = parseFloat(cfg("SCALP_RSI_PE_MIN", "22"));   // oversold guard  — block PE below
   var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
@@ -96,7 +77,6 @@ function getSignal(candles, opts) {
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
     rsi: null, sar: null, bbUpper: null, bbMiddle: null, bbLower: null,
-    cpr: null, cprNarrow: false, cprInsideValue: false,
   };
 
   // Warm-up
@@ -160,38 +140,29 @@ function getSignal(candles, opts) {
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 
-  // ── Near-miss filter audit (additive-only logging) ────────────────────────
-  // Attached to `base` early so it survives all subsequent early-return paths
-  // (squeeze, activity, approach, body). Does NOT affect signal decisions.
-  var _prevCandleAudit  = candles.length >= 2 ? candles[candles.length - 2] : null;
-  var _scRangeAudit     = sc.high - sc.low;
-  var _scBodyAudit      = Math.abs(sc.close - sc.open);
-  var _bodyRatioAudit   = _scRangeAudit > 0 ? _scBodyAudit / _scRangeAudit : 0;
-  var _bbWidthPctAudit  = bb.middle > 0 ? ((bb.upper - bb.lower) / bb.middle) * 100 : 0;
-  var _minWidthAudit    = parseFloat(cfg("SCALP_BB_MIN_WIDTH_PCT", "0.15"));
-  var _squeezeOn        = cfg("SCALP_BB_SQUEEZE_FILTER", "true") === "true";
-  var _approachOn       = cfg("SCALP_REQUIRE_APPROACH",  "false") === "true";
-  var _bodyMinRatioCfg  = parseFloat(cfg("SCALP_MIN_BODY_RATIO", "0"));
-  var _cePriceAudit     = sc.close >= bb.upper;
-  var _ceRsiAudit       = rsi > RSI_CE;
-  var _pePriceAudit     = sc.close <= bb.lower;
-  var _peRsiAudit       = rsi < RSI_PE;
+  // ── ENTRY CONDITIONS (V5: BB break + PSAR side + RSI) ─────────────────────
+  // CE: close above BB upper  + PSAR below close + RSI > RSI_CE (capped at RSI_CE_MAX)
+  // PE: close below BB lower   + PSAR above close + RSI < RSI_PE (floored at RSI_PE_MIN)
 
+  var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "12"));
+  var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
+  var prevCandle  = candles[candles.length - 2];
+
+  // PSAR side relative to the candle close (the directional confirmation)
+  var sarBelow = sar < sc.close;   // bullish — PSAR under price
+  var sarAbove = sar > sc.close;   // bearish — PSAR over price
+
+  // ── Near-miss filter audit (additive-only logging; does NOT affect signal) ──
   var _ceAuditChecks = [
-    { name: "BB width",       ok: (!_squeezeOn || _bbWidthPctAudit >= _minWidthAudit), detail: _bbWidthPctAudit.toFixed(3) + "% vs >=" + _minWidthAudit + "%" },
-    { name: "BB upper touch", ok: _cePriceAudit, detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
-    { name: "RSI bullish",    ok: _ceRsiAudit,   detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE },
-    { name: "Approach",       ok: (!_approachOn || (_prevCandleAudit && _prevCandleAudit.close >= bb.middle)), detail: "prev.close=" + (_prevCandleAudit ? _prevCandleAudit.close : "n/a") + " vs mid=" + bb.middle.toFixed(1) },
-    { name: "Body ratio",     ok: (_bodyMinRatioCfg <= 0 || _bodyRatioAudit >= _bodyMinRatioCfg), detail: (_bodyRatioAudit*100).toFixed(0) + "% vs >=" + (_bodyMinRatioCfg*100).toFixed(0) + "%" },
+    { name: "BB upper break", ok: sc.close >= bb.upper, detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
+    { name: "PSAR below",     ok: sarBelow,             detail: "SAR=" + sar.toFixed(1) + " vs close=" + sc.close },
+    { name: "RSI bullish",    ok: rsi > RSI_CE,         detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE },
   ];
   var _peAuditChecks = [
-    { name: "BB width",       ok: (!_squeezeOn || _bbWidthPctAudit >= _minWidthAudit), detail: _bbWidthPctAudit.toFixed(3) + "% vs >=" + _minWidthAudit + "%" },
-    { name: "BB lower touch", ok: _pePriceAudit, detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
-    { name: "RSI bearish",    ok: _peRsiAudit,   detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE },
-    { name: "Approach",       ok: (!_approachOn || (_prevCandleAudit && _prevCandleAudit.close <= bb.middle)), detail: "prev.close=" + (_prevCandleAudit ? _prevCandleAudit.close : "n/a") + " vs mid=" + bb.middle.toFixed(1) },
-    { name: "Body ratio",     ok: (_bodyMinRatioCfg <= 0 || _bodyRatioAudit >= _bodyMinRatioCfg), detail: (_bodyRatioAudit*100).toFixed(0) + "% vs >=" + (_bodyMinRatioCfg*100).toFixed(0) + "%" },
+    { name: "BB lower break", ok: sc.close <= bb.lower, detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
+    { name: "PSAR above",     ok: sarAbove,             detail: "SAR=" + sar.toFixed(1) + " vs close=" + sc.close },
+    { name: "RSI bearish",    ok: rsi < RSI_PE,         detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE },
   ];
-
   function _auditSide(checks) {
     var passed = [], failed = [];
     for (var i = 0; i < checks.length; i++) {
@@ -200,93 +171,10 @@ function getSignal(candles, opts) {
     }
     return { passed: passed.length, total: checks.length, passedNames: passed, failed: failed };
   }
-
   base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
 
-  // ── ACTIVITY FILTER (optional — disabled by default) ─────────────────────
-  // NIFTY index has no real volume — uses candle range (high-low) as activity proxy.
-  // Skips entries when current candle range is below threshold of recent average.
-  // Enable via Settings: SCALP_ACTIVITY_FILTER=true
-  if (cfg("SCALP_ACTIVITY_FILTER", "false") === "true" && candles.length >= 20) {
-    var activityRatio = parseFloat(cfg("SCALP_ACTIVITY_FILTER_RATIO", "0.5"));
-    var recentRanges = candles.slice(-20).map(function(c) { return c.high - c.low; });
-    var avgRange = recentRanges.reduce(function(s, r) { return s + r; }, 0) / recentRanges.length;
-    var curRange = sc.high - sc.low;
-    if (avgRange > 0 && curRange < avgRange * activityRatio) {
-      base.reason = "Low activity (range " + curRange.toFixed(1) + " < " + (avgRange * activityRatio).toFixed(1) + " threshold)";
-      return base;
-    }
-  }
-
-  // ── BB SQUEEZE FILTER — skip entries when bands are narrow (consolidation) ──
-  if (cfg("SCALP_BB_SQUEEZE_FILTER", "true") === "true") {
-    var bbWidth    = bb.upper - bb.lower;
-    var bbWidthPct = (bbWidth / bb.middle) * 100;
-    var minWidthPct = parseFloat(cfg("SCALP_BB_MIN_WIDTH_PCT", "0.15"));
-    base.bbWidth    = parseFloat(bbWidth.toFixed(2));
-    base.bbWidthPct = parseFloat(bbWidthPct.toFixed(3));
-    if (bbWidthPct < minWidthPct) {
-      base.reason = "BB squeeze (width " + bbWidth.toFixed(1) + "pts / " + bbWidthPct.toFixed(2) + "% < " + minWidthPct + "%)";
-      return base;
-    }
-  }
-
-  // ── TREND FILTER (Option A) — momentum + BB middle slope ─────────────────
-  // Blocks entries when the larger trend doesn't agree with the trade direction.
-  // PE needs: close below N-candles-ago by >=MOM_PCT AND BB middle sloping down.
-  // CE needs: close above N-candles-ago by >=MOM_PCT AND BB middle sloping up.
-  var trendOn = cfg("SCALP_TREND_FILTER", "true") === "true";
-  var trendDirection = null;       // "UP" | "DOWN" | "FLAT"
-  var trendMomPct    = 0;
-  var trendSlopeDir  = null;       // "up" | "down" | "flat"
-  var trendMomMinPct = parseFloat(cfg("SCALP_TREND_MOMENTUM_PCT", "0.15"));
-  var trendMomLookback   = parseInt(cfg("SCALP_TREND_MOMENTUM_LOOKBACK",  "5"), 10);
-  var trendSlopeLookback = parseInt(cfg("SCALP_TREND_MID_SLOPE_LOOKBACK", "3"), 10);
-
-  // Compute trend momentum % unconditionally for data-collection logging.
-  // The full trend-direction classification still depends on trendOn.
-  if (candles.length > trendMomLookback) {
-    var _pastClose = candles[candles.length - 1 - trendMomLookback].close;
-    trendMomPct    = _pastClose > 0 ? ((sc.close - _pastClose) / _pastClose) * 100 : 0;
-  }
-  base.trendMomPct      = parseFloat(trendMomPct.toFixed(3));
-  base.trendMomLookback = trendMomLookback;
-
-  if (trendOn && candles.length > trendMomLookback && bbMiddles && bbMiddles.length > trendSlopeLookback) {
-    var bbMidNow   = bbMiddles[bbMiddles.length - 1];
-    var bbMidPast  = bbMiddles[bbMiddles.length - 1 - trendSlopeLookback];
-    trendSlopeDir  = bbMidNow > bbMidPast ? "up" : (bbMidNow < bbMidPast ? "down" : "flat");
-
-    var momUp   = trendMomPct >=  trendMomMinPct;
-    var momDown = trendMomPct <= -trendMomMinPct;
-    if (momUp   && trendSlopeDir === "up")   trendDirection = "UP";
-    else if (momDown && trendSlopeDir === "down") trendDirection = "DOWN";
-    else trendDirection = "FLAT";
-  }
-  base.trendSlopeDir = trendSlopeDir;
-
-  // ── ENTRY CONDITIONS ─────────────────────────────────────────────────────
-
-  var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "25"));
-  var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
-
-  // Previous candle for SL + quality filters
-  var prevCandle = candles[candles.length - 2];
-
-  // ── V4 QUALITY FILTERS (env-toggleable) ──────────────────────────────────
-  // A. Approach filter — prev candle must already be on the trade-side half
-  //    Rejects "first-touch" breakouts where prev candle was deep on opposite side
-  var requireApproach = cfg("SCALP_REQUIRE_APPROACH", "false") === "true";
-
-  // B. Body strength filter — entry candle body must be >= N% of its range
-  //    Rejects doji/long-wick breakouts that signal exhaustion
-  var minBodyRatio = parseFloat(cfg("SCALP_MIN_BODY_RATIO", "0"));
-  var scRange = sc.high - sc.low;
-  var scBody  = Math.abs(sc.close - sc.open);
-  var bodyRatio = scRange > 0 ? scBody / scRange : 0;
-
-  // CE (Long): price at/above BB upper + RSI > 55
-  if (sc.close >= bb.upper && rsi > RSI_CE) {
+  // CE (Long): close >= BB upper + PSAR below close + RSI > RSI_CE
+  if (sc.close >= bb.upper && sarBelow && rsi > RSI_CE) {
     if (rsi > RSI_CE_MAX) {
       base.reason = "CE blocked: RSI=" + rsi.toFixed(1) + " > " + RSI_CE_MAX + " (overbought / exhausted move)";
       return base;
@@ -295,34 +183,22 @@ function getSignal(candles, opts) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    if (trendOn && trendDirection !== "UP") {
-      base.reason = "CE blocked: no uptrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs >=" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
-      return base;
-    }
-    if (requireApproach && prevCandle.close < bb.middle) {
-      base.reason = "CE blocked: prev candle below BB middle (no approach) [prev.close=" + prevCandle.close + " < mid=" + bb.middle.toFixed(1) + "]";
-      return base;
-    }
-    if (minBodyRatio > 0 && bodyRatio < minBodyRatio) {
-      base.reason = "CE blocked: weak entry candle body " + (bodyRatio * 100).toFixed(0) + "% < " + (minBodyRatio * 100).toFixed(0) + "% of range";
-      return base;
-    }
     var rawSL = prevCandle.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(PrevLow)=" + sl + " [prev.low=" + prevCandle.low + " capped=" + slPts.toFixed(1) + "]");
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(PrevLow)=" + sl + " [prev.low=" + prevCandle.low + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
       slSource: "Prev Candle",
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(PrevLow)=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + SAR<close + RSI=" + rsi.toFixed(0) + " | SL(PrevLow)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
-  // PE (Short): price at/below BB lower + RSI < 45
-  if (sc.close <= bb.lower && rsi < RSI_PE) {
+  // PE (Short): close <= BB lower + PSAR above close + RSI < RSI_PE
+  if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE) {
     if (rsi < RSI_PE_MIN) {
       base.reason = "PE blocked: RSI=" + rsi.toFixed(1) + " < " + RSI_PE_MIN + " (oversold / exhausted move)";
       return base;
@@ -331,48 +207,36 @@ function getSignal(candles, opts) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    if (trendOn && trendDirection !== "DOWN") {
-      base.reason = "PE blocked: no downtrend (Δ" + trendMomPct.toFixed(2) + "% over " + trendMomLookback + "c vs <=-" + trendMomMinPct + "%, BB mid slope=" + trendSlopeDir + ")";
-      return base;
-    }
-    if (requireApproach && prevCandle.close > bb.middle) {
-      base.reason = "PE blocked: prev candle above BB middle (no approach) [prev.close=" + prevCandle.close + " > mid=" + bb.middle.toFixed(1) + "]";
-      return base;
-    }
-    if (minBodyRatio > 0 && bodyRatio < minBodyRatio) {
-      base.reason = "PE blocked: weak entry candle body " + (bodyRatio * 100).toFixed(0) + "% < " + (minBodyRatio * 100).toFixed(0) + "% of range";
-      return base;
-    }
     var rawSL = prevCandle.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + RSI=" + rsi.toFixed(1) + " | SL(PrevHigh)=" + sl + " [prev.high=" + prevCandle.high + " capped=" + slPts.toFixed(1) + "]");
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(PrevHigh)=" + sl + " [prev.high=" + prevCandle.high + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
       slSource: "Prev Candle",
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + RSI=" + rsi.toFixed(0) + " | SL(PrevHigh)=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + SAR>close + RSI=" + rsi.toFixed(0) + " | SL(PrevHigh)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
-  // No signal — build descriptive reason showing which side was close / blocked
+  // No signal — build descriptive reason showing which leg failed
   var cePrice = sc.close >= bb.upper;
-  var ceRsi   = rsi > RSI_CE;
   var pePrice = sc.close <= bb.lower;
-  var peRsi   = rsi < RSI_PE;
 
   var parts = [];
-  if (cePrice && !ceRsi) {
-    parts.push("CE price OK but RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
-  } else if (!cePrice && ceRsi) {
-    parts.push("CE RSI OK but price below BB upper");
+  if (cePrice) {
+    var ceMiss = [];
+    if (!sarBelow)    ceMiss.push("SAR not below close");
+    if (!(rsi > RSI_CE)) ceMiss.push("RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
+    if (ceMiss.length) parts.push("CE broke BB but " + ceMiss.join(" & "));
   }
-  if (pePrice && !peRsi) {
-    parts.push("PE price OK but RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
-  } else if (!pePrice && peRsi) {
-    parts.push("PE RSI OK but price above BB lower");
+  if (pePrice) {
+    var peMiss = [];
+    if (!sarAbove)    peMiss.push("SAR not above close");
+    if (!(rsi < RSI_PE)) peMiss.push("RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
+    if (peMiss.length) parts.push("PE broke BB but " + peMiss.join(" & "));
   }
 
   base.reason = parts.length > 0 ? "No setup (" + parts.join("; ") + ")" : "No setup";
@@ -458,4 +322,4 @@ function isPSARFlip(candles, side) {
 
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, updateTrailingSL, isPSARFlip, calcCPR, isNarrowCPR, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, updateTrailingSL, isPSARFlip, reset };

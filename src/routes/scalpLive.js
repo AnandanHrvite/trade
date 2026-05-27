@@ -30,7 +30,7 @@ const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, parseTrailTiers, sleep } = require("../utils/tradeUtils");
+const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const liveDryRun = require("../utils/liveDryRun");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -50,23 +50,9 @@ const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
 const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
 const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
 const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-const _SCALP_TRAIL_START   = parseFloat(process.env.SCALP_TRAIL_START || "600");
-const _SCALP_TRAIL_PCT     = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
-// Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
-const _SCALP_TRAIL_TIERS = parseTrailTiers(process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93");
-const _SCALP_TRAIL_GRACE_SECS = parseFloat(process.env.SCALP_TRAIL_GRACE_SECS || "0");
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
 const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
-// Pause override — release per-side SL cooldown early if a subsequent candle close
-// proves the original direction resumed past the failed entry spot (retest-and-resume).
-const _SCALP_PAUSE_OVERRIDE_ENABLED = (process.env.SCALP_PAUSE_OVERRIDE_ENABLED || "false").toLowerCase() === "true";
-const _SCALP_PAUSE_OVERRIDE_PTS     = parseFloat(process.env.SCALP_PAUSE_OVERRIDE_PTS || "10");
-// Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
-const _SCALP_TIME_STOP_CANDLES = process.env.SCALP_TIME_STOP_CANDLES != null
-  ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
-const _SCALP_TIME_STOP_FLAT_PTS = process.env.SCALP_TIME_STOP_FLAT_PTS != null
-  ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
 // Breakeven snap — needs to run per-tick (not per-bar) because most trades exit
 // inside the entry candle before updateTrailingSL would be called.
 const _SCALP_BE_TRIGGER_R   = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
@@ -688,34 +674,7 @@ function onTick(tick) {
       }
     }
 
-    // 2a. TRAIL — track a PnL floor. Exit when curPnl drops below it.
-    //     PnL-based (not spot-based) so fast IV/gamma spikes that vanish
-    //     without spot following don't fool the trail into exiting at a
-    //     "right" spot price where the option has already given back.
-    if (_SCALP_TRAIL_START > 0 && pos.peakPnl >= _SCALP_TRAIL_START) {
-      const _ageSecs = pos.entryTimeMs ? (Date.now() - pos.entryTimeMs) / 1000 : Infinity;
-      const _graceActive = _SCALP_TRAIL_GRACE_SECS > 0 && _ageSecs < _SCALP_TRAIL_GRACE_SECS;
-      if (!_graceActive) {
-        let _pct = _SCALP_TRAIL_PCT;
-        for (const tier of _SCALP_TRAIL_TIERS) {
-          if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-        }
-        const newFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-        if (pos.trailFloorPnl == null || newFloor > pos.trailFloorPnl) {
-          pos.trailFloorPnl = newFloor;
-          pos.trailStopPct  = _pct;
-        }
-      }
-    }
-
-    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap, PnL trail)
-    if (pos.trailFloorPnl != null && curPnl <= pos.trailFloorPnl) {
-      squareOff(
-        price,
-        `Trail ${pos.trailStopPct}% (peak ₹${Math.round(pos.peakPnl)} → PnL ₹${Math.round(curPnl)})`
-      ).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
-      return;
-    }
+    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap)
     if (pos.side === "CE" && price <= pos.stopLoss) {
       const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
       const _src = pos.slSource || "PSAR";
@@ -750,27 +709,6 @@ async function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    // ── Time-stop: flat trade after N candles = theta bleed risk ──
-    {
-      const _pos = state.position;
-      const _entryOpt = _pos.optionEntryLtp;
-      const _curOpt   = state.optionLtp || _pos.optionCurrentLtp;
-      let _pnlPts = null;
-      if (_entryOpt && _curOpt) {
-        _pnlPts = _curOpt - _entryOpt;
-      } else if (_pos.spotAtEntry) {
-        _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
-      }
-      const _tsOpts = {};
-      if (_SCALP_TIME_STOP_CANDLES != null)  _tsOpts.maxCandles = _SCALP_TIME_STOP_CANDLES;
-      if (_SCALP_TIME_STOP_FLAT_PTS != null) _tsOpts.flatPts    = _SCALP_TIME_STOP_FLAT_PTS;
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts, _tsOpts);
-      if (_tsReason) {
-        log(`⏳ [SCALP-LIVE] ${_tsReason}`);
-        await squareOff(bar.close, _tsReason);
-        return;
-      }
-    }
 
     const window = [...state.candles];
 
@@ -851,26 +789,9 @@ async function onCandleClose(bar) {
   // Per-side SL cooldown — block only if THIS side has an active pause
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
   if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > Date.now()) {
-    // Pause override: if the prior-loss spot has been reclaimed by >= OVERRIDE_PTS in
-    // the original direction, treat the retest as complete and release the pause.
-    const _failSpot = state._lastSLSpotBySide && state._lastSLSpotBySide[_signalSide];
-    const _resumed = _SCALP_PAUSE_OVERRIDE_ENABLED && _failSpot && (
-      _signalSide === "CE"
-        ? bar.close >= _failSpot + _SCALP_PAUSE_OVERRIDE_PTS
-        : bar.close <= _failSpot - _SCALP_PAUSE_OVERRIDE_PTS
-    );
-    if (_resumed) {
-      log(`▶️ [SCALP-LIVE] Pause override — ${_signalSide} resumed: bar.close ₹${bar.close} vs failSpot ₹${_failSpot} (Δ${(bar.close-_failSpot).toFixed(1)}pt, threshold ${_SCALP_PAUSE_OVERRIDE_PTS}pt)`);
-      state._slPauseUntilBySide[_signalSide] = 0;
-      state._consecSLsBySide[_signalSide]    = 0;
-      state._lastSLSpotBySide[_signalSide]   = 0;
-      state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
-      state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    } else {
-      const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - Date.now()) / 1000);
-      log(`⏭️ [SCALP-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
-      return;
-    }
+    const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - Date.now()) / 1000);
+    log(`⏭️ [SCALP-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
+    return;
   }
 
   // VIX — post-strategy check with derived strength (SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
@@ -1002,8 +923,6 @@ async function resolveAndEnter(side, spot, result) {
       candlesHeld:      0,
       peakPnl:          0,
       initialRiskRupees: _initialRiskRupees,
-      trailFloorPnl:    null,
-      trailStopPct:     null,
       optionStrike:     optionInfo.strike || null,
       optionExpiry:     optionInfo.expiry || null,
       optionType:       side,
@@ -1117,11 +1036,6 @@ async function preloadHistory() {
         _prevPrevDayOHLC = { high: pp.high, low: pp.low, close: pp.close };
       }
 
-      if (_prevDayOHLC) {
-        const cpr = scalpStrategy.calcCPR(_prevDayOHLC.high, _prevDayOHLC.low, _prevDayOHLC.close);
-        const narrow = scalpStrategy.isNarrowCPR(cpr);
-        log(`📊 [SCALP-LIVE] CPR: TC=${cpr.tc} BC=${cpr.bc} Width=${cpr.width} ${narrow ? "✅ NARROW (trending)" : "❌ WIDE (skip entries)"}`);
-      }
     } else {
       log(`⚠️ [SCALP-LIVE] Not enough daily candles for prev day data`);
     }
@@ -1850,7 +1764,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail ${_SCALP_TRAIL_PCT}%+ tiered from \u20b9${_SCALP_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: Prev Candle \u2192 PSAR trail + BreakEven \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

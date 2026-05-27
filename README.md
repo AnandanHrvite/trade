@@ -11,7 +11,7 @@ Fyers WebSocket (NIFTY50 spot ticks — single connection)
         │
    ┌─────┼──────────────┬──────────────┬───────────┬─────────────┐
    │     │              │              │           │             │
- Swing (5/15-min)   Scalp (5-min)   Price Action   ORB           Straddle
+ Swing (5/15-min)   Scalp (3/5-min)   Price Action   ORB           Straddle
    │                    │                │           │             │
  ┌─┴─┐               ┌──┴──┐         ┌───┴──┐    ┌──┴──┐       ┌───┴──┐
  │   │               │     │         │      │    │     │       │      │
@@ -488,7 +488,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 ### Scalp
 | URL | Description |
 |-----|-------------|
-| `/scalp-backtest` | Scalp backtest (5-min BB+RSI+PSAR V4) |
+| `/scalp-backtest` | Scalp backtest (3/5-min BB+PSAR+RSI V5) |
 | `/scalp-paper/status` | Scalp paper trade + NIFTY chart with BB overlay |
 | `/scalp-paper/history` | Past scalp sessions (per-session delete + view modal) |
 | `/scalp-paper/simulate` | Scalp simulator |
@@ -574,7 +574,7 @@ src/
   app.js                              # Express server, dashboard, route registration, Start-All
   strategies/
     strategy1_sar_ema_rsi.js          # Swing strategy (SAR + EMA9 + RSI) — 5-min default; 15-min via TRADE_RESOLUTION=15
-    scalp_bb_cpr.js                   # Scalp 5-min V4 (BB + RSI + PSAR + approach/body filters)
+    scalp_bb_cpr.js                   # Scalp 3/5-min V5 (BB break + PSAR side + RSI)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps + BE trigger)
     orb_breakout.js                   # ORB strategy (15-min opening range; CE/PE single-leg breakout buys)
     straddle_volatility.js            # Long Straddle (BB-squeeze paired CE+PE for volatility expansion)

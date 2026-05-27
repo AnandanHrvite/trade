@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP strategy — redefinition to BB break + PSAR + RSI (V5)
+
+- **New entry logic** in [src/strategies/scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js) (`getSignal`), applied identically across Paper / Live / Backtest. Entry at candle close, all three true:
+  - **CE**: close ≥ **BB upper** · **PSAR below close** · `RSI > SCALP_RSI_CE_THRESHOLD` (default raised 55 → **62**), blocked above `SCALP_RSI_CE_MAX(78)`.
+  - **PE**: close ≤ **BB lower** · **PSAR above close** · `RSI < SCALP_RSI_PE_THRESHOLD` (default lowered 45 → **42**), blocked below `SCALP_RSI_PE_MIN(22)`.
+- **Indicators kept**: Bollinger Bands `20 / 1`, RSI(14), PSAR `0.02 / 0.2`. PSAR side is now an entry confirmation (was exit-only).
+- **Exit simplified** to SAR-based: initial prev-candle SL → **break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R`) → **PSAR trailing** (tighten-only) → **PSAR flip** → bid-ask spread guard → EOD.
+- **Resolution**: `SCALP_RESOLUTION` now offers **3 or 5-min** (was 5-only). Aggregation is resolution-agnostic via `getBucketStart`.
+- **Removed** (code + Settings UI fields): tiered **% profit-trail** (`SCALP_TRAIL_START/PCT/TIERS/GRACE`), **time-stop** (`SCALP_TIME_STOP_CANDLES/FLAT_PTS`), **pause-override** (`SCALP_PAUSE_OVERRIDE_ENABLED/PTS`), **BB squeeze** (`SCALP_BB_SQUEEZE_FILTER` / `SCALP_BB_MIN_WIDTH_PCT`), **CPR-narrow** (`SCALP_CPR_NARROW_PCT` + `calcCPR`/`isNarrowCPR`), **approach** (`SCALP_REQUIRE_APPROACH`), **body-ratio** (`SCALP_MIN_BODY_RATIO`), **trend filter** (`SCALP_TREND_FILTER` + lookbacks), **activity filter** (`SCALP_ACTIVITY_FILTER` + ratio).
+- **Guards kept**: VIX gate (`SCALP_VIX_*`), per-side SL cooldown (`SCALP_SL_PAUSE_CANDLES` / `SCALP_CONSEC_SL_EXTRA_PAUSE` / `SCALP_PER_SIDE_PAUSE`), `SCALP_MAX_DAILY_TRADES` / `SCALP_MAX_DAILY_LOSS`, prev-candle SL caps, trading window, `SCALP_EXPIRY_DAY_ONLY`, optional `SCALP_RSI_TURNING`.
+- New authoritative spec: [SCALP.md](SCALP.md) (mirrors [SWING.md](SWING.md)). Files touched: [scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js), [scalpPaper.js](src/routes/scalpPaper.js), [scalpLive.js](src/routes/scalpLive.js), [scalpBacktest.js](src/routes/scalpBacktest.js), [settings.js](src/routes/settings.js).
+
 ### SWING strategy — complete entry/exit redefinition (EMA21 + RSI + SAR)
 
 - **New decision logic** in [src/strategies/strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js) (`getSignal`), applied identically across all 5 SWING modes (Backtest, Paper, Live, Replay, Live Harness) since they all call it. Entry (intra-candle, all 3 true):

@@ -100,19 +100,8 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
 
-  // PNL-based trailing profit (tiered % of peak)
-  const SCALP_TRAIL_START  = parseFloat(process.env.SCALP_TRAIL_START || "600");
-  const SCALP_TRAIL_PCT    = parseFloat(process.env.SCALP_TRAIL_PCT || "70");
-  const SCALP_TRAIL_TIERS = (process.env.SCALP_TRAIL_TIERS || "600:70,1200:78,2500:85,5000:90,10000:93")
-    .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
-    .sort((a, b) => b.peak - a.peak);
   // Per-side SL pause — when true, an SL on CE only pauses CE entries
   const SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
-  // Per-mode time-stop overrides (fall back to global TIME_STOP_* defaults if unset)
-  const SCALP_TIME_STOP_CANDLES_OVR = process.env.SCALP_TIME_STOP_CANDLES != null
-    ? parseInt(process.env.SCALP_TIME_STOP_CANDLES, 10) : null;
-  const SCALP_TIME_STOP_FLAT_PTS_OVR = process.env.SCALP_TIME_STOP_FLAT_PTS != null
-    ? parseFloat(process.env.SCALP_TIME_STOP_FLAT_PTS) : null;
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -157,24 +146,12 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   const _dateIdx = {};
   for (let d = 0; d < sortedDates.length; d++) _dateIdx[sortedDates[d]] = d;
 
-  // Debug: show CPR for each day
-  const narrowPct = parseFloat(process.env.SCALP_CPR_NARROW_PCT || "0.5");
-  let narrowDays = 0, wideDays = 0;
-  for (let d = 1; d < sortedDates.length; d++) {
-    const prev = dailyOHLC[sortedDates[d - 1]];
-    const cpr = scalpStrategy.calcCPR(prev.high, prev.low, prev.close);
-    const isNarrow = scalpStrategy.isNarrowCPR(cpr);
-    if (isNarrow) narrowDays++; else wideDays++;
-    console.log(`  CPR ${sortedDates[d]}: TC=${cpr.tc} BC=${cpr.bc} W=${cpr.width} Range=${cpr.prevRange} %=${((cpr.width/cpr.prevRange)*100).toFixed(2)} ${isNarrow ? "✅NARROW" : "❌WIDE"}`);
-  }
-
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+CPR entry`);
+  console.log(`   Candles: ${candles.length} | PSAR trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${SCALP_TRAIL_START} start, base ${SCALP_TRAIL_PCT}% + ${SCALP_TRAIL_TIERS.length} tiers | SL: Prev Candle | Slippage: ${SLIPPAGE_PTS}pts`);
-  console.log(`   Days with data: ${sortedDates.length} | Narrow CPR: ${narrowDays} | Wide CPR: ${wideDays}`);
-  console.log(`   CPR Narrow threshold: ${narrowPct}%`);
+  console.log(`   SL: Prev Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
   const window = candles.slice(0, 30);
@@ -283,14 +260,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         return pts - _estCharges / LOT_SIZE;
       };
 
-      // ── Helper: estimate exit price for a target PNL ₹ amount ──
-      const _exitPriceForPnl = (targetPnl) => {
-        const _needed = targetPnl + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + _estCharges : _estCharges / LOT_SIZE);
-        const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
-        return parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
-      };
-
-      // ── Track peak PNL for trailing profit ──
+      // ── Track peak PNL for the break-even trigger ──
       const bestSpot = position.side === "CE" ? candle.high : candle.low;
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
@@ -314,21 +284,6 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING PROFIT — tiered % of peak: keep more as profit grows
-      if (!exitReason && SCALP_TRAIL_START > 0 && position.peakPnl >= SCALP_TRAIL_START) {
-        let _pct = SCALP_TRAIL_PCT;
-        for (const tier of SCALP_TRAIL_TIERS) {
-          if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-        }
-        const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
-
-        const curPnl = _runPnl(candle.close);
-        if (curPnl <= trailFloor) {
-          exitPrice  = _exitPriceForPnl(trailFloor);
-          exitReason = `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
-        }
-      }
-
       // 3. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
@@ -344,26 +299,6 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         if (trailResult.sl !== position.stopLoss) {
           position.stopLoss = trailResult.sl;
           if (trailResult.source) position.slSource = trailResult.source;
-        }
-      }
-
-      // 4b. Time-stop — flat trade after N candles (theta bleed risk)
-      // Only fires when |pnl in option-pts| < flat band; matches paper/live guard.
-      if (!exitReason) {
-        const _tsCandles = SCALP_TIME_STOP_CANDLES_OVR != null
-          ? SCALP_TIME_STOP_CANDLES_OVR
-          : parseInt(process.env.TIME_STOP_CANDLES || "4", 10);
-        const _tsFlatPts = SCALP_TIME_STOP_FLAT_PTS_OVR != null
-          ? SCALP_TIME_STOP_FLAT_PTS_OVR
-          : parseFloat(process.env.TIME_STOP_FLAT_PTS || "20");
-        if (position.candlesHeld >= _tsCandles) {
-          // Approximate option-premium pts via spot move × DELTA (matches paper helper)
-          const _spotMove = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-          const _pnlOptPts = OPTION_SIM ? _spotMove * DELTA : _spotMove;
-          if (Math.abs(_pnlOptPts) < _tsFlatPts) {
-            const sign = _pnlOptPts >= 0 ? "+" : "";
-            exitReason = `Time-stop — flat after ${position.candlesHeld} candles (${sign}${_pnlOptPts.toFixed(1)}pt)`;
-          }
         }
       }
 
