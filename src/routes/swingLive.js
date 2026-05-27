@@ -2399,7 +2399,30 @@ router.get("/status/chart-data", (req, res) => {
     if (tradeState.position && tradeState.position.stopLoss) stopLoss = tradeState.position.stopLoss;
     let entryPrice = null;
     if (tradeState.position && tradeState.position.entryPrice) entryPrice = tradeState.position.entryPrice;
-    return res.json({ candles, markers, stopLoss, entryPrice });
+
+    // Strategy indicator overlays: EMA21 (OHLC4) + PSAR + RSI(14)
+    const { EMA, PSAR, RSI } = require("technicalindicators");
+    let ema21 = [], sar = [], rsi = [];
+    try {
+      if (candles.length >= 21) {
+        const ohlc4 = candles.map(c => (c.open + c.high + c.low + c.close) / 4);
+        const arr = EMA.calculate({ period: 21, values: ohlc4 });
+        const off = candles.length - arr.length;
+        ema21 = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
+      }
+      if (candles.length >= 3) {
+        const arr = PSAR.calculate({ step: 0.02, max: 0.2, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        const off = candles.length - arr.length;
+        sar = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
+      }
+      if (candles.length >= 15) {
+        const arr = RSI.calculate({ period: 14, values: candles.map(c => c.close) });
+        const off = candles.length - arr.length;
+        rsi = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
+      }
+    } catch (_) { /* ignore indicator calc errors */ }
+
+    return res.json({ candles, markers, stopLoss, entryPrice, ema21, sar, rsi });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
@@ -2907,6 +2930,9 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
+        <span style="color:#fbbf24;">── EMA21</span> &nbsp;
+        <span style="color:#a78bfa;">· SAR</span> &nbsp;
+        <span style="color:#22d3ee;">── RSI</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span> &nbsp;
         <span style="color:#3b82f6;">-- Entry Price</span>
       </div>
@@ -3370,6 +3396,12 @@ async function manualEntry(side) {
     wickUpColor: '#10b981', wickDownColor: '#ef4444',
   });
 
+  // Strategy overlays: EMA21 (OHLC4) + PSAR dots + RSI (own bottom scale)
+  const ema21Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21' });
+  const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle: LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
+  const rsiSeries  = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
+  chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
   let slLine = null;
   let entryLine = null;
   let _lastCandleCount = 0;
@@ -3390,6 +3422,11 @@ async function manualEntry(side) {
         candleSeries.update({ time: last.time, open: last.open, high: last.high, low: last.low, close: last.close });
       }
       _lastCandleCount = d.candles.length;
+
+      // Indicator overlays
+      ema21Series.setData((d.ema21 && d.ema21.length) ? d.ema21 : []);
+      sarSeries.setData((d.sar && d.sar.length) ? d.sar : []);
+      rsiSeries.setData((d.rsi && d.rsi.length) ? d.rsi : []);
 
       if (d.markers && d.markers.length > 0) {
         var sorted = d.markers.slice().sort(function(a, b) { return a.time - b.time; });

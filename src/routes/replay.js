@@ -524,14 +524,20 @@ function drawReplayChart(el, cd) {
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['sar', '#f472b6'], ['ema9', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
+    ['sar', '#f472b6'], ['ema9', '#fbbf24'], ['ema21', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
   for (const [key, color] of overlays) {
     const arr = cd[key];
     if (Array.isArray(arr) && arr.length) {
-      const ls = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      const ls = chart.addLineSeries({ color, lineWidth: key === 'ema21' ? 2 : 1, priceLineVisible: false, lastValueVisible: false });
       ls.setData(arr);
     }
+  }
+  // RSI on its own bottom scale (so it doesn't distort the price axis).
+  if (Array.isArray(cd.rsi) && cd.rsi.length) {
+    const rsiLs = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceScaleId: 'rsi', priceLineVisible: false, lastValueVisible: true });
+    try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch (_) {}
+    rsiLs.setData(cd.rsi);
   }
   // Markers must be sorted ascending by time or the library throws.
   if (Array.isArray(cd.markers) && cd.markers.length) {
