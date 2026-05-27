@@ -419,1780 +419,239 @@
 </style>
 </head>
 <body>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- COVER PAGE                                                            -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="cover">
-  <div class="badge">Complete Strategy Reference</div>
+  <div class="badge">Strategy Reference</div>
   <h1>SWING STRATEGY</h1>
-  <div class="sub">SAR_EMA9_RSI Strategy | 5-Min NIFTY Options (default) | v4.6.0</div>
-  <div class="sub2">Definitive guide merging entry, exit, and configuration documentation</div>
+  <div class="sub">EMA21 + RSI + Parabolic SAR · Previous-Candle Trailing Stop</div>
+  <div class="sub2">NIFTY index options · Zerodha (live) · Fyers (data) · 3 / 5 / 15-min</div>
   <div class="version-box">
-    <strong>Generated:</strong> 2026-05-21 &nbsp;|&nbsp;
-    <strong>Timeframe:</strong> 5-minute (default; 15-min via <code>TRADE_RESOLUTION=15</code>) &nbsp;|&nbsp;
-    <strong>Instrument:</strong> NIFTY 50 Options &nbsp;|&nbsp;
-    <strong>Route:</strong> <code>/swing-*</code>
+    <strong>Redefined 2026-05-27</strong> — replaces the old EMA9-touch / ADX / STRONG-MARGINAL system.<br/>
+    Code: <code>src/strategies/strategy1_sar_ema_rsi.js</code> (<code>getSignal</code>) — shared by all modes.
   </div>
-
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#whatsnew60"><span class="num">00</span> What's New in v4.6.0</a>
-    <a href="#whatsnew50"><span class="num">00a</span> v4.5.0 Highlights</a>
-    <a href="#whatsnew"><span class="num">00b</span> v4.4.1 Highlights</a>
-    <a href="#s1"><span class="num">01</span> Strategy Overview &amp; Performance</a>
-    <a href="#s2"><span class="num">02</span> Indicators &amp; Configuration</a>
+    <a href="#s1"><span class="num">01</span> Strategy Overview</a>
+    <a href="#s2"><span class="num">02</span> Indicators</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
-    <a href="#s4"><span class="num">04</span> Entry Logic &mdash; 9 Gate Pipeline</a>
-    <a href="#s5"><span class="num">05</span> SAR Position &mdash; Three Entry Logics</a>
-    <a href="#s6"><span class="num">06</span> Signal Strength Classification</a>
-    <a href="#s7"><span class="num">07</span> CE Entry Example</a>
-    <a href="#s8"><span class="num">08</span> PE Entry Example</a>
-    <a href="#s9"><span class="num">09</span> Exit Logic &mdash; Decision Tree</a>
-    <a href="#s10"><span class="num">10</span> Trailing Stop Loss &mdash; 3-Tier System</a>
-    <a href="#s11"><span class="num">11</span> SL Movement Example</a>
-    <a href="#s12"><span class="num">12</span> Breakeven Stop Mechanics</a>
-    <a href="#s13"><span class="num">13</span> Risk Management &mdash; 3 Layers</a>
-    <a href="#s14"><span class="num">14</span> VIX Market Regime Filter</a>
-    <a href="#s15"><span class="num">15</span> Position Sizing &amp; PnL</a>
-    <a href="#s16"><span class="num">16</span> Time-Based Rules</a>
-    <a href="#s17"><span class="num">17</span> Trading Day Edge Cases</a>
-    <a href="#s18"><span class="num">18</span> Holiday &amp; Expiry Handling</a>
-    <a href="#s19"><span class="num">19</span> Scaling Guide</a>
-    <a href="#s20"><span class="num">20</span> Complete Configuration Reference</a>
+    <a href="#s4"><span class="num">04</span> Entry Logic — 3 Conditions</a>
+    <a href="#s5"><span class="num">05</span> Stop Loss &amp; Trailing</a>
+    <a href="#s6"><span class="num">06</span> Exit Logic</a>
+    <a href="#s7"><span class="num">07</span> Same-Side Cooldown</a>
+    <a href="#s8"><span class="num">08</span> Risk Guards</a>
+    <a href="#s9"><span class="num">09</span> Charts</a>
+    <a href="#s10"><span class="num">10</span> Settings Reference</a>
+    <a href="#s11"><span class="num">11</span> Expiry &amp; Live Gating</a>
+    <a href="#s12"><span class="num">12</span> Removed vs Old Strategy</a>
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.6.0                                                -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="whatsnew60">
-  <h2>00 &mdash; What's New in v4.6.0 (2026-05-21)</h2>
-  <p>Risk-controls tightening + new sibling strategies + deterministic Replay. <strong>Swing's signal-layer logic is unchanged</strong> &mdash; the same 9-Gate Pipeline, 3-Tier Trailing SL, Logic 3 override, and Hybrid Initial SL Cap from v4.5.0. The changes are: tighter daily-trade cap, a corrected fallback option-stop default, two new optional features (prev-candle trail + Swing-only expiry override), and broader app-level additions that affect Swing operationally (Tick Recorder, Live Harness DRY-RUN gate, Real-Time monitor expansion).</p>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong><code>MAX_DAILY_TRADES</code> default lowered from <code>20</code> &rarr; <code>6</code></strong> &mdash; anti-overtrade on chop days. Swing is a momentum-pullback strategy; trade #7+ on the same session almost always coincides with chop, not signal. Override via <code>.env</code> or Settings if your sizing/conviction differs.</li>
-      <li><strong><code>OPT_STOP_PCT</code> default corrected from <code>0.15</code> &rarr; <code>0.25</code></strong> &mdash; the fallback option-premium stop. The 0.15 was a stale default that triggered too eagerly on far-SAR setups where the option had healthy time value but the underlying SL hadn't been touched.</li>
-      <li><strong>Prev-Candle Trail (optional, disabled by default)</strong> &mdash; <code>SWING_PREV_CANDLE_TRAIL_ENABLED</code> (default <code>false</code>) adds a structural trail composed on top of SAR + tier trail (tighten-only). When enabled, the SL is also pulled to prev-candle low (CE) / high (PE) on each candle close once the trade is in profit. Gated by <code>ACTIVATE_PTS=15</code>, padded by <code>BUFFER_PTS=2</code>, and skipped on wide bars (<code>MAX_GAP=35</code>) to avoid loosening on volatile candles. Composes with existing tier trail &mdash; never widens SL.</li>
-      <li><strong>Swing-only option expiry override (renamed)</strong> &mdash; <code>SWING_OPTION_EXPIRY_OVERRIDE</code> + <code>SWING_OPTION_EXPIRY_TYPE</code>. Lets Swing roll to next-week expiry while Scalp / PA stay on current expiry. Blank inherits the common <code>OPTION_EXPIRY_*</code> settings from <code>src/config/instrument.js</code>.</li>
-      <li><strong>Two new sibling strategies launched</strong> &mdash; ORB (Opening Range Breakout) and Straddle (BB-squeeze paired CE+PE). Both run on the same Fyers socket fan-out via <code>socketManager</code> + <code>sharedSocketState</code> with their own <code>*_MODE_ENABLED</code> toggles. Swing remains fully independent and can run alongside both. See the new ORB and Straddle strategy guides under <code>/docs</code>.</li>
-      <li><strong>Real-Time Monitor expanded</strong> &mdash; <code>/realtime</code> now renders a Swing card alongside Scalp / PA / ORB / Straddle (was hardcoded to 3 strategies). Each card is gated by <code>{STRATEGY}_MODE_ENABLED</code>. Swing card content is unchanged.</li>
-      <li><strong>Tick Recorder + Replay</strong> &mdash; <code>TICK_RECORDER_ENABLED=true</code> (default) records every spot / option / VIX tick during Swing paper/live sessions to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code>. The new <code>/replay</code> route re-runs a recorded session through the Swing Paper <code>onTick()</code> handler for deterministic A/B settings comparison. Pure observer at the trade path &mdash; zero impact.</li>
-      <li><strong>Live Harness DRY-RUN gate</strong> &mdash; global <code>LIVE_HARNESS_DRY_RUN</code> (default <code>true</code>) is a master safety. Swing Live still uses its own <code>SWING_LIVE_ENABLED</code> for Zerodha orders &mdash; <em>both</em> must be set correctly for real orders to fire (DRY-RUN must be <code>false</code>).</li>
-    </ul>
+<div class="section">
+  <h2 id="s1">01 — Strategy Overview</h2>
+  <p>A deliberately simple, chart-driven swing strategy. Three indicators decide entries, and the stop is the
+  previous candle's extreme, trailed candle-by-candle. The same <code>getSignal()</code> drives Backtest, Paper,
+  Live, Replay and the Live Harness, so all modes agree by construction.</p>
+  <div class="card blue-border">
+    <h3 class="blue">In one line</h3>
+    <p><strong>CE</strong> = RSI in band &amp; price at/above EMA21 &amp; SAR below price. <strong>PE</strong> = mirror.
+    Stop = previous candle low (CE) / high (PE), trailed each candle. Exits: SL · breakeven · option-stop · opposite signal · exit-before-close · EOD.</p>
+  </div>
+  <div class="note warn">There is no strength tier, no ADX, no EMA9/EMA30, no candle-body or SAR-distance gate, and no
+  3-tier trail. Those were all removed in the 2026-05-27 redefinition (see section 12).</div>
+</div>
+
+<div class="section">
+  <h2 id="s2">02 — Indicators</h2>
+  <table>
+    <tr><th>Indicator</th><th>Params</th><th>Used for</th></tr>
+    <tr><td><strong>EMA 21</strong></td><td>period 21, on <code>OHLC4</code></td><td>The trend line price must be above (CE) / below (PE)</td></tr>
+    <tr><td><strong>RSI 14</strong></td><td>period 14, on close</td><td>Momentum band gate (floor + overbought/oversold cap)</td></tr>
+    <tr><td><strong>Parabolic SAR</strong></td><td>step 0.02, max 0.2</td><td>Direction: <code>trend=1</code> dots below price (CE), <code>trend=-1</code> above (PE)</td></tr>
+  </table>
+  <p>Warm-up: at least <strong>30 candles</strong> before any signal. Trading window: <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST.</p>
+</div>
+
+<div class="section">
+  <h2 id="s3">03 — Trading Modes</h2>
+  <p>All five modes call the one shared <code>getSignal()</code>; only the plumbing differs.</p>
+  <table>
+    <tr><th>Mode</th><th>Route</th><th>Data / Execution</th></tr>
+    <tr><td>Live</td><td><code>/swing-live</code></td><td>Fyers ticks → Zerodha orders (double-gated, see §11)</td></tr>
+    <tr><td>Paper</td><td><code>/swing-paper</code></td><td>Live Fyers ticks → simulated fills (canonical for behaviour)</td></tr>
+    <tr><td>Backtest</td><td><code>/swing-backtest</code></td><td>Historical candles → option-sim P&amp;L</td></tr>
+    <tr><td>Replay</td><td><code>/replay</code></td><td>Recorded ticks → drives the Paper engine</td></tr>
+    <tr><td>Sim / Harness</td><td><code>/swing-paper/simulate</code></td><td>Wrap the Paper/Live engine; inherit automatically</td></tr>
+  </table>
+  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>3, 5, or 15-min</strong>. The logic is resolution-agnostic
+  (smaller candles → tighter prev-candle stops).</p>
+</div>
+
+<div class="section">
+  <h2 id="s4">04 — Entry Logic — 3 Conditions</h2>
+  <p>Re-evaluated on <strong>every live tick while flat</strong> (intra-candle). All three conditions must be true.
+  The EMA21 test fires whether the candle is <em>already</em> on the correct side of EMA21 or <em>crossing</em> it now.</p>
+  <div class="logic-cards">
+    <div class="logic-card" style="border-left:3px solid var(--green);">
+      <div class="lc-num" style="color:var(--green2);">BUY_CE — long call</div>
+      <div class="lc-title">Bullish</div>
+      <div class="lc-desc">
+        1. <code>RSI_CE_MIN &lt; RSI &lt; RSI_CE_MAX</code> (above momentum floor, below overbought cap)<br/>
+        2. Price at/above EMA21 → <code>candle.high ≥ EMA21</code><br/>
+        3. SAR below the candle → <code>SAR.trend = 1</code>
+      </div>
+      <div class="lc-condition">→ Initial SL = previous candle LOW</div>
+    </div>
+    <div class="logic-card" style="border-left:3px solid var(--red);">
+      <div class="lc-num" style="color:var(--red2);">BUY_PE — long put</div>
+      <div class="lc-title">Bearish</div>
+      <div class="lc-desc">
+        1. <code>RSI_PE_MIN &lt; RSI &lt; RSI_PE_MAX</code> (above oversold floor, below momentum cap)<br/>
+        2. Price at/below EMA21 → <code>candle.low ≤ EMA21</code><br/>
+        3. SAR above the candle → <code>SAR.trend = -1</code>
+      </div>
+      <div class="lc-condition">→ Initial SL = previous candle HIGH</div>
+    </div>
+  </div>
+  <div class="note">Defaults: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=80</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=20</code>.
+  The overbought/oversold caps stop you chasing exhausted moves. Entry price = current tick LTP.</div>
+</div>
+
+<div class="section">
+  <h2 id="s5">05 — Stop Loss &amp; Trailing</h2>
+  <div class="card green-border">
+    <h3 class="green">Previous-candle trailing stop</h3>
+    <p><strong>Initial SL</strong> = the prior completed candle's <strong>low (CE) / high (PE)</strong>, used as-is — no cap, no floor.</p>
+    <p><strong>Trail</strong>: at every candle close, tighten the SL to <em>that just-closed candle's</em> low (CE) / high (PE).
+    Tighten-only — it never loosens. Enforced intra-candle (tick-by-tick) during the next bar; in Live it is also pushed to the broker hard-SL.</p>
+    <p><strong>Breakeven</strong>: once price is <code>+BREAKEVEN_PTS</code> in favour, SL jumps to entry (tighten-only).</p>
+  </div>
+  <div class="note warn">Because entry happens right at EMA21 and the previous candle's extreme often sits a few points away,
+  the stop is structurally tight — expect frequent small stop-outs, especially on 3-min. Tighter timeframes amplify this.</div>
+</div>
+
+<div class="section">
+  <h2 id="s6">06 — Exit Logic</h2>
+  <p>Checked per tick (price stops) and per candle close (signal/time stops):</p>
+  <table>
+    <tr><th>#</th><th>Exit</th><th>Rule</th></tr>
+    <tr><td>1</td><td>Prev-candle SL hit</td><td>CE: <code>ltp ≤ SL</code> · PE: <code>ltp ≥ SL</code></td></tr>
+    <tr><td>2</td><td>Option-premium stop</td><td>Exit if option LTP <code>≤ entryLtp × (1 − OPT_STOP_PCT)</code></td></tr>
+    <tr><td>3</td><td>Breakeven</td><td>After SL has moved to entry, a pullback to entry exits flat</td></tr>
+    <tr><td>4</td><td>Opposite signal</td><td>Holding CE and a BUY_PE fires → exit (and vice-versa)</td></tr>
+    <tr><td>5</td><td>Exit before close</td><td>Square off any open position at <code>SWING_EOD_EXIT_TIME</code> (default 15:15)</td></tr>
+    <tr><td>6</td><td>EOD auto-stop</td><td>At <code>TRADE_STOP_TIME</code> (15:30) — square off + stop the engine</td></tr>
+    <tr><td>7</td><td>Time-stop</td><td>Flat trade bleeding theta closed via <code>tradeGuards.checkTimeStop</code></td></tr>
+  </table>
+  <div class="note">In Backtest there is no live option LTP, so the option-stop is approximated as an equivalent adverse
+  spot move (<code>OPT_STOP_PCT × est-premium ÷ delta</code>); it is disabled for futures.</div>
+</div>
+
+<div class="section">
+  <h2 id="s7">07 — Same-Side Cooldown</h2>
+  <p>After an <strong>SL hit or option-stop</strong> on a side, new entries on <em>that</em> side are blocked for
+  <code>SWING_SL_PAUSE_CANDLES</code> candles (default 3). The other side is free. Set to <code>0</code> to disable.
+  This prevents immediately re-entering the same losing setup tick-after-tick.</p>
+</div>
+
+<div class="section">
+  <h2 id="s8">08 — Risk Guards</h2>
+  <table>
+    <tr><th>Guard</th><th>Env</th><th>Effect</th></tr>
+    <tr><td>Daily loss kill</td><td><code>MAX_DAILY_LOSS</code></td><td>Stop entries once session loss ≥ this (also latched on 3 consecutive losses)</td></tr>
+    <tr><td>Max trades</td><td><code>MAX_DAILY_TRADES</code></td><td>Hard cap on entries per session (paper, live &amp; backtest)</td></tr>
+    <tr><td>VIX gate</td><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>Block entries above this VIX (Swing-scoped)</td></tr>
+    <tr><td>Trading window</td><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>No new entries outside the window</td></tr>
+    <tr><td>Spread / time-stop</td><td><code>tradeGuards.js</code></td><td>Skip wide bid-ask; close stale flat trades</td></tr>
+  </table>
+  <div class="note warn"><strong>Tuning tip:</strong> a 25% option-stop on a ~₹200 premium ≈ ₹3,750 on one lot — that single
+  exit can exceed a small <code>MAX_DAILY_LOSS</code>. Keep <code>OPT_STOP_PCT</code> and <code>MAX_DAILY_LOSS</code> consistent.</div>
+</div>
+
+<div class="section">
+  <h2 id="s9">09 — Charts</h2>
+  <p>Every swing chart (Paper status, Live status, Replay) overlays exactly what the strategy decides on:</p>
+  <table>
+    <tr><th>Overlay</th><th>Render</th></tr>
+    <tr><td><span class="tag tag-yellow">EMA21</span></td><td>Solid orange line (OHLC4)</td></tr>
+    <tr><td><span class="tag tag-purple">SAR</span></td><td>Discrete dots (line hidden, point-markers only)</td></tr>
+    <tr><td><span class="tag tag-blue">RSI</span></td><td>Own bottom price-scale, with dashed level lines at <code>RSI_CE_MIN</code> (CE) and <code>RSI_PE_MAX</code> (PE)</td></tr>
+  </table>
+  <p>Chart data contract: <code>GET /swing-{paper,live}/status/chart-data</code> →
+  <code>{ candles, markers, ema21, sar, rsi, rsiCeMin, rsiPeMax, stopLoss, entryPrice }</code>. Replay harvests the same.
+  Backtest uses Chart.js equity curves (no candlestick overlays).</p>
+</div>
+
+<div class="section">
+  <h2 id="s10">10 — Settings Reference</h2>
+  <div class="env-group">
+    <div class="env-group-title">Entry</div>
+    <table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>3 / 5 / 15-min</td></tr>
+      <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>CE momentum floor (RSI must be above)</td></tr>
+      <tr><td><code>RSI_CE_MAX</code></td><td>80</td><td>CE overbought cap (blocked at/above)</td></tr>
+      <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>PE momentum cap (RSI must be below)</td></tr>
+      <tr><td><code>RSI_PE_MIN</code></td><td>20</td><td>PE oversold floor (blocked at/below)</td></tr>
+    </table>
+  </div>
+  <div class="env-group">
+    <div class="env-group-title">Stops &amp; exits</div>
+    <table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>BREAKEVEN_PTS</code></td><td>25</td><td>Move SL to entry after +N spot pts</td></tr>
+      <tr><td><code>OPT_STOP_PCT</code></td><td>0.25</td><td>Exit if option premium drops this fraction below entry</td></tr>
+      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side cooldown after an SL/option-stop hit</td></tr>
+      <tr><td><code>SWING_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square off open position ahead of the close</td></tr>
+    </table>
+  </div>
+  <div class="env-group">
+    <div class="env-group-title">Risk &amp; session</div>
+    <table>
+      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
+      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily kill-switch (₹)</td></tr>
+      <tr><td><code>MAX_DAILY_TRADES</code></td><td>6</td><td>Entries per session</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block entries above this VIX</td></tr>
+      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>09:30 / 14:00</td><td>Entry window (IST)</td></tr>
+    </table>
   </div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.5.0                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="whatsnew50">
-  <h2>00a &mdash; v4.5.0 Highlights (2026-05-14)</h2>
-  <p><strong>Default candle resolution changed from 15-min &rarr; 5-min</strong>, plus a STRONG-only entry gate, 0DTE refusal on swing start, and per-mode expiry override. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, Logic 3 override, and Hybrid Initial SL Cap remain unchanged at the signal layer.</p>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong>Default <code>TRADE_RESOLUTION</code> changed from <code>15</code> &rarr; <code>5</code></strong> &mdash; 15-min wasn't taking entries during the paper-trade data-collection window. The strategy itself is unchanged: all <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code> runtime branches are preserved, so flipping <code>TRADE_RESOLUTION=15</code> in <code>.env</code> (or via Settings UI) restores the prior behavior with no code change. Strategy header / description string updated to reflect the new default.</li>
-      <li><strong><code>SWING_STRONG_ONLY</code> toggle</strong> (default <code>false</code>) &mdash; when on, blocks <strong>MARGINAL</strong> signals on the <strong>candle-close</strong> entry path (intra-candle path was already STRONG-only, so this closes the asymmetry). Blocked entries are recorded to <code>skipLogger</code> with <code>gate: "strong_only"</code> for audit. Wired into both Swing Paper and Swing Live; surfaced in Settings UI.</li>
-      <li><strong>0DTE refusal on swing start</strong> &mdash; Swing <code>/start</code> is blocked when the configured expiry == today (gamma risk on intraday holding through expiry). The dashboard's All-Paper / All-Live flows catch the refusal per mode and surface it in the start-all error modal instead of silently skipping. A red banner appears when a stale manual expiry-override session has ended (override date in the past).</li>
-      <li><strong>Per-mode option expiry override</strong> &mdash; each mode (Swing/Scalp/PA) can now set its own expiry independent of the global setting. Useful when scalp is fine on Tue weekly expiry but swing should roll to next Tue.</li>
-      <li><strong>Expiry calendar fix</strong> &mdash; calendar was showing Mon dates instead of Tue (UTC shift bug); now correctly shows Tue weekly NIFTY expiries. Settings expiry modal no longer throws on a missing <code>year-title</code> element.</li>
-      <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL is the canonical export format (CSV/PDF dropped). Light-theme aware.</li>
-      <li><strong>Settings checkpoint notes</strong> &mdash; every Settings save can be tagged with a one-line note. Daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's trades.</li>
-      <li><strong>Auth hardening</strong> &mdash; mobile-friendly login flow end-to-end; pre-start broker token verification (Fyers/Zerodha tokens are validated before engines boot, so a position can't open with a dead token); access token displayed with Copy button after manual login; Fyers socket auth failure (code &minus;15) now bails out + sends a Telegram alert instead of silently retrying.</li>
-      <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on the activity-log header (swingLive + swingPaper). <code>navigator.clipboard</code> with textarea fallback.</li>
-      <li><strong>Per-menu / per-submenu sidebar visibility toggles</strong> &mdash; hide the Swing section entirely, or hide individual links within it (e.g., hide Backtest but keep Paper + Live). Driven by env vars + Settings UI.</li>
-      <li><strong>gzip on all responses</strong> &mdash; <code>/settings</code> dropped from ~329 KB &rarr; 61 KB; same wins across all HTML routes.</li>
-    </ul>
-  </div>
+<div class="section">
+  <h2 id="s11">11 — Expiry &amp; Live Gating</h2>
+  <ul style="margin:8px 0 8px 18px;line-height:1.7;">
+    <li><strong>0DTE refusal</strong>: live/paper <code>/start</code> is blocked when the configured expiry == today.
+    Replay bypasses this (<code>force=1</code>) so historical sessions aren't aborted.</li>
+    <li><code>TRADE_EXPIRY_DAY_ONLY</code> — when on, only trade on NIFTY expiry day.</li>
+    <li><code>SWING_OPTION_EXPIRY_OVERRIDE</code> / <code>SWING_OPTION_EXPIRY_TYPE</code> let Swing run a different expiry from the other strategies; blank inherits the common expiry.</li>
+    <li><strong>Live orders are double-gated</strong>: <code>SWING_LIVE_ENABLED=true</code> <em>and</em> global <code>LIVE_HARNESS_DRY_RUN=false</code>,
+    with a per-strategy <code>SWING_LIVE_DRY_RUN</code> override to keep Swing simulated while others trade live.</li>
+  </ul>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.4.1                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="whatsnew">
-  <h2>00b &mdash; v4.4.1 Highlights (2026-05-02)</h2>
-  <p>Unified Real-Time Monitor &mdash; one screen to see Swing alongside Scalp and PA. UI / observability only; <strong>no swing signal-layer or SL/exit changes</strong>.</p>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
-      <li><strong>Swing card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
-      <li><strong>Rollup table</strong> includes Swing's row alongside Scalp + PA + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
-      <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/swing-paper/status</code> and <code>/swing-live/status</code>. The Real-Time Monitor stays reachable while Swing Live is active.</li>
-      <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
-      <li><strong>No new backend aggregation</strong> &mdash; the browser polls Swing's existing <code>/swing-paper/status/data</code> or <code>/swing-live/status/data</code> in parallel with Scalp + PA, so the unified screen always reads the same source the dedicated Swing pages already trust. Normalised key handles <code>unrealisedPnl</code> (Swing) vs <code>unrealised</code> (Scalp/PA).</li>
-    </ul>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.4.0                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break">
-  <h2>00c &mdash; v4.4.0 Highlights (2026-04-27)</h2>
-  <p>Hybrid initial SL cap, paper-history Restore from append-only JSONL, and a paper-parity sweep into Swing Live (skip-log/near-miss wiring + daily-trades guard on candle-close). The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remain unchanged at the signal layer.</p>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong>Hybrid initial SL cap</strong> &mdash; new env knobs <code>SWING_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>SWING_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>SWING_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL = tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code>, floored at <code>MIN_PTS</code> to avoid suicide-tight SLs on doji bars. Wired into <strong>both</strong> Swing Paper and Swing Live (candle-close + intra-candle paths). Backtest is intentionally untouched during the paper-data-collection window.</li>
-      <li><strong>Trail activation rescaled</strong> &mdash; <code>TRAIL_ACTIVATE_PTS</code> now scales with the capped SL gap so the env knob actually binds (previously it could be dwarfed by 100&ndash;130 pt SAR-only stops).</li>
-      <li><strong>New trade-record field <code>sarStopLoss</code></strong> &mdash; preserves the raw SAR distance at entry so paper-vs-live and paper-vs-historical analyses can compare against the pre-cap value.</li>
-      <li><strong>Live paper-parity</strong> &mdash; Swing Live's candle-close entry path now has the same <code>pauseUntil</code> + <code>MAX_DAILY_TRADES</code> guards as the intra-candle path (and as paper). <code>skipLogger</code> + <code>logNearMiss</code> are wired across the signal=NONE / VIX / spread blocks. Trade record now captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on exit &mdash; same schema as Swing Paper.</li>
-      <li><strong>Paper-history Restore</strong> &mdash; <code>POST /swing-paper/history/restore</code> replays the daily JSONL trade log for an IST date and rebuilds any session deleted via the UI. Idempotent (re-running on a fully-present date returns "Nothing to restore"); refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
-      <li><strong>Sync to Local</strong> &mdash; Dashboard button now streams <code>~/trading-data/</code> as a <code>tar.gz</code> to the browser (<code>/sync/info</code> + <code>/sync/download-all</code>), so you can pull Swing Live + Paper trade logs off EC2 without SSH.</li>
-      <li><strong>Settings UI</strong> exposes the 3 swing SL knobs in the Swing section so SAVE ALL writes them straight to <code>.env</code>.</li>
-      <li><strong>Misc swing-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/Scalp); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
-    </ul>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.3.0                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break">
-  <h2>00d &mdash; v4.3.0 Highlights (2026-04-24)</h2>
-  <p>Live-side analytics, audit trails, and trade guards. The 9 Gate Pipeline, 3-Tier Trailing SL, VIX filter, and Logic 3 override remained unchanged at the signal layer.</p>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history with Day View and per-mode breakdown; mirrors the existing paper-side <code>/consolidation</code>.</li>
-      <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /swing-live/reset</code> wipes Swing live history (gated when a session is active). Surfaced as a Reset button on the Swing Live status page.</li>
-      <li><strong>Per-module VIX thresholds</strong> &mdash; Swing keeps using <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code>; Scalp and PA can now override these per-mode (and fall back to swing values when unset). No change for Swing-only deployments.</li>
-      <li><strong>Trade guards (shared)</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> blocks entry on wide spreads; <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> auto-exits trades that stay flat (theta-bleed guard). Applies to Swing too.</li>
-      <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs every candle that missed entry by exactly one filter (and which filter blocked it). Visible live in <code>/logs</code> SSE feed; quantifies the opportunity cost of each filter.</li>
-      <li><strong>Crash-safe JSONL trade log</strong> &mdash; every Swing exit is appended to <code>~/trading-data/swing_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/swing_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Async, atomic per line.</li>
-      <li><strong>Per-module dashboard cards</strong> with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign). Mutual lock between Start-All Paper and Start-All Live.</li>
-      <li><strong>Eye-icon View buttons</strong> on swing-paper-history rows &rarr; trade detail modal; Day View pagination on backtest + paper history.</li>
-      <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; synchronous shutdown send + crash-marker recovery ping. Orphan reconciliation on boot.</li>
-      <li><strong>Sidebar accordion + UI toggles</strong> (<code>UI_SHOW_SIMULATE</code>, <code>UI_SHOW_COMPARE</code>, <code>UI_SHOW_TRACKER</code>); Login Logs moved to Settings top-bar.</li>
-      <li><strong>Bulk Edit modal</strong> on Settings supports deleting keys via lines starting with <code>-KEY</code>.</li>
-      <li><strong>Operations</strong> &mdash; PM2 heap caps restored, SIGTERM root-cause fixed, backtest engine memory shrunk.</li>
-    </ul>
-  </div>
-</div>
-
-<div class="section page-break">
-  <h2>00e &mdash; v4.2.0 Highlights (2026-04-20)</h2>
-  <div class="card">
-    <ul style="padding-left:22px; line-height:1.9;">
-      <li><strong>Live NIFTY candlestick chart</strong> on <code>/swing-paper/status</code> and <code>/swing-live/status</code> with entry/exit markers. Toggleable via <code>CHART_ENABLED</code>.</li>
-      <li><strong>Click trade row → focus chart</strong>; zoom preserved across auto-refresh.</li>
-      <li><strong>Consolidation page</strong> (<code>/consolidation</code>) &mdash; cross-mode paper trades.</li>
-      <li><strong>P&amp;L History</strong> (<code>/pnl-history</code>) with broker baselines + live overlay grouped by Indian FY.</li>
-      <li><strong>Telegram restructure</strong> &mdash; 17 per-mode toggles + master <code>TG_ENABLED</code> + consolidated 15:30 IST report.</li>
-      <li><strong>Dashboard Start-All</strong> Paper / Live buttons.</li>
-      <li><strong>Settings: bulk paste</strong> + one-click server restart.</li>
-      <li><strong>Simulator fidelity</strong> &mdash; warmup 30 → 300 candles; intra-candle ticks zig-zag.</li>
-      <li><strong>Login cookie SameSite=Lax</strong> to fix mobile OAuth redirect loop.</li>
-    </ul>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 1. STRATEGY OVERVIEW & PERFORMANCE                                    -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s1">
-  <h2>01 &mdash; Strategy Overview &amp; Performance</h2>
-
+<div class="section">
+  <h2 id="s12">12 — Removed vs Old Strategy</h2>
+  <p>The 2026-05-27 redefinition removed all of the following (and their Settings fields):</p>
   <p>
-    <strong>SAR_EMA9_RSI</strong> is a trend-following pullback strategy on <strong>NIFTY candles &mdash; 5-minute by default since v4.5.0 (was 15-minute)</strong>. Set <code>TRADE_RESOLUTION=15</code> in <code>.env</code> or Settings to restore 15-min behavior; the strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code> for resolution-specific tuning.
-    It identifies entries when price pulls back to the 9-period EMA during established trends, confirmed by
-    Parabolic SAR direction, RSI momentum, ADX trend strength, and candle body conviction.
+    <span class="tag tag-red">EMA9 touch</span>
+    <span class="tag tag-red">EMA30 trend gate</span>
+    <span class="tag tag-red">ADX filter</span>
+    <span class="tag tag-red">candle-body filter</span>
+    <span class="tag tag-red">min/max SAR-distance</span>
+    <span class="tag tag-red">Logic-3 SAR-lag overrides</span>
+    <span class="tag tag-red">STRONG / MARGINAL tiers</span>
+    <span class="tag tag-red">3-tier trailing</span>
+    <span class="tag tag-red">hybrid initial-SL cap</span>
+    <span class="tag tag-red">prev-candle structural trail</span>
+    <span class="tag tag-red">50% candle rule</span>
+    <span class="tag tag-red">near-miss N/8 audit</span>
   </p>
-
-  <h3>Backtest Performance</h3>
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th>Period</th>
-          <th>Trades</th>
-          <th>Win Rate</th>
-          <th>Net PnL</th>
-          <th>Avg / Trade</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><strong>3 months</strong></td>
-          <td>14</td>
-          <td><span class="tag tag-green">85.7%</span></td>
-          <td style="color: var(--green2); font-weight: 700;">+84,265</td>
-          <td>+6,019</td>
-        </tr>
-        <tr>
-          <td><strong>15 months</strong></td>
-          <td>51</td>
-          <td><span class="tag tag-green">78.4%</span></td>
-          <td style="color: var(--green2); font-weight: 700;">+1,92,180</td>
-          <td>+3,768</td>
-        </tr>
-        <tr>
-          <td><strong>27 months</strong></td>
-          <td>76</td>
-          <td><span class="tag tag-green">77.6%</span></td>
-          <td style="color: var(--green2); font-weight: 700;">+2,47,232</td>
-          <td>+3,253</td>
-        </tr>
-        <tr>
-          <td><strong>8 years</strong></td>
-          <td>327</td>
-          <td><span class="tag tag-blue">70.6%</span></td>
-          <td style="color: var(--green2); font-weight: 700;">+7,32,140</td>
-          <td>+2,239</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>System Architecture</h3>
-  <div class="arch">
-    <div class="arch-box" style="border-color: var(--cyan);">Fyers API<br><span style="font-size:0.7rem;color:var(--text3)">WebSocket / REST</span></div>
-    <div class="arch-arrow">&rarr;</div>
-    <div class="arch-box">
-      Candle Builder<br><span style="font-size:0.7rem;color:var(--text3)">5-min OHLCV (default; 15-min via env)</span>
-    </div>
-    <div class="arch-arrow">+</div>
-    <div class="arch-box">
-      Indicator Engine<br>
-      <span style="font-size:0.7rem;color:var(--text3)">EMA9/21/30 | RSI14 | ADX14 | SAR</span>
-    </div>
-    <div class="arch-arrow">&rarr;</div>
-    <div class="arch-box" style="border-color: var(--accent); background: rgba(59,130,246,0.08);">
-      <strong style="color: var(--accent2)">SAR_EMA9_RSI</strong><br>
-      <span style="font-size:0.7rem;color:var(--text3)">9 Gates | 5 Exit Rules | VIX Filter</span>
-    </div>
-    <div class="arch-arrow">&rarr;</div>
-    <div class="arch-box" style="border-color: var(--green);">
-      Zerodha Kite<br><span style="font-size:0.7rem;color:var(--text3)">/ Paper Trade</span>
-    </div>
-  </div>
+  <div class="note success">Entry is now always intra-candle (no STRONG/MARGINAL timing split), and the stop is purely the
+  previous candle's extreme + breakeven + option-stop. See <code>SWING.md</code> in the repo for the code-level reference.</div>
 </div>
 
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 2. INDICATORS & CONFIGURATION                                         -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s2">
-  <h2>02 &mdash; Indicators &amp; Configuration</h2>
-
-  <div class="card">
-    <table>
-      <thead>
-        <tr><th>Indicator</th><th>Period</th><th>Source</th><th>Purpose</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><strong>EMA 9</strong></td><td>9</td><td>OHLC4</td><td>Entry trigger (pullback touch), slope direction</td></tr>
-        <tr><td><strong>EMA 21</strong></td><td>21</td><td>OHLC4</td><td>Momentum alignment (EMA9 vs EMA21)</td></tr>
-        <tr><td><strong>EMA 30</strong></td><td>30</td><td>Close</td><td>Medium-term trend filter</td></tr>
-        <tr><td><strong>RSI</strong></td><td>14</td><td>Close</td><td>Momentum confirmation, strength grading</td></tr>
-        <tr><td><strong>ADX</strong></td><td>14</td><td>H/L/C</td><td>Trend strength gate (chop filter)</td></tr>
-        <tr><td><strong>Parabolic SAR</strong></td><td>0.02 / 0.2</td><td>H/L</td><td>Trend direction, trailing stop loss</td></tr>
-        <tr><td><strong>India VIX</strong></td><td>&mdash;</td><td>NSE API</td><td>Market regime filter (volatility gate)</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="note">
-    <strong>OHLC4 = (Open + High + Low + Close) / 4</strong> &mdash; smoother than close-only EMAs, reduces wick noise on 15-minute candles. EMA30 uses Close only for broader trend alignment.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. TRADING MODES                                                      -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s3">
-  <h2>03 &mdash; Trading Modes</h2>
-
-  <p>The Swing strategy runs in three distinct modes. All three share the <strong>same signal logic</strong> (9 Gate Pipeline, 3-Tier Trailing SL, VIX Filter) but differ in data source, order execution, and persistence.</p>
-
-  <!-- ── Mode Architecture SVG ── -->
-  <div class="chart-container" style="padding:24px 16px;">
-    <div class="chart-title">Mode Architecture &mdash; Data Flow Comparison</div>
-    <svg viewBox="0 0 800 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
-      <!-- Background grid -->
-      <defs>
-        <linearGradient id="liveGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#26a69a" stop-opacity="0.15"/><stop offset="100%" stop-color="#26a69a" stop-opacity="0.03"/></linearGradient>
-        <linearGradient id="paperGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3b82f6" stop-opacity="0.15"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0.03"/></linearGradient>
-        <linearGradient id="btGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#a78bfa" stop-opacity="0.15"/><stop offset="100%" stop-color="#a78bfa" stop-opacity="0.03"/></linearGradient>
-        <marker id="arrowG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#26a69a"/></marker>
-        <marker id="arrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3b82f6"/></marker>
-        <marker id="arrowP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#a78bfa"/></marker>
-      </defs>
-
-      <!-- Row labels -->
-      <text x="10" y="68" fill="#26a69a" font-size="13" font-weight="700">LIVE</text>
-      <text x="10" y="168" fill="#3b82f6" font-size="13" font-weight="700">PAPER</text>
-      <text x="10" y="278" fill="#a78bfa" font-size="13" font-weight="700">BACKTEST</text>
-
-      <!-- LIVE row -->
-      <rect x="70" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
-      <text x="135" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
-      <text x="135" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">Real-time NIFTY ticks</text>
-      <line x1="200" y1="65" x2="240" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
-
-      <rect x="245" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
-      <text x="310" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
-      <text x="310" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">9 Gates + Signal Logic</text>
-      <line x1="375" y1="65" x2="415" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
-
-      <rect x="420" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
-      <text x="485" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Zerodha Kite API</text>
-      <text x="485" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">REAL orders placed</text>
-      <line x1="550" y1="65" x2="590" y2="65" stroke="#26a69a" stroke-width="1.5" marker-end="url(#arrowG)"/>
-
-      <rect x="595" y="40" width="130" height="50" rx="8" fill="url(#liveGrad)" stroke="#26a69a" stroke-width="1.5"/>
-      <text x="660" y="60" fill="#4dd0c4" font-size="11" font-weight="600" text-anchor="middle">Telegram Alerts</text>
-      <text x="660" y="76" fill="#7a94b8" font-size="9" text-anchor="middle">Entry / Exit / Signals</text>
-
-      <!-- PAPER row -->
-      <rect x="70" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
-      <text x="135" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
-      <text x="135" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">Real-time NIFTY ticks</text>
-      <line x1="200" y1="165" x2="240" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
-
-      <rect x="245" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
-      <text x="310" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
-      <text x="310" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">Same 9 Gates + Logic</text>
-      <line x1="375" y1="165" x2="415" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
-
-      <rect x="420" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
-      <text x="485" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Simulated Fills</text>
-      <text x="485" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">No broker, in-memory</text>
-      <line x1="550" y1="165" x2="590" y2="165" stroke="#3b82f6" stroke-width="1.5" marker-end="url(#arrowB)"/>
-
-      <rect x="595" y="140" width="130" height="50" rx="8" fill="url(#paperGrad)" stroke="#3b82f6" stroke-width="1.5"/>
-      <text x="660" y="160" fill="#60a5fa" font-size="11" font-weight="600" text-anchor="middle">Disk Persistence</text>
-      <text x="660" y="176" fill="#7a94b8" font-size="9" text-anchor="middle">~/trading-data/</text>
-
-      <!-- BACKTEST row -->
-      <rect x="70" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
-      <text x="135" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Fyers History API</text>
-      <text x="135" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">Cached candle files</text>
-      <line x1="200" y1="275" x2="240" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
-
-      <rect x="245" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
-      <text x="310" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Strategy Engine</text>
-      <text x="310" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">Same 9 Gates + Logic</text>
-      <line x1="375" y1="275" x2="415" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
-
-      <rect x="420" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
-      <text x="485" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Option Sim</text>
-      <text x="485" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
-      <line x1="550" y1="275" x2="590" y2="275" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowP)"/>
-
-      <rect x="595" y="250" width="130" height="50" rx="8" fill="url(#btGrad)" stroke="#a78bfa" stroke-width="1.5"/>
-      <text x="660" y="270" fill="#c4b5fd" font-size="11" font-weight="600" text-anchor="middle">Result Store</text>
-      <text x="660" y="286" fill="#7a94b8" font-size="9" text-anchor="middle">JSON reports &amp; charts</text>
-
-      <!-- Shared engine bracket -->
-      <rect x="255" y="35" width="110" height="275" rx="0" fill="none" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,3" opacity="0.35"/>
-      <text x="310" y="325" fill="#fbbf24" font-size="9" text-anchor="middle" opacity="0.7">SHARED STRATEGY ENGINE</text>
-    </svg>
-  </div>
-
-  <!-- ── Mode detail cards ── -->
-  <div class="logic-cards">
-    <div class="logic-card" style="border-top: 3px solid var(--green);">
-      <div class="lc-num" style="color: var(--green2);">Mode 1</div>
-      <div class="lc-title">Live Trading</div>
-      <div class="lc-desc">Fyers WebSocket for real-time NIFTY spot ticks. Orders placed via Zerodha Kite API. Full risk management with daily loss limit and trade caps.</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--accent);">
-      <div class="lc-num" style="color: var(--accent2);">Mode 2</div>
-      <div class="lc-title">Paper Trading</div>
-      <div class="lc-desc">Identical signal logic and exit rules. Simulated order fills at market price. Tracks PnL, win rate, and session history. Same code path as live.</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--purple);">
-      <div class="lc-num" style="color: var(--purple2);">Mode 3</div>
-      <div class="lc-title">Backtesting</div>
-      <div class="lc-desc">Historical Fyers candles replayed tick-by-tick (1-min candle replay). Option premium simulation: delta 0.55, theta decay 10 pts/day. Validates strategy across years of data.</div>
-    </div>
-  </div>
-
-  <!-- ── Live Trading Detail ── -->
-  <h3 class="green">Live Trading &mdash; How It Works</h3>
-  <div class="card green-border">
-    <p><strong>File:</strong> <code>swingLive.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers WebSocket &nbsp;|&nbsp; <strong>Orders:</strong> Zerodha Kite Connect</p>
-    <table>
-      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
-      <tr><td>1. Connect</td><td>WebSocket subscribes to <code>NSE:NIFTY50-INDEX</code> for 1-second ticks</td><td><code>EC2_IP</code></td></tr>
-      <tr><td>2. Build candles</td><td>Ticks aggregated into 15-min OHLC candles in real-time</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
-      <tr><td>3. Evaluate</td><td>On each candle close, run 9 Gate Pipeline to check for signal</td><td>All signal filters</td></tr>
-      <tr><td>4. Place order</td><td>ATM CE/PE option order sent to Zerodha with market order type</td><td><code>SWING_LIVE_ENABLED=true</code></td></tr>
-      <tr><td>5. Monitor</td><td>Option LTP polled every 1 second via Fyers quote API</td><td><code>LTP_STALE_THRESHOLD_SEC=15</code></td></tr>
-      <tr><td>6. Trail &amp; Exit</td><td>3-Tier trailing SL, breakeven logic, SAR flip, daily loss limit</td><td><code>TRAIL_TIER*</code>, <code>BREAKEVEN_PTS</code></td></tr>
-      <tr><td>7. Alert</td><td>Telegram notification sent on entry, exit, and signal detection (gated by master <code>TG_ENABLED</code>)</td><td><code>TG_SWING_ENTRY</code>, <code>TG_SWING_EXIT</code></td></tr>
-    </table>
-  </div>
-
-  <!-- ── Paper Trading Detail ── -->
-  <h3 class="blue">Paper Trading &mdash; How It Works</h3>
-  <div class="card blue-border">
-    <p><strong>File:</strong> <code>swingPaper.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers WebSocket (real) &nbsp;|&nbsp; <strong>Orders:</strong> Simulated in-memory</p>
-    <table>
-      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
-      <tr><td>1. Connect</td><td>Same WebSocket feed as live &mdash; identical real-time data</td><td>&mdash;</td></tr>
-      <tr><td>2. Build candles</td><td>15-min candles built identically from ticks</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
-      <tr><td>3. Evaluate</td><td>Same 9 Gate Pipeline, same signal logic as live</td><td>All signal filters</td></tr>
-      <tr><td>4. Simulate fill</td><td>Order "filled" instantly at current price with simulated slippage</td><td><code>SWING_PAPER_CAPITAL=100000</code></td></tr>
-      <tr><td>5. Track PnL</td><td>Option premium tracked using Fyers quote API (real premium data)</td><td>&mdash;</td></tr>
-      <tr><td>6. Trail &amp; Exit</td><td>Same trailing, breakeven, daily loss limit as live</td><td>Same settings as live</td></tr>
-      <tr><td>7. Persist</td><td>Position saved to <code>~/trading-data/</code> &mdash; survives server restarts</td><td>&mdash;</td></tr>
-    </table>
-    <div class="note success" style="margin-top:12px;">
-      <strong>Paper = Live minus the broker.</strong> Every signal, exit condition, and risk check runs through the exact same code path. The only difference is the order goes to an in-memory array instead of Zerodha.
-    </div>
-  </div>
-
-  <!-- ── Backtest Detail ── -->
-  <h3 class="purple">Backtesting &mdash; How It Works</h3>
-  <div class="card purple-border">
-    <p><strong>File:</strong> <code>swingBacktest.js</code> + <code>backtestEngine.js</code> &nbsp;|&nbsp; <strong>Data:</strong> Fyers Historical API (cached) &nbsp;|&nbsp; <strong>Orders:</strong> Simulated with option Greeks</p>
-    <table>
-      <tr><th>Step</th><th>What Happens</th><th>Key Setting</th></tr>
-      <tr><td>1. Fetch candles</td><td>Download historical 1-min candles from Fyers for date range, cache to disk</td><td><code>BACKTEST_FROM</code>, <code>BACKTEST_TO</code></td></tr>
-      <tr><td>2. Aggregate</td><td>1-min candles aggregated to 15-min OHLC (same logic as live)</td><td><code>TRADE_RESOLUTION=15</code></td></tr>
-      <tr><td>3. Replay</td><td>Walk through each 15-min candle sequentially, evaluating signals</td><td>&mdash;</td></tr>
-      <tr><td>4. Option sim</td><td>NIFTY spot move &times; delta = option premium P&amp;L, minus theta decay</td><td><code>BACKTEST_DELTA=0.55</code>, <code>BACKTEST_THETA_DAY=10</code></td></tr>
-      <tr><td>5. Apply charges</td><td>STT, exchange txn, SEBI, GST, stamp duty, broker flat fee all deducted</td><td><code>STT_OPT_SELL_PCT</code>, <code>BROKER_FLAT_PER_ORDER</code></td></tr>
-      <tr><td>6. Generate report</td><td>Win rate, net PnL, drawdown, trade log &mdash; stored in result store</td><td><code>BACKTEST_CAPITAL=100000</code></td></tr>
-    </table>
-  </div>
-
-  <!-- ── Option Simulation Diagram ── -->
-  <div class="chart-container" style="padding:20px 16px;">
-    <div class="chart-title">Backtest Option Price Simulation</div>
-    <svg viewBox="0 0 700 200" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
-      <defs>
-        <marker id="arrowY" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#fbbf24"/></marker>
-      </defs>
-      <!-- NIFTY Move box -->
-      <rect x="20" y="30" width="150" height="70" rx="10" fill="rgba(38,166,154,0.1)" stroke="#26a69a" stroke-width="1.5"/>
-      <text x="95" y="55" fill="#4dd0c4" font-size="12" font-weight="700" text-anchor="middle">NIFTY Spot Move</text>
-      <text x="95" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">e.g. +40 points</text>
-
-      <line x1="170" y1="65" x2="210" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
-      <text x="190" y="58" fill="#fbbf24" font-size="8" text-anchor="middle">&times;</text>
-
-      <!-- Delta box -->
-      <rect x="215" y="30" width="110" height="70" rx="10" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.5"/>
-      <text x="270" y="55" fill="#fcd34d" font-size="12" font-weight="700" text-anchor="middle">Delta</text>
-      <text x="270" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">0.55</text>
-
-      <line x1="325" y1="65" x2="360" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
-      <text x="342" y="58" fill="#fbbf24" font-size="8" text-anchor="middle">=</text>
-
-      <!-- Premium Move box -->
-      <rect x="365" y="30" width="130" height="70" rx="10" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" stroke-width="1.5"/>
-      <text x="430" y="55" fill="#60a5fa" font-size="12" font-weight="700" text-anchor="middle">Premium Move</text>
-      <text x="430" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">+22 pts (40 &times; 0.55)</text>
-
-      <line x1="495" y1="65" x2="530" y2="65" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowY)"/>
-      <text x="512" y="58" fill="#ef5350" font-size="8" text-anchor="middle">&minus;&theta;</text>
-
-      <!-- Theta Decay box -->
-      <rect x="535" y="30" width="130" height="70" rx="10" fill="rgba(239,83,80,0.1)" stroke="#ef5350" stroke-width="1.5"/>
-      <text x="600" y="55" fill="#ff7875" font-size="12" font-weight="700" text-anchor="middle">After Theta</text>
-      <text x="600" y="75" fill="#7a94b8" font-size="10" text-anchor="middle">+22 &minus; 0.67 = +21.3 pts</text>
-
-      <!-- Formula footer -->
-      <text x="350" y="135" fill="#7a94b8" font-size="10" text-anchor="middle">Option PnL = (NIFTY Move &times; &delta;) &minus; (&theta; &times; candles &divide; candles_per_day) &minus; Slippage &minus; Charges</text>
-      <text x="350" y="155" fill="#5a7499" font-size="9" text-anchor="middle">&theta; decay = 10 pts/day &divide; 25 candles = 0.4 pts/candle for 15-min | Gamma adjustment optional</text>
-      <text x="350" y="175" fill="#5a7499" font-size="9" text-anchor="middle">Lot PnL = Premium Move &times; Lot Size (65) &times; Lots (1) = 21.3 &times; 65 = &#8377;1,385</text>
-    </svg>
-  </div>
-
-  <!-- ── Mode Comparison Table ── -->
-  <h3>Mode Comparison at a Glance</h3>
-  <div class="card">
-    <table>
-      <thead>
-        <tr><th>Feature</th><th style="color:var(--green2);">Live</th><th style="color:var(--accent2);">Paper</th><th style="color:var(--purple2);">Backtest</th></tr>
-      </thead>
-      <tbody>
-        <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket (real-time)</td><td>Fyers WebSocket (real-time)</td><td>Fyers Historical API (cached)</td></tr>
-        <tr><td><strong>Order Execution</strong></td><td>Zerodha Kite (real money)</td><td>In-memory (simulated)</td><td>In-memory (simulated + Greeks)</td></tr>
-        <tr><td><strong>Option Premium</strong></td><td>Live LTP from Fyers quotes</td><td>Live LTP from Fyers quotes</td><td>Simulated: &delta;=0.55, &theta;=10/day</td></tr>
-        <tr><td><strong>Capital Tracking</strong></td><td>Zerodha account balance</td><td><code>SWING_PAPER_CAPITAL</code> (&#8377;1L)</td><td><code>BACKTEST_CAPITAL</code> (&#8377;1L)</td></tr>
-        <tr><td><strong>Charges Deducted</strong></td><td>Real broker charges</td><td>Estimated (STT, GST, etc.)</td><td>Full simulation (STT, GST, etc.)</td></tr>
-        <tr><td><strong>Slippage</strong></td><td>Real market slippage</td><td>None (instant fill)</td><td><code>BACKTEST_SLIPPAGE_PTS</code></td></tr>
-        <tr><td><strong>VIX Filter</strong></td><td>Live VIX polling (60s cache)</td><td>Live VIX polling (60s cache)</td><td>Historical VIX candles</td></tr>
-        <tr><td><strong>Position Persistence</strong></td><td>Disk (crash recovery)</td><td>Disk (survives restarts)</td><td>N/A (single run)</td></tr>
-        <tr><td><strong>Telegram Alerts</strong></td><td>Yes</td><td>Optional</td><td>No</td></tr>
-        <tr><td><strong>Route</strong></td><td><code>/swing-live</code></td><td><code>/swing-paper</code></td><td><code>/swing-backtest</code></td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- ── Settings per Mode ── -->
-  <h3>Key Settings by Mode</h3>
-  <div class="logic-cards">
-    <div class="logic-card" style="border-top: 3px solid var(--green);">
-      <div class="lc-num" style="color: var(--green2);">Live Settings</div>
-      <div class="lc-condition">SWING_LIVE_ENABLED=true</div>
-      <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
-      <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
-      <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
-      <div class="lc-condition">MAX_DAILY_TRADES=6</div>
-      <div class="lc-condition">HARD_SL_ENABLED=false</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--accent);">
-      <div class="lc-num" style="color: var(--accent2);">Paper Settings</div>
-      <div class="lc-condition">SWING_PAPER_CAPITAL=100000</div>
-      <div class="lc-condition">TRADE_ENTRY_START=09:30</div>
-      <div class="lc-condition">TRADE_ENTRY_END=14:00</div>
-      <div class="lc-condition">MAX_DAILY_LOSS=5000</div>
-      <div class="lc-condition">MAX_DAILY_TRADES=6</div>
-      <div class="lc-condition">(Uses same signal filters)</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--purple);">
-      <div class="lc-num" style="color: var(--purple2);">Backtest Settings</div>
-      <div class="lc-condition">BACKTEST_FROM=2026-01-01</div>
-      <div class="lc-condition">BACKTEST_TO=2026-03-28</div>
-      <div class="lc-condition">BACKTEST_CAPITAL=100000</div>
-      <div class="lc-condition">BACKTEST_DELTA=0.55</div>
-      <div class="lc-condition">BACKTEST_THETA_DAY=10</div>
-      <div class="lc-condition">BACKTEST_SLIPPAGE_PTS=0</div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. ENTRY LOGIC — 9 GATE PIPELINE                                      -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s4">
-  <h2>04 &mdash; Entry Logic &mdash; 9 Gate Pipeline</h2>
-
-  <p>Every potential entry must pass <strong>all 9 gates</strong> sequentially. A failure at any gate blocks the signal. The order is optimized to reject cheaply &mdash; the most common rejections happen at gates 1-3.</p>
-
-  <div class="pipeline">
-    <div class="gate">
-      <div class="gate-num">1</div>
-      <div class="gate-content">
-        <div class="gate-name">EMA9 Touch</div>
-        <div class="gate-desc">Price must pull back to and touch the 9-period EMA within the candle</div>
-        <div class="gate-rule">CE: High &ge; EMA9 AND Low &le; EMA9 + 20 &nbsp;|&nbsp; PE: Low &le; EMA9 AND High &ge; EMA9 - 20</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">2</div>
-      <div class="gate-content">
-        <div class="gate-name">SAR Position</div>
-        <div class="gate-desc">Parabolic SAR must confirm trend direction (3 valid logic paths)</div>
-        <div class="gate-rule">CE: trend=1 (dots below) &nbsp;|&nbsp; PE: trend=-1 (dots above) &nbsp;|&nbsp; SAR flip &nbsp;|&nbsp; Bull Override</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">3</div>
-      <div class="gate-content">
-        <div class="gate-name">EMA9 Slope</div>
-        <div class="gate-desc">EMA must be actively moving in trade direction &mdash; flat EMAs produce noise signals</div>
-        <div class="gate-rule">CE: slope &ge; +6 pts vs prev candle &nbsp;|&nbsp; PE: slope &le; -6 pts vs prev candle</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">4</div>
-      <div class="gate-content">
-        <div class="gate-name">Trend Filter</div>
-        <div class="gate-desc">Align with medium-term trend &mdash; eliminates counter-trend trades (biggest losers)</div>
-        <div class="gate-rule">CE: Close &gt; EMA30 AND EMA9 &gt; EMA21 &nbsp;|&nbsp; PE: Close &lt; EMA30 AND EMA9 &lt; EMA21</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">5</div>
-      <div class="gate-content">
-        <div class="gate-name">Candle Body</div>
-        <div class="gate-desc">Candle must close in the trade direction with minimum body size (no dojis)</div>
-        <div class="gate-rule">CE: Close &gt; Open, body &ge; 10pts &nbsp;|&nbsp; PE: Close &lt; Open, body &ge; 10pts</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">6</div>
-      <div class="gate-content">
-        <div class="gate-name">SAR Distance</div>
-        <div class="gate-desc">Stop loss (SAR value) must be in the optimal range &mdash; not too tight, not too wide</div>
-        <div class="gate-rule">Min: 45 pts &nbsp;|&nbsp; Max: 200 pts &nbsp; (entry price to SAR SL)</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">7</div>
-      <div class="gate-content">
-        <div class="gate-name">ADX Strength</div>
-        <div class="gate-desc">Market must be trending, not ranging &mdash; EMA touches in choppy markets are noise</div>
-        <div class="gate-rule">ADX(14) &ge; 25 &nbsp; (trending market confirmed)</div>
-      </div>
-    </div>
-
-    <div class="gate">
-      <div class="gate-num">8</div>
-      <div class="gate-content">
-        <div class="gate-name">RSI Momentum</div>
-        <div class="gate-desc">Momentum must confirm the trade direction &mdash; dead zone 48-52 blocked</div>
-        <div class="gate-rule">CE: RSI &gt; 52 &nbsp;|&nbsp; PE: RSI &lt; 48</div>
-      </div>
-    </div>
-
-    <div class="gate" style="border-color: var(--yellow);">
-      <div class="gate-num" style="background: linear-gradient(135deg, var(--yellow), #e5a000);">9</div>
-      <div class="gate-content">
-        <div class="gate-name">VIX Filter</div>
-        <div class="gate-desc">India VIX must be within acceptable range &mdash; high VIX = erratic moves, SLs blown</div>
-        <div class="gate-rule">VIX &le; 20 to enter &nbsp;|&nbsp; VIX 16-20: STRONG signals only &nbsp;|&nbsp; VIX &gt; 20: all entries blocked</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="note success">
-    <strong>Pipeline efficiency:</strong> ~70% of ticks are rejected at Gate 1 (no EMA touch), ~20% at Gates 2-3 (wrong SAR/slope). Only ~10% reach the deeper gates, keeping CPU usage minimal.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 5. SAR POSITION — THREE ENTRY LOGICS                                  -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s5">
-  <h2>05 &mdash; SAR Position &mdash; Three Entry Logics</h2>
-
-  <p>Gate 2 (SAR Position) has three valid paths. The SAR does <em>not</em> need to flip for an entry &mdash; it just needs to be on the correct side.</p>
-
-  <div class="logic-cards">
-    <div class="logic-card green-border">
-      <div class="lc-num" style="color: var(--green2);">Logic 1 &mdash; SAR Already Positioned</div>
-      <div class="lc-title">Standard Entry</div>
-      <div class="lc-desc">SAR has been on the correct side for multiple candles. This is the most common and reliable entry type.</div>
-      <div style="margin-top: 10px;">
-        <!-- SAR dots visual -->
-        <div style="display:flex;align-items:center;gap:12px;margin:6px 0;">
-          <span class="tag tag-green">CE</span>
-          <div style="display:flex;gap:6px;align-items:flex-end;">
-            <div style="width:14px;height:36px;background:var(--green);border-radius:2px;"></div>
-            <div style="width:14px;height:28px;background:var(--green);border-radius:2px;"></div>
-            <div style="width:14px;height:42px;background:var(--green);border-radius:2px;"></div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:flex-end;">
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;margin-bottom:-6px;"></div>
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;margin-bottom:-8px;"></div>
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;margin-bottom:-10px;"></div>
-          </div>
-          <span style="font-size:0.78rem;color:var(--text3);">SAR dots below candles (trend=1)</span>
-        </div>
-        <div style="display:flex;align-items:center;gap:12px;margin:6px 0;">
-          <span class="tag tag-red">PE</span>
-          <div style="display:flex;gap:6px;align-items:flex-start;">
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;"></div>
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;"></div>
-            <div style="width:6px;height:6px;background:var(--yellow);border-radius:50%;"></div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:flex-start;">
-            <div style="width:14px;height:36px;background:var(--red);border-radius:2px;margin-top:10px;"></div>
-            <div style="width:14px;height:28px;background:var(--red);border-radius:2px;margin-top:16px;"></div>
-            <div style="width:14px;height:42px;background:var(--red);border-radius:2px;margin-top:6px;"></div>
-          </div>
-          <span style="font-size:0.78rem;color:var(--text3);">SAR dots above candles (trend=-1)</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="logic-card blue-border">
-      <div class="lc-num" style="color: var(--accent2);">Logic 2 &mdash; SAR Just Flipped</div>
-      <div class="lc-title">Trend Reversal Entry</div>
-      <div class="lc-desc">SAR changed direction on THIS candle. Previous candle had opposite trend. Catches trend reversals at the earliest point.</div>
-      <div class="lc-condition">CE: prevSAR.trend=-1 AND currSAR.trend=1<br>PE: prevSAR.trend=1 AND currSAR.trend=-1</div>
-    </div>
-
-    <div class="logic-card red-border">
-      <div class="lc-num" style="color: var(--red2);">Logic 3 &mdash; Bull Override (PE only)</div>
-      <div class="lc-title">Momentum Override</div>
-      <div class="lc-desc">SAR still bullish but strong downward momentum detected. SAR is lagging behind a fast move. Uses EMA9 as SL instead of SAR.</div>
-      <div class="lc-condition">
-        EMA9 slope &le; -6 pts<br>
-        Close &lt; EMA9<br>
-        RSI &lt; 42<br>
-        (Close - SAR) &gt; 50 pts<br>
-        SL = EMA9 value
-      </div>
-    </div>
-  </div>
-
-  <div class="note warn">
-    <strong>Logic 3 also has a CE mirror:</strong> SAR still bearish but strong bullish momentum. EMA9 slope &ge; +6, Close &gt; EMA9, RSI &gt; 53, (SAR - Close) &gt; 30pts. SL = EMA9.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. SIGNAL STRENGTH CLASSIFICATION                                     -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s6">
-  <h2>06 &mdash; Signal Strength Classification</h2>
-
-  <div class="compare">
-    <div class="compare-box" style="background: rgba(38,166,154,0.08); border: 1px solid rgba(38,166,154,0.25);">
-      <div class="cb-title" style="color: var(--green2);">STRONG</div>
-      <div style="font-size: 0.88rem; margin-bottom: 8px;">Enter <strong>INTRA-CANDLE</strong></div>
-      <div style="font-size: 0.82rem; color: var(--text2);">
-        CE: EMA9 slope &ge; 9 AND RSI &gt; 58<br>
-        PE: EMA9 slope &le; -9 AND RSI &lt; 40
-      </div>
-      <div style="margin-top: 10px; font-size: 0.78rem; color: var(--green2);">
-        Enter at EMA touch for best price.<br>Don't wait for candle close.
-      </div>
-    </div>
-    <div class="compare-box" style="background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.2);">
-      <div class="cb-title" style="color: var(--yellow2);">MARGINAL</div>
-      <div style="font-size: 0.88rem; margin-bottom: 8px;">Wait for <strong>CANDLE CLOSE</strong></div>
-      <div style="font-size: 0.82rem; color: var(--text2);">
-        EMA9 slope 6-8 pts<br>
-        RSI threshold met but not extreme
-      </div>
-      <div style="margin-top: 10px; font-size: 0.78rem; color: var(--yellow);">
-        Confirm candle closes in trade direction.<br>Blocked if VIX is 16-20.
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 7. CE ENTRY EXAMPLE                                                   -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s7">
-  <h2>07 &mdash; CE Entry Example</h2>
-
-  <div class="chart-container">
-    <div class="chart-title">NIFTY 15-Min &mdash; Bullish Pullback to EMA9</div>
-    <div class="chart-area" style="height: 220px; position: relative;">
-      <!-- Grid lines -->
-      <div style="position:absolute;left:0;right:0;top:10%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:30%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:50%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:70%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:90%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-
-      <!-- Price labels -->
-      <div style="position:absolute;left:-2px;top:8%;font-size:0.6rem;color:var(--text3);">25200</div>
-      <div style="position:absolute;left:-2px;top:28%;font-size:0.6rem;color:var(--text3);">25150</div>
-      <div style="position:absolute;left:-2px;top:48%;font-size:0.6rem;color:var(--text3);">25100</div>
-      <div style="position:absolute;left:-2px;top:68%;font-size:0.6rem;color:var(--text3);">25050</div>
-      <div style="position:absolute;left:-2px;top:88%;font-size:0.6rem;color:var(--text3);">25000</div>
-
-      <!-- EMA9 line (blue dashed) - rising from bottom-left to upper-right -->
-      <svg style="position:absolute;left:30px;right:10px;top:0;bottom:0;width:calc(100% - 40px);height:100%;z-index:5;" preserveAspectRatio="none">
-        <polyline points="0,170 80,155 160,140 240,130 320,115 400,105 480,90 560,78 640,72 720,68"
-          stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4" fill="none" opacity="0.7"/>
-        <polyline points="0,185 80,178 160,170 240,162 320,155 400,148 480,140 560,135 640,128 720,122"
-          stroke="#a78bfa" stroke-width="2" stroke-dasharray="8,6" fill="none" opacity="0.5"/>
-      </svg>
-
-      <!-- EMA labels -->
-      <div class="chart-label" style="top:28%;right:8px;color:#3b82f6;background:rgba(59,130,246,0.15);">EMA9</div>
-      <div class="chart-label" style="top:52%;right:8px;color:#a78bfa;background:rgba(167,139,250,0.15);">EMA30</div>
-
-      <!-- Candles -->
-      <!-- Candle 1: green, rising -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:12%;width:100%;">
-          <div class="wick-top" style="height:12px;"></div>
-          <div class="candle-body" style="height:24px;"></div>
-          <div class="wick-bottom" style="height:8px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:5%;left:50%;"></div>
-      </div>
-      <!-- Candle 2: green -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:18%;width:100%;">
-          <div class="wick-top" style="height:14px;"></div>
-          <div class="candle-body" style="height:20px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:10%;left:50%;"></div>
-      </div>
-      <!-- Candle 3: big green -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:22%;width:100%;">
-          <div class="wick-top" style="height:8px;"></div>
-          <div class="candle-body" style="height:36px;"></div>
-          <div class="wick-bottom" style="height:6px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:14%;left:50%;"></div>
-      </div>
-      <!-- Candle 4: green -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:36%;width:100%;">
-          <div class="wick-top" style="height:16px;"></div>
-          <div class="candle-body" style="height:18px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:26%;left:50%;"></div>
-      </div>
-      <!-- Candle 5: red pullback -->
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:34%;width:100%;">
-          <div class="wick-top" style="height:8px;"></div>
-          <div class="candle-body" style="height:16px;"></div>
-          <div class="wick-bottom" style="height:18px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:24%;left:50%;"></div>
-      </div>
-      <!-- Candle 6: red pullback to EMA -->
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:30%;width:100%;">
-          <div class="wick-top" style="height:6px;"></div>
-          <div class="candle-body" style="height:14px;"></div>
-          <div class="wick-bottom" style="height:20px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:20%;left:50%;"></div>
-      </div>
-      <!-- Candle 7: ENTRY - green bounce off EMA9 -->
-      <div class="candle-wrapper" style="position:relative;">
-        <div class="candle green" style="bottom:28%;width:100%;">
-          <div class="wick-top" style="height:10px;"></div>
-          <div class="candle-body" style="height:28px;border:2px solid #fff;"></div>
-          <div class="wick-bottom" style="height:14px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:18%;left:50%;"></div>
-        <div class="chart-marker entry" style="top:8px;left:50%;transform:translateX(-50%);">ENTRY</div>
-      </div>
-      <!-- Candle 8: green continuation -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:36%;width:100%;">
-          <div class="wick-top" style="height:12px;"></div>
-          <div class="candle-body" style="height:26px;"></div>
-          <div class="wick-bottom" style="height:8px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:26%;left:50%;"></div>
-      </div>
-      <!-- Candle 9: green -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:44%;width:100%;">
-          <div class="wick-top" style="height:14px;"></div>
-          <div class="candle-body" style="height:22px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:34%;left:50%;"></div>
-      </div>
-      <!-- Candle 10: green -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:50%;width:100%;">
-          <div class="wick-top" style="height:10px;"></div>
-          <div class="candle-body" style="height:30px;"></div>
-          <div class="wick-bottom" style="height:6px;"></div>
-        </div>
-        <div class="sar-dot" style="bottom:40%;left:50%;"></div>
-      </div>
-    </div>
-  </div>
-
-  <h3>Gate Check &mdash; All 9 Gates PASS</h3>
-  <div class="card">
-    <table class="gate-check">
-      <thead><tr><th>Gate</th><th>Check</th><th>Value</th><th>Result</th></tr></thead>
-      <tbody>
-        <tr><td>1. EMA9 Touch</td><td>Low &le; EMA9+20 AND High &ge; EMA9</td><td>Low=25048, EMA9=25060</td><td class="pass">PASS</td></tr>
-        <tr><td>2. SAR Position</td><td>trend=1 (dots below)</td><td>SAR=24960, trend=BULL</td><td class="pass">PASS</td></tr>
-        <tr><td>3. EMA9 Slope</td><td>slope &ge; +6</td><td>+8.4 pts</td><td class="pass">PASS</td></tr>
-        <tr><td>4. Trend Filter</td><td>Close &gt; EMA30 AND EMA9 &gt; EMA21</td><td>25082 &gt; 24990, 25060 &gt; 25020</td><td class="pass">PASS</td></tr>
-        <tr><td>5. Candle Body</td><td>Close &gt; Open, body &ge; 10</td><td>body=34pts, bullish</td><td class="pass">PASS</td></tr>
-        <tr><td>6. SAR Distance</td><td>45 &le; gap &le; 200</td><td>gap=122pts</td><td class="pass">PASS</td></tr>
-        <tr><td>7. ADX Strength</td><td>ADX &ge; 25</td><td>ADX=31.4</td><td class="pass">PASS</td></tr>
-        <tr><td>8. RSI Momentum</td><td>RSI &gt; 52</td><td>RSI=58.7</td><td class="pass">PASS</td></tr>
-        <tr><td>9. VIX Filter</td><td>VIX &le; 20</td><td>VIX=14.2</td><td class="pass">PASS</td></tr>
-      </tbody>
-    </table>
-  </div>
-  <div class="note success">
-    <strong>Signal: BUY_CE [STRONG]</strong> &mdash; Slope 8.4 &ge; 9? No (MARGINAL would apply unless RSI compensates). With RSI 58.7 &gt; 58 and slope approaching 9, this enters at candle close.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. PE ENTRY EXAMPLE                                                   -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s8">
-  <h2>08 &mdash; PE Entry Example</h2>
-
-  <div class="chart-container">
-    <div class="chart-title">NIFTY 15-Min &mdash; Bearish Rally to EMA9 Rejection</div>
-    <div class="chart-area" style="height: 220px; position: relative;">
-      <!-- Grid lines -->
-      <div style="position:absolute;left:0;right:0;top:10%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:30%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:50%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:70%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-      <div style="position:absolute;left:0;right:0;top:90%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-
-      <!-- Price labels -->
-      <div style="position:absolute;left:-2px;top:8%;font-size:0.6rem;color:var(--text3);">24900</div>
-      <div style="position:absolute;left:-2px;top:28%;font-size:0.6rem;color:var(--text3);">24850</div>
-      <div style="position:absolute;left:-2px;top:48%;font-size:0.6rem;color:var(--text3);">24800</div>
-      <div style="position:absolute;left:-2px;top:68%;font-size:0.6rem;color:var(--text3);">24750</div>
-      <div style="position:absolute;left:-2px;top:88%;font-size:0.6rem;color:var(--text3);">24700</div>
-
-      <!-- EMA9 line (blue dashed) - falling from upper-left to lower-right -->
-      <svg style="position:absolute;left:30px;right:10px;top:0;bottom:0;width:calc(100% - 40px);height:100%;z-index:5;" preserveAspectRatio="none">
-        <polyline points="0,50 80,65 160,82 240,95 320,110 400,125 480,142 560,155 640,165 720,175"
-          stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4" fill="none" opacity="0.7"/>
-        <polyline points="0,35 80,42 160,50 240,58 320,65 400,72 480,80 560,88 640,95 720,100"
-          stroke="#a78bfa" stroke-width="2" stroke-dasharray="8,6" fill="none" opacity="0.5"/>
-      </svg>
-
-      <div class="chart-label" style="top:72%;right:8px;color:#3b82f6;background:rgba(59,130,246,0.15);">EMA9</div>
-      <div class="chart-label" style="top:40%;right:8px;color:#a78bfa;background:rgba(167,139,250,0.15);">EMA30</div>
-
-      <!-- Candles in downtrend -->
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:58%;width:100%;">
-          <div class="wick-top" style="height:10px;"></div>
-          <div class="candle-body" style="height:22px;"></div>
-          <div class="wick-bottom" style="height:14px;"></div>
-        </div>
-        <div class="sar-dot" style="top:12%;left:50%;"></div>
-      </div>
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:50%;width:100%;">
-          <div class="wick-top" style="height:8px;"></div>
-          <div class="candle-body" style="height:28px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="top:16%;left:50%;"></div>
-      </div>
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:38%;width:100%;">
-          <div class="wick-top" style="height:12px;"></div>
-          <div class="candle-body" style="height:34px;"></div>
-          <div class="wick-bottom" style="height:8px;"></div>
-        </div>
-        <div class="sar-dot" style="top:18%;left:50%;"></div>
-      </div>
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:26%;width:100%;">
-          <div class="wick-top" style="height:14px;"></div>
-          <div class="candle-body" style="height:18px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="top:22%;left:50%;"></div>
-      </div>
-      <!-- Rally candle 1 (green, bouncing up) -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:24%;width:100%;">
-          <div class="wick-top" style="height:18px;"></div>
-          <div class="candle-body" style="height:16px;"></div>
-          <div class="wick-bottom" style="height:6px;"></div>
-        </div>
-        <div class="sar-dot" style="top:24%;left:50%;"></div>
-      </div>
-      <!-- Rally candle 2 (green, touching EMA) -->
-      <div class="candle-wrapper">
-        <div class="candle green" style="bottom:28%;width:100%;">
-          <div class="wick-top" style="height:20px;"></div>
-          <div class="candle-body" style="height:14px;"></div>
-          <div class="wick-bottom" style="height:8px;"></div>
-        </div>
-        <div class="sar-dot" style="top:26%;left:50%;"></div>
-      </div>
-      <!-- ENTRY: Rejection candle (red) at EMA9 -->
-      <div class="candle-wrapper" style="position:relative;">
-        <div class="candle red" style="bottom:24%;width:100%;">
-          <div class="wick-top" style="height:22px;"></div>
-          <div class="candle-body" style="height:26px;border:2px solid #fff;"></div>
-          <div class="wick-bottom" style="height:8px;"></div>
-        </div>
-        <div class="sar-dot" style="top:26%;left:50%;"></div>
-        <div class="chart-marker entry" style="top:4px;left:50%;transform:translateX(-50%);background:rgba(239,83,80,0.3);color:var(--red2);border-color:var(--red);">ENTRY PE</div>
-      </div>
-      <!-- Continuation down -->
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:16%;width:100%;">
-          <div class="wick-top" style="height:8px;"></div>
-          <div class="candle-body" style="height:24px;"></div>
-          <div class="wick-bottom" style="height:12px;"></div>
-        </div>
-        <div class="sar-dot" style="top:30%;left:50%;"></div>
-      </div>
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:8%;width:100%;">
-          <div class="wick-top" style="height:10px;"></div>
-          <div class="candle-body" style="height:30px;"></div>
-          <div class="wick-bottom" style="height:14px;"></div>
-        </div>
-        <div class="sar-dot" style="top:32%;left:50%;"></div>
-      </div>
-      <div class="candle-wrapper">
-        <div class="candle red" style="bottom:2%;width:100%;">
-          <div class="wick-top" style="height:12px;"></div>
-          <div class="candle-body" style="height:26px;"></div>
-          <div class="wick-bottom" style="height:10px;"></div>
-        </div>
-        <div class="sar-dot" style="top:34%;left:50%;"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <table class="gate-check">
-      <thead><tr><th>Gate</th><th>Value</th><th>Result</th></tr></thead>
-      <tbody>
-        <tr><td>1. EMA9 Touch</td><td>High=24832, EMA9=24825 (within 20pts)</td><td class="pass">PASS</td></tr>
-        <tr><td>2. SAR Position</td><td>SAR=24910, trend=BEAR (dots above)</td><td class="pass">PASS</td></tr>
-        <tr><td>3. EMA9 Slope</td><td>-7.2 pts (falling)</td><td class="pass">PASS</td></tr>
-        <tr><td>4. Trend Filter</td><td>24788 &lt; EMA30 24860, EMA9 &lt; EMA21</td><td class="pass">PASS</td></tr>
-        <tr><td>5. Candle Body</td><td>body=26pts, bearish</td><td class="pass">PASS</td></tr>
-        <tr><td>6. SAR Distance</td><td>gap=122pts (45-200 range)</td><td class="pass">PASS</td></tr>
-        <tr><td>7. ADX Strength</td><td>ADX=28.9</td><td class="pass">PASS</td></tr>
-        <tr><td>8. RSI Momentum</td><td>RSI=41.3 &lt; 48</td><td class="pass">PASS</td></tr>
-        <tr><td>9. VIX Filter</td><td>VIX=13.8</td><td class="pass">PASS</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. EXIT LOGIC — DECISION TREE                                         -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s9">
-  <h2>09 &mdash; Exit Logic &mdash; Priority-Ordered Decision Tree</h2>
-
-  <p>Exit checks run on <strong>every NIFTY spot tick</strong> (not just candle close). Priority order matters &mdash; earlier checks override later ones.</p>
-
-  <div class="flow">
-    <div class="flow-box" style="border-color: var(--cyan); font-weight: 700; color: var(--cyan);">TICK RECEIVED (LTP update)</div>
-    <div class="flow-arrow"></div>
-
-    <div class="flow-box decision">
-      <strong>Move &ge; 25 pts in favour?</strong>
-    </div>
-    <div class="flow-branch">
-      <div style="text-align:center;">
-        <div class="flow-label yes">YES</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box action-green" style="font-size:0.82rem;">SL &rarr; Entry Price<br><span style="font-size:0.72rem;opacity:0.7;">(breakeven lock)</span></div>
-      </div>
-      <div style="text-align:center;">
-        <div class="flow-label no">NO</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div style="font-size:0.72rem;color:var(--text3);padding:4px;">continue &darr;</div>
-      </div>
-    </div>
-
-    <div class="flow-arrow"></div>
-    <div class="flow-box decision">
-      <strong>Move &ge; trailActivatePts?</strong><br>
-      <span style="font-size:0.75rem;">min(max(SARgap &times; 0.25, 12), 40)</span>
-    </div>
-    <div class="flow-branch">
-      <div style="text-align:center;">
-        <div class="flow-label yes">YES</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box action-green" style="font-size:0.82rem;">Calculate tiered trail gap<br>Tighten SL (never loosen)</div>
-      </div>
-      <div style="text-align:center;">
-        <div class="flow-label no">NO</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div style="font-size:0.72rem;color:var(--text3);padding:4px;">continue &darr;</div>
-      </div>
-    </div>
-
-    <div class="flow-arrow"></div>
-    <div class="flow-box decision">
-      <strong>CE: LTP &le; SL? &nbsp;|&nbsp; PE: LTP &ge; SL?</strong>
-    </div>
-    <div class="flow-branch">
-      <div style="text-align:center;">
-        <div class="flow-label yes">HIT</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box action-red" style="font-weight:700;">EXIT @ SL</div>
-      </div>
-      <div style="text-align:center;">
-        <div class="flow-label no">NOT HIT</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div style="font-size:0.72rem;color:var(--text3);padding:4px;">continue &darr;</div>
-      </div>
-    </div>
-
-    <div class="flow-arrow"></div>
-    <div class="flow-box decision">
-      <strong>Opposite signal generated?</strong>
-    </div>
-    <div class="flow-branch">
-      <div style="text-align:center;">
-        <div class="flow-label yes">YES</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box action-yellow" style="font-weight:700;">EXIT + REVERSE</div>
-      </div>
-      <div style="text-align:center;">
-        <div class="flow-label no">NO</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div style="font-size:0.72rem;color:var(--text3);padding:4px;">continue &darr;</div>
-      </div>
-    </div>
-
-    <div class="flow-arrow"></div>
-    <div class="flow-box decision">
-      <strong>Time &ge; 3:20 PM IST?</strong>
-    </div>
-    <div class="flow-branch">
-      <div style="text-align:center;">
-        <div class="flow-label yes">YES</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box action-red" style="font-weight:700;">EOD EXIT</div>
-      </div>
-      <div style="text-align:center;">
-        <div class="flow-label no">NO</div>
-        <div class="flow-arrow" style="margin: 0 auto;"></div>
-        <div class="flow-box" style="border-color: var(--green); background: var(--green-bg); font-size: 0.85rem;">Continue holding...</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. TRAILING STOP LOSS — 3-TIER SYSTEM                                -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s10">
-  <h2>10 &mdash; Trailing Stop Loss &mdash; 3-Tier Dynamic Gap System</h2>
-
-  <p>The trailing SL gap adjusts dynamically based on how far the trade has moved in favour. This captures profits without being too tight during the initial move or too loose during a runner.</p>
-
-  <div class="tier-visual">
-    <div class="tier-card" style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.25);">
-      <div class="tc-num" style="color: rgba(59,130,246,0.2);">1</div>
-      <div class="tc-range" style="color: var(--accent2);">Move &lt; 30 pts</div>
-      <div class="tc-gap" style="color: var(--accent2);">60 pt gap</div>
-      <div class="tc-desc" style="color: var(--text2);">Wide gap &mdash; room to breathe<br>Early move, don't choke it</div>
-      <div style="margin-top:10px;height:8px;background:var(--accent);border-radius:4px;width:100%;"></div>
-    </div>
-    <div class="tier-card" style="background: rgba(38,166,154,0.08); border: 1px solid rgba(38,166,154,0.25);">
-      <div class="tc-num" style="color: rgba(38,166,154,0.2);">2</div>
-      <div class="tc-range" style="color: var(--green2);">Move 30-70 pts</div>
-      <div class="tc-gap" style="color: var(--green2);">25 pt gap</div>
-      <div class="tc-desc" style="color: var(--text2);">Tight gap &mdash; lock profits<br>Good move, protect it</div>
-      <div style="margin-top:10px;height:8px;background:var(--green);border-radius:4px;width:42%;"></div>
-    </div>
-    <div class="tier-card" style="background: rgba(167,139,250,0.08); border: 1px solid rgba(167,139,250,0.25);">
-      <div class="tc-num" style="color: rgba(167,139,250,0.2);">3</div>
-      <div class="tc-range" style="color: var(--purple2);">Move &ge; 70 pts</div>
-      <div class="tc-gap" style="color: var(--purple2);">30 pt gap</div>
-      <div class="tc-desc" style="color: var(--text2);">Slight widen &mdash; let it run<br>Healthy retracement room</div>
-      <div style="margin-top:10px;height:8px;background:var(--purple);border-radius:4px;width:50%;"></div>
-    </div>
-  </div>
-
-  <h3>Trail Activation</h3>
-  <div class="card">
-    <p style="margin-bottom:10px;"><strong>Formula:</strong> <code>trailActivatePts = min(max(SARgap &times; 0.25, 12), 40)</code></p>
-    <p style="font-size:0.85rem;color:var(--text2);margin-bottom:14px;">The trail only starts after the trade moves a minimum distance. This distance is proportional to the initial SAR gap (SL distance), ensuring the trail doesn't activate too early on wide-SL trades.</p>
-    <table>
-      <thead><tr><th>SAR Gap (SL distance)</th><th>Calculation</th><th>Trail Activates At</th></tr></thead>
-      <tbody>
-        <tr><td>45 pts</td><td>max(45 &times; 0.25, 12) = max(11.25, 12)</td><td><strong>+12 pts</strong></td></tr>
-        <tr><td>80 pts</td><td>max(80 &times; 0.25, 12) = max(20, 12)</td><td><strong>+20 pts</strong></td></tr>
-        <tr><td>120 pts</td><td>max(120 &times; 0.25, 12) = max(30, 12)</td><td><strong>+30 pts</strong></td></tr>
-        <tr><td>200 pts</td><td>min(max(200 &times; 0.25, 12), 40) = min(50, 40)</td><td><strong>+40 pts</strong> (capped)</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="note">
-    <strong>Key rule:</strong> The trailing SL can only <em>tighten</em> (move towards price). It never loosens. Once moved to breakeven, it stays there or gets tighter.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. SL MOVEMENT EXAMPLE                                               -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s11">
-  <h2>11 &mdash; SL Movement Example</h2>
-
-  <div class="sl-chart">
-    <!-- Background grid -->
-    <div style="position:absolute;left:60px;right:10px;top:15%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-    <div style="position:absolute;left:60px;right:10px;top:35%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-    <div style="position:absolute;left:60px;right:10px;top:55%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-    <div style="position:absolute;left:60px;right:10px;top:75%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-    <div style="position:absolute;left:60px;right:10px;top:95%;border-top:1px solid rgba(30,58,95,0.3);"></div>
-
-    <!-- Y-axis labels -->
-    <div style="position:absolute;left:8px;top:13%;font-size:0.62rem;color:var(--text3);">25150</div>
-    <div style="position:absolute;left:8px;top:33%;font-size:0.62rem;color:var(--text3);">25100</div>
-    <div style="position:absolute;left:8px;top:53%;font-size:0.62rem;color:var(--text3);">25050</div>
-    <div style="position:absolute;left:8px;top:73%;font-size:0.62rem;color:var(--text3);">25000</div>
-    <div style="position:absolute;left:8px;top:93%;font-size:0.62rem;color:var(--text3);">24900</div>
-
-    <!-- Price line (green, going up then slightly down at exit) -->
-    <svg style="position:absolute;left:60px;right:10px;top:0;bottom:0;width:calc(100% - 70px);height:100%;z-index:3;">
-      <polyline points="0,155 60,148 120,135 180,115 240,95 300,75 360,60 420,48 480,42 540,55 600,68"
-        stroke="#26a69a" stroke-width="2.5" fill="none"/>
-    </svg>
-
-    <!-- SL line (red dotted, stepping up) -->
-    <svg style="position:absolute;left:60px;right:10px;top:0;bottom:0;width:calc(100% - 70px);height:100%;z-index:2;">
-      <!-- Initial SL at 24900 -->
-      <line x1="0" y1="195" x2="120" y2="195" stroke="#ef5350" stroke-width="2" stroke-dasharray="4,3"/>
-      <!-- Breakeven at 25000 -->
-      <line x1="120" y1="195" x2="120" y2="155" stroke="#ef5350" stroke-width="1" stroke-dasharray="2,2"/>
-      <line x1="120" y1="155" x2="300" y2="155" stroke="#ef5350" stroke-width="2" stroke-dasharray="4,3"/>
-      <!-- Trail tightens to 25060 -->
-      <line x1="300" y1="155" x2="300" y2="120" stroke="#ef5350" stroke-width="1" stroke-dasharray="2,2"/>
-      <line x1="300" y1="120" x2="420" y2="120" stroke="#ef5350" stroke-width="2" stroke-dasharray="4,3"/>
-      <!-- Trail tightens to 25090 -->
-      <line x1="420" y1="120" x2="420" y2="100" stroke="#ef5350" stroke-width="1" stroke-dasharray="2,2"/>
-      <line x1="420" y1="100" x2="600" y2="100" stroke="#ef5350" stroke-width="2" stroke-dasharray="4,3"/>
-    </svg>
-
-    <!-- Annotations -->
-    <div class="sl-annotation" style="left:62px;top:198px;color:var(--red2);background:rgba(239,83,80,0.15);border:1px solid rgba(239,83,80,0.3);">Initial SL: 24900</div>
-    <div class="sl-annotation" style="left:62px;top:148px;color:var(--green2);background:rgba(38,166,154,0.15);border:1px solid rgba(38,166,154,0.3);">Entry: 25000</div>
-    <div class="sl-annotation" style="left:180px;top:138px;color:var(--yellow);background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);">Breakeven @ +25pts</div>
-    <div class="sl-annotation" style="left:355px;top:104px;color:var(--purple2);background:rgba(167,139,250,0.1);border:1px solid rgba(167,139,250,0.3);">Trail tightens</div>
-    <div class="sl-annotation" style="left:530px;top:55px;color:var(--red2);background:rgba(239,83,80,0.15);border:1px solid rgba(239,83,80,0.3);">EXIT @ trail SL</div>
-
-    <!-- Entry marker -->
-    <div style="position:absolute;left:60px;top:148px;width:8px;height:8px;border-radius:50%;background:var(--green);z-index:5;"></div>
-    <!-- Exit marker -->
-    <div style="position:absolute;right:50px;top:62px;width:8px;height:8px;border-radius:50%;background:var(--red);z-index:5;"></div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 12. BREAKEVEN STOP MECHANICS                                          -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s12">
-  <h2>12 &mdash; Breakeven Stop Mechanics</h2>
-
-  <p>When the trade moves <strong>+25 pts</strong> in favour, the stop loss is immediately moved to the entry price. This eliminates risk on the position while letting the trail system handle profit protection.</p>
-
-  <div class="compare">
-    <div class="compare-box before">
-      <div class="cb-title" style="color: var(--red2);">Before Breakeven</div>
-      <div style="font-size:0.85rem;margin-bottom:8px;color:var(--text2);">Entry: 25,000</div>
-      <div style="font-size:0.85rem;margin-bottom:8px;color:var(--text2);">SL: 24,900</div>
-      <div class="cb-val" style="color: var(--red2);">Risk: -100 pts</div>
-    </div>
-    <div class="arrow-between">&rarr;</div>
-    <div class="compare-box after">
-      <div class="cb-title" style="color: var(--green2);">After +25pts Move</div>
-      <div style="font-size:0.85rem;margin-bottom:8px;color:var(--text2);">Entry: 25,000</div>
-      <div style="font-size:0.85rem;margin-bottom:8px;color:var(--text2);">SL: 25,000 (entry)</div>
-      <div class="cb-val" style="color: var(--green2);">Risk: 0 pts</div>
-    </div>
-  </div>
-
-  <h3>Scenario Analysis</h3>
-  <div class="card">
-    <table>
-      <thead><tr><th>Scenario</th><th>Without Breakeven</th><th>With Breakeven</th><th>Impact</th></tr></thead>
-      <tbody>
-        <tr>
-          <td>Price hits +30pts then reverses to SL</td>
-          <td style="color:var(--red2);">-100 pts loss</td>
-          <td style="color:var(--green2);">0 pts (breakeven)</td>
-          <td><span class="tag tag-green">Saved 100 pts</span></td>
-        </tr>
-        <tr>
-          <td>Price goes straight to +80pts</td>
-          <td>Trail handles exit</td>
-          <td>Trail handles exit</td>
-          <td><span class="tag tag-blue">No difference</span></td>
-        </tr>
-        <tr>
-          <td>Price hits +20pts then reverses</td>
-          <td style="color:var(--red2);">-100 pts loss</td>
-          <td style="color:var(--red2);">-100 pts loss</td>
-          <td><span class="tag tag-yellow">Below threshold</span></td>
-        </tr>
-        <tr>
-          <td>Price hits +25pts, pulls back to entry, then runs +120pts</td>
-          <td>+120 pts profit</td>
-          <td>0 pts (stopped at BE)</td>
-          <td><span class="tag tag-yellow">Rare miss</span></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="note">
-    <strong>Net effect:</strong> Breakeven converts ~30% of would-be full losses into flat trades. The occasional missed runner is a small cost for the consistent risk reduction.
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 13. RISK MANAGEMENT — 3 LAYERS                                        -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s13">
-  <h2>13 &mdash; Risk Management &mdash; 3 Layers</h2>
-
-  <div class="logic-cards">
-    <div class="logic-card" style="border-top: 3px solid var(--red);">
-      <div class="lc-num" style="color: var(--red2);">Layer 1</div>
-      <div class="lc-title">Daily Loss Limit</div>
-      <div class="lc-desc">
-        <strong style="font-size:1.3rem;color:var(--red2);">-5,000</strong><br>
-        Hard stop &mdash; latches ON for the rest of the session. No new entries until next trading day. Prevents catastrophic drawdown from a bad day.
-      </div>
-      <div class="lc-condition">MAX_DAILY_LOSS = 5000</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--yellow);">
-      <div class="lc-num" style="color: var(--yellow2);">Layer 2</div>
-      <div class="lc-title">Max Daily Trades</div>
-      <div class="lc-desc">
-        <strong style="font-size:1.3rem;color:var(--yellow2);">20 trades</strong><br>
-        Prevents overtrading in choppy markets. Once hit, no new entries. Keeps commission costs in check.
-      </div>
-      <div class="lc-condition">MAX_DAILY_TRADES = 6</div>
-    </div>
-    <div class="logic-card" style="border-top: 3px solid var(--orange);">
-      <div class="lc-num" style="color: var(--orange);">Layer 3</div>
-      <div class="lc-title">Consecutive Loss Pause</div>
-      <div class="lc-desc">
-        <strong style="font-size:1.3rem;color:var(--orange);">3+ losses &rarr; 15 min</strong><br>
-        After 3 consecutive losses, the system pauses for 15 minutes. Breaks the cycle of emotional re-entries after losses.
-      </div>
-      <div class="lc-condition">MAX_LOSS_PAUSE_MS = 900000</div>
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 13a. HYBRID INITIAL SL CAP (v4.4.0)                                    -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break">
-  <h2>13a &mdash; Hybrid Initial SL Cap <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.4.0</span></h2>
-
-  <p>Initial SL on Swing was historically <strong>SAR-based only</strong> &mdash; on young trends the SAR can sit 100&ndash;130 pts away, so a single losing trade could wipe out multiple winners. v4.4.0 adds a per-trade hybrid cap that picks the <em>tightest</em> structurally-justified SL and floors it so it can't go suicide-tight on doji bars.</p>
-
-  <div class="card">
-    <h3>Computation</h3>
-    <pre style="background:rgba(0,0,0,0.25);padding:14px;border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:0.9rem;line-height:1.55;overflow-x:auto;">
-<span style="color:#79c0ff;">candidates</span> = [
-   sarStopLoss,                             <span style="color:#8b949e;">// raw SAR (preserved on trade record)</span>
-   prev-candle low/high <em>(if</em> SWING_USE_PREV_CANDLE_SL <em>)</em>,
-   entry &plusmn; SWING_MAX_INITIAL_SL_PTS         <span style="color:#8b949e;">// hard cap</span>
-]
-
-<span style="color:#79c0ff;">stopLoss</span>   = tightest of candidates  <span style="color:#8b949e;">// min for CE, max for PE</span>
-<span style="color:#79c0ff;">stopLoss</span>   = floor at entry &plusmn; SWING_MIN_INITIAL_SL_PTS</pre>
-  </div>
-
-  <div class="card">
-    <h3>Configuration</h3>
-    <table>
-      <thead><tr><th>Variable</th><th>Default</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><code>SWING_USE_PREV_CANDLE_SL</code></td><td><code>true</code></td><td>Include prev-candle structural low/high in the min-of stack</td></tr>
-        <tr><td><code>SWING_MAX_INITIAL_SL_PTS</code></td><td><code>50</code></td><td>Hard cap on initial SL distance &mdash; binds when SAR alone would be wider</td></tr>
-        <tr><td><code>SWING_MIN_INITIAL_SL_PTS</code></td><td><code>15</code></td><td>Floor for initial SL distance &mdash; protects against suicide-tight SLs on doji bars</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h3>Side-Effects</h3>
-    <ul style="padding-left:22px;line-height:1.85;">
-      <li><strong>Trail activation rescaled.</strong> <code>TRAIL_ACTIVATE_PTS</code> previously could be dwarfed by a wide SAR-only SL. With the cap binding, the trail-activation knob actually controls when the 3-tier trailer engages.</li>
-      <li><strong>New trade-record field <code>sarStopLoss</code></strong> preserves the raw SAR distance at entry, so paper-vs-live and paper-vs-historical analyses can compare against the pre-cap value.</li>
-      <li><strong>Wired into Swing Paper + Swing Live</strong> on both candle-close and intra-candle entry paths via the shared <code>_applyInitialSLCap()</code> helper. Backtest is intentionally untouched during the paper-trade data-collection window so historical baseline stays comparable.</li>
-      <li><strong>Settings UI.</strong> All 3 knobs are exposed in the Swing section; SAVE ALL writes them straight to <code>.env</code>.</li>
-    </ul>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 14. VIX MARKET REGIME FILTER                                          -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s14">
-  <h2>14 &mdash; VIX Market Regime Filter</h2>
-
-  <p>India VIX measures expected market volatility. High VIX means erratic moves that blow through stop losses. The VIX filter adjusts entry aggressiveness based on the current regime.</p>
-
-  <div class="vix-zones">
-    <div class="vix-zone" style="background: linear-gradient(135deg, rgba(38,166,154,0.2), rgba(38,166,154,0.08));">
-      <div class="vz-range" style="color: var(--green2);">VIX &le; 16</div>
-      <div class="vz-label" style="color: var(--green2);">ALL SIGNALS</div>
-      <div style="font-size:0.65rem;color:var(--text3);margin-top:2px;">STRONG + MARGINAL</div>
-    </div>
-    <div class="vix-zone" style="background: linear-gradient(135deg, rgba(251,191,36,0.2), rgba(251,191,36,0.08));">
-      <div class="vz-range" style="color: var(--yellow2);">VIX 16-20</div>
-      <div class="vz-label" style="color: var(--yellow);">STRONG ONLY</div>
-      <div style="font-size:0.65rem;color:var(--text3);margin-top:2px;">MARGINAL blocked</div>
-    </div>
-    <div class="vix-zone" style="background: linear-gradient(135deg, rgba(239,83,80,0.2), rgba(239,83,80,0.08));">
-      <div class="vz-range" style="color: var(--red2);">VIX &gt; 20</div>
-      <div class="vz-label" style="color: var(--red2);">BLOCKED</div>
-      <div style="font-size:0.65rem;color:var(--text3);margin-top:2px;">No entries allowed</div>
-    </div>
-  </div>
-
-  <div class="card">
-    <table>
-      <thead><tr><th>Configuration</th><th>Value</th></tr></thead>
-      <tbody>
-        <tr><td>Data Source</td><td>NSE India VIX via Fyers <code>getQuotes</code></td></tr>
-        <tr><td>Cache Duration</td><td>60 seconds (avoids API rate limits)</td></tr>
-        <tr><td>Failure Mode</td><td><code>VIX_FAIL_MODE</code> &mdash; <code>closed</code> = block (safe default), <code>open</code> = allow</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <h3>Per-Module Thresholds (v4.3.0)</h3>
-    <p>Each strategy now carries its own VIX thresholds (with fall-back to the swing values).</p>
-    <table>
-      <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-      <tbody>
-        <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code></td><td><code>true</code> / <code>20</code> / <code>16</code></td><td>Swing thresholds (canonical)</td></tr>
-        <tr><td><code>SCALP_VIX_ENABLED</code> / <code>SCALP_VIX_MAX_ENTRY</code> / <code>SCALP_VIX_STRONG_ONLY</code></td><td><code>false</code> / inherits / inherits</td><td>Scalp overrides; falls back to swing if unset</td></tr>
-        <tr><td><code>PA_VIX_ENABLED</code> / <code>PA_VIX_MAX_ENTRY</code> / <code>PA_VIX_STRONG_ONLY</code></td><td><code>false</code> / inherits / inherits</td><td>PA overrides; falls back to swing if unset</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 14b. TRADE GUARDS — BID-ASK SPREAD + TIME-STOP (v4.3.0)                 -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s14b">
-  <h2>14b &mdash; Trade Guards &mdash; Bid-Ask Spread + Time-Stop <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h2>
-  <p>Two shared guards live in <code>src/utils/tradeGuards.js</code> and are consulted by Swing, Scalp, and PA paper + live engines.</p>
-  <div class="card">
-    <h3>Bid-Ask Spread Guard (entry)</h3>
-    <p>Before placing an entry, the option's bid/ask spread is compared to <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>). If wider, the entry is rejected with reason <code>WIDE_SPREAD</code>. The check fails <strong>open</strong> if quotes are unavailable, so live entries don't freeze on a transient broker outage.</p>
-  </div>
-  <div class="card">
-    <h3>Time-Stop (exit)</h3>
-    <p>Any open trade that has stayed flat (|PnL| &lt; <code>TIME_STOP_FLAT_PTS</code>) for <code>TIME_STOP_CANDLES</code> consecutive candles is auto-exited with reason <code>TIME_STOP</code>. This prevents pure theta drain on directionless trades. Defaults: <code>4</code> candles / <code>20</code> pts. PA tightens to <code>3</code> / <code>10</code> via <code>PA_TIME_STOP_CANDLES</code>/<code>PA_TIME_STOP_FLAT_PTS</code>.</p>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 14c. NEAR-MISS AUDIT (v4.3.0)                                           -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s14c">
-  <h2>14c &mdash; Per-Filter Near-Miss Audit <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h2>
-  <p>Every candle-close evaluation produces a <code>filterAudit</code> structure listing which gates passed and which failed. <code>src/utils/nearMissLog.js</code> logs every candle that missed entry by <em>exactly one</em> filter (configurable threshold), tagging the failing filter name and detail (e.g. <code>ADX 18.4 &lt; 20</code>). View live in the <code>/logs</code> SSE feed.</p>
-  <div class="card">
-    <p>Use this to <em>quantify</em> the opportunity cost of each filter: if "ADX gate" misses 30 trades a week and most would have been winners, you have data to support relaxing it. The Paper Trade Data Collection window is exactly when this audit is most valuable.</p>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 15. POSITION SIZING & PNL                                             -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s15">
-  <h2>15 &mdash; Position Sizing &amp; PnL</h2>
-
-  <div class="card">
-    <h3>Position Size Calculation</h3>
-    <div style="background:var(--bg3);border-radius:8px;padding:14px 18px;margin:10px 0;font-family:monospace;font-size:0.9rem;">
-      lotQty = NIFTY_LOT_SIZE &times; LOT_MULTIPLIER = <strong style="color:var(--accent2);">65 &times; 1 = 65 units</strong>
-    </div>
-    <p style="font-size:0.85rem;color:var(--text2);">One lot of NIFTY options = 65 units (exchange-set default). The LOT_MULTIPLIER scales position size for scaling up.</p>
-  </div>
-
-  <div class="card">
-    <h3>Brokerage</h3>
-    <p><strong>80 per trade</strong> (flat fee, applied to both entry and exit)</p>
-  </div>
-
-  <div class="card">
-    <h3>PnL Calculation Modes</h3>
-    <table>
-      <thead><tr><th>Mode</th><th>Calculation</th><th>Used In</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Futures (Direct)</strong></td><td>PnL = (Exit - Entry) &times; lotQty &times; direction</td><td>Live, Paper</td></tr>
-        <tr><td><strong>Options Sim</strong></td><td>Delta 0.55 premium mapping, theta 10 pts/day decay</td><td>Backtest</td></tr>
-        <tr><td><strong>Raw Points</strong></td><td>Spot NIFTY point difference only</td><td>UI display</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 16. TIME-BASED RULES                                                  -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s16">
-  <h2>16 &mdash; Time-Based Rules</h2>
-
-  <h3>Trading Day Timeline</h3>
-  <div class="timeline">
-    <div class="timeline-seg" style="flex:0.5;background:rgba(239,83,80,0.2);color:var(--red2);font-size:0.68rem;">
-      <span class="timeline-marker" style="left:0;">9:15</span>
-      Warm-up
-    </div>
-    <div class="timeline-seg" style="flex:3;background:rgba(38,166,154,0.15);color:var(--green2);">
-      <span class="timeline-marker" style="left:0;">9:30</span>
-      Active Entries
-    </div>
-    <div class="timeline-seg" style="flex:1;background:rgba(251,191,36,0.12);color:var(--yellow);">
-      <span class="timeline-marker" style="left:0;">14:00</span>
-      Exits Only
-    </div>
-    <div class="timeline-seg" style="flex:0.6;background:rgba(239,83,80,0.15);color:var(--red2);font-size:0.68rem;">
-      <span class="timeline-marker" style="left:0;">15:20</span>
-      EOD
-    </div>
-    <div class="timeline-seg" style="flex:0.3;background:rgba(100,100,100,0.15);color:var(--text3);font-size:0.65rem;">
-      <span class="timeline-marker" style="left:0;white-space:nowrap;">15:30</span>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:20px;">
-    <table>
-      <thead><tr><th>Time</th><th>Phase</th><th>Behaviour</th></tr></thead>
-      <tbody>
-        <tr><td><strong>9:15 AM</strong></td><td>Market Open / Warm-up</td><td>Indicators initializing, candles forming. No entries.</td></tr>
-        <tr><td><strong>9:30 AM</strong></td><td>Active Entry Window</td><td>All 9 gates active. Both STRONG (intra-candle) and MARGINAL (candle-close) entries allowed.</td></tr>
-        <tr><td><strong>2:00 PM</strong></td><td>Exits Only</td><td>No new entries. Existing positions managed with trail/breakeven/EOD exit rules.</td></tr>
-        <tr><td><strong>3:20 PM</strong></td><td>EOD Close</td><td>All open positions forcibly exited at market price.</td></tr>
-        <tr><td><strong>3:30 PM</strong></td><td>Market Close</td><td>WebSocket disconnects. Session PnL finalized.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3>SL Re-entry Block</h3>
-  <div class="card">
-    <p><strong>Pure SL loss on a candle:</strong> blocks re-entry on the <em>same</em> candle. Prevents rapid re-entry into the same losing setup.</p>
-    <p><strong>Trail SL exit:</strong> if the trailing stop was active (trade was profitable), re-entry <em>is</em> allowed on the same candle &mdash; the setup may still be valid.</p>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 17. TRADING DAY EDGE CASES                                            -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s17">
-  <h2>17 &mdash; Trading Day Edge Cases</h2>
-
-  <div class="card">
-    <table>
-      <thead><tr><th>Edge Case</th><th>Handling</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Intra-candle throttle</strong></td><td>STRONG signals evaluate once per tick, but the entry fires only once per candle to prevent duplicate orders.</td></tr>
-        <tr><td><strong>SL re-entry block</strong></td><td>Pure loss SL hit blocks same-candle re-entry. Trail SL exit allows re-entry.</td></tr>
-        <tr><td><strong>Option symbol pre-fetch</strong></td><td>ATM option symbol fetched before order placement. Cached for the session.</td></tr>
-        <tr><td><strong>Signal missed logging</strong></td><td>If position already open and new signal fires, logged as "missed" with timestamp and reason for post-session analysis.</td></tr>
-        <tr><td><strong>VIX fail-open</strong></td><td>If VIX API call fails, system defaults to allowing entries (conservative for trader). Logged as warning.</td></tr>
-        <tr><td><strong>Trail only tightens</strong></td><td>Once SL moves to a better level, it never moves back. Prevents trail from loosening during a pullback.</td></tr>
-        <tr><td><strong>EMA touch tiebreaker</strong></td><td>If candle straddles EMA9 (both CE and PE touch true), close direction decides: close &ge; EMA9 = CE only, close &lt; EMA9 = PE only.</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 18. HOLIDAY & EXPIRY HANDLING                                         -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s18">
-  <h2>18 &mdash; Holiday &amp; Expiry Handling</h2>
-
-  <div class="card green-border">
-    <h3 class="green">NSE Holiday Detection</h3>
-    <table>
-      <tbody>
-        <tr><td><strong>Primary</strong></td><td>NSE API holiday list check</td></tr>
-        <tr><td><strong>Cache</strong></td><td>24-hour cache to avoid repeated API calls</td></tr>
-        <tr><td><strong>Fallback</strong></td><td>Hardcoded holiday list for the current year (updated annually)</td></tr>
-        <tr><td><strong>Behaviour</strong></td><td>No WebSocket connection attempt on holidays. Clean skip with log message.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="card blue-border">
-    <h3 class="blue">Weekly Expiry Management</h3>
-    <table>
-      <tbody>
-        <tr><td><strong>Expiry Day</strong></td><td>Thursday (or Wednesday if Thursday is a holiday)</td></tr>
-        <tr><td><strong>Auto-detection</strong></td><td>System identifies weekly expiry automatically from option chain</td></tr>
-        <tr><td><strong>Roll timing</strong></td><td>After 3:30 PM on expiry day, switches to next week's expiry</td></tr>
-        <tr><td><strong>On expiry day</strong></td><td>Normal trading rules apply. EOD exit at 3:20 PM handles settlement risk.</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 19. SCALING GUIDE                                                     -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section" id="s19">
-  <h2>19 &mdash; Scaling Guide</h2>
-
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th>Lots</th>
-          <th>Qty</th>
-          <th>LOT_MULTIPLIER</th>
-          <th>Est. Monthly PnL</th>
-          <th>Margin Required</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr class="scale-highlight">
-          <td><strong>1 lot</strong></td>
-          <td>75</td>
-          <td>1</td>
-          <td style="color:var(--green2);">~5,000</td>
-          <td>~1,00,000</td>
-        </tr>
-        <tr>
-          <td><strong>2 lots</strong></td>
-          <td>150</td>
-          <td>2</td>
-          <td style="color:var(--green2);">~10,000</td>
-          <td>~2,00,000</td>
-        </tr>
-        <tr>
-          <td><strong>3 lots</strong></td>
-          <td>225</td>
-          <td>3</td>
-          <td style="color:var(--green2);">~16,000</td>
-          <td>~3,00,000</td>
-        </tr>
-        <tr class="scale-highlight">
-          <td><strong>5 lots</strong></td>
-          <td>375</td>
-          <td>5</td>
-          <td style="color:var(--green2);">~28,000</td>
-          <td>~5,00,000</td>
-        </tr>
-        <tr>
-          <td><strong>10 lots</strong></td>
-          <td>750</td>
-          <td>10</td>
-          <td style="color:var(--green2);">~55,000</td>
-          <td>~10,00,000</td>
-        </tr>
-      </tbody>
-    </table>
-    <div class="note warn" style="margin-top:12px;">
-      <strong>Scaling advice:</strong> Start with 1 lot for at least 3 months of live trading. Scale to 2 lots only after consistent profitability. Scale daily loss limit proportionally (1 lot = 5K, 5 lots = 25K).
-    </div>
-  </div>
-</div>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 20. COMPLETE CONFIGURATION REFERENCE                                  -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<div class="section page-break" id="s20">
-  <h2>20 &mdash; Complete Configuration Reference</h2>
-
-  <div class="card">
-    <div class="env-group">
-      <div class="env-group-title">Indicators</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>EMA_SLOPE_MIN</code></td><td>6</td><td>Minimum EMA9 slope (pts) for directional conviction</td></tr>
-          <tr><td><code>EMA_TOUCH_MAX</code></td><td>20</td><td>Max distance from EMA9 to count as "touch"</td></tr>
-          <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>Minimum RSI for CE entry</td></tr>
-          <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>Maximum RSI for PE entry</td></tr>
-          <tr><td><code>ADX_MIN_TREND</code></td><td>25</td><td>Minimum ADX for trending market</td></tr>
-          <tr><td><code>EMA30_FILTER</code></td><td>true</td><td>Enable/disable EMA30 trend filter</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">SAR &amp; Stop Loss</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>MIN_SAR_DISTANCE</code></td><td>45</td><td>Minimum SAR gap (pts) for entry</td></tr>
-          <tr><td><code>MAX_SAR_DISTANCE</code></td><td>80</td><td>Maximum SAR gap (pts) for entry</td></tr>
-          <tr><td><code>BREAKEVEN_PTS</code></td><td>25</td><td>Move in favour to trigger breakeven SL</td></tr>
-          <tr><td><code>MIN_CANDLE_BODY</code></td><td>10</td><td>Minimum candle body size (pts)</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">Signal Strength</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>STRONG_SLOPE</code></td><td>9</td><td>Min EMA9 slope for STRONG signal</td></tr>
-          <tr><td><code>STRONG_RSI_CE</code></td><td>58</td><td>Min RSI for STRONG CE signal</td></tr>
-          <tr><td><code>STRONG_RSI_PE</code></td><td>40</td><td>Max RSI for STRONG PE signal</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">Logic 3 (Override)</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>LOGIC3_RSI_MAX</code></td><td>46</td><td>Max RSI for PE bull override</td></tr>
-          <tr><td><code>LOGIC3_RSI_MIN_CE</code></td><td>53</td><td>Min RSI for CE bear override</td></tr>
-          <tr><td><code>LOGIC3_SAR_GAP</code></td><td>30</td><td>Min SAR lag distance for override trigger</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">Trailing Stop</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>TRAIL_ACTIVATE_PTS</code></td><td>12</td><td>Floor for trail activation (pts)</td></tr>
-          <tr><td><code>TRAIL_TIER1_UPTO</code></td><td>30</td><td>Tier 1 upper bound (pts in favour)</td></tr>
-          <tr><td><code>TRAIL_TIER1_GAP</code></td><td>40</td><td>Tier 1 trail gap (pts)</td></tr>
-          <tr><td><code>TRAIL_TIER2_UPTO</code></td><td>55</td><td>Tier 2 upper bound (pts in favour)</td></tr>
-          <tr><td><code>TRAIL_TIER2_GAP</code></td><td>25</td><td>Tier 2 trail gap (pts)</td></tr>
-          <tr><td><code>TRAIL_TIER3_GAP</code></td><td>15</td><td>Tier 3 trail gap (pts)</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">Risk Management</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily loss limit (INR) &mdash; hard stop</td></tr>
-          <tr><td><code>MAX_DAILY_TRADES</code></td><td>6</td><td>Maximum trades per session &mdash; lowered from <code>20</code> in v4.6.0 (anti-overtrade on chop days)</td></tr>
-          <tr><td><code>MAX_LOSS_PAUSE_MS</code></td><td>900000</td><td>Pause after 3+ consecutive losses (15 min)</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">Trading Window</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>TRADE_ENTRY_START</code></td><td>09:30</td><td>Earliest entry time (IST)</td></tr>
-          <tr><td><code>TRADE_ENTRY_END</code></td><td>14:00</td><td>Latest entry time (IST)</td></tr>
-          <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>Candle timeframe (minutes). Default changed from <code>15</code> &rarr; <code>5</code> in v4.5.0; set to <code>15</code> to restore prior behavior.</td></tr>
-          <tr><td><code>SWING_STRONG_ONLY</code></td><td>false</td><td>Block MARGINAL signals on candle-close entry path (intra-candle was already STRONG-only). Logged to skipLogger as <code>gate: "strong_only"</code>.</td></tr>
-          <tr><td><code>NIFTY_LOT_SIZE</code></td><td>65</td><td>NIFTY lot size (exchange-set; override only if contract-size changes)</td></tr>
-          <tr><td><code>LOT_MULTIPLIER</code></td><td>1</td><td>Number of lots per trade</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="env-group">
-      <div class="env-group-title">VIX Filter</div>
-      <table>
-        <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-        <tbody>
-          <tr><td><code>VIX_FILTER_ENABLED</code></td><td>true</td><td>Master Swing VIX filter toggle</td></tr>
-          <tr><td><code>VIX_MAX_ENTRY</code></td><td>20</td><td>Maximum VIX for any entry</td></tr>
-          <tr><td><code>VIX_STRONG_ONLY</code></td><td>16</td><td>Above this VIX, only STRONG signals allowed</td></tr>
-          <tr><td><code>VIX_FAIL_MODE</code></td><td>closed</td><td>When VIX unavailable: closed = block (safe), open = allow</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ── Footer ──────────────────────────────────────────────────────────── -->
-<hr>
-<div style="text-align:center;padding:20px 0 10px;font-size:0.75rem;color:var(--text3);">
-  <div style="font-weight:600;margin-bottom:4px;">SWING STRATEGY &mdash; Complete Strategy Reference v4.4.1</div>
-  <div>SAR_EMA9_RSI | 5-Min NIFTY Options (default; 15-min via env) | v4.6.0 | Generated 2026-05-21</div>
-  <div style="margin-top:8px;font-size:0.68rem;opacity:0.6;">This document is auto-generated from the trading system source code. All values reflect the current production configuration.</div>
-</div>
-
+<hr/>
+<p style="text-align:center;color:var(--text3);font-size:0.78rem;">
+  Reference only — the code is authoritative (<code>strategy1_sar_ema_rsi.js</code>, <code>swingPaper.js</code>, <code>swingLive.js</code>, <code>backtestEngine.js</code>).
+  Regenerated 2026-05-28 for the EMA21+RSI+SAR redefinition.
+</p>
 </body>
 </html>
