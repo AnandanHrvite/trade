@@ -899,7 +899,9 @@ app.get("/", (req, res) => {
 
     /* ── PER-MODULE START CARDS ── */
     /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
-    .mm-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    /* auto-fit so the enabled cards always fill the row width — no empty
+       trailing column when fewer than 3 strategies are enabled. */
+    .mm-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px,1fr)); gap:10px; }
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:10px 12px 12px; display:flex; flex-direction:column; }
     .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
     .mm-dot { width:7px; height:7px; border-radius:50%; background:#4a6080; flex-shrink:0; }
@@ -926,8 +928,6 @@ app.get("/", (req, res) => {
     .mm-stats .pnl-flat { color:#4a6080; font-weight:700; }
     .mm-wrap { position:relative; height:130px; }
     .mm-empty { text-align:center; padding:38px 20px 14px; color:#4a6080; font-size:0.72rem; }
-    @media (max-width:900px) { .mm-grid { grid-template-columns:1fr 1fr; } }
-    @media (max-width:640px) { .mm-grid { grid-template-columns:1fr; } }
     :root[data-theme="light"] .mm-card { background:#ffffff; border-color:#e0e4ea; }
     :root[data-theme="light"] .mm-hdr { border-bottom-color:#e0e4ea; }
     :root[data-theme="light"] .mm-title { color:#475569; }
