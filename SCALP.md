@@ -42,7 +42,7 @@ Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm
 
 ## 4. Stop loss & trailing
 
-- **Initial SL** = the prior completed candle's **low (CE) / high (PE)**, capped to `SCALP_MAX_SL_PTS(12)` and floored at `SCALP_MIN_SL_PTS(8)` distance from the close.
+- **Initial SL source** (`SCALP_SL_USE_SAR`, default off): **off** = the prior completed candle's **low (CE) / high (PE)**; **on** = the **PSAR value** at entry. Either way the distance is capped to `SCALP_MAX_SL_PTS(12)` and floored at `SCALP_MIN_SL_PTS(8)` from the close. (PSAR is always on the correct side at entry, since entry requires SAR below close for CE / above close for PE.)
 - **Break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R(0.7)`, `0` disables): once peak P&L ≥ trigger × initial risk, SL jumps to entry ± `SCALP_BREAKEVEN_OFFSET_PTS(1)`. Runs per-tick (most trades resolve inside the entry bar). Tighten-only.
 - **PSAR trail**: at each candle close, tighten SL toward PSAR — only when PSAR is on the favourable side of price. Tighten-only, never loosens.
 

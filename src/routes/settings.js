@@ -99,9 +99,10 @@ const SETTINGS_SCHEMA = [
       // ── Break-even SL (move SL to entry once peak ≥ trigger × initial risk) ──
       { key: "SCALP_BREAKEVEN_TRIGGER_R", label: "Break-Even Trigger (R)", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.SESSION, desc: "Move SL to entry+offset once peak P&L ≥ N × initial risk. Stops winners reversing into losers. 0 = disabled.", default: "0.7" },
       { key: "SCALP_BREAKEVEN_OFFSET_PTS", label: "Break-Even Offset (pts)", type: "number", min: 0, max: 5, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above/below entry for the BE stop (small buffer for slippage)", default: "1" },
-      // ── Risk management (Prev Candle SL) ──
-      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 6, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on prev candle SL distance. Tighter = smaller max loss but more SL hits.", default: "12" },
-      { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on prev candle SL (prevents too-tight SL on tiny candles)", default: "8" },
+      // ── Risk management (initial SL source) ──
+      { key: "SCALP_SL_USE_SAR", label: "Initial SL = SAR", type: "toggle", effect: EFFECT.SESSION, desc: "ON: initial SL = PSAR value at entry. OFF: previous candle low (CE) / high (PE). Either way clamped to Min/Max SL pts. PSAR trail + break-even tighten it afterwards regardless.", default: "false" },
+      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 6, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on initial SL distance. Tighter = smaller max loss but more SL hits.", default: "12" },
+      { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on initial SL (prevents too-tight SL on tiny candles)", default: "8" },
       { key: "SCALP_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "4000" },
@@ -559,7 +560,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BREAKEVEN_TRIGGER_R", "SCALP_BREAKEVEN_OFFSET_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
-  "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
+  "SCALP_SL_USE_SAR", "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
   // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
   "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
   "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",

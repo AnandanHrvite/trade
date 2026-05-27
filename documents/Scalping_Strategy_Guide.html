@@ -871,7 +871,7 @@
 </div>
 
 <div class="highlight">
-  <p>The <strong>initial</strong> SL is the previous candle's low (CE) / high (PE), clamped to a distance between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close. PSAR and the break-even snap then <em>tighten</em> it after entry (they never set the initial SL).</p>
+  <p>The <strong>initial</strong> SL source is selectable via <code>SCALP_SL_USE_SAR</code>: <strong>off</strong> (default) uses the previous candle's low (CE) / high (PE); <strong>on</strong> uses the <strong>PSAR value</strong> at entry. Either way the distance is clamped between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close. PSAR and the break-even snap then <em>tighten</em> it after entry (they never set the initial SL).</p>
 </div>
 
 <div class="card card-green">

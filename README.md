@@ -260,6 +260,7 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_RSI_PE_THRESHOLD` / `SCALP_RSI_PE_MIN` | `42` / `22` | PE momentum ceiling and oversold floor |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + trailing SL + flip exit |
+| `SCALP_SL_USE_SAR` | `false` | Initial SL source — `true` = PSAR value at entry, `false` = prev candle low/high (both clamped to Min/Max SL) |
 | `SCALP_MAX_SL_PTS` | `12` | Max SL distance (pts) |
 | `SCALP_MIN_SL_PTS` | `8` | Min SL distance (pts) |
 | `SCALP_BREAKEVEN_TRIGGER_R` | `0.7` | Move SL to entry once peak ≥ N × initial risk. `0` disables. |

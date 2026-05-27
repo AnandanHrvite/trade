@@ -147,6 +147,10 @@ function getSignal(candles, opts) {
   var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "12"));
   var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
   var prevCandle  = candles[candles.length - 2];
+  // Initial-SL source: PSAR value at entry (SCALP_SL_USE_SAR=true) or previous candle low/high.
+  // Either way the distance is clamped to [MIN_SL_PTS, MAX_SL_PTS]. SAR is always on the
+  // correct side here (entry requires sarBelow for CE / sarAbove for PE).
+  var SL_USE_SAR  = cfg("SCALP_SL_USE_SAR", "false") === "true";
 
   // PSAR side relative to the candle close (the directional confirmation)
   var sarBelow = sar < sc.close;   // bullish — PSAR under price
@@ -183,17 +187,19 @@ function getSignal(candles, opts) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    var rawSL = prevCandle.low;
+    var rawSL = SL_USE_SAR ? sar : prevCandle.low;
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(PrevLow)=" + sl + " [prev.low=" + prevCandle.low + " capped=" + slPts.toFixed(1) + "]");
+    var slLbl = SL_USE_SAR ? "SAR" : "PrevLow";
+    var slSrc = SL_USE_SAR ? "PSAR" : "Prev Candle";
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(" + slLbl + ")=" + sl + " [raw=" + rawSL.toFixed(1) + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: "Prev Candle",
+      slSource: slSrc,
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + SAR<close + RSI=" + rsi.toFixed(0) + " | SL(PrevLow)=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + SAR<close + RSI=" + rsi.toFixed(0) + " | SL(" + slLbl + ")=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
@@ -207,17 +213,19 @@ function getSignal(candles, opts) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    var rawSL = prevCandle.high;
+    var rawSL = SL_USE_SAR ? sar : prevCandle.high;
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(PrevHigh)=" + sl + " [prev.high=" + prevCandle.high + " capped=" + slPts.toFixed(1) + "]");
+    var slLbl = SL_USE_SAR ? "SAR" : "PrevHigh";
+    var slSrc = SL_USE_SAR ? "PSAR" : "Prev Candle";
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(" + slLbl + ")=" + sl + " [raw=" + rawSL.toFixed(1) + " capped=" + slPts.toFixed(1) + "]");
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: "Prev Candle",
+      slSource: slSrc,
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + SAR>close + RSI=" + rsi.toFixed(0) + " | SL(PrevHigh)=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + SAR>close + RSI=" + rsi.toFixed(0) + " | SL(" + slLbl + ")=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
