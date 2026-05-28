@@ -2150,27 +2150,34 @@ function showStatusPill(alertDiv, icon, msg, color){
 async function checkTradingStatus(){
   try {
     var alertDiv = document.getElementById('trading-status-alert');
-    if(!alertDiv || alertDiv._dismissed) return;
     var now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     var day = now.getDay(); var hour = now.getHours();
+    var todayStr = now.toISOString().split('T')[0];
+
+    // Holiday check runs first and unconditionally so the Start All button
+    // is hidden regardless of weekend/pre/post-market early-returns below.
+    var isHoliday = false;
+    try {
+      var hres = await fetch('/api/holidays', {cache:'no-store'});
+      if(hres.ok){
+        var hdata = await hres.json();
+        if(hdata && hdata.success && hdata.holidays && hdata.holidays.includes(todayStr)){
+          isHoliday = true;
+        }
+      }
+    } catch(e){}
+    var btnAllHol = document.getElementById('btn-all-start');
+    if(btnAllHol) btnAllHol.style.display = isHoliday ? 'none' : '';
+
+    if(!alertDiv || alertDiv._dismissed) return;
+    if(isHoliday){
+      showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24'); return;
+    }
     if(day === 0 || day === 6){
       showStatusPill(alertDiv, '🏖️', 'Weekend — markets resume Monday 9:15 AM', '#ef4444'); return;
     }
     if(hour < 7 || hour >= 16){
       showStatusPill(alertDiv, '🕐', hour < 7 ? 'Pre-market — opens 9:15 AM IST' : 'Post-market — closed for the day', '#60a5fa'); return;
-    }
-    var res = await fetch('/api/holidays', {cache:'no-store'});
-    if(res.ok){
-      var data = await res.json();
-      if(data.success && data.holidays){
-        var todayStr = now.toISOString().split('T')[0];
-        if(data.holidays.includes(todayStr)){
-          showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24');
-          var btnAllHol = document.getElementById('btn-all-start');
-          if(btnAllHol) btnAllHol.style.display = 'none';
-          return;
-        }
-      }
     }
     alertDiv.style.display = 'none';
   } catch(e){}
