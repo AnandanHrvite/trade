@@ -234,6 +234,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `RSI_CE_MAX` | `80` | CE blocked when RSI at/above this (overbought guard) |
 | `RSI_PE_MAX` | `48` | PE entry: RSI(14) must be below this (bearish momentum cap) |
 | `RSI_PE_MIN` | `20` | PE blocked when RSI at/below this (oversold guard) |
+| `SWING_ENTRY_REQUIRE_CROSS` | `false` | When `true`, only allow entries on a candle whose range straddles EMA21 (low ≤ EMA21 ≤ high). Blocks entries where price has already drifted far past the line. |
+| `SWING_ENTRY_CROSS_TOLERANCE` | `0` | How many prior candles back the cross can be (0 = signal candle itself; 2 = ok if any of the last 3 candles straddled EMA21). Only used when `SWING_ENTRY_REQUIRE_CROSS=true`. |
 | `BREAKEVEN_PTS` | `25` | Move SL to entry once +N spot pts in favour |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |

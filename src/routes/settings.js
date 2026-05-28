@@ -65,6 +65,9 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "CE entry blocked when RSI is at/above this (overbought — don't chase exhausted up-moves)", default: "80" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
       { key: "RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PE entry blocked when RSI is at/below this (oversold — don't chase exhausted down-moves)", default: "20" },
+      // ── EMA21-cross entry confirmation ──
+      { key: "SWING_ENTRY_REQUIRE_CROSS", label: "Require EMA21 Cross", type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, only allow entries on a candle whose range straddles EMA21 (low ≤ EMA21 ≤ high). Blocks entries where price has already drifted far past the line.", default: "false" },
+      { key: "SWING_ENTRY_CROSS_TOLERANCE", label: "Cross Tolerance (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many prior candles back the cross can be (0 = signal candle itself must straddle EMA21; 2 = ok if any of the last 3 candles did). Only used when Require EMA21 Cross is ON.", default: "0" },
       // ── Stops & exits ──
       { key: "BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Move SL to entry once the trade is +N spot pts in favour", default: "25" },
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
@@ -535,6 +538,7 @@ const IMMEDIATE_KEYS = new Set([
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN", "BREAKEVEN_PTS",
+  "SWING_ENTRY_REQUIRE_CROSS", "SWING_ENTRY_CROSS_TOLERANCE",
 ]);
 
 // These are cached as const at module load — need session stop+start

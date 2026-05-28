@@ -176,6 +176,26 @@ function getSignal(candles, opts) {
   var rsiCE         = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;  // above momentum floor, below overbought cap
   var rsiPE         = rsi < RSI_PE_MAX && rsi > RSI_PE_MIN;  // below momentum cap, above oversold floor
 
+  // ── EMA21-cross requirement (optional, off by default) ───────────────────
+  // When SWING_ENTRY_REQUIRE_CROSS=true, an entry is allowed only if the signal
+  // candle — or any of the last SWING_ENTRY_CROSS_TOLERANCE prior candles —
+  // had its range straddle its own EMA21 (low <= ema21 <= high). This blocks
+  // entries where price has already drifted far past EMA21.
+  var REQUIRE_CROSS   = (process.env.SWING_ENTRY_REQUIRE_CROSS || "false").toLowerCase() === "true";
+  var CROSS_TOLERANCE = Math.max(0, parseInt(process.env.SWING_ENTRY_CROSS_TOLERANCE || "0", 10) || 0);
+  var crossOk = !REQUIRE_CROSS || (function () {
+    // ema21arr[k] aligns with candles[k + 20] (EMA needs 21 prior values).
+    var lastIdx  = candles.length - 1;
+    var firstIdx = Math.max(0, lastIdx - CROSS_TOLERANCE);
+    for (var i = lastIdx; i >= firstIdx; i--) {
+      var emaIdx = i - 20;
+      if (emaIdx < 0) continue;
+      var e = ema21arr[emaIdx];
+      if (candles[i].low <= e && candles[i].high >= e) return true;
+    }
+    return false;
+  })();
+
   var base = {
     ema21:          Math.round(ema21 * 100) / 100,
     rsi:            Math.round(rsi * 10) / 10,
@@ -200,6 +220,13 @@ function getSignal(candles, opts) {
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
   if (rsiCE && priceAboveEma && sarBelow) {
+    if (!crossOk) {
+      if (!silent) console.log("  ⛔ BUY_CE blocked — no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s)");
+      return Object.assign({}, base, {
+        signal: "NONE",
+        reason: "CE blocked: no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s) (SWING_ENTRY_REQUIRE_CROSS)",
+      });
+    }
     var slCE = Math.round(prevCandle.low * 100) / 100;
     if (!silent) console.log("  🟢 BUY_CE — RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | price>=EMA21 " + ema21.toFixed(1) + " | SAR below | SL(prevLow)=" + slCE);
     return Object.assign({}, base, {
@@ -211,6 +238,13 @@ function getSignal(candles, opts) {
 
   // ── BUY PE ────────────────────────────────────────────────────────────────
   if (rsiPE && priceBelowEma && sarAbove) {
+    if (!crossOk) {
+      if (!silent) console.log("  ⛔ BUY_PE blocked — no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s)");
+      return Object.assign({}, base, {
+        signal: "NONE",
+        reason: "PE blocked: no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s) (SWING_ENTRY_REQUIRE_CROSS)",
+      });
+    }
     var slPE = Math.round(prevCandle.high * 100) / 100;
     if (!silent) console.log("  🔴 BUY_PE — RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | price<=EMA21 " + ema21.toFixed(1) + " | SAR above | SL(prevHigh)=" + slPE);
     return Object.assign({}, base, {
