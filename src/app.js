@@ -2165,7 +2165,10 @@ async function checkTradingStatus(){
       if(data.success && data.holidays){
         var todayStr = now.toISOString().split('T')[0];
         if(data.holidays.includes(todayStr)){
-          showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24'); return;
+          showStatusPill(alertDiv, '🎉', 'NSE Holiday — markets closed today', '#fbbf24');
+          var btnAllHol = document.getElementById('btn-all-start');
+          if(btnAllHol) btnAllHol.style.display = 'none';
+          return;
         }
       }
     }
