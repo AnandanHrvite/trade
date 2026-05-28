@@ -382,7 +382,7 @@ ${buildSidebar('replay', false)}
         <label>Quick range</label>
         <select id="range-preset" onchange="applyRangePreset(this.value)">
           <option value="">Custom</option>
-          <option value="today">Today</option>
+          <option value="today" selected>Today</option>
           <option value="yesterday">Yesterday</option>
           <option value="this-week">This week</option>
           <option value="last-week">Last week</option>
@@ -1343,8 +1343,13 @@ function setRangeDefaults() {
 
   const earliest = _enabledDates[0];
   const latest   = _enabledDates[_enabledDates.length - 1];
-  const prevFrom = fromEl.value && _enabledDates.includes(fromEl.value) ? fromEl.value : earliest;
-  const prevTo   = toEl.value   && _enabledDates.includes(toEl.value)   ? toEl.value   : latest;
+  // Default to today (or the most recent recorded date ≤ today if today
+  // has no recording — weekend, holiday, or session not yet started).
+  const today = new Date().toISOString().slice(0, 10);
+  const onOrBefore = _enabledDates.filter(d => d <= today);
+  const todayOrNearest = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : latest;
+  const prevFrom = fromEl.value && _enabledDates.includes(fromEl.value) ? fromEl.value : todayOrNearest;
+  const prevTo   = toEl.value   && _enabledDates.includes(toEl.value)   ? toEl.value   : todayOrNearest;
   const common = {
     dateFormat: 'Y-m-d',
     enable: _enabledDates,
