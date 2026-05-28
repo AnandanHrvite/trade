@@ -363,6 +363,9 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .trades-table td.reason { color:#475569 !important; }
 </style>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13"></script>
 </head>
 <body>
 ${buildSidebar('replay', false)}
@@ -389,11 +392,11 @@ ${buildSidebar('replay', false)}
       </div>
       <div class="range-field">
         <label>From</label>
-        <input type="date" id="range-from" onchange="document.getElementById('range-preset').value=''">
+        <input type="text" id="range-from" readonly placeholder="YYYY-MM-DD" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>To</label>
-        <input type="date" id="range-to" onchange="document.getElementById('range-preset').value=''">
+        <input type="text" id="range-to" readonly placeholder="YYYY-MM-DD" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>Strategy</label>
@@ -1319,26 +1322,42 @@ function downloadDiagnostic(btn, context, rows) {
 // ── Date-range orchestration ───────────────────────────────────────────────
 let _allSessionsCache = [];
 
+let _enabledDates = [];
+let _rangeFromFp = null;
+let _rangeToFp   = null;
+
 function setRangeDefaults() {
-  // Constrain From/To to the actual recorded date range.
-  // Falls back to "today only" if no recordings exist yet.
+  // Restrict From/To to dates that actually have a recording on disk.
+  // Weekends and market holidays appear greyed out in the calendar.
   const fromEl = document.getElementById('range-from');
   const toEl   = document.getElementById('range-to');
-  const dates  = _allSessionsCache.map(s => s.date).filter(Boolean);
-  if (dates.length === 0) {
+  _enabledDates = Array.from(new Set(_allSessionsCache.map(s => s.date).filter(Boolean))).sort();
+
+  if (_enabledDates.length === 0) {
+    if (_rangeFromFp) { _rangeFromFp.destroy(); _rangeFromFp = null; }
+    if (_rangeToFp)   { _rangeToFp.destroy();   _rangeToFp   = null; }
     const today = new Date().toISOString().slice(0, 10);
-    fromEl.min = fromEl.max = toEl.min = toEl.max = today;
     fromEl.value = toEl.value = today;
     return;
   }
-  dates.sort();
-  const earliest = dates[0];
-  const latest   = dates[dates.length - 1];
-  fromEl.min = earliest; fromEl.max = latest;
-  toEl.min   = earliest; toEl.max   = latest;
-  // Only set defaults if user hasn't already picked something valid.
-  if (!fromEl.value || fromEl.value < earliest || fromEl.value > latest) fromEl.value = earliest;
-  if (!toEl.value   || toEl.value   < earliest || toEl.value   > latest) toEl.value   = latest;
+
+  const earliest = _enabledDates[0];
+  const latest   = _enabledDates[_enabledDates.length - 1];
+  const prevFrom = fromEl.value && _enabledDates.includes(fromEl.value) ? fromEl.value : earliest;
+  const prevTo   = toEl.value   && _enabledDates.includes(toEl.value)   ? toEl.value   : latest;
+  const common = {
+    dateFormat: 'Y-m-d',
+    enable: _enabledDates,
+    minDate: earliest,
+    maxDate: latest,
+    disableMobile: true,
+    onChange: () => { document.getElementById('range-preset').value = ''; },
+  };
+
+  if (_rangeFromFp) _rangeFromFp.destroy();
+  if (_rangeToFp)   _rangeToFp.destroy();
+  _rangeFromFp = flatpickr(fromEl, Object.assign({}, common, { defaultDate: prevFrom }));
+  _rangeToFp   = flatpickr(toEl,   Object.assign({}, common, { defaultDate: prevTo   }));
 }
 
 // Quick-range presets. Computes [from,to] in local time, then clamps to the
@@ -1373,13 +1392,17 @@ function applyRangePreset(preset) {
     default: return;
   }
   let f = fmt(from), t = fmt(to);
-  // Clamp to recorded bounds so we never request dates with no data.
-  if (fromEl.min && f < fromEl.min) f = fromEl.min;
-  if (fromEl.max && f > fromEl.max) f = fromEl.max;
-  if (toEl.min   && t < toEl.min)   t = toEl.min;
-  if (toEl.max   && t > toEl.max)   t = toEl.max;
-  fromEl.value = f;
-  toEl.value   = t;
+  // Snap to nearest recorded date so we never request dates with no data
+  // (weekends, holidays, gaps in recording).
+  if (_enabledDates.length) {
+    const firstOnOrAfter = _enabledDates.find(d => d >= f);
+    f = firstOnOrAfter || _enabledDates[_enabledDates.length - 1];
+    const onOrBefore = _enabledDates.filter(d => d <= t);
+    t = onOrBefore.length ? onOrBefore[onOrBefore.length - 1] : _enabledDates[0];
+  }
+  // setDate(_, false) avoids firing onChange, which would re-clear the preset.
+  if (_rangeFromFp) _rangeFromFp.setDate(f, false); else fromEl.value = f;
+  if (_rangeToFp)   _rangeToFp.setDate(t, false);   else toEl.value   = t;
 }
 
 function pickSessionsInRange(from, to, mode) {
