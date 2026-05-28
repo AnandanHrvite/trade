@@ -238,6 +238,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `SWING_ENTRY_CROSS_TOLERANCE` | `0` | How many prior candles back the cross can be (0 = signal candle itself; 2 = ok if any of the last 3 candles straddled EMA21). Only used when `SWING_ENTRY_REQUIRE_CROSS=true`. |
 | `BREAKEVEN_PTS` | `25` | Move SL to entry once +N spot pts in favour |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
+| `SWING_SL_MODE` | `candle` | What feeds the trailing SL at candle close. `candle` = just-closed candle low/high. `psar` = current Parabolic SAR (PSAR flip = explicit exit). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). All tighten-only; breakeven / option-stop / opposite-signal / EOD still apply. |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
 | `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
 | `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |

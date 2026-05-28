@@ -994,22 +994,36 @@ async function onCandleClose(candle) {
   // It is set once in simulateBuy() = mid of the last fully closed candle at entry.
   // The 50% rule reference must not roll forward as new candles close.
 
-  // ── Prev-candle trailing stop (SWING redefined) ──────────────────────────
-  // Tighten the SL to THIS just-closed candle's low (CE) / high (PE). It becomes
-  // the stop enforced intra-candle during the NEXT bar (via onTick). Tighten-only.
-  // Then apply breakeven (SL → entry once +BREAKEVEN_PTS in favour).
+  // ── Trailing stop (mode-aware: candle | psar | ema) ─────────────────────
+  // SWING_SL_MODE selects the SL source updated at each candle close (tighten-only):
+  //   candle (default) — just-closed candle's low (CE) / high (PE) [original behaviour]
+  //   psar             — current Parabolic SAR value; PSAR flip against position = exit
+  //   ema              — current EMA21 value; candle range touching back EMA21 = exit
+  // pos.stopLoss is then enforced intra-candle in onTick. Breakeven still applies.
   if (ptState.position) {
-    const pos      = ptState.position;
-    const trailRef = pos.side === "CE" ? candle.low : candle.high;
-    if (pos.side === "CE") {
-      if (pos.stopLoss == null || trailRef > pos.stopLoss) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2));
-        log(`📐 [PAPER] Prev-candle trail CE: ₹${_o} → ₹${pos.stopLoss} (just-closed low)`);
-      }
+    const pos     = ptState.position;
+    const SL_MODE = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+    let _newSL    = null;
+    let _flipExit = false;
+    let _trailTag = "";
+    if (SL_MODE === "psar") {
+      if (indicators.sar != null) { _newSL = indicators.sar; _trailTag = "PSAR"; }
+      if ((pos.side === "CE" && indicators.sarTrendInt === -1) ||
+          (pos.side === "PE" && indicators.sarTrendInt ===  1)) _flipExit = true;
+    } else if (SL_MODE === "ema") {
+      if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
+      if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
     } else {
-      if (pos.stopLoss == null || trailRef < pos.stopLoss) {
-        const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2));
-        log(`📐 [PAPER] Prev-candle trail PE: ₹${_o} → ₹${pos.stopLoss} (just-closed high)`);
+      _newSL = pos.side === "CE" ? candle.low : candle.high;
+      _trailTag = pos.side === "CE" ? "just-closed low" : "just-closed high";
+    }
+    if (_newSL != null) {
+      if (pos.side === "CE" && (pos.stopLoss == null || _newSL > pos.stopLoss)) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
+        log(`📐 [PAPER] ${SL_MODE.toUpperCase()} trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+      } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
+        log(`📐 [PAPER] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
     const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
@@ -1018,8 +1032,13 @@ async function onCandleClose(candle) {
       if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
       if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
     }
+    if (_flipExit) {
+      const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
+      log(`🔁 [PAPER] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
+      simulateSell(candle.close, _reason, candle.close);
+    }
   }
-  // SL-hit is enforced intra-candle in onTick against the prev-candle stop set above —
+  // SL-hit is enforced intra-candle in onTick against the stop set above —
   // no separate candle-close SL check needed.
 
   // ── Exit Rule 3: Opposite signal ────────────────────────────────────────

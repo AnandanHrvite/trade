@@ -310,22 +310,33 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
-    // ── PREV-CANDLE TRAILING STOP (tighten-only) ─────────────────────────────
-    // SL trails the previous completed candle's low (CE) / high (PE).
-    // prevCandle = candles[i-1] = the last fully completed candle before this one,
-    // so on the iteration AFTER entry this tightens to the entry candle's low/high,
-    // then advances candle-by-candle. Never loosens.
+    // ── TRAILING STOP (mode-aware: candle | psar | ema) ───────────────────
+    // SWING_SL_MODE selects the SL source (tighten-only) at each candle close:
+    //   candle (default) — previous completed candle's low (CE) / high (PE)
+    //   psar             — current Parabolic SAR value; PSAR flip = explicit exit
+    //   ema              — current EMA21 value; candle touching back EMA21 = explicit exit
+    // The flip/touch-back exits are wired below in the EXIT CHECK block.
     if (position) {
-      const trailRef = position.side === "CE" ? prevCandle.low : prevCandle.high;
-      if (position.side === "CE") {
-        if (position.stopLoss == null || trailRef > position.stopLoss) {
-          if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE → prevLow ${trailRef} (was ${position.stopLoss})`);
-          position.stopLoss = quantize(trailRef, 2);
-        }
+      const SL_MODE = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+      let trailRef = null;
+      if (SL_MODE === "psar") {
+        if (_sig.sar != null) trailRef = _sig.sar;
+      } else if (SL_MODE === "ema") {
+        if (_sig.ema21 != null) trailRef = _sig.ema21;
       } else {
-        if (position.stopLoss == null || trailRef < position.stopLoss) {
-          if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE → prevHigh ${trailRef} (was ${position.stopLoss})`);
-          position.stopLoss = quantize(trailRef, 2);
+        trailRef = position.side === "CE" ? prevCandle.low : prevCandle.high;
+      }
+      if (trailRef != null) {
+        if (position.side === "CE") {
+          if (position.stopLoss == null || trailRef > position.stopLoss) {
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE (${SL_MODE}) → ${trailRef} (was ${position.stopLoss})`);
+            position.stopLoss = quantize(trailRef, 2);
+          }
+        } else {
+          if (position.stopLoss == null || trailRef < position.stopLoss) {
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE (${SL_MODE}) → ${trailRef} (was ${position.stopLoss})`);
+            position.stopLoss = quantize(trailRef, 2);
+          }
         }
       }
       // Track favourable extreme (for breakeven trigger)
@@ -397,6 +408,23 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           exitPrice  = position.side === "CE"
             ? quantize(position.entryPrice - _OPT_STOP_SPOT_PTS, 2)
             : quantize(position.entryPrice + _OPT_STOP_SPOT_PTS, 2);
+        }
+      }
+
+      // Rule 1c: PSAR flip / EMA touch-back exit (mode-driven, SWING_SL_MODE)
+      if (!exitReason) {
+        const _slMode = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+        if (_slMode === "psar") {
+          if ((position.side === "CE" && _sig.sarTrendInt === -1) ||
+              (position.side === "PE" && _sig.sarTrendInt ===  1)) {
+            exitReason = "PSAR flip exit";
+            exitPrice  = candle.close;
+          }
+        } else if (_slMode === "ema" && _sig.ema21 != null) {
+          if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
+            exitReason = "EMA touch-back exit";
+            exitPrice  = candle.close;
+          }
         }
       }
 

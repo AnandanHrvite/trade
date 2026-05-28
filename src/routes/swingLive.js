@@ -1141,18 +1141,36 @@ async function onCandleClose(candle) {
     }
   }
 
-  // ── Prev-candle trailing stop (SWING redefined) ──────────────────────────
-  // Tighten the SL to THIS just-closed candle's low (CE) / high (PE) — becomes the
-  // stop enforced intra-candle during the next bar (via onTick). Tighten-only.
-  // Then breakeven (SL → entry once +BREAKEVEN_PTS in favour). Push to broker hard-SL.
+  // ── Trailing stop (mode-aware: candle | psar | ema) ─────────────────────
+  // Mirrors paper. SWING_SL_MODE selects the SL source (tighten-only) at each
+  // candle close. PSAR/EMA modes additionally trigger an explicit candle-close
+  // exit on a flip / EMA touch-back. Broker hard-SL is pushed on any change.
   if (tradeState.position) {
-    const pos      = tradeState.position;
-    const trailRef = pos.side === "CE" ? candle.low : candle.high;
-    let _changed = false;
-    if (pos.side === "CE") {
-      if (pos.stopLoss == null || trailRef > pos.stopLoss) { const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2)); _changed = true; log(`📐 [LIVE] Prev-candle trail CE: ₹${_o} → ₹${pos.stopLoss} (just-closed low)`); }
+    const pos     = tradeState.position;
+    const SL_MODE = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+    let _newSL    = null;
+    let _flipExit = false;
+    let _trailTag = "";
+    if (SL_MODE === "psar") {
+      if (indicators.sar != null) { _newSL = indicators.sar; _trailTag = "PSAR"; }
+      if ((pos.side === "CE" && indicators.sarTrendInt === -1) ||
+          (pos.side === "PE" && indicators.sarTrendInt ===  1)) _flipExit = true;
+    } else if (SL_MODE === "ema") {
+      if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
+      if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
     } else {
-      if (pos.stopLoss == null || trailRef < pos.stopLoss) { const _o = pos.stopLoss; pos.stopLoss = parseFloat(trailRef.toFixed(2)); _changed = true; log(`📐 [LIVE] Prev-candle trail PE: ₹${_o} → ₹${pos.stopLoss} (just-closed high)`); }
+      _newSL = pos.side === "CE" ? candle.low : candle.high;
+      _trailTag = pos.side === "CE" ? "just-closed low" : "just-closed high";
+    }
+    let _changed = false;
+    if (_newSL != null) {
+      if (pos.side === "CE" && (pos.stopLoss == null || _newSL > pos.stopLoss)) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2)); _changed = true;
+        log(`📐 [LIVE] ${SL_MODE.toUpperCase()} trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+      } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
+        const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2)); _changed = true;
+        log(`📐 [LIVE] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+      }
     }
     const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
     const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
@@ -1164,8 +1182,13 @@ async function onCandleClose(candle) {
       saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
       updateHardSL(pos.stopLoss);
     }
+    if (_flipExit) {
+      const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
+      log(`🔁 [LIVE] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
+      await squareOff(candle.close, _reason);
+    }
   }
-  // SL-hit is enforced intra-candle in onTick against the prev-candle stop set above.
+  // SL-hit is enforced intra-candle in onTick against the stop set above.
 
   // ── Exit Rule 3: opposite signal ────────────────────────────────────────────
   if (tradeState.position) {
