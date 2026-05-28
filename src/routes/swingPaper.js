@@ -1033,9 +1033,17 @@ async function onCandleClose(candle) {
       if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
     }
     if (_flipExit) {
-      const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
-      log(`🔁 [PAPER] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
-      simulateSell(candle.close, _reason, candle.close);
+      // EMA mode: skip touch-back on entry bar (the entry condition trivially
+      // satisfies a touch — would cause instant exit on the entry candle).
+      // PSAR mode: intra-bar SAR flip is a real trend reversal — always fire.
+      const _isEntryBar = SL_MODE === "ema" && pos.entryBarTime && candle.time === pos.entryBarTime;
+      if (_isEntryBar) {
+        log(`⏭️ [PAPER] EMA touch-back on entry bar — skipping flip exit`);
+      } else {
+        const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
+        log(`🔁 [PAPER] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
+        simulateSell(candle.close, _reason, candle.close);
+      }
     }
   }
   // SL-hit is enforced intra-candle in onTick against the stop set above —

@@ -1183,9 +1183,16 @@ async function onCandleClose(candle) {
       updateHardSL(pos.stopLoss);
     }
     if (_flipExit) {
-      const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
-      log(`🔁 [LIVE] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
-      await squareOff(candle.close, _reason);
+      // EMA mode: skip touch-back on entry bar (entry condition trivially
+      // satisfies touch). PSAR mode: intra-bar flip = real reversal, always fire.
+      const _isEntryBar = SL_MODE === "ema" && pos.entryBarTime && candle.time === pos.entryBarTime;
+      if (_isEntryBar) {
+        log(`⏭️ [LIVE] EMA touch-back on entry bar — skipping flip exit`);
+      } else {
+        const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
+        log(`🔁 [LIVE] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
+        await squareOff(candle.close, _reason);
+      }
     }
   }
   // SL-hit is enforced intra-candle in onTick against the stop set above.
