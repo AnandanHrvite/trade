@@ -392,11 +392,11 @@ ${buildSidebar('replay', false)}
       </div>
       <div class="range-field">
         <label>From</label>
-        <input type="text" id="range-from" readonly placeholder="YYYY-MM-DD" onchange="document.getElementById('range-preset').value=''">
+        <input type="text" id="range-from" readonly placeholder="DD/MM/YYYY" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>To</label>
-        <input type="text" id="range-to" readonly placeholder="YYYY-MM-DD" onchange="document.getElementById('range-preset').value=''">
+        <input type="text" id="range-to" readonly placeholder="DD/MM/YYYY" onchange="document.getElementById('range-preset').value=''">
       </div>
       <div class="range-field">
         <label>Strategy</label>
@@ -1352,6 +1352,8 @@ function setRangeDefaults() {
   const prevTo   = toEl.value   && _enabledDates.includes(toEl.value)   ? toEl.value   : todayOrNearest;
   const common = {
     dateFormat: 'Y-m-d',
+    altInput: true,
+    altFormat: 'd/m/Y',
     enable: _enabledDates,
     minDate: earliest,
     maxDate: latest,
