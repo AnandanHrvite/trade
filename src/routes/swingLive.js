@@ -64,6 +64,22 @@ function _setSlPause(side) {
   log(`⏸️ [LIVE] ${side} SL cooldown — no new ${side} entries for ${_SWING_SL_PAUSE_CANDLES} candles`);
 }
 
+// ── Opposite-side (flip) cooldown ───────────────────────────────────────────
+// After any non-flip exit, block entries on the OPPOSITE side for
+// SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
+// Skipped for opposite-signal / EOD / manual exits.
+const _OPP_COOLDOWN_ENABLED = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+const _OPP_COOLDOWN_CANDLES = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+function _setOppositeCooldown(exitedSide, reason) {
+  if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
+  if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart/i.test(reason)) return;
+  const _resMin = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
+  tradeState._oppositeCooldownUntilTs  = Date.now() + _OPP_COOLDOWN_CANDLES * _resMin * 60 * 1000;
+  tradeState._oppositeCooldownLastSide = exitedSide;
+  const opp = exitedSide === "CE" ? "PE" : "CE";
+  log(`🔁 [LIVE] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * _resMin} min)`);
+}
+
 // SWING (redefined): initial SL = the prev-candle low/high from getSignal, used as-is.
 function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle) {
   return { stopLoss, capLog: null, origSAR: stopLoss };
@@ -1044,6 +1060,9 @@ async function squareOff(exitPrice, reason) {
   _hardSLOrderId = null; // clear Hard SL tracking (already cancelled before exit)
   _squareOffInFlight      = false; // release only AFTER position is cleared
 
+  // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
+  if (closedSide) _setOppositeCooldown(closedSide, reason);
+
   // ── 50%-rule exit pause (mirrors paperTrade) ──────────────────────────────
   // If exit was caused by 50% rule, pause re-entry for 2 candles to avoid
   // re-entering same choppy conditions immediately.
@@ -1286,6 +1305,13 @@ async function onCandleClose(candle) {
     // ── Same-side SL cooldown: block re-entry on a side that recently hit SL ──
     if (tradeState._slPauseUntilBySide && tradeState._slPauseUntilBySide[side] > Date.now()) {
       log(`⏸️ [LIVE] ${side} SL cooldown — candle-close entry blocked`);
+      return;
+    }
+    // ── Opposite-side cooldown: block opposite-side entry within cooldown window ──
+    if (_OPP_COOLDOWN_ENABLED && tradeState._oppositeCooldownLastSide
+        && tradeState._oppositeCooldownLastSide !== side
+        && tradeState._oppositeCooldownUntilTs > Date.now()) {
+      log(`⏸️ [LIVE] Opposite-side cooldown — candle-close entry blocked (last exit ${tradeState._oppositeCooldownLastSide}, new ${side})`);
       return;
     }
 
@@ -1581,6 +1607,15 @@ function onSpotTick(tick) {
         if (!tradeState._coolLoggedCandle || tradeState._coolLoggedCandle !== _curBarTime) {
           tradeState._coolLoggedCandle = _curBarTime;
           log(`⏸️ [LIVE] ${side} SL cooldown — intra-candle entry blocked`);
+        }
+      } else if (_OPP_COOLDOWN_ENABLED && tradeState._oppositeCooldownLastSide
+                 && tradeState._oppositeCooldownLastSide !== side
+                 && tradeState._oppositeCooldownUntilTs > Date.now()) {
+        // ── Opposite-side cooldown: block opposite-side entry within cooldown window ──
+        const _curBarTime = tradeState.currentBar ? tradeState.currentBar.time : 0;
+        if (!tradeState._oppCoolLoggedCandle || tradeState._oppCoolLoggedCandle !== _curBarTime) {
+          tradeState._oppCoolLoggedCandle = _curBarTime;
+          log(`⏸️ [LIVE] Opposite-side cooldown — intra-candle entry blocked (last exit ${tradeState._oppositeCooldownLastSide}, new ${side})`);
         }
       } else {
       // ── 50% entry gate REMOVED — breakeven stop handles protection ──────────
@@ -1932,6 +1967,8 @@ router.get("/start", async (req, res) => {
   tradeState._pauseUntilTime       = null;
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
   tradeState._slPauseUntilBySide   = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+  tradeState._oppositeCooldownUntilTs  = 0;
+  tradeState._oppositeCooldownLastSide = null;
   tradeState._cachedCE             = null; // clear pre-fetch cache on session start
   tradeState._cachedPE             = null;
   tradeState._fiftyPctPauseUntil   = null;

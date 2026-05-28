@@ -73,6 +73,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Trailing**: each candle close, tighten SL to that candle's low (CE) / high (PE) — tighten-only.
 - **Exits**: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`).
 - **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
+- **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
 - **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
 - **Removed** vs the old strategy: EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
@@ -240,6 +241,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
 | `SWING_SL_MODE` | `candle` | What feeds the trailing SL at candle close. `candle` = just-closed candle low/high. `psar` = current Parabolic SAR (PSAR flip = explicit exit). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). All tighten-only; breakeven / option-stop / opposite-signal / EOD still apply. |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
+| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / breakeven / option-stop / PSAR-flip / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
+| `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
 | `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
 | `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |
 | `TRADE_ENTRY_START` | `09:30` | Earliest entry time (IST) |

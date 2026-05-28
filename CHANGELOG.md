@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SWING — opposite-side (flip) cooldown
+
+- **New gate**: after any non-flip exit (Initial/Trail/Breakeven SL, option-stop, PSAR-flip exit, EMA touch-back exit), block entries on the **OPPOSITE side** for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` × `TRADE_RESOLUTION` minutes. Prevents the bot from whipsawing CE→PE→CE in chop within minutes of an exit.
+- **Skipped** for legitimate flips and end-of-day: `Opposite signal exit`, `EOD`/`Exit before day close`/`Auto-stop`/`Manual` exits do not trigger the cooldown.
+- **Toggle**: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` (default `true`). Candle count: `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` (default `3`).
+- Applied identically across [swingPaper.js](src/routes/swingPaper.js) (canonical) / [swingLive.js](src/routes/swingLive.js) / [backtestEngine.js](src/services/backtestEngine.js). Settings UI fields added in [settings.js](src/routes/settings.js) (effect: SESSION restart).
+
 ### SCALP strategy — redefinition to BB break + PSAR + RSI (V5)
 
 - **New entry logic** in [src/strategies/scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js) (`getSignal`), applied identically across Paper / Live / Backtest. Entry at candle close, all three true:

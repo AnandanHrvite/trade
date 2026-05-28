@@ -48,6 +48,8 @@ let _OPT_STOP_PCT;
 let _STOP_MINS;
 let _SWING_SL_PAUSE_CANDLES;   // same-side cooldown (candles) after an SL hit
 let _SWING_EOD_EXIT_MINS;      // square off any open SWING position at/after this IST time (before day close)
+let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
+let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
   _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
@@ -62,6 +64,8 @@ function _refreshConfig() {
   const _eodRaw = process.env.SWING_EOD_EXIT_TIME || "15:15";
   const [eh, em] = _eodRaw.split(":").map(Number);
   _SWING_EOD_EXIT_MINS = (isNaN(eh)) ? _STOP_MINS : (eh * 60 + (isNaN(em) ? 0 : em));
+  _OPP_COOLDOWN_ENABLED = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+  _OPP_COOLDOWN_CANDLES = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
 }
 _refreshConfig();
 let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
@@ -74,6 +78,19 @@ function _setSlPause(side) {
   ptState._slPauseUntilBySide = ptState._slPauseUntilBySide || { CE: 0, PE: 0 };
   ptState._slPauseUntilBySide[side] = simNow() + _SWING_SL_PAUSE_CANDLES * getTradeResolution() * 60 * 1000;
   log(`⏸️ [PAPER] ${side} SL cooldown — no new ${side} entries for ${_SWING_SL_PAUSE_CANDLES} candles`);
+}
+
+// ── Opposite-side (flip) cooldown ───────────────────────────────────────────
+// After any non-flip exit, block entries on the OPPOSITE side for
+// SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
+// Skipped for opposite-signal / EOD / manual exits.
+function _setOppositeCooldown(exitedSide, reason) {
+  if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
+  if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i.test(reason)) return;
+  ptState._oppositeCooldownUntilTs   = simNow() + _OPP_COOLDOWN_CANDLES * getTradeResolution() * 60 * 1000;
+  ptState._oppositeCooldownLastSide  = exitedSide;
+  const opp = exitedSide === "CE" ? "PE" : "CE";
+  log(`🔁 [PAPER] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * getTradeResolution()} min)`);
 }
 
 // _STOP_MINS declared and populated by _refreshConfig() above
@@ -603,6 +620,14 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ptState._entryPending = false;
     return;
   }
+  // Opposite-side cooldown: reject opposite-side entry within cooldown window after a recent exit.
+  if (_OPP_COOLDOWN_ENABLED && ptState._oppositeCooldownLastSide
+      && ptState._oppositeCooldownLastSide !== side
+      && ptState._oppositeCooldownUntilTs > simNow()) {
+    log(`⏸️ [PAPER] Opposite-side cooldown active — entry rejected (last exit ${ptState._oppositeCooldownLastSide}, new ${side} @ ₹${price})`);
+    ptState._entryPending = false;
+    return;
+  }
   const optDetails = parseOptionDetails(symbol);
 
   // Capture the prev-candle reference at entry time — tick exit rule uses this FIXED value forever.
@@ -895,6 +920,9 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   ptState.position = null;
+
+  // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
+  _setOppositeCooldown(side, reason);
 
   // Notify active strategy (optional callbacks for strategy-level state tracking)
   const activeStrat = getActiveStrategy();
@@ -1748,6 +1776,8 @@ router.get("/start", async (req, res) => {
   ptState._maxTradesLoggedCandle = null;
   ptState._slHitCandleTime     = null;
   ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+  ptState._oppositeCooldownUntilTs  = 0;
+  ptState._oppositeCooldownLastSide = null;
   ptState._lastCheckedBarHigh  = null;
   ptState._lastCheckedBarLow   = null;
   ptState._missedLoggedCandle  = null;
@@ -4144,6 +4174,8 @@ router.post("/simulate/start", async (req, res) => {
     ptState._maxTradesLoggedCandle = null;
     ptState._slHitCandleTime     = null;
     ptState._slPauseUntilBySide  = { CE: 0, PE: 0 }; // reset same-side SL cooldown
+    ptState._oppositeCooldownUntilTs  = 0;
+    ptState._oppositeCooldownLastSide = null;
     ptState._lastCheckedBarHigh  = null;
     ptState._lastCheckedBarLow   = null;
     ptState._missedLoggedCandle  = null;

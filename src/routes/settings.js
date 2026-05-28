@@ -73,6 +73,8 @@ const SETTINGS_SCHEMA = [
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
       { key: "SWING_SL_MODE", label: "SL / Trail Source", type: "select", options: ["candle", "psar", "ema"], effect: EFFECT.INSTANT, desc: "What feeds the trailing SL at each candle close. candle = just-closed candle low/high (default). psar = current Parabolic SAR — PSAR flip against position is an explicit exit. ema = current EMA21 — candle touching back EMA21 is an explicit exit. All modes are tighten-only and still respect Breakeven, option-stop %, opposite signal and EOD.", default: "candle" },
       { key: "SWING_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After an SL / option-stop hit on a side, block new entries on THAT side for this many candles (0 = off)", default: "3" },
+      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, breakeven, option-stop, PSAR-flip, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
+      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown duration in candles (multiplied by TRADE_RESOLUTION to get minutes — e.g. 3 candles × 5-min = 15 min). Only used when Opposite-Side Cooldown is ON.", default: "3" },
     ],
   },
   {
@@ -546,7 +548,8 @@ const IMMEDIATE_KEYS = new Set([
 // These are cached as const at module load — need session stop+start
 const SESSION_RESTART_KEYS = new Set([
   "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT",
-  "SWING_SL_PAUSE_CANDLES", "SWING_EOD_EXIT_TIME", "SWING_LIVE_DRY_RUN",
+  "SWING_SL_PAUSE_CANDLES", "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES",
+  "SWING_EOD_EXIT_TIME", "SWING_LIVE_DRY_RUN",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
   "SCALP_ENTRY_START", "SCALP_ENTRY_END",

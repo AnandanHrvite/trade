@@ -165,6 +165,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
   const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
   const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+  // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
+  const OPP_COOLDOWN_ENABLED   = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+  const OPP_COOLDOWN_CANDLES   = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
   // Backtest has no live option LTP — approximate the premium stop as an adverse
   // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
   // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
@@ -225,6 +228,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
   let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
+  let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
+  let _oppositeCooldownLastSide  = null;  // last exited side
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
@@ -265,6 +270,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _consecPauseUntilTs = 0;
         _slPauseUntilBySide.CE = 0;
         _slPauseUntilBySide.PE = 0;
+        _oppositeCooldownUntilTs  = 0;
+        _oppositeCooldownLastSide = null;
         if (_verbose) {
           // Count trades for previous day for the daily log
           // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
@@ -538,6 +545,15 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           if (_verbose) console.log(`  ⏸️ ${position.side} SL pause — no ${position.side} entries for ${SWING_SL_PAUSE_CANDLES} candles`);
         }
 
+        // Opposite-side (flip) cooldown: after non-flip exit, block opposite-side entries.
+        // Skip on opposite-signal exits (legit strategy flip) and EOD square-offs.
+        if (OPP_COOLDOWN_ENABLED && OPP_COOLDOWN_CANDLES > 0
+            && !/opposite signal|eod/i.test(exitReason)) {
+          _oppositeCooldownUntilTs  = candle.time + (OPP_COOLDOWN_CANDLES * candleResolutionMins * 60);
+          _oppositeCooldownLastSide = position.side;
+          if (_verbose) console.log(`  🔁 Opposite-side cooldown — no ${position.side === "CE" ? "PE" : "CE"} entries for ${OPP_COOLDOWN_CANDLES} candles`);
+        }
+
         // ── Notify strategy: optional exit callbacks
         const exitedSide = position.side;
         position = null;
@@ -550,6 +566,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // Gate checks: same-side SL cooldown, consecutive-loss pause, daily loss limit
     const _sigSide = signal === "BUY_CE" ? "CE" : signal === "BUY_PE" ? "PE" : null;
     const isSideCoolingDown = _sigSide && _slPauseUntilBySide[_sigSide] > 0 && candle.time < _slPauseUntilBySide[_sigSide];
+    const isOppositeCoolingDown = OPP_COOLDOWN_ENABLED
+                                  && _sigSide && _oppositeCooldownLastSide
+                                  && _sigSide !== _oppositeCooldownLastSide
+                                  && candle.time < _oppositeCooldownUntilTs;
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
     const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
     const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
@@ -559,6 +579,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (expiryDates && !expiryDates.has(candleDate)) continue;
       // Same-side SL cooldown: skip this side until the pause expires
       if (isSideCoolingDown) continue;
+      // Opposite-side cooldown: skip opposite side within cooldown window
+      if (isOppositeCoolingDown) continue;
 
       const side     = _sigSide;
       const strength = signalStrength || "STRONG";
