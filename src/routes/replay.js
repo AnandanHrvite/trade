@@ -223,12 +223,17 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .range-table tr.totals { font-weight:700; background:#0f172a; }
 .range-table tr.totals td { border-top:2px solid #334155; border-bottom:0; }
 .range-table .num { text-align:right; font-variant-numeric: tabular-nums; }
-.activity-log { margin-top:10px; background:#020617; border:1px solid #1e293b; border-radius:6px; padding:8px 10px; max-height:240px; overflow-y:auto; font-family: ui-monospace, Menlo, monospace; font-size:0.72rem; line-height:1.5; color:#94a3b8; }
-.activity-log .log-line { white-space:pre-wrap; word-break:break-word; }
-.activity-log .log-line.err { color:#fca5a5; }
-.activity-log .log-line.warn { color:#fbbf24; }
-.activity-log .log-line.ok { color:#6ee7b7; }
-.activity-log-empty { color:#475569; font-style:italic; }
+.rp-block { margin-top:10px; background:#020617; border:1px solid #1e293b; border-radius:6px; padding:14px 16px; }
+.rp-row { display:flex; align-items:center; gap:10px; font-size:0.9rem; color:#e2e8f0; }
+.rp-spinner { width:14px; height:14px; border:2px solid #1e293b; border-top-color:#38bdf8; border-radius:50%; animation: rp-spin 0.8s linear infinite; flex:0 0 auto; }
+.rp-current { font-weight:600; }
+.rp-counter { margin-left:auto; color:#94a3b8; font-variant-numeric: tabular-nums; font-size:0.82rem; }
+.rp-bar { margin-top:10px; height:6px; background:#0f172a; border-radius:3px; overflow:hidden; }
+.rp-bar-fill { height:100%; background:linear-gradient(90deg, #38bdf8, #6366f1); transition: width 0.4s ease; }
+.rp-elapsed { margin-top:6px; font-size:0.72rem; color:#64748b; }
+.rp-done .rp-spinner { animation:none; border-top-color:#22c55e; border-color:#22c55e; }
+.rp-cancelled .rp-spinner { animation:none; border-top-color:#ef4444; border-color:#ef4444; }
+@keyframes rp-spin { to { transform: rotate(360deg); } }
 .copy-btn { background:#0f766e; color:#ccfbf1; border:1px solid #14b8a6; padding:6px 12px; border-radius:6px; font-size:0.78rem; cursor:pointer; margin-top:10px; }
 .copy-btn:hover { background:#14b8a6; }
 .copy-btn.copied { background:#15803d; border-color:#22c55e; color:#fff; }
@@ -307,8 +312,12 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .range-table th, :root[data-theme="light"] .range-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .range-table tr.totals { background:#f1f5f9 !important; color:#1e293b; }
 :root[data-theme="light"] .range-table tr.totals td { border-top-color:#cbd5e1 !important; }
-:root[data-theme="light"] .activity-log { background:#0f172a !important; border-color:#1e293b !important; color:#cbd5e1 !important; }
-:root[data-theme="light"] .activity-log-empty { color:#64748b !important; }
+:root[data-theme="light"] .rp-block { background:#f8fafc !important; border-color:#e2e8f0 !important; }
+:root[data-theme="light"] .rp-row { color:#1e293b !important; }
+:root[data-theme="light"] .rp-counter { color:#64748b !important; }
+:root[data-theme="light"] .rp-bar { background:#e2e8f0 !important; }
+:root[data-theme="light"] .rp-spinner { border-color:#e2e8f0; border-top-color:#0ea5e9; }
+:root[data-theme="light"] .rp-elapsed { color:#94a3b8 !important; }
 :root[data-theme="light"] .empty { color:#94a3b8 !important; }
 :root[data-theme="light"] .copy-btn { background:#ecfdf5 !important; color:#047857 !important; border-color:#10b981 !important; }
 :root[data-theme="light"] .copy-btn:hover { background:#a7f3d0 !important; }
@@ -408,10 +417,7 @@ ${buildSidebar('replay', false)}
       </div>
       <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
     </div>
-    <div id="range-progress" style="display:none;"></div>
-    <div id="activity-log" class="activity-log" style="display:none;">
-      <div class="activity-log-empty">Activity log will stream here while the replay runs…</div>
-    </div>
+    <div id="range-progress" class="rp-block" style="display:none;"></div>
     <div id="range-result" style="margin-top:12px;"></div>
   </div>
 
@@ -1225,71 +1231,8 @@ async function runReplay(date, mode, sessionId, btn) {
   refreshPreflight();
 }
 
-// ── Live activity log polling ──────────────────────────────────────────────
-let _logPollTimer    = null;
-let _logPollFromIdx  = null;  // index marker — set on poll start so we only see new entries
-let _logBuf          = [];    // collected log entries for the copy button
-
-function classifyLogLine(text) {
-  if (!text) return '';
-  if (/❌|🚨|error/i.test(text))           return 'err';
-  if (/⚠️|warn|skip/i.test(text))          return 'warn';
-  if (/✅|🛒|🎯|entry|sold|exit|profit/i.test(text)) return 'ok';
-  return '';
-}
-
-async function pollLogs() {
-  try {
-    const r = await fetch('/logs/data?from=' + _logPollFromIdx + '&limit=200', { cache: 'no-store' });
-    const data = await r.json();
-    if (!data || !Array.isArray(data.logs)) return;
-    const pane = document.getElementById('activity-log');
-    if (data.logs.length > 0) {
-      const wasEmpty = pane.querySelector('.activity-log-empty');
-      if (wasEmpty) pane.innerHTML = '';
-      for (const entry of data.logs) {
-        _logBuf.push(entry);
-        const div = document.createElement('div');
-        const text = typeof entry === 'string' ? entry : (entry && entry.msg ? entry.msg : JSON.stringify(entry));
-        div.className = 'log-line ' + classifyLogLine(text);
-        div.textContent = text;
-        pane.appendChild(div);
-      }
-      // Cap at last 500 lines in the DOM to keep it light
-      while (pane.childNodes.length > 500) pane.removeChild(pane.firstChild);
-      pane.scrollTop = pane.scrollHeight;
-    }
-    _logPollFromIdx = data.from + data.logs.length;
-  } catch (_) { /* ignore poll errors */ }
-}
-
-async function startLogPolling() {
-  _logBuf = [];
-  // Get current total so we only see entries from this run forward
-  try {
-    const r = await fetch('/logs/data?from=0&limit=1', { cache: 'no-store' });
-    const data = await r.json();
-    _logPollFromIdx = (data && typeof data.total === 'number') ? data.total : 0;
-  } catch (_) {
-    _logPollFromIdx = 0;
-  }
-  const pane = document.getElementById('activity-log');
-  pane.style.display = 'block';
-  pane.innerHTML = '<div class="activity-log-empty">Waiting for log lines…</div>';
-  if (_logPollTimer) clearInterval(_logPollTimer);
-  _logPollTimer = setInterval(pollLogs, 1000);
-  // Kick one immediately so the user sees something fast
-  pollLogs();
-}
-
-function stopLogPolling() {
-  if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null; }
-  // One final poll so we capture the last few lines
-  pollLogs();
-}
-
 // Builds a single text blob with everything I'd need to debug a divergence:
-// result summary + per-session trade details + recent activity log.
+// result summary + per-session trade details.
 function buildDiagnosticBlob(context, rows) {
   const lines = [];
   lines.push('===== REPLAY DIAGNOSTIC =====');
@@ -1321,12 +1264,6 @@ function buildDiagnosticBlob(context, rows) {
     }
     lines.push('');
   });
-
-  lines.push('----- ACTIVITY LOG (' + _logBuf.length + ' lines) -----');
-  for (const entry of _logBuf) {
-    const text = typeof entry === 'string' ? entry : (entry && entry.msg ? entry.msg : JSON.stringify(entry));
-    lines.push(text);
-  }
 
   return lines.join('\\n');
 }
@@ -1483,33 +1420,53 @@ function renderRangeResult(rows, context) {
     return;
   }
 
-  let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0, okCount = 0, simBetter = 0, simWorse = 0, totDPnl = 0;
+  // Track baseline and sim independently so a row counts even if one side is
+  // missing (e.g. swing-paper has no canonical record for these dates → only
+  // sim totals are valid). Delta counters only iterate over rows where both
+  // sides are ok, since cmpDelta needs both.
+  let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0;
+  let bOkCount = 0, sOkCount = 0, bothOkCount = 0;
+  let simBetter = 0, simWorse = 0, totDPnl = 0;
   for (const r of rows) {
-    if (!r.baseline || !r.baseline.ok || !r.sim || !r.sim.ok) continue;
-    okCount++;
-    totBPnl += (r.baseline.sessionPnl || 0);
-    totSPnl += (r.sim.sessionPnl      || 0);
-    totBTrd += (r.baseline.tradeCount || 0);
-    totSTrd += (r.sim.tradeCount      || 0);
-    const d = cmpDelta(r.baseline.sessionPnl, r.sim.sessionPnl);
-    totDPnl += d;
-    if (d >  0.005) simBetter++;
-    else if (d < -0.005) simWorse++;
+    const bOk = r.baseline && r.baseline.ok;
+    const sOk = r.sim && r.sim.ok;
+    if (bOk) {
+      bOkCount++;
+      totBPnl += (r.baseline.sessionPnl || 0);
+      totBTrd += (r.baseline.tradeCount || 0);
+    }
+    if (sOk) {
+      sOkCount++;
+      totSPnl += (r.sim.sessionPnl  || 0);
+      totSTrd += (r.sim.tradeCount  || 0);
+    }
+    if (bOk && sOk) {
+      bothOkCount++;
+      const d = cmpDelta(r.baseline.sessionPnl, r.sim.sessionPnl);
+      totDPnl += d;
+      if (d >  0.005) simBetter++;
+      else if (d < -0.005) simWorse++;
+    }
   }
   // Aggregate delta is the sum of per-session deltas (so 0-result replays
   // contribute 0), NOT totSPnl − totBPnl which would re-introduce the
   // avoided-loss credit cmpDelta() suppresses.
   const dPnl = totDPnl;
-  const dTrd = totSTrd - totBTrd;
+  const dTrd = (bothOkCount > 0) ? (totSTrd - totBTrd) : 0;
+  const hasBaseline = bOkCount > 0;
+  const hasDelta    = bothOkCount > 0;
 
   const colSnapshot =
     '<div class="cmp-col">' +
       '<div class="cmp-label">Live paper trade (baseline)</div>' +
-      '<div class="cmp-pnl ' + (totBPnl >= 0 ? 'positive' : 'negative') + '">' + (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) + '</div>' +
-      '<div class="cmp-meta">' +
-        '<div class="cmp-meta-row"><span>Total trades</span><span>' + totBTrd + '</span></div>' +
-        '<div class="cmp-meta-row"><span>Sessions</span><span>' + okCount + '</span></div>' +
-      '</div>' +
+      (hasBaseline
+        ? '<div class="cmp-pnl ' + (totBPnl >= 0 ? 'positive' : 'negative') + '">' + (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) + '</div>' +
+          '<div class="cmp-meta">' +
+            '<div class="cmp-meta-row"><span>Total trades</span><span>' + totBTrd + '</span></div>' +
+            '<div class="cmp-meta-row"><span>Sessions</span><span>' + bOkCount + '</span></div>' +
+          '</div>'
+        : '<div class="cmp-pnl neutral">—</div>' +
+          '<div class="cmp-meta"><div class="cmp-meta-row"><span>No canonical record on disk for these sessions.</span></div></div>') +
     '</div>';
   const colSim =
     '<div class="cmp-col">' +
@@ -1517,28 +1474,38 @@ function renderRangeResult(rows, context) {
       '<div class="cmp-pnl ' + (totSPnl >= 0 ? 'positive' : 'negative') + '">' + (totSPnl >= 0 ? '+' : '') + '₹' + totSPnl.toFixed(2) + '</div>' +
       '<div class="cmp-meta">' +
         '<div class="cmp-meta-row"><span>Total trades</span><span>' + totSTrd + '</span></div>' +
-        '<div class="cmp-meta-row"><span>Sessions</span><span>' + okCount + '</span></div>' +
+        '<div class="cmp-meta-row"><span>Sessions</span><span>' + sOkCount + '</span></div>' +
       '</div>' +
     '</div>';
-  const colDelta =
-    '<div class="cmp-col delta">' +
-      '<div class="cmp-label">Aggregate delta</div>' +
-      '<div class="cmp-pnl ' + (Math.abs(dPnl) < 0.005 ? 'neutral' : (dPnl > 0 ? 'positive' : 'negative')) + '">' +
-        deltaArrow(dPnl) + ' ' + fmtRupee(dPnl) +
-      '</div>' +
-      '<div class="cmp-meta">' +
-        '<div class="cmp-meta-row delta-row"><span>Trades</span>' +
-          '<span class="' + deltaClass(dTrd) + '">' + deltaArrow(dTrd) + ' ' + (dTrd > 0 ? '+' : '') + dTrd + '</span></div>' +
-        '<div class="cmp-meta-row delta-row"><span>Sessions improved</span><span class="cmp-delta-up">' + simBetter + '</span></div>' +
-        '<div class="cmp-meta-row delta-row"><span>Sessions regressed</span><span class="cmp-delta-down">' + simWorse + '</span></div>' +
-      '</div>' +
-    '</div>';
+  const colDelta = hasDelta
+    ? '<div class="cmp-col delta">' +
+        '<div class="cmp-label">Aggregate delta</div>' +
+        '<div class="cmp-pnl ' + (Math.abs(dPnl) < 0.005 ? 'neutral' : (dPnl > 0 ? 'positive' : 'negative')) + '">' +
+          deltaArrow(dPnl) + ' ' + fmtRupee(dPnl) +
+        '</div>' +
+        '<div class="cmp-meta">' +
+          '<div class="cmp-meta-row delta-row"><span>Trades</span>' +
+            '<span class="' + deltaClass(dTrd) + '">' + deltaArrow(dTrd) + ' ' + (dTrd > 0 ? '+' : '') + dTrd + '</span></div>' +
+          '<div class="cmp-meta-row delta-row"><span>Sessions improved</span><span class="cmp-delta-up">' + simBetter + '</span></div>' +
+          '<div class="cmp-meta-row delta-row"><span>Sessions regressed</span><span class="cmp-delta-down">' + simWorse + '</span></div>' +
+        '</div>' +
+      '</div>'
+    : '<div class="cmp-col delta">' +
+        '<div class="cmp-label">Aggregate delta</div>' +
+        '<div class="cmp-pnl neutral">—</div>' +
+        '<div class="cmp-meta"><div class="cmp-meta-row"><span>Need a baseline to compare.</span></div></div>' +
+      '</div>';
 
   const verdict =
-    okCount === 0 ? 'All runs failed — see per-session table below.' :
-    Math.abs(dPnl) < 0.005 ? 'No net change — your settings produce the same aggregate P&L on these days.' :
-    dPnl > 0 ? 'Across these ' + okCount + ' sessions, replay is <strong>better</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').' :
-                'Across these ' + okCount + ' sessions, replay is <strong>worse</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
+    sOkCount === 0
+      ? 'All runs failed — see per-session table below.'
+      : !hasBaseline
+        ? 'No baseline available for these sessions — showing replay-only totals (' + sOkCount + ' session' + (sOkCount === 1 ? '' : 's') + ', ' + totSTrd + ' trades, ' + fmtRupee(totSPnl) + ').'
+        : Math.abs(dPnl) < 0.005
+          ? 'No net change — your settings produce the same aggregate P&L on these days.'
+          : dPnl > 0
+            ? 'Across these ' + bothOkCount + ' sessions, replay is <strong>better</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').'
+            : 'Across these ' + bothOkCount + ' sessions, replay is <strong>worse</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
 
   let html = headerLine;
   html += '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
@@ -1568,14 +1535,17 @@ function renderRangeResult(rows, context) {
       '<td class="num ' + (dT == null ? '' : deltaClass(dT)) + '">' + (dT == null ? '–' : (dT > 0 ? '+' : '') + dT) + '</td>' +
       '</tr>';
   }
+  const totalsLabel = hasBaseline
+    ? 'Totals (' + bothOkCount + ' compared / ' + sOkCount + ' replayed)'
+    : 'Totals (' + sOkCount + ' replayed, no baseline)';
   html += '<tr class="totals">' +
-    '<td colspan="3">Totals (' + okCount + ' sessions)</td>' +
-    '<td class="num">' + (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) + '</td>' +
-    '<td class="num">' + totBTrd + '</td>' +
+    '<td colspan="3">' + totalsLabel + '</td>' +
+    '<td class="num">' + (hasBaseline ? (totBPnl >= 0 ? '+' : '') + '₹' + totBPnl.toFixed(2) : '–') + '</td>' +
+    '<td class="num">' + (hasBaseline ? totBTrd : '–') + '</td>' +
     '<td class="num">' + (totSPnl >= 0 ? '+' : '') + '₹' + totSPnl.toFixed(2) + '</td>' +
     '<td class="num">' + totSTrd + '</td>' +
-    '<td class="num ' + deltaClass(dPnl) + '">' + fmtRupee(dPnl) + '</td>' +
-    '<td class="num ' + deltaClass(dTrd) + '">' + (dTrd > 0 ? '+' : '') + dTrd + '</td>' +
+    '<td class="num ' + (hasDelta ? deltaClass(dPnl) : '') + '">' + (hasDelta ? fmtRupee(dPnl) : '–') + '</td>' +
+    '<td class="num ' + (hasDelta ? deltaClass(dTrd) : '') + '">' + (hasDelta ? ((dTrd > 0 ? '+' : '') + dTrd) : '–') + '</td>' +
   '</tr>';
   html += '</tbody></table>';
 
@@ -1684,15 +1654,9 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   const progress = document.getElementById('range-progress');
   const resultDiv = document.getElementById('range-result');
   progress.style.display = 'block';
-  progress.className = 'range-progress';
+  progress.className = 'rp-block';
   resultDiv.innerHTML = '';
-  // Scroll the range card into view so the per-row button user sees the
-  // activity log + result rendering, not just a frozen button at the bottom.
   document.getElementById('range-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  // Start live activity log streaming so the user can see strategy output
-  // (and capture it via the Copy button after the run).
-  await startLogPolling();
 
   const rows = [];
   const t0 = Date.now();
@@ -1709,12 +1673,22 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   // Live-update the elapsed time every second so the user sees progress
   // even while a single API call is in flight (each baseline+sim pass can
   // take 15-60s for a full session that actually trades).
-  let _stepLabel = '';
-  const tickProgress = () => {
+  let _curDate = '';
+  let _curIdx  = 0;
+  const renderProgress = () => {
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    progress.innerHTML = _stepLabel + ' (' + elapsed + 's total elapsed)';
+    const pct = sessions.length ? Math.min(100, (_curIdx / sessions.length) * 100) : 0;
+    progress.innerHTML =
+      '<div class="rp-row">' +
+        '<span class="rp-spinner"></span>' +
+        '<span class="rp-current">Processing ' + (_curDate || '…') + '</span>' +
+        '<span class="rp-counter">' + _curIdx + ' / ' + sessions.length + '</span>' +
+      '</div>' +
+      '<div class="rp-bar"><div class="rp-bar-fill" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<div class="rp-elapsed">' + elapsed + 's elapsed</div>';
   };
-  const progressTimer = setInterval(tickProgress, 1000);
+  renderProgress();
+  const progressTimer = setInterval(renderProgress, 1000);
 
   let cancelled = false;
   try {
@@ -1723,12 +1697,9 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     const s = sessions[i];
     const idx = i + 1;
 
-    // ONE replay per session (snapshot or simulator). Baseline = live paper
-    // trade from canonical paper_trades.json, loaded server-side and returned
-    // as sim.canonical on the run response.
-    const modeWord = useCurrentSettings ? 'your settings' : 'snapshot settings';
-    _stepLabel = '[' + idx + '/' + sessions.length + '] ' + s.date + ' · ' + s.sessionId + ' — replaying with ' + modeWord + '…';
-    tickProgress();
+    _curDate = s.date;
+    _curIdx  = idx;
+    renderProgress();
     let sim = null;
     try {
       sim = await callReplayApi(s.date, s.mode, s.sessionId, useCurrentSettings);
@@ -1756,7 +1727,6 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   }
   } finally {
     clearInterval(progressTimer);
-    stopLogPolling();
   }
 
   // After the run, attach Copy + Download buttons so the user can share
@@ -1780,13 +1750,21 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   }
 
   const total = ((Date.now() - t0) / 1000).toFixed(1);
-  if (aborted) {
-    progress.innerHTML = '⛔ Aborted at session ' + (rows.length + 1) + '/' + sessions.length + ' — a paper or live session was started during the run. ' + rows.length + ' sessions completed in ' + total + 's.';
-  } else if (cancelled) {
-    progress.innerHTML = '🛑 Cancelled — ' + rows.length + ' of ' + sessions.length + ' sessions completed in ' + total + 's.';
-  } else {
-    progress.innerHTML = '✅ Done — ' + sessions.length + ' sessions in ' + total + 's.';
-  }
+  const finalIcon = aborted ? '⛔' : cancelled ? '🛑' : '✅';
+  const finalText = aborted
+    ? 'Aborted at session ' + (rows.length + 1) + '/' + sessions.length + ' — a paper or live session was started during the run.'
+    : cancelled
+    ? 'Cancelled — ' + rows.length + ' of ' + sessions.length + ' sessions completed.'
+    : 'Done — ' + sessions.length + ' sessions completed.';
+  progress.className = 'rp-block ' + (aborted || cancelled ? 'rp-cancelled' : 'rp-done');
+  progress.innerHTML =
+    '<div class="rp-row">' +
+      '<span style="font-size:1rem;">' + finalIcon + '</span>' +
+      '<span class="rp-current">' + finalText + '</span>' +
+      '<span class="rp-counter">' + rows.length + ' / ' + sessions.length + '</span>' +
+    '</div>' +
+    '<div class="rp-bar"><div class="rp-bar-fill" style="width:' + ((rows.length / Math.max(1, sessions.length)) * 100).toFixed(1) + '%"></div></div>' +
+    '<div class="rp-elapsed">' + total + 's total</div>';
   const cancelBtnEnd = document.getElementById('range-cancel-btn');
   if (cancelBtnEnd) cancelBtnEnd.style.display = 'none';
   btn.disabled = false;
