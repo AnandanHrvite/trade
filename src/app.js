@@ -2586,11 +2586,10 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getStraddleMode && sharedSocketState.getStraddleMode()) activeModes.push(sharedSocketState.getStraddleMode());
 
     if (activeModes.length === 0) {
+      // No Telegram here: with no live positions in play there is nothing the
+      // user needs to verify on a broker dashboard, and PM2 reloads on every
+      // deploy were producing a stream of identical SHUTDOWN messages.
       console.log("✅ [SHUTDOWN] No active trading modes — clean exit.");
-      try {
-        const mu = process.memoryUsage();
-        sendTelegramSync(`ℹ️ SHUTDOWN: Bot received ${signal} (no active modes). RSS=${(mu.rss/1048576).toFixed(0)}MB heap=${(mu.heapUsed/1048576).toFixed(0)}MB uptime=${Math.floor(process.uptime())}s`);
-      } catch (_) {}
       process.exit(0);
       return;
     }

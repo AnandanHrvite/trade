@@ -19,6 +19,7 @@
 
 const { notifyConsolidatedDayReport } = require("./notify");
 const { loadAllTrades } = require("../routes/consolidation");
+const { isNonTradingDay } = require("./nseHolidays");
 
 function collectTodayStats(istDate) {
   const byMode = {
@@ -77,11 +78,17 @@ function scheduleNext() {
   if (_timer) clearTimeout(_timer);
   const wait = msUntilNextReportIST();
   _timer = setTimeout(async () => {
-    // Only fire on weekdays (Mon–Fri IST). Holidays are a nice-to-have; skipped
-    // for now because a muted Telegram toggle already covers them.
+    // Skip weekends and NSE holidays — no trading session means the report
+    // is just a row of zeros, which the user does not want.
     const istNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    const dow = istNow.getDay(); // 0=Sun, 6=Sat
-    if (dow !== 0 && dow !== 6) {
+    try {
+      if (!(await isNonTradingDay(istNow))) {
+        sendConsolidatedReport();
+      } else {
+        console.log("[EOD] Non-trading day (weekend/holiday) — skipping consolidated report.");
+      }
+    } catch (err) {
+      console.warn(`[EOD] holiday check failed (${err.message}) — sending report anyway.`);
       sendConsolidatedReport();
     }
     scheduleNext(); // reschedule for next day
