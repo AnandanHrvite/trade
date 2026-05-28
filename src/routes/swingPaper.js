@@ -968,11 +968,14 @@ async function onCandleClose(candle) {
       } else if (_pos.spotAtEntry) {
         _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
       }
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
-      if (_tsReason) {
-        log(`⏳ [PAPER] ${_tsReason}`);
-        simulateSell(candle.close, _tsReason, candle.close);
-        return;
+      // Time-stop applies only in candle mode — psar/ema modes own SL fully.
+      if ((process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
+        const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+        if (_tsReason) {
+          log(`⏳ [PAPER] ${_tsReason}`);
+          simulateSell(candle.close, _tsReason, candle.close);
+          return;
+        }
       }
     }
 
@@ -1026,11 +1029,14 @@ async function onCandleClose(candle) {
         log(`📐 [PAPER] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
-    const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
-    const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
-    if (_beMove >= _bePts) {
-      if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
-      if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
+    // Breakeven bump applies only in candle mode — psar/ema modes own SL fully.
+    if (SL_MODE === "candle") {
+      const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
+      const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
+      if (_beMove >= _bePts) {
+        if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
+        if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); log(`✅ [PAPER] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
+      }
     }
     if (_flipExit) {
       // EMA mode: skip touch-back on entry bar (the entry condition trivially
@@ -1451,7 +1457,9 @@ function onTick(tick) {
 
   // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
   // Once trade moves +25pt in favor, SL moves to entry price = zero risk.
-  if (ptState.position && ptState.position.stopLoss !== null) {
+  // Applies only in candle mode — psar/ema modes own SL fully.
+  if (ptState.position && ptState.position.stopLoss !== null &&
+      (process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
     const _bePos = ptState.position;
     const _bePts = parseFloat(process.env.BREAKEVEN_PTS || "25");
     if (_bePos.side === "CE") {

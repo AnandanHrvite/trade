@@ -1133,11 +1133,14 @@ async function onCandleClose(candle) {
     } else if (_pos.spotAtEntry) {
       _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
     }
-    const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
-    if (_tsReason) {
-      log(`⏳ [LIVE] ${_tsReason}`);
-      await squareOff(candle.close, _tsReason);
-      return;
+    // Time-stop applies only in candle mode — psar/ema modes own SL fully.
+    if ((process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
+      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
+      if (_tsReason) {
+        log(`⏳ [LIVE] ${_tsReason}`);
+        await squareOff(candle.close, _tsReason);
+        return;
+      }
     }
   }
 
@@ -1172,11 +1175,14 @@ async function onCandleClose(candle) {
         log(`📐 [LIVE] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
-    const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
-    const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
-    if (_beMove >= _bePts) {
-      if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
-      if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
+    // Breakeven bump applies only in candle mode — psar/ema modes own SL fully.
+    if (SL_MODE === "candle") {
+      const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
+      const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
+      if (_beMove >= _bePts) {
+        if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
+        if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
+      }
     }
     if (_changed) {
       saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
@@ -1779,7 +1785,9 @@ function onSpotTick(tick) {
   // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
   // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
   // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
-  if (tradeState.position && tradeState.position.stopLoss !== null) {
+  // Applies only in candle mode — psar/ema modes own SL fully.
+  if (tradeState.position && tradeState.position.stopLoss !== null &&
+      (process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
     const _bePos = tradeState.position;
     const _bePts = parseFloat(process.env.BREAKEVEN_PTS || "25");
     if (_bePos.side === "CE") {

@@ -358,23 +358,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
       // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
       // Once trade moves 25pt in favor, SL moves to entry price (zero risk).
-      // This is MUCH better than the 50% rule because:
-      // - 50% rule killed trades on normal noise (exits at fixed reference)
-      // - Breakeven stop only fires after the trade proves itself (+25pt move)
-      // - Trades that go +25pt then reverse = breakeven (not a loss)
-      // - Trades that never reach +25pt = hit initial SL (max 80pt loss)
-      const BREAKEVEN_THRESHOLD = parseFloat(process.env.BREAKEVEN_PTS || "25");
-      if (position.side === "CE") {
-        const ceMove = (position.bestPrice || candle.close) - position.entryPrice;
-        if (ceMove >= BREAKEVEN_THRESHOLD && position.stopLoss < position.entryPrice) {
-          if (_verbose) console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
-          position.stopLoss = position.entryPrice;
-        }
-      } else {
-        const peMove = position.entryPrice - (position.bestPrice || candle.close);
-        if (peMove >= BREAKEVEN_THRESHOLD && position.stopLoss > position.entryPrice) {
-          if (_verbose) console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
-          position.stopLoss = position.entryPrice;
+      // Applies only in candle mode — psar/ema modes own SL fully.
+      if ((process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
+        const BREAKEVEN_THRESHOLD = parseFloat(process.env.BREAKEVEN_PTS || "25");
+        if (position.side === "CE") {
+          const ceMove = (position.bestPrice || candle.close) - position.entryPrice;
+          if (ceMove >= BREAKEVEN_THRESHOLD && position.stopLoss < position.entryPrice) {
+            if (_verbose) console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+            position.stopLoss = position.entryPrice;
+          }
+        } else {
+          const peMove = position.entryPrice - (position.bestPrice || candle.close);
+          if (peMove >= BREAKEVEN_THRESHOLD && position.stopLoss > position.entryPrice) {
+            if (_verbose) console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
+            position.stopLoss = position.entryPrice;
+          }
         }
       }
 
