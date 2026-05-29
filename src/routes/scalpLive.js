@@ -686,6 +686,12 @@ async function onCandleClose(bar) {
 
     const window = [...state.candles];
 
+    // BB re-entry → failed breakout: price closed back inside the band, exit now
+    if (window.length >= 15 && scalpStrategy.bbReentryExit(window, state.position.side)) {
+      squareOff(bar.close, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+      return;
+    }
+
     // PSAR flip → exit on reversal signal (trend exit; profit lock handles giveback per-tick)
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
       squareOff(bar.close, "PSAR flip").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));

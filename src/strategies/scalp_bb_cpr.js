@@ -12,8 +12,10 @@
  *   1. Profit lock (PnL space) — once peak P&L ≥ SCALP_PROFIT_LOCK_TRIGGER (₹), exit when open P&L
  *      gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; banks small scalp profits.
  *      This is the ONLY intra-tick exit.
- *   2. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
- *   3. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
+ *   2. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
+ *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
+ *   3. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
+ *   4. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
 const { BollingerBands, RSI, PSAR } = require("technicalindicators");
@@ -284,6 +286,25 @@ function isPSARFlip(candles, side) {
   }
 }
 
+// ── BB re-entry exit (failed-breakout) ──────────────────────────────────────
+// On candle close, if price has closed back INSIDE the band the breakout that
+// triggered the entry has failed → exit (faster than waiting for the PSAR flip).
+//   CE entered on close ≥ BB.upper → exit when close < BB.upper.
+//   PE entered on close ≤ BB.lower → exit when close > BB.lower.
+// Gated by SCALP_BB_REENTRY_EXIT (default on). Uses the same BB inputs as entry.
+function bbReentryExit(candles, side) {
+  if (cfg("SCALP_BB_REENTRY_EXIT", "true") !== "true") return false;
+  var BB_PERIOD = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
+  var BB_STDDEV = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
+  var closes = candles.map(function(c) { return c.close; });
+  var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+  if (bbArr.length < 1) return false;
+  var bb = bbArr[bbArr.length - 1];
+  var close = candles[candles.length - 1].close;
+  if (side === "CE") return close < bb.upper;   // closed back below the upper band
+  return close > bb.lower;                        // PE: closed back above the lower band
+}
+
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, isPSARFlip, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, isPSARFlip, bbReentryExit, reset };

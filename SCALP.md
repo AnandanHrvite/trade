@@ -52,12 +52,13 @@ The strategy is **PSAR-flip driven** for the trend exit, with a **profit lock** 
 ## 5. Exit rules
 
 1. **Profit lock** — per tick, once peak P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER`, exit when open P&L ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Banks small profits; ratchets for runners. The only intra-tick exit.
-2. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
-3. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
-4. **Daily kill-switch / max trades** — see risk guards.
-5. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
+2. **BB re-entry (failed breakout)** — on candle close, if price has closed **back inside the band** the breakout that triggered the entry has failed → exit. CE: `close < BB.upper`; PE: `close > BB.lower`. Gated by `SCALP_BB_REENTRY_EXIT` (default on). Cuts loss bleed before the slower PSAR flip.
+3. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
+4. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
+5. **Daily kill-switch / max trades** — see risk guards.
+6. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
 
-There is **no** break-even-to-entry snap, no percentage spot-trail, no time-stop, no pause-override, and no PSAR/prev-candle SL trail — the exit is the per-tick profit lock plus the candle-close PSAR flip.
+There is **no** break-even-to-entry snap, no percentage spot-trail, no time-stop, no pause-override, and no PSAR/prev-candle SL trail — the exits are the per-tick profit lock, the candle-close BB re-entry, and the candle-close PSAR flip.
 
 ## 6. Same-side cooldown
 

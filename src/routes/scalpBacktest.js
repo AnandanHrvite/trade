@@ -266,7 +266,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Profit lock  2. PSAR flip  3. EOD
+      // EXIT: 1. Profit lock  2. BB re-entry  3. PSAR flip  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
       // 1. PROFIT LOCK — the only intra-candle exit. Once peak P&L ≥ TRIGGER, exit when
@@ -279,12 +279,17 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = "Profit lock";
       }
 
-      // 2. PSAR flip — exit on reversal signal
+      // 2. BB re-entry — failed breakout: price closed back inside the band
+      if (!exitReason && scalpStrategy.bbReentryExit(window, position.side)) {
+        exitReason = "BB re-entry";
+      }
+
+      // 3. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
       }
 
-      // 3. EOD
+      // 4. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -1576,6 +1581,7 @@ function renderAnalytics(){
     var r = t.reason;
     // Normalize V6 exit reasons.
     if(r.indexOf('Profit lock')===0) r='Profit lock';
+    else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
@@ -1886,6 +1892,7 @@ function renderAnalytics(){
     lossTrades.forEach(function(t){
       var r=t.reason;
       if(r.indexOf('Profit lock')===0) r='Profit lock';
+      else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
       else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};

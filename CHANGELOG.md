@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — BB re-entry (failed-breakout) exit (V6.1)
+
+- **New candle-close exit: `SCALP_BB_REENTRY_EXIT` (default on).** After entry, if a candle closes **back inside** the Bollinger Band the breakout that triggered the trade has failed → exit immediately, rather than waiting for the slower PSAR flip. CE exits when `close < BB.upper`; PE exits when `close > BB.lower`. Targets the loss-bleed seen on replay (05-29 PE −₹3,236, 05-21 PE −₹1,455, 05-26 PE −₹1,695 all reversed back into the band before the PSAR flip fired). Order on candle close: profit lock (per-tick) → BB re-entry → PSAR flip → EOD. Toggleable so it can be A/B'd via `/replay`. Engine helper `scalpStrategy.bbReentryExit(window, side)`; applied across paper/live/backtest.
+
 ### SCALP — far-PSAR entry filter + profit lock (V6.1)
 
 - **Profit lock replaces the R-multiple break-even.** The V6 break-even snap (`0.7 × initial risk`) almost never armed, because the no-clamp PSAR SL made "risk" huge (often 100–400 pts) — so winners round-tripped to the candle-close PSAR flip (replay showed a +₹650 peak giving back to −₹1,187). New per-tick **profit lock** works in P&L space: once peak open P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER` (default ₹500), exit when open P&L falls below `SCALP_PROFIT_LOCK_PCT` (default 50) % of peak. The floor ratchets with the peak (peak ₹1000 → lock ₹500, peak ₹2000 → lock ₹1000), banking small scalp profits while letting runners ride to the PSAR flip. Removed `SCALP_BREAKEVEN_TRIGGER_R` / `SCALP_BREAKEVEN_OFFSET_PTS`.

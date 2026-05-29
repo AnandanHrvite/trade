@@ -104,6 +104,7 @@ const SETTINGS_SCHEMA = [
       // ── Profit lock (bank small scalp profits; the only intra-tick exit) ──
       { key: "SCALP_PROFIT_LOCK_TRIGGER", label: "Profit Lock Trigger (₹)", type: "number", min: 0, max: 5000, step: 100, effect: EFFECT.SESSION, desc: "Arm the profit lock once peak open P&L reaches this. Once armed, exit if P&L gives back below the lock %. 0 = disabled.", default: "500" },
       { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when open P&L falls below this % of the peak (ratchets up with peak). e.g. 50 → peak ₹1000 banks ₹500, peak ₹2000 banks ₹1000.", default: "50" },
+      { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit on candle close if price closes back inside the Bollinger Band (failed breakout) — cuts loss bleed before the slower PSAR flip.", default: "true" },
       // ── Risk management ──
       // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
       // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
@@ -558,7 +559,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
-  "SCALP_PROFIT_LOCK_TRIGGER", "SCALP_PROFIT_LOCK_PCT",
+  "SCALP_PROFIT_LOCK_TRIGGER", "SCALP_PROFIT_LOCK_PCT", "SCALP_BB_REENTRY_EXIT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
   "SCALP_SLIPPAGE_PTS",

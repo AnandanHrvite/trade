@@ -617,6 +617,12 @@ async function onCandleClose(bar) {
     // Use only completed candles (matches backtest logic)
     const window = [...state.candles];
 
+    // BB re-entry → failed breakout: price closed back inside the band, exit now
+    if (window.length >= 15 && scalpStrategy.bbReentryExit(window, state.position.side)) {
+      simulateSell(bar.close, "BB re-entry", bar.close);
+      return;
+    }
+
     // PSAR flip → exit on reversal signal (trend exit; profit lock handles giveback per-tick)
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
       simulateSell(bar.close, "PSAR flip", bar.close);
