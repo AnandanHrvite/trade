@@ -855,8 +855,40 @@ async function loadSessions() {
     setRangeDefaults();
     _populateModeFilter();
     renderSessions();
+    applyReplayDeepLink();
   } catch (e) {
     div.innerHTML = '<div class="empty">Fetch failed: ' + e.message + '</div>';
+  }
+}
+
+// Deep-link entry from the per-session "View chart" links on the history pages:
+//   /replay?from=YYYY-MM-DD&to=YYYY-MM-DD&mode=swing-paper&run=1
+// Prefills the date-range + mode and (optionally) auto-runs the replay so the
+// candlestick chart + trade markers render without manual setup. Runs once.
+let _deepLinkApplied = false;
+function applyReplayDeepLink() {
+  if (_deepLinkApplied) return;
+  _deepLinkApplied = true;
+  let p;
+  try { p = new URLSearchParams(window.location.search); } catch (_) { return; }
+  const from = p.get('from'), to = p.get('to'), mode = p.get('mode'), run = p.get('run');
+  if (!from && !to && !mode) return;
+
+  if (mode) {
+    const ms = document.getElementById('range-mode');
+    if (ms) {
+      const ok = Array.prototype.some.call(ms.options, o => o.value === mode);
+      if (ok) ms.value = mode;
+    }
+  }
+  if (from && _rangeFromFp) _rangeFromFp.setDate(from, true);
+  if (to && _rangeToFp)     _rangeToFp.setDate(to, true);
+  const presetEl = document.getElementById('range-preset');
+  if (presetEl) presetEl.value = '';
+
+  if (run === '1') {
+    const btn = document.getElementById('range-run-btn');
+    if (btn) setTimeout(() => runRange(btn), 0);
   }
 }
 

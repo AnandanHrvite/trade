@@ -1055,6 +1055,7 @@ function buildSessionCards(sessions, opts) {
   opts = opts || {};
   const emptyLabel = opts.emptyLabel || "Start paper trading to record your first session.";
   const filterField = opts.filterField || null; // when set, rows carry data-filter-group for live filtering
+  const replayMode = opts.replayMode || ""; // strategy mode for the "View chart" deep-link into /replay
   if (!sessions || sessions.length === 0) {
     return `<div style="text-align:center;padding:60px 24px;background:#07111f;border:0.5px solid #0e1e36;border-radius:12px;">
         <div style="font-size:3rem;margin-bottom:16px;">📭</div>
@@ -1114,6 +1115,7 @@ function buildSessionCards(sessions, opts) {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
+          ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${String(s.date).slice(0,10)}&to=${String(s.date).slice(0,10)}&mode=${replayMode}&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
           <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
           <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
         </div>
@@ -1189,7 +1191,7 @@ function renderHistoryPage(cfg) {
       </label>`;
   }
 
-  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel, filterField: filter && filter.field });
+  const sessionCards = buildSessionCards(sessions, { emptyLabel: cfg.emptyLabel, filterField: filter && filter.field, replayMode: (cfg.routePrefix || "").replace(/^\//, "") });
 
   return `<!DOCTYPE html>
 <html lang="en">

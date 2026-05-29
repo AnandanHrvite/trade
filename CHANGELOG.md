@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### HISTORY — per-session "View chart" link into Replay
+
+- **Each session card on all 5 paper history pages (Swing/Scalp/PA/ORB/Straddle) now has a 📈 View chart link** that opens the candlestick chart + EMA/SAR/RSI + entry/exit trade markers for that exact session in Replay — no manual date/mode setup. The link deep-links `/replay?from=…&to=…&mode=…&run=1`; Replay prefills the date range + strategy mode and auto-runs. Reuses the existing Replay rendering (no duplicated chart code). Opens in a new tab.
+
 ### SYSTEM — Cache Files browser (`/cache-files`)
 
 - **New System page to inspect, download, and clear every on-disk cache.** Groups each cache by purpose — Backtest Cache, Candle Cache, Recorded Ticks (`data/ticks/`), Replay Trades (snapshot + sim), and loose Root Data Files under `~/trading-data/` — with per-file **View** / **Download** / **Delete** and group-level **Download All** (`.tar.gz`) + **Delete All**, mirroring the Trade Logs UX (paging, double-confirm, light-theme). The canonical trade/skip JSONLs stay on `/trade-logs`; cache deletes here are safe (regenerated on demand).
