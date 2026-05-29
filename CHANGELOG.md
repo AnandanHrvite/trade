@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — added a wide points hard stop alongside the profit lock (V6.2.1)
+
+- **New `SCALP_STOP_LOSS_PTS` (default 30) — a per-tick catastrophic loss cap.** Exits if the trade moves N spot points against entry. Set **wide** so it never touches the normal small scalps; it only clips the deep adverse excursions on failed BB-break fades that previously bled to −100+ pts before the candle-close BB re-entry / PSAR flip could fire (the −₹1.9K/−₹2.4K losers). Points-based; reason `SL (Npts)`; arms the per-side SL cooldown. The profit lock (upside) and BB re-entry / PSAR flip are unchanged. Engine adds `hardStop()`; applied across paper/live/backtest/replay.
+- **Note:** an earlier attempt (V6.3) that *replaced* the profit lock with a fixed-points trailing stop + a tight −20 hard stop was reverted — it was asymmetric (winners cut to breakeven, losers took the full stop). This change keeps the winning V6.2 behaviour and only caps the tail.
+
 ### SCALP — profit lock switched to spot-POINTS (V6.2)
 
 - **Profit lock is now points-based, not ₹-based.** It tracks the favourable spot move since entry (PE = entry−price, CE = price−entry): once the peak favourable move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS` (default 25), it exits when the move gives back below `SCALP_PROFIT_LOCK_PCT`% of the peak (ratchets up: peak 100pts → lock 50pts). **Why:** the old ₹-based lock (a) exited far too early on tiny ₹ peaks, and (b) read option P&L that is *fake* on spot-proxy replay sessions (a PE that fell 89 pts could show −₹68), so it never locked the real move. Points are real even on those sessions. Renamed key `SCALP_PROFIT_LOCK_TRIGGER` (₹) → `SCALP_PROFIT_LOCK_TRIGGER_PTS` (points). Exit label is now `Profit lock (Npts)`. Applied across paper/live/backtest.

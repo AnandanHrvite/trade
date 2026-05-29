@@ -8,14 +8,17 @@
  *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
  *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
- * EXIT (profit lock + BB re-entry + PSAR flip):
+ * EXIT (profit lock + hard stop + BB re-entry + PSAR flip):
  *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ SCALP_PROFIT_LOCK_TRIGGER_PTS,
  *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
- *      so it is independent of option pricing. This is the ONLY intra-tick exit.
- *   2. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
+ *      so it is independent of option pricing. The per-tick upside exit.
+ *   2. Hard stop (spot POINTS) — catastrophic loss cap; exit once the trade moves
+ *      SCALP_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
+ *      adverse excursions on failed fades, not the normal small scalps. The per-tick downside cap.
+ *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
  *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
- *   3. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
- *   4. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
+ *   4. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
+ *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
 const { BollingerBands, RSI, PSAR } = require("technicalindicators");
@@ -264,6 +267,20 @@ function profitLock(favPts, peakFavPts) {
   return { hit: favPts <= floor, floor: floor };
 }
 
+// ── Hard stop (catastrophic loss cap, per-tick, spot POINTS) ─────────────────
+// Companion to the profit lock — caps the downside only. Exit once the trade has
+// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
+// so it never touches the normal small scalps — it only clips the deep adverse
+// excursions on failed BB-break fades that would otherwise bleed to −100+ pts
+// before the candle-close BB re-entry / PSAR flip fires. 0 disables.
+//   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
+// Returns { hit, stop }.
+function hardStop(favPts) {
+  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "30"));
+  if (stop <= 0 || favPts == null) return { hit: false, stop: null };
+  return { hit: favPts <= -stop, stop: stop };
+}
+
 // ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
 // The primary exit: on candle close, if SAR has crossed to the wrong side of price
 // the trend has flipped — exit the position.
@@ -309,4 +326,4 @@ function bbReentryExit(candles, side) {
 
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, isPSARFlip, bbReentryExit, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isPSARFlip, bbReentryExit, reset };

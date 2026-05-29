@@ -929,8 +929,8 @@
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
-      <strong style="color:var(--orange);">Profit Lock (the intra-tick exit)</strong>
-      <p style="font-size:0.85rem;">Per tick: once the peak favourable spot move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak. Floor ratchets up (peak 100pts &rarr; lock 50pts). Points-based. <code>TRIGGER=0</code> disables.</p>
+      <strong style="color:var(--orange);">Profit Lock + Hard Stop (the per-tick exits)</strong>
+      <p style="font-size:0.85rem;">Per tick, both spot-points based. <strong>Profit lock</strong> (upside): once the peak favourable move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak (floor ratchets up). <strong>Hard stop</strong> (downside): exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 30) against entry &mdash; a wide catastrophic cap that only clips deep failed-fade excursions. <code>0</code> disables each.</p>
     </div>
   </div>
   <div class="exit-item">
@@ -1016,7 +1016,7 @@
 
 <div class="card card-yellow">
   <h4 style="color:var(--yellow);">Bank small scalp profits; let runners ride</h4>
-  <p>V6.2 has no percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. Instead, the profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor; points-based, so it is independent of option pricing. The candle-close PSAR flip handles the rest.</p>
+  <p>No percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. The profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor. On the downside a <strong>wide hard stop</strong> (<code>SCALP_STOP_LOSS_PTS</code>, default 30) caps the catastrophic failed-fade losses without touching the small scalps. Both are points-based, so they are independent of option pricing. The candle-close BB re-entry / PSAR flip handle the rest.</p>
 </div>
 
 <table>
@@ -1024,6 +1024,7 @@
   <tbody>
     <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td>25</td><td>Arm the lock once the favourable spot move (points) reaches this. <code>0</code> disables.</td></tr>
     <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td>50</td><td>Once armed, exit when open P&amp;L falls below this % of the peak. Ratchets with the peak.</td></tr>
+    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td>30</td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
   </tbody>
 </table>
 
@@ -1484,6 +1485,7 @@
     <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
     <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) hits this. <code>0</code> disables.</td></tr>
     <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
+    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
     <tr><td><code>SCALP_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the band (failed breakout)</td></tr>
     <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
   </tbody>

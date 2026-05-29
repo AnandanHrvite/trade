@@ -582,7 +582,19 @@ function onTick(tick) {
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
-    // 1. PROFIT LOCK — the only intra-tick exit. Once peak favourable spot move ≥
+    // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
+    //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
+    //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.
+    {
+      const _hs = scalpStrategy.hardStop(_favPts);
+      if (_hs.hit) {
+        pos.slSource = "Stop Loss";
+        simulateSell(price, `SL (${_hs.stop}pts)`, price);
+        return;
+      }
+    }
+
+    // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
     //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
     //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
     {

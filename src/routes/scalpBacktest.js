@@ -150,7 +150,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   SL: PSAR flip exit + Profit lock | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Exit: profit lock + hard stop + BB re-entry + PSAR flip | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -268,31 +268,46 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Profit lock  2. BB re-entry  3. PSAR flip  4. EOD
+      // EXIT: 1. Hard stop  2. Profit lock  3. BB re-entry  4. PSAR flip  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. PROFIT LOCK — the only intra-candle exit. Once peak favourable spot move ≥
-      //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
-      //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
       const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-      const _lock = scalpStrategy.profitLock(_favClosePts, position.mfeSpotPts);
-      if (_lock.hit) {
-        position.slSource = "Profit Lock";
-        exitPrice  = candle.close;
-        exitReason = "Profit lock";
+
+      // 1. HARD STOP — catastrophic loss cap. Uses the bar's adverse extreme
+      //    (CE→low, PE→high) as a per-bar proxy for the per-tick paper logic; exits
+      //    at the stop level. Reason includes "SL" so it arms the per-side cooldown.
+      const _worstSpot   = position.side === "CE" ? candle.low : candle.high;
+      const _favWorstPts = (_worstSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+      const _hs = scalpStrategy.hardStop(_favWorstPts);
+      if (_hs.hit) {
+        position.slSource = "Stop Loss";
+        exitPrice  = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
+        exitReason = `SL (${_hs.stop}pts)`;
       }
 
-      // 2. BB re-entry — failed breakout: price closed back inside the band
+      // 2. PROFIT LOCK — the upside exit. Once peak favourable spot move ≥
+      //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
+      //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
+      if (!exitReason) {
+        const _lock = scalpStrategy.profitLock(_favClosePts, position.mfeSpotPts);
+        if (_lock.hit) {
+          position.slSource = "Profit Lock";
+          exitPrice  = candle.close;
+          exitReason = "Profit lock";
+        }
+      }
+
+      // 3. BB re-entry — failed breakout: price closed back inside the band
       if (!exitReason && scalpStrategy.bbReentryExit(window, position.side)) {
         exitReason = "BB re-entry";
       }
 
-      // 3. PSAR flip — exit on reversal signal
+      // 4. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
       }
 
-      // 4. EOD
+      // 5. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -1584,6 +1599,7 @@ function renderAnalytics(){
     var r = t.reason;
     // Normalize V6 exit reasons.
     if(r.indexOf('Profit lock')===0) r='Profit lock';
+    else if(r.indexOf('SL')===0) r='Stop loss';
     else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
@@ -1895,6 +1911,7 @@ function renderAnalytics(){
     lossTrades.forEach(function(t){
       var r=t.reason;
       if(r.indexOf('Profit lock')===0) r='Profit lock';
+      else if(r.indexOf('SL')===0) r='Stop loss';
       else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
       else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
