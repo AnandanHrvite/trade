@@ -1607,7 +1607,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 Exit: hard stop + trailing stop + PSAR flip \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
