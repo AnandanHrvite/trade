@@ -42,23 +42,21 @@ Timeframe: **3 or 5-min** candles via `SCALP_RESOLUTION` (default 5). BB and RSI
 
 Just the two RSI keys — there are no overbought/oversold caps. The **far-PSAR filter** (`SCALP_MAX_ENTRY_SL_PTS`, `0` disables) skips entries where a freshly-flipped SAR sits 100s of pts away (uncapped risk). Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). All valid signals enter at the `SCALP` strength tier.
 
-## 4. Stop loss & trailing stop
+## 4. Stop loss & profit lock
 
-The downside is capped by a **points hard stop**; the upside rides on a **points trailing stop** that ratchets up with the move and exits on a reversal. Both are per-tick and **spot-points based**, so they work even when option P&L is unavailable (spot-proxy sessions).
+The strategy is **PSAR-flip driven** for the trend exit, with a **profit lock** that banks small scalp gains.
 
-- **Initial SL = the PSAR value at entry** (no min/max clamp). It is used for risk sizing + display only; it is **not** the intra-tick stop. The real downside stop is the points hard stop below.
-- **Hard stop** (`SCALP_STOP_LOSS_PTS(20)`, `0` disables) — exit if the trade moves this many spot points against entry. Symmetric loss cap; arms the per-side SL cooldown.
-- **Trailing stop** (`SCALP_TRAIL_ARM_PTS(15)`, `0` disables trailing; `SCALP_TRAIL_GIVEBACK_PTS(15)`) — once the **peak** favourable move reaches the arm threshold, the stop trails `GIVEBACK` points behind the best (floor = peak − giveback) and exits when price retraces to it. The floor **ratchets up** with the peak (peak 100 / giveback 15 → exit at 85; peak 30 → exit at 15), so winners ride and reversals still bank most of the move.
+- **Initial SL = the PSAR value at entry** (no min/max clamp). At entry PSAR is always on the correct side and within `SCALP_MAX_ENTRY_SL_PTS`. It is used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
+- **Profit lock** (`SCALP_PROFIT_LOCK_TRIGGER_PTS(25)`, `0` disables; `SCALP_PROFIT_LOCK_PCT(50)`) — works in **spot points**, per-tick. Tracks the favourable spot move since entry (PE = entry−price, CE = price−entry). Once the **peak** favourable move reaches the trigger, exit as soon as it gives back below `PCT%` of the peak. The floor **ratchets up** with the peak (peak 100pts → lock 50pts; peak 200pts → lock 100pts at 50%). Points-based, so it works even when option P&L is unavailable (spot-proxy sessions). This is the **only** intra-tick exit.
 
 ## 5. Exit rules
 
-1. **Hard stop (spot points)** — per tick, exit if the trade moves ≥ `SCALP_STOP_LOSS_PTS` against entry. Symmetric loss cap; arms the SL cooldown. Points-based — independent of option pricing.
-2. **Trailing stop (spot points)** — per tick, once peak favourable spot move ≥ `SCALP_TRAIL_ARM_PTS`, exit when the favourable move ≤ `peak − SCALP_TRAIL_GIVEBACK_PTS`. Ratchets for runners.
-3. **BB re-entry (failed breakout)** — on candle close, if price has closed **back inside the band** the breakout that triggered the entry has failed → exit. CE: `close < BB.upper`; PE: `close > BB.lower`. Gated by `SCALP_BB_REENTRY_EXIT` (default on). Cuts loss bleed before the slower PSAR flip.
-4. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the trail.
-5. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
-6. **Daily kill-switch / max trades** — see risk guards.
-7. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
+1. **Profit lock (spot points)** — per tick, once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS`, exit when the favourable move ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Ratchets for runners. The only intra-tick exit. Points-based — independent of option pricing.
+2. **BB re-entry (failed breakout)** — on candle close, if price has closed **back inside the band** the breakout that triggered the entry has failed → exit. CE: `close < BB.upper`; PE: `close > BB.lower`. Gated by `SCALP_BB_REENTRY_EXIT` (default on). Cuts loss bleed before the slower PSAR flip.
+3. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
+4. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
+5. **Daily kill-switch / max trades** — see risk guards.
+6. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
 
 There is **no** break-even-to-entry snap, no percentage spot-trail, no time-stop, no pause-override, and no PSAR/prev-candle SL trail — the exits are the per-tick profit lock, the candle-close BB re-entry, and the candle-close PSAR flip.
 

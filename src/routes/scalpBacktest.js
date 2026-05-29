@@ -150,7 +150,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   Exit: hard stop + trailing stop + BB re-entry + PSAR flip | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   SL: PSAR flip exit + Profit lock | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -268,46 +268,31 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Hard stop  2. Trailing stop  3. BB re-entry  4. PSAR flip  5. EOD
+      // EXIT: 1. Profit lock  2. BB re-entry  3. PSAR flip  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
+      // 1. PROFIT LOCK — the only intra-candle exit. Once peak favourable spot move ≥
+      //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
+      //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
       const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-
-      // 1. HARD STOP (points) — symmetric loss cap. Uses the bar's adverse extreme
-      //    (CE→low, PE→high) as a per-bar proxy for the per-tick paper logic; exits
-      //    at the stop level. Reason includes "SL" so it arms the per-side cooldown.
-      const _worstSpot   = position.side === "CE" ? candle.low : candle.high;
-      const _favWorstPts = (_worstSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-      const _hs = scalpStrategy.hardStop(_favWorstPts);
-      if (_hs.hit) {
-        position.slSource = "Stop Loss";
-        exitPrice  = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
-        exitReason = `SL (${_hs.stop}pts)`;
+      const _lock = scalpStrategy.profitLock(_favClosePts, position.mfeSpotPts);
+      if (_lock.hit) {
+        position.slSource = "Profit Lock";
+        exitPrice  = candle.close;
+        exitReason = "Profit lock";
       }
 
-      // 2. TRAILING STOP (points) — ride + exit on reversal. Once peak favourable
-      //    spot move ≥ SCALP_TRAIL_ARM_PTS, trail SCALP_TRAIL_GIVEBACK_PTS behind the
-      //    best; exit when the close retraces past the trail (ratchets up).
-      if (!exitReason) {
-        const _trail = scalpStrategy.trailExit(_favClosePts, position.mfeSpotPts);
-        if (_trail.hit) {
-          position.slSource = "Trailing Stop";
-          exitPrice  = candle.close;
-          exitReason = `Trail (${_trail.floor.toFixed(0)}pts)`;
-        }
-      }
-
-      // 3. BB re-entry — failed breakout: price closed back inside the band
+      // 2. BB re-entry — failed breakout: price closed back inside the band
       if (!exitReason && scalpStrategy.bbReentryExit(window, position.side)) {
         exitReason = "BB re-entry";
       }
 
-      // 4. PSAR flip — exit on reversal signal
+      // 3. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
       }
 
-      // 5. EOD
+      // 4. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -1598,8 +1583,7 @@ function renderAnalytics(){
   trades.forEach(function(t){
     var r = t.reason;
     // Normalize V6 exit reasons.
-    if(r.indexOf('SL')===0) r='Stop loss';
-    else if(r.indexOf('Trail')===0) r='Trailing stop';
+    if(r.indexOf('Profit lock')===0) r='Profit lock';
     else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
@@ -1910,8 +1894,7 @@ function renderAnalytics(){
     var lrMap={};
     lossTrades.forEach(function(t){
       var r=t.reason;
-      if(r.indexOf('SL')===0) r='Stop loss';
-      else if(r.indexOf('Trail')===0) r='Trailing stop';
+      if(r.indexOf('Profit lock')===0) r='Profit lock';
       else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
       else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';

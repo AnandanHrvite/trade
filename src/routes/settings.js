@@ -101,10 +101,9 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
       { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where PSAR sits farther than this from close (a freshly-flipped SAR can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
-      // ── Exit: hard stop + trailing stop (points-based, ride then exit on reversal) ──
-      { key: "SCALP_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Hard loss cap — exit if the trade moves this many spot points against entry. The real downside stop (the shown PSAR SL is display/sizing only). Points-based. 0 = disabled.", default: "20" },
-      { key: "SCALP_TRAIL_ARM_PTS", label: "Trail Arm (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Start trailing once the favourable spot move (points) reaches this. Below it the position rides freely (only the hard stop protects). 0 = trailing disabled.", default: "15" },
-      { key: "SCALP_TRAIL_GIVEBACK_PTS", label: "Trail Giveback (pts)", type: "number", min: 1, max: 200, step: 1, effect: EFFECT.SESSION, desc: "Once armed, exit when price retraces this many points from the best (floor = peak − giveback, ratchets up). Smaller = banks sooner; larger = rides more but gives back more.", default: "15" },
+      // ── Profit lock (bank small scalp profits; the only intra-tick exit) ──
+      { key: "SCALP_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
+      { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
       { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit on candle close if price closes back inside the Bollinger Band (failed breakout) — cuts loss bleed before the slower PSAR flip.", default: "true" },
       // ── Risk management ──
       // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
@@ -560,7 +559,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
-  "SCALP_STOP_LOSS_PTS", "SCALP_TRAIL_ARM_PTS", "SCALP_TRAIL_GIVEBACK_PTS", "SCALP_BB_REENTRY_EXIT",
+  "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_BB_REENTRY_EXIT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
   "SCALP_SLIPPAGE_PTS",

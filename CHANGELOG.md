@@ -6,14 +6,6 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### SCALP — exit redesign: points hard stop + points trailing stop (V6.3)
-
-- **Replaced the %-of-peak profit lock with a fixed-points trailing stop and added a points hard stop.** Two per-tick, spot-points exits now drive the trade:
-  - **Hard stop** (`SCALP_STOP_LOSS_PTS`, default 20) — exit if the trade moves N points against entry. A symmetric loss cap that was previously **missing** (the only downside exits were BB re-entry / PSAR flip, neither a fixed cap, so losers could bleed). Arms the per-side SL cooldown.
-  - **Trailing stop** (`SCALP_TRAIL_ARM_PTS` default 15, `SCALP_TRAIL_GIVEBACK_PTS` default 15) — once the peak favourable move ≥ arm, trail `GIVEBACK` points behind the best (floor = peak − giveback, ratchets up) and exit on retrace. Rides the move and exits on a reversal, instead of banking tiny scalps.
-- **Why:** the %-of-peak lock was unintuitive and, at a high `PCT`, exited on a ~2-point pullback from a small peak — slicing one big move into many tiny re-entries instead of riding it. A fixed-points trail matches "ride while it goes my way, exit when it turns N points," and the hard stop caps the loss side the user asked for.
-- Removed keys `SCALP_PROFIT_LOCK_TRIGGER_PTS` / `SCALP_PROFIT_LOCK_PCT`. Exit labels are now `SL (Npts)` (hard stop) / `Trail (Npts)` (trailing stop). Engine helper `profitLock()` replaced by `hardStop()` + `trailExit()`. Applied across paper (canonical), live, backtest, replay; SCALP.md / README / .env.example / docs updated.
-
 ### SCALP — profit lock switched to spot-POINTS (V6.2)
 
 - **Profit lock is now points-based, not ₹-based.** It tracks the favourable spot move since entry (PE = entry−price, CE = price−entry): once the peak favourable move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS` (default 25), it exits when the move gives back below `SCALP_PROFIT_LOCK_PCT`% of the peak (ratchets up: peak 100pts → lock 50pts). **Why:** the old ₹-based lock (a) exited far too early on tiny ₹ peaks, and (b) read option P&L that is *fake* on spot-proxy replay sessions (a PE that fell 89 pts could show −₹68), so it never locked the real move. Points are real even on those sessions. Renamed key `SCALP_PROFIT_LOCK_TRIGGER` (₹) → `SCALP_PROFIT_LOCK_TRIGGER_PTS` (points). Exit label is now `Profit lock (Npts)`. Applied across paper/live/backtest.
