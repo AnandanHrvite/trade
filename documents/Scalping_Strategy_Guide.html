@@ -372,15 +372,30 @@
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_PSAR_RSI_V5 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
   <div class="version">Version 5.0.0 &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; PSAR / Break-Even Exit</div>
-  <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI Momentum &bull; VIX Filter &bull; Break-Even Snap &bull; PSAR Trail &bull; Dynamic SL &bull; Live Chart</div>
+  <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI Momentum &bull; VIX Filter &bull; Break-Even Snap &bull; PSAR-Flip Exit &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v5.0.0                                                  -->
+<!-- 0. WHAT'S NEW IN V6                                                       -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">00</span> What's New in v5.0.0 (2026-05-28) &mdash; Strategy Redefinition</h2>
+<h2><span class="sec-num">00</span> What's New in V6 (2026-05-29) &mdash; Simplified RSI + PSAR-Flip Exit</h2>
+<div class="card card-green">
+  <p><strong>Entry RSI simplified to two keys and the exit is now purely PSAR-flip driven.</strong> This supersedes the V5 entry-cap / SL-source / trail description below. Where the body sections (01&ndash;15) still mention RSI caps, <code>SCALP_SL_USE_SAR</code>, a PSAR trail, or a prev-candle trail, the V6 rules here take precedence.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Entry &mdash; two RSI keys only.</strong> CE: <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (default raised <code>62 &rarr; 70</code>). PE: <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (default lowered <code>42 &rarr; 40</code>). The overbought/oversold caps <code>SCALP_RSI_CE_MAX</code> / <code>SCALP_RSI_PE_MIN</code> were <strong>removed</strong>. BB-break + PSAR-side conditions unchanged.</li>
+    <li><strong>Initial SL = PSAR value at entry, no clamp.</strong> The keys <code>SCALP_SL_USE_SAR</code>, <code>SCALP_MAX_SL_PTS</code>, and <code>SCALP_MIN_SL_PTS</code> were <strong>removed</strong>. The initial SL is used for risk sizing + the break-even trigger; it is <strong>not</strong> an intra-tick stop.</li>
+    <li><strong>Exit &mdash; candle-close PSAR flip is the only normal exit.</strong> There is no PSAR trail and no prev-candle trail. Before break-even snaps there is no intra-tick stop &mdash; the position rides to the next PSAR flip.</li>
+    <li><strong>Break-even snap is the sole hard intra-tick stop.</strong> Once peak P&amp;L &ge; <code>SCALP_BREAKEVEN_TRIGGER_R</code> &times; initial risk, SL snaps to entry &plusmn; <code>SCALP_BREAKEVEN_OFFSET_PTS</code> and that level is enforced tick-by-tick. EOD square-off + daily-loss / max-trades / SL-pause guards unchanged.</li>
+    <li>Applied consistently across <strong>paper (canonical), live, backtest, and replay</strong>; exit reasons are now <code>BreakEven SL hit</code> / <code>PSAR flip</code> / <code>EOD square-off</code>.</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 0b. LEGACY: WHAT'S NEW IN v5.0.0 (pre-V6 history)                         -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">00&middot;v5</span> [Legacy &mdash; superseded by V6] What's New in v5.0.0 (2026-05-28)</h2>
 <div class="card card-purple">
-  <p><strong>The scalp strategy was redefined to a clean Bollinger-Band break + PSAR-side + RSI design, with SAR-based exits only.</strong> This supersedes the V4 pipeline described in the older "What's New" notes below (kept as version history). The authoritative current behaviour is in sections 01&ndash;15.</p>
+  <p><strong>The scalp strategy was redefined to a clean Bollinger-Band break + PSAR-side + RSI design.</strong> This supersedes the V4 pipeline described in the older "What's New" notes below (kept as version history). <em>Note: the entry caps, <code>SCALP_SL_USE_SAR</code>, and trail described in this V5 card were themselves superseded by V6 (see the card above).</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Entry (evaluated at candle close &mdash; all three required):</strong>
       <ul style="padding-left:20px;">
@@ -502,7 +517,7 @@
 
 <div class="highlight">
   <strong>SCALP_BB_PSAR_RSI_V5</strong> is a 3/5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
-  It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum. Exits: a break-even snap plus a trailing stop whose source (previous candle or PSAR) follows <code>SCALP_SL_USE_SAR</code>; in SAR mode a PSAR-flip exit also applies.
+  It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum. Exits: a candle-close PSAR flip (the primary exit) plus a break-even snap that becomes the sole hard intra-tick stop once peak profit reaches the trigger. The initial SL is the PSAR value at entry (no clamp) and does not trail.
 </div>
 
 <div class="metrics">
@@ -633,14 +648,14 @@
 <!-- RSI Section -->
 <h3 class="blue">RSI (14) &mdash; Momentum Confirmation</h3>
 <div class="card card-blue">
-  <h4 class="blue">CE Entry: RSI &gt; 62 | PE Entry: RSI &lt; 42</h4>
-  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>SCALP_RSI_CE_THRESHOLD</code>, default 62), while PE signals need bearish momentum (RSI below <code>SCALP_RSI_PE_THRESHOLD</code>, default 42). Overbought/oversold guards block exhausted moves: CE is rejected above <code>SCALP_RSI_CE_MAX</code> (78), PE below <code>SCALP_RSI_PE_MIN</code> (22). Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
+  <h4 class="blue">CE Entry: RSI &gt; 70 | PE Entry: RSI &lt; 40</h4>
+  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>SCALP_RSI_CE_THRESHOLD</code>, default 70), while PE signals need bearish momentum (RSI below <code>SCALP_RSI_PE_THRESHOLD</code>, default 40). These are the only two RSI keys &mdash; the V5 overbought/oversold caps (<code>SCALP_RSI_CE_MAX</code> / <code>SCALP_RSI_PE_MIN</code>) were removed in V6. Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
 </div>
 
 <div class="rsi-gauge">
-  <div class="rsi-zone-pe">PE Zone (&lt; 42)</div>
+  <div class="rsi-zone-pe">PE Zone (&lt; 40)</div>
   <div class="rsi-zone-dead">Dead</div>
-  <div class="rsi-zone-ce">CE Zone (&gt; 62)</div>
+  <div class="rsi-zone-ce">CE Zone (&gt; 70)</div>
 </div>
 <div class="rsi-labels">
   <span>0</span>
@@ -865,35 +880,23 @@
   <div class="sl-arrow">&rarr;</div>
   <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">Prev Candle Low/High</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--red); color:#fff;">Cap at 12pts<br/>Floor at 8pts</div>
+  <div class="sl-box" style="background:var(--yellow); color:#000;">Initial SL =<br/>PSAR value (no clamp)</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--yellow); color:#000;">Initial SL<br/>(then PSAR + BE tighten)</div>
+  <div class="sl-box" style="background:var(--red); color:#fff;">Exit on PSAR flip<br/>(BE snap = hard stop)</div>
 </div>
 
 <div class="highlight">
-  <p><code>SCALP_SL_USE_SAR</code> picks the SL source for <strong>both</strong> the initial SL and the trail: <strong>off</strong> (default) = previous candle's low (CE) / high (PE) for entry, then tighten to each just-closed candle's low/high; <strong>on</strong> = the <strong>PSAR value</strong> at entry, then PSAR trailing + the PSAR-flip exit. Either way the initial distance is clamped between <code>SCALP_MIN_SL_PTS</code> (8) and <code>SCALP_MAX_SL_PTS</code> (12) from the entry close, and the break-even snap (both modes) can tighten it afterwards. Trailing never loosens.</p>
+  <p><strong>V6:</strong> the initial SL is simply the <strong>PSAR value at entry</strong> &mdash; no clamp, no <code>SCALP_SL_USE_SAR</code> toggle, no prev-candle source. PSAR is always on the correct side at entry (CE requires SAR below close, PE above). The SL itself does <strong>not</strong> trail: the position rides until the <strong>PSAR flips on candle close</strong>. The only thing that moves the SL is the <strong>break-even snap</strong>, which once armed becomes the sole hard intra-tick stop. The initial SL is used for risk sizing + the break-even trigger; it is not an intra-tick stop on its own.</p>
 </div>
 
 <div class="card card-green">
   <h4 class="green">Example: CE Entry at 22,500</h4>
-  <table>
-    <thead><tr><th>Source</th><th>Value</th><th>Raw distance</th><th>After clamp (8&ndash;12pt)</th></tr></thead>
-    <tbody>
-      <tr><td>Previous Candle Low</td><td>22,465</td><td>35 pts</td><td style="color:var(--green); font-weight:700;">Capped &rarr; SL = 22,488 (12pts)</td></tr>
-    </tbody>
-  </table>
-  <p style="margin-top:10px;"><strong>Result:</strong> raw 35pt distance exceeds the 12pt cap, so SL = entry &minus; 12 = 22,488.</p>
+  <p style="margin-top:6px;">PSAR dot sits at 22,489 (below price). <strong>Initial SL = 22,489</strong> (11 pts), used for risk sizing. No clamp is applied. The trade exits when PSAR flips above price on a candle close &mdash; or, if peak P&amp;L reaches 0.7&times; the 11-pt risk first, the break-even snap locks SL at entry + 1 pt (22,501) as a hard intra-tick floor.</p>
 </div>
 
 <div class="card card-red">
   <h4 class="red">Example: PE Entry at 22,200</h4>
-  <table>
-    <thead><tr><th>Source</th><th>Value</th><th>Raw distance</th><th>After clamp (8&ndash;12pt)</th></tr></thead>
-    <tbody>
-      <tr><td>Previous Candle High</td><td>22,209</td><td>9 pts</td><td style="color:var(--green); font-weight:700;">Within bounds &rarr; SL = 22,209 (9pts)</td></tr>
-    </tbody>
-  </table>
-  <p style="margin-top:10px;"><strong>Result:</strong> raw 9pt distance is between the 8pt floor and 12pt cap, so SL = prev high = 22,209.</p>
+  <p style="margin-top:6px;">PSAR dot sits at 22,214 (above price). <strong>Initial SL = 22,214</strong> (14 pts). The trade rides until PSAR flips below price on a candle close; break-even snap (entry &minus; 1 pt = 22,199) takes over as the hard stop once peak profit reaches 0.7&times; the 14-pt risk.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -905,26 +908,19 @@
   <div class="exit-item">
     <div class="exit-badge p1">P1</div>
     <div>
-      <strong style="color:var(--red);">Stop Loss hit</strong>
-      <p style="font-size:0.85rem;">Price crosses the active SL level (initial prev-candle, then PSAR / break-even tightened). The SL only tightens, never widens. Primary risk-management exit.</p>
+      <strong style="color:var(--yellow);">PSAR Flip (candle close)</strong>
+      <p style="font-size:0.85rem;">The primary exit. On each candle close, if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. Always active. Before break-even snaps, this is the <strong>only</strong> exit &mdash; there is no intra-tick SL.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
-      <strong style="color:var(--orange);">Break-Even Snap</strong>
-      <p style="font-size:0.85rem;">Once peak P&amp;L &ge; <code>SCALP_BREAKEVEN_TRIGGER_R</code> &times; initial risk (default 0.7), the SL jumps to entry &plusmn; <code>SCALP_BREAKEVEN_OFFSET_PTS</code> (1 pt). Fires per-tick, tighten-only. Stops a winner reversing into a loser. <code>R=0</code> disables.</p>
+      <strong style="color:var(--orange);">Break-Even Snap (hard intra-tick stop)</strong>
+      <p style="font-size:0.85rem;">Once peak P&amp;L &ge; <code>SCALP_BREAKEVEN_TRIGGER_R</code> &times; initial risk (default 0.7), the SL jumps to entry &plusmn; <code>SCALP_BREAKEVEN_OFFSET_PTS</code> (1 pt) and that level is enforced tick-by-tick. This is the only hard intra-tick stop. Fires per-tick, tighten-only. <code>R=0</code> disables.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p3">P3</div>
-    <div>
-      <strong style="color:var(--yellow);">SAR Flip (Reversal) &mdash; SAR mode only</strong>
-      <p style="font-size:0.85rem;">When <code>SCALP_SL_USE_SAR</code> is ON: PSAR crosses to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) &rarr; immediate exit. In prev-candle mode the per-candle trail manages exits instead, so there is no flip exit.</p>
-    </div>
-  </div>
-  <div class="exit-item">
-    <div class="exit-badge p4">P4</div>
     <div>
       <strong style="color:var(--text2);">EOD Square-off</strong>
       <p style="font-size:0.85rem;">All open positions squared off near 3:20&ndash;3:30 PM IST. No overnight holding for scalp trades.</p>
@@ -933,18 +929,17 @@
 </div>
 
 <div class="card card-purple" style="margin-top:14px;">
-  <p style="font-size:0.85rem;"><strong>Removed in V5:</strong> the tiered <strong>% profit-trail</strong> and the <strong>time-stop</strong> are gone. Profit is protected by the break-even snap plus the trail of the chosen source (prev-candle or PSAR, per <code>SCALP_SL_USE_SAR</code>).</p>
+  <p style="font-size:0.85rem;"><strong>V6:</strong> there is no PSAR trail, no prev-candle trail, no tiered %-profit-trail, and no time-stop. Profit is protected by the break-even snap; the rest of the move is managed by the candle-close PSAR flip.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. PSAR TRAILING SL VISUALIZATION                                       -->
+<!-- 8. PSAR FLIP EXIT VISUALIZATION                                          -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="page-break"></div>
-<h2><span class="sec-num">08</span> PSAR Trailing SL Visualization</h2>
+<h2><span class="sec-num">08</span> PSAR Flip Exit Visualization</h2>
 
 <div class="highlight">
-  <p><em>Applies when <code>SCALP_SL_USE_SAR</code> is ON. In prev-candle mode the trail instead tightens to each just-closed candle's low (CE) / high (PE).</em></p>
-  <p><strong>Tightening Only:</strong> the trailing SL can only move in the direction of the trade (up for CE, down for PE). It never widens. Each candle potentially tightens the SL, protecting more of the gains as the trend progresses.</p>
+  <p>The PSAR dots below price both <strong>set the initial SL value</strong> at entry and act as the <strong>flip trigger</strong>. The dots are <em>not</em> a trailing stop &mdash; the position is not exited tick-by-tick as they rise. The exit fires only when the dots cross to the <strong>wrong side of price on a candle close</strong> (the flip), as shown on the right of the chart below.</p>
 </div>
 
 <div class="psar-chart" style="height:260px;">
@@ -985,12 +980,12 @@
   <div style="position:absolute; left:8%; top:5%; font-size:0.7rem; color:var(--cyan); font-weight:700;">ENTRY</div>
   <div style="position:absolute; left:8%; top:10%; width:1px; height:60%; border-left:2px dashed var(--cyan);"></div>
 
-  <div style="position:absolute; left:30%; top:5%; font-size:0.65rem; color:var(--green); font-weight:600;">SL tightens &uarr; each candle</div>
+  <div style="position:absolute; left:30%; top:5%; font-size:0.65rem; color:var(--green); font-weight:600;">PSAR = initial SL value (no trail)</div>
 
   <div style="position:absolute; left:62%; top:5%; font-size:0.7rem; color:var(--red); font-weight:700;">SAR FLIP = EXIT</div>
   <div style="position:absolute; left:66%; top:10%; width:1px; height:14%; border-left:2px dashed var(--red);"></div>
 
-  <div style="position:absolute; left:42%; bottom:6%; font-size:0.65rem; color:var(--text2); font-weight:600;">Never widens &mdash; only tightens toward price</div>
+  <div style="position:absolute; left:42%; bottom:6%; font-size:0.65rem; color:var(--text2); font-weight:600;">Exit only on candle-close flip &mdash; break-even snap is the one hard intra-tick stop</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1000,7 +995,7 @@
 
 <div class="card card-yellow">
   <h4 style="color:var(--yellow);">Lock at entry once the trade has proven itself</h4>
-  <p>V5 has no percentage profit-trail. Instead, once peak P&amp;L reaches a multiple of the initial risk, the SL snaps to break-even &mdash; converting a winner into a free trade. From there, the trailing stop (prev-candle or PSAR, per <code>SCALP_SL_USE_SAR</code>) &mdash; and, in SAR mode, a PSAR flip &mdash; manage the rest of the move.</p>
+  <p>V6 has no percentage profit-trail and no trailing SL. Instead, once peak P&amp;L reaches a multiple of the initial risk, the SL snaps to break-even &mdash; converting a winner into a free trade and arming the only hard intra-tick stop. From there, the candle-close PSAR flip manages the rest of the move.</p>
 </div>
 
 <table>
@@ -1084,7 +1079,7 @@
   <table>
     <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>Initial SL + trail (prev-candle or PSAR) + 12pt cap / 8pt floor</td></tr>
+      <tr><td>1. Per-Trade SL</td><td>Individual trade risk</td><td>PSAR-value initial SL (no clamp); exit on candle-close PSAR flip; break-even snap = hard stop</td></tr>
       <tr><td>2. Break-Even Snap</td><td>Protect unrealized gains</td><td>SL to entry once peak &ge; 0.7 &times; risk</td></tr>
       <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
       <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>N candle pause after SL, +2 per consecutive SL (per-side)</td></tr>
@@ -1396,7 +1391,7 @@
 
 <div class="card card-green">
   <h4 class="green">No Fixed Targets</h4>
-  <p>There are no hard profit targets. All exits are dynamic &mdash; the trailing stop (prev-candle or PSAR), the break-even snap, or (in SAR mode) a PSAR flip. This lets winning trades run as far as the trend carries, rather than cutting winners short at an arbitrary level.</p>
+  <p>There are no hard profit targets. All exits are dynamic &mdash; the candle-close PSAR flip or the break-even snap. This lets winning trades run as far as the trend carries, rather than cutting winners short at an arbitrary level.</p>
 </div>
 
 <div class="card card-yellow">
@@ -1440,10 +1435,8 @@
     <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
     <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
     <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
-    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>62</code></td><td>RSI above this for CE entry</td></tr>
-    <tr><td><code>SCALP_RSI_CE_MAX</code></td><td><code>78</code></td><td>Block CE when RSI above this (overbought guard)</td></tr>
-    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>42</code></td><td>RSI below this for PE entry</td></tr>
-    <tr><td><code>SCALP_RSI_PE_MIN</code></td><td><code>22</code></td><td>Block PE when RSI below this (oversold guard)</td></tr>
+    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
+    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
     <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
     <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
     <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
@@ -1462,8 +1455,6 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>12</code></td><td>Hard cap on SL distance (points). Tightened from <code>25</code> in v4.6.0.</td></tr>
-    <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Floor on SL distance (prevents too-tight SL)</td></tr>
     <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
     <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp entries per day</td></tr>
     <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Kill switch: halt entries at this loss (&#8377;). Raised from <code>2000</code> in v4.6.0.</td></tr>

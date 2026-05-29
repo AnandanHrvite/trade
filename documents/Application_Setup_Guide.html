@@ -1498,25 +1498,20 @@
       <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
       <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
       <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
-      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>62</code></td><td>RSI above this for CE entry</td></tr>
-      <tr><td><code>SCALP_RSI_CE_MAX</code></td><td><code>78</code></td><td>Block CE above this (overbought guard)</td></tr>
-      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>42</code></td><td>RSI below this for PE entry</td></tr>
-      <tr><td><code>SCALP_RSI_PE_MIN</code></td><td><code>22</code></td><td>Block PE below this (oversold guard)</td></tr>
+      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
+      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
       <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
       <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
       <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp SL Source, Stops &amp; Break-even</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);"><code>SCALP_SL_USE_SAR</code> drives BOTH the initial SL and the trail. The break-even snap applies in both modes; there is no %-profit trail or time-stop in V5.</p>
+  <h4>Scalp Stops &amp; Break-even</h4>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6: initial SL = the PSAR value at entry (no clamp); exit on candle-close PSAR flip. The break-even snap is the only hard intra-tick stop. No %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_SL_USE_SAR</code></td><td><code>false</code></td><td>SL source for init+trail: <code>true</code> = PSAR (+ PSAR-flip exit); <code>false</code> = prev candle (init + per-candle trail)</td></tr>
-      <tr><td><code>SCALP_MAX_SL_PTS</code></td><td><code>12</code></td><td>Max initial SL distance (cap)</td></tr>
-      <tr><td><code>SCALP_MIN_SL_PTS</code></td><td><code>8</code></td><td>Min initial SL distance (floor)</td></tr>
-      <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td><code>0.7</code></td><td>Move SL to entry+offset once peak P&amp;L &ge; this &times; initial risk. <code>0</code> disables.</td></tr>
+      <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td><code>0.7</code></td><td>Move SL to entry+offset once peak P&amp;L &ge; this &times; initial risk &mdash; the only hard intra-tick stop. <code>0</code> disables.</td></tr>
       <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
       <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
     </tbody>
