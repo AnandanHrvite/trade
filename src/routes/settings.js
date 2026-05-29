@@ -94,10 +94,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Min (>)", type: "number", min: 50, max: 80, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (momentum confirmation)", default: "62" },
-      { key: "SCALP_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 65, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE when RSI above this — overbought / chasing exhausted move", default: "78" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Max (<)", type: "number", min: 20, max: 50, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (momentum confirmation)", default: "42" },
-      { key: "SCALP_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 10, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Block PE when RSI below this — oversold / shorting exhausted move", default: "22" },
+      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
+      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
       // ── Parabolic SAR (entry confirmation + trailing SL + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
@@ -105,10 +103,9 @@ const SETTINGS_SCHEMA = [
       // ── Break-even SL (move SL to entry once peak ≥ trigger × initial risk) ──
       { key: "SCALP_BREAKEVEN_TRIGGER_R", label: "Break-Even Trigger (R)", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.SESSION, desc: "Move SL to entry+offset once peak P&L ≥ N × initial risk. Stops winners reversing into losers. 0 = disabled.", default: "0.7" },
       { key: "SCALP_BREAKEVEN_OFFSET_PTS", label: "Break-Even Offset (pts)", type: "number", min: 0, max: 5, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above/below entry for the BE stop (small buffer for slippage)", default: "1" },
-      // ── Risk management (initial SL source) ──
-      { key: "SCALP_SL_USE_SAR", label: "SL Source = SAR", type: "toggle", effect: EFFECT.SESSION, desc: "Drives BOTH the initial SL and the trail. ON: initial SL = PSAR at entry + PSAR trailing + PSAR-flip exit. OFF: initial SL = previous candle low/high + prev-candle trail (tighten to each closed candle), no flip exit. Break-even snap applies in both; initial distance clamped to Min/Max SL pts.", default: "false" },
-      { key: "SCALP_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 6, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on initial SL distance. Tighter = smaller max loss but more SL hits.", default: "12" },
-      { key: "SCALP_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on initial SL (prevents too-tight SL on tiny candles)", default: "8" },
+      // ── Risk management ──
+      // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp), exit on
+      // candle-close PSAR flip; break-even snap (above) is the only hard intra-tick stop.
       { key: "SCALP_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "4000" },
@@ -557,13 +554,13 @@ const SESSION_RESTART_KEYS = new Set([
   // Scalp settings — need session restart
   "SCALP_RESOLUTION",
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
-  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD", "SCALP_RSI_CE_MAX",
-  "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_PE_MIN", "SCALP_RSI_TURNING",
+  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
+  "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
   "SCALP_BREAKEVEN_TRIGGER_R", "SCALP_BREAKEVEN_OFFSET_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
-  "SCALP_SL_USE_SAR", "SCALP_MAX_SL_PTS", "SCALP_MIN_SL_PTS", "SCALP_SLIPPAGE_PTS",
+  "SCALP_SLIPPAGE_PTS",
   // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
   "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
   "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",

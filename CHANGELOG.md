@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — simplified RSI entry + PSAR-flip exit (V6)
+
+- **Entry RSI reduced to two keys.** Removed the `SCALP_RSI_CE_MAX` / `SCALP_RSI_PE_MIN` overbought/oversold caps. Entry is now simply CE: `RSI > SCALP_RSI_CE_THRESHOLD` (default raised **62 → 70**); PE: `RSI < SCALP_RSI_PE_THRESHOLD` (default lowered **42 → 40**). BB-break and PSAR-side conditions unchanged.
+- **Exit is now PSAR-flip driven.** Initial SL = the PSAR value at entry (no min/max clamp). The position rides until the **PSAR flips on candle close** — that is the only normal exit; there is no intra-tick stop before break-even. The **break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R`, default 0.7R) is retained as the sole hard intra-tick stop, fixed at entry ± offset. EOD square-off and daily-loss / max-trades / SL-pause guards are unchanged.
+- **Removed the PSAR trail and prev-candle trail entirely**, along with the `SCALP_SL_USE_SAR`, `SCALP_MAX_SL_PTS`, and `SCALP_MIN_SL_PTS` settings (SL is always the PSAR value). Applied consistently across paper (canonical), live, and backtest. Updated SCALP.md / README.
+
 ### HISTORY — per-session "View chart" link into Replay
 
 - **Each session card on all 5 paper history pages (Swing/Scalp/PA/ORB/Straddle) now has a 📈 View chart link** that opens the candlestick chart + EMA/SAR/RSI + entry/exit trade markers for that exact session in Replay — no manual date/mode setup. The link deep-links `/replay?from=…&to=…&mode=…&run=1`; Replay prefills the date range + strategy mode and auto-runs. Reuses the existing Replay rendering (no duplicated chart code). Opens in a new tab.

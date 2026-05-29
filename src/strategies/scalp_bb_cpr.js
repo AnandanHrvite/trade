@@ -1,18 +1,16 @@
 /**
- * SCALP V5: Bollinger Bands + PSAR + RSI (clean BB-break design)
+ * SCALP V6: Bollinger Bands + PSAR + RSI (PSAR-flip exit design)
  *
  * ENTRY:
- *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 62)
- *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 42)
- *   Guards: RSI overbought/oversold cap (SCALP_RSI_CE_MAX / SCALP_RSI_PE_MIN), optional RSI-turning.
- *   SL = Previous candle low (CE) / high (PE), capped at SCALP_MAX_SL_PTS, floored at SCALP_MIN_SL_PTS
+ *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 70)
+ *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 40)
+ *   Two RSI keys only — no overbought/oversold caps.
+ *   Initial SL = PSAR value at entry (no min/max clamp). Used for risk sizing + BE trigger.
  *
- * EXIT:
- *   1. Initial SL hit (Prev Candle)
- *   2. Break-even snap (peak ≥ trigger × risk)
- *   3. Trailing SL: PSAR only — tightens only
- *   4. PSAR flip → immediate exit
- *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
+ * EXIT (PSAR-flip driven):
+ *   1. PSAR flip → exit on candle close (the only normal exit; no intra-tick SL before BE)
+ *   2. Break-even snap (peak ≥ trigger × risk) — the ONLY hard intra-tick stop, fixed at entry±offset
+ *   3. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
 const { BollingerBands, RSI, PSAR } = require("technicalindicators");
@@ -66,10 +64,8 @@ function getSignal(candles, opts) {
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
   var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "62"));
-  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "42"));
-  var RSI_CE_MAX  = parseFloat(cfg("SCALP_RSI_CE_MAX", "78"));   // overbought guard — block CE above
-  var RSI_PE_MIN  = parseFloat(cfg("SCALP_RSI_PE_MIN", "22"));   // oversold guard  — block PE below
+  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "70"));
+  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "40"));
   var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
@@ -140,17 +136,11 @@ function getSignal(candles, opts) {
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 
-  // ── ENTRY CONDITIONS (V5: BB break + PSAR side + RSI) ─────────────────────
-  // CE: close above BB upper  + PSAR below close + RSI > RSI_CE (capped at RSI_CE_MAX)
-  // PE: close below BB lower   + PSAR above close + RSI < RSI_PE (floored at RSI_PE_MIN)
-
-  var MAX_SL_PTS  = parseFloat(cfg("SCALP_MAX_SL_PTS", "12"));
-  var MIN_SL_PTS  = parseFloat(cfg("SCALP_MIN_SL_PTS", "8"));
-  var prevCandle  = candles[candles.length - 2];
-  // Initial-SL source: PSAR value at entry (SCALP_SL_USE_SAR=true) or previous candle low/high.
-  // Either way the distance is clamped to [MIN_SL_PTS, MAX_SL_PTS]. SAR is always on the
-  // correct side here (entry requires sarBelow for CE / sarAbove for PE).
-  var SL_USE_SAR  = cfg("SCALP_SL_USE_SAR", "false") === "true";
+  // ── ENTRY CONDITIONS (V6: BB break + PSAR side + RSI) ─────────────────────
+  // CE: close above BB upper  + PSAR below close + RSI > RSI_CE
+  // PE: close below BB lower   + PSAR above close + RSI < RSI_PE
+  // Initial SL = PSAR value at entry (no clamp). SAR is always on the correct side
+  // here (entry requires sarBelow for CE / sarAbove for PE), so it is a valid stop.
 
   // PSAR side relative to the candle close (the directional confirmation)
   var sarBelow = sar < sc.close;   // bullish — PSAR under price
@@ -179,53 +169,41 @@ function getSignal(candles, opts) {
 
   // CE (Long): close >= BB upper + PSAR below close + RSI > RSI_CE
   if (sc.close >= bb.upper && sarBelow && rsi > RSI_CE) {
-    if (rsi > RSI_CE_MAX) {
-      base.reason = "CE blocked: RSI=" + rsi.toFixed(1) + " > " + RSI_CE_MAX + " (overbought / exhausted move)";
-      return base;
-    }
     if (RSI_TURNING && rsi < rsiPrev) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    var rawSL = SL_USE_SAR ? sar : prevCandle.low;
-    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close - slPts).toFixed(2));
-    var slLbl = SL_USE_SAR ? "SAR" : "PrevLow";
-    var slSrc = SL_USE_SAR ? "PSAR" : "Prev Candle";
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(" + slLbl + ")=" + sl + " [raw=" + rawSL.toFixed(1) + " capped=" + slPts.toFixed(1) + "]");
+    // Initial SL = PSAR value at entry (no clamp). SAR is below close here.
+    var sl = parseFloat(sar.toFixed(2));
+    var slPts = parseFloat((sc.close - sar).toFixed(2));
+    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(PSAR)=" + sl + " [" + slPts.toFixed(1) + "pts]");
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: slSrc,
+      slSource: "PSAR",
       target: null,
       slPts: slPts,
-      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + SAR<close + RSI=" + rsi.toFixed(0) + " | SL(" + slLbl + ")=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "CE: BB upper(" + bb.upper.toFixed(0) + ") + SAR<close + RSI=" + rsi.toFixed(0) + " | SL(PSAR)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
   // PE (Short): close <= BB lower + PSAR above close + RSI < RSI_PE
   if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE) {
-    if (rsi < RSI_PE_MIN) {
-      base.reason = "PE blocked: RSI=" + rsi.toFixed(1) + " < " + RSI_PE_MIN + " (oversold / exhausted move)";
-      return base;
-    }
     if (RSI_TURNING && rsi > rsiPrev) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
-    var rawSL = SL_USE_SAR ? sar : prevCandle.high;
-    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close + slPts).toFixed(2));
-    var slLbl = SL_USE_SAR ? "SAR" : "PrevHigh";
-    var slSrc = SL_USE_SAR ? "PSAR" : "Prev Candle";
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(" + slLbl + ")=" + sl + " [raw=" + rawSL.toFixed(1) + " capped=" + slPts.toFixed(1) + "]");
+    // Initial SL = PSAR value at entry (no clamp). SAR is above close here.
+    var sl = parseFloat(sar.toFixed(2));
+    var slPts = parseFloat((sar - sc.close).toFixed(2));
+    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + SAR(" + sar.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(PSAR)=" + sl + " [" + slPts.toFixed(1) + "pts]");
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "SCALP",
       stopLoss: sl,
-      slSource: slSrc,
+      slSource: "PSAR",
       target: null,
       slPts: slPts,
-      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + SAR>close + RSI=" + rsi.toFixed(0) + " | SL(" + slLbl + ")=" + sl + " [" + slPts.toFixed(1) + "pts]",
+      reason: "PE: BB lower(" + bb.lower.toFixed(0) + ") + SAR>close + RSI=" + rsi.toFixed(0) + " | SL(PSAR)=" + sl + " [" + slPts.toFixed(1) + "pts]",
     });
   }
 
@@ -251,22 +229,19 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Trailing SL update: break-even snap → (PSAR | prev-candle) — tighten only ──
-// The trail source follows SCALP_SL_USE_SAR, same as the initial SL:
-//   ON  → PSAR trail (dots tighten toward price; PSAR flip exit also active)
-//   OFF → prev-candle trail (tighten to each just-closed candle's low/high; no flip)
+// ── Trailing SL update: break-even snap ONLY ──────────────────────────────────
+// Break-even is the only thing that moves the SL. PSAR drives the exit via flip
+// (candle close), never as a moving/intra-tick stop. Once BE snaps, slSource stays
+// "BreakEven" — that level is the sole hard intra-tick stop (enforced by the routes).
 // opts: { peakPnl, initialRiskRupees, entryPrice, slippagePts }
 //   - peakPnl + initialRiskRupees: enable break-even snap when peak ≥ trigger × risk
 //   - entryPrice + slippagePts: target spot price for the break-even SL
 function updateTrailingSL(candles, currentSL, side, opts) {
   opts = opts || {};
-  var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
-  var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
-  var useSar    = cfg("SCALP_SL_USE_SAR", "false") === "true";
 
-  // ── Break-even snap (preempts the trail — runs first because it's the bigger win) ─
-  // Once peak P&L reaches BE_TRIGGER_R × initial risk, snap SL to entry +/- offset.
-  // Applies in both modes. Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
+  // ── Break-even snap — the only SL movement ──────────────────────────────────
+  // Once peak P&L reaches BE_TRIGGER_R × initial risk, snap SL to entry +/- offset
+  // and keep it there. Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
   var beTriggerR = parseFloat(cfg("SCALP_BREAKEVEN_TRIGGER_R", "0.7"));
   var beOffsetPts = parseFloat(cfg("SCALP_BREAKEVEN_OFFSET_PTS", "1"));
   if (beTriggerR > 0
@@ -286,48 +261,13 @@ function updateTrailingSL(candles, currentSL, side, opts) {
     }
   }
 
-  if (!useSar) {
-    // ── Prev-candle trail — tighten SL to the last closed candle's low/high ──
-    if (candles.length < 1) return { sl: currentSL, source: null };
-    var lc = candles[candles.length - 1];
-    if (side === "CE") {
-      if (lc.low > currentSL) return { sl: parseFloat(lc.low.toFixed(2)), source: "Prev Candle" };
-    } else {
-      if (lc.high < currentSL) return { sl: parseFloat(lc.high.toFixed(2)), source: "Prev Candle" };
-    }
-    return { sl: currentSL, source: null };
-  }
-
-  // ── PSAR trail ──
-  var highs = candles.map(function(c) { return c.high; });
-  var lows  = candles.map(function(c) { return c.low; });
-
-  var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
-  var newSar = sarArr.length > 0 ? sarArr[sarArr.length - 1] : null;
-  var close = candles[candles.length - 1].close;
-
-  if (newSar === null) return { sl: currentSL, source: null };
-
-  if (side === "CE") {
-    // CE: SL is below price — tighter = higher value; only tighten (move up)
-    if (newSar < close && newSar > currentSL) {
-      return { sl: parseFloat(newSar.toFixed(2)), source: "PSAR" };
-    }
-  } else {
-    // PE: SL is above price — tighter = lower value; only tighten (move down)
-    if (newSar > close && newSar < currentSL) {
-      return { sl: parseFloat(newSar.toFixed(2)), source: "PSAR" };
-    }
-  }
-
   return { sl: currentSL, source: null };
 }
 
-// ── PSAR flip detection (SAR crosses price → exit) — PSAR mode only ─────────
+// ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
+// The primary exit: on candle close, if SAR has crossed to the wrong side of price
+// the trend has flipped — exit the position.
 function isPSARFlip(candles, side) {
-  // Flip exit is a PSAR-mode concept; in prev-candle mode the prev-candle trail
-  // manages exits, so disable it there.
-  if (cfg("SCALP_SL_USE_SAR", "false") !== "true") return false;
   var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
 

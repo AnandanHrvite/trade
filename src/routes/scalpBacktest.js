@@ -150,7 +150,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   SL: ${(process.env.SCALP_SL_USE_SAR || "false") === "true" ? "SAR" : "Prev Candle"} | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   SL: PSAR flip exit + BreakEven floor | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -214,10 +214,8 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     }
     if (pendingSignal && !position && !isEOD) {
       const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Recalculate SL: use raw SL level but clamp distance from actual entry
-      const rawGap = Math.abs(entryPrice - pendingSignal.rawSL);
-      const slPts = Math.max(Math.min(rawGap, pendingSignal.maxSlPts), pendingSignal.minSlPts);
-      const sl = parseFloat((entryPrice + slPts * (pendingSignal.side === "CE" ? -1 : 1)).toFixed(2));
+      // Initial SL = PSAR value from the strategy (no clamp).
+      const sl = pendingSignal.rawSL;
       // Initial rupee risk (used by break-even snap in updateTrailingSL).
       // Approximate: |entry-SL| × DELTA × qty (flat charges ignored).
       const _initRiskBT = OPTION_SIM
@@ -268,28 +266,27 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. PSAR SL  2. Trail profit  3. PSAR flip  4. PSAR trail  5. EOD
+      // EXIT: 1. BreakEven SL  2. PSAR flip  3. BreakEven snap  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. SL hit (Prev Candle initial, PSAR trailing — tightens each candle)
-      if (position.side === "CE" && candle.low <= position.stopLoss) {
-        exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-        const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _src = position.slSource || "PSAR";
-        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
-      } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-        exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-        const _isTrail = Math.abs(position.stopLoss - position.initialStopLoss) > 0.5;
-        const _src = position.slSource || "PSAR";
-        exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
+      // 1. Hard SL hit — ONLY once break-even has snapped. The PSAR stop is not a
+      //    candle-level stop; before BE the position exits only on a PSAR flip.
+      if (position.slSource === "BreakEven") {
+        if (position.side === "CE" && candle.low <= position.stopLoss) {
+          exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
+          exitReason = "BreakEven SL hit";
+        } else if (position.side === "PE" && candle.high >= position.stopLoss) {
+          exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
+          exitReason = "BreakEven SL hit";
+        }
       }
 
-      // 3. PSAR flip — exit on reversal signal
+      // 2. PSAR flip — exit on reversal signal
       if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
         exitReason = "PSAR flip";
       }
 
-      // 4. Update trailing SL (BreakEven snap → PSAR, tighten only)
+      // 3. Update trailing SL (BreakEven snap only)
       if (!exitReason) {
         const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side, {
           peakPnl:           position.peakPnl,
@@ -422,9 +419,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (candle.time < _slPauseUntilBySide[side]) continue;
     pendingSignal = {
       side,
-      rawSL:    result.stopLoss, // absolute SL level from strategy
-      maxSlPts: parseFloat(process.env.SCALP_MAX_SL_PTS || "25"),
-      minSlPts: parseFloat(process.env.SCALP_MIN_SL_PTS || "8"),
+      rawSL:    result.stopLoss, // absolute SL level from strategy (PSAR value)
       slSource: result.slSource || "PSAR",
       signalTs: candle.time,
       reason:   result.reason || `${side} signal`,

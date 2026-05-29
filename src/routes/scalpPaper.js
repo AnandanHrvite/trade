@@ -605,18 +605,17 @@ function onTick(tick) {
       }
     }
 
-    // 1. SL hit (Prev Candle initial, PSAR trailing, BreakEven snap)
-    if (pos.side === "CE" && price <= pos.stopLoss) {
-      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      const _src = pos.slSource || "PSAR";
-      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
-      return;
-    }
-    if (pos.side === "PE" && price >= pos.stopLoss) {
-      const _isTrail = Math.abs(pos.stopLoss - pos.initialStopLoss) > 0.5;
-      const _src = pos.slSource || "PSAR";
-      simulateSell(pos.stopLoss, _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`, price);
-      return;
+    // 1. Hard SL hit — ONLY once break-even has snapped. The PSAR stop is not an
+    //    intra-tick stop; before BE the position exits only on a candle-close PSAR flip.
+    if (pos.slSource === "BreakEven") {
+      if (pos.side === "CE" && price <= pos.stopLoss) {
+        simulateSell(pos.stopLoss, "BreakEven SL hit", price);
+        return;
+      }
+      if (pos.side === "PE" && price >= pos.stopLoss) {
+        simulateSell(pos.stopLoss, "BreakEven SL hit", price);
+        return;
+      }
     }
 
     // EOD check — skip in simulation mode
@@ -781,12 +780,8 @@ async function resolveAndEnter(side, spot, result) {
       symbol = optionInfo.symbol;
     }
     const qty = getLotQty();
-    // Clamp SL distance to [MIN_SL_PTS, MAX_SL_PTS] — matches backtest logic
-    const MAX_SL_PTS = parseFloat(process.env.SCALP_MAX_SL_PTS || "25");
-    const MIN_SL_PTS = parseFloat(process.env.SCALP_MIN_SL_PTS || "8");
-    const rawGap = Math.abs(spot - result.stopLoss);
-    const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
-    const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
+    // Initial SL = PSAR value from the strategy (no clamp).
+    const clampedSL = result.stopLoss;
 
     // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
     if (!state._simMode) {
@@ -1113,36 +1108,30 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = Previous candle low/high, capped at MAX_SL_PTS, floored at MIN_SL_PTS
+  // SL = PSAR value at entry (no clamp) — matches strategy logic.
   const candles = state.candles || [];
-  const MAX_SL_PTS  = parseFloat(process.env.SCALP_MAX_SL_PTS || "12");
-  const MIN_SL_PTS  = parseFloat(process.env.SCALP_MIN_SL_PTS || "8");
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
-  // Honor the initial-SL-source toggle; SAR only if it's on the correct side, else prev candle.
-  const _useSar = (process.env.SCALP_SL_USE_SAR || "false") === "true";
-  let slSrcLbl = "PrevCandle";
-  let rawSL = prevCandle ? (side === "CE" ? prevCandle.low : prevCandle.high) : null;
-  if (_useSar && candles.length >= 3) {
+  let slSrcLbl = "PSAR";
+  let sl = null;
+  if (candles.length >= 3) {
     try {
       const _sa = PSAR.calculate({ step: parseFloat(process.env.SCALP_PSAR_STEP || "0.02"), max: parseFloat(process.env.SCALP_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
       const _sar = _sa.length ? _sa[_sa.length - 1] : null;
-      if (_sar != null && (side === "CE" ? _sar < spot : _sar > spot)) { rawSL = _sar; slSrcLbl = "SAR"; }
-    } catch (_) { /* fall back to prev candle */ }
+      if (_sar != null) sl = parseFloat(_sar.toFixed(2));
+    } catch (_) { /* fall back below */ }
   }
-  let sl;
-  if (rawSL != null) {
-    const slPts = Math.max(Math.min(Math.abs(spot - rawSL), MAX_SL_PTS), MIN_SL_PTS);
-    sl = side === "CE" ? parseFloat((spot - slPts).toFixed(2)) : parseFloat((spot + slPts).toFixed(2));
-  } else {
-    sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
+  if (sl == null) {
+    // PSAR unavailable — fall back to previous candle low/high.
+    const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+    sl = prevCandle ? (side === "CE" ? prevCandle.low : prevCandle.high) : (side === "CE" ? spot - 10 : spot + 10);
+    slSrcLbl = "Prev Candle";
   }
 
   try {
     const optResult = await validateAndGetOptionSymbol(spot, side);
     const symbol = optResult.symbol;
     const qty = getLotQty();
-    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl}${slSrcLbl === "PrevCandle" && prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
-    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot, slSrcLbl === "SAR" ? "PSAR" : "Prev Candle");
+    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
+    simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot, slSrcLbl);
     return res.json({ success: true, spot, side, sl, symbol });
   } catch (e) {
     log(`❌ [SCALP-PAPER] Manual entry failed: ${e.message}`);
@@ -1637,7 +1626,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: ${(process.env.SCALP_SL_USE_SAR || 'false') === 'true' ? 'SAR (init+trail+flip)' : 'Prev Candle (init+trail)'} + BreakEven \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + BreakEven floor \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
