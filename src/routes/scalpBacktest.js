@@ -1589,12 +1589,8 @@ function renderAnalytics(){
   var reasonMap={};
   trades.forEach(function(t){
     var r = t.reason;
-    // Normalize: group trail locks together
-    if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-    else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-    else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-    else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-    else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
+    // Normalize V6 exit reasons.
+    if(r.indexOf('BreakEven')===0) r='BreakEven SL hit';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
@@ -1904,11 +1900,7 @@ function renderAnalytics(){
     var lrMap={};
     lossTrades.forEach(function(t){
       var r=t.reason;
-      if(r.indexOf('Trail lock')===0) r='Trail lock (profit)';
-      else if(r.indexOf('Prev candle Trail SL')===0) r='Prev candle Trail SL';
-      else if(r.indexOf('Prev candle SL')===0) r='Prev candle SL hit';
-      else if(r.indexOf('PSAR Trail SL')===0) r='PSAR Trail SL';
-      else if(r.indexOf('PSAR SL')===0) r='PSAR SL hit';
+      if(r.indexOf('BreakEven')===0) r='BreakEven SL hit';
       else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
