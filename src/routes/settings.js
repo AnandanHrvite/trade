@@ -412,6 +412,7 @@ const SETTINGS_SCHEMA = [
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true", subheader: "System sub-menus" },
       { key: "UI_SHOW_TRADE_LOGS", label: "System → Trade Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Trade Logs' inside the System group", default: "true" },
+      { key: "UI_SHOW_CACHE_FILES", label: "System → Cache Files", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Cache Files' inside the System group (browse/clear backtest & candle caches, recorded ticks, replay outputs, root state files)", default: "true" },
     ],
   },
   {

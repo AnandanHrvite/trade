@@ -87,7 +87,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showStraddleHistory   = (process.env.UI_SHOW_STRADDLE_HISTORY     || 'true').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
-  const showTradeLogs = (process.env.UI_SHOW_TRADE_LOGS || 'true').toLowerCase() === 'true';
+  const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
+  const showCacheFiles = (process.env.UI_SHOW_CACHE_FILES || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
@@ -186,7 +187,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        ...(showTradeLogs ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
+        ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
+        ...(showCacheFiles ? [{ key: 'cacheFiles', href: '/cache-files', icon: '🧰', label: 'Cache Files' }] : []),
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },

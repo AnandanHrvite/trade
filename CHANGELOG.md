@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SYSTEM — Cache Files browser (`/cache-files`)
+
+- **New System page to inspect, download, and clear every on-disk cache.** Groups each cache by purpose — Backtest Cache, Candle Cache, Recorded Ticks (`data/ticks/`), Replay Trades (snapshot + sim), and loose Root Data Files under `~/trading-data/` — with per-file **View** / **Download** / **Delete** and group-level **Download All** (`.tar.gz`) + **Delete All**, mirroring the Trade Logs UX (paging, double-confirm, light-theme). The canonical trade/skip JSONLs stay on `/trade-logs`; cache deletes here are safe (regenerated on demand).
+- Read endpoints are open; the two delete endpoints require `API_SECRET`. File access is path-traversal-guarded (resolved path must stay inside the group's base dir). Gated by the new `UI_SHOW_CACHE_FILES` toggle (default on) in Settings → System sub-menus.
+
 ### REPLAY — deterministic result cache (faster re-runs)
 
 - **Re-running an identical replay is now near-instant.** A replay is deterministic, so the full result (trades, P&L, chart) is cached on disk in `~/trading-data/_replay_cache/` and served on an identical re-run instead of re-streaming ~55k ticks (~80s/session → ~0s). Date-range runs benefit per-session automatically.

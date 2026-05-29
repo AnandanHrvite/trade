@@ -270,6 +270,13 @@ const OPEN_PATHS = [
   "/trade-logs/skips/download", // download raw skip JSONL
   "/trade-logs/skips/download-all", // concat-download all daily skip JSONLs per mode
   // NOTE: POST /trade-logs/delete and POST /trade-logs/skips/delete are intentionally protected (write ops)
+  "/cache-files",           // cache / generated-file browser (read-only)
+  "/cache-files/groups",    // JSON: per-group file count + size
+  "/cache-files/list",      // JSON: paged files for one group
+  "/cache-files/view",      // JSON: text content of one file (capped)
+  "/cache-files/download",  // download one raw cache file
+  "/cache-files/download-all", // download a whole group as .tar.gz
+  // NOTE: POST /cache-files/delete and POST /cache-files/delete-all are intentionally protected (write ops)
   // Scalp mode (read-only status/data)
   "/scalp-live/status",
   "/scalp-live/status/data",
@@ -360,6 +367,7 @@ app.use("/swing-live",      require("./routes/swingLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
+app.use("/cache-files", require("./routes/cacheFiles")); // ← cache / generated-file browser (caches, ticks, replay outputs)
 app.use("/sync",        require("./routes/sync"));       // ← EC2→local data sync (download tar.gz)
 app.use("/backup",      require("./routes/backup"));     // ← daily downloadable data snapshots (Settings card + nag banner)
 app.use("/settings",    require("./routes/settings"));   // ← settings UI
