@@ -142,6 +142,25 @@ function _writeReplayCache(key, result) {
   }
 }
 
+// Wipe every cached replay result — current AND orphaned (old-key) entries.
+// Used by the "Clear cache" run option so a fresh range run recomputes from
+// scratch. Returns { ok, removed } with the count of deleted cache files.
+function clearReplayCache() {
+  const dir = _replayCacheDir();
+  let removed = 0;
+  try {
+    if (!fs.existsSync(dir)) return { ok: true, removed: 0 };
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json") && !f.endsWith(".json.tmp")) continue;
+      try { fs.unlinkSync(path.join(dir, f)); removed++; } catch (_) {}
+    }
+    console.log(`🧹 [replay] cache cleared — ${removed} file(s) removed`);
+    return { ok: true, removed };
+  } catch (e) {
+    return { ok: false, error: e.message, removed };
+  }
+}
+
 // ── Loaders ─────────────────────────────────────────────────────────────────
 
 // Sync read (used for small files: sessions.jsonl ≤ ~6 events/day)
@@ -1330,6 +1349,7 @@ module.exports = {
   requestCancel,
   forceClearSharedState,
   deleteSessionMarker,
+  clearReplayCache,
   // exposed for tests
   _internals: { _buildOptionTimeline, _lookupAtOrBefore, _createHarness, _invokeRoute, MODE_TO_MODULE },
 };
