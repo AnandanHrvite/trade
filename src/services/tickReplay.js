@@ -88,9 +88,22 @@ function _fileFingerprint(p) {
 
 function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) {
   const dir = path.join(ROOT_DIR, date);
-  const settingsBasis = useCurrentSettings
-    ? { env: process.env }            // sim: current Settings-page values
-    : (sessionStart.settings || {});  // snapshot: recorded session-start env
+  // Sim mode: the result depends on the CURRENT value of the settings the
+  // strategy reads — so key on those keys' current process.env values, using
+  // the snapshot's key set (the managed-settings keys captured at record time).
+  // NOT the whole process.env: PM2/deploy injects per-restart vars (pm_id,
+  // NODE_APP_INSTANCE, uptime, instance id, …) that change every restart and
+  // would bust the cache on each deploy even with identical strategy settings.
+  // Snapshot mode keys on the recorded session-start env (immutable on disk).
+  let settingsBasis;
+  if (useCurrentSettings) {
+    settingsBasis = {};
+    for (const k of Object.keys(sessionStart.settings || {})) {
+      settingsBasis[k] = process.env[k];
+    }
+  } else {
+    settingsBasis = sessionStart.settings || {};
+  }
   const basis = {
     v: REPLAY_CACHE_VERSION,
     mode,
