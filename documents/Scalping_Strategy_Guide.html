@@ -372,12 +372,23 @@
   <h1>Scalping Strategy</h1>
   <div class="sub">SCALP_BB_PSAR_RSI_V5 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
   <div class="version">Version 5.0.0 &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; PSAR / Break-Even Exit</div>
-  <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI Momentum &bull; VIX Filter &bull; Profit Lock &bull; PSAR-Flip Exit &bull; Live Chart</div>
+  <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI Momentum &bull; VIX Filter &bull; Hard Stop + Trailing Stop &bull; PSAR-Flip Exit &bull; Live Chart</div>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 0. WHAT'S NEW IN V6.1                                                     -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
+<h2><span class="sec-num">00</span> What's New in V6.3 (2026-05-30) &mdash; Points Hard Stop + Points Trailing Stop</h2>
+<div class="card card-green">
+  <p><strong>The %-of-peak profit lock is replaced by a fixed-points trailing stop, and a points hard stop is added.</strong> Where the sections below mention a "profit lock", <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> or <code>SCALP_PROFIT_LOCK_PCT</code>, the V6.3 rules here take precedence.</p>
+  <ul style="padding-left:22px; line-height:1.85;">
+    <li><strong>Why:</strong> a high <code>PCT</code> exited on a ~2-point pullback from a small peak, slicing one big move into many tiny re-entries instead of riding it; and there was no fixed loss cap on the downside.</li>
+    <li><strong>Hard stop (points).</strong> New <code>SCALP_STOP_LOSS_PTS</code> (default 20): exit if the trade moves N points against entry. Symmetric loss cap; arms the per-side SL cooldown. The PSAR initial SL is display/sizing only.</li>
+    <li><strong>Trailing stop (points).</strong> New <code>SCALP_TRAIL_ARM_PTS</code> (default 15) + <code>SCALP_TRAIL_GIVEBACK_PTS</code> (default 15): once the peak favourable move &ge; arm, trail GIVEBACK points behind the best (floor = peak &minus; giveback, ratchets up) and exit on retrace. Rides winners, exits on reversal. Removed <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> / <code>SCALP_PROFIT_LOCK_PCT</code>.</li>
+    <li>Exit reasons are now <code>SL (Npts)</code> / <code>Trail (Npts)</code> / <code>BB re-entry</code> / <code>PSAR flip</code> / <code>EOD square-off</code>. Applied across paper (canonical), live, backtest, replay.</li>
+  </ul>
+</div>
+
 <h2><span class="sec-num">00</span> What's New in V6.1 (2026-05-29) &mdash; Far-PSAR Filter + Profit Lock</h2>
 <div class="card card-green">
   <p><strong>The R-multiple break-even is replaced by a P&amp;L-space profit lock, and a far-PSAR entry filter caps risk.</strong> Where the body sections below (incl. the V6 card) mention a "break-even snap" or <code>SCALP_BREAKEVEN_TRIGGER_R</code> / <code>SCALP_BREAKEVEN_OFFSET_PTS</code>, the V6.1 rules here take precedence.</p>
@@ -923,14 +934,14 @@
     <div class="exit-badge p1">P1</div>
     <div>
       <strong style="color:var(--yellow);">PSAR Flip (candle close)</strong>
-      <p style="font-size:0.85rem;">On each candle close, if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. Always active &mdash; handles trend runners beyond the profit lock.</p>
+      <p style="font-size:0.85rem;">On each candle close, if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. Always active &mdash; handles trend runners beyond the trailing stop.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
-      <strong style="color:var(--orange);">Profit Lock (the intra-tick exit)</strong>
-      <p style="font-size:0.85rem;">Per tick: once the peak favourable spot move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak. Floor ratchets up (peak 100pts &rarr; lock 50pts). Points-based. <code>TRIGGER=0</code> disables.</p>
+      <strong style="color:var(--orange);">Hard stop + Trailing stop (the intra-tick exits)</strong>
+      <p style="font-size:0.85rem;">Both per tick, spot-points based. <strong>Hard stop</strong>: exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 20) against entry &mdash; symmetric loss cap. <strong>Trailing stop</strong>: once the peak favourable move &ge; <code>SCALP_TRAIL_ARM_PTS</code> (default 15), trail <code>SCALP_TRAIL_GIVEBACK_PTS</code> (default 15) behind the best (floor = peak &minus; giveback, ratchets up) and exit on retrace. Rides winners, exits on reversal. <code>0</code> disables each.</p>
     </div>
   </div>
   <div class="exit-item">
@@ -1012,18 +1023,19 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 9. PROFIT LOCK MECHANISM                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">09</span> Profit Lock Mechanism</h2>
+<h2><span class="sec-num">09</span> Hard Stop + Trailing Stop Mechanism</h2>
 
 <div class="card card-yellow">
-  <h4 style="color:var(--yellow);">Bank small scalp profits; let runners ride</h4>
-  <p>V6.2 has no percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. Instead, the profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor; points-based, so it is independent of option pricing. The candle-close PSAR flip handles the rest.</p>
+  <h4 style="color:var(--yellow);">Cap the loss; ride the move, exit on reversal</h4>
+  <p>V6.3 has no percentage spot-trail (tiered) and no break-even-to-entry snap. The downside is capped by a <strong>points hard stop</strong> (exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> against entry), and the upside rides on a <strong>points trailing stop</strong>: once the peak favourable move reaches <code>SCALP_TRAIL_ARM_PTS</code>, the stop trails <code>SCALP_TRAIL_GIVEBACK_PTS</code> behind the best (floor = peak &minus; giveback) and exits on a retrace to it. The floor <strong>ratchets up</strong> with the peak, so a winner keeps running while always banking most of its best move. Both are per-tick and points-based, so they are independent of option pricing. The candle-close PSAR flip handles the rest.</p>
 </div>
 
 <table>
   <thead><tr><th>Parameter</th><th>Default</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td>25</td><td>Arm the lock once the favourable spot move (points) reaches this. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td>50</td><td>Once armed, exit when open P&amp;L falls below this % of the peak. Ratchets with the peak.</td></tr>
+    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td>20</td><td>Hard loss cap — exit if the trade moves this many spot points against entry. <code>0</code> disables.</td></tr>
+    <tr><td><code>SCALP_TRAIL_ARM_PTS</code></td><td>15</td><td>Start trailing once the favourable spot move (points) reaches this. <code>0</code> disables trailing.</td></tr>
+    <tr><td><code>SCALP_TRAIL_GIVEBACK_PTS</code></td><td>15</td><td>Once armed, exit when price retraces this many points from the best (ratchets with the peak).</td></tr>
   </tbody>
 </table>
 
@@ -1100,8 +1112,8 @@
   <table>
     <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
     <tbody>
-      <tr><td>1. Per-Trade exit</td><td>Individual trade risk</td><td>PSAR-value initial SL (no clamp, far-PSAR filtered); exit on profit lock or candle-close PSAR flip</td></tr>
-      <tr><td>2. Profit Lock</td><td>Bank unrealized gains</td><td>Exit when P&amp;L gives back below 50% of peak (once peak &ge; &#8377;500)</td></tr>
+      <tr><td>1. Hard stop (points)</td><td>Individual trade risk</td><td>Exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 20) against entry. The PSAR initial SL is display/sizing only.</td></tr>
+      <tr><td>2. Trailing stop (points)</td><td>Ride + bank the move</td><td>Once peak &ge; <code>SCALP_TRAIL_ARM_PTS</code>, trail <code>SCALP_TRAIL_GIVEBACK_PTS</code> behind the best (ratchets up); exit on retrace</td></tr>
       <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
       <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>N candle pause after SL, +2 per consecutive SL (per-side)</td></tr>
       <tr><td>5. Daily Loss Limit</td><td>Session-level risk</td><td>All entries halted at -&#8377;2,000 day P&amp;L</td></tr>
@@ -1482,8 +1494,9 @@
     <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit. Raised from <code>1</code>/<code>2</code> in v4.6.0.</td></tr>
     <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
     <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) hits this. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
+    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td><code>20</code></td><td>Hard loss cap — exit if the trade moves this many spot points against entry. <code>0</code> disables.</td></tr>
+    <tr><td><code>SCALP_TRAIL_ARM_PTS</code></td><td><code>15</code></td><td>Start trailing once the favourable spot move (points) reaches this. <code>0</code> disables trailing.</td></tr>
+    <tr><td><code>SCALP_TRAIL_GIVEBACK_PTS</code></td><td><code>15</code></td><td>Once armed, exit when price retraces this many points from the best (ratchets up)</td></tr>
     <tr><td><code>SCALP_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the band (failed breakout)</td></tr>
     <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
   </tbody>

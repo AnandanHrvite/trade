@@ -8,14 +8,17 @@
  *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
  *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
- * EXIT (profit lock + BB re-entry + PSAR flip):
- *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ SCALP_PROFIT_LOCK_TRIGGER_PTS,
- *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
- *      so it is independent of option pricing. This is the ONLY intra-tick exit.
- *   2. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
+ * EXIT (hard stop + trailing stop + BB re-entry + PSAR flip), all spot-POINTS based:
+ *   1. Hard stop (SCALP_STOP_LOSS_PTS) — symmetric loss cap; exit if the trade moves N pts
+ *      against entry. This is the real downside stop (the entry SL shown = PSAR is display/sizing only).
+ *   2. Trailing stop — once peak favourable spot move ≥ SCALP_TRAIL_ARM_PTS, trail
+ *      SCALP_TRAIL_GIVEBACK_PTS behind the best; exit when price retraces past the trail.
+ *      Ratchets up with the peak so winners ride and reversals still bank most of the move.
+ *      (1 + 2 are per-tick and points-based, so independent of option pricing.)
+ *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
  *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
- *   3. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
- *   4. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
+ *   4. PSAR flip → exit on candle close (trend exit; handles bigger runners).
+ *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
 const { BollingerBands, RSI, PSAR } = require("technicalindicators");
@@ -245,22 +248,33 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Profit lock (the only intra-tick exit) ───────────────────────────────────
-// Spot-POINTS ratcheting profit lock — banks favourable spot travel and lets
-// winners run. Tracks the favourable spot move since entry (PE = entry−price,
-// CE = price−entry). Once the PEAK favourable move reaches
-// SCALP_PROFIT_LOCK_TRIGGER_PTS, exit as soon as it gives back below
-// SCALP_PROFIT_LOCK_PCT% of that peak. Floor ratchets up with the peak
-// (peak 100pts → lock 50pts at 50%). Points-based, so it is independent of
-// option pricing (works even on spot-proxy replay sessions). TRIGGER = 0 disables.
-//   favPts     — current favourable spot points
-//   peakFavPts — best favourable spot points seen this trade
-// Returns { hit, floor }.
-function profitLock(favPts, peakFavPts) {
-  var trigger = parseFloat(cfg("SCALP_PROFIT_LOCK_TRIGGER_PTS", "25"));
-  var pct     = parseFloat(cfg("SCALP_PROFIT_LOCK_PCT", "50"));
-  if (trigger <= 0 || peakFavPts == null || peakFavPts < trigger) return { hit: false, floor: null };
-  var floor = parseFloat(((pct / 100) * peakFavPts).toFixed(2));
+// ── Exit helpers (per-tick, spot-POINTS based) ───────────────────────────────
+// Both work in favourable spot points since entry:
+//   favPts     — current favourable points: CE = price−entry, PE = entry−price
+//   peakFavPts — best favourable points seen this trade
+// Points-based, so they are independent of option pricing (work even on
+// spot-proxy replay sessions).
+
+// Hard stop — symmetric loss cap. Exit once the trade has moved
+// SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). 0 disables. This is the
+// real downside stop; the entry SL shown (PSAR) is display/risk-sizing only.
+// Returns { hit, stop }.
+function hardStop(favPts) {
+  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "20"));
+  if (stop <= 0 || favPts == null) return { hit: false, stop: null };
+  return { hit: favPts <= -stop, stop: stop };
+}
+
+// Trailing stop — ride the move, exit on reversal. Once the PEAK favourable move
+// reaches SCALP_TRAIL_ARM_PTS, the stop trails SCALP_TRAIL_GIVEBACK_PTS behind the
+// best (floor = peak − giveback) and exits when favPts falls to/below it. The
+// floor ratchets up with the peak (peak 100 / giveback 15 → exit if it gives back
+// to 85; peak 30 → exit at 15). ARM = 0 disables. Returns { hit, floor }.
+function trailExit(favPts, peakFavPts) {
+  var arm      = parseFloat(cfg("SCALP_TRAIL_ARM_PTS", "15"));
+  var giveback = parseFloat(cfg("SCALP_TRAIL_GIVEBACK_PTS", "15"));
+  if (arm <= 0 || peakFavPts == null || peakFavPts < arm) return { hit: false, floor: null };
+  var floor = parseFloat((peakFavPts - giveback).toFixed(2));
   return { hit: favPts <= floor, floor: floor };
 }
 
@@ -309,4 +323,4 @@ function bbReentryExit(candles, side) {
 
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, isPSARFlip, bbReentryExit, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, hardStop, trailExit, isPSARFlip, bbReentryExit, reset };

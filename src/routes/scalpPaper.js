@@ -582,14 +582,27 @@ function onTick(tick) {
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
-    // 1. PROFIT LOCK — the only intra-tick exit. Once peak favourable spot move ≥
-    //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
-    //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
+    // 1. HARD STOP (points) — symmetric loss cap. Exit if the trade moves
+    //    SCALP_STOP_LOSS_PTS against entry. This is the real downside stop
+    //    (entry SL shown = PSAR is display/sizing only). Arms the SL cooldown.
     {
-      const _lock = scalpStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
-      if (_lock.hit) {
-        pos.slSource = "Profit Lock";
-        simulateSell(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`, price);
+      const _hs = scalpStrategy.hardStop(_favPts);
+      if (_hs.hit) {
+        pos.slSource = "Stop Loss";
+        simulateSell(price, `SL (${_hs.stop}pts)`, price);
+        return;
+      }
+    }
+
+    // 2. TRAILING STOP (points) — ride the move, exit on reversal. Once peak
+    //    favourable spot move ≥ SCALP_TRAIL_ARM_PTS, trail SCALP_TRAIL_GIVEBACK_PTS
+    //    behind the best; exit when price retraces past the trail (ratchets up).
+    //    Points-based; PSAR flip (candle close) handles bigger runners.
+    {
+      const _trail = scalpStrategy.trailExit(_favPts, pos.mfeSpotPts || 0);
+      if (_trail.hit) {
+        pos.slSource = "Trailing Stop";
+        simulateSell(price, `Trail (${_trail.floor.toFixed(0)}pts)`, price);
         return;
       }
     }
