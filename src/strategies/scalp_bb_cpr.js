@@ -5,11 +5,14 @@
  *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 70)
  *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 40)
  *   Two RSI keys only — no overbought/oversold caps.
- *   Initial SL = PSAR value at entry (no min/max clamp). Used for risk sizing + BE trigger.
+ *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
+ *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
- * EXIT (PSAR-flip driven):
- *   1. PSAR flip → exit on candle close (the only normal exit; no intra-tick SL before BE)
- *   2. Break-even snap (peak ≥ trigger × risk) — the ONLY hard intra-tick stop, fixed at entry±offset
+ * EXIT (PSAR-flip driven + profit lock):
+ *   1. Profit lock (PnL space) — once peak P&L ≥ SCALP_PROFIT_LOCK_TRIGGER (₹), exit when open P&L
+ *      gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; banks small scalp profits.
+ *      This is the ONLY intra-tick exit.
+ *   2. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
  *   3. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
@@ -69,6 +72,7 @@ function getSignal(candles, opts) {
   var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
+  var MAX_ENTRY_SL_PTS = parseFloat(cfg("SCALP_MAX_ENTRY_SL_PTS", "50")); // skip entries where PSAR sits farther than this from close (0 = off)
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -173,6 +177,11 @@ function getSignal(candles, opts) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
     }
+    // Skip far-PSAR entries: a freshly-flipped SAR can sit 100s of pts away → huge risk.
+    if (MAX_ENTRY_SL_PTS > 0 && (sc.close - sar) > MAX_ENTRY_SL_PTS) {
+      base.reason = "CE blocked: PSAR too far (" + (sc.close - sar).toFixed(0) + "pts > " + MAX_ENTRY_SL_PTS + ")";
+      return base;
+    }
     // Initial SL = PSAR value at entry (no clamp). SAR is below close here.
     var sl = parseFloat(sar.toFixed(2));
     var slPts = parseFloat((sc.close - sar).toFixed(2));
@@ -191,6 +200,11 @@ function getSignal(candles, opts) {
   if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE) {
     if (RSI_TURNING && rsi > rsiPrev) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
+      return base;
+    }
+    // Skip far-PSAR entries: a freshly-flipped SAR can sit 100s of pts away → huge risk.
+    if (MAX_ENTRY_SL_PTS > 0 && (sar - sc.close) > MAX_ENTRY_SL_PTS) {
+      base.reason = "PE blocked: PSAR too far (" + (sar - sc.close).toFixed(0) + "pts > " + MAX_ENTRY_SL_PTS + ")";
       return base;
     }
     // Initial SL = PSAR value at entry (no clamp). SAR is above close here.
@@ -229,39 +243,21 @@ function getSignal(candles, opts) {
   return base;
 }
 
-// ── Trailing SL update: break-even snap ONLY ──────────────────────────────────
-// Break-even is the only thing that moves the SL. PSAR drives the exit via flip
-// (candle close), never as a moving/intra-tick stop. Once BE snaps, slSource stays
-// "BreakEven" — that level is the sole hard intra-tick stop (enforced by the routes).
-// opts: { peakPnl, initialRiskRupees, entryPrice, slippagePts }
-//   - peakPnl + initialRiskRupees: enable break-even snap when peak ≥ trigger × risk
-//   - entryPrice + slippagePts: target spot price for the break-even SL
-function updateTrailingSL(candles, currentSL, side, opts) {
-  opts = opts || {};
-
-  // ── Break-even snap — the only SL movement ──────────────────────────────────
-  // Once peak P&L reaches BE_TRIGGER_R × initial risk, snap SL to entry +/- offset
-  // and keep it there. Set SCALP_BREAKEVEN_TRIGGER_R = 0 to disable.
-  var beTriggerR = parseFloat(cfg("SCALP_BREAKEVEN_TRIGGER_R", "0.7"));
-  var beOffsetPts = parseFloat(cfg("SCALP_BREAKEVEN_OFFSET_PTS", "1"));
-  if (beTriggerR > 0
-      && opts.peakPnl != null
-      && opts.initialRiskRupees > 0
-      && opts.entryPrice != null
-      && opts.peakPnl >= beTriggerR * opts.initialRiskRupees) {
-    var beSL = side === "CE"
-      ? opts.entryPrice + beOffsetPts
-      : opts.entryPrice - beOffsetPts;
-    beSL = parseFloat(beSL.toFixed(2));
-    if (side === "CE" && beSL > currentSL) {
-      return { sl: beSL, source: "BreakEven" };
-    }
-    if (side === "PE" && beSL < currentSL) {
-      return { sl: beSL, source: "BreakEven" };
-    }
-  }
-
-  return { sl: currentSL, source: null };
+// ── Profit lock (the only intra-tick exit) ───────────────────────────────────
+// PnL-space ratcheting lock that banks small scalp profits and lets winners run:
+// once peak P&L reaches SCALP_PROFIT_LOCK_TRIGGER (₹), exit as soon as the open
+// P&L gives back below SCALP_PROFIT_LOCK_PCT% of the peak. The floor ratchets up
+// with the peak (peak ₹1000 → lock ₹500, peak ₹2000 → lock ₹1000 at 50%). PSAR
+// flip (candle close) still handles trend exits. Set TRIGGER = 0 to disable.
+//   curPnl  — current open P&L (₹)
+//   peakPnl — best open P&L seen so far this trade (₹)
+// Returns { hit, floor }.
+function profitLock(curPnl, peakPnl) {
+  var trigger = parseFloat(cfg("SCALP_PROFIT_LOCK_TRIGGER", "500"));
+  var pct     = parseFloat(cfg("SCALP_PROFIT_LOCK_PCT", "50"));
+  if (trigger <= 0 || peakPnl == null || peakPnl < trigger) return { hit: false, floor: null };
+  var floor = parseFloat(((pct / 100) * peakPnl).toFixed(2));
+  return { hit: curPnl <= floor, floor: floor };
 }
 
 // ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
@@ -290,4 +286,4 @@ function isPSARFlip(candles, side) {
 
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, updateTrailingSL, isPSARFlip, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, isPSARFlip, reset };

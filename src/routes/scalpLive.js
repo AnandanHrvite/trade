@@ -54,10 +54,6 @@ const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2",
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
 const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
-// Breakeven snap — needs to run per-tick (not per-bar) because most trades exit
-// inside the entry candle before updateTrailingSL would be called.
-const _SCALP_BE_TRIGGER_R   = parseFloat(process.env.SCALP_BREAKEVEN_TRIGGER_R || "0");
-const _SCALP_BE_OFFSET_PTS  = parseFloat(process.env.SCALP_BREAKEVEN_OFFSET_PTS || "1");
 
 // ── Previous day OHLC (reference, fetched on session start) ─────────────────
 let _prevDayOHLC     = null;
@@ -654,34 +650,14 @@ function onTick(tick) {
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
-    // 2a-pre. BREAKEVEN SNAP — per-tick. Snap SL to entry ± offset once peak ≥
-    //         BE_TRIGGER_R × initial risk. Tighten-only, so it fires at most once.
-    //         Per-bar updateTrailingSL also has this check, but most trades exit
-    //         inside the entry bar, so we have to evaluate it per-tick too.
-    if (_SCALP_BE_TRIGGER_R > 0
-        && pos.initialRiskRupees > 0
-        && pos.peakPnl >= _SCALP_BE_TRIGGER_R * pos.initialRiskRupees) {
-      const _beSL = parseFloat((pos.side === "CE"
-        ? pos.entryPrice + _SCALP_BE_OFFSET_PTS
-        : pos.entryPrice - _SCALP_BE_OFFSET_PTS).toFixed(2));
-      const _beTightens = (pos.side === "CE" && _beSL > pos.stopLoss)
-                       || (pos.side === "PE" && _beSL < pos.stopLoss);
-      if (_beTightens) {
-        log(`📐 [SCALP-LIVE] Trail SL (BreakEven): ₹${pos.stopLoss} → ₹${_beSL}`);
-        pos.stopLoss = _beSL;
-        pos.slSource = "BreakEven";
-      }
-    }
-
-    // 1. Hard SL hit — ONLY once break-even has snapped. The PSAR stop is not an
-    //    intra-tick stop; before BE the position exits only on a candle-close PSAR flip.
-    if (pos.slSource === "BreakEven") {
-      if (pos.side === "CE" && price <= pos.stopLoss) {
-        squareOff(pos.stopLoss, "BreakEven SL hit").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
-        return;
-      }
-      if (pos.side === "PE" && price >= pos.stopLoss) {
-        squareOff(pos.stopLoss, "BreakEven SL hit").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+    // 1. PROFIT LOCK — the only intra-tick exit. Once peak P&L ≥ SCALP_PROFIT_LOCK_TRIGGER,
+    //    exit when open P&L gives back below SCALP_PROFIT_LOCK_PCT% of peak (ratchets with
+    //    peak). Banks small scalp profits; PSAR flip (candle close) handles runners.
+    {
+      const _lock = scalpStrategy.profitLock(curPnl, pos.peakPnl);
+      if (_lock.hit) {
+        pos.slSource = "Profit Lock";
+        squareOff(price, `Profit lock (₹${Math.round(_lock.floor)})`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
         return;
       }
     }
@@ -710,26 +686,10 @@ async function onCandleClose(bar) {
 
     const window = [...state.candles];
 
-    // PSAR flip → exit on reversal signal
+    // PSAR flip → exit on reversal signal (trend exit; profit lock handles giveback per-tick)
     if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
       squareOff(bar.close, "PSAR flip").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
-    }
-
-    // Update trailing SL (BreakEven snap → PSAR, tighten only)
-    if (window.length >= 15) {
-      const trailResult = scalpStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side, {
-        peakPnl:           state.position.peakPnl,
-        initialRiskRupees: state.position.initialRiskRupees,
-        entryPrice:        state.position.entryPrice,
-      });
-      if (trailResult.sl !== state.position.stopLoss) {
-        log(`📐 [SCALP-LIVE] Trail SL (${trailResult.source}): ₹${state.position.stopLoss} → ₹${trailResult.sl}`);
-        state.position.stopLoss = trailResult.sl;
-        if (trailResult.source) state.position.slSource = trailResult.source;
-        saveScalpPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
-        updateScalpHardSL(trailResult.sl);
-      }
     }
 
     return;
@@ -1802,7 +1762,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + BreakEven floor \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

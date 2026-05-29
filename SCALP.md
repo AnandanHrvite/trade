@@ -1,6 +1,6 @@
 # SCALP Strategy — Bollinger Bands + PSAR + RSI
 
-*Redefined 2026-05-29 (PSAR-flip exit).* Authoritative description of the **current** Scalp logic, transcribed from the code:
+*Redefined 2026-05-29 (PSAR-flip exit + profit lock, V6.1).* Authoritative description of the **current** Scalp logic, transcribed from the code:
 - Entry signal: [src/strategies/scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js) (`getSignal`) — shared by all three modes.
 - Order/exit/trail management: [src/routes/scalpPaper.js](src/routes/scalpPaper.js) (paper is canonical) / [src/routes/scalpLive.js](src/routes/scalpLive.js). Backtest: [src/routes/scalpBacktest.js](src/routes/scalpBacktest.js). Replay drives the paper engine and inherits automatically.
 
@@ -30,33 +30,34 @@ Timeframe: **3 or 5-min** candles via `SCALP_RESOLUTION` (default 5). BB and RSI
 - Candle **closes at/above the BB upper band** — `close ≥ BB.upper`
 - **PSAR below the close** — `SAR < close`
 - `RSI > SCALP_RSI_CE_THRESHOLD(70)`
+- **PSAR not too far** — `close − SAR ≤ SCALP_MAX_ENTRY_SL_PTS(50)`
 - → Initial SL = **PSAR value at entry**
 
 **PE (long put):**
 - Candle **closes at/below the BB lower band** — `close ≤ BB.lower`
 - **PSAR above the close** — `SAR > close`
 - `RSI < SCALP_RSI_PE_THRESHOLD(40)`
+- **PSAR not too far** — `SAR − close ≤ SCALP_MAX_ENTRY_SL_PTS(50)`
 - → Initial SL = **PSAR value at entry**
 
-Just the two RSI keys — there are no overbought/oversold caps. Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). All valid signals enter at the `SCALP` strength tier.
+Just the two RSI keys — there are no overbought/oversold caps. The **far-PSAR filter** (`SCALP_MAX_ENTRY_SL_PTS`, `0` disables) skips entries where a freshly-flipped SAR sits 100s of pts away (uncapped risk). Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). All valid signals enter at the `SCALP` strength tier.
 
-## 4. Stop loss & trailing
+## 4. Stop loss & profit lock
 
-The strategy is **PSAR-flip driven** — the SL itself does not trail.
+The strategy is **PSAR-flip driven** for the trend exit, with a **profit lock** that banks small scalp gains.
 
-- **Initial SL = the PSAR value at entry** (no min/max clamp). At entry PSAR is always on the correct side (entry requires SAR below close for CE / above for PE). It is used for risk sizing and the break-even trigger; it is **not** an intra-tick stop.
-- **No PSAR trail, no prev-candle trail.** The position rides until the PSAR flips on a candle close (see Exit rules).
-- **Break-even snap** (`SCALP_BREAKEVEN_TRIGGER_R(0.7)`, `0` disables) is the **only** hard intra-tick stop: once peak P&L ≥ trigger × initial risk, SL jumps to entry ± `SCALP_BREAKEVEN_OFFSET_PTS(1)` and that level is enforced tick-by-tick. Per-tick, tighten-only, fires at most once.
+- **Initial SL = the PSAR value at entry** (no min/max clamp). At entry PSAR is always on the correct side and within `SCALP_MAX_ENTRY_SL_PTS`. It is used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
+- **Profit lock** (`SCALP_PROFIT_LOCK_TRIGGER(₹500)`, `0` disables; `SCALP_PROFIT_LOCK_PCT(50)`) — works in **P&L space**, per-tick. Once peak open P&L reaches the trigger, exit as soon as open P&L gives back below `PCT%` of the peak. The floor **ratchets up** with the peak (peak ₹1000 → lock ₹500; peak ₹2000 → lock ₹1000 at 50%). This is the **only** hard intra-tick exit.
 
 ## 5. Exit rules
 
-1. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. This is the only normal exit; **before break-even snaps there is no intra-tick stop.**
-2. **Break-even SL hit** — once BE has snapped, `ltp ≤ SL` (CE) / `ltp ≥ SL` (PE) every tick exits at the BE level.
+1. **Profit lock** — per tick, once peak P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER`, exit when open P&L ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Banks small profits; ratchets for runners. The only intra-tick exit.
+2. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
 3. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
 4. **Daily kill-switch / max trades** — see risk guards.
 5. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
 
-There is **no** percentage profit-trail, no time-stop, no pause-override, and no PSAR/prev-candle trail — the exit is the candle-close PSAR flip plus the break-even snap.
+There is **no** break-even-to-entry snap, no percentage spot-trail, no time-stop, no pause-override, and no PSAR/prev-candle SL trail — the exit is the per-tick profit lock plus the candle-close PSAR flip.
 
 ## 6. Same-side cooldown
 
@@ -89,7 +90,7 @@ Plot these on **NIFTY 50 spot** at the same resolution (3 or 5-min) to mirror th
 
 ## 11. Removed vs the previous (V4) strategy
 
-The tiered **% profit-trail** (`SCALP_TRAIL_START/PCT/TIERS/GRACE`), **time-stop** (`SCALP_TIME_STOP_*`), **pause-override** (`SCALP_PAUSE_OVERRIDE_*`), **BB squeeze** (`SCALP_BB_SQUEEZE_FILTER` / `SCALP_BB_MIN_WIDTH_PCT`), **CPR-narrow** (`SCALP_CPR_NARROW_PCT`), **approach** (`SCALP_REQUIRE_APPROACH`), **body-ratio** (`SCALP_MIN_BODY_RATIO`), **trend filter** (`SCALP_TREND_*`), and **activity filter** (`SCALP_ACTIVITY_*`) are all gone, with their Settings fields removed. Entry is now BB-break + PSAR-side + RSI; exit is candle-close PSAR flip + break-even snap.
+The tiered **% profit-trail** (`SCALP_TRAIL_START/PCT/TIERS/GRACE`), **time-stop** (`SCALP_TIME_STOP_*`), **pause-override** (`SCALP_PAUSE_OVERRIDE_*`), **BB squeeze** (`SCALP_BB_SQUEEZE_FILTER` / `SCALP_BB_MIN_WIDTH_PCT`), **CPR-narrow** (`SCALP_CPR_NARROW_PCT`), **approach** (`SCALP_REQUIRE_APPROACH`), **body-ratio** (`SCALP_MIN_BODY_RATIO`), **trend filter** (`SCALP_TREND_*`), and **activity filter** (`SCALP_ACTIVITY_*`) are all gone, with their Settings fields removed. Entry is now BB-break + PSAR-side + RSI + far-PSAR filter; exit is the per-tick profit lock + candle-close PSAR flip.
 
 ---
 

@@ -78,13 +78,13 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Removed** vs the old strategy: EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
-### Strategy 2: Scalp — BB + PSAR + RSI V6 (3 / 5-min)
+### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
 See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all three required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps.
+- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries).
 - **Guards**: optional `SCALP_RSI_TURNING`, independent VIX filter.
 - **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
-- **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing and the break-even trigger; it is **not** an intra-tick stop.
-- **Exit (PSAR-flip driven)**: **PSAR flip** on candle close is the only normal exit (no intra-tick SL before break-even) → **break-even snap** (peak ≥ `SCALP_BREAKEVEN_TRIGGER_R(0.7)` × risk, per-tick) is the sole hard intra-tick stop, fixed at entry ± `SCALP_BREAKEVEN_OFFSET_PTS` → bid-ask spread guard → EOD. No PSAR trail, no prev-candle trail, no % profit-trail, no time-stop.
+- **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
+- **Exit**: **Profit lock** (per-tick) — once peak P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER(₹500)`, exit when open P&L gives back below `SCALP_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak ₹1000 → lock ₹500, peak ₹2000 → lock ₹1000). This is the only intra-tick exit and banks small scalp profits. → **PSAR flip** on candle close handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no PSAR/prev-candle SL trail, no % spot-trail, no time-stop.
 - **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 5 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags; Straddle: trigger/BB-width + combined-premium MFE/MAE + max spot travel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
@@ -266,8 +266,9 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
-| `SCALP_BREAKEVEN_TRIGGER_R` | `0.7` | Move SL to entry once peak ≥ N × initial risk — the only hard intra-tick stop. `0` disables. |
-| `SCALP_BREAKEVEN_OFFSET_PTS` | `1` | Spot points above/below entry for the BE stop |
+| `SCALP_MAX_ENTRY_SL_PTS` | `50` | Skip entries where PSAR is more than this many pts from close (avoids uncapped risk). `0` = off |
+| `SCALP_PROFIT_LOCK_TRIGGER` | `500` | Arm the profit lock once peak open P&L (₹) hits this. `0` disables. |
+| `SCALP_PROFIT_LOCK_PCT` | `50` | Once armed, exit when open P&L falls below this % of peak (ratchets up) — the only intra-tick exit |
 | `SCALP_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & SL exit (pts against you) |
 | `SCALP_MAX_DAILY_TRADES` | `30` | Daily scalp cap |
 | `SCALP_MAX_DAILY_LOSS` | `4000` | Scalp kill-switch in INR |

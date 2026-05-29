@@ -1507,12 +1507,13 @@
   </table>
 
   <h4>Scalp Stops &amp; Break-even</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6: initial SL = the PSAR value at entry (no clamp); exit on candle-close PSAR flip. The break-even snap is the only hard intra-tick stop. No %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6.1: initial SL = the PSAR value at entry (no clamp; far-PSAR entries filtered by <code>SCALP_MAX_ENTRY_SL_PTS</code>); exit on candle-close PSAR flip plus a per-tick <strong>profit lock</strong> (the only intra-tick exit). No break-even-to-entry snap, no %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_BREAKEVEN_TRIGGER_R</code></td><td><code>0.7</code></td><td>Move SL to entry+offset once peak P&amp;L &ge; this &times; initial risk &mdash; the only hard intra-tick stop. <code>0</code> disables.</td></tr>
-      <tr><td><code>SCALP_BREAKEVEN_OFFSET_PTS</code></td><td><code>1</code></td><td>Spot points above/below entry for the BE stop (slippage cushion)</td></tr>
+      <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
+      <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER</code></td><td><code>500</code></td><td>Arm the profit lock once peak open P&amp;L (&#8377;) reaches this &mdash; the only intra-tick exit. <code>0</code> disables.</td></tr>
+      <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
       <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
     </tbody>
   </table>

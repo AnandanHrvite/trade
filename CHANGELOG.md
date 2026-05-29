@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — far-PSAR entry filter + profit lock (V6.1)
+
+- **Profit lock replaces the R-multiple break-even.** The V6 break-even snap (`0.7 × initial risk`) almost never armed, because the no-clamp PSAR SL made "risk" huge (often 100–400 pts) — so winners round-tripped to the candle-close PSAR flip (replay showed a +₹650 peak giving back to −₹1,187). New per-tick **profit lock** works in P&L space: once peak open P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER` (default ₹500), exit when open P&L falls below `SCALP_PROFIT_LOCK_PCT` (default 50) % of peak. The floor ratchets with the peak (peak ₹1000 → lock ₹500, peak ₹2000 → lock ₹1000), banking small scalp profits while letting runners ride to the PSAR flip. Removed `SCALP_BREAKEVEN_TRIGGER_R` / `SCALP_BREAKEVEN_OFFSET_PTS`.
+- **Far-PSAR entry filter.** New `SCALP_MAX_ENTRY_SL_PTS` (default 50): skip entries where PSAR sits farther than N pts from close. A freshly-flipped SAR can be 100s of pts away, producing uncapped-risk trades; this bounds entry risk without re-introducing a hard SL clamp.
+- Exit reasons are now `Profit lock` / `PSAR flip` / `EOD square-off`. Applied across paper (canonical), live, backtest, replay; SCALP.md / README / docs updated.
+
 ### SCALP — simplified RSI entry + PSAR-flip exit (V6)
 
 - **Entry RSI reduced to two keys.** Removed the `SCALP_RSI_CE_MAX` / `SCALP_RSI_PE_MIN` overbought/oversold caps. Entry is now simply CE: `RSI > SCALP_RSI_CE_THRESHOLD` (default raised **62 → 70**); PE: `RSI < SCALP_RSI_PE_THRESHOLD` (default lowered **42 → 40**). BB-break and PSAR-side conditions unchanged.

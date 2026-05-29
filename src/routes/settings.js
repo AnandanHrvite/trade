@@ -97,15 +97,16 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
       { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
-      // ── Parabolic SAR (entry confirmation + trailing SL + flip exit) ──
+      // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      // ── Break-even SL (move SL to entry once peak ≥ trigger × initial risk) ──
-      { key: "SCALP_BREAKEVEN_TRIGGER_R", label: "Break-Even Trigger (R)", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.SESSION, desc: "Move SL to entry+offset once peak P&L ≥ N × initial risk. Stops winners reversing into losers. 0 = disabled.", default: "0.7" },
-      { key: "SCALP_BREAKEVEN_OFFSET_PTS", label: "Break-Even Offset (pts)", type: "number", min: 0, max: 5, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above/below entry for the BE stop (small buffer for slippage)", default: "1" },
+      { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where PSAR sits farther than this from close (a freshly-flipped SAR can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      // ── Profit lock (bank small scalp profits; the only intra-tick exit) ──
+      { key: "SCALP_PROFIT_LOCK_TRIGGER", label: "Profit Lock Trigger (₹)", type: "number", min: 0, max: 5000, step: 100, effect: EFFECT.SESSION, desc: "Arm the profit lock once peak open P&L reaches this. Once armed, exit if P&L gives back below the lock %. 0 = disabled.", default: "500" },
+      { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when open P&L falls below this % of the peak (ratchets up with peak). e.g. 50 → peak ₹1000 banks ₹500, peak ₹2000 banks ₹1000.", default: "50" },
       // ── Risk management ──
-      // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp), exit on
-      // candle-close PSAR flip; break-even snap (above) is the only hard intra-tick stop.
+      // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
+      // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
       { key: "SCALP_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
       { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
       { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "4000" },
@@ -556,8 +557,8 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
-  "SCALP_PSAR_STEP", "SCALP_PSAR_MAX",
-  "SCALP_BREAKEVEN_TRIGGER_R", "SCALP_BREAKEVEN_OFFSET_PTS",
+  "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
+  "SCALP_PROFIT_LOCK_TRIGGER", "SCALP_PROFIT_LOCK_PCT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
   "SCALP_SLIPPAGE_PTS",

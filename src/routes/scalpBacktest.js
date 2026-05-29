@@ -150,7 +150,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
   console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
-  console.log(`   SL: PSAR flip exit + BreakEven floor | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   SL: PSAR flip exit + Profit lock | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -216,7 +216,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
       // Initial SL = PSAR value from the strategy (no clamp).
       const sl = pendingSignal.rawSL;
-      // Initial rupee risk (used by break-even snap in updateTrailingSL).
+      // Initial rupee risk (recorded on the trade for analysis; no longer drives exits).
       // Approximate: |entry-SL| × DELTA × qty (flat charges ignored).
       const _initRiskBT = OPTION_SIM
         ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
@@ -258,7 +258,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         return pts - _estCharges / LOT_SIZE;
       };
 
-      // ── Track peak PNL for the break-even trigger ──
+      // ── Track peak PNL for the profit lock (intra-candle extreme) ──
       const bestSpot = position.side === "CE" ? candle.high : candle.low;
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
@@ -266,19 +266,17 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. BreakEven SL  2. PSAR flip  3. BreakEven snap  4. EOD
+      // EXIT: 1. Profit lock  2. PSAR flip  3. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. Hard SL hit — ONLY once break-even has snapped. The PSAR stop is not a
-      //    candle-level stop; before BE the position exits only on a PSAR flip.
-      if (position.slSource === "BreakEven") {
-        if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitPrice  = parseFloat((position.stopLoss - SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-          exitReason = "BreakEven SL hit";
-        } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitPrice  = parseFloat((position.stopLoss + SLIPPAGE_PTS).toFixed(2)); // slippage works against you
-          exitReason = "BreakEven SL hit";
-        }
+      // 1. PROFIT LOCK — the only intra-candle exit. Once peak P&L ≥ TRIGGER, exit when
+      //    P&L gives back below PCT% of peak. Evaluated at candle close (per-bar proxy for
+      //    the per-tick paper logic). PSAR flip handles trend runners.
+      const _lock = scalpStrategy.profitLock(_runPnl(candle.close), position.peakPnl);
+      if (_lock.hit) {
+        position.slSource = "Profit Lock";
+        exitPrice  = candle.close;
+        exitReason = "Profit lock";
       }
 
       // 2. PSAR flip — exit on reversal signal
@@ -286,20 +284,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = "PSAR flip";
       }
 
-      // 3. Update trailing SL (BreakEven snap only)
-      if (!exitReason) {
-        const trailResult = scalpStrategy.updateTrailingSL(window, position.stopLoss, position.side, {
-          peakPnl:           position.peakPnl,
-          initialRiskRupees: position.initialRiskRupees,
-          entryPrice:        position.entryPrice,
-        });
-        if (trailResult.sl !== position.stopLoss) {
-          position.stopLoss = trailResult.sl;
-          if (trailResult.source) position.slSource = trailResult.source;
-        }
-      }
-
-      // 5. EOD
+      // 3. EOD
       if (!exitReason && isEOD) {
         exitReason = "EOD square-off";
       }
@@ -1590,7 +1575,7 @@ function renderAnalytics(){
   trades.forEach(function(t){
     var r = t.reason;
     // Normalize V6 exit reasons.
-    if(r.indexOf('BreakEven')===0) r='BreakEven SL hit';
+    if(r.indexOf('Profit lock')===0) r='Profit lock';
     else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
@@ -1900,7 +1885,7 @@ function renderAnalytics(){
     var lrMap={};
     lossTrades.forEach(function(t){
       var r=t.reason;
-      if(r.indexOf('BreakEven')===0) r='BreakEven SL hit';
+      if(r.indexOf('Profit lock')===0) r='Profit lock';
       else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
