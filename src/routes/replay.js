@@ -107,16 +107,6 @@ router.get("/download-day", (req, res) => {
   });
 });
 
-// Wipe all cached replay results (current + orphaned). Used by the
-// "Clear cache" run option before a fresh range run.
-router.post("/clear-cache", (req, res) => {
-  try {
-    res.json(tickReplay.clearReplayCache());
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
 router.post("/delete-session", express.json(), (req, res) => {
   const { date, sessionId } = req.body || {};
   try {
@@ -421,12 +411,6 @@ ${buildSidebar('replay', false)}
           <option value="current">My current settings</option>
           <option value="snapshot">Snapshot settings</option>
         </select>
-      </div>
-      <div class="range-field">
-        <label>&nbsp;</label>
-        <label title="Wipe ALL cached replay results (current + orphaned) before running, then recompute every day fresh." style="display:flex; gap:6px; align-items:center; font-weight:normal; cursor:pointer; white-space:nowrap;">
-          <input type="checkbox" id="range-clear-cache" style="cursor:pointer;"> Clear cache before run
-        </label>
       </div>
       <div class="range-field">
         <label>&nbsp;</label>
@@ -1702,18 +1686,6 @@ async function runRange(btn) {
   const HARD_CAP = 30;
   if (sessions.length > HARD_CAP) {
     if (!confirm('That range has ' + sessions.length + ' sessions (~' + Math.round(sessions.length * 10 / 60) + ' min). Continue?')) return;
-  }
-
-  // Optional: wipe ALL cached results (current + orphaned) first so every day
-  // in this run recomputes from scratch and re-caches under the current key.
-  const clearChk = document.getElementById('range-clear-cache');
-  if (clearChk && clearChk.checked) {
-    try {
-      const r = await fetch('/replay/clear-cache', { method: 'POST' });
-      const j = await r.json().catch(() => ({}));
-      console.log('[replay] cache cleared: ' + ((j && j.removed) || 0) + ' file(s)');
-    } catch (_) { /* non-fatal — proceed with the run */ }
-    clearChk.checked = false;  // one-shot — don't silently re-wipe every run
   }
 
   await runSessionsBatch(sessions, context, btn, useCurrentSettings ? '▶ Run range (compare)' : '▶ Run range (snapshot)');

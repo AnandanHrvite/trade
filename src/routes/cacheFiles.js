@@ -43,9 +43,10 @@ const VIEW_MAX_BYTES = 1024 * 1024; // 1 MB cap on the View modal
 const GROUPS = [
   { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-swing",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Cached historical OHLC pulls used by backtests (auto-pruned)." },
   { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-scalp",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
-  { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay." },
-  { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(DATA_DIR, "_replay_trades"),     flat: false, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
-  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-straddle", base: path.join(DATA_DIR, "_replay_trades_sim"), flat: false, desc: "Replay outputs in current-settings (sim) mode." },
+  { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay. (Replay outputs/cache under the same root are listed separately below.)" },
+  { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
+  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-straddle", base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, desc: "Replay outputs in current-settings (sim) mode." },
+  { key: "replay_cache",   label: "Replay Cache",        icon: "⚡", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_cache"),      flat: false, desc: "Cached deterministic replay results — re-run hits these to skip the tick stream. Deleting forces a fresh recompute on the next run (safe)." },
   { key: "root",           label: "Root Data Files",     icon: "🗂", cls: "mode-swing",    base: DATA_DIR,                                  flat: true,  desc: "Loose JSON / JSONL state files directly under ~/trading-data (the grouped sub-folders are listed above)." },
 ];
 const GROUP_BY_KEY = Object.fromEntries(GROUPS.map(g => [g.key, g]));
@@ -86,6 +87,11 @@ function listFiles(group) {
       const full = path.join(dir, e.name);
       const rel  = prefix ? prefix + "/" + e.name : e.name;
       if (e.isDirectory()) {
+        // Skip underscore-prefixed dirs (_replay_trades, _replay_trades_sim,
+        // _replay_cache) — they share the ticks ROOT_DIR but have their own
+        // groups, so the "Recorded Ticks" walk shouldn't sweep them in. Real
+        // tick folders are date-named (YYYY-MM-DD), never underscore-prefixed.
+        if (e.name.startsWith("_")) continue;
         if (!group.flat) walk(full, rel);
       } else if (e.isFile()) {
         let st; try { st = fs.statSync(full); } catch (_) { continue; }
