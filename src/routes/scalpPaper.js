@@ -582,14 +582,14 @@ function onTick(tick) {
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
 
-    // 1. PROFIT LOCK — the only intra-tick exit. Once peak P&L ≥ SCALP_PROFIT_LOCK_TRIGGER,
-    //    exit when open P&L gives back below SCALP_PROFIT_LOCK_PCT% of peak (ratchets with
-    //    peak). Banks small scalp profits; PSAR flip (candle close) handles runners.
+    // 1. PROFIT LOCK — the only intra-tick exit. Once peak favourable spot move ≥
+    //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
+    //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
     {
-      const _lock = scalpStrategy.profitLock(curPnl, pos.peakPnl);
+      const _lock = scalpStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
         pos.slSource = "Profit Lock";
-        simulateSell(price, `Profit lock (₹${Math.round(_lock.floor)})`, price);
+        simulateSell(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`, price);
         return;
       }
     }

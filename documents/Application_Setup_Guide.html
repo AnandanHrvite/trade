@@ -1512,7 +1512,7 @@
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
-      <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER</code></td><td><code>500</code></td><td>Arm the profit lock once peak open P&amp;L (&#8377;) reaches this &mdash; the only intra-tick exit. <code>0</code> disables.</td></tr>
+      <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) reaches this &mdash; the only intra-tick exit. Points-based. <code>0</code> disables.</td></tr>
       <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
       <tr><td><code>SCALP_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the Bollinger Band (failed breakout)</td></tr>
       <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>

@@ -47,11 +47,11 @@ Just the two RSI keys — there are no overbought/oversold caps. The **far-PSAR 
 The strategy is **PSAR-flip driven** for the trend exit, with a **profit lock** that banks small scalp gains.
 
 - **Initial SL = the PSAR value at entry** (no min/max clamp). At entry PSAR is always on the correct side and within `SCALP_MAX_ENTRY_SL_PTS`. It is used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
-- **Profit lock** (`SCALP_PROFIT_LOCK_TRIGGER(₹500)`, `0` disables; `SCALP_PROFIT_LOCK_PCT(50)`) — works in **P&L space**, per-tick. Once peak open P&L reaches the trigger, exit as soon as open P&L gives back below `PCT%` of the peak. The floor **ratchets up** with the peak (peak ₹1000 → lock ₹500; peak ₹2000 → lock ₹1000 at 50%). This is the **only** hard intra-tick exit.
+- **Profit lock** (`SCALP_PROFIT_LOCK_TRIGGER_PTS(25)`, `0` disables; `SCALP_PROFIT_LOCK_PCT(50)`) — works in **spot points**, per-tick. Tracks the favourable spot move since entry (PE = entry−price, CE = price−entry). Once the **peak** favourable move reaches the trigger, exit as soon as it gives back below `PCT%` of the peak. The floor **ratchets up** with the peak (peak 100pts → lock 50pts; peak 200pts → lock 100pts at 50%). Points-based, so it works even when option P&L is unavailable (spot-proxy sessions). This is the **only** intra-tick exit.
 
 ## 5. Exit rules
 
-1. **Profit lock** — per tick, once peak P&L ≥ `SCALP_PROFIT_LOCK_TRIGGER`, exit when open P&L ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Banks small profits; ratchets for runners. The only intra-tick exit.
+1. **Profit lock (spot points)** — per tick, once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS`, exit when the favourable move ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Ratchets for runners. The only intra-tick exit. Points-based — independent of option pricing.
 2. **BB re-entry (failed breakout)** — on candle close, if price has closed **back inside the band** the breakout that triggered the entry has failed → exit. CE: `close < BB.upper`; PE: `close > BB.lower`. Gated by `SCALP_BB_REENTRY_EXIT` (default on). Cuts loss bleed before the slower PSAR flip.
 3. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
 4. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).

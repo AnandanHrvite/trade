@@ -8,10 +8,10 @@
  *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
  *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
- * EXIT (PSAR-flip driven + profit lock):
- *   1. Profit lock (PnL space) — once peak P&L ≥ SCALP_PROFIT_LOCK_TRIGGER (₹), exit when open P&L
- *      gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; banks small scalp profits.
- *      This is the ONLY intra-tick exit.
+ * EXIT (profit lock + BB re-entry + PSAR flip):
+ *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ SCALP_PROFIT_LOCK_TRIGGER_PTS,
+ *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
+ *      so it is independent of option pricing. This is the ONLY intra-tick exit.
  *   2. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
  *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
  *   3. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
@@ -246,20 +246,22 @@ function getSignal(candles, opts) {
 }
 
 // ── Profit lock (the only intra-tick exit) ───────────────────────────────────
-// PnL-space ratcheting lock that banks small scalp profits and lets winners run:
-// once peak P&L reaches SCALP_PROFIT_LOCK_TRIGGER (₹), exit as soon as the open
-// P&L gives back below SCALP_PROFIT_LOCK_PCT% of the peak. The floor ratchets up
-// with the peak (peak ₹1000 → lock ₹500, peak ₹2000 → lock ₹1000 at 50%). PSAR
-// flip (candle close) still handles trend exits. Set TRIGGER = 0 to disable.
-//   curPnl  — current open P&L (₹)
-//   peakPnl — best open P&L seen so far this trade (₹)
+// Spot-POINTS ratcheting profit lock — banks favourable spot travel and lets
+// winners run. Tracks the favourable spot move since entry (PE = entry−price,
+// CE = price−entry). Once the PEAK favourable move reaches
+// SCALP_PROFIT_LOCK_TRIGGER_PTS, exit as soon as it gives back below
+// SCALP_PROFIT_LOCK_PCT% of that peak. Floor ratchets up with the peak
+// (peak 100pts → lock 50pts at 50%). Points-based, so it is independent of
+// option pricing (works even on spot-proxy replay sessions). TRIGGER = 0 disables.
+//   favPts     — current favourable spot points
+//   peakFavPts — best favourable spot points seen this trade
 // Returns { hit, floor }.
-function profitLock(curPnl, peakPnl) {
-  var trigger = parseFloat(cfg("SCALP_PROFIT_LOCK_TRIGGER", "500"));
+function profitLock(favPts, peakFavPts) {
+  var trigger = parseFloat(cfg("SCALP_PROFIT_LOCK_TRIGGER_PTS", "25"));
   var pct     = parseFloat(cfg("SCALP_PROFIT_LOCK_PCT", "50"));
-  if (trigger <= 0 || peakPnl == null || peakPnl < trigger) return { hit: false, floor: null };
-  var floor = parseFloat(((pct / 100) * peakPnl).toFixed(2));
-  return { hit: curPnl <= floor, floor: floor };
+  if (trigger <= 0 || peakFavPts == null || peakFavPts < trigger) return { hit: false, floor: null };
+  var floor = parseFloat(((pct / 100) * peakFavPts).toFixed(2));
+  return { hit: favPts <= floor, floor: floor };
 }
 
 // ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────

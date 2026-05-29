@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — profit lock switched to spot-POINTS (V6.2)
+
+- **Profit lock is now points-based, not ₹-based.** It tracks the favourable spot move since entry (PE = entry−price, CE = price−entry): once the peak favourable move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS` (default 25), it exits when the move gives back below `SCALP_PROFIT_LOCK_PCT`% of the peak (ratchets up: peak 100pts → lock 50pts). **Why:** the old ₹-based lock (a) exited far too early on tiny ₹ peaks, and (b) read option P&L that is *fake* on spot-proxy replay sessions (a PE that fell 89 pts could show −₹68), so it never locked the real move. Points are real even on those sessions. Renamed key `SCALP_PROFIT_LOCK_TRIGGER` (₹) → `SCALP_PROFIT_LOCK_TRIGGER_PTS` (points). Exit label is now `Profit lock (Npts)`. Applied across paper/live/backtest.
+
 ### SCALP — BB re-entry (failed-breakout) exit (V6.1)
 
 - **New candle-close exit: `SCALP_BB_REENTRY_EXIT` (default on).** After entry, if a candle closes **back inside** the Bollinger Band the breakout that triggered the trade has failed → exit immediately, rather than waiting for the slower PSAR flip. CE exits when `close < BB.upper`; PE exits when `close > BB.lower`. Targets the loss-bleed seen on replay (05-29 PE −₹3,236, 05-21 PE −₹1,455, 05-26 PE −₹1,695 all reversed back into the band before the PSAR flip fired). Order on candle close: profit lock (per-tick) → BB re-entry → PSAR flip → EOD. Toggleable so it can be A/B'd via `/replay`. Engine helper `scalpStrategy.bbReentryExit(window, side)`; applied across paper/live/backtest.

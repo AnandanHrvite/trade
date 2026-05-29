@@ -258,21 +258,24 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         return pts - _estCharges / LOT_SIZE;
       };
 
-      // ── Track peak PNL for the profit lock (intra-candle extreme) ──
+      // ── Track peak PNL (record-keeping) + peak favourable spot points (profit lock) ──
       const bestSpot = position.side === "CE" ? candle.high : candle.low;
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
         position.peakPnl = bestPnl;
       }
+      const _favPeakPts = (bestSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+      if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
       // ──────────────────────────────────────────────────────────────────────
       // EXIT: 1. Profit lock  2. BB re-entry  3. PSAR flip  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
-      // 1. PROFIT LOCK — the only intra-candle exit. Once peak P&L ≥ TRIGGER, exit when
-      //    P&L gives back below PCT% of peak. Evaluated at candle close (per-bar proxy for
-      //    the per-tick paper logic). PSAR flip handles trend runners.
-      const _lock = scalpStrategy.profitLock(_runPnl(candle.close), position.peakPnl);
+      // 1. PROFIT LOCK — the only intra-candle exit. Once peak favourable spot move ≥
+      //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
+      //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
+      const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+      const _lock = scalpStrategy.profitLock(_favClosePts, position.mfeSpotPts);
       if (_lock.hit) {
         position.slSource = "Profit Lock";
         exitPrice  = candle.close;
