@@ -441,6 +441,7 @@ function dayViewSectionHTML() {
         <span class="tbar-count" id="dayCntLabel"></span>
         <button class="copy-btn" onclick="copyDayView(this)" style="margin-left:auto;">📋 Copy Day View</button>
       </div>
+      <div class="ana-card" style="margin-bottom:12px;"><h3>📊 Daily P&L</h3><div class="ana-chart-wrap"><canvas id="dayPnlChart"></canvas></div></div>
       <div style="overflow-x:auto;">
         <table class="tbl">
           <thead><tr>
@@ -704,6 +705,25 @@ function buildDayView(){
   var cumAll=0;
   for(var k=0;k<days.length;k++){ cumAll+=days[k].pnl; days[k]._cum=cumAll; }
   window._dayData = days;
+
+  // Daily P&L bar chart (one bar per date) + cumulative P&L line overlay.
+  var dpCanvas = document.getElementById('dayPnlChart');
+  if(typeof Chart !== 'undefined' && dpCanvas){
+    var dpLabels = days.map(function(d){ return d.date; });
+    var dpVals   = days.map(function(d){ return Math.round(d.pnl); });
+    var dpCum    = days.map(function(d){ return Math.round(d._cum); });
+    var dpColors = dpVals.map(function(v){ return v>=0?'rgba(16,185,129,0.7)':'rgba(239,68,68,0.7)'; });
+    if(anaCharts.dayPnl) anaCharts.dayPnl.destroy();
+    if(days.length){
+      anaCharts.dayPnl = new Chart(dpCanvas,{
+        data:{labels:dpLabels,datasets:[
+          {type:'bar',label:'Day P&L',data:dpVals,backgroundColor:dpColors,borderRadius:4,barPercentage:0.7,order:2},
+          {type:'line',label:'Cumulative',data:dpCum,borderColor:'#3b82f6',borderWidth:1.5,backgroundColor:'rgba(59,130,246,0.08)',fill:false,pointRadius:0,tension:0.3,order:1}
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{color:'#4a6080',font:{size:10,family:'IBM Plex Mono'},boxWidth:10}},tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+': '+fmtAna(ctx.raw);}}}},scales:{x:{grid:{display:false},ticks:{color:'#3a5070',font:{size:9,family:'IBM Plex Mono'},maxRotation:60,minRotation:0}},y:{grid:{color:'#0e1428'},ticks:{color:'#3a5070',font:{size:10,family:'IBM Plex Mono'},callback:function(v){return fmtAnaShort(v);}}}}}
+      });
+    }
+  }
 
   var totalPages = dwPageSize === 0 ? 1 : Math.max(1, Math.ceil(days.length / dwPageSize));
   if(dwPage > totalPages) dwPage = totalPages;
