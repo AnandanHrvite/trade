@@ -42,6 +42,7 @@
 const fs       = require("fs");
 const path     = require("path");
 const readline = require("readline");
+const crypto   = require("crypto");
 
 const { ROOT_DIR } = require("../utils/tickRecorder")._internals;
 
@@ -56,6 +57,76 @@ let _cancelRequested = false;
 function requestCancel() {
   _cancelRequested = true;
   return { ok: true, replayInProgress: _replayInProgress };
+}
+
+// ── Deterministic result cache ───────────────────────────────────────────────
+// A replay is fully deterministic: same recorded ticks + same settings basis +
+// same replay code → byte-identical trades/PnL. Re-running an identical replay
+// therefore needn't re-stream 55k+ ticks (~80s). We cache the full result on
+// disk keyed by a fingerprint of every input that can change the outcome, and
+// short-circuit on a hit. Snapshot mode keys on the recorded session-start
+// settings; sim mode keys on a snapshot of current env, so re-running the SAME
+// settings hits while changing any setting misses (the refinement workflow's
+// intent). Speed is excluded — it changes pacing, not the result.
+//
+// BUMP this whenever replay/strategy semantics change in a way that would alter
+// a past session's result, so stale cached results are invalidated rather than
+// silently served.
+const REPLAY_CACHE_VERSION = 1;
+
+function _replayCacheDir() {
+  return path.join(ROOT_DIR, "_replay_cache");
+}
+
+// Cheap immutability fingerprint for a recorded file: size + mtime. Recorded
+// tick files for a past date never change, so this is a sufficient (and fast)
+// invalidation signal — no need to hash multi-MB streams.
+function _fileFingerprint(p) {
+  try { const st = fs.statSync(p); return `${st.size}:${Math.round(st.mtimeMs)}`; }
+  catch (_) { return "missing"; }
+}
+
+function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) {
+  const dir = path.join(ROOT_DIR, date);
+  const settingsBasis = useCurrentSettings
+    ? { env: process.env }            // sim: current Settings-page values
+    : (sessionStart.settings || {});  // snapshot: recorded session-start env
+  const basis = {
+    v: REPLAY_CACHE_VERSION,
+    mode,
+    date,
+    sid: sessionStart.sid,
+    src: useCurrentSettings ? "sim" : "snapshot",
+    files: {
+      sessions: _fileFingerprint(path.join(dir, "sessions.jsonl")),
+      spot:     _fileFingerprint(path.join(dir, "spot.jsonl")),
+      options:  _fileFingerprint(path.join(dir, "options.jsonl")),
+      vix:      _fileFingerprint(path.join(dir, "vix.jsonl")),
+    },
+    settings: settingsBasis,
+  };
+  return crypto.createHash("sha1").update(JSON.stringify(basis)).digest("hex");
+}
+
+function _readReplayCache(key) {
+  try {
+    const f = path.join(_replayCacheDir(), `${key}.json`);
+    if (!fs.existsSync(f)) return null;
+    return JSON.parse(fs.readFileSync(f, "utf-8"));
+  } catch (_) { return null; }
+}
+
+function _writeReplayCache(key, result) {
+  try {
+    const dir = _replayCacheDir();
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const f = path.join(dir, `${key}.json`);
+    const tmp = `${f}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(result));
+    fs.renameSync(tmp, f);
+  } catch (e) {
+    console.log(`⚠️ [replay] cache write failed: ${e.message}`);
+  }
 }
 
 // ── Loaders ─────────────────────────────────────────────────────────────────
@@ -784,7 +855,7 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Returns:
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
  */
-async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false } = {}) {
+async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSettings = false, noCache = false } = {}) {
   // Guard: replay shares the process with live/paper engines via monkey-patches.
   // Refuse if anything is active so a real trade isn't accidentally silenced.
   const pre = replayPreflight();
@@ -809,6 +880,23 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    makes the Replay activity pane look frozen.
     console.log(`📼 [replay] ${mode} ${sessionId || date}: loading recorded session…`);
     const data = await loadSessionData({ date, mode, sessionId });
+
+    // 1b. Result cache: an identical re-run is deterministic, so short-circuit
+    //     the ~80s tick stream if this exact (mode, date, session, settings,
+    //     recorded-ticks) combination was computed before. Checked here — after
+    //     loadSessionData resolves the session + settings, before any env
+    //     override or harness install — so an early return needs no cleanup.
+    const cacheKey = _buildReplayCacheKey({
+      mode, date, sessionStart: data.sessionStart, useCurrentSettings,
+    });
+    if (!noCache) {
+      const hit = _readReplayCache(cacheKey);
+      if (hit && hit.ok) {
+        console.log(`⚡ [replay] ${mode} ${data.sessionStart.sid}: cache hit — skipping tick stream`);
+        return { ...hit, cached: true, durationMs: Date.now() - startWall };
+      }
+    }
+
     const optionTimeline = _buildOptionTimeline(data.optionTicks);
     const vixTimeline    = data.vixTicks.map(v => ({ t: v.t, l: v.v })); // unify field name
 
@@ -1031,7 +1119,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     } catch (_) { /* chart is best-effort; never fail a replay over it */ }
 
     const canonical = _lookupCanonicalSession(mode, data.sessionStart.t);
-    return {
+    const result = {
       ok: true,
       cancelled,  // true if stopped early via requestCancel() mid-session
       mode,
@@ -1044,6 +1132,10 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       chartData,  // { candles, markers, ...mode overlays } or null if unavailable
       canonical,  // { pnl, tradeCount, matchedAt, matchSkewMs } or null if no match
     };
+    // Cache only complete (non-cancelled) results so a future identical re-run
+    // short-circuits. Cancelled runs are partial — never cache.
+    if (!cancelled) _writeReplayCache(cacheKey, result);
+    return result;
   } catch (err) {
     return {
       ok: false,

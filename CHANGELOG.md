@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### REPLAY — deterministic result cache (faster re-runs)
+
+- **Re-running an identical replay is now near-instant.** A replay is deterministic, so the full result (trades, P&L, chart) is cached on disk in `~/trading-data/_replay_cache/` and served on an identical re-run instead of re-streaming ~55k ticks (~80s/session → ~0s). Date-range runs benefit per-session automatically.
+- **Cache key** fingerprints everything that can change the outcome: mode, date, session id, the recorded tick-file size+mtime (spot/options/vix/sessions), the replay-code version, and the settings basis — recorded session-start settings in **snapshot** mode, current env in **sim** (current-settings) mode. So same-settings re-runs hit; changing any setting (sim) or re-recording the day misses and recomputes.
+- **Invalidation**: bump `REPLAY_CACHE_VERSION` in [tickReplay.js](src/services/tickReplay.js) whenever replay/strategy semantics change; or pass `noCache:true` to `POST /replay/run` to force a fresh recompute (+ cache overwrite); or delete the `_replay_cache/` dir. Cancelled runs are never cached.
+
+### REPLAY — fix stale entry LTP on re-subscribed strike
+
+- `_lookupNearest` only forward-filled a strike's **first** subscription. Since a strike is re-subscribed each trade and its option timeline has multi-minute gaps between trades, a later trade's entry inherited the **previous trade's exit price** (e.g. trade 2 entry = trade 1 exit), breaking snapshot↔live-paper determinism. Now forward-fills the nearest after-tick on re-subscription too.
+
 ### SWING — opposite-side (flip) cooldown
 
 - **New gate**: after any non-flip exit (Initial/Trail/Breakeven SL, option-stop, PSAR-flip exit, EMA touch-back exit), block entries on the **OPPOSITE side** for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` × `TRADE_RESOLUTION` minutes. Prevents the bot from whipsawing CE→PE→CE in chop within minutes of an exit.

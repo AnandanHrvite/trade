@@ -119,7 +119,7 @@ router.post("/delete-session", express.json(), (req, res) => {
 });
 
 router.post("/run", express.json(), async (req, res) => {
-  const { date, mode, sessionId, speed, useCurrentSettings } = req.body || {};
+  const { date, mode, sessionId, speed, useCurrentSettings, noCache } = req.body || {};
   if (!date || !mode) {
     return res.status(400).json({ ok: false, error: "date and mode are required" });
   }
@@ -130,6 +130,7 @@ router.post("/run", express.json(), async (req, res) => {
       sessionId,
       speed: typeof speed === "number" ? speed : 0,
       useCurrentSettings: !!useCurrentSettings,
+      noCache: !!noCache,  // force fresh recompute + cache overwrite when true
     });
     res.json(result);
   } catch (err) {
