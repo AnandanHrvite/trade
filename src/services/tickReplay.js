@@ -218,14 +218,17 @@ function _lookupNearest(arr, t, windowMs) {
   if (!best) return null;
   // Within window → return nearest (may be after t)
   if (Math.min(dBefore, dAfter) <= windowMs) return best;
-  // No prior tick — replayNow precedes this symbol's first recorded tick
-  // (option just subscribed at entry, no option data has flowed yet). Forward-
-  // fill the first tick, mirroring live where the first option websocket tick
-  // after subscription fills optionEntryLtp. Without this the entry lands in a
-  // data hole → paper's 10s spot-proxy fallback poisons optionEntryLtp with the
-  // spot price (~100× the premium), producing absurd PnL and tripping daily-loss.
-  if (!before) return after;
-  // Outside window → preserve original at-or-before semantics
+  // Past the window: if the nearest recorded tick is AFTER t, forward-fill it.
+  // Covers a strike's first subscription (no prior tick) AND re-subscription
+  // later in the session — the same strike is only subscribed while a position
+  // is open, so its timeline has multi-minute gaps between trades. A stale tick
+  // from an earlier subscription survives far back in the array as `before`;
+  // without this, a new entry inherits the PREVIOUS trade's last LTP instead of
+  // its own first tick (e.g. trade 2's entry = trade 1's exit price). On a
+  // first-ever subscription the entry would instead land in a data hole →
+  // paper's 10s spot-proxy fallback poisons optionEntryLtp with the spot price.
+  if (after && dAfter < dBefore) return after;
+  // Otherwise (after is null, or before is genuinely nearer) → at-or-before.
   return before;
 }
 
