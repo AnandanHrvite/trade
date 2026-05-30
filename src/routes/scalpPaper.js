@@ -1202,7 +1202,7 @@ router.get("/status/chart-data", (req, res) => {
       try {
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
-          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value });
+          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
         }
       } catch (_) { /* ignore */ }
     } else {
@@ -2193,8 +2193,9 @@ function doCopy(text,btn,label){
   // PSAR rendered as a thin dotted "line" (dot-per-bar look). Lightweight Charts has no scatter
   // primitive, so a Line series with style=Dotted and lineWidth=1 closely approximates SAR dots.
   var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  // SuperTrend line (solid, on the price scale) — shown only when it is the active source.
-  var stS  = chart.addLineSeries({ color:'#f59e0b', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
+  // SuperTrend line (solid, on the price scale) — per-point colour: GREEN bullish / RED bearish.
+  var stS  = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
+  var _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
   // RSI on its own bottom price-scale, with dashed CE/PE threshold lines
   var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
@@ -2245,7 +2246,7 @@ function doCopy(text,btn,label){
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
       if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
-      if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend); else stS.setData([]);
+      if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend.map(_stColor)); else stS.setData([]);
       if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMin); } else adxS.setData([]);
       if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }

@@ -574,12 +574,14 @@ function drawReplayChart(el, cd) {
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['ema21', '#fbbf24'], ['orhLine', '#34d399'], ['orlLine', '#f87171'],
+    ['ema20', '#fbbf24'], ['ema50', '#e5e7eb'], ['ema21', '#fbbf24'],
+    ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
+  const _wideOverlays = { ema20: 1, ema50: 1, ema21: 1 };
   for (const [key, color] of overlays) {
     const arr = cd[key];
     if (Array.isArray(arr) && arr.length) {
-      const ls = chart.addLineSeries({ color, lineWidth: key === 'ema21' ? 2 : 1, priceLineVisible: false, lastValueVisible: false });
+      const ls = chart.addLineSeries({ color, lineWidth: _wideOverlays[key] ? 2 : 1, priceLineVisible: false, lastValueVisible: false });
       ls.setData(arr);
     }
   }
@@ -589,9 +591,11 @@ function drawReplayChart(el, cd) {
     sarLs.setData(cd.sar);
   }
   // SuperTrend line (solid) — drawn when the session used SuperTrend instead of PSAR.
+  // Per-point colour: GREEN when bullish (trend===1), RED when bearish (trend===-1).
+  // Older cached sessions without per-point trend fall back to green.
   if (Array.isArray(cd.supertrend) && cd.supertrend.length) {
-    const stLs = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
-    stLs.setData(cd.supertrend);
+    const stLs = chart.addLineSeries({ color: '#22c55e', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+    stLs.setData(cd.supertrend.map(p => ({ time: p.time, value: p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') })));
   }
   // RSI on its own bottom scale + dashed level lines at the strategy thresholds.
   if (Array.isArray(cd.rsi) && cd.rsi.length) {

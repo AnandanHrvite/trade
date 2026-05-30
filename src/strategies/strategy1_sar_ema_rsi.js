@@ -1,36 +1,37 @@
 /**
- * STRATEGY: SAR_EMA21_RSI  (SWING — redefined 2026-05-27)
+ * STRATEGY: SAR_EMA_RSI  (SWING — entry redefined 2026-05-31)
  *
- * A deliberately simple, chart-driven rule set. Replaces the old EMA9-touch /
- * 3-logic-path / ADX / body / SAR-distance / STRONG-MARGINAL system.
+ * Trend-following rule set driven by an EMA20/EMA50 crossover-state gate.
  *
- * Indicators: EMA21 (OHLC4) · RSI(14) · Parabolic SAR (0.02 / 0.2).
+ * Indicators: EMA20 (close) · EMA50 (close) · RSI(14) · Parabolic SAR (0.02/0.2)
+ *             or SuperTrend(10,3) — PSAR vs SuperTrend selected by SWING_USE_SUPERTREND.
+ *             EMA21 (OHLC4) is still computed but ONLY for the SL "ema" mode and the
+ *             trade-record snapshot — it is NOT part of the entry decision any more.
  *
  * ENTRY — BUY_CE (bullish), ALL must be true (evaluated every tick while flat):
- *   1. RSI(14)  >  RSI_CE_MIN (default 52)
- *   2. Price at or ABOVE EMA21 — fires whether the candle is already above EMA21
- *      OR is currently crossing up through it  →  signalCandle.high >= ema21
- *   3. SAR below the candle  →  SAR.trend === 1 (dots below price)
+ *   1. EMA20 ABOVE EMA50 (fast on top of slow)
+ *   2. RSI(14) in the CE band  →  RSI_CE_MIN < RSI < RSI_CE_MAX
+ *   3. Trend source GREEN  →  SAR below price (SAR.trend===1) OR SuperTrend bullish (trend===1)
  *
  * ENTRY — BUY_PE (bearish), mirror:
- *   1. RSI(14)  <  RSI_PE_MAX (default 48)
- *   2. Price at or BELOW EMA21  →  signalCandle.low <= ema21
- *   3. SAR above the candle  →  SAR.trend === -1 (dots above price)
+ *   1. EMA20 BELOW EMA50 (fast under slow)
+ *   2. RSI(14) in the PE band  →  RSI_PE_MIN < RSI < RSI_PE_MAX
+ *   3. Trend source RED  →  SAR above price (SAR.trend===-1) OR SuperTrend bearish (trend===-1)
  *
- * STOP LOSS (set by the execution layer, value seeded here):
+ * STOP LOSS (unchanged — set by the execution layer, value seeded here):
  *   CE: previous (last completed) candle LOW
  *   PE: previous (last completed) candle HIGH
  *   The execution layer trails this candle-by-candle (tighten-only) and adds
  *   breakeven, option-stop-%, opposite-signal and EOD exits.
  *
- * Timeframe: 5-min or 15-min (TRADE_RESOLUTION) · EMA on OHLC4 · window 09:30–14:00 IST.
+ * Timeframe: 5-min or 15-min (TRADE_RESOLUTION) · window 09:30–14:00 IST.
  */
 
 const { EMA, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
-const NAME        = "SAR_EMA21_RSI";
-const DESCRIPTION = "SWING | EMA21(OHLC4) + RSI + SAR | price vs EMA21 + RSI gate + SAR side | prev-candle trailing SL | thresholds via Settings";
+const NAME        = "SAR_EMA_RSI";
+const DESCRIPTION = "SWING | EMA20/EMA50(close) + RSI + SAR/SuperTrend | EMA20-vs-EMA50 trend + RSI gate + PSAR/ST side | prev-candle trailing SL | thresholds via Settings";
 
 // ── Parabolic SAR (step=0.02, max=0.2) ───────────────────────────────────────
 // trend=1  → uptrend,   SAR dots BELOW price
@@ -104,19 +105,23 @@ function isInTradingWindow(unixSec) {
  * evaluation, or the just-closed candle at candle close).
  *
  * Returns { signal: "BUY_CE"|"BUY_PE"|"NONE", reason, stopLoss, prevCandleLow,
- *           prevCandleHigh, rsi, ema21, sar, sarTrend, signalStrength }.
- * signalStrength is always "STRONG" — there is no strength tier any more, but the
- * field is kept so the VIX gate's call shape (which only hard-blocks > VIX_MAX_ENTRY)
- * is unchanged.
+ *           prevCandleHigh, rsi, ema20, ema50, ema21, sar, sarTrend, signalStrength }.
+ * signalStrength is always "STRONG" — there is no strength tier, but the field is
+ * kept so the VIX gate's call shape (which only hard-blocks > VIX_MAX_ENTRY) is unchanged.
  */
 function getSignal(candles, opts) {
   var silent = (opts && opts.silent === true);
 
-  // Warm-up: EMA21 + RSI(14) + SAR need a stable history. 30 candles is comfortable.
-  if (candles.length < 30) {
+  // EMA periods (close-based) — the fast/slow pair that gates direction.
+  var EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
+  var EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
+  // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SAR to settle.
+  var WARMUP = Math.max(EMA_SLOW, 30) + 5;
+
+  if (candles.length < WARMUP) {
     return {
       signal: "NONE",
-      reason: "Warming up (" + candles.length + "/30 candles)",
+      reason: "Warming up (" + candles.length + "/" + WARMUP + " candles)",
       stopLoss: null,
       prevCandleHigh: null,
       prevCandleLow:  null,
@@ -142,9 +147,16 @@ function getSignal(candles, opts) {
   }
 
   // ── Indicators ──────────────────────────────────────────────────────────────
-  var ohlc4  = candles.map(function(c) { return (c.open + c.high + c.low + c.close) / 4; });
   var closes = candles.map(function(c) { return c.close; });
+  var ohlc4  = candles.map(function(c) { return (c.open + c.high + c.low + c.close) / 4; });
 
+  // Entry EMAs — fast/slow on CLOSE.
+  var emaFastArr = EMA.calculate({ period: EMA_FAST, values: closes });
+  var emaSlowArr = EMA.calculate({ period: EMA_SLOW, values: closes });
+  var emaFast = emaFastArr.length > 0 ? emaFastArr[emaFastArr.length - 1] : null;
+  var emaSlow = emaSlowArr.length > 0 ? emaSlowArr[emaSlowArr.length - 1] : null;
+
+  // EMA21 (OHLC4) — retained ONLY for the SL "ema" mode + record snapshot. Not an entry input.
   var ema21arr = EMA.calculate({ period: 21, values: ohlc4 });
   var ema21    = ema21arr.length > 0 ? ema21arr[ema21arr.length - 1] : null;
 
@@ -167,7 +179,8 @@ function getSignal(candles, opts) {
     currST = stArr[stArr.length - 1];
   }
 
-  if (ema21 === null || !currSAR || rsi === undefined || (USE_SUPERTREND && (!currST || currST.trend == null))) {
+  if (emaFast === null || emaSlow === null || !currSAR || rsi === undefined ||
+      (USE_SUPERTREND && (!currST || currST.trend == null))) {
     return {
       signal: "NONE",
       reason: "Indicators not ready",
@@ -185,44 +198,25 @@ function getSignal(candles, opts) {
   var RSI_PE_MIN = parseFloat(process.env.RSI_PE_MIN || "20");  // PE oversold floor
 
   // ── The three conditions per side ─────────────────────────────────────────
-  // CE: price at/above EMA21 (already above OR crossing up) — signalCandle.high reaches the line.
-  // PE: price at/below EMA21 (already below OR crossing down) — signalCandle.low reaches the line.
-  var priceAboveEma = signalCandle.high >= ema21;
-  var priceBelowEma = signalCandle.low  <= ema21;
-  // Directional confirmation comes from whichever trend source is active.
-  // PSAR: trend===1 → dots below price (CE) / ===-1 → dots above (PE).
-  // SuperTrend: trend===1 → line below price (CE) / ===-1 → line above (PE).
+  // 1. EMA20-vs-EMA50 alignment (fast above slow = CE, below = PE).
+  var emaUp   = emaFast > emaSlow;   // EMA20 on top of EMA50 — supports CE
+  var emaDown = emaFast < emaSlow;   // EMA20 below EMA50      — supports PE
+  // 2. RSI band (unchanged).
+  var rsiCE = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;  // above momentum floor, below overbought cap
+  var rsiPE = rsi < RSI_PE_MAX && rsi > RSI_PE_MIN;  // below momentum cap, above oversold floor
+  // 3. Directional confirmation from whichever trend source is active.
+  //    PSAR: trend===1 → dots below price (CE) / ===-1 → dots above (PE).
+  //    SuperTrend: trend===1 → line below price (CE) / ===-1 → line above (PE).
   var trendUp   = USE_SUPERTREND ? (currST.trend === 1)  : (currSAR.trend === 1);
   var trendDown = USE_SUPERTREND ? (currST.trend === -1) : (currSAR.trend === -1);
   var _srcLabel = USE_SUPERTREND ? "ST" : "SAR";        // active trend source label for logs
   var _srcVal   = USE_SUPERTREND ? currST.value : currSAR.sar;
-  var sarBelow      = trendUp;   // supports CE
-  var sarAbove      = trendDown; // supports PE
-  var rsiCE         = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;  // above momentum floor, below overbought cap
-  var rsiPE         = rsi < RSI_PE_MAX && rsi > RSI_PE_MIN;  // below momentum cap, above oversold floor
-
-  // ── EMA21-cross requirement (optional, off by default) ───────────────────
-  // When SWING_ENTRY_REQUIRE_CROSS=true, an entry is allowed only if the signal
-  // candle — or any of the last SWING_ENTRY_CROSS_TOLERANCE prior candles —
-  // had its range straddle its own EMA21 (low <= ema21 <= high). This blocks
-  // entries where price has already drifted far past EMA21.
-  var REQUIRE_CROSS   = (process.env.SWING_ENTRY_REQUIRE_CROSS || "false").toLowerCase() === "true";
-  var CROSS_TOLERANCE = Math.max(0, parseInt(process.env.SWING_ENTRY_CROSS_TOLERANCE || "0", 10) || 0);
-  var crossOk = !REQUIRE_CROSS || (function () {
-    // ema21arr[k] aligns with candles[k + 20] (EMA needs 21 prior values).
-    var lastIdx  = candles.length - 1;
-    var firstIdx = Math.max(0, lastIdx - CROSS_TOLERANCE);
-    for (var i = lastIdx; i >= firstIdx; i--) {
-      var emaIdx = i - 20;
-      if (emaIdx < 0) continue;
-      var e = ema21arr[emaIdx];
-      if (candles[i].low <= e && candles[i].high >= e) return true;
-    }
-    return false;
-  })();
 
   var base = {
-    ema21:          Math.round(ema21 * 100) / 100,
+    ema20:          Math.round(emaFast * 100) / 100,
+    ema50:          Math.round(emaSlow * 100) / 100,
+    // EMA21 kept for SL "ema" mode + record continuity (not an entry input).
+    ema21:          ema21 != null ? Math.round(ema21 * 100) / 100 : null,
     rsi:            Math.round(rsi * 10) / 10,
     sar:            currSAR.sar,
     sarTrend:       currSAR.trend === 1 ? "BULLISH" : "BEARISH",
@@ -245,63 +239,52 @@ function getSignal(candles, opts) {
     ? "ST=" + currST.value + "(" + (currST.trend === 1 ? "BULL" : "BEAR") + ")"
     : "SAR=" + currSAR.sar + "(" + (currSAR.trend === 1 ? "BULL" : "BEAR") + ")";
   if (!silent) console.log(
-    "[STRAT " + _istTime + "] EMA21=" + ema21.toFixed(1) +
+    "[STRAT " + _istTime + "] EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) +
+    "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")" +
     " | RSI=" + rsi.toFixed(1) +
     " | " + _trendStr +
-    " | C=" + signalCandle.close + " H=" + signalCandle.high + " L=" + signalCandle.low
+    " | C=" + signalCandle.close
   );
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
-  if (rsiCE && priceAboveEma && sarBelow) {
-    if (!crossOk) {
-      if (!silent) console.log("  ⛔ BUY_CE blocked — no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s)");
-      return Object.assign({}, base, {
-        signal: "NONE",
-        reason: "CE blocked: no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s) (SWING_ENTRY_REQUIRE_CROSS)",
-      });
-    }
+  if (emaUp && rsiCE && trendUp) {
     var slCE = Math.round(prevCandle.low * 100) / 100;
-    if (!silent) console.log("  🟢 BUY_CE — RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | price>=EMA21 " + ema21.toFixed(1) + " | " + _srcLabel + " below | SL(prevLow)=" + slCE);
+    if (!silent) console.log("  🟢 BUY_CE — EMA20 " + emaFast.toFixed(1) + ">EMA50 " + emaSlow.toFixed(1) + " | RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | " + _srcLabel + " GREEN | SL(prevLow)=" + slCE);
     return Object.assign({}, base, {
       signal:   "BUY_CE",
       stopLoss: slCE,
-      reason:   "CE: RSI=" + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | price " + signalCandle.high + ">=EMA21 " + ema21.toFixed(1) + " | " + _srcLabel + " below @ " + _srcVal + " | SL=prevLow " + slCE,
+      reason:   "CE: EMA20 " + emaFast.toFixed(1) + ">EMA50 " + emaSlow.toFixed(1) + " | RSI=" + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | " + _srcLabel + " GREEN @ " + _srcVal + " | SL=prevLow " + slCE,
     });
   }
 
   // ── BUY PE ────────────────────────────────────────────────────────────────
-  if (rsiPE && priceBelowEma && sarAbove) {
-    if (!crossOk) {
-      if (!silent) console.log("  ⛔ BUY_PE blocked — no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s)");
-      return Object.assign({}, base, {
-        signal: "NONE",
-        reason: "PE blocked: no EMA21 cross within last " + (CROSS_TOLERANCE + 1) + " candle(s) (SWING_ENTRY_REQUIRE_CROSS)",
-      });
-    }
+  if (emaDown && rsiPE && trendDown) {
     var slPE = Math.round(prevCandle.high * 100) / 100;
-    if (!silent) console.log("  🔴 BUY_PE — RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | price<=EMA21 " + ema21.toFixed(1) + " | " + _srcLabel + " above | SL(prevHigh)=" + slPE);
+    if (!silent) console.log("  🔴 BUY_PE — EMA20 " + emaFast.toFixed(1) + "<EMA50 " + emaSlow.toFixed(1) + " | RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | " + _srcLabel + " RED | SL(prevHigh)=" + slPE);
     return Object.assign({}, base, {
       signal:   "BUY_PE",
       stopLoss: slPE,
-      reason:   "PE: RSI=" + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | price " + signalCandle.low + "<=EMA21 " + ema21.toFixed(1) + " | " + _srcLabel + " above @ " + _srcVal + " | SL=prevHigh " + slPE,
+      reason:   "PE: EMA20 " + emaFast.toFixed(1) + "<EMA50 " + emaSlow.toFixed(1) + " | RSI=" + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | " + _srcLabel + " RED @ " + _srcVal + " | SL=prevHigh " + slPE,
     });
   }
 
   // ── No signal — explain which condition(s) failed ─────────────────────────
   var why = [];
-  if (trendUp) {
-    // trend bullish → only CE possible; report CE misses
-    if (!rsiCE)         why.push("RSI=" + rsi.toFixed(1) + (rsi >= RSI_CE_MAX ? " >=" + RSI_CE_MAX + " (overbought)" : " <=" + RSI_CE_MIN + " (need >)"));
-    if (!priceAboveEma) why.push("price " + signalCandle.high + " < EMA21 " + ema21.toFixed(1));
+  if (emaUp) {
+    // EMA bullish → only CE possible; report CE misses
+    if (!rsiCE)   why.push("RSI=" + rsi.toFixed(1) + (rsi >= RSI_CE_MAX ? " >=" + RSI_CE_MAX + " (overbought)" : " <=" + RSI_CE_MIN + " (need >)"));
+    if (!trendUp) why.push(_srcLabel + " not GREEN @ " + _srcVal);
+  } else if (emaDown) {
+    if (!rsiPE)     why.push("RSI=" + rsi.toFixed(1) + (rsi <= RSI_PE_MIN ? " <=" + RSI_PE_MIN + " (oversold)" : " >=" + RSI_PE_MAX + " (need <)"));
+    if (!trendDown) why.push(_srcLabel + " not RED @ " + _srcVal);
   } else {
-    if (!rsiPE)         why.push("RSI=" + rsi.toFixed(1) + (rsi <= RSI_PE_MIN ? " <=" + RSI_PE_MIN + " (oversold)" : " >=" + RSI_PE_MAX + " (need <)"));
-    if (!priceBelowEma) why.push("price " + signalCandle.low + " > EMA21 " + ema21.toFixed(1));
+    why.push("EMA20=" + emaFast.toFixed(1) + " ≈ EMA50 " + emaSlow.toFixed(1) + " (no alignment)");
   }
-  if (why.length === 0) why.push(_srcLabel + " " + (trendUp ? "BULL" : "BEAR") + " but other side conditions unmet");
+  if (why.length === 0) why.push("EMA " + (emaUp ? "20>50" : "20<50") + " but other conditions unmet");
 
   return Object.assign({}, base, {
     signal: "NONE",
-    reason: why.join(" | ") + " | " + _srcLabel + " " + (trendUp ? "BULL" : "BEAR") + " @ " + _srcVal,
+    reason: why.join(" | ") + " | EMA " + (emaUp ? "20>50" : emaDown ? "20<50" : "flat"),
   });
 }
 

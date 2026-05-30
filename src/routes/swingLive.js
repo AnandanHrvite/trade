@@ -989,6 +989,8 @@ async function squareOff(exitPrice, reason) {
     entryMinuteIST: entryMinuteIST   != null ? entryMinuteIST   : null,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
     rsiAtEntry:     tradeState.position ? (tradeState.position.rsiAtEntry    != null ? tradeState.position.rsiAtEntry    : null) : null,
+    ema20AtEntry:   tradeState.position ? (tradeState.position.ema20AtEntry  != null ? tradeState.position.ema20AtEntry  : null) : null,
+    ema50AtEntry:   tradeState.position ? (tradeState.position.ema50AtEntry  != null ? tradeState.position.ema50AtEntry  : null) : null,
     ema21AtEntry:   tradeState.position ? (tradeState.position.ema21AtEntry  != null ? tradeState.position.ema21AtEntry  : null) : null,
     sarAtEntry:     tradeState.position ? (tradeState.position.sarAtEntry    != null ? tradeState.position.sarAtEntry    : null) : null,
     sarTrend:       tradeState.position ? (tradeState.position.sarTrend      || null) : null,
@@ -996,6 +998,8 @@ async function squareOff(exitPrice, reason) {
     stTrendAtEntry:    tradeState.position ? (tradeState.position.stTrendAtEntry    || null) : null,
     trendSource:       tradeState.position ? (tradeState.position.trendSource       || null) : null,
     rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
+    ema20AtExit:      _exitInd.ema20      != null ? _exitInd.ema20      : null,
+    ema50AtExit:      _exitInd.ema50      != null ? _exitInd.ema50      : null,
     ema21AtExit:      _exitInd.ema21      != null ? _exitInd.ema21      : null,
     sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
     sarTrendAtExit:   _exitInd.sarTrend   || null,
@@ -1128,7 +1132,8 @@ async function onCandleClose(candle) {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
-      ema21: indicators.ema21 ?? null,
+      ema20: indicators.ema20 ?? null,
+      ema50: indicators.ema50 ?? null,
       rsi: indicators.rsi ?? null,
       sar: indicators.sar ?? null,
       sarTrend: indicators.sarTrend ?? null,
@@ -1468,6 +1473,8 @@ async function onCandleClose(candle) {
         entryMinuteIST:    _entryMinuteIST,
         // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
         rsiAtEntry:        indicators.rsi    != null ? indicators.rsi   : null,
+        ema20AtEntry:      indicators.ema20  != null ? indicators.ema20 : null,
+        ema50AtEntry:      indicators.ema50  != null ? indicators.ema50 : null,
         ema21AtEntry:      indicators.ema21  != null ? indicators.ema21 : null,
         sarAtEntry:        indicators.sar    != null ? indicators.sar   : null,
         sarTrend:          indicators.sarTrend || null,
@@ -1778,6 +1785,8 @@ function onSpotTick(tick) {
           entryMinuteIST:    _entryMinuteISTIntra,
           // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
           rsiAtEntry:        indicators.rsi    != null ? indicators.rsi   : null,
+          ema20AtEntry:      indicators.ema20  != null ? indicators.ema20 : null,
+          ema50AtEntry:      indicators.ema50  != null ? indicators.ema50 : null,
           ema21AtEntry:      indicators.ema21  != null ? indicators.ema21 : null,
           sarAtEntry:        indicators.sar    != null ? indicators.sar   : null,
           sarTrend:          indicators.sarTrend || null,
@@ -2404,17 +2413,21 @@ router.get("/status/chart-data", (req, res) => {
     let entryPrice = null;
     if (tradeState.position && tradeState.position.entryPrice) entryPrice = tradeState.position.entryPrice;
 
-    // Strategy indicator overlays: EMA21 (OHLC4) + PSAR/SuperTrend + RSI(14)
+    // Strategy indicator overlays: EMA20 + EMA50 (close) + PSAR/SuperTrend + RSI(14)
     const { EMA, PSAR, RSI } = require("technicalindicators");
     const useSupertrend = (process.env.SWING_USE_SUPERTREND || "false").toLowerCase() === "true";
-    let ema21 = [], sar = [], supertrend = [], rsi = [];
+    const EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
+    const EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
+    let ema20 = [], ema50 = [], sar = [], supertrend = [], rsi = [];
     try {
-      if (candles.length >= 21) {
-        const ohlc4 = candles.map(c => (c.open + c.high + c.low + c.close) / 4);
-        const arr = EMA.calculate({ period: 21, values: ohlc4 });
+      const _emaLine = (period) => {
+        if (candles.length < period) return [];
+        const arr = EMA.calculate({ period, values: candles.map(c => c.close) });
         const off = candles.length - arr.length;
-        ema21 = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
-      }
+        return arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
+      };
+      ema20 = _emaLine(EMA_FAST);
+      ema50 = _emaLine(EMA_SLOW);
       // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
       if (useSupertrend) {
         const { computeSuperTrend } = require("../utils/supertrend");
@@ -2422,7 +2435,7 @@ router.get("/status/chart-data", (req, res) => {
         const ST_MULT   = parseFloat(process.env.SWING_SUPERTREND_MULT || "3");
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
-          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value });
+          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
         }
       } else if (candles.length >= 3) {
         // Display SAR must use the SAME algorithm the strategy decides on
@@ -2440,8 +2453,8 @@ router.get("/status/chart-data", (req, res) => {
       }
     } catch (_) { /* ignore indicator calc errors */ }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema21, sar, supertrend,
-      trendSource: useSupertrend ? "SUPERTREND" : "PSAR", rsi,
+    return res.json({ candles, markers, stopLoss, entryPrice, ema20, ema50, sar, supertrend,
+      trendSource: useSupertrend ? "SUPERTREND" : "PSAR", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW,
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2950,11 +2963,12 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
-        <span style="color:#fbbf24;">── EMA21</span> &nbsp;
+        <span style="color:#fbbf24;">── EMA20</span> &nbsp;
+        <span style="color:#e5e7eb;">── EMA50</span> &nbsp;
         <span style="color:#a78bfa;">· SAR</span> &nbsp;
+        <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
         <span style="color:#22d3ee;">── RSI</span> &nbsp;
-        <span style="color:#f59e0b;">── SL</span> &nbsp;
-        <span style="color:#3b82f6;">-- Entry Price</span>
+        <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
   </div>` : ""}
@@ -3416,10 +3430,13 @@ async function manualEntry(side) {
     wickUpColor: '#10b981', wickDownColor: '#ef4444',
   });
 
-  // Strategy overlays: EMA21 (line) + PSAR (dots) + RSI (own bottom scale, level lines)
-  const ema21Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21' });
+  // Strategy overlays: EMA20 (fast) + EMA50 (slow) + PSAR (dots) + RSI (own bottom scale, level lines)
+  const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
+  const ema50Series = chart.addLineSeries({ color:'#e5e7eb', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
   const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
-  const stSeries   = chart.addLineSeries({ color:'#f59e0b', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
+  // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
+  const stSeries   = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
+  const _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
   const rsiSeries  = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
   let _rsiLevelsDrawn = false;
@@ -3463,9 +3480,10 @@ async function manualEntry(side) {
       _lastCandleCount = d.candles.length;
 
       // Indicator overlays
-      ema21Series.setData((d.ema21 && d.ema21.length) ? d.ema21 : []);
+      ema20Series.setData((d.ema20 && d.ema20.length) ? d.ema20 : []);
+      ema50Series.setData((d.ema50 && d.ema50.length) ? d.ema50 : []);
       sarSeries.setData((d.sar && d.sar.length) ? d.sar : []);
-      stSeries.setData((d.supertrend && d.supertrend.length) ? d.supertrend : []);
+      stSeries.setData((d.supertrend && d.supertrend.length) ? d.supertrend.map(_stColor) : []);
       if (d.rsi && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
       if (d.markers && d.markers.length > 0) {

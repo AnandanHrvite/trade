@@ -44,7 +44,7 @@ const EFFECT = {
 
 const SETTINGS_SCHEMA = [
   {
-    section: "SWING STRATEGY (EMA21 + RSI + SAR) — Zerodha",
+    section: "SWING STRATEGY (EMA20/50 + RSI + SAR/SuperTrend) — Zerodha",
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
@@ -60,14 +60,13 @@ const SETTINGS_SCHEMA = [
       { key: "VIX_MAX_ENTRY", label: "Swing VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: block entries above this VIX", default: "20" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss (also latched on 3 consecutive losses)", default: "5000" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on entries per session — prevents chop-day overtrading", default: "6" },
-      // ── Entry rule (all 3 must be true): RSI gate + price vs EMA21 + SAR side ──
+      // ── Entry rule (all 3 must be true): EMA20-vs-EMA50 alignment + RSI gate + PSAR/SuperTrend side ──
+      { key: "SWING_EMA_FAST", label: "EMA Fast Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA (on close). CE needs EMA-fast ABOVE EMA-slow; PE needs it below. Classic = 20.", default: "20" },
+      { key: "SWING_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA (on close). The EMA-fast vs EMA-slow alignment is the directional gate. Classic = 50.", default: "50" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE entry: RSI(14) must be ABOVE this (bullish momentum floor)", default: "52" },
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "CE entry blocked when RSI is at/above this (overbought — don't chase exhausted up-moves)", default: "80" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
       { key: "RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PE entry blocked when RSI is at/below this (oversold — don't chase exhausted down-moves)", default: "20" },
-      // ── EMA21-cross entry confirmation ──
-      { key: "SWING_ENTRY_REQUIRE_CROSS", label: "Require EMA21 Cross", type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, only allow entries on a candle whose range straddles EMA21 (low ≤ EMA21 ≤ high). Blocks entries where price has already drifted far past the line.", default: "false" },
-      { key: "SWING_ENTRY_CROSS_TOLERANCE", label: "Cross Tolerance (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many prior candles back the cross can be (0 = signal candle itself must straddle EMA21; 2 = ok if any of the last 3 candles did). Only used when Require EMA21 Cross is ON.", default: "0" },
       // ── Trend confirmation: PSAR (default) or SuperTrend ──
       { key: "SWING_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.INSTANT, desc: "Trend-confirmation source for entries. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and uses SuperTrend(10,3) for the directional confirmation instead. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
       { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
@@ -556,7 +555,7 @@ const IMMEDIATE_KEYS = new Set([
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN", "BREAKEVEN_PTS",
-  "SWING_ENTRY_REQUIRE_CROSS", "SWING_ENTRY_CROSS_TOLERANCE",
+  "SWING_EMA_FAST", "SWING_EMA_SLOW",
   "SWING_SL_MODE",
   "SWING_USE_SUPERTREND", "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
 ]);
