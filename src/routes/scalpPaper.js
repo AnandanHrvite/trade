@@ -18,7 +18,8 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
-const { BollingerBands, PSAR, RSI } = require("technicalindicators");
+const { BollingerBands, PSAR, RSI, ADX } = require("technicalindicators");
+const { computeSuperTrend } = require("../utils/supertrend");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
 const sharedSocketState = require("../utils/sharedSocketState");
@@ -291,6 +292,11 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     bbMiddleAtEntry:  entryMeta.bbMiddleAtEntry != null ? entryMeta.bbMiddleAtEntry : null,
     rsiAtEntry:       entryMeta.rsiAtEntry      != null ? entryMeta.rsiAtEntry      : null,
     ptsFromBB:        entryMeta.ptsFromBB       != null ? entryMeta.ptsFromBB       : null,
+    // Trend/strength indicators at entry — captured for the trade log.
+    adxAtEntry:       entryMeta.adxAtEntry      != null ? entryMeta.adxAtEntry      : null,
+    supertrendAtEntry:entryMeta.supertrendAtEntry != null ? entryMeta.supertrendAtEntry : null,
+    stTrendAtEntry:   entryMeta.stTrendAtEntry  || null,
+    trendSource:      entryMeta.trendSource     || null,
     // MFE/MAE tracking — updated per-tick. Captures best favourable and worst
     // adverse excursion before exit (sizes break-even trigger / drawdown analysis).
     mfeSpotPts:       0,
@@ -360,6 +366,11 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   const _pnlPointsScalp  = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
   const _isManualScalp   = typeof state.position.reason === "string" && /Manual/i.test(state.position.reason);
 
+  // Indicator snapshot AT EXIT — recompute silently so the JSONL log carries the
+  // full indicator picture at exit, not just at entry.
+  let _exitInd = {};
+  try { _exitInd = scalpStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+
   const trade = {
     side, symbol, qty, entryPrice, exitPrice,
     spotAtEntry: spotAtEntry || entryPrice,
@@ -393,6 +404,19 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     bbMiddleAtEntry: state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null,
     rsiAtEntry:      state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null,
     ptsFromBB:       state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null,
+    // Trend/strength indicators at entry + exit snapshot (all indicators logged).
+    adxAtEntry:        state.position.adxAtEntry        != null ? state.position.adxAtEntry        : null,
+    supertrendAtEntry: state.position.supertrendAtEntry != null ? state.position.supertrendAtEntry : null,
+    stTrendAtEntry:    state.position.stTrendAtEntry    || null,
+    trendSource:       state.position.trendSource       || null,
+    rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
+    bbUpperAtExit:    _exitInd.bbUpper    != null ? _exitInd.bbUpper    : null,
+    bbMiddleAtExit:   _exitInd.bbMiddle   != null ? _exitInd.bbMiddle   : null,
+    bbLowerAtExit:    _exitInd.bbLower    != null ? _exitInd.bbLower    : null,
+    sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
+    adxAtExit:        _exitInd.adx        != null ? _exitInd.adx        : null,
+    supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
+    stTrendAtExit:    _exitInd.stTrend    || null,
     mfeSpotPts:      state.position.mfeSpotPts      || 0,
     mfePnl:          state.position.mfePnl          || 0,
     maeSpotPts:      state.position.maeSpotPts      || 0,
@@ -635,9 +659,11 @@ async function onCandleClose(bar) {
       return;
     }
 
-    // PSAR flip → exit on reversal signal (trend exit; profit lock handles giveback per-tick)
-    if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
-      simulateSell(bar.close, "PSAR flip", bar.close);
+    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND;
+    // trend exit, profit lock handles giveback per-tick)
+    if (window.length >= 15 && scalpStrategy.isTrendFlip(window, state.position.side)) {
+      var _flipLbl = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+      simulateSell(bar.close, _flipLbl, bar.close);
       return;
     }
 
@@ -803,6 +829,10 @@ async function resolveAndEnter(side, spot, result) {
       bbMiddleAtEntry: result.bbMiddle != null ? result.bbMiddle : null,
       rsiAtEntry:      result.rsi     != null ? result.rsi     : null,
       ptsFromBB:       _ptsFromBB,
+      adxAtEntry:        result.adx        != null ? result.adx        : null,
+      supertrendAtEntry: result.supertrend != null ? result.supertrend : null,
+      stTrendAtEntry:    result.stTrend    || null,
+      trendSource:       result.trendSource|| null,
     });
   } catch (err) {
     log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
@@ -1162,16 +1192,41 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // PSAR overlay — same params as the strategy. Plotted as dots above/below price
-    const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
-    const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
-    let sarPoints = [];
-    if (candles.length >= 3) {
+    // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
+    const useSupertrend = (process.env.SCALP_USE_SUPERTREND === "true");
+    let sarPoints = [];        // PSAR dots (active when useSupertrend=false)
+    let supertrend = [];       // SuperTrend line (active when useSupertrend=true)
+    if (useSupertrend) {
+      const ST_PERIOD = parseInt(process.env.SCALP_SUPERTREND_PERIOD || "10", 10);
+      const ST_MULT   = parseFloat(process.env.SCALP_SUPERTREND_MULT || "3");
       try {
-        const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
-        const off = candles.length - sarArr.length;
-        for (let i = 0; i < sarArr.length; i++) {
-          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+        const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
+        for (let i = 0; i < stArr.length; i++) {
+          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value });
+        }
+      } catch (_) { /* ignore */ }
+    } else {
+      const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
+      const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+      if (candles.length >= 3) {
+        try {
+          const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+          const off = candles.length - sarArr.length;
+          for (let i = 0; i < sarArr.length; i++) {
+            sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+          }
+        } catch (_) { /* ignore */ }
+      }
+    }
+
+    // ADX(14) overlay — drawn on its own bottom scale (trend-strength subplot)
+    let adxSeries = [];
+    if (candles.length >= 28) {
+      try {
+        const arr = ADX.calculate({ period: 14, high: candles.map(c => c.high), low: candles.map(c => c.low), close: candles.map(c => c.close) });
+        const off = candles.length - arr.length;
+        for (let i = 0; i < arr.length; i++) {
+          adxSeries.push({ time: candles[i + off].time, value: parseFloat(arr[i].adx.toFixed(2)) });
         }
       } catch (_) { /* ignore */ }
     }
@@ -1197,6 +1252,8 @@ router.get("/status/chart-data", (req, res) => {
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
     return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints,
+      supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
+      adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
       rsi: rsiSeries,
       rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
       rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
@@ -2136,9 +2193,19 @@ function doCopy(text,btn,label){
   // PSAR rendered as a thin dotted "line" (dot-per-bar look). Lightweight Charts has no scatter
   // primitive, so a Line series with style=Dotted and lineWidth=1 closely approximates SAR dots.
   var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  // SuperTrend line (solid, on the price scale) — shown only when it is the active source.
+  var stS  = chart.addLineSeries({ color:'#f59e0b', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   // RSI on its own bottom price-scale, with dashed CE/PE threshold lines
   var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
+  // ADX trend-strength subplot, stacked just above the RSI pane.
+  var adxS = chart.addLineSeries({ color:'#e879f9', lineWidth:1, priceScaleId:'adx', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ADX' });
+  try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch(_) {}
+  var _adxLine = null;
+  function drawAdxLevel(adxMin) {
+    if (_adxLine) { try { adxS.removePriceLine(_adxLine); } catch(_){} _adxLine = null; }
+    if (adxMin != null) _adxLine = adxS.createPriceLine({ price: adxMin, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'ADX min' });
+  }
   var _rsiLines = [];
   function drawRsiLevels(ceMin, peMax) {
     _rsiLines.forEach(function(l){ try { rsiS.removePriceLine(l); } catch(_){} }); _rsiLines = [];
@@ -2168,7 +2235,7 @@ function doCopy(text,btn,label){
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema21','sar','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema21','sar','supertrend','adx','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
       _internalUpdate = true;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
@@ -2178,6 +2245,8 @@ function doCopy(text,btn,label){
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
       if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
+      if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend); else stS.setData([]);
+      if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMin); } else adxS.setData([]);
       if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
       else {

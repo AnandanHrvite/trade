@@ -68,6 +68,10 @@ const SETTINGS_SCHEMA = [
       // ── EMA21-cross entry confirmation ──
       { key: "SWING_ENTRY_REQUIRE_CROSS", label: "Require EMA21 Cross", type: "toggle", effect: EFFECT.INSTANT, desc: "When ON, only allow entries on a candle whose range straddles EMA21 (low ≤ EMA21 ≤ high). Blocks entries where price has already drifted far past the line.", default: "false" },
       { key: "SWING_ENTRY_CROSS_TOLERANCE", label: "Cross Tolerance (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many prior candles back the cross can be (0 = signal candle itself must straddle EMA21; 2 = ok if any of the last 3 candles did). Only used when Require EMA21 Cross is ON.", default: "0" },
+      // ── Trend confirmation: PSAR (default) or SuperTrend ──
+      { key: "SWING_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.INSTANT, desc: "Trend-confirmation source for entries. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and uses SuperTrend(10,3) for the directional confirmation instead. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
+      { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
+      { key: "SWING_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
       // ── Stops & exits ──
       { key: "BREAKEVEN_PTS", label: "Breakeven Stop (pts)", type: "number", min: 10, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Move SL to entry once the trade is +N spot pts in favour", default: "25" },
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
@@ -100,7 +104,11 @@ const SETTINGS_SCHEMA = [
       // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where PSAR sits farther than this from close (a freshly-flipped SAR can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where the trend line (PSAR/SuperTrend) sits farther than this from close (a freshly-flipped line can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      // ── Trend confirmation: PSAR (default) or SuperTrend ──
+      { key: "SCALP_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.SESSION, desc: "Trend-confirmation source. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and SuperTrend(10,3) takes over the directional confirmation, the entry SL line AND the trend-flip exit. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
+      { key: "SCALP_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
+      { key: "SCALP_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
       // ── ADX trend filter (sit out choppy/ranging sessions) ──
       { key: "SCALP_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending — block ALL entries when ADX(14) is below the threshold. The strategy wins in trends and bleeds in chop; this sits out ranging days.", default: "false" },
       { key: "SCALP_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX(14) to allow entries when the trend filter is on. Higher = stricter (only strong trends). Typical 20–25. Ignored when the filter is off.", default: "20" },
@@ -550,6 +558,7 @@ const IMMEDIATE_KEYS = new Set([
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN", "BREAKEVEN_PTS",
   "SWING_ENTRY_REQUIRE_CROSS", "SWING_ENTRY_CROSS_TOLERANCE",
   "SWING_SL_MODE",
+  "SWING_USE_SUPERTREND", "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
 ]);
 
 // These are cached as const at module load — need session stop+start
@@ -566,6 +575,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
+  "SCALP_USE_SUPERTREND", "SCALP_SUPERTREND_PERIOD", "SCALP_SUPERTREND_MULT",
   "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
   "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",

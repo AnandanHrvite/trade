@@ -302,9 +302,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = "BB re-entry";
       }
 
-      // 4. PSAR flip — exit on reversal signal
-      if (!exitReason && scalpStrategy.isPSARFlip(window, position.side)) {
-        exitReason = "PSAR flip";
+      // 4. Trend flip — exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND)
+      if (!exitReason && scalpStrategy.isTrendFlip(window, position.side)) {
+        exitReason = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
       }
 
       // 5. EOD

@@ -240,6 +240,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `BREAKEVEN_PTS` | `25` | Move SL to entry once +N spot pts in favour |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
 | `SWING_SL_MODE` | `candle` | What feeds the trailing SL at candle close. `candle` = just-closed candle low/high. `psar` = current Parabolic SAR (PSAR flip = explicit exit). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). All tighten-only; breakeven / option-stop / opposite-signal / EOD still apply. |
+| `SWING_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = Parabolic SAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** for the directional confirmation instead. Mutually exclusive; the chart shows whichever is active. |
+| `SWING_SUPERTREND_PERIOD` / `SWING_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `SWING_USE_SUPERTREND=true`). |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
 | `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / breakeven / option-stop / PSAR-flip / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
 | `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
@@ -266,7 +268,9 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
-| `SCALP_MAX_ENTRY_SL_PTS` | `50` | Skip entries where PSAR is more than this many pts from close (avoids uncapped risk). `0` = off |
+| `SCALP_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = PSAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** — it takes over the directional confirmation, the entry SL line **and** the candle-close trend-flip exit. Mutually exclusive; the chart shows whichever is active. |
+| `SCALP_SUPERTREND_PERIOD` / `SCALP_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `SCALP_USE_SUPERTREND=true`). |
+| `SCALP_MAX_ENTRY_SL_PTS` | `50` | Skip entries where the trend line (PSAR/SuperTrend) is more than this many pts from close (avoids uncapped risk). `0` = off |
 | `SCALP_ADX_ENABLED` | `false` | Trend filter — block all entries when ADX(14) is below the floor (sit out chop). |
 | `SCALP_ADX_MIN` | `20` | Minimum ADX(14) to allow entries when the trend filter is on (higher = stricter). |
 | `SCALP_PROFIT_LOCK_TRIGGER_PTS` | `25` | Arm the profit lock once the favourable spot move (points) hits this. Points-based. `0` disables. |

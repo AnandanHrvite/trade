@@ -694,6 +694,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ema21AtEntry:      entryMeta.ema21AtEntry != null ? entryMeta.ema21AtEntry : null,
     sarAtEntry:        entryMeta.sarAtEntry   != null ? entryMeta.sarAtEntry   : null,
     sarTrend:          entryMeta.sarTrend     || null,
+    supertrendAtEntry: entryMeta.supertrendAtEntry != null ? entryMeta.supertrendAtEntry : null,
+    stTrendAtEntry:    entryMeta.stTrendAtEntry    || null,
+    trendSource:       entryMeta.trendSource       || null,
   };
 
   // Set option symbol and start REST polling (no socket changes)
@@ -778,6 +781,11 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   const _pnlPoints     = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
   const _isManualEntry = typeof ptState.position.reason === "string" && /Manual/i.test(ptState.position.reason);
 
+  // Indicator snapshot AT EXIT — recompute silently so the JSONL log carries the
+  // full indicator picture at exit, not just at entry.
+  let _exitInd = {};
+  try { _exitInd = getActiveStrategy().getSignal(ptState.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+
   const trade = {
     side,
     symbol,
@@ -818,6 +826,15 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     ema21AtEntry:     ptState.position.ema21AtEntry  != null ? ptState.position.ema21AtEntry  : null,
     sarAtEntry:       ptState.position.sarAtEntry    != null ? ptState.position.sarAtEntry    : null,
     sarTrend:         ptState.position.sarTrend      || null,
+    supertrendAtEntry: ptState.position.supertrendAtEntry != null ? ptState.position.supertrendAtEntry : null,
+    stTrendAtEntry:    ptState.position.stTrendAtEntry    || null,
+    trendSource:       ptState.position.trendSource       || null,
+    rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
+    ema21AtExit:      _exitInd.ema21      != null ? _exitInd.ema21      : null,
+    sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
+    sarTrendAtExit:   _exitInd.sarTrend   || null,
+    supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
+    stTrendAtExit:    _exitInd.stTrend    || null,
     mfeSpotPts:       ptState.position.mfeSpotPts   || 0,
     maeSpotPts:       ptState.position.maeSpotPts   || 0,
     secsToMFE:        ptState.position.secsToMFE    || 0,
@@ -1240,6 +1257,9 @@ async function onCandleClose(candle) {
         ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
         sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
         sarTrend:     indicators.sarTrend || null,
+        supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
+        stTrendAtEntry:    indicators.stTrend     || null,
+        trendSource:       indicators.trendSource || null,
       });
       ptState._entryPending = false;
       clearTimeout(_ptEntryTimer);
@@ -1452,6 +1472,9 @@ function onTick(tick) {
           ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
           sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
           sarTrend:     indicators.sarTrend || null,
+          supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
+          stTrendAtEntry:    indicators.stTrend     || null,
+          trendSource:       indicators.trendSource || null,
         }); // isIntraCandle=true
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
@@ -2266,11 +2289,22 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // PSAR overlay — must use the SAME algorithm the strategy decides on
-    // (hand-rolled calcSAR), not technicalindicators PSAR, so the dots match
-    // the SAR that actually drives entries/exits.
+    // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
+    // PSAR uses the SAME hand-rolled calcSAR the strategy decides on so the dots match.
+    const useSupertrend = (process.env.SWING_USE_SUPERTREND || "false").toLowerCase() === "true";
     let sarPoints = [];
-    if (candles.length >= 3) {
+    let supertrend = [];
+    if (useSupertrend) {
+      const { computeSuperTrend } = require("../utils/supertrend");
+      const ST_PERIOD = parseInt(process.env.SWING_SUPERTREND_PERIOD || "10", 10);
+      const ST_MULT   = parseFloat(process.env.SWING_SUPERTREND_MULT || "3");
+      try {
+        const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
+        for (let i = 0; i < stArr.length; i++) {
+          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value });
+        }
+      } catch (_) { /* ignore */ }
+    } else if (candles.length >= 3) {
       try {
         const { calcSAR } = require("../strategies/strategy1_sar_ema_rsi");
         const sarArr = calcSAR(candles); // [{sar,trend}], aligned to candles[1..]
@@ -2319,7 +2353,8 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema21: ema21Series, sar: sarPoints, rsi: rsiSeries,
+    return res.json({ candles, markers, stopLoss, entryPrice, ema21: ema21Series, sar: sarPoints,
+      supertrend, trendSource: useSupertrend ? "SUPERTREND" : "PSAR", rsi: rsiSeries,
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -3213,6 +3248,8 @@ ${modalJS()}
   const ema21Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA21' });
   // SAR as discrete dots: hide the connecting line, show only point markers.
   const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
+  // SuperTrend line (solid) — shown only when it is the active trend source.
+  const stSeries   = chart.addLineSeries({ color:'#f59e0b', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   const rsiSeries  = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   // Pin RSI to the bottom ~20% of the pane so it doesn't distort the price axis.
   chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
@@ -3256,7 +3293,7 @@ ${modalJS()}
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema21','sar','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema21','sar','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
 
       _internalUpdate = true;
@@ -3275,6 +3312,7 @@ ${modalJS()}
       // Indicator overlays
       if (d.ema21 && d.ema21.length) ema21Series.setData(d.ema21); else ema21Series.setData([]);
       if (d.sar   && d.sar.length)   sarSeries.setData(d.sar);     else sarSeries.setData([]);
+      if (d.supertrend && d.supertrend.length) stSeries.setData(d.supertrend); else stSeries.setData([]);
       if (d.rsi   && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
       // Markers (entries & exits)

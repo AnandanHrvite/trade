@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SuperTrend(10,3) trend confirmation for Swing & Scalp (toggle vs PSAR) + ADX on Scalp chart
+
+- **New `SWING_USE_SUPERTREND` / `SCALP_USE_SUPERTREND` toggles** (default off → PSAR, current behaviour). When ON, **SuperTrend(10,3)** replaces Parabolic SAR as the directional entry confirmation. The two are **mutually exclusive** — exactly one trend source is active. Period/multiplier configurable via `{SWING,SCALP}_SUPERTREND_PERIOD` (10) / `_MULT` (3). All exposed in the Settings UI under each strategy.
+  - **Swing**: SuperTrend swaps SAR's "which side is the trend on?" role; the SL seed (prev-candle low/high) is unchanged.
+  - **Scalp**: SuperTrend takes over the directional confirmation, the **entry SL line**, and the **candle-close trend-flip exit** (the `isPSARFlip` exit becomes a unified `isTrendFlip` that follows the active source). Profit-lock / hard-stop / BB-reentry exits unchanged.
+  - SuperTrend is built on the `technicalindicators` ATR (the package has no SuperTrend), mirroring how Swing already hand-rolls SAR. New shared helper [src/utils/supertrend.js](src/utils/supertrend.js).
+- **Charts now plot the active trend source only** — PSAR dots when PSAR is on, a solid SuperTrend line when SuperTrend is on (Swing + Scalp, paper + live).
+- **Scalp chart now shows the ADX subplot** (it was computed only behind the `SCALP_ADX_ENABLED` filter and never charted). ADX(14) is now computed every candle and drawn on its own pane with the `SCALP_ADX_MIN` floor line.
+- **Trade logs now capture all indicator values at entry AND exit** — added `supertrendAtEntry/Exit`, `stTrendAtEntry/Exit`, `trendSource` (Swing + Scalp) and `adxAtEntry/Exit` (Scalp), plus an at-exit indicator snapshot (RSI/EMA21/SAR/BB/SuperTrend) recomputed on close.
+
 ### Live (Harness) for Swing, Scalp & ORB + interception fix
 
 - **New `/swing-live-harness`, `/scalp-live-harness`, `/orb-live-harness` routes** — each runs LIVE by wrapping its Paper engine (LIVE = PAPER by construction), mirroring the existing PA harness. Swing routes orders via Zerodha; Scalp/ORB via Fyers. Gated by `LIVE_HARNESS_DRY_RUN` (+ per-strategy `{SWING,SCALP,ORB}_LIVE_DRY_RUN`) and shown via `UI_SHOW_{SWING,SCALP,ORB}_LIVE_HARNESS` (default off). Only one harness can be installed at a time (process-wide lock).

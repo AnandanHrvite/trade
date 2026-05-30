@@ -21,7 +21,8 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const scalpStrategy    = require("../strategies/scalp_bb_cpr");
-const { BollingerBands, PSAR, RSI } = require("technicalindicators");
+const { BollingerBands, PSAR, RSI, ADX } = require("technicalindicators");
+const { computeSuperTrend } = require("../utils/supertrend");
 const fyersBroker      = require("../services/fyersBroker");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
@@ -452,6 +453,10 @@ async function squareOff(exitPrice, reason) {
   const emoji     = netPnl >= 0 ? "✅" : "❌";
   log(`${emoji} [SCALP-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
 
+  // Indicator snapshot AT EXIT — recompute silently so the log carries the full picture.
+  let _exitInd = {};
+  try { _exitInd = scalpStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+
   state.sessionTrades.push({
     side, symbol, qty, entryPrice, exitPrice,
     spotAtEntry: spotAtEntry || entryPrice,
@@ -479,6 +484,19 @@ async function squareOff(exitPrice, reason) {
     bbMiddleAtEntry: state.position ? (state.position.bbMiddleAtEntry != null ? state.position.bbMiddleAtEntry : null) : null,
     rsiAtEntry:      state.position ? (state.position.rsiAtEntry      != null ? state.position.rsiAtEntry      : null) : null,
     ptsFromBB:       state.position ? (state.position.ptsFromBB       != null ? state.position.ptsFromBB       : null) : null,
+    // Trend/strength indicators at entry + exit snapshot (all indicators logged).
+    adxAtEntry:        state.position ? (state.position.adxAtEntry        != null ? state.position.adxAtEntry        : null) : null,
+    supertrendAtEntry: state.position ? (state.position.supertrendAtEntry != null ? state.position.supertrendAtEntry : null) : null,
+    stTrendAtEntry:    state.position ? (state.position.stTrendAtEntry    || null) : null,
+    trendSource:       state.position ? (state.position.trendSource       || null) : null,
+    rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
+    bbUpperAtExit:    _exitInd.bbUpper    != null ? _exitInd.bbUpper    : null,
+    bbMiddleAtExit:   _exitInd.bbMiddle   != null ? _exitInd.bbMiddle   : null,
+    bbLowerAtExit:    _exitInd.bbLower    != null ? _exitInd.bbLower    : null,
+    sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
+    adxAtExit:        _exitInd.adx        != null ? _exitInd.adx        : null,
+    supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
+    stTrendAtExit:    _exitInd.stTrend    || null,
     mfeSpotPts:      state.position ? (state.position.mfeSpotPts || 0) : 0,
     mfePnl:          state.position ? (state.position.mfePnl     || 0) : 0,
     maeSpotPts:      state.position ? (state.position.maeSpotPts || 0) : 0,
@@ -704,9 +722,11 @@ async function onCandleClose(bar) {
       return;
     }
 
-    // PSAR flip → exit on reversal signal (trend exit; profit lock handles giveback per-tick)
-    if (window.length >= 15 && scalpStrategy.isPSARFlip(window, state.position.side)) {
-      squareOff(bar.close, "PSAR flip").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND;
+    // trend exit, profit lock handles giveback per-tick)
+    if (window.length >= 15 && scalpStrategy.isTrendFlip(window, state.position.side)) {
+      const _flipLbl = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+      squareOff(bar.close, _flipLbl).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
       return;
     }
 
@@ -919,6 +939,11 @@ async function resolveAndEnter(side, spot, result) {
       bbMiddleAtEntry:  result.bbMiddle != null ? result.bbMiddle : null,
       rsiAtEntry:       result.rsi      != null ? result.rsi      : null,
       ptsFromBB:        _ptsFromBB,
+      // Trend/strength indicators at entry — captured for the trade log.
+      adxAtEntry:        result.adx        != null ? result.adx        : null,
+      supertrendAtEntry: result.supertrend != null ? result.supertrend : null,
+      stTrendAtEntry:    result.stTrend    || null,
+      trendSource:       result.trendSource|| null,
       // MFE/MAE — updated per-tick, captures best favourable + worst adverse excursion.
       mfeSpotPts:       0,
       mfePnl:           0,
@@ -1316,15 +1341,38 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // PSAR overlay — same params as the strategy
-    const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
-    const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+    // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
+    const useSupertrend = (process.env.SCALP_USE_SUPERTREND === "true");
     let sarPoints = [];
-    if (candles.length >= 3) {
+    let supertrend = [];
+    if (useSupertrend) {
+      const ST_PERIOD = parseInt(process.env.SCALP_SUPERTREND_PERIOD || "10", 10);
+      const ST_MULT   = parseFloat(process.env.SCALP_SUPERTREND_MULT || "3");
       try {
-        const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
-        const off = candles.length - sarArr.length;
-        for (let i = 0; i < sarArr.length; i++) sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+        const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
+        for (let i = 0; i < stArr.length; i++) {
+          if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value });
+        }
+      } catch (_) { /* ignore */ }
+    } else {
+      const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
+      const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+      if (candles.length >= 3) {
+        try {
+          const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+          const off = candles.length - sarArr.length;
+          for (let i = 0; i < sarArr.length; i++) sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+        } catch (_) { /* ignore */ }
+      }
+    }
+
+    // ADX(14) overlay — trend-strength subplot
+    let adxSeries = [];
+    if (candles.length >= 28) {
+      try {
+        const arr = ADX.calculate({ period: 14, high: candles.map(c => c.high), low: candles.map(c => c.low), close: candles.map(c => c.close) });
+        const off = candles.length - arr.length;
+        for (let i = 0; i < arr.length; i++) adxSeries.push({ time: candles[i + off].time, value: parseFloat(arr[i].adx.toFixed(2)) });
       } catch (_) { /* ignore */ }
     }
 
@@ -1336,6 +1384,8 @@ router.get("/status/chart-data", (req, res) => {
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
     return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints,
+      supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
+      adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
       rsi: rsiSeries,
       rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
       rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
@@ -2316,8 +2366,16 @@ logFilter();
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
+  var stS  = chart.addLineSeries({ color:'#f59e0b', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   var rsiS = chart.addLineSeries({ color:'#22d3ee', lineWidth:1, priceScaleId:'rsi', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'RSI' });
   try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch(_) {}
+  var adxS = chart.addLineSeries({ color:'#e879f9', lineWidth:1, priceScaleId:'adx', priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ADX' });
+  try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch(_) {}
+  var _adxLine = null;
+  function drawAdxLevel(adxMin) {
+    if (_adxLine) { try { adxS.removePriceLine(_adxLine); } catch(_){} _adxLine = null; }
+    if (adxMin != null) _adxLine = adxS.createPriceLine({ price: adxMin, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'ADX min' });
+  }
   var _rsiLines = [];
   function drawRsiLevels(ceMin, peMax) {
     _rsiLines.forEach(function(l){ try { rsiS.removePriceLine(l); } catch(_){} }); _rsiLines = [];
@@ -2344,6 +2402,8 @@ logFilter();
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
       if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
+      if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend); else stS.setData([]);
+      if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMin); } else adxS.setData([]);
       if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (d.markers && d.markers.length) { var s = d.markers.slice().sort(function(a,b){return a.time-b.time;}); cs.setMarkers(s); } else { cs.setMarkers([]); }
       if (slLine) { cs.removePriceLine(slLine); slLine = null; }
