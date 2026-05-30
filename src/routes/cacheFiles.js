@@ -737,6 +737,10 @@ ${buildSidebar('cacheFiles', liveActive)}
     var n = (data.deleted || []).length;
     if (data.failed && data.failed.length) showToast('Deleted ' + n + ', ' + data.failed.length + ' failed', '#f87171');
     else showToast('Deleted all ' + n + ' file' + (n === 1 ? '' : 's'), '#10b981');
+    // Clearing all of one strategy removes it from the filter list — drop the
+    // filter so the dropdown and listing don't desync (select shows "All" while
+    // the list stays scoped to a now-absent strategy).
+    if (tf) _tagFilter[group] = '';
     _page[group] = 1;
     loadGroupSection(group);
   }
