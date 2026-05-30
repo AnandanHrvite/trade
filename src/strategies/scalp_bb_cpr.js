@@ -6,6 +6,8 @@
  *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 40)
  *   Two RSI keys only — no overbought/oversold caps.
  *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
+ *   ADX trend filter (optional, SCALP_ADX_ENABLED): block ALL entries when ADX(14) < SCALP_ADX_MIN
+ *     — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions.
  *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
  * EXIT (profit lock + hard stop + BB re-entry + PSAR flip):
@@ -21,7 +23,7 @@
  *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
-const { BollingerBands, RSI, PSAR } = require("technicalindicators");
+const { BollingerBands, RSI, PSAR, ADX } = require("technicalindicators");
 
 const NAME        = "SCALP_BB_PSAR_RSI_V5";
 const DESCRIPTION = "BB break + PSAR + RSI";
@@ -78,10 +80,12 @@ function getSignal(candles, opts) {
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
   var MAX_ENTRY_SL_PTS = parseFloat(cfg("SCALP_MAX_ENTRY_SL_PTS", "50")); // skip entries where PSAR sits farther than this from close (0 = off)
+  var ADX_ENABLED = cfg("SCALP_ADX_ENABLED", "false") === "true"; // trend filter toggle
+  var ADX_MIN     = parseFloat(cfg("SCALP_ADX_MIN", "20"));        // block entries when ADX(14) < this (ranging/chop)
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
-    rsi: null, sar: null, bbUpper: null, bbMiddle: null, bbLower: null,
+    rsi: null, sar: null, adx: null, bbUpper: null, bbMiddle: null, bbLower: null,
   };
 
   // Warm-up
@@ -102,7 +106,7 @@ function getSignal(candles, opts) {
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
   var cacheKey = _makeIndicatorKey(candles);
-  var bb, bbMiddles, rsi, rsiPrev, sar;
+  var bb, bbMiddles, rsi, rsiPrev, sar, adx;
 
   if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
     bb        = _indicatorCache.bb;
@@ -110,6 +114,7 @@ function getSignal(candles, opts) {
     rsi       = _indicatorCache.rsi;
     rsiPrev   = _indicatorCache.rsiPrev;
     sar       = _indicatorCache.sar;
+    adx       = _indicatorCache.adx;
   } else {
     var closes = candles.map(function(c) { return c.close; });
     var highs  = candles.map(function(c) { return c.high; });
@@ -132,8 +137,15 @@ function getSignal(candles, opts) {
     if (sarArr.length < 1) { base.reason = "SAR warming up"; return base; }
     sar = sarArr[sarArr.length - 1];
 
+    // ADX (trend strength) — only when the filter is on, to avoid the cost otherwise
+    adx = null;
+    if (ADX_ENABLED) {
+      var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: closes });
+      adx = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
+    }
+
     // Cache for next tick with same window
-    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, rsiPrev: rsiPrev, sar: sar };
+    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, rsiPrev: rsiPrev, sar: sar, adx: adx };
   }
 
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
@@ -142,8 +154,19 @@ function getSignal(candles, opts) {
   base.bbWidth  = parseFloat((bb.upper - bb.lower).toFixed(2));
   base.rsi = parseFloat(rsi.toFixed(1));
   base.sar = parseFloat(sar.toFixed(2));
+  base.adx = adx != null ? parseFloat(adx.toFixed(1)) : null;
 
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+
+  // ── ADX trend filter (chop gate) ──────────────────────────────────────────
+  // Block ALL entries when the market is ranging — ADX(14) below SCALP_ADX_MIN.
+  // The strategy wins in trends and bleeds in chop; this sits out the choppy
+  // sessions. Off by default (SCALP_ADX_ENABLED=false); when on, the floor is
+  // SCALP_ADX_MIN. If ADX has no value yet (warm-up), pass through.
+  if (ADX_ENABLED && Number.isFinite(adx) && adx < ADX_MIN) {
+    base.reason = "No setup (market ranging — ADX=" + adx.toFixed(1) + " < " + ADX_MIN + ")";
+    return base;
+  }
 
   // ── ENTRY CONDITIONS (V6: BB break + PSAR side + RSI) ─────────────────────
   // CE: close above BB upper  + PSAR below close + RSI > RSI_CE

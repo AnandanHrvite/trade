@@ -101,6 +101,9 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
       { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where PSAR sits farther than this from close (a freshly-flipped SAR can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      // ── ADX trend filter (sit out choppy/ranging sessions) ──
+      { key: "SCALP_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending — block ALL entries when ADX(14) is below the threshold. The strategy wins in trends and bleeds in chop; this sits out ranging days.", default: "false" },
+      { key: "SCALP_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX(14) to allow entries when the trend filter is on. Higher = stricter (only strong trends). Typical 20–25. Ignored when the filter is off.", default: "20" },
       // ── Profit lock (bank small scalp profits) + hard stop (catastrophic loss cap) ──
       { key: "SCALP_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
       { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
@@ -560,6 +563,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
   "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
+  "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
   "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",

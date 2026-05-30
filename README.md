@@ -80,7 +80,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 ### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
 See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries).
+- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
 - **Guards**: optional `SCALP_RSI_TURNING`, independent VIX filter.
 - **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
 - **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
@@ -267,6 +267,8 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
 | `SCALP_MAX_ENTRY_SL_PTS` | `50` | Skip entries where PSAR is more than this many pts from close (avoids uncapped risk). `0` = off |
+| `SCALP_ADX_ENABLED` | `false` | Trend filter — block all entries when ADX(14) is below the floor (sit out chop). |
+| `SCALP_ADX_MIN` | `20` | Minimum ADX(14) to allow entries when the trend filter is on (higher = stricter). |
 | `SCALP_PROFIT_LOCK_TRIGGER_PTS` | `25` | Arm the profit lock once the favourable spot move (points) hits this. Points-based. `0` disables. |
 | `SCALP_PROFIT_LOCK_PCT` | `50` | Once armed, exit when the favourable move falls below this % of peak (ratchets up) — the per-tick upside exit |
 | `SCALP_STOP_LOSS_PTS` | `30` | Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide (only clips deep failed-fade excursions). Points-based. `0` disables. |

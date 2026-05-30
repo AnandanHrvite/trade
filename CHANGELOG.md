@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP — optional ADX trend filter (sit out choppy sessions)
+
+- **New `SCALP_ADX_ENABLED` (toggle, default off) + `SCALP_ADX_MIN` (default 20).** When on, blocks **all** entries on a candle whose `ADX(14)` is below the floor — the engine sits out ranging/chop sessions. **Why:** replay showed the strategy's winning days are clean trends (price marches one way, all-PE or all-CE, big net +) while the losing days are choppy (price flip-flops, a mix of CE+PE that all fail). The entry rule is the same; the difference is trend vs chop. ADX is the standard trend/chop separator, so gating on it skips the bleed days at the source. Ships **off** so it can't change current behaviour until enabled. Engine computes ADX only when the toggle is on. `getSignal` result now carries `adx`. Settings + docs updated.
+
 ### SCALP — added a wide points hard stop alongside the profit lock (V6.2.1)
 
 - **New `SCALP_STOP_LOSS_PTS` (default 30) — a per-tick catastrophic loss cap.** Exits if the trade moves N spot points against entry. Set **wide** so it never touches the normal small scalps; it only clips the deep adverse excursions on failed BB-break fades that previously bled to −100+ pts before the candle-close BB re-entry / PSAR flip could fire (the −₹1.9K/−₹2.4K losers). Points-based; reason `SL (Npts)`; arms the per-side SL cooldown. The profit lock (upside) and BB re-entry / PSAR flip are unchanged. Engine adds `hardStop()`; applied across paper/live/backtest/replay.

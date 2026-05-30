@@ -40,7 +40,7 @@ Timeframe: **3 or 5-min** candles via `SCALP_RESOLUTION` (default 5). BB and RSI
 - **PSAR not too far** — `SAR − close ≤ SCALP_MAX_ENTRY_SL_PTS(50)`
 - → Initial SL = **PSAR value at entry**
 
-Just the two RSI keys — there are no overbought/oversold caps. The **far-PSAR filter** (`SCALP_MAX_ENTRY_SL_PTS`, `0` disables) skips entries where a freshly-flipped SAR sits 100s of pts away (uncapped risk). Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). All valid signals enter at the `SCALP` strength tier.
+Just the two RSI keys — there are no overbought/oversold caps. The **far-PSAR filter** (`SCALP_MAX_ENTRY_SL_PTS`, `0` disables) skips entries where a freshly-flipped SAR sits 100s of pts away (uncapped risk). Optional `SCALP_RSI_TURNING` (default off): also require RSI momentum to confirm (CE: RSI not falling vs prior bar; PE: not rising). **Optional ADX trend filter** (`SCALP_ADX_ENABLED`, default off): block **all** entries when `ADX(14) < SCALP_ADX_MIN(20)` — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions. All valid signals enter at the `SCALP` strength tier.
 
 ## 4. Stop loss & profit lock
 
