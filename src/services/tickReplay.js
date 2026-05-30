@@ -72,7 +72,9 @@ function requestCancel() {
 // BUMP this whenever replay/strategy semantics change in a way that would alter
 // a past session's result, so stale cached results are invalidated rather than
 // silently served.
-const REPLAY_CACHE_VERSION = 1;
+// v2: SWING SAR chart dots now computed via calcSAR (was technicalindicators
+//     PSAR) — old cached chartData would still show the library-PSAR dots.
+const REPLAY_CACHE_VERSION = 2;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
