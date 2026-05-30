@@ -15,6 +15,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 - **Charts now plot the active trend source only** — PSAR dots when PSAR is on, a solid SuperTrend line when SuperTrend is on (Swing + Scalp, paper + live).
 - **Scalp chart now shows the ADX subplot** (it was computed only behind the `SCALP_ADX_ENABLED` filter and never charted). ADX(14) is now computed every candle and drawn on its own pane with the `SCALP_ADX_MIN` floor line.
 - **Trade logs now capture all indicator values at entry AND exit** — added `supertrendAtEntry/Exit`, `stTrendAtEntry/Exit`, `trendSource` (Swing + Scalp) and `adxAtEntry/Exit` (Scalp), plus an at-exit indicator snapshot (RSI/EMA21/SAR/BB/SuperTrend) recomputed on close.
+- **Replay chart now renders SuperTrend + ADX too.** The Replay page reuses each strategy's `/status/chart-data` (so the payload already carried `supertrend`/`adx`), but its chart renderer only drew SAR/EMA/BB/RSI — it now draws the SuperTrend line and the ADX subplot, and the diagnostic trace switches its label to SuperTrend when that was the active source.
 
 ### Live (Harness) for Swing, Scalp & ORB + interception fix
 
