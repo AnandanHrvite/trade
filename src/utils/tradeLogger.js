@@ -13,6 +13,7 @@
 const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
+const { isNonTradingDay } = require("./nseHolidays");
 const _HOME = require("os").homedir();
 const DATA_DIR   = path.join(_HOME, "trading-data");
 const TRADES_DIR = path.join(DATA_DIR, "trades");
@@ -129,9 +130,18 @@ function _ensureDailyHeader(mode, ts) {
 // Used by routes/settings.js after a successful save to append the new
 // values to today's daily file, so settings changes during the session
 // land in the same document as the trades they affected.
-function appendSettingsSnapshot(mode, snapshot, meta = {}) {
+async function appendSettingsSnapshot(mode, snapshot, meta = {}) {
   const ts = Date.now();
   const dateStr = istDateString(ts);
+  // Don't seed a daily trade-log file on non-trading days (weekend/holiday):
+  // no trades are taken, so a settings save would otherwise create a phantom
+  // dated JSONL with nothing but snapshot lines. TZ is Asia/Calcutta so a bare
+  // `new Date()` resolves weekday/holiday in IST.
+  try {
+    if (await isNonTradingDay(new Date())) return;
+  } catch (err) {
+    console.warn(`[tradeLogger] non-trading-day check failed (mode=${mode}): ${err.message}`);
+  }
   const settings = snapshot && typeof snapshot === "object"
     ? (snapshot.settings || snapshot)
     : {};
