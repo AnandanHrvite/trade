@@ -1221,12 +1221,29 @@ async function orbpManualEntry(side) {
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
   var orhS = chart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var orlS = chart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null, slLine = null, tgtLine = null;
+  var entryLine = null, slLine = null, tgtLine = null, _zoomed = false;
   async function fetchChart(){
     try {
       var r = await fetch('/orb-paper/status/chart-data', { cache:'no-store' });
       var d = await r.json();
-      if (d.candles && d.candles.length) cs.setData(d.candles);
+      if (d.candles && d.candles.length) {
+        cs.setData(d.candles);
+        if (!_zoomed) {
+          // First load: show just the latest IST trading day. The candle buffer
+          // holds several days; a default fit renders them as extra candles.
+          try {
+            var lastT = d.candles[d.candles.length - 1].time;
+            var dayK = Math.floor((lastT + 19800) / 86400);
+            var firstT = lastT;
+            for (var i = d.candles.length - 1; i >= 0; i--) {
+              if (Math.floor((d.candles[i].time + 19800) / 86400) === dayK) firstT = d.candles[i].time;
+              else break;
+            }
+            chart.timeScale().setVisibleRange({ from: firstT, to: lastT });
+            _zoomed = true;
+          } catch(_) {}
+        }
+      }
       orhS.setData(d.orhLine || []);
       orlS.setData(d.orlLine || []);
       if (d.markers && d.markers.length) cs.setMarkers(d.markers.slice().sort(function(a,b){return a.time-b.time;}));

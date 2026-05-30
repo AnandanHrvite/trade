@@ -1188,12 +1188,29 @@ async function strpManualEntry(){
   var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  var entryLine = null;
+  var entryLine = null, _zoomed = false;
   async function fetchChart(){
     try {
       var r = await fetch('/straddle-paper/status/chart-data', { cache:'no-store' });
       var d = await r.json();
-      if (d.candles && d.candles.length) cs.setData(d.candles);
+      if (d.candles && d.candles.length) {
+        cs.setData(d.candles);
+        if (!_zoomed) {
+          // First load: show just the latest IST trading day. The candle buffer
+          // holds several days; a default fit renders them as extra candles.
+          try {
+            var lastT = d.candles[d.candles.length - 1].time;
+            var dayK = Math.floor((lastT + 19800) / 86400);
+            var firstT = lastT;
+            for (var i = d.candles.length - 1; i >= 0; i--) {
+              if (Math.floor((d.candles[i].time + 19800) / 86400) === dayK) firstT = d.candles[i].time;
+              else break;
+            }
+            chart.timeScale().setVisibleRange({ from: firstT, to: lastT });
+            _zoomed = true;
+          } catch(_) {}
+        }
+      }
       bbU.setData(d.bbUpper  || []);
       bbM.setData(d.bbMiddle || []);
       bbL.setData(d.bbLower  || []);
