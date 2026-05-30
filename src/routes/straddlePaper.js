@@ -1193,6 +1193,15 @@ async function strpManualEntry(){
     try {
       var r = await fetch('/straddle-paper/status/chart-data', { cache:'no-store' });
       var d = await r.json();
+      // Trim every series to the latest IST trading day so zooming out still
+      // shows only today — warmup history stays server-side for indicator calc.
+      if (d.candles && d.candles.length) { (function(){
+        var _lt=d.candles[d.candles.length-1].time, _dk=Math.floor((_lt+19800)/86400), _cut=_lt;
+        for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
+        var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
+        d.candles=_k(d.candles);
+        ['ema21','sar','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+      })(); }
       if (d.candles && d.candles.length) {
         cs.setData(d.candles);
         if (!_zoomed) {

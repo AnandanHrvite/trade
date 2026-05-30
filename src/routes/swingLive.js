@@ -3408,6 +3408,16 @@ async function manualEntry(side) {
       const d = await res.json();
       if (!d.candles || d.candles.length === 0) return;
 
+      // Trim every series to the latest IST trading day so zooming out still
+      // shows only today — warmup history stays server-side for indicator calc.
+      (function(){
+        var _c=d.candles, _lt=_c[_c.length-1].time, _dk=Math.floor((_lt+19800)/86400), _cut=_lt;
+        for (var _i=_c.length-1;_i>=0;_i--){ if(Math.floor((_c[_i].time+19800)/86400)===_dk) _cut=_c[_i].time; else break; }
+        var _f=function(a){ return a.filter(function(x){return x.time>=_cut;}); };
+        var _trim=function(o){ Object.keys(o).forEach(function(kk){ var a=o[kk]; if(Array.isArray(a)){ if(a.length&&a[0]&&typeof a[0].time==='number') o[kk]=_f(a); } else if(a&&typeof a==='object'){ _trim(a); } }); };
+        _trim(d);
+      })();
+
       if (Math.abs(d.candles.length - _lastCandleCount) > 1 || _lastCandleCount === 0) {
         candleSeries.setData(d.candles.map(function(c) {
           return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close };

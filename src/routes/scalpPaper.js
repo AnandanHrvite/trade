@@ -2161,6 +2161,15 @@ function doCopy(text,btn,label){
       var res = await fetch('/scalp-paper/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return; var d = await res.json();
       if (!d.candles || !d.candles.length) return;
+      // Trim every series to the latest IST trading day so zooming out still
+      // shows only today — warmup history stays server-side for indicator calc.
+      (function(){
+        var _lt=d.candles[d.candles.length-1].time, _dk=Math.floor((_lt+19800)/86400), _cut=_lt;
+        for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
+        var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
+        d.candles=_k(d.candles);
+        ['ema21','sar','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+      })();
       _internalUpdate = true;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
         cs.setData(d.candles.map(function(c) { return { time:c.time, open:c.open, high:c.high, low:c.low, close:c.close }; }));
