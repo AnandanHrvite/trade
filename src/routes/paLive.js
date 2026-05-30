@@ -728,7 +728,11 @@ async function onCandleClose(bar) {
   }
 
   // Entry
-  if (!isMarketHours()) { log(`⏭️ [PA-LIVE] SKIP: outside market hours`); return; }
+  if (!isMarketHours()) {
+    if (!state._omhLogged) { log(`⏭️ [PA-LIVE] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
+    return;
+  }
+  state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [PA-LIVE] SKIP: daily loss limit hit`); return; }
   if (state._entryPending) { log(`⏭️ [PA-LIVE] SKIP: entry pending`); return; }
   if (state.sessionTrades.length >= _PA_MAX_TRADES) { log(`⏭️ [PA-LIVE] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }

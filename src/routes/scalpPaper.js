@@ -645,7 +645,11 @@ async function onCandleClose(bar) {
   }
 
   // ── Entry evaluation ──────────────────────────────────────────────────────
-  if (!state._simMode && !isMarketHours()) { log(`⏭️ [SCALP-PAPER] SKIP: outside market hours`); return; }
+  if (!state._simMode && !isMarketHours()) {
+    if (!state._omhLogged) { log(`⏭️ [SCALP-PAPER] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
+    return;
+  }
+  state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [SCALP-PAPER] SKIP: daily loss limit hit`); return; }
   if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-PAPER] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
   // Per-side SL cooldown is checked AFTER the strategy returns a side (further below).
