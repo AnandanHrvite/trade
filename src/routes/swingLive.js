@@ -1088,6 +1088,20 @@ async function squareOff(exitPrice, reason) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function onCandleClose(candle) {
+  // ── Drop pre-market candles (before 09:15 IST) ───────────────────────────
+  // Pre-open ticks (esp. the 09:00 auction bar's ~250pt fake low) anchor
+  // Parabolic SAR far below price and delay its trend flip by hours vs the
+  // regular-session view (TradingView/Kite). That late flip caused wrong-side
+  // entries. Keep the indicator series to the 09:15+ session only — this holds
+  // no matter how early the bot is started.
+  const _istMin = Math.floor((candle.time + 19800) / 60) % 1440; // candle.time epoch sec
+  if (_istMin < 555) {
+    tradeState.prevCandleHigh = candle.high;
+    tradeState.prevCandleLow  = candle.low;
+    tradeState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
+    return;
+  }
+
   tradeState.candles.push(candle);
   tradeState.prevCandleHigh = candle.high;
   tradeState.prevCandleLow  = candle.low;
