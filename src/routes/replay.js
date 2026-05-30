@@ -1318,6 +1318,23 @@ function buildDiagnosticBlob(context, rows) {
     } else {
       lines.push('YourCfg:    FAILED — ' + (r.sim && r.sim.error));
     }
+
+    // SAR trace: per-candle OHLC + the SAR dot value/side the chart drew, so a
+    // flip-timing divergence (bot vs TradingView) can be located candle-by-candle
+    // without needing the raw session file off the server. Diagnostic-only.
+    const cd = r.sim && r.sim.chartData;
+    if (cd && Array.isArray(cd.candles) && cd.candles.length) {
+      const sarByTime = new Map();
+      (cd.sar || []).forEach(p => sarByTime.set(p.time, p.value));
+      lines.push('');
+      lines.push('SAR trace (time IST | O H L C | SAR | side):');
+      for (const c of cd.candles) {
+        const sar = sarByTime.has(c.time) ? sarByTime.get(c.time) : null;
+        const side = sar == null ? '-' : (sar < c.close ? 'BULL' : 'BEAR');
+        const t = new Date(c.time * 1000).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
+        lines.push('  ' + t + ' | ' + c.open + ' ' + c.high + ' ' + c.low + ' ' + c.close + ' | ' + (sar == null ? '-' : sar) + ' | ' + side);
+      }
+    }
     lines.push('');
   });
 
