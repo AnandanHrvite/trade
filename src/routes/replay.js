@@ -446,6 +446,7 @@ ${buildSidebar('replay', false)}
         <div style="display:flex; gap:8px; align-items:center;">
           <button id="range-run-btn" onclick="runRange(this)">▶ Run range</button>
           <button id="range-cancel-btn" onclick="cancelRange(this)" style="display:none; background:#7f1d1d; color:#fecaca; white-space:nowrap;">✕ Cancel</button>
+          <button id="clear-cache-btn" onclick="clearReplayCache(this)" title="Delete all cached replay results — forces a fresh recompute on the next run (safe; does not touch recordings or trade logs)" style="background:#1e293b; color:#e2e8f0; border:1px solid #334155; white-space:nowrap;">🗑 Clear cache</button>
         </div>
       </div>
       <div class="range-field" id="range-diag-btns" style="display:none; flex-direction:row; gap:8px; align-items:flex-end;"></div>
@@ -587,6 +588,11 @@ function drawReplayChart(el, cd) {
     const sarLs = chart.addLineSeries({ color: '#f472b6', lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false });
     sarLs.setData(cd.sar);
   }
+  // SuperTrend line (solid) — drawn when the session used SuperTrend instead of PSAR.
+  if (Array.isArray(cd.supertrend) && cd.supertrend.length) {
+    const stLs = chart.addLineSeries({ color: '#f59e0b', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
+    stLs.setData(cd.supertrend);
+  }
   // RSI on its own bottom scale + dashed level lines at the strategy thresholds.
   if (Array.isArray(cd.rsi) && cd.rsi.length) {
     const rsiLs = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceScaleId: 'rsi', priceLineVisible: false, lastValueVisible: true });
@@ -596,6 +602,13 @@ function drawReplayChart(el, cd) {
       rsiLs.createPriceLine({ price: cd.rsiCeMin != null ? cd.rsiCeMin : 52, color: '#10b981', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'CE' });
       rsiLs.createPriceLine({ price: cd.rsiPeMax != null ? cd.rsiPeMax : 48, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'PE' });
     } catch (_) {}
+  }
+  // ADX trend-strength subplot (scalp) — own bottom scale, stacked just above RSI.
+  if (Array.isArray(cd.adx) && cd.adx.length) {
+    const adxLs = chart.addLineSeries({ color: '#e879f9', lineWidth: 1, priceScaleId: 'adx', priceLineVisible: false, lastValueVisible: true });
+    try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch (_) {}
+    adxLs.setData(cd.adx);
+    if (cd.adxMin != null) { try { adxLs.createPriceLine({ price: cd.adxMin, color: '#a855f7', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'ADX min' }); } catch (_) {} }
   }
   // Markers must be sorted ascending by time or the library throws.
   if (Array.isArray(cd.markers) && cd.markers.length) {
@@ -746,6 +759,35 @@ async function forceClearStuckState(btn) {
     btn.disabled = false;
     btn.textContent = 'Force clear';
     alert('Force-clear failed: ' + e.message);
+  }
+}
+
+// Delete every cached replay result (the _replay_cache group). The next Run
+// recomputes from the raw tick stream — recordings, trade logs and replay
+// outputs are untouched, so this is always safe.
+async function clearReplayCache(btn) {
+  if (!confirm('Delete ALL cached replay results?\\n\\n' +
+               'This wipes the deterministic replay cache so the next run recomputes fresh.\\n' +
+               'It does NOT touch recordings, trade logs, or replay outputs.')) return;
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Clearing…';
+  try {
+    const r = await secretFetch('/cache-files/delete-all?group=replay_cache', { method: 'POST' });
+    if (r === null) { btn.disabled = false; btn.textContent = orig; return; } // secret prompt cancelled
+    const data = await r.json();
+    if (data.success) {
+      btn.textContent = 'Cleared ' + (data.deleted ? data.deleted.length : 0) + ' ✓';
+      setTimeout(function(){ btn.disabled = false; btn.textContent = orig; }, 2500);
+    } else {
+      btn.disabled = false;
+      btn.textContent = orig;
+      alert('Clear cache failed: ' + (data.error || (data.failed && data.failed.length ? data.failed.length + ' files' : 'unknown')));
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = orig;
+    alert('Clear cache failed: ' + e.message);
   }
 }
 
@@ -1368,15 +1410,18 @@ function buildDiagnosticBlob(context, rows) {
     // without needing the raw session file off the server. Diagnostic-only.
     const cd = r.sim && r.sim.chartData;
     if (cd && Array.isArray(cd.candles) && cd.candles.length) {
-      const sarByTime = new Map();
-      (cd.sar || []).forEach(p => sarByTime.set(p.time, p.value));
+      // Trace whichever trend source the session used (PSAR dots or SuperTrend line).
+      const useST = Array.isArray(cd.supertrend) && cd.supertrend.length;
+      const label = useST ? 'SuperTrend' : 'SAR';
+      const byTime = new Map();
+      (useST ? cd.supertrend : (cd.sar || [])).forEach(p => byTime.set(p.time, p.value));
       lines.push('');
-      lines.push('SAR trace (time IST | O H L C | SAR | side):');
+      lines.push(label + ' trace (time IST | O H L C | ' + label + ' | side):');
       for (const c of cd.candles) {
-        const sar = sarByTime.has(c.time) ? sarByTime.get(c.time) : null;
-        const side = sar == null ? '-' : (sar < c.close ? 'BULL' : 'BEAR');
+        const v = byTime.has(c.time) ? byTime.get(c.time) : null;
+        const side = v == null ? '-' : (v < c.close ? 'BULL' : 'BEAR');
         const t = new Date(c.time * 1000).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-        lines.push('  ' + t + ' | ' + c.open + ' ' + c.high + ' ' + c.low + ' ' + c.close + ' | ' + (sar == null ? '-' : sar) + ' | ' + side);
+        lines.push('  ' + t + ' | ' + c.open + ' ' + c.high + ' ' + c.low + ' ' + c.close + ' | ' + (v == null ? '-' : v) + ' | ' + side);
       }
     }
     lines.push('');
