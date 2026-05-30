@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Cache Files — per-strategy tags + filtered Delete All
+
+- **Replay groups (Replay Trades / Replay Trades (Sim) / Replay Cache) now show a Strategy badge and Session date per file.** The Replay Cache files are sha1-hash-named, so previously there was no way to tell a SCALP cache from a SWING one — "Delete All" wiped every strategy at once. The badge is derived from the filename for the replay outputs and from the embedded `mode` for hash-named cache files; the session date is read from the cached result (`date`, now stored) or recovered from a numeric `sessionId`.
+- **New per-group Strategy filter dropdown.** Selecting e.g. SCALP scopes the listing, the "Download All", and the "Delete All" to just that strategy — so you can clear SCALP caches without touching SWING. The confirm dialog spells out the scope. `tickReplay` now stamps `date` into every cached replay result so future caches are self-describing.
+
 ### SCALP — optional ADX trend filter (sit out choppy sessions)
 
 - **New `SCALP_ADX_ENABLED` (toggle, default off) + `SCALP_ADX_MIN` (default 20).** When on, blocks **all** entries on a candle whose `ADX(14)` is below the floor — the engine sits out ranging/chop sessions. **Why:** replay showed the strategy's winning days are clean trends (price marches one way, all-PE or all-CE, big net +) while the losing days are choppy (price flip-flops, a mix of CE+PE that all fail). The entry rule is the same; the difference is trend vs chop. ADX is the standard trend/chop separator, so gating on it skips the bleed days at the source. Ships **off** so it can't change current behaviour until enabled. Engine computes ADX only when the toggle is on. `getSignal` result now carries `adx`. Settings + docs updated.

@@ -1136,6 +1136,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       ok: true,
       cancelled,  // true if stopped early via requestCancel() mid-session
       mode,
+      date,       // recorded session date (IST, YYYY-MM-DD) — lets the cache-file browser label hash-named caches
       sessionId: data.sessionStart.sid,
       ticksReplayed,
       durationMs: Date.now() - startWall,

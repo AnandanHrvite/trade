@@ -44,14 +44,62 @@ const GROUPS = [
   { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-swing",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Cached historical OHLC pulls used by backtests (auto-pruned)." },
   { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-scalp",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
   { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay. (Replay outputs/cache under the same root are listed separately below.)" },
-  { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
-  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-straddle", base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, desc: "Replay outputs in current-settings (sim) mode." },
-  { key: "replay_cache",   label: "Replay Cache",        icon: "⚡", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_cache"),      flat: false, desc: "Cached deterministic replay results — re-run hits these to skip the tick stream. Deleting forces a fresh recompute on the next run (safe)." },
+  { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, tagged: true, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
+  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-straddle", base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, tagged: true, desc: "Replay outputs in current-settings (sim) mode." },
+  { key: "replay_cache",   label: "Replay Cache",        icon: "⚡", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_cache"),      flat: false, tagged: true, desc: "Cached deterministic replay results — re-run hits these to skip the tick stream. Deleting forces a fresh recompute on the next run (safe)." },
   { key: "root",           label: "Root Data Files",     icon: "🗂", cls: "mode-swing",    base: DATA_DIR,                                  flat: true,  desc: "Loose JSON / JSONL state files directly under ~/trading-data (the grouped sub-folders are listed above)." },
 ];
 const GROUP_BY_KEY = Object.fromEntries(GROUPS.map(g => [g.key, g]));
 
 const IGNORE_NAMES = new Set([".DS_Store", ".gitkeep"]);
+
+// Strategy → display badge. The mode strings replay writes are "{strategy}-paper"
+// (e.g. "scalp-paper"); we tag on the leading strategy token so a hash-named
+// replay-cache file can still be told apart by which engine produced it.
+const STRATEGY_BADGE = {
+  swing:    { label: "SWING",    cls: "mode-swing" },
+  scalp:    { label: "SCALP",    cls: "mode-scalp" },
+  pa:       { label: "PA",       cls: "mode-pa" },
+  orb:      { label: "ORB",      cls: "mode-orb" },
+  straddle: { label: "STRADDLE", cls: "mode-straddle" },
+};
+
+// Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
+const _tagCache = new Map();
+
+// IST date string from an epoch-ms value (used to recover a session date from a
+// numeric sessionId when the cached result predates the stored `date` field).
+function _istDateFromMs(ms) {
+  if (!Number.isFinite(ms) || ms < 1577836800000) return null; // sanity: after 2020
+  const ist = new Date(ms + 19800000);
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
+}
+
+// Resolve { strat, date } for a file in a tagged group.
+//   _replay_trades / _replay_trades_sim → "{mode}_{suffix}.jsonl" — strat from name.
+//   _replay_cache                       → sha1-named .json; the result JSON carries
+//                                         a top-level "mode" (and now "date") field.
+// strat is a strategy key (swing|scalp|pa|orb|straddle) or null; date is "YYYY-MM-DD" or null.
+function detectMeta(group, rel, abs, mtimeMs) {
+  if (!group.tagged) return { strat: null, date: null };
+  // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
+  const nameMatch = path.basename(rel).match(/^(swing|scalp|pa|orb|straddle)\b/i);
+  if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
+  // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
+  const cached = _tagCache.get(abs);
+  if (cached && cached.mtimeMs === mtimeMs) return cached.meta;
+  let meta = { strat: null, date: null };
+  try {
+    const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
+    const m = String(obj && obj.mode || "").match(/^(swing|scalp|pa|orb|straddle)/i);
+    if (m) meta.strat = m[1].toLowerCase();
+    // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
+    if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
+    else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
+  } catch (_) { /* leave nulls */ }
+  _tagCache.set(abs, { mtimeMs, meta });
+  return meta;
+}
 
 function validGroup(k) { return Object.prototype.hasOwnProperty.call(GROUP_BY_KEY, k); }
 
@@ -131,7 +179,25 @@ router.get("/list", (req, res) => {
   const key = String(req.query.group || "");
   if (!validGroup(key)) return res.status(400).json({ success: false, error: "bad group" });
   const group = GROUP_BY_KEY[key];
-  const files = listFiles(group);
+  let files = listFiles(group);
+  // Attach a strategy tag for tagged groups; collect the distinct tags present
+  // so the UI can offer a per-strategy filter.
+  const tagsPresent = new Set();
+  if (group.tagged) {
+    for (const f of files) {
+      const meta = detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs);
+      f.tag = meta.strat;
+      f.sessionDate = meta.date;
+      if (f.tag) tagsPresent.add(f.tag);
+    }
+  }
+  const unfilteredTotal = files.length; // group-wide count for the page overview
+  // Optional strategy filter — scopes both the listing and the totals so a
+  // filtered "Delete All" only touches that strategy's files.
+  const tagFilter = String(req.query.tag || "").toLowerCase();
+  if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
+    files = files.filter(f => f.tag === tagFilter);
+  }
   const totalSize = files.reduce((s, f) => s + f.size, 0);
   const paging = parsePaging(req, 10);
   const total = files.length;
@@ -141,9 +207,12 @@ router.get("/list", (req, res) => {
   res.json({
     success: true,
     group: key,
+    tagged: !!group.tagged,
+    tags: Array.from(tagsPresent).sort(),
+    tagFilter: (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) ? tagFilter : null,
     page: paging ? paging.page : 1,
     pageSize: paging ? paging.pageSize : total,
-    total, totalSize,
+    total, totalSize, unfilteredTotal,
     count: slice.length,
     rows: slice,
   });
@@ -197,9 +266,13 @@ router.get("/download-all", (req, res) => {
   const key = String(req.query.group || "");
   if (!validGroup(key)) return res.status(400).send("bad group");
   const group = GROUP_BY_KEY[key];
-  const files = listFiles(group);
+  let files = listFiles(group);
+  const tagFilter = String(req.query.tag || "").toLowerCase();
+  if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
+    files = files.filter(f => detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs).strat === tagFilter);
+  }
   if (!files.length) return res.status(404).send("no files for this group");
-  const filename = `${group.key}_${istDateString()}.tar.gz`;
+  const filename = `${group.key}${tagFilter ? "_" + tagFilter : ""}_${istDateString()}.tar.gz`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "application/gzip");
   // Feed the explicit relative file list on stdin (-T -) so the flat "root"
@@ -222,6 +295,7 @@ router.post("/delete", (req, res) => {
   if (!abs) return res.status(400).json({ success: false, error: "bad path" });
   try {
     fs.unlinkSync(abs);
+    _tagCache.delete(abs);
     console.log(`[cache-files] deleted ${abs}`);
     res.json({ success: true, deleted: path.basename(abs) });
   } catch (err) {
@@ -235,17 +309,23 @@ router.post("/delete-all", (req, res) => {
   const key = String(req.query.group || req.body?.group || "");
   if (!validGroup(key)) return res.status(400).json({ success: false, error: "bad group" });
   const group = GROUP_BY_KEY[key];
-  const files = listFiles(group);
+  let files = listFiles(group);
+  // Scope the wipe to one strategy when a valid tag filter is supplied — this is
+  // what lets "Delete All" clear only SCALP without touching SWING.
+  const tagFilter = String(req.query.tag || req.body?.tag || "").toLowerCase();
+  if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
+    files = files.filter(f => detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs).strat === tagFilter);
+  }
   const deleted = [];
   const failed = [];
   for (const f of files) {
     const abs = resolveInGroup(group, f.rel);
     if (!abs) { failed.push({ path: f.rel, error: "bad path" }); continue; }
-    try { fs.unlinkSync(abs); deleted.push(f.rel); }
+    try { fs.unlinkSync(abs); _tagCache.delete(abs); deleted.push(f.rel); }
     catch (err) { if (err.code !== "ENOENT") failed.push({ path: f.rel, error: err.message }); }
   }
-  console.log(`[cache-files] delete-all group=${key} removed=${deleted.length} failed=${failed.length}`);
-  res.json({ success: failed.length === 0, group: key, deleted, failed });
+  console.log(`[cache-files] delete-all group=${key}${tagFilter ? ` tag=${tagFilter}` : ""} removed=${deleted.length} failed=${failed.length}`);
+  res.json({ success: failed.length === 0, group: key, tag: tagFilter || null, deleted, failed });
 });
 
 // ── GET /cache-files — UI page ──────────────────────────────────────────────
@@ -303,6 +383,15 @@ router.get("/", (_req, res) => {
     .actions { display:flex; gap:5px; }
     .num  { font-family:'IBM Plex Mono',monospace; }
     .fname { font-family:'IBM Plex Mono',monospace; color:#c8d8f0; word-break:break-all; }
+    .tag { display:inline-block; font-size:0.6rem; font-weight:700; letter-spacing:0.5px; padding:2px 7px; border-radius:10px; border:1px solid currentColor; text-transform:uppercase; }
+    .tag-none { color:#475569; }
+    .sdate { font-family:'IBM Plex Mono',monospace; font-size:0.66rem; color:#64748b; }
+    .tag-filter { display:flex; align-items:center; gap:6px; font-size:0.62rem; color:#4a6080; text-transform:uppercase; letter-spacing:0.5px; }
+    .tag-filter select { padding:3px 7px; background:#0a1528; border:1px solid #1e3a5a; border-radius:5px; color:#c8d8f0; font-family:inherit; font-size:0.66rem; outline:none; }
+    :root[data-theme="light"] .tag-none { color:#94a3b8; }
+    :root[data-theme="light"] .sdate { color:#64748b; }
+    :root[data-theme="light"] .tag-filter { color:#64748b; }
+    :root[data-theme="light"] .tag-filter select { background:#fff; border-color:#e0e4ea; color:#334155; }
 
     /* File-view modal */
     .tv-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:flex-start; justify-content:center; padding:40px 16px; overflow-y:auto; }
@@ -403,6 +492,19 @@ ${buildSidebar('cacheFiles', liveActive)}
 
   var GROUPS = [];  // populated from /cache-files/groups
   var _totals = {}; // key -> file count (for overview)
+  var _tagFilter = {}; // group key -> active strategy filter ('' = all)
+  var STRAT_BADGE = {
+    swing:    { label: 'SWING',    cls: 'mode-swing' },
+    scalp:    { label: 'SCALP',    cls: 'mode-scalp' },
+    pa:       { label: 'PA',       cls: 'mode-pa' },
+    orb:      { label: 'ORB',      cls: 'mode-orb' },
+    straddle: { label: 'STRADDLE', cls: 'mode-straddle' },
+  };
+  function badgeHtml(strat) {
+    var b = STRAT_BADGE[strat];
+    if (!b) return '<span class="tag tag-none">—</span>';
+    return '<span class="tag ' + b.cls + '">' + b.label + '</span>';
+  }
 
   var _pageSize = (function(){
     try {
@@ -494,16 +596,18 @@ ${buildSidebar('cacheFiles', liveActive)}
   function loadGroupSection(key) {
     var g = groupMeta(key);
     var page = _page[key] || 1;
-    var url = '/cache-files/list?group=' + encodeURIComponent(key) + '&page=' + page + '&pageSize=' + _pageSize;
+    var tf = _tagFilter[key] || '';
+    var url = '/cache-files/list?group=' + encodeURIComponent(key) + '&page=' + page + '&pageSize=' + _pageSize +
+      (tf ? '&tag=' + encodeURIComponent(tf) : '');
     return fetch(url, { cache: 'no-store' })
       .then(function(r){ return r.json(); })
       .then(function(d){
         var el = document.getElementById('section-' + key);
         if (!el) return;
         if (!d || !d.success) { el.innerHTML = '<div class="empty">Failed to load.</div>'; return; }
-        // keep overview totals fresh after deletes
+        // keep overview totals fresh after deletes (group-wide, ignoring any active filter)
         var gm = groupMeta(key);
-        if (gm) { gm.fileCount = d.total; gm.totalSize = d.totalSize; }
+        if (gm) { gm.fileCount = (d.unfilteredTotal != null ? d.unfilteredTotal : d.total); gm.totalSize = d.totalSize; }
         updateOverview();
         el.innerHTML = renderSectionHTML(g, d);
       })
@@ -516,14 +620,21 @@ ${buildSidebar('cacheFiles', liveActive)}
   function renderSectionHTML(g, d) {
     var rows = d.rows || [];
     var total = d.total || 0;
+    var tagged = !!d.tagged;
+    var tf = _tagFilter[g.key] || '';
+    var stratTh  = tagged ? '<th>Strategy</th><th>Session</th>' : '';
     var bodyHtml = rows.length === 0
-      ? '<div class="empty">No files in ' + escHtml(g.label) + '.</div>'
-      : '<table><thead><tr><th>File</th><th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
+      ? '<div class="empty">No files' + (tf ? ' for ' + escHtml((STRAT_BADGE[tf]||{}).label || tf) : '') + ' in ' + escHtml(g.label) + '.</div>'
+      : '<table><thead><tr><th>File</th>' + stratTh + '<th>Size</th><th>Modified (IST)</th><th></th></tr></thead><tbody>' +
         rows.map(function(r){
           var pEnc = encodeURIComponent(r.rel);
           var pJs  = "'" + escAttr(r.rel) + "'";
+          var stratTd = tagged
+            ? '<td>' + badgeHtml(r.tag) + '</td><td class="sdate">' + (r.sessionDate ? escHtml(r.sessionDate) : '—') + '</td>'
+            : '';
           return '<tr>' +
             '<td class="fname">' + escHtml(r.rel) + '</td>' +
+            stratTd +
             '<td class="num">' + fmtSize(r.size) + '</td>' +
             '<td class="num">' + fmtMtime(r.mtimeMs) + '</td>' +
             '<td><div class="actions">' +
@@ -533,21 +644,38 @@ ${buildSidebar('cacheFiles', liveActive)}
             '</div></td>' +
           '</tr>';
         }).join('') + '</tbody></table>';
+    // Strategy filter dropdown — only for tagged groups that actually hold tags.
+    var filterHtml = '';
+    if (tagged && (d.tags || []).length) {
+      var opts = '<option value="">All strategies</option>' + d.tags.map(function(t){
+        var lbl = (STRAT_BADGE[t] || {}).label || t.toUpperCase();
+        return '<option value="' + escAttr(t) + '"' + (t === tf ? ' selected' : '') + '>' + escHtml(lbl) + '</option>';
+      }).join('');
+      filterHtml = '<div class="tag-filter"><span>Strategy</span><select onchange="onTagFilter(\\''+g.key+'\\',this.value)">' + opts + '</select></div>';
+    }
     var dlAll = total > 0
-      ? '<a class="btn btn-download" href="/cache-files/download-all?group=' + g.key + '" title="Download all ' + total + ' files as a .tar.gz">⬇ Download All (' + total + ')</a>'
+      ? '<a class="btn btn-download" href="/cache-files/download-all?group=' + g.key + (tf ? '&tag=' + encodeURIComponent(tf) : '') + '" title="Download all ' + total + ' files as a .tar.gz">⬇ Download All (' + total + ')</a>'
       : '';
+    var delLabel = tf ? ('Delete All ' + ((STRAT_BADGE[tf]||{}).label || tf) + ' (' + total + ')') : ('Delete All (' + total + ')');
     var delAll = total > 0
-      ? '<button class="btn btn-delete" onclick="delAll(\\''+g.key+'\\','+total+')" title="Delete every file in this group">🗑 Delete All (' + total + ')</button>'
+      ? '<button class="btn btn-delete" onclick="delAll(\\''+g.key+'\\','+total+')" title="Delete '+(tf?'every '+escHtml((STRAT_BADGE[tf]||{}).label||tf)+' file':'every file in this group')+'">🗑 ' + escHtml(delLabel) + '</button>'
       : '';
     var head = '<div class="mode-head">' +
         '<div class="mode-name ' + g.cls + '">' + g.icon + ' ' + escHtml(g.label) + '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          filterHtml +
           '<div class="mode-meta">' + total + ' file' + (total === 1 ? '' : 's') + ' · ' + fmtSize(d.totalSize) + '</div>' +
           dlAll + delAll +
         '</div>' +
       '</div>' +
       (g.desc ? '<div class="mode-desc">' + escHtml(g.desc) + '</div>' : '');
     return head + bodyHtml + (total > _pageSize ? pagerHtml(g.key, d.page, d.pageSize, total) : '');
+  }
+
+  function onTagFilter(groupKey, val) {
+    _tagFilter[groupKey] = val || '';
+    _page[groupKey] = 1;
+    loadGroupSection(groupKey);
   }
 
   // ── File view modal ──────────────────────────────────────────────────
@@ -588,17 +716,21 @@ ${buildSidebar('cacheFiles', liveActive)}
 
   async function delAll(group, count) {
     var g = groupMeta(group);
+    var tf = _tagFilter[group] || '';
+    var scope = tf ? (((STRAT_BADGE[tf]||{}).label || tf) + ' files in ' + (g.label || group)) : ('files in ' + (g.label || group));
     var ok = await showDoubleConfirm({
       icon: '🗑',
-      title: 'Delete ALL ' + (g.label || group) + ' files',
-      message: 'Permanently delete every file in ' + (g.label || group) + ' (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\nThis cannot be undone. Cache files are regenerated by the app on demand.',
+      title: 'Delete ' + (tf ? ((STRAT_BADGE[tf]||{}).label || tf) + ' ' : 'ALL ') + (g.label || group) + ' files',
+      message: 'Permanently delete every ' + scope + ' (' + count + ' file' + (count === 1 ? '' : 's') + ')?\\n\\n' +
+        (tf ? 'Only ' + ((STRAT_BADGE[tf]||{}).label || tf) + ' files will be removed — other strategies are kept.\\n\\n' : '') +
+        'This cannot be undone. Cache files are regenerated by the app on demand.',
       confirmText: 'Delete All',
       confirmClass: 'modal-btn-danger',
-      subject: 'ALL ' + count + ' file' + (count === 1 ? '' : 's') + ' in ' + (g.label || group),
+      subject: 'ALL ' + count + ' ' + scope,
       secondConfirmText: 'Yes, delete all',
     });
     if (!ok) return;
-    var res = await secretFetch('/cache-files/delete-all?group=' + encodeURIComponent(group), { method: 'POST' });
+    var res = await secretFetch('/cache-files/delete-all?group=' + encodeURIComponent(group) + (tf ? '&tag=' + encodeURIComponent(tf) : ''), { method: 'POST' });
     if (!res) return;
     var data = await res.json().catch(function(){ return null; });
     if (!data) { showToast('Delete failed: ' + res.status, '#f87171'); return; }
