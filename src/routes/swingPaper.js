@@ -1860,7 +1860,6 @@ router.get("/start", async (req, res) => {
   try {
     log(`📥 Pre-loading historical candles so strategy warms up instantly...`);
     const { fetchCandles } = require("../services/backtestEngine");
-    const { fetchCandlesCached } = require("../utils/candleCache");
 
     // Go back 21 calendar days (~15 trading days ≈ 390 candles) to match backtest depth.
     // SAR (Parabolic SAR) is path-dependent — with too few seed candles, SAR dots/trend
@@ -1870,8 +1869,11 @@ router.get("/start", async (req, res) => {
     fromDate.setDate(fromDate.getDate() - 21);
     const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
-    // fetchCandlesCached: reads cache first, only calls Fyers API for missing/today's candles
-    const todayCandles = await fetchCandlesCached(subscribeSymbol, String(getTradeResolution()), fromStr, todayStr, fetchCandles);
+    // Fetch warmup DIRECTLY from Fyers (no candle cache). The cache could serve a
+    // stale partial day (e.g. a day first loaded mid-session), leaving holes in the
+    // series — and PSAR is path-dependent, so a gappy warmup shifts its trend flip.
+    // A direct pull always returns clean continuous Fyers candles for the full range.
+    const todayCandles = await fetchCandles(subscribeSymbol, String(getTradeResolution()), fromStr, todayStr);
 
     if (todayCandles.length > 0) {
       // Load all but the last candle (last one is still forming — live ticks will complete it)

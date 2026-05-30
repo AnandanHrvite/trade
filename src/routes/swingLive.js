@@ -2090,8 +2090,11 @@ router.get("/start", async (req, res) => {
 
   // Pre-load candles (same as paperTrade)
   try {
-    log(`📥 Pre-loading candles (${fromStr} → ${todayStr}) — using cache if available...`);
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(getTradeResolution()), fromStr, todayStr, fetchCandles);
+    log(`📥 Pre-loading candles (${fromStr} → ${todayStr}) — fetching fresh from Fyers (no cache)...`);
+    // Direct Fyers fetch (no candle cache) — guarantees a clean continuous series.
+    // The cache could serve a stale partial day, leaving holes that shift the
+    // path-dependent PSAR's trend flip. See swingPaper preload for the rationale.
+    const candles = await fetchCandles(NIFTY_INDEX_SYMBOL, String(getTradeResolution()), fromStr, todayStr);
     if (candles.length > 0) {
       tradeState.candles = candles.slice(0, -1);
       log(`✅ Pre-loaded ${tradeState.candles.length} candles`);
