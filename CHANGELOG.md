@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Live (Harness) for Swing, Scalp & ORB + interception fix
+
+- **New `/swing-live-harness`, `/scalp-live-harness`, `/orb-live-harness` routes** — each runs LIVE by wrapping its Paper engine (LIVE = PAPER by construction), mirroring the existing PA harness. Swing routes orders via Zerodha; Scalp/ORB via Fyers. Gated by `LIVE_HARNESS_DRY_RUN` (+ per-strategy `{SWING,SCALP,ORB}_LIVE_DRY_RUN`) and shown via `UI_SHOW_{SWING,SCALP,ORB}_LIVE_HARNESS` (default off). Only one harness can be installed at a time (process-wide lock).
+- **Fixed live-harness order interception.** The harness reassigned `notify.notifyEntry/Exit`, but every paper module destructures those at `require` time, so the reassignment never reached them — the order branch was a silent no-op even with `LIVE_HARNESS_DRY_RUN=false`. `notify.js` now invokes registered order hooks from *inside* `notifyEntry/notifyExit` (before any Telegram gating), and `liveHarness` registers via `setOrderHooks`/`clearOrderHooks`. This fixes the PA harness too.
+- **Wired Zerodha dispatch** in `liveHarness._placeOrder` (previously threw "not yet wired"), enabling the Swing harness to place real orders.
+
 ### Cache Files — per-strategy tags + filtered Delete All
 
 - **Replay groups (Replay Trades / Replay Trades (Sim) / Replay Cache) now show a Strategy badge and Session date per file.** The Replay Cache files are sha1-hash-named, so previously there was no way to tell a SCALP cache from a SWING one — "Delete All" wiped every strategy at once. The badge is derived from the filename for the replay outputs and from the embedded `mode` for hash-named cache files; the session date is read from the cached result (`date`, now stored) or recovered from a numeric `sessionId`.

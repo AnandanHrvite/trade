@@ -277,11 +277,36 @@ function notifyStarted({ mode, text }) {
   sendTelegram(text);
 }
 
+// ── Live-order hooks ────────────────────────────────────────────────────────
+// The live harness registers entry/exit hooks here so it can place real broker
+// orders off the SAME notify call paper already makes. We invoke the hook from
+// INSIDE notifyEntry/notifyExit (rather than reassigning the export) because
+// paper modules destructure `const { notifyEntry } = require('./notify')` at
+// load time — reassigning notify.notifyEntry would never reach those bindings,
+// but the body of this stable function is always what they call.
+let _entryHook = null;
+let _exitHook  = null;
+
+/** Register live-order hooks. Pass { entry, exit } (either may be null). */
+function setOrderHooks({ entry = null, exit = null } = {}) {
+  _entryHook = entry;
+  _exitHook  = exit;
+}
+/** Remove any registered live-order hooks. */
+function clearOrderHooks() {
+  _entryHook = null;
+  _exitHook  = null;
+}
+
 /**
  * notifyEntry({ mode, side, symbol, strike, expiry, spotAtEntry,
  *               optionEntryLtp, stopLoss, qty, reason })
  */
 function notifyEntry(p) {
+  // Fire the live-order hook FIRST — must run regardless of Telegram gating
+  // (a mode with TG entry alerts disabled must still place its real order).
+  if (_entryHook) { try { _entryHook(p); } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); } }
+
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_ENTRY`)) return;
@@ -314,6 +339,9 @@ function notifyEntry(p) {
  *              pnl, sessionPnl, exitReason, entryTime, exitTime, qty })
  */
 function notifyExit(p) {
+  // Fire the live-order hook FIRST — see notifyEntry note on Telegram gating.
+  if (_exitHook) { try { _exitHook(p); } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); } }
+
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_EXIT`)) return;
@@ -476,4 +504,6 @@ module.exports = {
   notifyDayReport,
   notifyConsolidatedDayReport,
   notifyAuthError,
+  setOrderHooks,
+  clearOrderHooks,
 };

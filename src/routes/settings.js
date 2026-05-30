@@ -387,11 +387,13 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_SWING_BACKTEST", label: "Swing → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Swing group", default: "true", subheader: "Swing sub-menus" },
       { key: "UI_SHOW_SWING_PAPER",    label: "Swing → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Swing group",    default: "true" },
       { key: "UI_SHOW_SWING_LIVE",     label: "Swing → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Swing group",     default: "true" },
+      { key: "UI_SHOW_SWING_LIVE_HARNESS", label: "Swing → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Swing group — runs LIVE by wrapping PAPER (Zerodha orders), guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── Scalp submenu ──
       { key: "UI_SHOW_SCALP_BACKTEST", label: "Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Scalp group", default: "true", subheader: "Scalp sub-menus" },
       { key: "UI_SHOW_SCALP_PAPER",    label: "Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Scalp group",    default: "true" },
       { key: "UI_SHOW_SCALP_LIVE",     label: "Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Scalp group",     default: "true" },
+      { key: "UI_SHOW_SCALP_LIVE_HARNESS", label: "Scalp → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Scalp group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── Price Action submenu ──
       { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Price Action group",     default: "true", subheader: "Price Action sub-menus" },
@@ -404,6 +406,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ORB_BACKTEST", label: "ORB → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the ORB group", default: "true", subheader: "ORB sub-menus" },
       { key: "UI_SHOW_ORB_PAPER",    label: "ORB → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the ORB group", default: "true" },
       { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the ORB group (needs ORB_LIVE_ENABLED to actually start)", default: "true" },
+      { key: "UI_SHOW_ORB_LIVE_HARNESS", label: "ORB → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the ORB group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
 
       // ── Straddle submenu ──

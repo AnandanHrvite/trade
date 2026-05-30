@@ -69,9 +69,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showSwingBacktest = (process.env.UI_SHOW_SWING_BACKTEST || 'true').toLowerCase() === 'true';
   const showSwingPaper    = (process.env.UI_SHOW_SWING_PAPER    || 'true').toLowerCase() === 'true';
   const showSwingLive     = (process.env.UI_SHOW_SWING_LIVE     || 'true').toLowerCase() === 'true';
+  const showSwingLiveHarness = (process.env.UI_SHOW_SWING_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showScalpBacktest = (process.env.UI_SHOW_SCALP_BACKTEST || 'true').toLowerCase() === 'true';
   const showScalpPaper    = (process.env.UI_SHOW_SCALP_PAPER    || 'true').toLowerCase() === 'true';
   const showScalpLive     = (process.env.UI_SHOW_SCALP_LIVE     || 'true').toLowerCase() === 'true';
+  const showScalpLiveHarness = (process.env.UI_SHOW_SCALP_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'true').toLowerCase() === 'true';
   const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'true').toLowerCase() === 'true';
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
@@ -80,6 +82,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showOrbBacktest       = (process.env.UI_SHOW_ORB_BACKTEST         || 'true').toLowerCase() === 'true';
   const showOrbPaper          = (process.env.UI_SHOW_ORB_PAPER            || 'true').toLowerCase() === 'true';
   const showOrbLive           = (process.env.UI_SHOW_ORB_LIVE             || 'true').toLowerCase() === 'true';
+  const showOrbLiveHarness    = (process.env.UI_SHOW_ORB_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
   const showStraddleBacktest  = (process.env.UI_SHOW_STRADDLE_BACKTEST    || 'true').toLowerCase() === 'true';
   const showStraddlePaper     = (process.env.UI_SHOW_STRADDLE_PAPER       || 'true').toLowerCase() === 'true';
@@ -91,10 +94,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showCacheFiles = (process.env.UI_SHOW_CACHE_FILES || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
-  const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive'];
-  const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive'];
+  const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive', 'swingLiveHarness'];
+  const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive', 'scalpLiveHarness'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
-  const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbHistory'];
+  const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
   const straddleKeys = ['straddleBacktest', 'straddlePaper', 'straddleLive', 'straddleHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
@@ -111,6 +114,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showCompare  ? [{ key: 'swingCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
     ...(showTracker  ? [{ key: 'swingTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
     ...(showSwingLive     ? [{ key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     }] : []),
+    ...(showSwingLiveHarness ? [{ key: 'swingLiveHarness', href: '/swing-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const scalpItems = [
@@ -119,6 +123,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showSim     ? [{ key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'scalpCompare', href: '/compare/scalping',     icon: '⚖',  label: 'Compare'  }] : []),
     ...(showScalpLive     ? [{ key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     }] : []),
+    ...(showScalpLiveHarness ? [{ key: 'scalpLiveHarness', href: '/scalp-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const paItems = [
@@ -135,6 +140,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showOrbBacktest ? [{ key: 'orbBacktest', href: '/orb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showOrbPaper    ? [{ key: 'orbPaper',    href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
     ...(showOrbLive     ? [{ key: 'orbLive',     href: '/orb-live/status',   icon: '📡', label: 'Live'    }] : []),
+    ...(showOrbLiveHarness ? [{ key: 'orbLiveHarness', href: '/orb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 

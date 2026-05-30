@@ -68,19 +68,17 @@ async function _placeOrder({ broker, symbol, qty, sideAction, isFutures, tag }) 
   }
   if (broker === "zerodha") {
     if (!zerodhaBroker) throw new Error("zerodhaBroker module not loaded");
-    // Zerodha API signature differs — adapter expected to be added here when
-    // swing harness is enabled. For now, throw to surface the gap.
-    throw new Error("zerodhaBroker dispatch not yet wired in liveHarness — required before swing harness can flip from DRY-RUN to LIVE");
+    // Zerodha signature differs from Fyers: (fyersSymbol, side, qty, orderTag, { isFutures })
+    // where side is 1 (BUY) / -1 (SELL). Returns the same { success, orderId, raw } shape.
+    const sideCode = sideAction === "BUY" ? 1 : -1;
+    return zerodhaBroker.placeMarketOrder(symbol, sideCode, qty, tag, { isFutures });
   }
   throw new Error(`Unknown broker: ${broker}`);
 }
 
-// ── Patched notify handlers ─────────────────────────────────────────────────
-function _makePatchedNotifyEntry(orig, cfg) {
-  return function patchedNotifyEntry(p) {
-    // Always forward to original — Telegram alerts stay intact.
-    try { orig(p); } catch (_) {}
-
+// ── Order hooks (registered into notify; Telegram is emitted by notify itself) ─
+function _makeEntryHook(cfg) {
+  return function entryHook(p) {
     // Only act on the mode this harness is for. (Paper modes other than the
     // active one shouldn't trigger orders. mode field is e.g. "PA-PAPER".)
     const expectedModeTag = cfg.modeTag;   // e.g. "PA-PAPER"
@@ -134,10 +132,8 @@ function _makePatchedNotifyEntry(orig, cfg) {
   };
 }
 
-function _makePatchedNotifyExit(orig, cfg) {
-  return function patchedNotifyExit(p) {
-    try { orig(p); } catch (_) {}
-
+function _makeExitHook(cfg) {
+  return function exitHook(p) {
     const expectedModeTag = cfg.modeTag;
     if (p.mode !== expectedModeTag) return;
 
@@ -223,13 +219,10 @@ function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, 
     liveLogKey: liveLogKey || null,
   };
 
-  _orig = {
-    notifyEntry: notify.notifyEntry,
-    notifyExit:  notify.notifyExit,
-  };
-
-  notify.notifyEntry = _makePatchedNotifyEntry(_orig.notifyEntry, _config);
-  notify.notifyExit  = _makePatchedNotifyExit(_orig.notifyExit,  _config);
+  notify.setOrderHooks({
+    entry: _makeEntryHook(_config),
+    exit:  _makeExitHook(_config),
+  });
 
   _installed = true;
   _logEvent({ event: "HARNESS_INSTALLED", mode, broker, dryRun: dr });
@@ -239,8 +232,7 @@ function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, 
 
 function uninstallHarness() {
   if (!_installed) return;
-  notify.notifyEntry = _orig.notifyEntry;
-  notify.notifyExit  = _orig.notifyExit;
+  notify.clearOrderHooks();
   _logEvent({ event: "HARNESS_UNINSTALLED", mode: _config.mode });
   console.log(`🔧 [HARNESS][${_config.mode}] Uninstalled`);
   _installed = false;

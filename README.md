@@ -438,6 +438,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `UI_SHOW_TRACKER` | `false` | Show "Tracker" under Swing |
 | `UI_SHOW_{SWING,SCALP,PA,ORB,STRADDLE}_{BACKTEST,PAPER,LIVE,HISTORY}` | `true` | Per-submenu toggles for each strategy group |
 | `UI_SHOW_PA_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the PA group |
+| `UI_SHOW_{SWING,SCALP,ORB}_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the Swing/Scalp/ORB group — runs LIVE by wrapping PAPER (LIVE = PAPER) |
 | `UI_SHOW_PA_PATTERN_BACKTEST` | `true` | Show "Pattern Test" inside the PA group |
 | `UI_SHOW_LOGS` / `UI_SHOW_TRADE_LOGS` / `UI_SHOW_CACHE_FILES` | `true` | System menu items |
 
@@ -513,6 +514,9 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `/pa-paper/simulate` | PA simulator |
 | `/pa-live/status` | PA live trade (legacy code path) + NIFTY chart |
 | `/pa-live-harness/status` | PA live via the **paper-wrapping harness** — guarantees LIVE = PAPER decisions. Routes `/start` and `/stop` are gated by `LIVE_HARNESS_DRY_RUN`. |
+| `/swing-live-harness` | Swing live via the paper-wrapping harness (Zerodha orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `SWING_LIVE_DRY_RUN`). |
+| `/scalp-live-harness` | Scalp live via the paper-wrapping harness (Fyers orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `SCALP_LIVE_DRY_RUN`). |
+| `/orb-live-harness` | ORB live via the paper-wrapping harness (Fyers orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `ORB_LIVE_DRY_RUN`). |
 
 ### ORB (Opening Range Breakout)
 | URL | Description |

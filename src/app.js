@@ -382,6 +382,9 @@ app.use("/compare",        require("./routes/compare"));        // ← paper vs 
 // ── Price Action mode routes (5-min, independent from main & scalp) ─────────
 app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders) — legacy
 app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live via PAPER + harness (LIVE = PAPER guaranteed)
+app.use("/swing-live-harness", require("./routes/swingLiveHarness")); // ← Swing live via PAPER + harness (Zerodha orders)
+app.use("/scalp-live-harness", require("./routes/scalpLiveHarness")); // ← Scalp live via PAPER + harness (Fyers orders)
+app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB live via PAPER + harness (Fyers orders)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
