@@ -1115,7 +1115,7 @@ function buildSessionCards(sessions, opts) {
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
-          ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${String(s.date).slice(0,10)}&to=${String(s.date).slice(0,10)}&mode=${replayMode}&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
+          ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${String(s.date).slice(0,10)}&to=${String(s.date).slice(0,10)}&mode=${replayMode}&settings=snapshot&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
           <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
           <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
         </div>

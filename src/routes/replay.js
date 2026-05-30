@@ -886,7 +886,13 @@ function applyReplayDeepLink() {
   let p;
   try { p = new URLSearchParams(window.location.search); } catch (_) { return; }
   const from = p.get('from'), to = p.get('to'), mode = p.get('mode'), run = p.get('run');
+  const settings = p.get('settings');
   if (!from && !to && !mode) return;
+
+  if (settings === 'snapshot' || settings === 'current') {
+    const ss = document.getElementById('settings-source');
+    if (ss) ss.value = settings;
+  }
 
   if (mode) {
     const ms = document.getElementById('range-mode');
