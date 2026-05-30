@@ -500,6 +500,15 @@ function drawReplayChart(el, cd) {
   }
   el.style.display = 'block';
   el.innerHTML = '';
+  // Trim every series to the latest IST trading day so zooming out shows only
+  // the session day — warmup history is loaded only for indicator computation.
+  (function(){
+    var _c=cd.candles, _lt=_c[_c.length-1].time, _dk=Math.floor((_lt+19800)/86400), _cut=_lt;
+    for (var _i=_c.length-1;_i>=0;_i--){ if(Math.floor((_c[_i].time+19800)/86400)===_dk) _cut=_c[_i].time; else break; }
+    var _f=function(a){ return a.filter(function(x){return x.time>=_cut;}); };
+    var _trim=function(o){ Object.keys(o).forEach(function(kk){ var a=o[kk]; if(Array.isArray(a)){ if(a.length&&a[0]&&typeof a[0].time==='number') o[kk]=_f(a); } else if(a&&typeof a==='object'){ _trim(a); } }); };
+    _trim(cd);
+  })();
   const isLight = document.documentElement.getAttribute('data-theme') === 'light';
   // Candle/marker times are epoch seconds; lightweight-charts renders the axis
   // in UTC by default, which puts an IST session 5:30 too far left. Format the
