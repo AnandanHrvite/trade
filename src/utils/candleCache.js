@@ -90,6 +90,38 @@ function mergeCandles(existing, fresh) {
   return [...map.values()].sort((a, b) => a.time - b.time);
 }
 
+// Expected candle count for a FULL regular session (09:15–15:30 = 375 min).
+//   5-min → 75, 15-min → 25, 3-min → 125. Used to detect partial days.
+function expectedPerDay(resolution) {
+  const r = parseInt(resolution, 10) || 5;
+  return Math.floor(375 / r);
+}
+
+// Group candles by IST date → count. Used to find partial (under-filled) days.
+function perDayCounts(candles) {
+  const m = new Map();
+  for (const c of candles) {
+    const d = new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    m.set(d, (m.get(d) || 0) + 1);
+  }
+  return m;
+}
+
+// Find the earliest PAST day in cache that is under-filled (cached partial —
+// e.g. the bot first ran mid-day so the morning bars were never fetched).
+// Returns "YYYY-MM-DD" or null. Today is excluded (always still forming).
+function earliestPartialDay(cached, resolution, from, today) {
+  const minOk = Math.floor(expectedPerDay(resolution) * 0.85); // allow minor feed quirks
+  const counts = perDayCounts(cached);
+  let earliest = null;
+  for (const [d, n] of counts) {
+    if (d >= from && d < today && n < minOk) {
+      if (!earliest || d < earliest) earliest = d;
+    }
+  }
+  return earliest;
+}
+
 /**
  * fetchCandlesCached — drop-in wrapper around raw fetchCandles
  *
@@ -136,23 +168,36 @@ async function fetchCandlesCached(symbol, resolution, from, to, rawFetcher) {
     const needFrom = from < cachedFrom ? from : null; // data before our cache
     const needTo   = to;                               // always need up to `to`
 
+    // Self-heal partial PAST days: if the bot first ran mid-day, that day was
+    // cached with only afternoon bars and the forward-only fetch never went back
+    // to fill the morning. A path-dependent indicator (PSAR) computed over such
+    // a gappy series diverges badly. Detect the earliest under-filled past day
+    // and re-fetch from there so the holes get backfilled.
+    const partialFrom = earliestPartialDay(cached, resolution, from, today);
+
     // If we have all historical data and only today's date is missing/partial
-    const onlyTodayMissing = !needFrom && cachedTo >= yesterdayIST();
+    const onlyTodayMissing = !needFrom && !partialFrom && cachedTo >= yesterdayIST();
 
     if (onlyTodayMissing) {
       // Just fetch today's candles to update live bars
       fetchFrom = today;
       fetchTo   = today;
       console.log(`[candleCache] ✅ Cache hit for ${symbol} ${resolution}min — fetching only today (${today})`);
-    } else if (!needFrom && cachedTo >= to && cachedTo !== today) {
-      // Have everything and today isn't requested — skip fetch entirely
+    } else if (!needFrom && !partialFrom && cachedTo >= to && cachedTo !== today) {
+      // Have everything (no holes) and today isn't requested — skip fetch entirely
       skipFetch = true;
       console.log(`[candleCache] ✅ Full cache hit for ${symbol} ${resolution}min — no API call needed`);
     } else {
-      // Fetch from where cache ends (or from requested start if we need earlier data)
-      fetchFrom = needFrom || cachedTo; // start from end of cache
+      // Fetch from the earliest of: data-before-cache, a partial day to heal,
+      // or the cache end. Date strings sort chronologically.
+      const starts = [needFrom, partialFrom, cachedTo].filter(Boolean).sort();
+      fetchFrom = starts[0];
       fetchTo   = to;
-      console.log(`[candleCache] 🔄 Partial cache — fetching ${fetchFrom} to ${fetchTo}`);
+      if (partialFrom) {
+        console.log(`[candleCache] 🩹 Partial day(s) detected — backfilling from ${fetchFrom} to ${fetchTo}`);
+      } else {
+        console.log(`[candleCache] 🔄 Partial cache — fetching ${fetchFrom} to ${fetchTo}`);
+      }
     }
   } else {
     console.log(`[candleCache] 📥 No cache for ${symbol} ${resolution}min — fetching ${from} to ${to}`);
