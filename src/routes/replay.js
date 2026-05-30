@@ -107,6 +107,35 @@ router.get("/download-day", (req, res) => {
   });
 });
 
+// Stream every recorded day's tick folder as one zip. The per-row ⬇ grabs a
+// single day; this is the "download all" bulk version for offline analysis.
+// Same streaming approach — never buffers the archive in memory.
+router.get("/download-all", (req, res) => {
+  if (!fs.existsSync(TICKS_ROOT)) {
+    return res.status(404).json({ ok: false, error: "No recordings on disk yet" });
+  }
+  const days = fs.readdirSync(TICKS_ROOT)
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  if (days.length === 0) {
+    return res.status(404).json({ ok: false, error: "No recorded days to download" });
+  }
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="ticks-all.zip"`);
+  // Pass each date dir explicitly so paths in the archive stay relative
+  // (date/spot.jsonl etc.), not absolute. cwd=TICKS_ROOT.
+  const zip = spawn("zip", ["-rq", "-", ...days], { cwd: TICKS_ROOT });
+  zip.stdout.pipe(res);
+  zip.stderr.on("data", (d) => console.warn(`[replay/download-all] zip stderr: ${d}`));
+  zip.on("error", (err) => {
+    if (!res.headersSent) res.status(500).json({ ok: false, error: err.message });
+    else res.end();
+  });
+  zip.on("close", (code) => {
+    if (code !== 0 && !res.writableEnded) res.end();
+  });
+});
+
 router.post("/delete-session", express.json(), (req, res) => {
   const { date, sessionId } = req.body || {};
   try {
@@ -449,6 +478,7 @@ ${buildSidebar('replay', false)}
           <option value="50">50 / page</option>
           <option value="100">100 / page</option>
         </select>
+        <button class="row-btn" onclick="downloadAll()" title="Download every recorded day's tick folder as one zip">⬇ Download all</button>
       </div>
     </div>
     <div id="sessions-meta" class="muted" style="margin-top:8px;"></div>
@@ -938,6 +968,11 @@ async function copySessionId(sid, btn) {
     setTimeout(() => { try { document.body.removeChild(ta); } catch (_) {} }, 100);
   }
   setTimeout(() => { btn.textContent = origLabel; }, 1500);
+}
+
+function downloadAll() {
+  // Direct nav so the browser handles the streamed zip as a normal download.
+  window.location.href = '/replay/download-all';
 }
 
 function downloadDay(date) {
