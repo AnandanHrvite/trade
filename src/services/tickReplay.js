@@ -74,7 +74,9 @@ function requestCancel() {
 // silently served.
 // v2: SWING SAR chart dots now computed via calcSAR (was technicalindicators
 //     PSAR) — old cached chartData would still show the library-PSAR dots.
-const REPLAY_CACHE_VERSION = 2;
+// v3: SWING drops pre-09:15 (pre-market) candles from the indicator series —
+//     changes SAR/EMA/RSI and entries, so old cached replay results are stale.
+const REPLAY_CACHE_VERSION = 3;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
