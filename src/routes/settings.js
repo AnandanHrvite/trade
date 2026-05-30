@@ -1835,6 +1835,40 @@ document.addEventListener('keydown', function(e){
     vixToggleEl.addEventListener('change', updateVixSectionVisibility);
   }
   updateVixSectionVisibility();
+
+  // Trend-source gating: PSAR and SuperTrend are mutually exclusive, so grey out
+  // the inactive set based on the "Use SuperTrend" toggle (Scalp + Swing). Values
+  // are kept (disabled inputs are still collected on save) — only editing is blocked.
+  // A frozen field (running session) stays disabled regardless.
+  function _setSourceRowDisabled(key, disabled) {
+    var el = document.querySelector('[data-key="' + key + '"]');
+    if (!el) return;
+    var row = el.closest('.setting-row');
+    var frozen = row && row.classList.contains('frozen');
+    el.disabled = disabled || frozen;
+    if (row && !frozen) row.style.opacity = disabled ? '0.4' : '';
+  }
+  function updateTrendSourceGating() {
+    var scalp = document.querySelector('[data-key="SCALP_USE_SUPERTREND"]');
+    if (scalp) {
+      var sON = scalp.checked;
+      _setSourceRowDisabled('SCALP_PSAR_STEP', sON);
+      _setSourceRowDisabled('SCALP_PSAR_MAX', sON);
+      _setSourceRowDisabled('SCALP_SUPERTREND_PERIOD', !sON);
+      _setSourceRowDisabled('SCALP_SUPERTREND_MULT', !sON);
+    }
+    var swing = document.querySelector('[data-key="SWING_USE_SUPERTREND"]');
+    if (swing) {
+      var wON = swing.checked;  // swing SAR has no env params, so only the ST fields gate
+      _setSourceRowDisabled('SWING_SUPERTREND_PERIOD', !wON);
+      _setSourceRowDisabled('SWING_SUPERTREND_MULT', !wON);
+    }
+  }
+  ['SCALP_USE_SUPERTREND', 'SWING_USE_SUPERTREND'].forEach(function(k) {
+    var t = document.querySelector('[data-key="' + k + '"]');
+    if (t) t.addEventListener('change', updateTrendSourceGating);
+  });
+  updateTrendSourceGating();
 })();
 
 function togglePwdVis(btn) {
