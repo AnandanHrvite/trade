@@ -562,7 +562,21 @@ function drawReplayChart(el, cd) {
   if (Array.isArray(cd.markers) && cd.markers.length) {
     cs.setMarkers(cd.markers.slice().sort((a, b) => a.time - b.time));
   }
-  chart.timeScale().fitContent();
+  // Zoom to just the latest IST trading day. The payload carries the multi-day
+  // warmup history needed for indicator convergence (EMA/SAR/RSI); fitContent()
+  // would show all of it as "extra" candles with repeated 09:15 day-boundary
+  // labels. Restrict the visible range to the session day instead.
+  try {
+    const cl = cd.candles;
+    const lastT = cl[cl.length - 1].time;
+    const dayK = Math.floor((lastT + 19800) / 86400); // IST calendar day of last candle
+    let firstT = lastT;
+    for (let i = cl.length - 1; i >= 0; i--) {
+      if (Math.floor((cl[i].time + 19800) / 86400) === dayK) firstT = cl[i].time;
+      else break;
+    }
+    chart.timeScale().setVisibleRange({ from: firstT, to: lastT });
+  } catch (_) { try { chart.timeScale().fitContent(); } catch (__) {} }
   try {
     const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
     ro.observe(el);
