@@ -934,23 +934,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 // ── On each completed candle ──────────────────────────────────────────
 
 async function onCandleClose(candle) {
-  // ── Drop pre-market candles (before 09:15 IST) ───────────────────────────
-  // Starting the bot early (e.g. 08:25) builds 5-min candles from pre-open
-  // ticks, incl. the 09:00 pre-open auction bar whose ~250pt fake low anchors
-  // Parabolic SAR far below price → SAR then crawls up and flips trend LATE
-  // (e.g. 12:10 vs TradingView's 10:50, which only sees the 09:15+ session).
-  // That late flip produced wrong-side CE entries. Excluding pre-09:15 bars
-  // from the indicator series aligns SAR/EMA/RSI with the regular session.
-  const _istMin = Math.floor((candle.time + 19800) / 60) % 1440; // candle.time is epoch sec
-  if (_istMin < 555) {
-    // Still seed prev-candle refs so the first 09:15 bar has a sane reference,
-    // but do NOT feed this bar to the indicator series.
-    ptState.prevCandleHigh = candle.high;
-    ptState.prevCandleLow  = candle.low;
-    ptState.prevCandleMid  = parseFloat(((candle.high + candle.low) / 2).toFixed(2));
-    return;
-  }
-
   ptState.candles.push(candle);
   ptState.prevCandleHigh = candle.high;
   ptState.prevCandleLow  = candle.low;
