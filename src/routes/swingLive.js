@@ -2393,9 +2393,13 @@ router.get("/status/chart-data", (req, res) => {
         ema21 = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
       }
       if (candles.length >= 3) {
-        const arr = PSAR.calculate({ step: 0.02, max: 0.2, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        // Display SAR must use the SAME algorithm the strategy decides on
+        // (hand-rolled calcSAR), not technicalindicators PSAR — otherwise the
+        // dots disagree with the SAR that actually drives entries/exits.
+        const { calcSAR } = require("../strategies/strategy1_sar_ema_rsi");
+        const arr = calcSAR(candles); // [{sar,trend}], aligned to candles[1..]
         const off = candles.length - arr.length;
-        sar = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
+        sar = arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.sar.toFixed(2)) }));
       }
       if (candles.length >= 15) {
         const arr = RSI.calculate({ period: 14, values: candles.map(c => c.close) });

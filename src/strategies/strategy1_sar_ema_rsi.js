@@ -272,4 +272,4 @@ function getSignal(candles, opts) {
   });
 }
 
-module.exports = { NAME: NAME, DESCRIPTION: DESCRIPTION, getSignal: getSignal };
+module.exports = { NAME: NAME, DESCRIPTION: DESCRIPTION, getSignal: getSignal, calcSAR: calcSAR };

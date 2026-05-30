@@ -2264,14 +2264,17 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // PSAR overlay — same params as the strategy (step=0.02, max=0.2)
+    // PSAR overlay — must use the SAME algorithm the strategy decides on
+    // (hand-rolled calcSAR), not technicalindicators PSAR, so the dots match
+    // the SAR that actually drives entries/exits.
     let sarPoints = [];
     if (candles.length >= 3) {
       try {
-        const sarArr = PSAR.calculate({ step: 0.02, max: 0.2, high: candles.map(c => c.high), low: candles.map(c => c.low) });
+        const { calcSAR } = require("../strategies/strategy1_sar_ema_rsi");
+        const sarArr = calcSAR(candles); // [{sar,trend}], aligned to candles[1..]
         const off = candles.length - sarArr.length;
         for (let i = 0; i < sarArr.length; i++) {
-          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
+          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].sar.toFixed(2)) });
         }
       } catch (_) { /* ignore */ }
     }
