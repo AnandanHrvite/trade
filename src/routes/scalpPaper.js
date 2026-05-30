@@ -2171,6 +2171,22 @@ function doCopy(text,btn,label){
       if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
       if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);
       if (_userRange) { try { chart.timeScale().setVisibleLogicalRange(_userRange); } catch(_) {} }
+      else {
+        // First load (no manual zoom yet): show just the latest IST trading day.
+        // The candle array carries multi-day warmup history; fitting all of it
+        // renders spurious extra candles. _internalUpdate is true here so this
+        // programmatic range change is ignored by the zoom watcher.
+        try {
+          var lastT = d.candles[d.candles.length - 1].time;
+          var dayK = Math.floor((lastT + 19800) / 86400);
+          var firstT = lastT;
+          for (var i = d.candles.length - 1; i >= 0; i--) {
+            if (Math.floor((d.candles[i].time + 19800) / 86400) === dayK) firstT = d.candles[i].time;
+            else break;
+          }
+          chart.timeScale().setVisibleRange({ from: firstT, to: lastT });
+        } catch(_) {}
+      }
       if (_internalTimer) clearTimeout(_internalTimer);
       _internalTimer = setTimeout(function() { _internalUpdate = false; }, 60);
       var selEt = window._spSelEt || null;
