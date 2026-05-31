@@ -443,6 +443,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
   const nseHolidays       = require("../utils/nseHolidays");
   const tickRecorder      = require("../utils/tickRecorder");
   const sharedSocketState = require("../utils/sharedSocketState");
+  const skipLogger        = require("../utils/skipLogger");
 
   const orig = {
     sm_start:        socketManager.start,
@@ -475,6 +476,12 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     tr_recordVix:          tickRecorder.recordVix,
     tr_recordSessionStart: tickRecorder.recordSessionStart,
     tr_recordSessionStop:  tickRecorder.recordSessionStop,
+    // skipLogger original — replay must NOT write strategy/VIX/spread skip
+    // rows into the canonical ~/trading-data/skips/ files. The skip gates are
+    // re-evaluated on every replayed tick, so without this stub each replay
+    // appends phantom skips (under the recorded session's date, since Date.now
+    // is overridden) to the real Skip Logs the user sees in /trade-logs.
+    sl_appendSkipLog:      skipLogger.appendSkipLog,
     // sharedSocketState originals — paper /start handlers call setActive()
     // (and only some /stop paths call clear()). If the replay's /stop bails
     // out early — e.g. swing /stop returns 400 when ptState.running became
@@ -602,6 +609,10 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     tickRecorder.recordVix          = () => {};
     tickRecorder.recordSessionStart = () => {};
     tickRecorder.recordSessionStop  = () => {};
+
+    // skipLogger: silence skip logging during replay so re-evaluated gates
+    // don't append phantom rows to the canonical ~/trading-data/skips/ files.
+    skipLogger.appendSkipLog = () => {};
 
     // sharedSocketState: stub the mutators so /start's setActive() and
     // /stop's clear() don't touch real session state. Reads (isActive,
@@ -737,6 +748,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     tickRecorder.recordVix          = orig.tr_recordVix;
     tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
+    skipLogger.appendSkipLog        = orig.sl_appendSkipLog;
     sharedSocketState.setActive         = orig.ss_setActive;
     sharedSocketState.clear             = orig.ss_clear;
     sharedSocketState.setScalpActive    = orig.ss_setScalpActive;
