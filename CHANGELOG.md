@@ -6,13 +6,6 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### Feat: Scalp per-trade max-loss cap (candle-gated, no cooldown)
-
-- **New exit** `maxLossStop()` in `scalp_bb_cpr.js`, wired into Scalp **paper + live + backtest** (and replay via the paper path). Exits a trade once it is down ≥ `SCALP_MAX_LOSS_PTS` spot points, **but only after it has been open `SCALP_MAX_LOSS_AFTER_CANDLES` (default 3) candles** — so it caps genuine bleeders that slip past the BB re-entry / trend-flip exits without clipping the quick winners that briefly wiggle against entry.
-- Uses an exit reason **without `"SL"`**, so unlike the unconditional `SCALP_STOP_LOSS_PTS` hard stop it does **not** arm the SL-pause cooldown: the entry sequence stays identical to a no-cap run — only the bleeders' loss is capped.
-- **Off by default** (`SCALP_MAX_LOSS_PTS=0`). Exposed in the Settings UI ("Max Loss / Trade (pts)" + "Max Loss After (candles)").
-- Reverted a same-day change that had lowered the unconditional `SCALP_STOP_LOSS_PTS` default 30→20: replay showed the always-on 20pt cap clipped winners mid-wiggle (e.g. an 09:40 PE that spiked −24pts then would have profit-locked at +₹696) and its cooldown blocked follow-on entries. The candle-gated cap above is the correct mechanism.
-
 ### Fix: Swing + Scalp skip pre-market/pre-open candles (SuperTrend/SAR now match Kite)
 
 - **Bug:** the tick→candle builders created candles from **pre-market ticks** — flat filler bars (~08:25–09:10) plus the **09:00 pre-open auction bar** (a wild wide-range print, e.g. a 250-pt range with a junk low). These polluted the path-dependent indicators (SuperTrend, SAR): the pre-open bar flipped SuperTrend bullish at 09:00 and pinned the support band a few points too high, causing a **premature bearish flip at 09:40** when the real flip (per Kite/TradingView) was ~11:45. Once flipped, the bot stayed on the wrong trend all midday.
