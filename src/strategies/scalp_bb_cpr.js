@@ -25,7 +25,6 @@
 
 const { BollingerBands, RSI, PSAR, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
-const srFilter = require("../utils/srFilter");
 
 const NAME        = "SCALP_BB_PSAR_RSI_V5";
 const DESCRIPTION = "BB break + PSAR + RSI";
@@ -239,15 +238,6 @@ function getSignal(candles, opts) {
       base.reason = "CE blocked: " + _srcLabel + " too far (" + (sc.close - trendVal).toFixed(0) + "pts > " + MAX_ENTRY_SL_PTS + ")";
       return base;
     }
-    // S/R entry filter (optional, OFF by default): skip a CE opening into overhead
-    // resistance — that's where breakouts most often reverse. Reuses PA swing logic.
-    if (cfg("SCALP_SR_FILTER_ENABLED", "false") === "true") {
-      var _sr = srFilter.blockedBySR(candles, "CE", sc.close, parseInt(cfg("SCALP_SR_LOOKBACK", "30"), 10), parseFloat(cfg("SCALP_SR_ZONE_PTS", "15")));
-      if (_sr.blocked) {
-        base.reason = "CE blocked: into resistance @ " + _sr.level.toFixed(0) + " (S/R filter, zone " + cfg("SCALP_SR_ZONE_PTS", "15") + "pts)";
-        return base;
-      }
-    }
     // Initial SL = active trend line at entry (no clamp). Line is below close here.
     var sl = parseFloat(trendVal.toFixed(2));
     var slPts = parseFloat((sc.close - trendVal).toFixed(2));
@@ -272,15 +262,6 @@ function getSignal(candles, opts) {
     if (MAX_ENTRY_SL_PTS > 0 && (trendVal - sc.close) > MAX_ENTRY_SL_PTS) {
       base.reason = "PE blocked: " + _srcLabel + " too far (" + (trendVal - sc.close).toFixed(0) + "pts > " + MAX_ENTRY_SL_PTS + ")";
       return base;
-    }
-    // S/R entry filter (optional, OFF by default): skip a PE opening into support
-    // just below — that's where breakdowns most often bounce. Reuses PA swing logic.
-    if (cfg("SCALP_SR_FILTER_ENABLED", "false") === "true") {
-      var _sr = srFilter.blockedBySR(candles, "PE", sc.close, parseInt(cfg("SCALP_SR_LOOKBACK", "30"), 10), parseFloat(cfg("SCALP_SR_ZONE_PTS", "15")));
-      if (_sr.blocked) {
-        base.reason = "PE blocked: into support @ " + _sr.level.toFixed(0) + " (S/R filter, zone " + cfg("SCALP_SR_ZONE_PTS", "15") + "pts)";
-        return base;
-      }
     }
     // Initial SL = active trend line at entry (no clamp). Line is above close here.
     var sl = parseFloat(trendVal.toFixed(2));
