@@ -15,7 +15,7 @@
  *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
  *      so it is independent of option pricing. The per-tick upside exit.
  *   2. Hard stop (spot POINTS) — catastrophic loss cap; exit once the trade moves
- *      SCALP_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
+ *      SCALP_STOP_LOSS_PTS against entry. Always-on cap (default 20) so it clips the deep
  *      adverse excursions on failed fades, not the normal small scalps. The per-tick downside cap.
  *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
  *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
@@ -320,14 +320,14 @@ function profitLock(favPts, peakFavPts) {
 
 // ── Hard stop (catastrophic loss cap, per-tick, spot POINTS) ─────────────────
 // Companion to the profit lock — caps the downside only. Exit once the trade has
-// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
+// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Always-on cap (default 20)
 // so it never touches the normal small scalps — it only clips the deep adverse
 // excursions on failed BB-break fades that would otherwise bleed to −100+ pts
 // before the candle-close BB re-entry / PSAR flip fires. 0 disables.
 //   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
 // Returns { hit, stop }.
 function hardStop(favPts) {
-  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "30"));
+  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "20"));
   if (stop <= 0 || favPts == null) return { hit: false, stop: null };
   return { hit: favPts <= -stop, stop: stop };
 }
