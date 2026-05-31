@@ -866,7 +866,11 @@ function sidebarCSS() {
       /* Sidebar: hidden by default, toggled by hamburger */
       .sidebar{transform:translateX(-100%);transition:transform 0.25s ease;z-index:200;width:84vw;max-width:300px;}
       .sidebar.mobile-open{transform:translateX(0);}
-      .main-content{margin-left:0;max-width:100%;}
+      /* min-width:0 lets flex children shrink below their content size, and
+         overflow-x:clip stops any stray wide element from making the whole page
+         pan sideways — clip (unlike hidden/auto) does NOT break the sticky
+         top-bar, and iOS 16+/iPhone 15 supports it (older browsers ignore it). */
+      .main-content{margin-left:0;max-width:100%;min-width:0;overflow-x:clip;}
 
       /* Hamburger button */
       .hamburger{display:flex;flex-direction:column;gap:4px;cursor:pointer;padding:8px;background:none;border:none;position:fixed;top:8px;left:12px;z-index:300;}
