@@ -77,6 +77,23 @@ function getBucketStart(unixMs, resMinutes) {
   return Math.floor(unixMs / resMs) * resMs;
 }
 
+// NSE regular session open (09:15 IST). Pre-open auction (09:00–09:08) prints a
+// wild wide-range bar and pre-market ticks are stale/flat — both corrupt the
+// path-dependent indicators (SuperTrend, SAR) and make trend flips diverge from
+// Kite/TradingView. Candle builders skip buckets before this so the bot sees the
+// same candles a charting platform does.
+const _MKT_OPEN_MIN = 9 * 60 + 15;
+
+/**
+ * True if a candle-bucket timestamp falls before NSE regular-session open (09:15 IST).
+ * @param {number} bucketMs — candle bucket start (ms). Uses the bucket's own IST
+ *   time so it is correct in live AND replay/sim (both drive the bucket clock).
+ */
+function isPreMarketBucket(bucketMs) {
+  const istMin = Math.floor((Math.floor(bucketMs / 1000) + 19800) / 60) % 1440;
+  return istMin < _MKT_OPEN_MIN;
+}
+
 // ── Array helpers ───────────────────────────────────────────────────────────
 
 /**
@@ -178,6 +195,7 @@ module.exports = {
   fmtISTDateTime,
   getISTMinutes,
   getBucketStart,
+  isPreMarketBucket,
   reverseSlice,
   mapTradesReversed,
   parseOptionDetails,

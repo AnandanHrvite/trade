@@ -49,9 +49,18 @@ async function fetchCandles(symbol, resolution, from, to) {
     if (cursor <= endDate) await sleep(300);
   }
   unique.sort((a, b) => a.time - b.time);
-  console.log(`   ✅ Total candles fetched: ${unique.length}`);
+  // Keep only NSE regular-session candles (09:15 ≤ IST < 15:30). Pre-open auction
+  // (09:00–09:08) prints a wild wide-range bar and any post-close prints are junk;
+  // both corrupt path-dependent indicators (SuperTrend, SAR) and make them diverge
+  // from Kite/TradingView. Filtering here keeps every historical source — warmup
+  // preload + backtest — consistent with the chart. No-op when the feed is already
+  // 09:15+ (the usual case), so it is a safe defensive guard.
+  const _MKT_OPEN = 9 * 60 + 15, _MKT_CLOSE = 15 * 60 + 30;
+  const sessionOnly = unique.filter(c => { const m = getISTHHMM(c.time); return m >= _MKT_OPEN && m < _MKT_CLOSE; });
+  const _dropped = unique.length - sessionOnly.length;
+  console.log(`   ✅ Total candles fetched: ${sessionOnly.length}${_dropped ? ` (dropped ${_dropped} pre-open/post-close)` : ""}`);
   if (global.gc) global.gc();
-  return unique;
+  return sessionOnly;
 }
 
 function toIST(unixSec) {

@@ -32,7 +32,7 @@ const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, sleep } = require("../utils/tradeUtils");
+const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, isPreMarketBucket, parseTimeToMinutes, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const liveDryRun = require("../utils/liveDryRun");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -598,6 +598,10 @@ function onTick(tick) {
   // Build candle
   const tickMs   = Date.now();
   const bucketMs = getBucketStart(tickMs);
+
+  // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so
+  // SuperTrend/SAR match Kite — the 09:00 pre-open auction bar pollutes them.
+  if (isPreMarketBucket(bucketMs)) return;
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
     if (state.currentBar) {
