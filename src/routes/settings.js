@@ -77,6 +77,9 @@ const SETTINGS_SCHEMA = [
       { key: "SWING_SL_MODE", label: "SL / Trail Source", type: "select", options: ["candle", "psar", "ema"], effect: EFFECT.INSTANT, desc: "What feeds the trailing SL at each candle close. candle = just-closed candle low/high (default). psar = current Parabolic SAR — PSAR flip against position is an explicit exit. ema = current EMA21 — candle touching back EMA21 is an explicit exit. All modes are tighten-only and still respect Breakeven, option-stop %, opposite signal and EOD.", default: "candle" },
       { key: "SWING_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After an SL / option-stop hit on a side, block new entries on THAT side for this many candles (0 = off)", default: "3" },
       { key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, breakeven, option-stop, PSAR-flip, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
+      { key: "SWING_SR_FILTER_ENABLED", label: "S/R Entry Filter", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, skip a CE entry that opens into overhead resistance (or a PE into support just below) — a recent swing-high/low within the zone. Targets entries that reverse at a level. OFF = no S/R check.", default: "false" },
+      { key: "SWING_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "How many recent candles to scan for swing-high/low S/R levels.", default: "30" },
+      { key: "SWING_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Block the entry when price is within this many spot points of a swing-high (CE) / swing-low (PE) level.", default: "15" },
       { key: "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown duration in candles (multiplied by TRADE_RESOLUTION to get minutes — e.g. 3 candles × 5-min = 15 min). Only used when Opposite-Side Cooldown is ON.", default: "3" },
     ],
   },
@@ -116,6 +119,9 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
       { key: "SCALP_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Catastrophic loss cap — exit if the trade moves this many spot points against entry. Set WIDE (default 30) so it only clips deep adverse excursions on failed fades, not the normal small scalps. Points-based. 0 = disabled.", default: "30" },
       { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit on candle close if price closes back inside the Bollinger Band (failed breakout) — cuts loss bleed before the slower PSAR flip.", default: "true" },
+      { key: "SCALP_SR_FILTER_ENABLED", label: "S/R Entry Filter", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, skip a CE breakout that opens into overhead resistance (or a PE into support just below) — a recent swing-high/low within the zone. Targets the failed-breakout fades that bleed on chop days. OFF = no S/R check.", default: "false" },
+      { key: "SCALP_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "How many recent candles to scan for swing-high/low S/R levels.", default: "30" },
+      { key: "SCALP_SR_ZONE_PTS", label: "S/R Zone (pts)", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Block the entry when price is within this many spot points of a swing-high (CE) / swing-low (PE) level.", default: "15" },
       // ── Risk management ──
       // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
       // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
@@ -556,6 +562,7 @@ const IMMEDIATE_KEYS = new Set([
   // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN", "BREAKEVEN_PTS",
   "SWING_EMA_FAST", "SWING_EMA_SLOW",
+  "SWING_SR_FILTER_ENABLED", "SWING_SR_LOOKBACK", "SWING_SR_ZONE_PTS",
   "SWING_SL_MODE",
   "SWING_USE_SUPERTREND", "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
 ]);
@@ -577,6 +584,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_USE_SUPERTREND", "SCALP_SUPERTREND_PERIOD", "SCALP_SUPERTREND_MULT",
   "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
   "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT",
+  "SCALP_SR_FILTER_ENABLED", "SCALP_SR_LOOKBACK", "SCALP_SR_ZONE_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
   "SCALP_SLIPPAGE_PTS",

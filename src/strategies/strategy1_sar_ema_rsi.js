@@ -29,6 +29,7 @@
 
 const { EMA, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
+const srFilter = require("../utils/srFilter");
 
 const NAME        = "SAR_EMA_RSI";
 const DESCRIPTION = "SWING | EMA20/EMA50(close) + RSI + SAR/SuperTrend | EMA20-vs-EMA50 trend + RSI gate + PSAR/ST side | prev-candle trailing SL | thresholds via Settings";
@@ -248,6 +249,14 @@ function getSignal(candles, opts) {
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
   if (emaUp && rsiCE && trendUp) {
+    // S/R entry filter (optional, OFF by default): skip a CE opening into overhead
+    // resistance — that's where the move most often reverses. Reuses PA swing logic.
+    if (process.env.SWING_SR_FILTER_ENABLED === "true") {
+      var _srCE = srFilter.blockedBySR(candles, "CE", signalCandle.close, parseInt(process.env.SWING_SR_LOOKBACK || "30", 10), parseFloat(process.env.SWING_SR_ZONE_PTS || "15"));
+      if (_srCE.blocked) {
+        return Object.assign({}, base, { signal: "NONE", reason: "CE blocked: into resistance @ " + _srCE.level.toFixed(0) + " (S/R filter, zone " + (process.env.SWING_SR_ZONE_PTS || "15") + "pts)" });
+      }
+    }
     var slCE = Math.round(prevCandle.low * 100) / 100;
     if (!silent) console.log("  🟢 BUY_CE — EMA20 " + emaFast.toFixed(1) + ">EMA50 " + emaSlow.toFixed(1) + " | RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | " + _srcLabel + " GREEN | SL(prevLow)=" + slCE);
     return Object.assign({}, base, {
@@ -259,6 +268,14 @@ function getSignal(candles, opts) {
 
   // ── BUY PE ────────────────────────────────────────────────────────────────
   if (emaDown && rsiPE && trendDown) {
+    // S/R entry filter (optional, OFF by default): skip a PE opening into support
+    // just below — that's where the move most often bounces. Reuses PA swing logic.
+    if (process.env.SWING_SR_FILTER_ENABLED === "true") {
+      var _srPE = srFilter.blockedBySR(candles, "PE", signalCandle.close, parseInt(process.env.SWING_SR_LOOKBACK || "30", 10), parseFloat(process.env.SWING_SR_ZONE_PTS || "15"));
+      if (_srPE.blocked) {
+        return Object.assign({}, base, { signal: "NONE", reason: "PE blocked: into support @ " + _srPE.level.toFixed(0) + " (S/R filter, zone " + (process.env.SWING_SR_ZONE_PTS || "15") + "pts)" });
+      }
+    }
     var slPE = Math.round(prevCandle.high * 100) / 100;
     if (!silent) console.log("  🔴 BUY_PE — EMA20 " + emaFast.toFixed(1) + "<EMA50 " + emaSlow.toFixed(1) + " | RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | " + _srcLabel + " RED | SL(prevHigh)=" + slPE);
     return Object.assign({}, base, {

@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feat: Optional Support/Resistance entry filter for Scalp + Swing (off by default)
+
+- **New shared helper** `src/utils/srFilter.js` (`findSwingPoints` + `blockedBySR`) — mirrors the swing-high/low + zone logic Price Action already uses. A swing high = a candle whose high tops both neighbours (resistance); a swing low = low under both neighbours (support).
+- **Scalp** (`scalp_bb_cpr.js getSignal`) and **Swing** (`strategy1_sar_ema_rsi.js getSignal`) now skip an entry that opens **into a level**: a CE within the zone of a recent swing-high (overhead resistance) or a PE within the zone of a recent swing-low (support just below) — exactly where breakouts/fades most often reverse. Lives in `getSignal`, so it applies to paper + live (and replay via the paper path) identically.
+- **Off by default.** New keys (both default unset/false → no behaviour change): `SCALP_SR_FILTER_ENABLED` / `SCALP_SR_LOOKBACK` (30) / `SCALP_SR_ZONE_PTS` (15), and `SWING_SR_FILTER_ENABLED` / `SWING_SR_LOOKBACK` (30) / `SWING_SR_ZONE_PTS` (15). Exposed in the Settings UI; documented in README + `.env.example`.
+- Intent: cut the failed-breakout entries that bleed on choppy days (the root cause behind the scalp losses), without touching exits. Validate per strategy via `/replay` before enabling live.
+
 ### Fix: Swing + Scalp skip pre-market/pre-open candles (SuperTrend/SAR now match Kite)
 
 - **Bug:** the tick→candle builders created candles from **pre-market ticks** — flat filler bars (~08:25–09:10) plus the **09:00 pre-open auction bar** (a wild wide-range print, e.g. a 250-pt range with a junk low). These polluted the path-dependent indicators (SuperTrend, SAR): the pre-open bar flipped SuperTrend bullish at 09:00 and pinned the support band a few points too high, causing a **premature bearish flip at 09:40** when the real flip (per Kite/TradingView) was ~11:45. Once flipped, the bot stayed on the wrong trend all midday.
