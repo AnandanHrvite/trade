@@ -12,7 +12,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
   - **CE**: EMA20 **above** EMA50 · RSI(14) in the CE band (`RSI_CE_MIN`..`RSI_CE_MAX`) · trend source **GREEN** (SAR below price, or SuperTrend bullish when `SWING_USE_SUPERTREND=true`).
   - **PE**: EMA20 **below** EMA50 · RSI in the PE band · trend source **RED**.
   - This **replaces** the old "price touches EMA21" gate and **removes** `SWING_ENTRY_REQUIRE_CROSS` / `SWING_ENTRY_CROSS_TOLERANCE` (obsolete). **Stop-loss is unchanged** (prev-candle low/high, trailed). `EMA21(OHLC4)` is still computed for the `ema` SL mode + the trade-record snapshot, but is no longer an entry input.
-- **Chart**: the Swing chart now draws **EMA20 (gold) + EMA50 (white)** lines (was a single EMA21). EMA20/EMA50 values are recorded per trade in the JSON + daily JSONL (`ema20AtEntry`/`ema50AtEntry`/`ema20AtExit`/`ema50AtExit`).
+- **Chart**: the Swing chart now draws **EMA20 (gold) + EMA50 (blue)** lines (was a single EMA21). EMA20/EMA50 values are recorded per trade in the JSON + daily JSONL (`ema20AtEntry`/`ema50AtEntry`/`ema20AtExit`/`ema50AtExit`).
 - **SuperTrend line is now trend-coloured GREEN (bullish) / RED (bearish)** on the Swing, Scalp **and** Replay charts (was solid amber). The chart-data payload carries `trend` per SuperTrend point and the client colours each segment accordingly.
 - **Scalp entry already honoured `SCALP_USE_SUPERTREND`** (PSAR vs SuperTrend) in paper/live/backtest — no logic change; only the chart line colouring was updated.
 

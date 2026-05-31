@@ -574,7 +574,7 @@ function drawReplayChart(el, cd) {
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['ema20', '#fbbf24'], ['ema50', '#e5e7eb'], ['ema21', '#fbbf24'],
+    ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
     ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
   const _wideOverlays = { ema20: 1, ema50: 1, ema21: 1 };

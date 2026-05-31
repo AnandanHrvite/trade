@@ -2902,7 +2902,7 @@ ${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
-        <span style="color:#e5e7eb;">── EMA50</span> &nbsp;
+        <span style="color:#3b82f6;">── EMA50</span> &nbsp;
         <span style="color:#a78bfa;">· SAR</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
         <span style="color:#22d3ee;">── RSI</span> &nbsp;
@@ -3263,7 +3263,7 @@ ${modalJS()}
 
   // EMA20 (fast) + EMA50 (slow) lines + PSAR (dots) + RSI (own bottom scale, with level lines)
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
-  const ema50Series = chart.addLineSeries({ color:'#e5e7eb', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
+  const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
   // SAR as discrete dots: hide the connecting line, show only point markers.
   const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.

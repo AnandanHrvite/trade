@@ -76,7 +76,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
 - **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
 - **Removed** vs prior versions: EMA21-price-touch entry gate + `SWING_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE` (replaced by the EMA20/50 alignment gate); EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
-- **Chart**: EMA20 (gold) + EMA50 (white) lines, SAR dots / SuperTrend line, RSI subplot. SuperTrend renders **green when bullish, red when bearish** (on swing, scalp & replay charts). EMA20/EMA50 values + trend source are recorded per trade in the JSON + daily JSONL (`ema20AtEntry`/`ema50AtEntry`/`ema20AtExit`/`ema50AtExit`).
+- **Chart**: EMA20 (gold) + EMA50 (blue) lines, SAR dots / SuperTrend line, RSI subplot. SuperTrend renders **green when bullish, red when bearish** (on swing, scalp & replay charts). EMA20/EMA50 values + trend source are recorded per trade in the JSON + daily JSONL (`ema20AtEntry`/`ema50AtEntry`/`ema20AtExit`/`ema50AtExit`).
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
 ### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
