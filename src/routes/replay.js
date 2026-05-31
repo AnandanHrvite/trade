@@ -388,6 +388,17 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 .sess-chart > summary { cursor:pointer; font-size:0.8rem; }
 :root[data-theme="light"] .sess-chart { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .replay-chart { background:#f8fafc !important; border-color:#e2e8f0 !important; }
+/* Hover legend: slim panel to the right of the chart showing indicator values
+   at the crosshair candle (falls back to the latest bar when not hovering). */
+.replay-chart-legend { width:132px; flex:0 0 132px; height:100%; box-sizing:border-box; overflow-y:auto; padding:8px 8px 8px 10px; border-left:1px solid #1e293b; font-size:0.7rem; font-variant-numeric:tabular-nums; color:#cbd5e1; }
+.replay-chart-legend .lg-time { font-size:0.68rem; color:#94a3b8; margin-bottom:6px; font-weight:600; letter-spacing:0.03em; }
+.replay-chart-legend .lg-row { display:flex; justify-content:space-between; gap:6px; padding:1px 0; line-height:1.55; }
+.replay-chart-legend .lg-k { color:#94a3b8; display:flex; align-items:center; gap:5px; white-space:nowrap; }
+.replay-chart-legend .lg-k i { width:7px; height:7px; border-radius:2px; display:inline-block; flex:0 0 auto; }
+.replay-chart-legend .lg-v { color:#e2e8f0; font-weight:600; white-space:nowrap; }
+:root[data-theme="light"] .replay-chart-legend { border-left-color:#e2e8f0 !important; color:#475569 !important; }
+:root[data-theme="light"] .replay-chart-legend .lg-time { color:#64748b !important; }
+:root[data-theme="light"] .replay-chart-legend .lg-v { color:#1e293b !important; }
 :root[data-theme="light"] .trades-table th { color:#64748b !important; }
 :root[data-theme="light"] .trades-table th, :root[data-theme="light"] .trades-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .trades-table td.reason { color:#475569 !important; }
@@ -529,8 +540,20 @@ function drawReplayChart(el, cd) {
     el.style.display = 'none';
     return;
   }
-  el.style.display = 'block';
+  el.style.display = 'flex';
   el.innerHTML = '';
+  // Split the card into a chart host (grows to fill) + a slim legend panel on
+  // the right. The legend shows each indicator's value at the hovered candle,
+  // which also keeps the chart itself narrower so the candles aren't stretched.
+  const host = document.createElement('div');
+  host.style.cssText = 'flex:1 1 auto; min-width:0; height:100%;';
+  const legend = document.createElement('div');
+  legend.className = 'replay-chart-legend';
+  el.appendChild(host);
+  el.appendChild(legend);
+  // Series collected here (in draw order) so the crosshair handler can read each
+  // one's value at the hovered time. The "last" bar is shown when idle.
+  const legendItems = [];
   // Trim every series to the latest IST trading day so zooming out shows only
   // the session day — warmup history is loaded only for indicator computation.
   (function(){
@@ -546,8 +569,8 @@ function drawReplayChart(el, cd) {
   // axis ticks and crosshair label in IST (browser-local, en-IN) to match the
   // paper screen and the IST trade table below it.
   const _ist2 = (n) => ('0' + n).slice(-2);
-  const chart = LightweightCharts.createChart(el, {
-    width: el.clientWidth, height: 360,
+  const chart = LightweightCharts.createChart(host, {
+    width: host.clientWidth, height: 360,
     layout: { background: { color: 'transparent' }, textColor: isLight ? '#475569' : '#94a3b8' },
     grid: { vertLines: { color: isLight ? '#e2e8f0' : '#1e293b' }, horzLines: { color: isLight ? '#e2e8f0' : '#1e293b' } },
     timeScale: {
@@ -571,37 +594,44 @@ function drawReplayChart(el, cd) {
     wickUpColor: '#10b981', wickDownColor: '#ef4444',
   });
   cs.setData(cd.candles);
+  legendItems.push({ kind: 'ohlc', color: '#cbd5e1', series: cs, last: cd.candles[cd.candles.length - 1] });
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
     ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
     ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
+  const _ovLabel = { bbUpper: 'BB↑', bbMiddle: 'BB·', bbLower: 'BB↓', ema20: 'EMA20', ema50: 'EMA50', ema21: 'EMA21', orhLine: 'ORH', orlLine: 'ORL' };
   const _wideOverlays = { ema20: 1, ema50: 1, ema21: 1 };
   for (const [key, color] of overlays) {
     const arr = cd[key];
     if (Array.isArray(arr) && arr.length) {
       const ls = chart.addLineSeries({ color, lineWidth: _wideOverlays[key] ? 2 : 1, priceLineVisible: false, lastValueVisible: false });
       ls.setData(arr);
+      legendItems.push({ label: _ovLabel[key] || key, color, series: ls, last: arr[arr.length - 1] });
     }
   }
   // SAR as discrete dots (hide connecting line, show only point markers).
   if (Array.isArray(cd.sar) && cd.sar.length) {
     const sarLs = chart.addLineSeries({ color: '#f472b6', lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false });
     sarLs.setData(cd.sar);
+    legendItems.push({ label: 'SAR', color: '#f472b6', series: sarLs, last: cd.sar[cd.sar.length - 1] });
   }
   // SuperTrend line (solid) — drawn when the session used SuperTrend instead of PSAR.
   // Per-point colour: GREEN when bullish (trend===1), RED when bearish (trend===-1).
   // Older cached sessions without per-point trend fall back to green.
   if (Array.isArray(cd.supertrend) && cd.supertrend.length) {
     const stLs = chart.addLineSeries({ color: '#22c55e', lineWidth: 2, priceLineVisible: false, lastValueVisible: true });
-    stLs.setData(cd.supertrend.map(p => ({ time: p.time, value: p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') })));
+    const stData = cd.supertrend.map(p => ({ time: p.time, value: p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }));
+    stLs.setData(stData);
+    legendItems.push({ label: 'ST', color: '#22c55e', series: stLs, last: stData[stData.length - 1] });
   }
   // RSI on its own bottom scale + dashed level lines at the strategy thresholds.
   if (Array.isArray(cd.rsi) && cd.rsi.length) {
     const rsiLs = chart.addLineSeries({ color: '#22d3ee', lineWidth: 1, priceScaleId: 'rsi', priceLineVisible: false, lastValueVisible: true });
     try { chart.priceScale('rsi').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } }); } catch (_) {}
     rsiLs.setData(cd.rsi);
+    legendItems.push({ label: 'RSI', color: '#22d3ee', series: rsiLs, last: cd.rsi[cd.rsi.length - 1] });
     try {
       rsiLs.createPriceLine({ price: cd.rsiCeMin != null ? cd.rsiCeMin : 52, color: '#10b981', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'CE' });
       rsiLs.createPriceLine({ price: cd.rsiPeMax != null ? cd.rsiPeMax : 48, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'PE' });
@@ -612,6 +642,7 @@ function drawReplayChart(el, cd) {
     const adxLs = chart.addLineSeries({ color: '#e879f9', lineWidth: 1, priceScaleId: 'adx', priceLineVisible: false, lastValueVisible: true });
     try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch (_) {}
     adxLs.setData(cd.adx);
+    legendItems.push({ label: 'ADX', color: '#e879f9', series: adxLs, last: cd.adx[cd.adx.length - 1] });
     if (cd.adxMin != null) { try { adxLs.createPriceLine({ price: cd.adxMin, color: '#a855f7', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'ADX min' }); } catch (_) {} }
   }
   // Markers must be sorted ascending by time or the library throws.
@@ -634,9 +665,39 @@ function drawReplayChart(el, cd) {
     chart.timeScale().setVisibleRange({ from: firstT, to: lastT });
   } catch (_) { try { chart.timeScale().fitContent(); } catch (__) {} }
   try {
-    const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth }));
-    ro.observe(el);
+    const ro = new ResizeObserver(() => chart.applyOptions({ width: host.clientWidth }));
+    ro.observe(host);
   } catch (_) {}
+  // Hover legend: on crosshair move, read each series' value at the hovered
+  // candle from param.seriesData; fall back to the latest bar when idle so the
+  // panel always shows numbers. A line point is {value}; a candle is OHLC.
+  const _num = (v) => (v == null || v !== v) ? '–' : (Math.round(v * 100) / 100).toFixed(2);
+  const _lineVal = (p) => (p == null) ? null : (typeof p === 'object' ? (p.value != null ? p.value : p.close) : p);
+  const _lgRow = (color, label, val) =>
+    '<div class="lg-row"><span class="lg-k"><i style="background:' + color + '"></i>' + label + '</span><span class="lg-v">' + val + '</span></div>';
+  function renderLegend(param) {
+    const hovering = param && param.time != null && param.seriesData;
+    let timeLabel = 'latest';
+    if (hovering) { const d = new Date(param.time * 1000); timeLabel = _ist2(d.getHours()) + ':' + _ist2(d.getMinutes()); }
+    let rows = '';
+    for (const it of legendItems) {
+      const pt = hovering ? param.seriesData.get(it.series) : null;
+      const data = pt != null ? pt : it.last;
+      if (it.kind === 'ohlc') {
+        const o = data && (data.open != null ? data.open : data.o);
+        const h = data && (data.high != null ? data.high : data.h);
+        const l = data && (data.low != null ? data.low : data.l);
+        const c = data && (data.close != null ? data.close : data.c);
+        rows += _lgRow(it.color, 'O', _num(o)) + _lgRow(it.color, 'H', _num(h)) +
+                _lgRow(it.color, 'L', _num(l)) + _lgRow(it.color, 'C', _num(c));
+      } else {
+        rows += _lgRow(it.color, it.label, _num(_lineVal(data)));
+      }
+    }
+    legend.innerHTML = '<div class="lg-time' + (hovering ? '' : ' muted') + '">' + timeLabel + '</div>' + rows;
+  }
+  chart.subscribeCrosshairMove(renderLegend);
+  renderLegend(null);
 }
 
 // Date-range path: per-session charts draw lazily when their <details> opens
