@@ -99,6 +99,19 @@ function runOrbBacktest(allCandles, expirySet) {
 
       // In-position exits
       if (position) {
+        // Move-to-BE (spot-anchored): once spot moves >= 1× range in favour, lift
+        // SL to entry. Mirrors paper/live (_checkExits). Uses the candle's
+        // favourable extreme (high for CE / low for PE) as the intra-candle proxy
+        // for "any tick reached +1× range"; the SL check below then uses the
+        // ratcheted slSpot. Without this the backtest overstates losses on trades
+        // that ran 1× in favour then reversed.
+        const moveInFavour = position.side === "CE" ? (c.high - position.entrySpot) : (position.entrySpot - c.low);
+        if (!position.movedToBE && moveInFavour >= position.rangePts) {
+          position.movedToBE = true;
+          position.slSpot = position.side === "CE"
+            ? Math.max(position.slSpot, position.entrySpot)
+            : Math.min(position.slSpot, position.entrySpot);
+        }
         // Spot SL (opposite side of OR)
         if (position.side === "CE" && c.low <= position.slSpot) {
           closePos(position, position.slSpot, c.time, `Spot SL hit (${position.slSpot} = ORL)`);
@@ -167,6 +180,7 @@ function runOrbBacktest(allCandles, expirySet) {
             targetPremium: parseFloat((SEED_PREMIUM * (1 + TARGET_PCT)).toFixed(2)),
             stopPremium:   parseFloat((SEED_PREMIUM * (1 - STOP_PCT)).toFixed(2)),
             lockinHit: false,
+            movedToBE: false,
             signalStrength: sig.signalStrength,
             vwap: sig.vwap, volRatio: sig.volRatio, wickRatio: sig.wickRatio,
             entryReason: sig.reason,
