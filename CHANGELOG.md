@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix: Swing skips pre-market/pre-open candles (SuperTrend/SAR now match Kite)
+
+- **Bug:** the Swing tick→candle builder created candles from **pre-market ticks** — flat filler bars (~08:25–09:10) plus the **09:00 pre-open auction bar** (a wild wide-range print, e.g. a 250-pt range with a junk low). These polluted the path-dependent indicators (SuperTrend, SAR): the pre-open bar flipped SuperTrend bullish at 09:00 and pinned the support band a few points too high, causing a **premature bearish flip at 09:40** when the real flip (per Kite/TradingView) was ~11:45. Once flipped, the bot stayed on the wrong trend all midday.
+- **Fix:** `onSpotTick`/`onTick` now **only build candles from 09:15 IST** (NSE regular-session open, fixed `_MKT_OPEN_MINS`), gated on the candle bucket's IST time so it's correct in live **and** replay/sim. This matches how charting platforms compute — same candles in → same SuperTrend/SAR out. Verified the bot's SuperTrend formula + ATR (Wilder) already match TradingView exactly; the divergence was purely the extra pre-open candles.
+- Applies to **Swing paper + live** (and Swing replay, which re-runs recorded ticks through the fixed builder). Scalp/PA/ORB build candles the same way and have the same latent pre-market issue — fixable with the same one-line gate if needed.
+
 ### Swing entry redefined to EMA20/EMA50 crossover gate + SuperTrend line coloured green/red
 
 - **Swing entry is now an EMA20-vs-EMA50 alignment gate** (close-based, periods via new `SWING_EMA_FAST`=20 / `SWING_EMA_SLOW`=50). Entry fires only when **all 3** are true:

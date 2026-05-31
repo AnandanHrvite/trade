@@ -303,6 +303,11 @@ function getISTMinutes() {
 
 // Cached start/stop mins — read from env ONCE at module load, never again
 const _START_MINS = parseMins("TRADE_START_TIME", "09:15");
+// NSE regular session open (09:15 IST) — the floor for building candles, fixed
+// regardless of TRADE_START_TIME. Pre-open auction (09:00–09:08) prints a wild
+// wide-range bar and pre-market ticks are stale/flat; both corrupt path-dependent
+// indicators (SuperTrend, SAR) and make trend flips diverge from Kite/TradingView.
+const _MKT_OPEN_MINS = 9 * 60 + 15;
 // _STOP_MINS already defined above (for EOD candle close)
 // Stop gate is STOP_MINS - 10 to avoid orphaned positions near close
 const _ENTRY_STOP_MINS = _STOP_MINS - 10;
@@ -1299,6 +1304,12 @@ function onTick(tick) {
 
   const now    = simNow();
   const bucket = get5MinBucket(now);
+
+  // ── Skip pre-market / pre-open candles (build only from 09:15 NSE open) ─────
+  // Gated on the BUCKET's IST time so it is correct in live AND replay/sim.
+  // Without this, the 09:00 pre-open auction bar + flat pre-market ticks pollute
+  // SuperTrend/SAR and flip the trend early (e.g. a spurious 09:40 flip vs Kite's 11:45).
+  if ((Math.floor((Math.floor(bucket / 1000) + 19800) / 60) % 1440) < _MKT_OPEN_MINS) return;
 
   if (!ptState.currentBar || ptState.barStartTime !== bucket) {
     if (ptState.currentBar) {
