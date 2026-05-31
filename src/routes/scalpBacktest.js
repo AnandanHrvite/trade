@@ -285,6 +285,19 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         exitReason = `SL (${_hs.stop}pts)`;
       }
 
+      // 1b. MAX-LOSS-PER-TRADE — candle-gated bleed cap (the per-trade loss cap).
+      //     Only arms after SCALP_MAX_LOSS_AFTER_CANDLES candles; reason has no "SL"
+      //     so it does NOT arm the cooldown. Uses the bar's adverse extreme as the
+      //     per-tick proxy (mirrors the hardStop above).
+      if (!exitReason) {
+        const _ml = scalpStrategy.maxLossStop(_favWorstPts, position.candlesHeld || 0);
+        if (_ml.hit) {
+          position.slSource = "Max Loss";
+          exitPrice  = parseFloat((position.entryPrice - _ml.cap * (position.side === "CE" ? 1 : -1)).toFixed(2));
+          exitReason = `Max loss (${_ml.cap}pts/${_ml.after}c)`;
+        }
+      }
+
       // 2. PROFIT LOCK — the upside exit. Once peak favourable spot move ≥
       //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
       //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).

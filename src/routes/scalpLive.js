@@ -684,6 +684,18 @@ function onTick(tick) {
       }
     }
 
+    // 1b. MAX-LOSS-PER-TRADE — candle-gated bleed cap (the per-trade loss cap).
+    //     Only arms after SCALP_MAX_LOSS_AFTER_CANDLES candles so it never clips the
+    //     quick winners; reason has no "SL" so it does NOT arm the SL-pause cooldown.
+    {
+      const _ml = scalpStrategy.maxLossStop(_favPts, pos.candlesHeld || 0);
+      if (_ml.hit) {
+        pos.slSource = "Max Loss";
+        squareOff(price, `Max loss (${_ml.cap}pts/${_ml.after}c)`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+        return;
+      }
+    }
+
     // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
     //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
     //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.

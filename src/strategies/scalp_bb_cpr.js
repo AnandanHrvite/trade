@@ -15,7 +15,7 @@
  *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
  *      so it is independent of option pricing. The per-tick upside exit.
  *   2. Hard stop (spot POINTS) — catastrophic loss cap; exit once the trade moves
- *      SCALP_STOP_LOSS_PTS against entry. Always-on cap (default 20) so it clips the deep
+ *      SCALP_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
  *      adverse excursions on failed fades, not the normal small scalps. The per-tick downside cap.
  *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
  *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
@@ -320,16 +320,35 @@ function profitLock(favPts, peakFavPts) {
 
 // ── Hard stop (catastrophic loss cap, per-tick, spot POINTS) ─────────────────
 // Companion to the profit lock — caps the downside only. Exit once the trade has
-// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Always-on cap (default 20)
+// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
 // so it never touches the normal small scalps — it only clips the deep adverse
 // excursions on failed BB-break fades that would otherwise bleed to −100+ pts
 // before the candle-close BB re-entry / PSAR flip fires. 0 disables.
 //   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
 // Returns { hit, stop }.
 function hardStop(favPts) {
-  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "20"));
+  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "30"));
   if (stop <= 0 || favPts == null) return { hit: false, stop: null };
   return { hit: favPts <= -stop, stop: stop };
+}
+
+// ── Max-loss-per-trade stop (candle-gated bleed cap, per-tick, spot POINTS) ──
+// The surgical loss cap for trades that slip PAST the candle-close exits (BB
+// re-entry / trend flip) and keep bleeding. Unlike the unconditional hardStop it
+// only arms AFTER the position has been open SCALP_MAX_LOSS_AFTER_CANDLES candles,
+// so it never touches the quick scalps / winners-that-wiggle that resolve in the
+// first 1–3 candles. Callers use an exit reason WITHOUT "SL" so it does NOT arm
+// the SL-pause cooldown — the entry sequence stays identical to a no-cap run, and
+// only the genuine bleeders have their loss capped.
+//   favPts      — current favourable spot points (CE = price−entry, PE = entry−price)
+//   candlesHeld — completed candles since entry
+// Returns { hit, cap, after }. SCALP_MAX_LOSS_PTS = 0 disables.
+function maxLossStop(favPts, candlesHeld) {
+  var cap   = parseFloat(cfg("SCALP_MAX_LOSS_PTS", "0"));
+  var after = parseInt(cfg("SCALP_MAX_LOSS_AFTER_CANDLES", "3"), 10);
+  if (cap <= 0 || favPts == null)  return { hit: false, cap: null, after: after };
+  if ((candlesHeld || 0) < after)  return { hit: false, cap: cap, after: after };
+  return { hit: favPts <= -cap, cap: cap, after: after };
 }
 
 // ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
@@ -400,4 +419,4 @@ function bbReentryExit(candles, side) {
 
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null, adx: null, st: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isPSARFlip, isSuperTrendFlip, isTrendFlip, bbReentryExit, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, maxLossStop, isPSARFlip, isSuperTrendFlip, isTrendFlip, bbReentryExit, reset };
