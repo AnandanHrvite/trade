@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix: Scalp backtest enters on the signal bar's close (matches paper)
+
+- **Bug:** the scalp backtest queued each signal and entered on the **next candle's open**, while paper (the canonical engine) enters immediately at the **signal bar's close**. That one-bar shift moved every stop-loss reference, which changed which trades hit Profit-lock vs BB-re-entry, which changed the re-entries after them — so the backtest's trade list diverged from paper's for the same day/settings.
+- **Fix:** the backtest now creates the position at `candle.close` on the bar the signal fires (same as `scalpPaper.onCandleClose` → enter at `bar.close`); the `pendingSignal` / next-bar-open machinery is removed. Trade *entries* now line up with paper. **Note:** rupee P&L still won't match paper exactly — the backtest has only spot candles, so it prices options synthetically (`δ=0.55, θ=₹10/day`) and approximates the per-tick exits with bar high/low. For tick-accurate reproduction of a recorded paper session, use **Replay**.
+
 ### Change: Settings-changes history capped at 3 days
 
 - **Settings audit retention:** the **Trade Logs → Checkpoints & Settings Changes** tab (`settings-audit.jsonl`) now keeps only the **last 3 days** of changes (`SETTINGS_AUDIT_RETAIN_DAYS=3`). Older entries are pruned from the file on every settings save and are never returned/shown — the list was growing unbounded (458 rows). No effect on per-day trade JSONL checkpoints.

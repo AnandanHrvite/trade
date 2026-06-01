@@ -77,7 +77,6 @@ function buildDailyOHLC(candles) {
 async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onProgress) {
   const trades   = [];
   let position   = null;
-  let pendingSignal = null; // queued signal — enters on next candle's open
   const LOT_SIZE  = getLotQty();
 
   // VIX
@@ -190,7 +189,6 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       _consecSLs = 0;
       _slPauseUntilBySide.CE = 0; _slPauseUntilBySide.PE = 0;
       _consecSLsBySide.CE    = 0; _consecSLsBySide.PE    = 0;
-      pendingSignal = null; // discard overnight pending signals
     }
     _prevDate = candleDate;
 
@@ -203,41 +201,6 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     const dateIdx = _dateIdx[candleDate] ?? -1;
     const prevDayOHLC     = dateIdx > 0 ? dailyOHLC[sortedDates[dateIdx - 1]] : null;
     const prevPrevDayOHLC = dateIdx > 1 ? dailyOHLC[sortedDates[dateIdx - 2]] : null;
-
-    // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
-    if (pendingSignal && !position && !isEOD) {
-      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Skip if open gapped past the raw SL (entry would be instant loss)
-      const gapBad = (pendingSignal.side === "CE" && entryPrice <= pendingSignal.rawSL)
-                  || (pendingSignal.side === "PE" && entryPrice >= pendingSignal.rawSL);
-      if (gapBad) { pendingSignal = null; }
-    }
-    if (pendingSignal && !position && !isEOD) {
-      const entryPrice = parseFloat((candle.open + SLIPPAGE_PTS * (pendingSignal.side === "CE" ? 1 : -1)).toFixed(2));
-      // Initial SL = PSAR value from the strategy (no clamp).
-      const sl = pendingSignal.rawSL;
-      // Initial rupee risk (recorded on the trade for analysis; no longer drives exits).
-      // Approximate: |entry-SL| × DELTA × qty (flat charges ignored).
-      const _initRiskBT = OPTION_SIM
-        ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
-        : Math.abs(entryPrice - sl) * LOT_SIZE;
-      position = {
-        side:           pendingSignal.side,
-        entryPrice:     entryPrice,
-        entryTs:        candle.time,
-        stopLoss:       sl,
-        initialStopLoss: sl,
-        slSource:       pendingSignal.slSource,
-        entryReason:    pendingSignal.reason || "",
-        target:         null,
-        candlesHeld:    0,
-        peakPnl:        0,
-        initialRiskRupees: _initRiskBT,
-      };
-      pendingSignal = null;
-    } else if (pendingSignal && (position || isEOD)) {
-      pendingSignal = null; // can't enter, discard
-    }
 
     // ── EXIT LOGIC ──────────────────────────────────────────────────────────
     if (position) {
@@ -421,16 +384,31 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       continue;
     }
 
-    // Queue signal — will enter on NEXT candle's open (eliminates look-ahead bias)
+    // Enter at the SIGNAL bar's CLOSE — matches paper, which evaluates the signal on
+    // candle close and enters immediately at bar.close (scalpPaper.onCandleClose).
+    // (Previously queued for the next candle's open, which shifted every trade by one bar.)
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
     // Per-side SL cooldown — block only if THIS side has an active pause
     if (candle.time < _slPauseUntilBySide[side]) continue;
-    pendingSignal = {
+    const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
+    // Initial SL = PSAR/SuperTrend value from the strategy (no clamp).
+    const sl = result.stopLoss;
+    // Initial rupee risk (recorded for analysis; no longer drives exits).
+    const _initRiskBT = OPTION_SIM
+      ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
+      : Math.abs(entryPrice - sl) * LOT_SIZE;
+    position = {
       side,
-      rawSL:    result.stopLoss, // absolute SL level from strategy (PSAR value)
-      slSource: result.slSource || "PSAR",
-      signalTs: candle.time,
-      reason:   result.reason || `${side} signal`,
+      entryPrice,
+      entryTs:         candle.time,
+      stopLoss:        sl,
+      initialStopLoss: sl,
+      slSource:        result.slSource || "PSAR",
+      entryReason:     result.reason || `${side} signal`,
+      target:          null,
+      candlesHeld:     0,
+      peakPnl:         0,
+      initialRiskRupees: _initRiskBT,
     };
   }
 
