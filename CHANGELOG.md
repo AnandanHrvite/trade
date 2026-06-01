@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Settings-changes history capped at 1 week
+
+- **Settings audit retention:** the **Trade Logs → Checkpoints & Settings Changes** tab (`settings-audit.jsonl`) now keeps only the **last 7 days** of changes (`SETTINGS_AUDIT_RETAIN_DAYS=7`). Older entries are pruned from the file on every settings save and are never returned/shown — the list was growing unbounded (458 rows). No effect on per-day trade JSONL checkpoints.
+
 ### Feature: Dashboard "Start All (Harness)" one-click button
 
 - New top-bar button (left of **Start All (Paper)**) that starts every Live (Harness) mode in one click — Swing + Scalp + ORB (each gated by its `*_MODE_ENABLED`). Fires the `*-live-harness/start` routes, which wrap Paper so **LIVE = PAPER by construction** and respect the global `LIVE_HARNESS_DRY_RUN` flag (no real orders while DRY-RUN is on). Avoids visiting each strategy's Live (Harness) page separately. The existing **Start All (Live)** button still fires the legacy standalone `*-live` engines.
