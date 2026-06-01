@@ -91,7 +91,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
-  const showCacheFiles = (process.env.UI_SHOW_CACHE_FILES || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
   const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive', 'swingLiveHarness'];
@@ -194,7 +193,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'SYSTEM', collapsible: false,
       items: [
         ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
-        ...(showCacheFiles ? [{ key: 'cacheFiles', href: '/cache-files', icon: '🧰', label: 'Cache Files' }] : []),
+        // Cache Files moved into the Settings top bar (🧰 CACHE FILES button) — gated by UI_SHOW_CACHE_FILES.
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },
