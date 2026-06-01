@@ -907,6 +907,20 @@ app.get("/", (req, res) => {
     :root[data-theme="light"] .util-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
     :root[data-theme="light"] .util-btn.run-live  { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
     :root[data-theme="light"] .util-info { color:#64748b; }
+    /* Light theme — top-bar pills/buttons + broker expiry pill (shared chrome lacks light variants) */
+    :root[data-theme="light"] .top-bar-btn { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
+    :root[data-theme="light"] .top-bar-btn.run-paper { background:#dcfce7; border-color:#86efac; color:#16a34a; }
+    :root[data-theme="light"] .top-bar-btn.run-live { background:#fee2e2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .top-bar-cache { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
+    :root[data-theme="light"] .top-bar-cache.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
+    :root[data-theme="light"] .top-bar-cache.schedule { background:#ecfeff; border-color:#a5f3fc; color:#0891b2; }
+    :root[data-theme="light"] .top-bar-cache.schedule.empty { background:#f8fafc; border-color:#e2e8f0; color:#64748b; }
+    :root[data-theme="light"] .top-bar-badge { background:#eff6ff; border-color:#bfdbfe; color:#2563eb; }
+    :root[data-theme="light"] .top-bar-badge.live-active { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+    :root[data-theme="light"] .top-bar-badge.paper-active { background:#f0fdf4; border-color:#bbf7d0; color:#16a34a; }
+    :root[data-theme="light"] .brk-expiry.valid { background:#f8fafc; border-color:#e2e8f0; color:#475569; }
+    :root[data-theme="light"] .brk-expiry.expiring { background:#fffbeb; border-color:#fde68a; color:#b45309; }
+    :root[data-theme="light"] .brk-expiry.expired { background:#fef2f2; border-color:#fecaca; color:#c2410c; }
 
     /* ── PER-MODULE START CARDS ── */
     /* ── PER-MODULE P&L CHART CARDS (Paper/Live toggle) ── */
