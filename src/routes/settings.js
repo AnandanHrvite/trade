@@ -1641,7 +1641,6 @@ router.get("/", (req, res) => {
           <span class="bc-current">⚙ Settings</span>
         </nav>
         <div class="top-bar-title">Settings</div>
-        <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
       <div class="top-bar-btns" style="margin-left:auto;display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;">
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
