@@ -1125,6 +1125,7 @@ ${buildSidebar('dashboard', liveActive)}
       <button type="button" class="dst-btn" data-src="live">LIVE</button>
     </div>
     <div class="top-bar-right">
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (Swing + Scalp + ORB)">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
@@ -1492,6 +1493,8 @@ async function pollDashboardStatus(){
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
 var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${straddleModeOn ? ",'/straddle-paper/start'" : ""}];
 var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}${straddleModeOn ? ",'/straddle-live/start'" : ""}];
+// Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
+var HARNESS_ENDPOINTS = ['/swing-live-harness/start'${scalpModeOn ? ",'/scalp-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}];
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1500,10 +1503,11 @@ function _escHtml(s){
 }
 
 function _prettyEndpoint(url){
-  var m = /\\/(\\w+)-(\\w+)\\/start/.exec(url);
+  var m = /\\/(\\w+)-(live|paper)(-harness)?\\/start/.exec(url);
   if (!m) return url;
-  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action' }[m[1]] || m[1];
-  return mode + ' ' + (m[2] === 'paper' ? 'Paper' : 'Live');
+  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB', straddle:'Straddle' }[m[1]] || m[1];
+  var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
+  return mode + ' ' + kind;
 }
 
 async function _startAll(endpoints){
@@ -1608,6 +1612,23 @@ async function startAllLive(btn){
   btn.disabled = true; btn.textContent = '⏳ Starting all live trades...';
   var result = await _startAll(LIVE_ENDPOINTS);
   await _handleStartAllResult(btn, orig, 'All Live', result);
+}
+
+async function startAllHarness(btn){
+  var modeList = 'Swing'
+    + (${scalpModeOn ? "' + Scalp'" : "''"})
+    + (${paModeOn ? "' + PA'" : "''"})
+    + (${orbModeOn ? "' + ORB'" : "''"});
+  var ok = await showConfirm({
+    icon: '🧪', title: 'Start ALL Live (Harness)',
+    message: 'Start ' + modeList + ' via Paper Harness?\\n\\nEach runs Paper unchanged and logs the broker order it WOULD place. Orders follow the global DRY-RUN flag — no real orders while LIVE_HARNESS_DRY_RUN is ON.',
+    confirmText: 'Start All (Harness)', confirmClass: 'modal-btn-primary'
+  });
+  if(!ok) return;
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Starting harness: ' + modeList + '...';
+  var result = await _startAll(HARNESS_ENDPOINTS);
+  await _handleStartAllResult(btn, orig, 'All Harness', result);
 }
 
 // Single Start-All button follows the top-bar PAPER/LIVE toggle.

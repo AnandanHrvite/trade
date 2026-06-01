@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: Dashboard "Start All (Harness)" one-click button
+
+- New top-bar button (left of **Start All (Paper)**) that starts every Live (Harness) mode in one click — Swing + Scalp + ORB (each gated by its `*_MODE_ENABLED`). Fires the `*-live-harness/start` routes, which wrap Paper so **LIVE = PAPER by construction** and respect the global `LIVE_HARNESS_DRY_RUN` flag (no real orders while DRY-RUN is on). Avoids visiting each strategy's Live (Harness) page separately. The existing **Start All (Live)** button still fires the legacy standalone `*-live` engines.
+
 ### Fix: Swing + Scalp skip pre-market/pre-open candles (SuperTrend/SAR now match Kite)
 
 - **Bug:** the tick→candle builders created candles from **pre-market ticks** — flat filler bars (~08:25–09:10) plus the **09:00 pre-open auction bar** (a wild wide-range print, e.g. a 250-pt range with a junk low). These polluted the path-dependent indicators (SuperTrend, SAR): the pre-open bar flipped SuperTrend bullish at 09:00 and pinned the support band a few points too high, causing a **premature bearish flip at 09:40** when the real flip (per Kite/TradingView) was ~11:45. Once flipped, the bot stayed on the wrong trend all midday.
