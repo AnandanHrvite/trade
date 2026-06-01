@@ -104,10 +104,25 @@ ${buildSidebar('swingBacktest', true)}
         backtestJobs.updateProgress(id, { phase: 'Fetching candle data…', pct: 0 });
         const strategy = getActiveStrategy();
         const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
+
+        // ── Warm-up buffer ─────────────────────────────────────────────────────
+        // Indicators (EMA/RSI/SAR) need history to be meaningful. Instead of
+        // consuming the start of the requested range as warm-up — which broke
+        // short ranges (a 1-day backtest skipped its own morning and reset EMAs
+        // each day) — fetch extra candles BEFORE `from` purely to seed indicators.
+        // Trades are only recorded from `from` onward (gated by activeFromTs in the
+        // engine), so the requested range is evaluated from its very first candle
+        // with the same warmed indicators a continuous live session would have.
+        const _isIntraday  = /^\d+$/.test(String(resolution));
+        const _warmupDays  = _isIntraday ? 10 : 150; // calendar days; daily/weekly need far more
+        const warmupFrom   = new Date(new Date(from + "T00:00:00+05:30").getTime() - _warmupDays * 86400000)
+          .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+        const activeFromTs = Math.floor(new Date(from + "T00:00:00+05:30").getTime() / 1000);
+
         const [_candles, _vixCandles] = await Promise.all([
-          fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
+          fetchCandlesCachedBT(symbol, resolution, warmupFrom, to, skipCache, _onFetchProgress),
           vixFilter.VIX_ENABLED
-            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(err => {
+            ? fetchCandlesCachedBT(VIX_SYMBOL, "D", warmupFrom, to, skipCache).catch(err => {
                 console.warn(`[Backtest] VIX candle fetch failed: ${err.message}`);
                 return [];
               })
@@ -129,7 +144,7 @@ ${buildSidebar('swingBacktest', true)}
 
         backtestJobs.updateProgress(id, { phase: 'Running backtest engine…', pct: 5, current: 0, total: _candles.length - 30 });
         const _result = await runBacktest(_candles, strategy, capital, _vixCandles, _expiryDates,
-          (p) => backtestJobs.updateProgress(id, p));
+          (p) => backtestJobs.updateProgress(id, p), activeFromTs);
         _result.candleCount = _candles.length;
         saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);

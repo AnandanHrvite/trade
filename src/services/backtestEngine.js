@@ -117,7 +117,7 @@ function getISTHHMM(unixSec) {
  * Other strategies that reuse this engine keep their getSignal-driven behaviour; the
  * 50%-rule pause scaffolding is retained for them but SWING no longer triggers it.
  */
-async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress) {
+async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0) {
   const trades    = [];
   let position    = null;
   const LOT_SIZE  = getLotQty();
@@ -583,7 +583,13 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
     const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
-    if (!position && !isEODcandle && !isConsecPaused && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
+    // Warm-up gate: candles before activeFromTs only build indicators (EMA/RSI/SAR),
+    // they never open a trade. This lets a single-day (or any) range be evaluated
+    // from its very first candle with fully-warmed indicators seeded by prior days,
+    // instead of silently consuming the range's own opening candles as warm-up.
+    const _isWarmupOnly = candle.time < activeFromTs;
+
+    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
       // Expiry-day-only filter: skip entry on non-expiry days
       if (expiryDates && !expiryDates.has(candleDate)) continue;
       // Same-side SL cooldown: skip this side until the pause expires
