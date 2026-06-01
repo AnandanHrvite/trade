@@ -20,9 +20,9 @@ const os   = require("os");
 const AUDIT_DIR  = path.join(os.homedir(), "trading-data");
 const AUDIT_FILE = path.join(AUDIT_DIR, "settings-audit.jsonl");
 
-// Retention: only the last week of settings changes is kept; older entries are
-// pruned from the file (on every append) and never returned by readAuditLog.
-const RETENTION_DAYS = Number(process.env.SETTINGS_AUDIT_RETAIN_DAYS || 7);
+// Retention: only the last few days of settings changes are kept; older entries
+// are pruned from the file (on every append) and never returned by readAuditLog.
+const RETENTION_DAYS = Number(process.env.SETTINGS_AUDIT_RETAIN_DAYS || 3);
 
 try { fs.mkdirSync(AUDIT_DIR, { recursive: true }); } catch (_) {}
 

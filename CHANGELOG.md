@@ -6,9 +6,9 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### Change: Settings-changes history capped at 1 week
+### Change: Settings-changes history capped at 3 days
 
-- **Settings audit retention:** the **Trade Logs → Checkpoints & Settings Changes** tab (`settings-audit.jsonl`) now keeps only the **last 7 days** of changes (`SETTINGS_AUDIT_RETAIN_DAYS=7`). Older entries are pruned from the file on every settings save and are never returned/shown — the list was growing unbounded (458 rows). No effect on per-day trade JSONL checkpoints.
+- **Settings audit retention:** the **Trade Logs → Checkpoints & Settings Changes** tab (`settings-audit.jsonl`) now keeps only the **last 3 days** of changes (`SETTINGS_AUDIT_RETAIN_DAYS=3`). Older entries are pruned from the file on every settings save and are never returned/shown — the list was growing unbounded (458 rows). No effect on per-day trade JSONL checkpoints.
 
 ### Feature: Dashboard "Start All (Harness)" one-click button
 
