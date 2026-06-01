@@ -1187,11 +1187,10 @@ router.get("/", (req, res) => {
     }
     .top-bar-title { font-size: 1.15rem; font-weight: 700; color: var(--text2); letter-spacing: -0.3px; }
     .top-bar-meta  { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
-    /* Keep top-bar action buttons on a single line — scroll horizontally if they overflow */
+    /* Keep top-bar action buttons on a single line — scroll horizontally if they overflow, with no visible scrollbar */
     .top-bar-btns > * { flex-shrink: 0; }
-    .top-bar-btns { scrollbar-width: thin; }
-    .top-bar-btns::-webkit-scrollbar { height: 6px; }
-    .top-bar-btns::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .top-bar-btns { scrollbar-width: none; -ms-overflow-style: none; }
+    .top-bar-btns::-webkit-scrollbar { display: none; }
 
     /* ── Breadcrumb ── */
     .breadcrumb {
