@@ -1187,6 +1187,11 @@ router.get("/", (req, res) => {
     }
     .top-bar-title { font-size: 1.15rem; font-weight: 700; color: var(--text2); letter-spacing: -0.3px; }
     .top-bar-meta  { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+    /* Keep top-bar action buttons on a single line — scroll horizontally if they overflow */
+    .top-bar-btns > * { flex-shrink: 0; }
+    .top-bar-btns { scrollbar-width: thin; }
+    .top-bar-btns::-webkit-scrollbar { height: 6px; }
+    .top-bar-btns::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
     /* ── Breadcrumb ── */
     .breadcrumb {
@@ -1639,7 +1644,7 @@ router.get("/", (req, res) => {
         <div class="top-bar-title">Settings</div>
         <div class="top-bar-meta">Configure trading parameters — changes apply without server restart</div>
       </div>
-      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;">
+      <div class="top-bar-btns" style="margin-left:auto;display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;">
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
         <button onclick="showBackupModal()" title="Download daily data snapshots so an EC2 loss never loses data" style="padding:6px 14px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📦 BACKUP</button>
         <a href="/pnl-history" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">💰 P&amp;L HISTORY</a>
