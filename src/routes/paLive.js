@@ -52,7 +52,6 @@ const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
 const _PA_BE_TRIGGER    = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ peak profit to lift SL to breakeven (0 = off)
 const _PA_BE_BUFFER     = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts above (CE) / below (PE) entry for the BE SL
-const _PA_OPT_STOP_PCT        = parseFloat(process.env.PA_OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
 let _prevDayOHLC     = null;
@@ -724,7 +723,7 @@ async function onCandleClose(bar) {
     return;
   }
 
-  // VIX — post-strategy check using pattern strength (PA_VIX_MAX_ENTRY + PA_VIX_STRONG_ONLY)
+  // VIX — post-strategy block-entry check (PA_VIX_MAX_ENTRY)
   if (process.env.PA_VIX_ENABLED === "true") {
     const _strength = result.signalStrength || "MARGINAL";
     const _vixCheck = await checkLiveVix(_strength, { mode: "pa" });
@@ -1250,8 +1249,6 @@ router.get("/status/data", (req, res) => {
   const optPremiumPnl = (optEntryLtp && optCurrentLtp) ? parseFloat(((optCurrentLtp - optEntryLtp) * (pos ? pos.qty : 0) - _chgOpt).toFixed(2)) : null;
   const optPremiumMove = (optEntryLtp && optCurrentLtp) ? parseFloat((optCurrentLtp - optEntryLtp).toFixed(2)) : null;
   const optPremiumPct = (optEntryLtp && optCurrentLtp && optEntryLtp > 0) ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2)) : null;
-  const PA_OPT_STOP_PCT_VAL = _PA_OPT_STOP_PCT;
-  const optStopPrice = optEntryLtp ? parseFloat((optEntryLtp * (1 - PA_OPT_STOP_PCT_VAL)).toFixed(2)) : null;
 
   res.json({
     running:       state.running,
@@ -1292,8 +1289,6 @@ router.get("/status/data", (req, res) => {
       optPremiumPnl,
       optPremiumMove,
       optPremiumPct,
-      optStopPrice,
-      optStopPct:        Math.round(PA_OPT_STOP_PCT_VAL * 100),
       liveClose:         state.lastTickPrice || null,
       trailActivatePts:  pos.trailActivatePts || null,
       reason:            pos.reason || null,
@@ -1358,9 +1353,6 @@ router.get("/status", (req, res) => {
   const optPremiumPct  = (optEntryLtp && optCurrentLtp && optEntryLtp > 0)
     ? parseFloat(((optCurrentLtp - optEntryLtp) / optEntryLtp * 100).toFixed(2))
     : null;
-  const PA_OPT_STOP_PCT_VAL = _PA_OPT_STOP_PCT;
-  const optStopPrice   = optEntryLtp ? parseFloat((optEntryLtp * (1 - PA_OPT_STOP_PCT_VAL)).toFixed(2)) : null;
-  const optStopPct     = Math.round(PA_OPT_STOP_PCT_VAL * 100);
 
   const liveClose  = state.lastTickPrice || null;
   const pointsMoved = pos && liveClose
@@ -1498,11 +1490,6 @@ router.get("/status", (req, res) => {
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Stop Loss (Prev Candle)</div>
           <div id="ax-stop-loss" style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopLoss ? inr(pos.stopLoss) : "\u2014"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Risk: ${pos.stopLoss ? inr(Math.abs(pos.entryPrice - pos.stopLoss) * pos.qty) : "\u2014"}</div>
-        </div>
-        <div style="background:#1c0d00;border:1px solid #92400e;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Option SL (${optStopPct}% stop)</div>
-          <div id="ax-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "\u20b9" + optStopPrice.toFixed(2) : "\u2014"}</div>
-          <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry \u20b9" + optEntryLtp.toFixed(2) + " \u00d7 " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak P&L</div>
@@ -2331,8 +2318,6 @@ logFilter();
             pctEl.style.color = p.optPremiumPct >= 0 ? '#10b981' : '#ef4444';
           }
         }
-        var optSlEl = document.getElementById('ax-opt-sl');
-        if (optSlEl) optSlEl.textContent = p.optStopPrice ? '\u20b9' + p.optStopPrice.toFixed(2) : '\u2014';
         var optPnlEl = document.getElementById('ax-opt-pnl');
         if (optPnlEl && p.optPremiumPnl !== null) {
           optPnlEl.textContent = (p.optPremiumPnl >= 0 ? '+' : '') + INR(p.optPremiumPnl);

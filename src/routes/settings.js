@@ -135,20 +135,9 @@ const SETTINGS_SCHEMA = [
       { key: "PA_EXPIRY_DAY_ONLY", label: "PA Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow PA entries on NIFTY weekly expiry day", default: "false" },
       { key: "PA_VIX_ENABLED", label: "VIX Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block PA entries when VIX is high (scope: PA only)", default: "false" },
       { key: "PA_VIX_MAX_ENTRY", label: "PA VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PA only: block entries above this VIX", default: "20" },
-      { key: "PA_VIX_STRONG_ONLY", label: "PA VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "PA only: above this VIX allow only STRONG signals — block MARGINAL. (All current PA chart patterns are STRONG.)", default: "16" },
       { key: "PA_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new PA entries (HH:MM IST)", default: "09:20" },
       { key: "PA_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new PA entries after this time (HH:MM IST)", default: "14:30" },
       { key: "PA_RESOLUTION", label: "Candle (min)", type: "select", options: ["5", "3"], effect: EFFECT.SESSION, desc: "Price action candle resolution", default: "5" },
-      // ── RSI (confluence filter) ──
-      { key: "PA_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "PA_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 30, max: 60, step: 1, effect: EFFECT.SESSION, desc: "RSI above this for CE entry (confluence)", default: "45" },
-      { key: "PA_RSI_CAPS_ENABLED", label: "RSI Caps", type: "toggle", effect: EFFECT.SESSION, desc: "Block CE when RSI overbought / PE when RSI oversold", default: "true" },
-      { key: "PA_RSI_CE_MAX", label: "RSI CE Max (<)", type: "number", min: 55, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Block CE entry when RSI above this (overbought — buying exhausted move)", default: "65" },
-      { key: "PA_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "RSI below this for PE entry (confluence)", default: "55" },
-      { key: "PA_RSI_PE_MIN", label: "RSI PE Min (>)", type: "number", min: 15, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Block PE entry when RSI below this (oversold — shorting exhausted move)", default: "25" },
-      // ── ADX chop filter ──
-      { key: "PA_ADX_ENABLED", label: "ADX Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Block entries when ADX < threshold (market ranging/choppy)", default: "true" },
-      { key: "PA_ADX_MIN", label: "ADX Min Trend", type: "number", min: 15, max: 35, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX to allow entries (below = ranging market)", default: "20" },
       // ── Pattern toggles (the only four entry logics) ──
       { key: "PA_PATTERN_DOUBLE_BOTTOM", label: "Double Bottom (W) → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Bullish reversal — twin equal lows + neckline breakout → CE", default: "true" },
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Bearish reversal — twin equal highs + neckline breakdown → PE", default: "true" },
@@ -167,7 +156,6 @@ const SETTINGS_SCHEMA = [
       { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Once peak PnL ≥ this many rupees, lift SL to entry+buffer so a winning trade can never close red. 0 = disabled.", default: "300" },
       { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above (CE) / below (PE) entry for the breakeven SL — small slippage cushion", default: "1" },
       { key: "PA_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage for backtest", default: "0" },
-      { key: "PA_OPT_STOP_PCT", label: "PA Option Stop %", type: "number", min: 0.05, max: 0.5, step: 0.05, effect: EFFECT.SESSION, desc: "Cap option premium decay at this fraction. Fires before spot SL when option side has bled out. 0 = disabled.", default: "0.15" },
       { key: "PA_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max PA entries per day", default: "30" },
       { key: "PA_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "PA daily loss kill-switch", default: "2000" },
       { key: "PA_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit", default: "2" },
@@ -521,7 +509,7 @@ function parseEnvFile() {
 const IMMEDIATE_KEYS = new Set([
   "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
-  "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY", "PA_VIX_STRONG_ONLY",
+  "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "SWING_OPTION_EXPIRY_OVERRIDE",
@@ -570,7 +558,6 @@ const SESSION_RESTART_KEYS = new Set([
   // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
   "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
   "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",
-  "PA_OPT_STOP_PCT",
 ]);
 
 // Schema-derived restart set: every field marked EFFECT.SESSION or EFFECT.SERVER
@@ -914,7 +901,7 @@ router.get("/", (req, res) => {
     // Per-module VIX thresholds frozen when that module's VIX toggle is off
     if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
     if ((key === "SCALP_VIX_MAX_ENTRY" || key === "SCALP_VIX_STRONG_ONLY") && !scalpVixEnabled) return true;
-    if ((key === "PA_VIX_MAX_ENTRY"    || key === "PA_VIX_STRONG_ONLY")    && !paVixEnabled)    return true;
+    if (key === "PA_VIX_MAX_ENTRY" && !paVixEnabled) return true;
     // Scalp section frozen when scalp mode is off (but not the master toggle itself)
     if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && !scalpModeOn) return true;
     return false;
@@ -931,7 +918,7 @@ router.get("/", (req, res) => {
     const dis = frozen ? "disabled" : "";
     let frozenGroup = "";
     if (f.key === "SCALP_VIX_MAX_ENTRY" || f.key === "SCALP_VIX_STRONG_ONLY") frozenGroup = "scalp-vix";
-    else if (f.key === "PA_VIX_MAX_ENTRY" || f.key === "PA_VIX_STRONG_ONLY") frozenGroup = "pa-vix";
+    else if (f.key === "PA_VIX_MAX_ENTRY") frozenGroup = "pa-vix";
     else if (f.key.startsWith("SCALP_"))   frozenGroup = "scalp";
     else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";

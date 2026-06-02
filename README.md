@@ -97,8 +97,7 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
   - **Descending Triangle → PE** — flat support (equal swing lows) + falling swing highs, close below support
   - "Equal" levels are within `PA_CHART_PATTERN_TOL=12` pts; the breakout candle body must be ≥ `PA_MIN_BODY=5` pts. The old Engulfing / Pin Bar / Inside Bar / BOS patterns were removed.
 - **Swings**: last `PA_SR_LOOKBACK=30` candles drive both detection and the structure trail.
-- **RSI confluence**: CE requires RSI in `(PA_RSI_CE_MIN, PA_RSI_CE_MAX)`, PE in `(PA_RSI_PE_MIN, PA_RSI_PE_MAX)`.
-- **ADX chop filter** (`PA_ADX_ENABLED` / `PA_ADX_MIN`): block entries when ADX is below threshold (ranging market).
+- **No RSI / ADX confluence** — pure chart-pattern entries (the breakout candle is the signal). The only entry gate beyond the pattern is the `PA_MIN_BODY` breakout-candle-body check.
 - **SL (pattern structure)**: placed `PA_SL_BUFFER_PTS=3` beyond the pattern extreme — below the twin bottoms / rising-low support (CE), above the twin tops / falling-high resistance (PE) — then clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]`.
 - **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE). Bid-ask spread guard + EOD square-off still apply. The old candle-trail / tiered profit-lock / time-stop were removed.
 
@@ -306,19 +305,14 @@ Full spec: [SCALP.md](SCALP.md).
 | `PA_CHART_PATTERN_TOL` | `12` | Tolerance (pts) for "equal" twin tops/bottoms and flat S/R lines |
 | `PA_MIN_BODY` | `5` | Minimum breakout-candle body (pts) |
 | `PA_SR_LOOKBACK` | `30` | Candles scanned for swing highs/lows (detection + structure trail) |
-| `PA_RSI_CAPS_ENABLED` | `true` | Block CE when RSI overbought / PE when oversold |
-| `PA_RSI_CE_MAX` / `PA_RSI_PE_MIN` | `65` / `25` | Overbought/oversold cap for the RSI gates |
-| `PA_ADX_ENABLED` / `PA_ADX_MIN` | `true` / `20` | ADX chop filter |
 | `PA_PATTERN_DOUBLE_BOTTOM` | `true` | Toggle Double Bottom (W) → CE |
 | `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
 | `PA_PATTERN_ASC_TRIANGLE` | `true` | Toggle Ascending Triangle → CE |
 | `PA_PATTERN_DESC_TRIANGLE` | `true` | Toggle Descending Triangle → PE |
-| `PA_OPT_STOP_PCT` | `0.15` | Cap option premium decay — fires before spot SL on bled-out far-OTM. `0` disables. |
 | `PA_MAX_DAILY_TRADES` | `30` | Daily PA cap |
 | `PA_MAX_DAILY_LOSS` | `2000` | PA kill-switch in INR |
 | `PA_VIX_ENABLED` | `false` | Independent VIX filter for PA |
 | `PA_VIX_MAX_ENTRY` | `20` (`VIX_MAX_ENTRY` fallback) | Per-mode VIX block-entry threshold |
-| `PA_VIX_STRONG_ONLY` | `16` (`VIX_STRONG_ONLY` fallback) | Per-mode strong-only threshold |
 | `PA_EXPIRY_DAY_ONLY` | `false` | Only allow PA entries on weekly-expiry day |
 
 ### ORB Mode (Opening Range Breakout, Fyers)
@@ -387,7 +381,6 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `SCALP_VIX_STRONG_ONLY` | inherits | Per-mode threshold (falls back to `VIX_STRONG_ONLY`) |
 | `PA_VIX_ENABLED` | `false` | Independent toggle |
 | `PA_VIX_MAX_ENTRY` | inherits | Per-mode threshold |
-| `PA_VIX_STRONG_ONLY` | inherits | Per-mode threshold |
 
 ### Trade Guards (shared across modes)
 | Key | Default | Notes |

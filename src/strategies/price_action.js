@@ -1,8 +1,8 @@
 /**
  * STRATEGY: PRICE ACTION (5-min candles)
  *
- * Chart-pattern breakout/reversal strategy with RSI/ADX confluence filters.
- * No lagging indicators as primary signal — reads what price IS doing.
+ * Pure chart-pattern breakout strategy — no RSI/ADX confluence, no lagging
+ * indicators. The pattern breakout candle IS the signal (as per the charts).
  *
  * PATTERNS DETECTED (the only four entry logics):
  *   1. Double Bottom (W) — two equal swing lows + neckline breakout → CE
@@ -15,10 +15,9 @@
  *   Pattern detection works off the last two swing highs/lows within the
  *   lookback (PA_CHART_PATTERN_TOL tolerance for "equal" levels).
  *
- * ENTRY CONFLUENCE & QUALITY GATES:
- *   RSI(14): CE min/max, PE min/max — blocks entries at exhausted-move extremes
- *   ADX level: blocks entries when market is ranging (PA_ADX_MIN)
- *   Min body: breakout candle body must be >= PA_MIN_BODY points
+ * ENTRY GATE:
+ *   Min body: the breakout candle body must be >= PA_MIN_BODY points. That's
+ *   the only confluence filter — no RSI, no ADX.
  *
  * EXIT (as per the chart-pattern playbook):
  *   Hard SL: placed at the pattern structure + PA_SL_BUFFER_PTS — below the
@@ -32,10 +31,8 @@
  * Timeframe: 5-min | Window: PA_ENTRY_START – PA_ENTRY_END IST
  */
 
-const { RSI, ADX } = require("technicalindicators");
-
 const NAME        = "PRICE_ACTION_5M";
-const DESCRIPTION = "5-min | Double Top/Bottom (M/W) + Ascending/Descending Triangle breakouts | S/R swings | RSI confluence";
+const DESCRIPTION = "5-min | Double Top/Bottom (M/W) + Ascending/Descending Triangle breakouts | pure chart patterns";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
 
@@ -175,29 +172,11 @@ function checkDescendingTriangle(candle, swingHighs, swingLows, tolerancePts) {
   return { detected: false };
 }
 
-// ── Indicator cache ──────────────────────────────────────────────────────────
-let _indicatorCache = { key: null, rsi: null };
-
-function _makeKey(candles) {
-  if (candles.length < 2) return null;
-  var last = candles[candles.length - 1];
-  var prev = candles[candles.length - 2];
-  return prev.time + ":" + candles.length + ":" + last.open + ":" + last.high + ":" + last.low + ":" + last.close;
-}
-
 // ── Main signal function ─────────────────────────────────────────────────────
 function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
 
-  var RSI_PERIOD    = parseInt(cfg("PA_RSI_PERIOD", "14"), 10);
-  var RSI_CE_MIN    = parseFloat(cfg("PA_RSI_CE_MIN", "45"));
-  var RSI_CAPS_ON   = cfg("PA_RSI_CAPS_ENABLED", "false") === "true";
-  var RSI_CE_MAX    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_CE_MAX", "85")) : 999;
-  var RSI_PE_MAX    = parseFloat(cfg("PA_RSI_PE_MAX", "55"));
-  var RSI_PE_MIN    = RSI_CAPS_ON ? parseFloat(cfg("PA_RSI_PE_MIN", "15")) : -999;
-  var ADX_ENABLED   = cfg("PA_ADX_ENABLED", "false") === "true";
-  var ADX_MIN       = parseFloat(cfg("PA_ADX_MIN", "20"));
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
   var SR_LOOKBACK   = parseInt(cfg("PA_SR_LOOKBACK", "30"), 10);
   var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
@@ -212,13 +191,13 @@ function getSignal(candles, opts) {
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
-    rsi: null, pattern: null, srLevel: null,
+    pattern: null, srLevel: null,
     swingHighs: [], swingLows: [],
     signalStrength: null,
   };
 
   // Warm-up
-  var minCandles = Math.max(RSI_PERIOD + 5, SR_LOOKBACK + 5, 30);
+  var minCandles = Math.max(SR_LOOKBACK + 5, 30);
   if (candles.length < minCandles) {
     base.reason = "Warming up (" + candles.length + "/" + minCandles + ")";
     return base;
@@ -234,36 +213,6 @@ function getSignal(candles, opts) {
     }
   }
 
-  // ── RSI (with cache) ──────────────────────────────────────────────────────
-  var cacheKey = _makeKey(candles);
-  var rsi;
-
-  if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.rsi !== null) {
-    rsi = _indicatorCache.rsi;
-  } else {
-    var closes = candles.map(function(c) { return c.close; });
-    var rsiArr = RSI.calculate({ period: RSI_PERIOD, values: closes });
-    if (rsiArr.length < 1) { base.reason = "RSI warming up"; return base; }
-    rsi = rsiArr[rsiArr.length - 1];
-    _indicatorCache = { key: cacheKey, rsi: rsi };
-  }
-
-  base.rsi = parseFloat(rsi.toFixed(1));
-
-  // ── ADX trend filter ──────────────────────────────────────────────────────
-  var adxVal = null;
-  var isTrending = true; // default pass if ADX disabled
-  if (ADX_ENABLED) {
-    var highs  = candles.map(function(c) { return c.high; });
-    var lows   = candles.map(function(c) { return c.low; });
-    var adxCloses = candles.map(function(c) { return c.close; });
-    var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: adxCloses });
-    adxVal = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
-    isTrending = adxVal === null ? true : adxVal >= ADX_MIN;
-  }
-  base.adx = adxVal !== null ? parseFloat(adxVal.toFixed(1)) : null;
-  base.isTrending = isTrending;
-
   // ── Swing points ───────────────────────────────────────────────────────────
   var swings = findSwingPoints(candles, SR_LOOKBACK);
   base.swingHighs = swings.swingHighs.slice(-3).map(function(s) { return s.price; });
@@ -274,13 +223,6 @@ function getSignal(candles, opts) {
     _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
   }
 
-  // ── ADX chop gate — block all entries when market is ranging ────────────────
-  if (ADX_ENABLED && !isTrending) {
-    var _adxSkip = "ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " < " + ADX_MIN + " (ranging)";
-    base.reason = "No setup (market ranging — " + _adxSkip + ")";
-    return base;
-  }
-
   // ── PATTERN 1: DOUBLE TOP (Bearish reversal) ────────────────────────────────
   var dblTop = { detected: false };
   var dblBot = { detected: false };
@@ -288,17 +230,17 @@ function getSignal(candles, opts) {
   var descTri = { detected: false };
   if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-  if (dblTop.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  if (dblTop.detected && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblTop.topLevel + SL_BUFFER; // above the twin tops
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] PE Double Top neckline break " + dblTop.neckline.toFixed(0) + " top=" + dblTop.topLevel.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    if (!silent) console.log("[PA " + _ist + "] PE Double Top neckline break " + dblTop.neckline.toFixed(0) + " top=" + dblTop.topLevel.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "STRONG",
       pattern: "Double Top",
       stopLoss: sl, slSource: "Above Double Top",
       srLevel: dblTop.neckline,
-      reason: "PE: Double Top neckline break " + dblTop.neckline.toFixed(0) + " | top=" + dblTop.topLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+      reason: "PE: Double Top neckline break " + dblTop.neckline.toFixed(0) + " | top=" + dblTop.topLevel.toFixed(0) + " | SL=" + sl,
     });
   }
   } // end PATTERN_DOUBLE_TOP
@@ -306,17 +248,17 @@ function getSignal(candles, opts) {
   // ── PATTERN 2: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
   if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-  if (dblBot.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  if (dblBot.detected && candleBody(sc) >= MIN_BODY) {
     var rawSL = dblBot.bottomLevel - SL_BUFFER; // below the twin bottoms
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] CE Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " bottom=" + dblBot.bottomLevel.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    if (!silent) console.log("[PA " + _ist + "] CE Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " bottom=" + dblBot.bottomLevel.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "STRONG",
       pattern: "Double Bottom",
       stopLoss: sl, slSource: "Below Double Bottom",
       srLevel: dblBot.neckline,
-      reason: "CE: Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " | bottom=" + dblBot.bottomLevel.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+      reason: "CE: Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " | bottom=" + dblBot.bottomLevel.toFixed(0) + " | SL=" + sl,
     });
   }
   } // end PATTERN_DOUBLE_BOTTOM
@@ -324,17 +266,17 @@ function getSignal(candles, opts) {
   // ── PATTERN 3: ASCENDING TRIANGLE (Bullish breakout) ──────────────────────
   if (PATTERN_ASC_TRIANGLE) {
   ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (ascTri.detected && rsi > RSI_CE_MIN && rsi < RSI_CE_MAX && candleBody(sc) >= MIN_BODY) {
+  if (ascTri.detected && candleBody(sc) >= MIN_BODY) {
     var rawSL = ascTri.risingLow - SL_BUFFER; // below the rising-low support line
     var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close - slPts).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] CE Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    if (!silent) console.log("[PA " + _ist + "] CE Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "STRONG",
       pattern: "Ascending Triangle",
       stopLoss: sl, slSource: "Rising Swing Low",
       srLevel: ascTri.resistance,
-      reason: "CE: Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+      reason: "CE: Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " | SL=" + sl,
     });
   }
   } // end PATTERN_ASC_TRIANGLE
@@ -342,17 +284,17 @@ function getSignal(candles, opts) {
   // ── PATTERN 4: DESCENDING TRIANGLE (Bearish breakout) ─────────────────────
   if (PATTERN_DESC_TRIANGLE) {
   descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (descTri.detected && rsi < RSI_PE_MAX && rsi > RSI_PE_MIN && candleBody(sc) >= MIN_BODY) {
+  if (descTri.detected && candleBody(sc) >= MIN_BODY) {
     var rawSL = descTri.fallingHigh + SL_BUFFER; // above the falling-high resistance line
     var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
     var sl = parseFloat((sc.close + slPts).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] PE Descending Triangle breakdown below " + descTri.support.toFixed(0) + " RSI=" + rsi.toFixed(1) + " SL=" + sl);
+    if (!silent) console.log("[PA " + _ist + "] PE Descending Triangle breakdown below " + descTri.support.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "STRONG",
       pattern: "Descending Triangle",
       stopLoss: sl, slSource: "Falling Swing High",
       srLevel: descTri.support,
-      reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | RSI=" + rsi.toFixed(0) + " | SL=" + sl,
+      reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | SL=" + sl,
     });
   }
   } // end PATTERN_DESC_TRIANGLE
@@ -378,18 +320,10 @@ function getSignal(candles, opts) {
   if (_auditDescTri.detected)_bearFormed.push("DescTri"   + (PATTERN_DESC_TRIANGLE ? "" : "(off)"));
 
   var _ceAuditChecks = [
-    { name: "RSI in CE range", ok: rsi > RSI_CE_MIN && rsi < RSI_CE_MAX,
-      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE_MIN + "-" + RSI_CE_MAX },
-    { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
-      detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
     { name: "Bullish pattern", ok: _bullFormed.length > 0,
       detail: _bullFormed.length ? _bullFormed.join(",") : "none formed (DblBot/AscTri)" },
   ];
   var _peAuditChecks = [
-    { name: "RSI in PE range", ok: rsi > RSI_PE_MIN && rsi < RSI_PE_MAX,
-      detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE_MAX },
-    { name: "ADX trending", ok: !ADX_ENABLED || isTrending,
-      detail: ADX_ENABLED ? ("ADX=" + (adxVal !== null ? adxVal.toFixed(1) : "n/a") + " vs >=" + ADX_MIN) : "ADX off" },
     { name: "Bearish pattern", ok: _bearFormed.length > 0,
       detail: _bearFormed.length ? _bearFormed.join(",") : "none formed (DblTop/DescTri)" },
   ];
@@ -435,7 +369,7 @@ function updateTrailingSL(candles, currentSL, side, opts) {
 }
 
 function reset() {
-  _indicatorCache = { key: null, rsi: null };
+  // No cross-call state to reset (pure per-bar pattern detection).
 }
 
 module.exports = {

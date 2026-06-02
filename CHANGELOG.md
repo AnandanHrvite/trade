@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Price Action — strip RSI/ADX confluence + dead knobs (pure chart-pattern entries)
+
+- **RSI + ADX gates removed.** Per the chart-pattern playbook (the images use pure price structure), PA no longer applies any RSI or ADX confluence. Entry = the pattern breakout candle, gated only by `PA_MIN_BODY`. Deleted from `price_action.js`: RSI calc + cache, ADX calc, the chop gate, and all RSI/ADX entry conditions. Removed settings: `PA_RSI_PERIOD/CE_MIN/CAPS_ENABLED/CE_MAX/PE_MAX/PE_MIN`, `PA_ADX_ENABLED/MIN`.
+- **Dead/zombie knobs removed.** `PA_VIX_STRONG_ONLY` (inert — all patterns are STRONG) and `PA_OPT_STOP_PCT` (display-only — it powered an "Option SL" readout on the live page but never triggered an exit) are gone from Settings; the misleading "Option SL" card was removed from the PA Live page. `PA_LIVE_DRY_RUN` was kept (it IS read, dynamically, via `liveDryRun.isDryRun`).
+- Net: the PA Settings page drops ~10 rows. Focus paths (paper / live / replay) verified loading + signalling clean.
+
 ### Change: Price Action rebuilt — 4 chart patterns only, structural SL + breakeven→swing trail
 
 - **Patterns cut to four.** Engulfing, Pin Bar, Inside Bar and Break-of-Structure are **removed** from `price_action.js`. PA now fires on exactly four chart patterns, all **ON by default**: **Double Bottom (W) → CE**, **Double Top (M) → PE**, **Ascending Triangle → CE**, **Descending Triangle → PE**. Detection uses the last two swing highs/lows (`PA_SR_LOOKBACK=30`), "equal" levels within `PA_CHART_PATTERN_TOL=12` pts, breakout candle body ≥ `PA_MIN_BODY=5`.
