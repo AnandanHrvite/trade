@@ -284,18 +284,28 @@ function notifyStarted({ mode, text }) {
 // paper modules destructure `const { notifyEntry } = require('./notify')` at
 // load time — reassigning notify.notifyEntry would never reach those bindings,
 // but the body of this stable function is always what they call.
-let _entryHook = null;
-let _exitHook  = null;
+// Keyed by harness id (e.g. "SWING-LIVE") so multiple harnesses can register
+// concurrently. Each hook filters by its own mode, so they never collide —
+// this is what lets all harnesses run in parallel.
+const _orderHooks = new Map();   // id → { entry, exit }
 
-/** Register live-order hooks. Pass { entry, exit } (either may be null). */
-function setOrderHooks({ entry = null, exit = null } = {}) {
-  _entryHook = entry;
-  _exitHook  = exit;
+/** Register live-order hooks under an id. Pass { entry, exit } (either may be null). */
+function setOrderHooks(id, { entry = null, exit = null } = {}) {
+  _orderHooks.set(id, { entry, exit });
 }
-/** Remove any registered live-order hooks. */
-function clearOrderHooks() {
-  _entryHook = null;
-  _exitHook  = null;
+/** Remove the live-order hooks registered under an id. */
+function clearOrderHooks(id) {
+  _orderHooks.delete(id);
+}
+function _fireEntryHooks(p) {
+  for (const h of _orderHooks.values()) {
+    if (h.entry) { try { h.entry(p); } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); } }
+  }
+}
+function _fireExitHooks(p) {
+  for (const h of _orderHooks.values()) {
+    if (h.exit) { try { h.exit(p); } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); } }
+  }
 }
 
 /**
@@ -305,7 +315,7 @@ function clearOrderHooks() {
 function notifyEntry(p) {
   // Fire the live-order hook FIRST — must run regardless of Telegram gating
   // (a mode with TG entry alerts disabled must still place its real order).
-  if (_entryHook) { try { _entryHook(p); } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); } }
+  _fireEntryHooks(p);
 
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;
@@ -340,7 +350,7 @@ function notifyEntry(p) {
  */
 function notifyExit(p) {
   // Fire the live-order hook FIRST — see notifyEntry note on Telegram gating.
-  if (_exitHook) { try { _exitHook(p); } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); } }
+  _fireExitHooks(p);
 
   const group = modeGroup(p.mode);
   if (!isModeEnabled(group)) return;

@@ -201,6 +201,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_trade_position.json     # Crash recovery — swing position
   .active_scalp_position.json     # Crash recovery — scalp position
   .active_pa_position.json        # Crash recovery — PA position
+  .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   swing_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   scalp_paper_trades_log.jsonl
   pa_paper_trades_log.jsonl

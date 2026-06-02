@@ -36,27 +36,59 @@
  *     Hard SL on exchange via placeSLMOrder when enabled.
  *
  * Concurrency:
- *   Only one harness can be installed at a time (process-wide lock). Calling
- *   installHarness while another is active throws.
+ *   Multiple harnesses (one per mode) can be installed at once — each registers
+ *   its own notify hooks keyed by mode and filters payloads by its modeTag, so
+ *   they run in parallel without colliding. Re-installing the SAME mode throws.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+const fs           = require("fs");
+const path         = require("path");
 const notify       = require("../utils/notify");
 const tradeLogger  = require("../utils/tradeLogger");
 const fyersBroker  = require("./fyersBroker");
 let   zerodhaBroker = null;
 try { zerodhaBroker = require("./zerodhaBroker"); } catch (_) { /* optional */ }
 
-let _installed = false;
-let _orig      = null;
-let _config    = null;
+// Registry of concurrently-installed harnesses, keyed by mode ("SWING-LIVE", …).
+// Each filters notify payloads by its own modeTag, so multiple can coexist —
+// this is what lets every harness run in parallel.
+const _harnesses = new Map();    // mode → config
 
 // In-memory tracking of harness-placed orders for reconciliation + status
 const _liveOrders = new Map();   // sessionId → [{symbol, side, qty, orderId, ts, status, ...}]
-const _harnessLog = [];          // ring buffer of harness events for /live-harness/status
+
+// Event log persisted to disk so the "Recent harness events" panel survives a
+// server restart / deploy (the ring buffer used to be wiped on every reboot).
+const DATA_DIR        = path.join(require("os").homedir(), "trading-data");
+const HARNESS_LOG_FILE = path.join(DATA_DIR, ".harness_events.json");
+const _harnessLog     = [];      // ring buffer of harness events for /live-harness/status
+
+function _loadHarnessLog() {
+  try {
+    const raw = fs.readFileSync(HARNESS_LOG_FILE, "utf8");
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) _harnessLog.push(...arr.slice(-500));
+  } catch (_) { /* no prior log */ }
+}
+let _flushTimer = null;
+function _persistHarnessLog() {
+  // debounce writes — events can burst during entry/exit
+  if (_flushTimer) return;
+  _flushTimer = setTimeout(() => {
+    _flushTimer = null;
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(HARNESS_LOG_FILE, JSON.stringify(_harnessLog.slice(-500)));
+    } catch (e) { console.error(`[harness] failed to persist event log: ${e.message}`); }
+  }, 1000);
+}
+_loadHarnessLog();
+
 function _logEvent(evt) {
   _harnessLog.push({ t: Date.now(), ...evt });
   if (_harnessLog.length > 500) _harnessLog.splice(0, _harnessLog.length - 500);
+  _persistHarnessLog();
 }
 
 // ── Broker dispatch ─────────────────────────────────────────────────────────
@@ -85,7 +117,7 @@ function _makeEntryHook(cfg) {
     if (p.mode !== expectedModeTag) return;
 
     if (cfg.dryRun) {
-      _logEvent({ event: "DRY_RUN_ENTRY", side: p.side, symbol: p.symbol, qty: p.qty, sl: p.stopLoss });
+      _logEvent({ mode: cfg.mode, event: "DRY_RUN_ENTRY", side: p.side, symbol: p.symbol, qty: p.qty, sl: p.stopLoss });
       console.log(`🧪 [HARNESS DRY-RUN][${cfg.mode}] Would BUY ${p.qty}× ${p.symbol} | SL=${p.stopLoss} | reason=${p.reason}`);
       return;
     }
@@ -103,7 +135,7 @@ function _makeEntryHook(cfg) {
     })
       .then(result => {
         if (result && result.success) {
-          _logEvent({ event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
+          _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] BUY filled — orderId=${result.orderId}`);
           // Log to live trade log (separate from paper log)
           try {
@@ -121,12 +153,12 @@ function _makeEntryHook(cfg) {
             });
           } catch (_) {}
         } else {
-          _logEvent({ event: "REAL_ENTRY_FAIL", symbol: p.symbol, raw: result && result.raw });
+          _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_FAIL", symbol: p.symbol, raw: result && result.raw });
           console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY FAILED — paper opened virtual position but broker rejected. Symbol=${p.symbol} | ${JSON.stringify(result && result.raw).slice(0, 200)}`);
         }
       })
       .catch(err => {
-        _logEvent({ event: "REAL_ENTRY_EXCEPTION", symbol: p.symbol, error: err.message });
+        _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY exception: ${err.message}`);
       });
   };
@@ -138,7 +170,7 @@ function _makeExitHook(cfg) {
     if (p.mode !== expectedModeTag) return;
 
     if (cfg.dryRun) {
-      _logEvent({ event: "DRY_RUN_EXIT", side: p.side, symbol: p.symbol, pnl: p.pnl });
+      _logEvent({ mode: cfg.mode, event: "DRY_RUN_EXIT", side: p.side, symbol: p.symbol, pnl: p.pnl });
       console.log(`🧪 [HARNESS DRY-RUN][${cfg.mode}] Would SELL ${p.symbol} (square-off) | paper-pnl=${p.pnl}`);
       return;
     }
@@ -153,7 +185,7 @@ function _makeExitHook(cfg) {
     })
       .then(result => {
         if (result && result.success) {
-          _logEvent({ event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
+          _logEvent({ mode: cfg.mode, event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] SELL filled — orderId=${result.orderId} | paper-pnl=${p.pnl}`);
           try {
             tradeLogger.appendTradeLog(cfg.liveLogKey, {
@@ -170,12 +202,12 @@ function _makeExitHook(cfg) {
             });
           } catch (_) {}
         } else {
-          _logEvent({ event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
+          _logEvent({ mode: cfg.mode, event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
           console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
         }
       })
       .catch(err => {
-        _logEvent({ event: "REAL_EXIT_EXCEPTION", symbol: p.symbol, error: err.message });
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL exception: ${err.message}`);
       });
   };
@@ -198,18 +230,18 @@ function _makeExitHook(cfg) {
  * Returns nothing; uninstall via uninstallHarness().
  */
 function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, liveLogKey } = {}) {
-  if (_installed) {
-    throw new Error(`Live harness already installed for ${_config.mode}. Uninstall first.`);
-  }
   if (!mode || !modeTag || !broker) {
     throw new Error("installHarness requires { mode, modeTag, broker }");
+  }
+  if (_harnesses.has(mode)) {
+    throw new Error(`Live harness already installed for ${mode}. Uninstall first.`);
   }
   // Default to dry-run unless explicitly set false
   const dr = (dryRun !== undefined)
     ? dryRun
     : ((process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "false");
 
-  _config = {
+  const cfg = {
     mode,
     modeTag,
     broker,
@@ -219,30 +251,42 @@ function installHarness({ mode, modeTag, broker, dryRun, isFutures, defaultQty, 
     liveLogKey: liveLogKey || null,
   };
 
-  notify.setOrderHooks({
-    entry: _makeEntryHook(_config),
-    exit:  _makeExitHook(_config),
+  _harnesses.set(mode, cfg);
+  notify.setOrderHooks(mode, {
+    entry: _makeEntryHook(cfg),
+    exit:  _makeExitHook(cfg),
   });
 
-  _installed = true;
-  _logEvent({ event: "HARNESS_INSTALLED", mode, broker, dryRun: dr });
+  _logEvent({ mode, event: "HARNESS_INSTALLED", broker, dryRun: dr });
   console.log(`🔧 [HARNESS][${mode}] Installed — broker=${broker} mode=${dr ? "DRY-RUN (no real orders)" : "🔴 LIVE (real orders)"}`);
   return { dryRun: dr };
 }
 
-function uninstallHarness() {
-  if (!_installed) return;
-  notify.clearOrderHooks();
-  _logEvent({ event: "HARNESS_UNINSTALLED", mode: _config.mode });
-  console.log(`🔧 [HARNESS][${_config.mode}] Uninstalled`);
-  _installed = false;
-  _orig      = null;
-  _config    = null;
+function uninstallHarness(mode) {
+  // No mode → uninstall all (used by shutdown paths).
+  const modes = mode ? [mode] : [..._harnesses.keys()];
+  for (const m of modes) {
+    if (!_harnesses.has(m)) continue;
+    notify.clearOrderHooks(m);
+    _logEvent({ mode: m, event: "HARNESS_UNINSTALLED" });
+    console.log(`🔧 [HARNESS][${m}] Uninstalled`);
+    _harnesses.delete(m);
+  }
 }
 
-function isInstalled() { return _installed; }
-function getConfig()   { return _config ? { ..._config } : null; }
-function getRecentEvents(limit = 50) { return _harnessLog.slice(-limit); }
+function isInstalled(mode) {
+  return mode ? _harnesses.has(mode) : _harnesses.size > 0;
+}
+function getConfig(mode) {
+  if (mode) return _harnesses.has(mode) ? { ..._harnesses.get(mode) } : null;
+  // No mode → first installed config (legacy single-harness callers).
+  const first = _harnesses.values().next().value;
+  return first ? { ...first } : null;
+}
+function getRecentEvents(limit = 50, mode) {
+  const src = mode ? _harnessLog.filter(e => e.mode === mode) : _harnessLog;
+  return src.slice(-limit);
+}
 
 module.exports = {
   installHarness,

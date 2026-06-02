@@ -76,11 +76,11 @@ function _invokePaperRoute(method, urlPath) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
-  const cfg = liveHarness.getConfig();
+  const cfg = liveHarness.getConfig("PA-LIVE");
   res.json({
-    installed:    liveHarness.isInstalled(),
+    installed:    liveHarness.isInstalled("PA-LIVE"),
     config:       cfg,
-    recentEvents: liveHarness.getRecentEvents(50),
+    recentEvents: liveHarness.getRecentEvents(50, "PA-LIVE"),
   });
 });
 
@@ -92,8 +92,8 @@ router.get("/start", async (req, res) => {
     return res.status(401).json({ success: false, error: "Fyers not authenticated for orders." });
   }
 
-  if (liveHarness.isInstalled()) {
-    return res.status(409).json({ success: false, error: "Harness already installed. Stop first." });
+  if (liveHarness.isInstalled("PA-LIVE")) {
+    return res.status(409).json({ success: false, error: "PA-LIVE harness is already running. Stop it first." });
   }
 
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
@@ -120,7 +120,7 @@ router.get("/start", async (req, res) => {
     const startResp = await _invokePaperRoute("GET", "/start");
     if (startResp.status >= 400 && startResp.status !== 302) {
       // Roll back the harness if paper failed to start
-      liveHarness.uninstallHarness();
+      liveHarness.uninstallHarness("PA-LIVE");
       return res.status(startResp.status).json({
         success: false,
         error:   `paPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
@@ -135,29 +135,29 @@ router.get("/start", async (req, res) => {
       paperStartResp: startResp,
     });
   } catch (err) {
-    liveHarness.uninstallHarness();
+    liveHarness.uninstallHarness("PA-LIVE");
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/stop", async (req, res) => {
-  if (!liveHarness.isInstalled()) {
+  if (!liveHarness.isInstalled("PA-LIVE")) {
     return res.status(400).json({ success: false, error: "Harness not installed." });
   }
   try {
     const stopResp = await _invokePaperRoute("GET", "/stop");
-    liveHarness.uninstallHarness();
+    liveHarness.uninstallHarness("PA-LIVE");
     return res.json({ success: true, message: "PA-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
   } catch (err) {
     // Try uninstall anyway so we don't leave the patches dangling
-    try { liveHarness.uninstallHarness(); } catch (_) {}
+    try { liveHarness.uninstallHarness("PA-LIVE"); } catch (_) {}
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/", (req, res) => {
-  const cfg = liveHarness.getConfig();
-  const installed = liveHarness.isInstalled();
+  const cfg = liveHarness.getConfig("PA-LIVE");
+  const installed = liveHarness.isInstalled("PA-LIVE");
   const dryRunCurrent = liveDryRun.isDryRun("PA");
   const html = `<!DOCTYPE html>
 <html><head>

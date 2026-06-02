@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Live harnesses now run in parallel + event log survives restart
+
+- **Multiple harnesses at once.** The live harness was a process-wide singleton — only one strategy's harness could be installed at a time, so "Start All (Harness)" actually installed Swing and then **409'd Scalp + ORB** ("already installed"). The harness is now a per-mode registry: each strategy registers its own `notify` order hooks keyed by mode and filters payloads by its `modeTag`, so Swing / Scalp / ORB / PA harnesses run **concurrently without colliding**. Re-installing the *same* mode still throws. (`notify.js` now holds a `Map` of hook-sets instead of a single pair.)
+- **Harness event log persists across restarts.** The "Recent harness events" ring buffer is now written to `~/trading-data/.harness_events.json` (debounced) and reloaded on boot, so a deploy / PM2 restart no longer wipes it to `[]`. Events are tagged with their mode; each harness's status panel shows only its own events.
+
 ### Change: Swing SL — breakeven removed, candle-trail overlay added, `candle` mode dropped
 
 - **Breakeven removed.** `BREAKEVEN_PTS` is gone from the Swing settings page and from all three engines (paper / live / backtest). It was inert in `ema`/`psar` mode anyway (only ran in the old `candle` mode), so removing it changes nothing for current `ema`-mode sessions.

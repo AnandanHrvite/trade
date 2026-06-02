@@ -75,17 +75,17 @@ function _invokePaperRoute(method, urlPath) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
-  const cfg = liveHarness.getConfig();
+  const cfg = liveHarness.getConfig("SWING-LIVE");
   res.json({
-    installed:    liveHarness.isInstalled(),
+    installed:    liveHarness.isInstalled("SWING-LIVE"),
     config:       cfg,
-    recentEvents: liveHarness.getRecentEvents(50),
+    recentEvents: liveHarness.getRecentEvents(50, "SWING-LIVE"),
   });
 });
 
 router.get("/start", async (req, res) => {
-  if (liveHarness.isInstalled()) {
-    return res.status(409).json({ success: false, error: "A live harness is already installed (one at a time). Stop it first." });
+  if (liveHarness.isInstalled("SWING-LIVE")) {
+    return res.status(409).json({ success: false, error: "SWING-LIVE harness is already running. Stop it first." });
   }
 
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
@@ -115,7 +115,7 @@ router.get("/start", async (req, res) => {
   try {
     const startResp = await _invokePaperRoute("GET", "/start");
     if (startResp.status >= 400 && startResp.status !== 302) {
-      liveHarness.uninstallHarness();
+      liveHarness.uninstallHarness("SWING-LIVE");
       return res.status(startResp.status).json({
         success: false,
         error:   `swingPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
@@ -130,28 +130,28 @@ router.get("/start", async (req, res) => {
       paperStartResp: startResp,
     });
   } catch (err) {
-    liveHarness.uninstallHarness();
+    liveHarness.uninstallHarness("SWING-LIVE");
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/stop", async (req, res) => {
-  if (!liveHarness.isInstalled()) {
+  if (!liveHarness.isInstalled("SWING-LIVE")) {
     return res.status(400).json({ success: false, error: "Harness not installed." });
   }
   try {
     const stopResp = await _invokePaperRoute("GET", "/stop");
-    liveHarness.uninstallHarness();
+    liveHarness.uninstallHarness("SWING-LIVE");
     return res.json({ success: true, message: "SWING-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
   } catch (err) {
-    try { liveHarness.uninstallHarness(); } catch (_) {}
+    try { liveHarness.uninstallHarness("SWING-LIVE"); } catch (_) {}
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/", (req, res) => {
-  const cfg = liveHarness.getConfig();
-  const installed = liveHarness.isInstalled();
+  const cfg = liveHarness.getConfig("SWING-LIVE");
+  const installed = liveHarness.isInstalled("SWING-LIVE");
   const dryRunCurrent = liveDryRun.isDryRun("SWING");
   const html = `<!DOCTYPE html>
 <html><head>
