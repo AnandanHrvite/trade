@@ -1663,6 +1663,10 @@ var ALL_BTN_POLL = [
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
+  // Harness is a paper-side concept (Paper + dry-run live log) — only show it
+  // when the PAPER source is selected; hide it under LIVE.
+  var hb = document.getElementById('btn-all-harness');
+  if(hb) hb.style.display = (_dashSrc === 'live') ? 'none' : '';
   var b = document.getElementById('btn-all-start');
   if(!b) return;
   b.classList.remove('run-paper','run-live','is-active-paper','is-active-live','is-locked');
