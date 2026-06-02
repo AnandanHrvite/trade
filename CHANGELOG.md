@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Price Action — retest-confirmation entry, SL cap restored, pattern drawn on chart
+
+- **Retest entry (kills false breakouts).** A breakout no longer enters on the breakout candle. It's parked as *pending* and only fires when price pulls back to the broken level and closes back on the breakout side (a retest), within `PA_RETEST_MAX_WAIT=4` candles and `PA_RETEST_TOL_PTS=10`. If price closes back through the level, the breakout is discarded. Replay diagnostic over 8 sessions showed ~23% WR from raw-breakout entries (breakout-then-instant-reversal) — this targets that leak. All internal knobs (no Settings rows).
+- **SL cap restored (internal).** Structural SL is clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]` again — the uncapped version was producing −40 to −58 pt losers on failed breakouts. Still computed internally (not Settings knobs).
+- **Pattern drawn on the chart (paper / live / replay).** The detector now returns the pattern's anchor points (twin tops/bottoms, triangle pivots) and neckline. The chart shows them as yellow labelled dots (Top1/Bottom1/R1…) plus a dashed **Neckline** line, so the W / M / triangle is actually visible — alongside the existing Entry/SL lines and entry/exit arrows. Persisted per-trade so replayed sessions render each trade's pattern.
+
 ### Change: Price Action — structural SL (no clamp) + settings declutter
 
 - **SL is now purely structural — no min/max clamp.** The stop sits at the pattern's invalidation level (just below the twin bottoms / rising-low support for CE; just above the twin tops / falling-high resistance for PE) with a small internal buffer. Removed the `[PA_MIN_SL_PTS, PA_MAX_SL_PTS]` clamp from the engine **and** the duplicate re-clamp in paPaper/paLive auto-entry — the engine's structural SL is now used verbatim. (Manual-entry button still uses the prev-candle SL with hidden defaults.) Note: stops can be wider than before on tall patterns — this is intentional, matching the chart playbook.

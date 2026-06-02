@@ -107,7 +107,9 @@ function checkDoubleTop(candle, swingHighs, candles, tolerancePts) {
   // Current candle must break below neckline (close below, open was above or near)
   var topLevel = (sh1.price + sh2.price) / 2;
   if (candle.close < neckline && candle.open >= neckline) {
-    return { detected: true, neckline: neckline, topLevel: topLevel };
+    return { detected: true, neckline: neckline, topLevel: topLevel,
+      points: [ { time: sh1.time, price: sh1.price, label: "Top 1" },
+                { time: sh2.time, price: sh2.price, label: "Top 2" } ] };
   }
   return { detected: false };
 }
@@ -126,7 +128,9 @@ function checkDoubleBottom(candle, swingLows, candles, tolerancePts) {
   if (neckline === -Infinity) return { detected: false };
   var bottomLevel = (sl1.price + sl2.price) / 2;
   if (candle.close > neckline && candle.open <= neckline) {
-    return { detected: true, neckline: neckline, bottomLevel: bottomLevel };
+    return { detected: true, neckline: neckline, bottomLevel: bottomLevel,
+      points: [ { time: sl1.time, price: sl1.price, label: "Bottom 1" },
+                { time: sl2.time, price: sl2.price, label: "Bottom 2" } ] };
   }
   return { detected: false };
 }
@@ -149,7 +153,11 @@ function checkAscendingTriangle(candle, swingHighs, swingLows, tolerancePts) {
   var resistanceLevel = (sh1.price + sh2.price) / 2;
   // Breakout: current candle closes above resistance
   if (candle.close > resistanceLevel && candle.open <= resistanceLevel) {
-    return { detected: true, resistance: resistanceLevel, risingLow: sl2.price };
+    return { detected: true, resistance: resistanceLevel, risingLow: sl2.price,
+      points: [ { time: sh1.time, price: sh1.price, label: "R1" },
+                { time: sh2.time, price: sh2.price, label: "R2" },
+                { time: sl1.time, price: sl1.price, label: "Low 1" },
+                { time: sl2.time, price: sl2.price, label: "Low 2" } ] };
   }
   return { detected: false };
 }
@@ -167,21 +175,46 @@ function checkDescendingTriangle(candle, swingHighs, swingLows, tolerancePts) {
   var supportLevel = (sl1.price + sl2.price) / 2;
   // Breakout: current candle closes below support
   if (candle.close < supportLevel && candle.open >= supportLevel) {
-    return { detected: true, support: supportLevel, fallingHigh: sh2.price };
+    return { detected: true, support: supportLevel, fallingHigh: sh2.price,
+      points: [ { time: sl1.time, price: sl1.price, label: "S1" },
+                { time: sl2.time, price: sl2.price, label: "S2" },
+                { time: sh1.time, price: sh1.price, label: "High 1" },
+                { time: sh2.time, price: sh2.price, label: "High 2" } ] };
   }
   return { detected: false };
+}
+
+// ── Pending breakout (retest watch) — module state across candles ─────────────
+let _pendingBreakout = null; // { side, pattern, structLevel, level, points, slSource, barsWaited }
+
+// Structural SL placement, clamped to [minPts, maxPts] distance from entry.
+function _clampedSL(side, structLevel, entryClose, buffer, minPts, maxPts) {
+  if (side === "CE") {
+    var raw = structLevel - buffer;                 // just below the pattern
+    var gap = Math.max(Math.min(entryClose - raw, maxPts), minPts);
+    return parseFloat((entryClose - gap).toFixed(2));
+  }
+  var rawP = structLevel + buffer;                  // just above the pattern
+  var gapP = Math.max(Math.min(rawP - entryClose, maxPts), minPts);
+  return parseFloat((entryClose + gapP).toFixed(2));
 }
 
 // ── Main signal function ─────────────────────────────────────────────────────
 function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
+  var preview = opts.preview === true; // read-only call (UI/status) — must not mutate pending state
 
   // All of these are computed/derived internally — not exposed as Settings knobs.
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
   var SR_LOOKBACK   = parseInt(cfg("PA_SR_LOOKBACK", "30"), 10);
-  var SL_BUFFER     = parseFloat(cfg("PA_SL_BUFFER_PTS", "3")); // small cushion beyond the pattern level for the structural SL
-  var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
+  var SL_BUFFER     = parseFloat(cfg("PA_SL_BUFFER_PTS", "3")); // cushion beyond the pattern level
+  var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));    // floor on SL distance
+  var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));   // cap on structural SL distance
+  var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for "equal" levels
+  var RETEST_ENABLED   = cfg("PA_RETEST_ENABLED", "true") === "true"; // wait for breakout retest before entry
+  var RETEST_TOL       = parseFloat(cfg("PA_RETEST_TOL_PTS", "10"));   // how close price must return to the broken level
+  var RETEST_MAX_WAIT  = parseInt(cfg("PA_RETEST_MAX_WAIT", "4"), 10); // candles to wait for the retest
   // Per-pattern toggles (the only four entry logics)
   var PATTERN_DOUBLE_TOP    = cfg("PA_PATTERN_DOUBLE_TOP",    "true") === "true";
   var PATTERN_DOUBLE_BOTTOM = cfg("PA_PATTERN_DOUBLE_BOTTOM", "true") === "true";
@@ -190,7 +223,7 @@ function getSignal(candles, opts) {
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
-    pattern: null, srLevel: null,
+    pattern: null, srLevel: null, patternLevel: null, patternPoints: null,
     swingHighs: [], swingLows: [],
     signalStrength: null,
   };
@@ -207,6 +240,7 @@ function getSignal(candles, opts) {
   if (!opts.skipTimeCheck) {
     var windowCheck = isInTradingWindow(sc.time);
     if (!windowCheck.ok) {
+      if (_pendingBreakout && !preview) _pendingBreakout = null; // outside window — drop stale pending
       base.reason = windowCheck.reason;
       return base;
     }
@@ -222,77 +256,84 @@ function getSignal(candles, opts) {
     _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
   }
 
-  // ── PATTERN 1: DOUBLE TOP (Bearish reversal) ────────────────────────────────
+  // Build a ready-to-enter signal from captured pattern info (structural SL + cap).
+  function _enter(side, pattern, structLevel, level, points, slSource) {
+    var sl = _clampedSL(side, structLevel, sc.close, SL_BUFFER, MIN_SL_PTS, MAX_SL_PTS);
+    var dir = side === "CE" ? "above" : "below";
+    if (!silent) console.log("[PA " + _ist + "] " + side + " " + pattern + " " + dir + " " + level.toFixed(0) + " SL=" + sl);
+    return Object.assign({}, base, {
+      signal: side === "CE" ? "BUY_CE" : "BUY_PE", signalStrength: "STRONG",
+      pattern: pattern, stopLoss: sl, slSource: slSource,
+      srLevel: level, patternLevel: level, patternPoints: points || null,
+      reason: side + ": " + pattern + " " + dir + " " + level.toFixed(0) + " | SL=" + sl,
+    });
+  }
+  // Snapshot fields for a breakout still waiting on its retest.
+  function _pendingSnapshot(pb, note) {
+    base.reason = "Breakout @ " + pb.level.toFixed(0) + " — " + note;
+    base.pattern = pb.pattern + " (pending retest)";
+    base.srLevel = pb.level; base.patternLevel = pb.level; base.patternPoints = pb.points;
+    return base;
+  }
+
+  // ── RETEST WATCH ────────────────────────────────────────────────────────────
+  // A confirmed breakout is parked until price pulls back to the broken level and
+  // closes back on the breakout side (a "retest"). Filters breakout-then-instant-
+  // reversal false signals. The breakout candle itself never enters.
+  if (RETEST_ENABLED && _pendingBreakout) {
+    var pb = _pendingBreakout;
+    if (preview) return _pendingSnapshot(pb, "awaiting retest");
+    pb.barsWaited = (pb.barsWaited || 0) + 1;
+    var L = pb.level;
+    if (pb.side === "CE" && sc.close < L - RETEST_TOL) { _pendingBreakout = null; base.reason = "Breakout failed — closed back below " + L.toFixed(0); return base; }
+    if (pb.side === "PE" && sc.close > L + RETEST_TOL) { _pendingBreakout = null; base.reason = "Breakout failed — closed back above " + L.toFixed(0); return base; }
+    var retestCE = pb.side === "CE" && sc.low  <= L + RETEST_TOL && sc.close > L;
+    var retestPE = pb.side === "PE" && sc.high >= L - RETEST_TOL && sc.close < L;
+    if (retestCE || retestPE) {
+      var sigR = _enter(pb.side, pb.pattern, pb.structLevel, pb.level, pb.points, pb.slSource);
+      _pendingBreakout = null;
+      return sigR;
+    }
+    if (pb.barsWaited >= RETEST_MAX_WAIT) { _pendingBreakout = null; base.reason = "Retest not seen in " + RETEST_MAX_WAIT + " candles — skipped " + pb.pattern; return base; }
+    return _pendingSnapshot(pb, "awaiting retest (" + pb.barsWaited + "/" + RETEST_MAX_WAIT + ")");
+  }
+
+  // ── PATTERN DETECTION ───────────────────────────────────────────────────────
+  // A fresh breakout either enters immediately (retest off) or is parked for its retest.
+  function _onBreakout(side, pattern, structLevel, level, points, slSource) {
+    if (!RETEST_ENABLED) return _enter(side, pattern, structLevel, level, points, slSource);
+    if (!preview) {
+      _pendingBreakout = { side: side, pattern: pattern, structLevel: structLevel, level: level, points: points, slSource: slSource, barsWaited: 0 };
+      if (!silent) console.log("[PA " + _ist + "] " + side + " " + pattern + " breakout @ " + level.toFixed(0) + " — awaiting retest");
+    }
+    return _pendingSnapshot({ pattern: pattern, level: level, points: points }, "awaiting retest (0/" + RETEST_MAX_WAIT + ")");
+  }
+
   var dblTop = { detected: false };
   var dblBot = { detected: false };
   var ascTri = { detected: false };
   var descTri = { detected: false };
+
   if (PATTERN_DOUBLE_TOP) {
-  dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-  if (dblTop.detected && candleBody(sc) >= MIN_BODY) {
-    // SL = just above the twin tops (pattern invalidation), no min/max clamp
-    var sl = parseFloat((dblTop.topLevel + SL_BUFFER).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] PE Double Top neckline break " + dblTop.neckline.toFixed(0) + " top=" + dblTop.topLevel.toFixed(0) + " SL=" + sl);
-    return Object.assign({}, base, {
-      signal: "BUY_PE", signalStrength: "STRONG",
-      pattern: "Double Top",
-      stopLoss: sl, slSource: "Above Double Top",
-      srLevel: dblTop.neckline,
-      reason: "PE: Double Top neckline break " + dblTop.neckline.toFixed(0) + " | top=" + dblTop.topLevel.toFixed(0) + " | SL=" + sl,
-    });
+    dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
+    if (dblTop.detected && candleBody(sc) >= MIN_BODY)
+      return _onBreakout("PE", "Double Top", dblTop.topLevel, dblTop.neckline, dblTop.points, "Above Double Top");
   }
-  } // end PATTERN_DOUBLE_TOP
-
-  // ── PATTERN 2: DOUBLE BOTTOM (Bullish reversal) ───────────────────────────
   if (PATTERN_DOUBLE_BOTTOM) {
-  dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-  if (dblBot.detected && candleBody(sc) >= MIN_BODY) {
-    // SL = just below the twin bottoms (pattern invalidation), no min/max clamp
-    var sl = parseFloat((dblBot.bottomLevel - SL_BUFFER).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] CE Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " bottom=" + dblBot.bottomLevel.toFixed(0) + " SL=" + sl);
-    return Object.assign({}, base, {
-      signal: "BUY_CE", signalStrength: "STRONG",
-      pattern: "Double Bottom",
-      stopLoss: sl, slSource: "Below Double Bottom",
-      srLevel: dblBot.neckline,
-      reason: "CE: Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " | bottom=" + dblBot.bottomLevel.toFixed(0) + " | SL=" + sl,
-    });
+    dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
+    if (dblBot.detected && candleBody(sc) >= MIN_BODY)
+      return _onBreakout("CE", "Double Bottom", dblBot.bottomLevel, dblBot.neckline, dblBot.points, "Below Double Bottom");
   }
-  } // end PATTERN_DOUBLE_BOTTOM
-
-  // ── PATTERN 3: ASCENDING TRIANGLE (Bullish breakout) ──────────────────────
   if (PATTERN_ASC_TRIANGLE) {
-  ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (ascTri.detected && candleBody(sc) >= MIN_BODY) {
-    // SL = just below the rising-low support line (pattern invalidation), no clamp
-    var sl = parseFloat((ascTri.risingLow - SL_BUFFER).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] CE Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " SL=" + sl);
-    return Object.assign({}, base, {
-      signal: "BUY_CE", signalStrength: "STRONG",
-      pattern: "Ascending Triangle",
-      stopLoss: sl, slSource: "Rising Swing Low",
-      srLevel: ascTri.resistance,
-      reason: "CE: Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " | SL=" + sl,
-    });
+    ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+    if (ascTri.detected && candleBody(sc) >= MIN_BODY)
+      return _onBreakout("CE", "Ascending Triangle", ascTri.risingLow, ascTri.resistance, ascTri.points, "Rising Swing Low");
   }
-  } // end PATTERN_ASC_TRIANGLE
-
-  // ── PATTERN 4: DESCENDING TRIANGLE (Bearish breakout) ─────────────────────
   if (PATTERN_DESC_TRIANGLE) {
-  descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-  if (descTri.detected && candleBody(sc) >= MIN_BODY) {
-    // SL = just above the falling-high resistance line (pattern invalidation), no clamp
-    var sl = parseFloat((descTri.fallingHigh + SL_BUFFER).toFixed(2));
-    if (!silent) console.log("[PA " + _ist + "] PE Descending Triangle breakdown below " + descTri.support.toFixed(0) + " SL=" + sl);
-    return Object.assign({}, base, {
-      signal: "BUY_PE", signalStrength: "STRONG",
-      pattern: "Descending Triangle",
-      stopLoss: sl, slSource: "Falling Swing High",
-      srLevel: descTri.support,
-      reason: "PE: Descending Triangle breakdown below " + descTri.support.toFixed(0) + " | SL=" + sl,
-    });
+    descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
+    if (descTri.detected && candleBody(sc) >= MIN_BODY)
+      return _onBreakout("PE", "Descending Triangle", descTri.fallingHigh, descTri.support, descTri.points, "Falling Swing High");
   }
-  } // end PATTERN_DESC_TRIANGLE
 
   // ── No signal — build reason ───────────────────────────────────────────────
   base.reason = "No setup";
@@ -364,7 +405,7 @@ function updateTrailingSL(candles, currentSL, side, opts) {
 }
 
 function reset() {
-  // No cross-call state to reset (pure per-bar pattern detection).
+  _pendingBreakout = null; // drop any breakout awaiting its retest
 }
 
 module.exports = {

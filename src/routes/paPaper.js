@@ -292,6 +292,9 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     isTrending:       entryMeta.isTrending     != null ? entryMeta.isTrending     : null,
     patternAtEntry:   entryMeta.patternAtEntry || null,
     srLevelAtEntry:   entryMeta.srLevelAtEntry != null ? entryMeta.srLevelAtEntry : null,
+    // Pattern geometry for the chart (neckline/breakout line + pivot points)
+    patternLevel:     entryMeta.patternLevel  != null ? entryMeta.patternLevel  : null,
+    patternPoints:    entryMeta.patternPoints || null,
   };
 
   state.optionSymbol = symbol;
@@ -386,6 +389,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     isTrending:      state.position.isTrending      != null ? state.position.isTrending      : null,
     patternAtEntry:  state.position.patternAtEntry  || null,
     srLevelAtEntry:  state.position.srLevelAtEntry  != null ? state.position.srLevelAtEntry  : null,
+    patternLevel:    state.position.patternLevel    != null ? state.position.patternLevel    : null,
+    patternPoints:   state.position.patternPoints   || null,
     mfeSpotPts:      state.position.mfeSpotPts       || 0,
     mfePnl:          state.position.mfePnl           || 0,
     maeSpotPts:      state.position.maeSpotPts       || 0,
@@ -731,6 +736,8 @@ async function resolveAndEnter(side, spot, result) {
       isTrending:     result.isTrending != null ? result.isTrending : null,
       patternAtEntry: result.pattern    || null,
       srLevelAtEntry: result.srLevel    != null ? result.srLevel : null,
+      patternLevel:   result.patternLevel  != null ? result.patternLevel : null,
+      patternPoints:  result.patternPoints || null,
     });
   } catch (err) {
     log(`⚠️ [PA-PAPER] Symbol resolution failed: ${err.message}`);
@@ -1034,7 +1041,7 @@ router.post("/manualEntry", async (req, res) => {
   } else {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
-  const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true }) : null;
+  const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true, preview: true }) : null;
 
   try {
     const optResult = await validateAndGetOptionSymbol(spot, side);
@@ -1086,7 +1093,31 @@ router.get("/status/chart-data", (req, res) => {
       return [side, pattern, lvl ? "@" + lvl[2] : ""].filter(Boolean).join(" ");
     };
 
-    const markers = [...swingMarkers];
+    // Pattern pivots (the twin tops/bottoms / triangle anchors) so the W/M/triangle
+    // shape is visible on the chart. Yellow dots labelled Top1/Bottom1/R1/...
+    const pivotMarkers = [];
+    const addPivots = (pts) => {
+      if (!Array.isArray(pts)) return;
+      for (const p of pts) { if (p && p.time != null) pivotMarkers.push({ time: p.time, position: 'inBar', color: '#eab308', shape: 'circle', text: p.label || '' }); }
+    };
+    for (const t of state.sessionTrades) addPivots(t.patternPoints);
+
+    // Neckline / breakout level for the active position; if flat, peek at the
+    // forming/pending pattern (preview = read-only, never mutates retest state).
+    let patternLevel = null;
+    if (state.position) {
+      addPivots(state.position.patternPoints);
+      patternLevel = state.position.patternLevel || null;
+    } else {
+      try {
+        if (state.candles.length >= 30) {
+          const psig = paStrategy.getSignal([...state.candles], { silent: true, preview: true });
+          if (psig) { addPivots(psig.patternPoints); if (psig.patternLevel) patternLevel = psig.patternLevel; }
+        }
+      } catch (_) { /* preview is best-effort */ }
+    }
+
+    const markers = [...swingMarkers, ...pivotMarkers];
     for (const t of state.sessionTrades) {
       if (t.entryPrice && t.entryBarTime) {
         const lbl = shortPAReason(t.entryReason || "") || (t.side + " @ " + t.entryPrice.toFixed(0));
@@ -1096,7 +1127,7 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice });
+    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -2034,7 +2065,7 @@ async function ptHandleReset(btn) {
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
-  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
+  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, neckLine = null, _lcc = 0;
   chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
   // Robust zoom preservation: track user-driven range and restore after every poll.
   var _userRange = null, _internalUpdate = false, _internalTimer = null;
@@ -2099,6 +2130,8 @@ async function ptHandleReset(btn) {
       if (d.stopLoss && !selEt) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (d.entryPrice && !selEt) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+      if (neckLine) { cs.removePriceLine(neckLine); neckLine = null; }
+      if (d.patternLevel && !selEt) { neckLine = cs.createPriceLine({ price:d.patternLevel, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Neckline' }); }
       // When a trade is selected, draw its own entry + SL lines
       if (selSlLine) { cs.removePriceLine(selSlLine); selSlLine = null; }
       if (selEntryLine) { cs.removePriceLine(selEntryLine); selEntryLine = null; }

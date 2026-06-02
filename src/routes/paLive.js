@@ -464,6 +464,8 @@ async function squareOff(exitPrice, reason) {
     isTrending:     state.position ? (state.position.isTrending     != null ? state.position.isTrending     : null) : null,
     patternAtEntry: state.position ? (state.position.patternAtEntry || null) : null,
     srLevelAtEntry: state.position ? (state.position.srLevelAtEntry != null ? state.position.srLevelAtEntry : null) : null,
+    patternLevel:   state.position ? (state.position.patternLevel != null ? state.position.patternLevel : null) : null,
+    patternPoints:  state.position ? (state.position.patternPoints || null) : null,
     mfeSpotPts:     state.position ? (state.position.mfeSpotPts || 0) : 0,
     mfePnl:         state.position ? (state.position.mfePnl     || 0) : 0,
     maeSpotPts:     state.position ? (state.position.maeSpotPts || 0) : 0,
@@ -847,6 +849,8 @@ async function resolveAndEnter(side, spot, result) {
       isTrending:       result.isTrending != null ? result.isTrending : null,
       patternAtEntry:   result.pattern    || null,
       srLevelAtEntry:   result.srLevel    != null ? result.srLevel    : null,
+      patternLevel:     result.patternLevel  != null ? result.patternLevel : null,
+      patternPoints:    result.patternPoints || null,
     };
 
     state.optionSymbol = symbol;
@@ -1192,7 +1196,7 @@ router.post("/manualEntry", async (req, res) => {
   } else {
     sl = side === "CE" ? spot - MAX_SL_PTS : spot + MAX_SL_PTS;
   }
-  const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true }) : null;
+  const sig = candles.length >= 30 ? paStrategy.getSignal(candles, { silent: true, preview: true }) : null;
 
   log(`🖐️ [PA-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (PrevCandle${prevCandle ? '=' + (side === 'CE' ? prevCandle.low : prevCandle.high) : ''})`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
@@ -1207,13 +1211,26 @@ router.get("/status/chart-data", (req, res) => {
     const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
     const markers = [];
+    // Pattern pivots (twin tops/bottoms / triangle anchors) — yellow dots so the shape is visible.
+    const addPivots = (pts) => { if (Array.isArray(pts)) for (const p of pts) { if (p && p.time != null) markers.push({ time: p.time, position: 'inBar', color: '#eab308', shape: 'circle', text: p.label || '' }); } };
+    for (const t of state.sessionTrades) addPivots(t.patternPoints);
+    let patternLevel = null;
+    if (state.position) { addPivots(state.position.patternPoints); patternLevel = state.position.patternLevel || null; }
+    else {
+      try {
+        if (state.candles.length >= 30) {
+          const psig = paStrategy.getSignal([...state.candles], { silent: true, preview: true });
+          if (psig) { addPivots(psig.patternPoints); if (psig.patternLevel) patternLevel = psig.patternLevel; }
+        }
+      } catch (_) { /* preview best-effort */ }
+    }
     for (const t of state.sessionTrades) {
       if (t.entryPrice && t.entryBarTime) markers.push({ time: t.entryBarTime, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: t.side + ' @ ' + t.entryPrice.toFixed(0) });
       if (t.exitPrice && t.exitBarTime) { const w = t.pnl > 0; markers.push({ time: t.exitBarTime, position: 'aboveBar', color: w ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (w ? '+' : '') + (t.pnl ? t.pnl.toFixed(0) : '') }); }
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice });
+    return res.json({ candles, markers, stopLoss, entryPrice, patternLevel });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -2181,7 +2198,7 @@ logFilter();
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });
-  var slLine = null, entryLine = null, _lcc = 0;
+  var slLine = null, entryLine = null, neckLine = null, _lcc = 0;
   function fetchChart() {
     fetch('/pa-live/status/chart-data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
       if (!d.candles || !d.candles.length) return;
@@ -2203,6 +2220,8 @@ logFilter();
       if (d.stopLoss) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (d.entryPrice) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+      if (neckLine) { cs.removePriceLine(neckLine); neckLine = null; }
+      if (d.patternLevel) { neckLine = cs.createPriceLine({ price:d.patternLevel, color:'#a855f7', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'Neckline' }); }
     }).catch(function(e) { console.warn('[Chart]', e.message); });
   }
   fetchChart();
