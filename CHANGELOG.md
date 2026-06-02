@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Swing SL — breakeven removed, candle-trail overlay added, `candle` mode dropped
+
+- **Breakeven removed.** `BREAKEVEN_PTS` is gone from the Swing settings page and from all three engines (paper / live / backtest). It was inert in `ema`/`psar` mode anyway (only ran in the old `candle` mode), so removing it changes nothing for current `ema`-mode sessions.
+- **`SWING_SL_MODE` now `ema | psar`** (was `candle | psar | ema`, default `candle`). New default is **`ema`** — the trail follows EMA21 and a candle touching back EMA21 is an explicit exit; `psar` trails Parabolic SAR with a flip-exit.
+- **New optional candle-trail overlay** (`SWING_CANDLE_TRAIL_ENABLED`, default **OFF**, + `SWING_CANDLE_TRAIL_BARS`, default 2). When ON, each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA/PSAR line or the N-bar low (CE) / high (PE). It can only pull the stop closer (banks more of a winner), never loosens it. Both keys are INSTANT (read live from `process.env`, no restart). Mirrors PA's `PA_CANDLE_TRAIL_*`.
+- **Dead key removed:** `SWING_OPTION_EXPIRY_TYPE` (nothing read it) is dropped from the Settings UI.
+- UI trail card + start-logs now show the active trail source (e.g. `EMA21 + 2-bar low`) instead of the old "Prev-candle low / Breakeven+" text.
+
 ### Fix: Scalp backtest enters on the signal bar's close (matches paper)
 
 - **Bug:** the scalp backtest queued each signal and entered on the **next candle's open**, while paper (the canonical engine) enters immediately at the **signal bar's close**. That one-bar shift moved every stop-loss reference, which changed which trades hit Profit-lock vs BB-re-entry, which changed the re-entries after them — so the backtest's trade list diverged from paper's for the same day/settings.

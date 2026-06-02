@@ -108,11 +108,13 @@ function getISTHHMM(unixSec) {
  *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA21 + RSI + SAR rules).
  *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
  *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
- *            Trails the previous completed candle's low/high every candle (tighten-only).
- *   EXIT   : prev-candle SL hit · option-premium stop (OPT_STOP_PCT, approximated via an
- *            adverse spot move in backtest) · opposite signal · EOD square-off at 3:20 PM/day.
- *   RISK   : breakeven (BREAKEVEN_PTS → SL to entry), same-side SL cooldown
- *            (SWING_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS, 3-consecutive-loss pause.
+ *            Trails EMA21 (default) or PSAR (SWING_SL_MODE), tighten-only. When
+ *            SWING_CANDLE_TRAIL_ENABLED, an N-bar low/high candle trail is layered on
+ *            and the tighter of the two wins.
+ *   EXIT   : trail SL hit · EMA touch-back / PSAR flip · option-premium stop (OPT_STOP_PCT,
+ *            approximated via an adverse spot move in backtest) · opposite signal · EOD.
+ *   RISK   : same-side SL cooldown (SWING_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
+ *            3-consecutive-loss pause.
  *
  * Other strategies that reuse this engine keep their getSignal-driven behaviour; the
  * 50%-rule pause scaffolding is retained for them but SWING no longer triggers it.
@@ -168,8 +170,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
   // ── SWING (redefined): exit/stop model ───────────────────────────────────
   //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
-  //   Trail       : every completed candle, tighten SL to that candle's low/high.
-  //   Breakeven   : after BREAKEVEN_PTS move in favour, snap SL to entry.
+  //   Trail       : EMA21 (default) or PSAR per SWING_SL_MODE, tighten-only; optional
+  //                 N-bar candle-trail overlay (SWING_CANDLE_TRAIL_*) — tighter wins.
   //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
   const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
@@ -222,7 +224,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   SWING(redefined): EMA21+RSI+SAR | prev-candle trailing SL | breakeven ${process.env.BREAKEVEN_PTS || "25"}pt | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
+  console.log(`   SWING(redefined): EMA21+RSI+SAR | ${(process.env.SWING_SL_MODE || "ema").toUpperCase()} trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
 
   // 50%-rule exit pause: retained for non-SWING strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
@@ -326,21 +328,33 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
-    // ── TRAILING STOP (mode-aware: candle | psar | ema) ───────────────────
-    // SWING_SL_MODE selects the SL source (tighten-only) at each candle close:
-    //   candle (default) — previous completed candle's low (CE) / high (PE)
-    //   psar             — current Parabolic SAR value; PSAR flip = explicit exit
-    //   ema              — current EMA21 value; candle touching back EMA21 = explicit exit
+    // ── TRAILING STOP (mode-aware: psar | ema, + optional candle-trail overlay) ──
+    // SWING_SL_MODE selects the base SL source (tighten-only) at each candle close:
+    //   ema (default) — current EMA21 value; candle touching back EMA21 = explicit exit
+    //   psar          — current Parabolic SAR value; PSAR flip = explicit exit
+    // When SWING_CANDLE_TRAIL_ENABLED, an N-bar low (CE) / high (PE) trail is layered
+    // on and the TIGHTER of the two wins. The window ends at the prior bar (i-1) to
+    // mirror paper's "SL from prior bars enforced on this bar" timing.
     // The flip/touch-back exits are wired below in the EXIT CHECK block.
     if (position) {
-      const SL_MODE = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+      const SL_MODE = (process.env.SWING_SL_MODE || "ema").toLowerCase();
       let trailRef = null;
       if (SL_MODE === "psar") {
         if (_sig.sar != null) trailRef = _sig.sar;
-      } else if (SL_MODE === "ema") {
-        if (_sig.ema21 != null) trailRef = _sig.ema21;
       } else {
-        trailRef = position.side === "CE" ? prevCandle.low : prevCandle.high;
+        if (_sig.ema21 != null) trailRef = _sig.ema21;
+      }
+      // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of mode vs candle.
+      const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+      const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+      if (_ctOn && i >= _ctBars) {
+        const _bars = candles.slice(i - _ctBars, i);
+        const _candleLvl = position.side === "CE"
+          ? Math.min(..._bars.map(c => c.low))
+          : Math.max(..._bars.map(c => c.high));
+        if (trailRef == null) trailRef = _candleLvl;
+        else if (position.side === "CE" && _candleLvl > trailRef) trailRef = _candleLvl;
+        else if (position.side === "PE" && _candleLvl < trailRef) trailRef = _candleLvl;
       }
       if (trailRef != null) {
         if (position.side === "CE") {
@@ -355,7 +369,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           }
         }
       }
-      // Track favourable extreme (for breakeven trigger)
+      // Track favourable extreme (best price seen, for analysis)
       if (position.side === "CE") {
         if (!position.bestPrice || candle.high > position.bestPrice) position.bestPrice = candle.high;
       } else {
@@ -372,33 +386,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       let exitReason = null;
       let exitPrice  = candle.close;
 
-      // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
-      // Once trade moves 25pt in favor, SL moves to entry price (zero risk).
-      // Applies only in candle mode — psar/ema modes own SL fully.
-      if ((process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
-        const BREAKEVEN_THRESHOLD = parseFloat(process.env.BREAKEVEN_PTS || "25");
-        if (position.side === "CE") {
-          const ceMove = (position.bestPrice || candle.close) - position.entryPrice;
-          if (ceMove >= BREAKEVEN_THRESHOLD && position.stopLoss < position.entryPrice) {
-            if (_verbose) console.log(`  ✅ BREAKEVEN CE: move +${ceMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
-            position.stopLoss = position.entryPrice;
-          }
-        } else {
-          const peMove = position.entryPrice - (position.bestPrice || candle.close);
-          if (peMove >= BREAKEVEN_THRESHOLD && position.stopLoss > position.entryPrice) {
-            if (_verbose) console.log(`  ✅ BREAKEVEN PE: move +${peMove.toFixed(0)}pt >= ${BREAKEVEN_THRESHOLD}pt → SL moved to entry ₹${position.entryPrice}`);
-            position.stopLoss = position.entryPrice;
-          }
-        }
-      }
-
       // Rule 1: SL or trail SL (uses candle low/high as intra-candle proxy)
       if (position.stopLoss !== null && position.stopLoss !== undefined) {
         // Determine SL type for clear labeling
-        const _isBreakevenSL = Math.abs(position.stopLoss - position.entryPrice) < 1;
-        const _isTrailSL     = !_isBreakevenSL && position.initialStopLoss != null &&
-                               Math.abs(position.stopLoss - position.initialStopLoss) > 1;
-        const _slLabel = _isBreakevenSL ? "Breakeven SL" : _isTrailSL ? "Trail SL" : "Initial SL";
+        const _isTrailSL = position.initialStopLoss != null &&
+                           Math.abs(position.stopLoss - position.initialStopLoss) > 1;
+        const _slLabel = _isTrailSL ? "Trail SL" : "Initial SL";
 
         if (position.side === "CE" && candle.low <= position.stopLoss) {
           exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}`;
@@ -427,7 +420,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
       // Rule 1c: PSAR flip / EMA touch-back exit (mode-driven, SWING_SL_MODE)
       if (!exitReason) {
-        const _slMode = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+        const _slMode = (process.env.SWING_SL_MODE || "ema").toLowerCase();
         if (_slMode === "psar") {
           if ((position.side === "CE" && _sig.sarTrendInt === -1) ||
               (position.side === "PE" && _sig.sarTrendInt ===  1)) {

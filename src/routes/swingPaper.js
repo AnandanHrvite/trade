@@ -1561,7 +1561,7 @@ function onTick(tick) {
     else                   { if (!pos.bestPrice || ltp < pos.bestPrice) pos.bestPrice = ltp; }
 
     const updatedSL = pos.stopLoss;
-    const _slType = (sl) => Math.abs(sl - pos.spotAtEntry) < 1 ? "Breakeven" : (pos.initialStopLoss && Math.abs(sl - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
+    const _slType = (sl) => (pos.initialStopLoss && Math.abs(sl - pos.initialStopLoss) > 1 ? "Trail" : "Initial");
     if (pos.side === "PE" && ltp >= updatedSL) {
       const optStr = ptState.optionLtp ? ` | opt=₹${ptState.optionLtp}` : "";
       log(`🛑 [PAPER] ${_slType(updatedSL)} SL HIT PE — ltp ₹${ltp} >= SL ₹${updatedSL} | best=₹${pos.bestPrice||"—"}${optStr}`);

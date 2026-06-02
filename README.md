@@ -71,7 +71,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
   - **PE**: mirror — EMA20 **below** EMA50 · RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · trend source **RED** — SAR above price, or SuperTrend bearish.
 - **Initial SL** (unchanged): previous completed candle's **low (CE) / high (PE)** — used as-is (no hybrid cap). `EMA21(OHLC4)` is still computed for the `ema` SL mode + trade-record snapshot, but is no longer an entry input.
 - **Trailing**: each candle close, tighten SL to that candle's low (CE) / high (PE) — tighten-only.
-- **Exits**: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`).
+- **Exits**: EMA21 trail / EMA touch-back (or PSAR per `SWING_SL_MODE`), optional N-bar candle trail (`SWING_CANDLE_TRAIL_ENABLED`, tighter-of) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`).
 - **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
 - **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
 - **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
@@ -223,7 +223,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ## Key .env Settings
 
 ### Swing Strategy (EMA20/50 + RSI + SAR/SuperTrend, Zerodha)
-**Entry redefined 2026-05-31.** Entry (intra-candle, all 3 true): **CE** = EMA20 above EMA50 (`SWING_EMA_FAST`/`SWING_EMA_SLOW`, close), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, trend source GREEN (SAR below price, or SuperTrend bullish when `SWING_USE_SUPERTREND=true`). **PE** = mirror (EMA20 below EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, trend source RED). **Stop (unchanged)** = previous candle low (CE) / high (PE), trailed candle-by-candle (tighten-only). **Exits**: prev-candle SL · breakeven (`BREAKEVEN_PTS` → SL to entry) · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). `EMA21(OHLC4)` is retained only for the `ema` SL mode + the trade-record snapshot, not for entry.
+**Entry redefined 2026-05-31.** Entry (intra-candle, all 3 true): **CE** = EMA20 above EMA50 (`SWING_EMA_FAST`/`SWING_EMA_SLOW`, close), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, trend source GREEN (SAR below price, or SuperTrend bullish when `SWING_USE_SUPERTREND=true`). **PE** = mirror (EMA20 below EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, trend source RED). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (default `SWING_SL_MODE=ema`; EMA touch-back is an explicit exit) or **PSAR** (`psar`; flip = exit), tighten-only. Optionally layer an **N-bar candle trail** (`SWING_CANDLE_TRAIL_ENABLED` / `SWING_CANDLE_TRAIL_BARS`): each candle close the stop is set to whichever is tighter — the EMA/PSAR line or the N-bar low/high. **Exits**: trail SL · EMA touch-back / PSAR flip · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). _Breakeven was removed 2026-06-02._
 
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -238,13 +238,14 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `RSI_PE_MIN` | `20` | PE blocked when RSI at/below this (oversold guard) |
 | `SWING_EMA_FAST` | `20` | Fast EMA period (close). CE needs EMA-fast above EMA-slow; PE needs it below. |
 | `SWING_EMA_SLOW` | `50` | Slow EMA period (close). The EMA-fast vs EMA-slow alignment is the directional entry gate. |
-| `BREAKEVEN_PTS` | `25` | Move SL to entry once +N spot pts in favour |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
-| `SWING_SL_MODE` | `candle` | What feeds the trailing SL at candle close. `candle` = just-closed candle low/high. `psar` = current Parabolic SAR (PSAR flip = explicit exit). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). All tighten-only; breakeven / option-stop / opposite-signal / EOD still apply. |
+| `SWING_SL_MODE` | `ema` | Base trailing-SL source at candle close (tighten-only). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). `psar` = current Parabolic SAR (PSAR flip = explicit exit). |
+| `SWING_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA/PSAR SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA/PSAR line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
+| `SWING_CANDLE_TRAIL_BARS` | `2` | Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. `1` = tightest. Only used when `SWING_CANDLE_TRAIL_ENABLED=true`. |
 | `SWING_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = Parabolic SAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** for the directional confirmation instead. Mutually exclusive; the chart shows whichever is active. |
 | `SWING_SUPERTREND_PERIOD` / `SWING_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `SWING_USE_SUPERTREND=true`). |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
-| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / breakeven / option-stop / PSAR-flip / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
+| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / PSAR-flip / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
 | `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
 | `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
 | `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |
@@ -252,7 +253,6 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |
 | `SWING_OPTION_EXPIRY_OVERRIDE` | (blank) | Swing-only expiry override — keep swing on next-week expiry while scalp/PA trade current. Blank inherits the common expiry. |
-| `SWING_OPTION_EXPIRY_TYPE` | (blank) | Swing-only `weekly` / `monthly`. Blank inherits common. |
 | (auto) | — | Swing `/start` is **blocked** when configured expiry == today (0DTE refusal — gamma risk on holding swing through expiry). |
 
 > Common expiry knobs (`OPTION_EXPIRY_OVERRIDE`, `OPTION_EXPIRY_TYPE`) live under **Common — Instrument & Backtest** in Settings and are read by `src/config/instrument.js` for every engine that does not set its own per-mode override.

@@ -70,6 +70,8 @@ function _setSlPause(side) {
 // Skipped for opposite-signal / EOD / manual exits.
 const _OPP_COOLDOWN_ENABLED = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
 const _OPP_COOLDOWN_CANDLES = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+// Candle-trail (SWING_CANDLE_TRAIL_*) is read live from process.env on each candle close
+// — INSTANT, like SWING_SL_MODE — so a Settings toggle takes effect without a restart.
 function _setOppositeCooldown(exitedSide, reason) {
   if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
   if (reason && /opposite signal|eod|day close|market closed|auto-stop|manual|session restart/i.test(reason)) return;
@@ -1173,8 +1175,8 @@ async function onCandleClose(candle) {
     } else if (_pos.spotAtEntry) {
       _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
     }
-    // Time-stop applies only in candle mode — psar/ema modes own SL fully.
-    if ((process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
+    // Time-stop is disabled — psar/ema modes own the SL fully (legacy candle-mode gate).
+    if ((process.env.SWING_SL_MODE || "ema").toLowerCase() === "candle") {
       const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
       if (_tsReason) {
         log(`⏳ [LIVE] ${_tsReason}`);
@@ -1184,13 +1186,15 @@ async function onCandleClose(candle) {
     }
   }
 
-  // ── Trailing stop (mode-aware: candle | psar | ema) ─────────────────────
-  // Mirrors paper. SWING_SL_MODE selects the SL source (tighten-only) at each
+  // ── Trailing stop (mode-aware: psar | ema, + optional candle-trail overlay) ──
+  // Mirrors paper. SWING_SL_MODE selects the base SL source (tighten-only) at each
   // candle close. PSAR/EMA modes additionally trigger an explicit candle-close
-  // exit on a flip / EMA touch-back. Broker hard-SL is pushed on any change.
+  // exit on a flip / EMA touch-back. When SWING_CANDLE_TRAIL_ENABLED, an N-bar
+  // low/high trail is layered on and the TIGHTER of the two wins. Broker hard-SL
+  // is pushed on any change.
   if (tradeState.position) {
     const pos     = tradeState.position;
-    const SL_MODE = (process.env.SWING_SL_MODE || "candle").toLowerCase();
+    const SL_MODE = (process.env.SWING_SL_MODE || "ema").toLowerCase();
     let _newSL    = null;
     let _flipExit = false;
     let _trailTag = "";
@@ -1198,12 +1202,21 @@ async function onCandleClose(candle) {
       if (indicators.sar != null) { _newSL = indicators.sar; _trailTag = "PSAR"; }
       if ((pos.side === "CE" && indicators.sarTrendInt === -1) ||
           (pos.side === "PE" && indicators.sarTrendInt ===  1)) _flipExit = true;
-    } else if (SL_MODE === "ema") {
+    } else {
       if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
       if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
-    } else {
-      _newSL = pos.side === "CE" ? candle.low : candle.high;
-      _trailTag = pos.side === "CE" ? "just-closed low" : "just-closed high";
+    }
+    // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of mode vs candle.
+    const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+    if (_ctOn && tradeState.candles && tradeState.candles.length >= _ctBars) {
+      const _bars = tradeState.candles.slice(-_ctBars);
+      const _candleLvl = pos.side === "CE"
+        ? Math.min(..._bars.map(c => c.low))
+        : Math.max(..._bars.map(c => c.high));
+      if (_newSL == null) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}`; }
+      else if (pos.side === "CE" && _candleLvl > _newSL) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar low`; }
+      else if (pos.side === "PE" && _candleLvl < _newSL) { _newSL = _candleLvl; _trailTag = `${_ctBars}-bar high`; }
     }
     let _changed = false;
     if (_newSL != null) {
@@ -1213,15 +1226,6 @@ async function onCandleClose(candle) {
       } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
         const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2)); _changed = true;
         log(`📐 [LIVE] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
-      }
-    }
-    // Breakeven bump applies only in candle mode — psar/ema modes own SL fully.
-    if (SL_MODE === "candle") {
-      const _bePts  = parseFloat(process.env.BREAKEVEN_PTS || "25");
-      const _beMove = pos.side === "CE" ? (candle.close - pos.spotAtEntry) : (pos.spotAtEntry - candle.close);
-      if (_beMove >= _bePts) {
-        if (pos.side === "CE" && pos.stopLoss < pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven CE → SL=entry ₹${pos.spotAtEntry}`); }
-        if (pos.side === "PE" && pos.stopLoss > pos.spotAtEntry) { pos.stopLoss = parseFloat(pos.spotAtEntry.toFixed(2)); _changed = true; log(`✅ [LIVE] Breakeven PE → SL=entry ₹${pos.spotAtEntry}`); }
       }
     }
     if (_changed) {
@@ -1853,32 +1857,8 @@ function onSpotTick(tick) {
     if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((Date.now() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
   }
 
-  // ── EXIT: Trailing SAR stoploss on every tick ─────────────────────────────
-  // Dynamic tiered trail: gap tightens as profit grows (mirrors paperTrade).
-  // ── BREAKEVEN STOP (replaces 50% rule) ─────────────────────────────────
-  // Applies only in candle mode — psar/ema modes own SL fully.
-  if (tradeState.position && tradeState.position.stopLoss !== null &&
-      (process.env.SWING_SL_MODE || "candle").toLowerCase() === "candle") {
-    const _bePos = tradeState.position;
-    const _bePts = parseFloat(process.env.BREAKEVEN_PTS || "25");
-    if (_bePos.side === "CE") {
-      const _beMove = (_bePos.bestPrice || ltp) - _bePos.spotAtEntry;
-      if (_beMove >= _bePts && _bePos.stopLoss < _bePos.spotAtEntry) {
-        log(`✅ [LIVE] BREAKEVEN CE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
-        _bePos.stopLoss = _bePos.spotAtEntry;
-        saveTradePosition(_bePos, { sessionPnl: tradeState.sessionPnl || 0 });
-        updateHardSL(_bePos.spotAtEntry);
-      }
-    } else {
-      const _beMove = _bePos.spotAtEntry - (_bePos.bestPrice || ltp);
-      if (_beMove >= _bePts && _bePos.stopLoss > _bePos.spotAtEntry) {
-        log(`✅ [LIVE] BREAKEVEN PE: +${_beMove.toFixed(0)}pt >= ${_bePts}pt → SL moved to entry ₹${_bePos.spotAtEntry}`);
-        _bePos.stopLoss = _bePos.spotAtEntry;
-        saveTradePosition(_bePos, { sessionPnl: tradeState.sessionPnl || 0 });
-        updateHardSL(_bePos.spotAtEntry);
-      }
-    }
-  }
+  // ── EXIT: trailing SL is set per candle close (EMA/PSAR + optional candle trail).
+  // The SL set there is enforced intra-tick below. Breakeven was removed.
 
   // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
   if (tradeState.position && tradeState.position.optionEntryLtp && tradeState.optionLtp && _OPT_STOP_PCT > 0) {
@@ -2091,7 +2071,7 @@ router.get("/start", async (req, res) => {
     }
 
     // Check 4: Risk config summary (always logs)
-    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: prev-candle trailing | Breakeven: +${process.env.BREAKEVEN_PTS || "25"}pt | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
+    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: ${(process.env.SWING_SL_MODE || "ema").toUpperCase()} trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
     log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
 
     const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
@@ -2659,6 +2639,11 @@ router.get("/status", (req, res) => {
   const trailProfit = pos && pos.bestPrice
     ? parseFloat((pos.side === "CE" ? pos.bestPrice - pos.entryPrice : pos.entryPrice - pos.bestPrice).toFixed(2))
     : 0;
+  // Trailing-stop label: base SL source (EMA21 / PSAR) + optional candle-trail overlay
+  const _slModeLbl  = (process.env.SWING_SL_MODE || "ema").toLowerCase() === "psar" ? "PSAR" : "EMA21";
+  const _ctOn       = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+  const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge
   const atmStrike   = pos ? Math.round(pos.entryPrice / 50) * 50 : null;
@@ -2792,11 +2777,11 @@ router.get("/status", (req, res) => {
           <div id="ajax-lt-opt-sl" style="font-size:1.05rem;font-weight:700;color:#f97316;">${optStopPrice ? "₹" + optStopPrice.toFixed(2) : "—"}</div>
           <div style="font-size:0.63rem;color:#4a6080;margin-top:2px;">${optEntryLtp ? "entry ₹" + optEntryLtp.toFixed(2) + " × " + (100 - optStopPct) + "%" : "awaiting entry LTP"}</div>
         </div>
-        <div id="ajax-trail-card" data-be="${parseFloat(process.env.BREAKEVEN_PTS || "25")}" style="background:#071a12;border:1px solid ${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
+        <div id="ajax-trail-card" data-trail="${_trailLbl}" style="background:#071a12;border:1px solid ${trailProfit > 0 ? "#8b5cf6" : "#134e35"};border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing Stop</div>
-          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "#8b5cf6" : "#f59e0b"};">${trailProfit >= parseFloat(process.env.BREAKEVEN_PTS || "25") ? "🔒 Breakeven+" : "Prev-candle " + (pos.side === "CE" ? "low" : "high")}</div>
+          <div id="ajax-trail-status" style="font-size:0.88rem;font-weight:700;color:${trailProfit > 0 ? "#8b5cf6" : "#f59e0b"};">${_trailLbl}</div>
           <div id="ajax-trail-best" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Best: ${pos.bestPrice ? inr(pos.bestPrice) : "—"} (${trailProfit >= 0 ? "+" : ""}${trailProfit.toFixed(1)} pts)</div>
-          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trails prev-candle ${pos.side === "CE" ? "low" : "high"} | Breakeven at +${parseFloat(process.env.BREAKEVEN_PTS || "25")}pt</div>
+          <div id="ajax-trail-activate" style="font-size:0.63rem;color:#4a6080;margin-top:2px;">Trail source: ${_trailLbl}${_ctOn ? " · tighter wins" : ""}</div>
         </div>
       </div>
 
@@ -3682,15 +3667,14 @@ async function manualEntry(side) {
           const tActive     = p.bestPrice !== null && p.bestPrice !== undefined;
           const tProfit     = tActive ? parseFloat(Math.abs(p.bestPrice - p.entryPrice).toFixed(2)) : 0;
           const tProfDir    = tActive ? (p.side === 'CE' ? p.bestPrice - p.entryPrice : p.entryPrice - p.bestPrice) : 0;
-          const bePts       = parseFloat(trailCard.dataset.be || '25');
-          const beOn        = tProfDir >= bePts;
-          const sideRef     = p.side === 'CE' ? 'low' : 'high';
-          trailCard.style.borderColor = beOn ? '#8b5cf6' : '#134e35';
-          trailStat.textContent  = beOn ? '\uD83D\uDD12 Breakeven+' : 'Prev-candle ' + sideRef;
-          trailStat.style.color  = beOn ? '#8b5cf6' : '#f59e0b';
+          const trailLbl    = trailCard.dataset.trail || 'EMA21';
+          const inProfit    = tProfDir > 0;
+          trailCard.style.borderColor = inProfit ? '#8b5cf6' : '#134e35';
+          trailStat.textContent  = trailLbl;
+          trailStat.style.color  = inProfit ? '#8b5cf6' : '#f59e0b';
           const pts = tProfDir >= 0 ? '+' + tProfit.toFixed(1) : tProfit.toFixed(1);
           trailBest.textContent  = tActive ? 'Best: \u20b9' + p.bestPrice.toLocaleString('en-IN') + ' (' + pts + ' pts)' : 'Best: \u2014 (+0.0 pts)';
-          if (trailAct) trailAct.textContent = 'Trails prev-candle ' + sideRef + ' | Breakeven at +' + bePts + 'pt';
+          if (trailAct) trailAct.textContent = 'Trail source: ' + trailLbl;
         }
       }
 
