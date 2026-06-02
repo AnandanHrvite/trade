@@ -291,6 +291,7 @@ function simulateSell(reason) {
     spotAtExit:     exitSpot,
     optionEntryLtp: pos.optionEntryLtp,
     optionExitLtp:  exitOptLtp,
+    bestOptionLtp:  pos.peakPremium  || null,   // peak option premium during trade — observer-only
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
     pnl,
@@ -1303,6 +1304,12 @@ async function orbpManualEntry(side) {
         '<td style="padding:8px 12px;font-weight:700;">' + (t.spotAtExit||'—') + '</td>' +
         '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionEntryLtp!=null?'₹'+t.optionEntryLtp:'—') + '</td>' +
         '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionExitLtp!=null?'₹'+t.optionExitLtp:'—') + '</td>' +
+        (function(){
+          if (t.bestOptionLtp == null) return '<td style="padding:8px 12px;color:#4a6080;">—</td>';
+          var giveback = (t.optionExitLtp!=null) ? parseFloat((t.bestOptionLtp - t.optionExitLtp).toFixed(2)) : null;
+          var sub = giveback != null ? '<span style="font-size:0.6rem;color:#4a6080;"> (gave back ' + giveback + ')</span>' : '';
+          return '<td style="padding:8px 12px;color:#a78bfa;font-weight:700;">₹' + t.bestOptionLtp + sub + '</td>';
+        })() +
         '<td style="padding:8px 12px;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+'₹'+t.pnl.toFixed(2):'—') + '</td>' +
         '<td style="padding:8px 12px;font-size:0.65rem;color:#4a6080;">' + (t.exitReason||'') + '</td>' +
       '</tr>';
@@ -1316,6 +1323,7 @@ async function orbpManualEntry(side) {
         '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">X.Spot</th>' +
         '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">E.Opt</th>' +
         '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">X.Opt</th>' +
+        '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#a78bfa;">Peak</th>' +
         '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">PnL</th>' +
         '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';

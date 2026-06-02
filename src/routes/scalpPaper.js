@@ -271,6 +271,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     slSource:         slSource || "PSAR",
     target,
     bestPrice:        null,
+    bestOptionLtp:    null,   // peak (highest) option premium reached during trade — observer-only
     candlesHeld:      0,
     peakPnl:          0,
     initialRiskRupees: _initialRiskRupees,
@@ -396,6 +397,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     slSource:        state.position.slSource        || null,
     target:          state.position.target          || null,
     bestPrice:       state.position.bestPrice       || null,
+    bestOptionLtp:   state.position.bestOptionLtp   || null,   // peak option premium during trade
     candlesHeld:     state.position.candlesHeld     || 0,
     peakPnl:         state.position.peakPnl         || 0,
     // Entry-context + MFE for post-window analysis.
@@ -609,6 +611,8 @@ function onTick(tick) {
     if (curPnl  > (pos.mfePnl     || 0)) pos.mfePnl     = parseFloat(curPnl.toFixed(2));
     if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((simNow() - pos.entryTimeMs) / 1000).toFixed(1)); }
     if (curPnl  < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(curPnl.toFixed(2));
+    // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
+    if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
     //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
@@ -1365,6 +1369,7 @@ router.get("/status/data", (req, res) => {
       eSl:          t.stopLoss       || null,
       xSpot:        t.spotAtExit     || t.exitPrice  || 0,
       xOpt:         t.optionExitLtp  || null,
+      peakOpt:      t.bestOptionLtp  || null,
       pnl:          typeof t.pnl === "number" ? t.pnl : null,
       pnlMode:      t.pnlMode        || "",
       entryReason:  t.entryReason    || "",
@@ -1588,6 +1593,7 @@ router.get("/status", (req, res) => {
     eSl:          t.stopLoss       || t.initialStopLoss || null,
     xSpot:        t.spotAtExit     || t.exitPrice  || 0,
     xOpt:         t.optionExitLtp  || null,
+    peakOpt:      t.bestOptionLtp  || null,
     pnl:          typeof t.pnl === "number" ? t.pnl : null,
     pnlMode:      t.pnlMode        || "",
     entryReason:  t.entryReason    || t.reason || "",
@@ -2133,6 +2139,13 @@ function showSPModal(t){
     + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
     + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '\\u2014', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry-Exit (PE profits on fall)' : 'Exit-Entry (CE profits on rise)')
     + cell('Option Move (pts)', optDiff != null ? (optDiff >= 0 ? '\\u25b2 +' : '\\u25bc ') + optDiff + ' pts' : '\\u2014', dc, 'Exit prem - Entry prem')
+    + (function(){
+        if (t.peakOpt == null) return cell('Peak Premium', '\\u2014', '#c8d8f0', 'Highest premium in trade');
+        const peakGain  = (t.eOpt != null) ? parseFloat((t.peakOpt - t.eOpt).toFixed(2)) : null;
+        const giveback  = (t.xOpt != null) ? parseFloat((t.peakOpt - t.xOpt).toFixed(2)) : null;
+        const sub = (peakGain != null ? '+' + peakGain + ' pts peak' : 'peak') + (giveback != null ? ' \\u00b7 gave back ' + giveback : '');
+        return cell('Peak Premium', fmt(t.peakOpt), '#a78bfa', sub);
+      })()
     + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '\\u2014', pc, 'After STT + charges')
     + '</div></div>';
 

@@ -317,6 +317,11 @@ function simulateExit(reason) {
     netTarget:     pos.targetNet,
     netStop:       pos.stopNet,
     pairPnl,
+    // Peak combined premium reached during the trade (long straddle → favorable
+    // extreme is the HIGHEST combined CE+PE). Observer-only; persisted for the
+    // Peak Premium display + giveback-to-exit analysis.
+    peakCombined:  pos.peakCombined,
+    exitCombined:  parseFloat((exitCe + exitPe).toFixed(2)),
     // Combined-premium excursion (gross, qty-scaled) + max spot travel for analysis.
     mfePnl:        parseFloat(((pos.peakCombined   - pos.netDebit) * qty).toFixed(2)),
     maePnl:        parseFloat(((pos.troughCombined - pos.netDebit) * qty).toFixed(2)),
@@ -1257,6 +1262,17 @@ async function strpManualEntry(){
     var rows = trades.slice().reverse().map(function(t){
       var pc = t.pnl == null ? '#c8d8f0' : t.pnl >= 0 ? '#10b981' : '#ef4444';
       var lc = t.leg === 'CE' ? '#10b981' : '#ef4444';
+      // Peak Premium (pair-level): long straddle's favorable extreme is the highest
+      // combined CE+PE. Show peak combined, peak gain over entry net, and giveback to exit.
+      var peakCell = '—';
+      if (t.peakCombined != null) {
+        var pkGain = (t.netDebit != null) ? (t.peakCombined - t.netDebit) : null;
+        var giveback = (t.exitCombined != null) ? (t.peakCombined - t.exitCombined) : null;
+        var sub = [];
+        if (pkGain != null)   sub.push('<span style="color:#10b981;">peak +' + pkGain.toFixed(2) + '</span>');
+        if (giveback != null) sub.push('<span style="color:#f59e0b;">gb -' + giveback.toFixed(2) + '</span>');
+        peakCell = '₹' + t.peakCombined + (sub.length ? '<div style="font-size:0.58rem;color:#4a6080;">' + sub.join(' · ') + '</div>' : '');
+      }
       return '<tr style="border-top:1px solid #1a2236;">' +
         '<td style="padding:8px 12px;font-size:0.62rem;color:#94a3b8;">' + (t.pairId||'') + '</td>' +
         '<td style="padding:8px 12px;color:' + lc + ';font-weight:800;">' + (t.leg||'—') + '</td>' +
@@ -1265,6 +1281,7 @@ async function strpManualEntry(){
         '<td style="padding:8px 12px;font-size:0.7rem;color:#94a3b8;">' + (t.exitTime||'') + '</td>' +
         '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionEntryLtp!=null?'₹'+t.optionEntryLtp:'—') + '</td>' +
         '<td style="padding:8px 12px;color:#60a5fa;">' + (t.optionExitLtp!=null?'₹'+t.optionExitLtp:'—') + '</td>' +
+        '<td style="padding:8px 12px;color:#c8d8f0;">' + peakCell + '</td>' +
         '<td style="padding:8px 12px;font-weight:800;color:' + pc + ';">' + (t.pnl!=null?(t.pnl>=0?'+':'')+'₹'+t.pnl.toFixed(2):'—') + '</td>' +
         '<td style="padding:8px 12px;font-size:0.65rem;color:#4a6080;">' + (t.exitReason||'') + '</td>' +
       '</tr>';
@@ -1278,6 +1295,7 @@ async function strpManualEntry(){
       '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit</th>' +
       '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">E.LTP</th>' +
       '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">X.LTP</th>' +
+      '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Peak (Combined)</th>' +
       '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Leg PnL</th>' +
       '<th style="padding:9px 12px;text-align:left;font-size:0.6rem;text-transform:uppercase;letter-spacing:1px;color:#4a6080;">Exit Reason</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>';

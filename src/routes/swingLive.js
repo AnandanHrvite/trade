@@ -1012,6 +1012,7 @@ async function squareOff(exitPrice, reason) {
     stTrendAtExit:    _exitInd.stTrend    || null,
     mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
     maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
+    bestOptionLtp:  tradeState.position ? (tradeState.position.bestOptionLtp || null) : null,   // peak option premium during trade
     secsToMFE:      tradeState.position ? (tradeState.position.secsToMFE  || 0) : 0,
     secsToMAE:      tradeState.position ? (tradeState.position.secsToMAE  || 0) : 0,
     vixAtExit:      getCachedVix(),
@@ -1456,6 +1457,7 @@ async function onCandleClose(candle) {
         initialStopLoss:   stopLoss || null,
         sarStopLoss:       _origSARforPos || null,  // initial SL (prev-candle) at entry
         bestPrice:         null,
+        bestOptionLtp:     null,   // peak (highest) option premium reached during trade — observer-only
         candlesHeld:       0,
         mfeSpotPts:        0,
         maeSpotPts:        0,
@@ -1775,6 +1777,7 @@ function onSpotTick(tick) {
           initialStopLoss:   stopLoss || null,
           sarStopLoss:       _origSARforPosIntra || null,  // initial SL (prev-candle) at entry
           bestPrice:         null,
+          bestOptionLtp:     null,   // peak (highest) option premium reached during trade — observer-only
           candlesHeld:       0,
           mfeSpotPts:        0,
           maeSpotPts:        0,
@@ -1855,6 +1858,8 @@ function onSpotTick(tick) {
     const _favPts = (ltp - _exPos.spotAtEntry) * (_exPos.side === "CE" ? 1 : -1);
     if (_favPts > (_exPos.mfeSpotPts || 0)) { _exPos.mfeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMFE = parseFloat(((Date.now() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
     if (_favPts < (_exPos.maeSpotPts || 0)) { _exPos.maeSpotPts = parseFloat(_favPts.toFixed(2)); _exPos.secsToMAE = parseFloat(((Date.now() - _exPos.entryTimeMs) / 1000).toFixed(1)); }
+    // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
+    if (tradeState.optionLtp && tradeState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(tradeState.optionLtp.toFixed(2));
   }
 
   // ── EXIT: trailing SL is set per candle close (EMA/PSAR + optional candle trail).
@@ -3034,6 +3039,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
       eSl:         t.stopLoss        || null,
       xSpot:       t.spotAtExit      || t.exitPrice  || 0,
       xOpt:        t.optionExitLtp   || null,
+      peakOpt:     t.bestOptionLtp   || null,
       pnl:         typeof t.pnl === "number" ? t.pnl : null,
       pnlMode:     t.pnlMode         || "",
       order:       t.orderId         || "",
@@ -3168,6 +3174,13 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         + cell('Option LTP @ Exit', fmt(t.xOpt), '#60a5fa', 'Option premium at exit')
         + cell('NIFTY Move (pts)', pnlPts != null ? (pnlPts >= 0 ? '+' : '') + pnlPts + ' pts' : '—', pnlPts != null ? (pnlPts >= 0 ? '#10b981' : '#ef4444') : '#c8d8f0', t.side === 'PE' ? 'Entry−Exit (PE profits on fall)' : 'Exit−Entry (CE profits on rise)')
         + cell('Option Δ (pts)', optDiff != null ? (optDiff >= 0 ? '▲ +' : '▼ ') + optDiff + ' pts' : '—', dc, 'Exit prem − Entry prem')
+        + (function(){
+            if (t.peakOpt == null) return cell('Peak Premium', '—', '#c8d8f0', 'Highest premium in trade');
+            const peakGain  = (t.eOpt != null) ? parseFloat((t.peakOpt - t.eOpt).toFixed(2)) : null;
+            const giveback  = (t.xOpt != null) ? parseFloat((t.peakOpt - t.xOpt).toFixed(2)) : null;
+            const sub = (peakGain != null ? '+' + peakGain + ' pts peak' : 'peak') + (giveback != null ? ' · gave back ' + giveback : '');
+            return cell('Peak Premium', fmt(t.peakOpt), '#a78bfa', sub);
+          })()
         + cell('Net PnL', t.pnl != null ? (t.pnl >= 0 ? '+' : '') + fmt(t.pnl) : '—', pc, 'After STT + charges')
         + '</div></div>';
 
