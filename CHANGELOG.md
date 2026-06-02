@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Price Action — structural SL (no clamp) + settings declutter
+
+- **SL is now purely structural — no min/max clamp.** The stop sits at the pattern's invalidation level (just below the twin bottoms / rising-low support for CE; just above the twin tops / falling-high resistance for PE) with a small internal buffer. Removed the `[PA_MIN_SL_PTS, PA_MAX_SL_PTS]` clamp from the engine **and** the duplicate re-clamp in paPaper/paLive auto-entry — the engine's structural SL is now used verbatim. (Manual-entry button still uses the prev-candle SL with hidden defaults.) Note: stops can be wider than before on tall patterns — this is intentional, matching the chart playbook.
+- **Settings decluttered.** Detection internals (`PA_MIN_BODY`, `PA_CHART_PATTERN_TOL`, `PA_SR_LOOKBACK`) and SL placement (`PA_SL_BUFFER_PTS`, `PA_MAX_SL_PTS`, `PA_MIN_SL_PTS`) are now computed internally and removed from the Settings UI (code keeps the defaults; still `.env`/Bulk-Edit overridable). PA page now shows only the knobs you actually tune.
+- **Chart clarity (paper / live / replay).** Entry + exit are drawn on all three: entry arrow (with a clean `CE DblBot @23050`-style label, dead pattern/RSI tokens removed), exit arrow with P&L, plus dashed **SL** and dotted **Entry** price lines. Replay reuses the paper chart-data endpoint, so it shows the same. The SL line now reflects the true structural stop.
+
 ### Change: Price Action — strip RSI/ADX confluence + dead knobs (pure chart-pattern entries)
 
 - **RSI + ADX gates removed.** Per the chart-pattern playbook (the images use pure price structure), PA no longer applies any RSI or ADX confluence. Entry = the pattern breakout candle, gated only by `PA_MIN_BODY`. Deleted from `price_action.js`: RSI calc + cache, ADX calc, the chop gate, and all RSI/ADX entry conditions. Removed settings: `PA_RSI_PERIOD/CE_MIN/CAPS_ENABLED/CE_MAX/PE_MAX/PE_MIN`, `PA_ADX_ENABLED/MIN`.

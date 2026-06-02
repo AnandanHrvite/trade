@@ -143,15 +143,9 @@ const SETTINGS_SCHEMA = [
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Bearish reversal — twin equal highs + neckline breakdown → PE", default: "true" },
       { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Flat resistance + rising lows, breakout → CE", default: "true" },
       { key: "PA_PATTERN_DESC_TRIANGLE", label: "Descending Triangle → PE", type: "toggle", effect: EFFECT.SESSION, desc: "Flat support + falling highs, breakdown → PE", default: "true" },
-      // ── Pattern parameters ──
-      { key: "PA_MIN_BODY", label: "Min Candle Body (pts)", type: "number", min: 2, max: 15, step: 1, effect: EFFECT.SESSION, desc: "Minimum body size of the breakout candle", default: "5" },
-      { key: "PA_CHART_PATTERN_TOL", label: "Pattern Tolerance (pts)", type: "number", min: 4, max: 30, step: 1, effect: EFFECT.SESSION, desc: "How close the twin tops/bottoms (or flat S/R line) must be to count as 'equal'", default: "12" },
-      // ── Support/Resistance swings ──
-      { key: "PA_SR_LOOKBACK", label: "S/R Lookback (candles)", type: "number", min: 15, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Number of candles to find swing highs/lows for pattern detection + structure trail", default: "30" },
-      // ── Stop-loss (pattern structure) ──
-      { key: "PA_SL_BUFFER_PTS", label: "SL Buffer (pts)", type: "number", min: 0, max: 15, step: 0.5, effect: EFFECT.SESSION, desc: "Points beyond the pattern level (below bottoms / above tops) where the structural SL sits", default: "3" },
-      { key: "PA_MAX_SL_PTS", label: "Max SL (pts)", type: "number", min: 8, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on structural SL distance. 25 pts × ~75 qty bounds per-trade loss.", default: "25" },
-      { key: "PA_MIN_SL_PTS", label: "Min SL (pts)", type: "number", min: 3, max: 20, step: 1, effect: EFFECT.SESSION, desc: "Floor on SL distance", default: "8" },
+      // Pattern-shape internals (Min Body / Pattern Tolerance / S/R Lookback) and the
+      // structural SL placement (buffer beyond the pattern level) are computed internally
+      // by the engine — no knobs. The SL sits at the pattern's invalidation level itself.
       // ── Exit: breakeven then swing trail ──
       { key: "PA_BREAKEVEN_TRIGGER", label: "Breakeven Trigger (₹)", type: "number", min: 0, max: 2000, step: 50, effect: EFFECT.SESSION, desc: "Once peak PnL ≥ this many rupees, lift SL to entry+buffer so a winning trade can never close red. 0 = disabled.", default: "300" },
       { key: "PA_BREAKEVEN_BUFFER", label: "Breakeven Buffer (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Spot points above (CE) / below (PE) entry for the breakeven SL — small slippage cushion", default: "1" },

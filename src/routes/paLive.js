@@ -792,12 +792,8 @@ async function resolveAndEnter(side, spot, result) {
       return;
     }
 
-    // Clamp SL distance to [MIN_SL_PTS, MAX_SL_PTS] — matches backtest logic
-    const MAX_SL_PTS = parseFloat(process.env.PA_MAX_SL_PTS || "25");
-    const MIN_SL_PTS = parseFloat(process.env.PA_MIN_SL_PTS || "8");
-    const rawGap = Math.abs(spot - result.stopLoss);
-    const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
-    const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
+    // SL is the structural level from getSignal (pattern invalidation) — use as-is, no clamp.
+    const structuralSL = result.stopLoss;
 
     // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
     const _entryIstMin    = Math.floor((Math.floor(Date.now() / 1000) + 19800) / 60) % 1440;
@@ -813,8 +809,8 @@ async function resolveAndEnter(side, spot, result) {
       spotAtEntry:      spot,
       entryTime:        istNow(),
       reason:           result.reason,
-      stopLoss:         clampedSL,
-      initialStopLoss:  clampedSL,
+      stopLoss:         structuralSL,
+      initialStopLoss:  structuralSL,
       slSource:         result.slSource || "Swing",
       target:           result.target,
       bestPrice:        null,
@@ -858,7 +854,7 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [PA-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
+    log(`📝 [PA-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${structuralSL} | ${result.reason}`);
 
     notifyEntry({
       mode: "PA-LIVE",

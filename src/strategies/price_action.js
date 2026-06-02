@@ -20,9 +20,9 @@
  *   the only confluence filter — no RSI, no ADX.
  *
  * EXIT (as per the chart-pattern playbook):
- *   Hard SL: placed at the pattern structure + PA_SL_BUFFER_PTS — below the
- *     twin bottoms / rising-low support (CE), above the twin tops / falling-high
- *     resistance (PE) — then clamped to [PA_MIN_SL_PTS, PA_MAX_SL_PTS].
+ *   Hard SL: placed purely at the pattern structure (no min/max clamp) — just
+ *     below the twin bottoms / rising-low support (CE), just above the twin tops
+ *     / falling-high resistance (PE). A small internal buffer sits beyond it.
  *   Breakeven: once peak profit >= PA_BREAKEVEN_TRIGGER (₹), the SL is lifted to
  *     entry +/- PA_BREAKEVEN_BUFFER so a winner can't round-trip to a loss.
  *   Trail: swing-structure tightening (only tighten) from there.
@@ -177,11 +177,10 @@ function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
 
+  // All of these are computed/derived internally — not exposed as Settings knobs.
   var MIN_BODY      = parseFloat(cfg("PA_MIN_BODY", "5"));
   var SR_LOOKBACK   = parseInt(cfg("PA_SR_LOOKBACK", "30"), 10);
-  var MAX_SL_PTS    = parseFloat(cfg("PA_MAX_SL_PTS", "25"));
-  var MIN_SL_PTS    = parseFloat(cfg("PA_MIN_SL_PTS", "8"));
-  var SL_BUFFER     = parseFloat(cfg("PA_SL_BUFFER_PTS", "3")); // pts beyond the pattern level for the structural SL
+  var SL_BUFFER     = parseFloat(cfg("PA_SL_BUFFER_PTS", "3")); // small cushion beyond the pattern level for the structural SL
   var CHART_PATTERN_TOL = parseFloat(cfg("PA_CHART_PATTERN_TOL", "12")); // tolerance for double top/bottom & triangles
   // Per-pattern toggles (the only four entry logics)
   var PATTERN_DOUBLE_TOP    = cfg("PA_PATTERN_DOUBLE_TOP",    "true") === "true";
@@ -231,9 +230,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DOUBLE_TOP) {
   dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
   if (dblTop.detected && candleBody(sc) >= MIN_BODY) {
-    var rawSL = dblTop.topLevel + SL_BUFFER; // above the twin tops
-    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close + slPts).toFixed(2));
+    // SL = just above the twin tops (pattern invalidation), no min/max clamp
+    var sl = parseFloat((dblTop.topLevel + SL_BUFFER).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] PE Double Top neckline break " + dblTop.neckline.toFixed(0) + " top=" + dblTop.topLevel.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "STRONG",
@@ -249,9 +247,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DOUBLE_BOTTOM) {
   dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
   if (dblBot.detected && candleBody(sc) >= MIN_BODY) {
-    var rawSL = dblBot.bottomLevel - SL_BUFFER; // below the twin bottoms
-    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close - slPts).toFixed(2));
+    // SL = just below the twin bottoms (pattern invalidation), no min/max clamp
+    var sl = parseFloat((dblBot.bottomLevel - SL_BUFFER).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] CE Double Bottom neckline break " + dblBot.neckline.toFixed(0) + " bottom=" + dblBot.bottomLevel.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "STRONG",
@@ -267,9 +264,8 @@ function getSignal(candles, opts) {
   if (PATTERN_ASC_TRIANGLE) {
   ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (ascTri.detected && candleBody(sc) >= MIN_BODY) {
-    var rawSL = ascTri.risingLow - SL_BUFFER; // below the rising-low support line
-    var slPts = Math.max(Math.min(sc.close - rawSL, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close - slPts).toFixed(2));
+    // SL = just below the rising-low support line (pattern invalidation), no clamp
+    var sl = parseFloat((ascTri.risingLow - SL_BUFFER).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] CE Ascending Triangle breakout above " + ascTri.resistance.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_CE", signalStrength: "STRONG",
@@ -285,9 +281,8 @@ function getSignal(candles, opts) {
   if (PATTERN_DESC_TRIANGLE) {
   descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
   if (descTri.detected && candleBody(sc) >= MIN_BODY) {
-    var rawSL = descTri.fallingHigh + SL_BUFFER; // above the falling-high resistance line
-    var slPts = Math.max(Math.min(rawSL - sc.close, MAX_SL_PTS), MIN_SL_PTS);
-    var sl = parseFloat((sc.close + slPts).toFixed(2));
+    // SL = just above the falling-high resistance line (pattern invalidation), no clamp
+    var sl = parseFloat((descTri.fallingHigh + SL_BUFFER).toFixed(2));
     if (!silent) console.log("[PA " + _ist + "] PE Descending Triangle breakdown below " + descTri.support.toFixed(0) + " SL=" + sl);
     return Object.assign({}, base, {
       signal: "BUY_PE", signalStrength: "STRONG",

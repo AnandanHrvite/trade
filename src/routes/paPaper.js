@@ -701,12 +701,8 @@ async function resolveAndEnter(side, spot, result) {
       symbol = optionInfo.symbol;
     }
     const qty = getLotQty();
-    // Clamp SL distance to [MIN_SL_PTS, MAX_SL_PTS] — matches backtest logic
-    const MAX_SL_PTS = parseFloat(process.env.PA_MAX_SL_PTS || "25");
-    const MIN_SL_PTS = parseFloat(process.env.PA_MIN_SL_PTS || "8");
-    const rawGap = Math.abs(spot - result.stopLoss);
-    const slPts = Math.max(Math.min(rawGap, MAX_SL_PTS), MIN_SL_PTS);
-    const clampedSL = parseFloat((spot + slPts * (side === "CE" ? -1 : 1)).toFixed(2));
+    // SL is the structural level computed by getSignal (pattern invalidation) — use as-is, no clamp.
+    const structuralSL = result.stopLoss;
 
     // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
     if (!state._simMode) {
@@ -727,7 +723,7 @@ async function resolveAndEnter(side, spot, result) {
       }
     }
 
-    simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, {
+    simulateBuy(symbol, side, qty, spot, result.reason, structuralSL, result.target, spot, result.slSource, {
       signalStrength: result.signalStrength || null,
       rsiAtEntry:     result.rsi        != null ? result.rsi   : null,
       adxAtEntry:     result.adx        != null ? result.adx   : null,
@@ -1077,24 +1073,17 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore swing calc errors */ }
     }
 
-    // Shorten entryReason for marker text ("CE: BOS above 22450 | RSI=62 | SL=..." → "CE BOS @22450 R62")
+    // Shorten entryReason for marker text ("CE: Double Bottom neckline break 23050 | ..." → "CE DblBot @23050")
     const shortPAReason = (r) => {
       if (!r) return "";
       const side = /^CE/i.test(r) ? "CE" : /^PE/i.test(r) ? "PE" : "";
       let pattern = "";
-      if (/BOS/i.test(r))                 pattern = "BOS";
-      else if (/Bullish Engulfing/i.test(r)) pattern = "BullEng";
-      else if (/Bearish Engulfing/i.test(r)) pattern = "BearEng";
-      else if (/Hammer/i.test(r))         pattern = "Pin";
-      else if (/Shooting Star/i.test(r))  pattern = "PinBr";
-      else if (/Inside Bar/i.test(r))     pattern = "InsideBr";
-      else if (/Double Top/i.test(r))     pattern = "DblTop";
-      else if (/Double Bottom/i.test(r))  pattern = "DblBot";
+      if (/Double Top/i.test(r))               pattern = "DblTop";
+      else if (/Double Bottom/i.test(r))       pattern = "DblBot";
       else if (/Ascending Triangle/i.test(r))  pattern = "AscTri";
       else if (/Descending Triangle/i.test(r)) pattern = "DescTri";
-      const lvl = /(above|below|at support|at resistance|break)\s+(\d+)/i.exec(r);
-      const rsi = /RSI\s*[=:]?\s*(\d+)/i.exec(r);
-      return [side, pattern, lvl ? "@" + lvl[2] : "", rsi ? "R" + rsi[1] : ""].filter(Boolean).join(" ");
+      const lvl = /(above|below|break|breakdown)\s+(\d+)/i.exec(r);
+      return [side, pattern, lvl ? "@" + lvl[2] : ""].filter(Boolean).join(" ");
     };
 
     const markers = [...swingMarkers];
