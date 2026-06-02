@@ -830,10 +830,20 @@ async function forceClearStuckState(btn) {
 // Delete every cached replay result (the _replay_cache group). The next Run
 // recomputes from the raw tick stream — recordings, trade logs and replay
 // outputs are untouched, so this is always safe.
+// Brief, non-blocking toast in the bottom-right corner.
+function showReplayToast(msg) {
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed; bottom:24px; right:24px; z-index:9999; ' +
+    'background:#065f46; color:#ecfdf5; padding:12px 18px; border-radius:8px; ' +
+    'border:1px solid #10b981; box-shadow:0 4px 16px rgba(0,0,0,.4); ' +
+    'font-size:14px; max-width:360px; opacity:0; transition:opacity .2s;';
+  document.body.appendChild(t);
+  requestAnimationFrame(function(){ t.style.opacity = '1'; });
+  setTimeout(function(){ t.style.opacity = '0'; setTimeout(function(){ t.remove(); }, 250); }, 3000);
+}
+
 async function clearReplayCache(btn) {
-  if (!confirm('Delete ALL cached replay results?\\n\\n' +
-               'This wipes the deterministic replay cache so the next run recomputes fresh.\\n' +
-               'It does NOT touch recordings, trade logs, or replay outputs.')) return;
   const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Clearing…';
@@ -842,7 +852,9 @@ async function clearReplayCache(btn) {
     if (r === null) { btn.disabled = false; btn.textContent = orig; return; } // secret prompt cancelled
     const data = await r.json();
     if (data.success) {
-      btn.textContent = 'Cleared ' + (data.deleted ? data.deleted.length : 0) + ' ✓';
+      var n = data.deleted ? data.deleted.length : 0;
+      btn.textContent = 'Cleared ' + n + ' ✓';
+      showReplayToast('Cleared ' + n + ' cached replay result' + (n === 1 ? '' : 's') + '. Next run recomputes fresh.');
       setTimeout(function(){ btn.disabled = false; btn.textContent = orig; }, 2500);
     } else {
       btn.disabled = false;
