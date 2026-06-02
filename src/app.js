@@ -1072,8 +1072,11 @@ app.get("/", (req, res) => {
     .da-grid.cols-2 { grid-template-columns:repeat(2, 1fr); }
     .da-grid.cols-3 { grid-template-columns:repeat(3, 1fr); }
     .da-grid.cols-4 { grid-template-columns:repeat(4, 1fr); }
-    @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr 1fr; } }
-    @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4 { grid-template-columns:1fr; } }
+    .da-grid.cols-5 { grid-template-columns:repeat(5, 1fr); }
+    .da-grid.cols-6 { grid-template-columns:repeat(6, 1fr); }
+    @media (max-width:1100px){ .da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:repeat(3, 1fr); } }
+    @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr 1fr; } }
+    @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr; } }
     .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; }
     .da-tile.swing { border-top:2px solid #3b82f6; }
     .da-tile.scalp { border-top:2px solid #f59e0b; }
@@ -2028,7 +2031,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
 
   function renderLive(data) {
     // data: { SWING, SCALP, ... } keyed by tile, each from /{strat}-paper/status/data
-    var html = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length, 4) + '">';
+    var html = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length, 6) + '">';
     SESSION_TILES.forEach(function(t){
       var d = data[t.key];
       if (!d) {
@@ -2101,7 +2104,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
     var lastDayAgg = lastDay ? aggregateTrades(combined, lastDay, lastDay) : null;
 
     // ── Last session card (per strategy) ── enabled tiles + a TOTAL card
-    var lastHtml = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length + 1, 4) + '">';
+    var lastHtml = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length + 1, 6) + '">';
     SESSION_TILES.forEach(function(t){
       var s = lastDayAgg ? lastDayAgg.byStrategy[t.key] : null;
       var net = s ? s.net : 0;
