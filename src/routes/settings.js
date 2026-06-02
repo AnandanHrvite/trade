@@ -576,8 +576,8 @@ const SESSION_RESTART_KEYS = new Set([
 // Schema-derived restart set: every field marked EFFECT.SESSION or EFFECT.SERVER
 // in SETTINGS_SCHEMA. The schema drives the badge shown in the UI, so deriving
 // from it keeps the post-save restart prompt in sync with what users see —
-// previously this drifted (e.g. PA_TRAIL_START showed SESSION RESTART but
-// wasn't in the hardcoded list, so the prompt never fired).
+// previously this drifted (a SESSION-RESTART field could be missing from the
+// hardcoded list, so the prompt never fired).
 const SCHEMA_RESTART_KEYS = new Set();
 for (const section of SETTINGS_SCHEMA) {
   for (const f of section.fields || []) {
