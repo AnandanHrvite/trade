@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Price Action rebuilt — 4 chart patterns only, structural SL + breakeven→swing trail
+
+- **Patterns cut to four.** Engulfing, Pin Bar, Inside Bar and Break-of-Structure are **removed** from `price_action.js`. PA now fires on exactly four chart patterns, all **ON by default**: **Double Bottom (W) → CE**, **Double Top (M) → PE**, **Ascending Triangle → CE**, **Descending Triangle → PE**. Detection uses the last two swing highs/lows (`PA_SR_LOOKBACK=30`), "equal" levels within `PA_CHART_PATTERN_TOL=12` pts, breakout candle body ≥ `PA_MIN_BODY=5`.
+- **Stop-loss now sits at the pattern structure.** SL is placed `PA_SL_BUFFER_PTS=3` beyond the pattern extreme (below the twin bottoms / rising-low support for CE; above the twin tops / falling-high resistance for PE), then clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]` (cap raised from 12). The old tight 8–12 pt clamp that overrode structure is gone.
+- **Exit = breakeven then swing trail.** Once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts; from there the swing-structure trail tightens it to each new swing low/high. This **wires the previously-inert** `PA_BREAKEVEN_TRIGGER`/`PA_BREAKEVEN_BUFFER` knobs. The candle-trail, tiered profit-lock floor, and PA time-stop are **removed** (paper / live / backtest aligned).
+- **Settings cleaned.** Dropped `PA_PATTERN_ENGULFING/PINBAR/BOS/INSIDE_BAR`, `PA_PIN_WICK_RATIO`, `PA_MAX_STRUCT_SL_PTS`, `PA_ADX_RISING_REQUIRED`, `PA_SR_ZONE_PTS`, `PA_CANDLE_TRAIL_*`, `PA_TRAIL_START/PCT/TIERS`, `PA_TIME_STOP_*`. Added `PA_SL_BUFFER_PTS`; surfaced `PA_CHART_PATTERN_TOL`. Pattern-Test page (`/pa-pattern-backtest`) now shows the four panels only.
+- Historical trade logs that contain the old pattern names still render correctly in the PA history view (display-side classifiers retained).
+
 ### Change: Live harnesses now run in parallel + event log survives restart
 
 - **Multiple harnesses at once.** The live harness was a process-wide singleton — only one strategy's harness could be installed at a time, so "Start All (Harness)" actually installed Swing and then **409'd Scalp + ORB** ("already installed"). The harness is now a per-mode registry: each strategy registers its own `notify` order hooks keyed by mode and filters payloads by its `modeTag`, so Swing / Scalp / ORB / PA harnesses run **concurrently without colliding**. Re-installing the *same* mode still throws. (`notify.js` now holds a `Map` of hook-sets instead of a single pair.)

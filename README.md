@@ -89,18 +89,18 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 5 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags; Straddle: trigger/BB-width + combined-premium MFE/MAE + max spot travel) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
-### Strategy 3: Price Action — Patterns + S/R Zones (5-min)
-- **Patterns**: Bullish/Bearish Engulfing, Pin Bar, Inside Bar Breakout, Break of Structure, Double Top/Bottom, Ascending/Descending Triangle
-- **S/R Zones**: Dynamic from swing highs/lows (last 30 candles, zone = swing ±10pts)
-- **RSI confluence (per pattern class)**:
-  - **Continuation patterns (BOS, Inside-Bar)**: CE requires RSI > 45 (momentum-aligned), PE requires RSI < 55
-  - **Reversal patterns (Engulfing, Pin Bar, Double Top/Bottom)**: RSI logic **inverted** in v4.5.0 — bullish reversal CE looks for *oversold* RSI (< 55), bearish reversal PE looks for *overbought* RSI (> 45). Prior code had the same RSI gate as continuation patterns, which gated out exactly the reversal setups it should have caught.
-- **ADX chop + rising filters** (`PA_ADX_ENABLED` / `PA_ADX_RISING_REQUIRED`): block low-ADX bars and require ADX[now] ≥ ADX[2 bars ago] for every pattern. The historical "ADX directional (+DI/−DI)" toggle was a no-op (no reader in [price_action.js](src/strategies/price_action.js)) and has been removed from the Settings UI.
-- **Breakeven trigger** (`PA_BREAKEVEN_TRIGGER` / `PA_BREAKEVEN_BUFFER`): **Settings UI knobs only — engine reader was reverted on 2026-05-21** (commit `5f1944d` reverted `c131923`). The UI rows still exist in [settings.js](src/routes/settings.js) but `paPaper.js` / `paLive.js` / `paBacktest.js` no longer read them, so changing the values has no effect on trades. Same zombie state as the old `PA_ADX_DIRECTIONAL` before its UI row was removed.
-- **SL**: Signal candle wick, capped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]`. BOS/Inside-Bar setups are skipped if the raw structural SL exceeds `PA_MAX_STRUCT_SL_PTS=15` (thin-structure / false-breakout guard).
-- **Exit**: Candle trail (prev N-bar H/L, parallel with profit-lock floor) + tiered profit-lock + PA-specific time-stop (3 candles / ±10pts) + breakeven SL + bid-ask spread guard
-- **Restart-survival**: BOS / Inside-Bar pending state is now persisted across process restart (was being lost on `pm2 reload`)
-- **Tightening goal**: cap loss/trade and let winners run via the existing trail stack
+### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
+- **Patterns (the only four entry logics)**:
+  - **Double Bottom (W) → CE** — twin equal swing lows + close above the neckline (peak between them)
+  - **Double Top (M) → PE** — twin equal swing highs + close below the neckline (valley between them)
+  - **Ascending Triangle → CE** — flat resistance (equal swing highs) + rising swing lows, close above resistance
+  - **Descending Triangle → PE** — flat support (equal swing lows) + falling swing highs, close below support
+  - "Equal" levels are within `PA_CHART_PATTERN_TOL=12` pts; the breakout candle body must be ≥ `PA_MIN_BODY=5` pts. The old Engulfing / Pin Bar / Inside Bar / BOS patterns were removed.
+- **Swings**: last `PA_SR_LOOKBACK=30` candles drive both detection and the structure trail.
+- **RSI confluence**: CE requires RSI in `(PA_RSI_CE_MIN, PA_RSI_CE_MAX)`, PE in `(PA_RSI_PE_MIN, PA_RSI_PE_MAX)`.
+- **ADX chop filter** (`PA_ADX_ENABLED` / `PA_ADX_MIN`): block entries when ADX is below threshold (ranging market).
+- **SL (pattern structure)**: placed `PA_SL_BUFFER_PTS=3` beyond the pattern extreme — below the twin bottoms / rising-low support (CE), above the twin tops / falling-high resistance (PE) — then clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]`.
+- **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE). Bid-ask spread guard + EOD square-off still apply. The old candle-trail / tiered profit-lock / time-stop were removed.
 
 ### Strategy 4: ORB — Opening Range Breakout (15-min OR, single-leg CE/PE)
 - **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken on a breakout above ORH or a long PE on a breakdown below ORL.
@@ -298,30 +298,21 @@ Full spec: [SCALP.md](SCALP.md).
 | `PA_ENABLED` | `false` | Must be `true` for Fyers PA live orders |
 | `PA_RESOLUTION` | `5` | Candle size in minutes (`5` or `3`) |
 | `PA_ENTRY_START` / `PA_ENTRY_END` | `09:20` / `14:30` | Entry window (IST) |
-| `PA_MAX_SL_PTS` | `12` | Hard cap on SL distance (≈ ₹1560 max loss at lot=130) |
+| `PA_SL_BUFFER_PTS` | `3` | Points beyond the pattern level where the structural SL sits |
+| `PA_MAX_SL_PTS` | `25` | Hard cap on structural SL distance |
 | `PA_MIN_SL_PTS` | `8` | Floor for SL distance |
-| `PA_MAX_STRUCT_SL_PTS` | `15` | Skip BOS/Inside-Bar setups when raw structural SL exceeds this |
-| `PA_CANDLE_TRAIL_ENABLED` | `true` | Use prev N-bar H/L as trail exit |
-| `PA_CANDLE_TRAIL_BARS` | `3` | Lookback for candle trail |
-| `PA_TRAIL_START` | `600` | Activate trailing after ₹N profit |
-| `PA_TRAIL_PCT` | `40` | Base trail floor |
-| `PA_TRAIL_TIERS` | `1000:50,1500:60,2500:70,4000:80` | Peak:pct ladder |
-| `PA_BREAKEVEN_TRIGGER` | `300` | ⚠ **UI-only, engine reverted on 2026-05-21** (commit `5f1944d`). Setting visible in Settings UI but `paPaper.js` / `paLive.js` / `paBacktest.js` no longer read it. |
-| `PA_BREAKEVEN_BUFFER` | `1` | ⚠ Same status as `PA_BREAKEVEN_TRIGGER` above. |
-| `PA_TIME_STOP_CANDLES` | `3` | Auto-exit flat trades after N candles (PA override of global `4`) |
-| `PA_TIME_STOP_FLAT_PTS` | `10` | "Flat" threshold for time-stop (PA override of global `20`) |
+| `PA_BREAKEVEN_TRIGGER` | `300` | Once peak PnL ≥ ₹N, lift SL to entry+buffer. `0` disables. |
+| `PA_BREAKEVEN_BUFFER` | `1` | Spot pts above (CE) / below (PE) entry for the breakeven SL |
+| `PA_CHART_PATTERN_TOL` | `12` | Tolerance (pts) for "equal" twin tops/bottoms and flat S/R lines |
+| `PA_MIN_BODY` | `5` | Minimum breakout-candle body (pts) |
+| `PA_SR_LOOKBACK` | `30` | Candles scanned for swing highs/lows (detection + structure trail) |
 | `PA_RSI_CAPS_ENABLED` | `true` | Block CE when RSI overbought / PE when oversold |
 | `PA_RSI_CE_MAX` / `PA_RSI_PE_MIN` | `65` / `25` | Overbought/oversold cap for the RSI gates |
 | `PA_ADX_ENABLED` / `PA_ADX_MIN` | `true` / `20` | ADX chop filter |
-| `PA_ADX_RISING_REQUIRED` | `true` | Require ADX[now] ≥ ADX[2 bars ago] for every pattern |
-| `PA_PATTERN_ENGULFING` | `true` | Toggle Bullish/Bearish Engulfing at S/R |
-| `PA_PATTERN_PINBAR` | `true` | Toggle Hammer / Shooting Star (pin bars) at S/R |
-| `PA_PATTERN_BOS` | `true` | Toggle Break-of-Structure (close beyond swing) |
-| `PA_PATTERN_INSIDE_BAR` | `true` | Toggle Inside Bar mother-bar breakout |
-| `PA_PATTERN_DOUBLE_TOP` | `false` | Toggle Double Top (M) bearish reversal |
-| `PA_PATTERN_DOUBLE_BOTTOM` | `false` | Toggle Double Bottom (W) bullish reversal |
-| `PA_PATTERN_ASC_TRIANGLE` | `false` | Toggle Ascending Triangle bullish breakout |
-| `PA_PATTERN_DESC_TRIANGLE` | `false` | Toggle Descending Triangle bearish breakdown |
+| `PA_PATTERN_DOUBLE_BOTTOM` | `true` | Toggle Double Bottom (W) → CE |
+| `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
+| `PA_PATTERN_ASC_TRIANGLE` | `true` | Toggle Ascending Triangle → CE |
+| `PA_PATTERN_DESC_TRIANGLE` | `true` | Toggle Descending Triangle → PE |
 | `PA_OPT_STOP_PCT` | `0.15` | Cap option premium decay — fires before spot SL on bled-out far-OTM. `0` disables. |
 | `PA_MAX_DAILY_TRADES` | `30` | Daily PA cap |
 | `PA_MAX_DAILY_LOSS` | `2000` | PA kill-switch in INR |

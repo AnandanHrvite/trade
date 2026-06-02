@@ -30,7 +30,7 @@ const tickRecorder  = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS, errorPage } = require("../utils/sharedNav");
 const { isTradingAllowed } = require("../utils/nseHolidays");
-const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, parseTrailTiers, sleep } = require("../utils/tradeUtils");
+const { reverseSlice: _reverseSlice, mapTradesReversed: _mapTradesReversed, fastISTTime: _fastISTTime, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseTimeToMinutes, sleep } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const fyers = require("../config/fyers");
@@ -50,13 +50,8 @@ const PA_RES            = parseInt(process.env.PA_RESOLUTION || "5", 10);
 const _PA_MAX_TRADES    = parseInt(process.env.PA_MAX_DAILY_TRADES || "30", 10);
 const _PA_MAX_LOSS      = parseFloat(process.env.PA_MAX_DAILY_LOSS || "2000");
 const _PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
-const _PA_TRAIL_START   = parseFloat(process.env.PA_TRAIL_START || "350");
-const _PA_TRAIL_PCT     = parseFloat(process.env.PA_TRAIL_PCT || "65");
-// Tiered trail: as peak grows, keep more. Format: "peak1:pct1,peak2:pct2,..."
-// Default: ₹500→55%, ₹1000→60%, ₹3000→70%, ₹5000→80%, ₹10000→90%
-const _PA_TRAIL_TIERS = parseTrailTiers(process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90");
-const _PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false";
-const _PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+const _PA_BE_TRIGGER    = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ peak profit to lift SL to breakeven (0 = off)
+const _PA_BE_BUFFER     = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts above (CE) / below (PE) entry for the BE SL
 const _PA_OPT_STOP_PCT        = parseFloat(process.env.PA_OPT_STOP_PCT || "0.15");
 
 // ── Previous day OHLC (fetched on session start) ────────────────────
@@ -628,28 +623,18 @@ function onTick(tick) {
       return;
     }
 
-    // 2. TRAILING — candle trail + profit-lock floor (parallel, whichever fires first)
-    if (_PA_TRAIL_START > 0 && pos.peakPnl >= _PA_TRAIL_START) {
-      // a) Candle trail breach (level updated on candle close)
-      if (_PA_CANDLE_TRAIL && pos.candleTrailLevel) {
-        const candleBreached = (pos.side === "CE" && price <= pos.candleTrailLevel)
-                            || (pos.side === "PE" && price >= pos.candleTrailLevel);
-        if (candleBreached) {
-          squareOff(price, `Candle Trail (${_PA_CANDLE_TRAIL_BARS}-bar ${pos.side === "CE" ? "low" : "high"} ${pos.candleTrailLevel})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
-          return;
-        }
+    // 2. BREAKEVEN — once peak profit clears the trigger, lift SL to entry+buffer
+    //    so a winner can't round-trip to a loss. Structure-trail (candle close)
+    //    keeps tightening from there. Only ever moves the SL the favourable way.
+    if (_PA_BE_TRIGGER > 0 && !pos.breakevenArmed && pos.peakPnl >= _PA_BE_TRIGGER) {
+      const beLevel = pos.side === "CE" ? pos.spotAtEntry + _PA_BE_BUFFER : pos.spotAtEntry - _PA_BE_BUFFER;
+      const better = pos.side === "CE" ? beLevel > pos.stopLoss : beLevel < pos.stopLoss;
+      if (better) {
+        log(`🛡️ [PA-LIVE] Breakeven: SL ₹${pos.stopLoss} → ₹${beLevel.toFixed(2)} (peak ₹${Math.round(pos.peakPnl)} ≥ ₹${_PA_BE_TRIGGER})`);
+        pos.stopLoss = parseFloat(beLevel.toFixed(2));
+        pos.slSource = "Breakeven";
       }
-
-      // b) Profit-lock floor (safety net)
-      let _pct = _PA_TRAIL_PCT;
-      for (const tier of _PA_TRAIL_TIERS) {
-        if (pos.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-      }
-      const trailFloor = parseFloat((pos.peakPnl * _pct / 100).toFixed(2));
-      if (curPnl <= trailFloor) {
-        squareOff(price, `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(pos.peakPnl)})`).catch(e => console.error(`🚨 [PA-LIVE] squareOff error: ${e.message}`));
-        return;
-      }
+      pos.breakevenArmed = true;
     }
 
     // EOD
@@ -673,31 +658,9 @@ async function onCandleClose(bar) {
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
-    // ── Time-stop: flat trade after N candles = theta bleed risk ──
-    {
-      const _pos = state.position;
-      const _entryOpt = _pos.optionEntryLtp;
-      const _curOpt   = state.optionLtp || _pos.optionCurrentLtp;
-      let _pnlPts = null;
-      if (_entryOpt && _curOpt) {
-        _pnlPts = _curOpt - _entryOpt;
-      } else if (_pos.spotAtEntry) {
-        _pnlPts = (bar.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
-      }
-      const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts, {
-        maxCandles: parseInt(process.env.PA_TIME_STOP_CANDLES || "3", 10),
-        flatPts:    parseFloat(process.env.PA_TIME_STOP_FLAT_PTS || "10"),
-      });
-      if (_tsReason) {
-        log(`⏳ [PA-LIVE] ${_tsReason}`);
-        await squareOff(bar.close, _tsReason);
-        return;
-      }
-    }
-
     const window = [...state.candles];
 
-    // Update trailing SL (swing-based, tighten only)
+    // Structure trail: tighten SL to the most recent swing low (CE) / high (PE)
     if (window.length >= 15) {
       const trailResult = paStrategy.updateTrailingSL(window, state.position.stopLoss, state.position.side);
       if (trailResult.sl !== state.position.stopLoss) {
@@ -706,24 +669,6 @@ async function onCandleClose(bar) {
         if (trailResult.source) state.position.slSource = trailResult.source;
         savePAPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
         updatePAHardSL(trailResult.sl);
-      }
-    }
-
-    // Update candle trail level (lowest low / highest high of last N candles, tighten only)
-    if (_PA_CANDLE_TRAIL && state.position.peakPnl >= _PA_TRAIL_START && window.length >= _PA_CANDLE_TRAIL_BARS) {
-      const bars = window.slice(-_PA_CANDLE_TRAIL_BARS);
-      if (state.position.side === "CE") {
-        const newLevel = Math.min(...bars.map(b => b.low));
-        if (!state.position.candleTrailLevel || newLevel > state.position.candleTrailLevel) {
-          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (${_PA_CANDLE_TRAIL_BARS}-bar low)`);
-          state.position.candleTrailLevel = newLevel;
-        }
-      } else {
-        const newLevel = Math.max(...bars.map(b => b.high));
-        if (!state.position.candleTrailLevel || newLevel < state.position.candleTrailLevel) {
-          log(`📐 [PA-LIVE] Candle Trail: ${state.position.candleTrailLevel || 'none'} → ${newLevel} (${_PA_CANDLE_TRAIL_BARS}-bar high)`);
-          state.position.candleTrailLevel = newLevel;
-        }
       }
     }
 
@@ -1718,7 +1663,7 @@ ${buildSidebar('paLive', liveActive, state.running, {
 <div class="top-bar">
   <div>
     <div class="top-bar-title">Price Action Live Trade</div>
-    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: Prev Candle \u00b7 Trail ${_PA_TRAIL_PCT}%+ tiered from \u20b9${_PA_TRAIL_START} \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-meta">${paStrategy.NAME} \u00b7 ${PA_RES}-min candles \u00b7 SL: pattern structure \u00b7 Breakeven \u20b9${_PA_BE_TRIGGER} then swing trail \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running

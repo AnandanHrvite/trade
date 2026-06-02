@@ -1,7 +1,7 @@
 /**
  * PRICE ACTION BACKTEST — /pa-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the price action strategy (Engulfing + Pin Bar + Inside Bar + BOS) on 5-min candles.
+ * Backtests the price action strategy (Double Top/Bottom + Ascending/Descending Triangle) on 5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -84,14 +84,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   // Slippage simulation (pts added against you on entry & exit)
   const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
 
-  // Trailing profit config
-  const PA_TRAIL_START  = parseFloat(process.env.PA_TRAIL_START || "350");
-  const PA_TRAIL_PCT    = parseFloat(process.env.PA_TRAIL_PCT || "65");
-  const PA_TRAIL_TIERS = (process.env.PA_TRAIL_TIERS || "500:55,1000:60,3000:70,5000:80,10000:90")
-    .split(",").map(t => { const [p, pct] = t.split(":"); return { peak: parseFloat(p), pct: parseFloat(pct) }; })
-    .sort((a, b) => b.peak - a.peak);
-  const PA_CANDLE_TRAIL = process.env.PA_CANDLE_TRAIL_ENABLED !== "false"; // default true
-  const PA_CANDLE_TRAIL_BARS = parseInt(process.env.PA_CANDLE_TRAIL_BARS || "2", 10);
+  // Breakeven config — lift SL to entry+buffer once peak profit clears the trigger
+  const PA_BE_TRIGGER = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ (0 = off)
+  const PA_BE_BUFFER  = parseFloat(process.env.PA_BREAKEVEN_BUFFER || "1");    // spot pts
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -137,7 +132,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   console.log(`🔍 PRICE ACTION BACKTEST — ${paStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | Swing trailing SL | Price Action entry`);
   console.log(`   MaxTrades: ${PA_MAX_TRADES}/day | MaxLoss: ₹${PA_MAX_LOSS}/day`);
-  console.log(`   Trail: ₹${PA_TRAIL_START} start, base ${PA_TRAIL_PCT}% + ${PA_TRAIL_TIERS.length} tiers | SL: Signal Candle | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   SL: pattern structure | Breakeven ₹${PA_BE_TRIGGER} then swing trail | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -208,7 +203,6 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         target:         null,
         candlesHeld:    0,
         peakPnl:        0,
-        candleTrailLevel: null,
       };
       pendingSignal = null;
     } else if (pendingSignal && (position || isEOD)) {
@@ -234,14 +228,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         return pts - _estCharges / LOT_SIZE;
       };
 
-      // ── Helper: estimate exit price for a target PNL ₹ amount ──
-      const _exitPriceForPnl = (targetPnl) => {
-        const _needed = targetPnl + (OPTION_SIM ? ((THETA_DAY * position.candlesHeld) / CANDLES_PER_DAY) + _estCharges : _estCharges / LOT_SIZE);
-        const _pts    = OPTION_SIM ? _needed / (DELTA * LOT_SIZE) : _needed;
-        return parseFloat((position.entryPrice + _pts * (position.side === "CE" ? 1 : -1)).toFixed(2));
-      };
-
-      // ── Track peak PNL for trailing profit ──
+      // ── Track peak PNL for breakeven trigger ──
       const bestSpot = position.side === "CE" ? candle.high : candle.low;
       const bestPnl  = _runPnl(bestSpot);
       if (!position.peakPnl || bestPnl > position.peakPnl) {
@@ -249,7 +236,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
       }
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. SL hit  2. Trail profit  3. Update trailing SL  4. EOD
+      // EXIT: 1. SL hit  2. Breakeven  3. Structure trail SL  4. EOD
       // ──────────────────────────────────────────────────────────────────────
 
       // 1. SL hit (initial or swing-trailed)
@@ -265,50 +252,18 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
         exitReason = _isTrail ? `${_src} Trail SL hit` : `${_src} SL hit`;
       }
 
-      // 2. TRAILING — candle trail + profit-lock floor (parallel, whichever fires first)
-      if (!exitReason && PA_TRAIL_START > 0 && position.peakPnl >= PA_TRAIL_START) {
-        // a) Candle trail: lowest low / highest high of last N candles
-        if (PA_CANDLE_TRAIL && position.candlesHeld >= (PA_CANDLE_TRAIL_BARS + 1) && i >= PA_CANDLE_TRAIL_BARS) {
-          // Compute trail level from last N completed candles
-          if (position.side === "CE") {
-            let minLow = candles[i - 1].low;
-            for (let b = 2; b <= PA_CANDLE_TRAIL_BARS; b++) minLow = Math.min(minLow, candles[i - b].low);
-            if (!position.candleTrailLevel || minLow > position.candleTrailLevel) {
-              position.candleTrailLevel = minLow;
-            }
-          } else {
-            let maxHigh = candles[i - 1].high;
-            for (let b = 2; b <= PA_CANDLE_TRAIL_BARS; b++) maxHigh = Math.max(maxHigh, candles[i - b].high);
-            if (!position.candleTrailLevel || maxHigh < position.candleTrailLevel) {
-              position.candleTrailLevel = maxHigh;
-            }
-          }
-
-          // Check breach
-          const candleBreached = (position.side === "CE" && candle.low <= position.candleTrailLevel)
-                              || (position.side === "PE" && candle.high >= position.candleTrailLevel);
-          if (candleBreached) {
-            exitPrice  = parseFloat((position.candleTrailLevel + SLIPPAGE_PTS * (position.side === "CE" ? -1 : 1)).toFixed(2));
-            exitReason = `Candle Trail (${PA_CANDLE_TRAIL_BARS}-bar ${position.side === "CE" ? "low" : "high"} ${position.candleTrailLevel})`;
-          }
+      // 2. BREAKEVEN — lift SL to entry+buffer once peak profit clears the trigger
+      if (!exitReason && PA_BE_TRIGGER > 0 && !position.breakevenArmed && position.peakPnl >= PA_BE_TRIGGER) {
+        const beLevel = position.side === "CE" ? position.entryPrice + PA_BE_BUFFER : position.entryPrice - PA_BE_BUFFER;
+        const better = position.side === "CE" ? beLevel > position.stopLoss : beLevel < position.stopLoss;
+        if (better) {
+          position.stopLoss = parseFloat(beLevel.toFixed(2));
+          position.slSource = "Breakeven";
         }
-
-        // b) Profit-lock floor (safety net — prevents total giveback)
-        if (!exitReason) {
-          let _pct = PA_TRAIL_PCT;
-          for (const tier of PA_TRAIL_TIERS) {
-            if (position.peakPnl >= tier.peak) { _pct = tier.pct; break; }
-          }
-          const trailFloor = parseFloat((position.peakPnl * _pct / 100).toFixed(2));
-          const curPnl = _runPnl(candle.close);
-          if (curPnl <= trailFloor) {
-            exitPrice  = _exitPriceForPnl(trailFloor);
-            exitReason = `Trail ${_pct}% ₹${trailFloor} (peak ₹${Math.round(position.peakPnl)})`;
-          }
-        }
+        position.breakevenArmed = true;
       }
 
-      // 3. Update trailing SL (swing-based, tighten only)
+      // 3. Structure trail SL (swing-based, tighten only)
       if (!exitReason) {
         const trailResult = paStrategy.updateTrailingSL(window, position.stopLoss, position.side);
         if (trailResult.sl !== position.stopLoss) {
