@@ -1044,7 +1044,7 @@ app.get("/", (req, res) => {
     .dash-chart-link:hover { filter:brightness(1.25); }
     .dash-chart-wrap { position:relative; height:clamp(140px, 26vh, 360px); }
     /* Cumulative card tucked into the strategy grid: span the 2-col gap, match card chart height */
-    .dash-cum-inline { grid-column:span 2; }
+    .dash-cum-inline { grid-column:1 / -1; }
     .dash-cum-inline .dash-chart-wrap { height:130px; }
     .dash-chart-empty { text-align:center; padding:46px 20px 14px; color:#4a6080; font-size:0.72rem; }
     @media (max-width:900px) { .dash-chart-grid { grid-template-columns:1fr; } }
