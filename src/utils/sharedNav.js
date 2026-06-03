@@ -807,7 +807,13 @@ function sidebarCSS() {
     .sb-reset-btn:hover{background:rgba(161,98,7,0.06);}
 
     /* ── MAIN CONTENT ── */
-    .main-content{margin-left:200px;flex:1;display:flex;flex-direction:column;min-height:100vh;}
+    /* min-width:0 is essential: .main-content is a flex item, and without it the
+       default min-width:auto lets it grow WIDER than the viewport to fit its
+       widest child (multi-column grids), so the overflow gets clipped by
+       body{overflow-x:hidden} and the right-hand cards disappear on narrower
+       desktops (13" MacBook). Pinning min-width:0 keeps it at viewport width so
+       the inner responsive grids reflow instead of overflowing. */
+    .main-content{margin-left:200px;flex:1;min-width:0;display:flex;flex-direction:column;min-height:100vh;}
     .top-bar{background:#040c18;border-bottom:1px solid #0e1e36;padding:7px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:50;}
     .top-bar-title{font-size:0.82rem;font-weight:700;color:#e0eaf8;}
     .top-bar-meta{font-size:0.62rem;color:#2a4060;margin-top:1px;}

@@ -954,6 +954,10 @@ app.get("/", (req, res) => {
        inline from dashCardCount) so the cards fill one row with no empty
        trailing column. Collapses to fewer cols on narrow screens. */
     .mm-grid { display:grid; grid-template-columns:repeat(var(--mm-cols,4), minmax(0,1fr)); gap:10px; }
+    /* Grid items default to min-width:auto, which can force a track wider than
+       its share and overflow the (clipped) page. Let them shrink so the grids
+       always reflow to the available width. */
+    .mm-grid > *, .da-grid > *, .ts-grid > * { min-width:0; }
     @media (max-width:1100px) { .mm-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
     @media (max-width:560px)  { .mm-grid { grid-template-columns:1fr; } }
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:8px 10px 9px; display:flex; flex-direction:column; }
