@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Dashboard — hide controls & broker cards while a trade is running
+
+- **Distraction-free Dashboard during active trading.** While any strategy is running (paper or live), the Dashboard now hides the top-bar action buttons (Start All (Harness) / Start All (Paper) / Reset Token), the schedule/cache pills (Expiry / Holiday / Candle cache), and the Fyers/Zerodha broker connection cards (balance, status, Login buttons). These reappear once everything is idle.
+- **Always-on running indicator.** A status badge stays visible while active — the existing mode-specific badges (LIVE ACTIVE / SCALP LIVE / PA LIVE / ORB PAPER / STRADDLE PAPER) plus a new generic **TRADE ACTIVE** badge that covers the remaining states (Swing/Scalp/PA paper, ORB/Straddle live) so you always know a trade is on.
+
 ### Change: Price Action — retest-confirmation entry, SL cap restored, pattern drawn on chart
 
 - **Retest entry (kills false breakouts).** A breakout no longer enters on the breakout candle. It's parked as *pending* and only fires when price pulls back to the broken level and closes back on the breakout side (a retest), within `PA_RETEST_MAX_WAIT=4` candles and `PA_RETEST_TOL_PTS=10`. If price closes back through the level, the breakout is discarded. Replay diagnostic over 8 sessions showed ~23% WR from raw-breakout entries (breakout-then-instant-reversal) — this targets that leak. All internal knobs (no Settings rows).

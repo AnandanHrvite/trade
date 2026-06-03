@@ -522,6 +522,26 @@ app.get("/", (req, res) => {
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
+  // True when ANY strategy (paper or live) is currently running. While active we
+  // hide the dashboard's control buttons (Start All / Reset Token), broker
+  // connection cards, and schedule/cache pills so they can't be touched or
+  // distract mid-trade — the running-status badge stays visible. Mirror of the
+  // IDLE condition used for the top-bar badge below.
+  const anyModeActive = liveActive
+    || (scalpModeOn && scalpMode)
+    || (paModeOn && paMode)
+    || (orbModeOn && orbMode)
+    || (straddleModeOn && straddleMode);
+  // The mode-specific top-bar badges below only cover a subset of states
+  // (SWING live, SCALP_LIVE, PA_LIVE, ORB_PAPER, STRADDLE_PAPER). When some
+  // OTHER mode is active (e.g. Swing/Scalp/PA paper, ORB/Straddle live) we still
+  // want a running indicator visible — show a generic badge in that gap.
+  const specificBadgeShown = liveActive
+    || (scalpModeOn && scalpMode === 'SCALP_LIVE')
+    || (paModeOn && paMode === 'PA_LIVE')
+    || (orbModeOn && orbMode === 'ORB_PAPER')
+    || (straddleModeOn && straddleMode === 'STRADDLE_PAPER');
+
   // Strategy tiles for the dashboard "Last Session" / "Today So Far" analytics
   // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
   // panel only shows currently-enabled strategies (and includes ORB/Straddle).
@@ -1145,18 +1165,20 @@ ${buildSidebar('dashboard', liveActive)}
       <button type="button" class="dst-btn" data-src="live">LIVE</button>
     </div>
     <div class="top-bar-right">
+      ${anyModeActive ? '' : `
       <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (Swing + Scalp + ORB)">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
-      <span id="cache-info-pill" class="top-bar-cache empty" title="NIFTY candle cache built from Fyers history">📦 Candle cache: checking…</span>
+      <span id="cache-info-pill" class="top-bar-cache empty" title="NIFTY candle cache built from Fyers history">📦 Candle cache: checking…</span>`}
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${straddleModeOn && straddleMode === 'STRADDLE_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#ec4899;"><span style="width:5px;height:5px;border-radius:50%;background:#ec4899;display:inline-block;"></span>STRADDLE PAPER</span>' : ''}
+      ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
       ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!straddleModeOn || !straddleMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
@@ -1165,7 +1187,8 @@ ${buildSidebar('dashboard', liveActive)}
 
   ${optionExpiryAlertHtml}
 
-  <!-- ① BROKER CONNECTIONS — compact single-line rows -->
+  <!-- ① BROKER CONNECTIONS — compact single-line rows (hidden while a trade runs) -->
+  ${anyModeActive ? '' : `
   <div class="brokers">
     <div class="brk-row ${fyersOk ? 'ok' : 'bad'}">
       <span class="brk-dot ${fyersOk ? 'pulse' : ''}"></span>
@@ -1190,7 +1213,7 @@ ${buildSidebar('dashboard', liveActive)}
           : `<span class="brk-action muted-hint">Set ZERODHA_API_KEY in .env</span>`}
     </div>
     ${zerodhaOk && zerodhaExpiryHtml ? `<div class="brk-expiry ${pastExpiry ? 'expired' : nearExpiry ? 'expiring' : 'valid'}">${zerodhaExpiryHtml}</div>` : ''}
-  </div>
+  </div>`}
 
   <!-- (utility buttons moved to top-bar-right; cache pill + schedule pills also live there) -->
 
