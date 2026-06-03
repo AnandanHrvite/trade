@@ -679,19 +679,27 @@ function onTick(tick) {
     //    route): exit the instant spot crosses back through the band (PE: above the
     //    lower band, CE: below the upper band), per-tick rather than at candle close,
     //    so a one-candle V-reversal exits at the band line instead of the bar close.
+    //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
+    //    ≥ SCALP_BB_REENTRY_ARM_PTS past the band, so a fresh entry sitting right at
+    //    the band isn't stopped by an immediate noise wick before it can work.
     if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
       if (!state._bbTickCache || state._bbTickCache.n !== state.candles.length) {
         const _lv = scalpStrategy.bbLevels(state.candles);
         state._bbTickCache = { n: state.candles.length, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
       }
       const _bb = state._bbTickCache;
-      const _reentered = pos.side === "CE"
-        ? (_bb.upper != null && price < _bb.upper)
-        : (_bb.lower != null && price > _bb.lower);
-      if (_reentered) {
-        pos.slSource = "BB re-entry";
-        squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
-        return;
+      const _band = pos.side === "CE" ? _bb.upper : _bb.lower;
+      if (_band != null) {
+        const _pen = pos.side === "CE" ? (price - _band) : (_band - price);
+        if (_pen > (pos._bbMaxPen || 0)) pos._bbMaxPen = _pen;
+        const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+        const _armed = (pos._bbMaxPen || 0) >= _armPts;
+        const _reentered = pos.side === "CE" ? (price < _band) : (price > _band);
+        if (_armed && _reentered) {
+          pos.slSource = "BB re-entry";
+          squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+          return;
+        }
       }
     }
 

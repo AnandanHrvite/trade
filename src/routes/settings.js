@@ -115,7 +115,8 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
       { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
       { key: "SCALP_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Catastrophic loss cap — exit if the trade moves this many spot points against entry. Set WIDE (default 30) so it only clips deep adverse excursions on failed fades, not the normal small scalps. Points-based. 0 = disabled.", default: "30" },
-      { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit on candle close if price closes back inside the Bollinger Band (failed breakout) — cuts loss bleed before the slower PSAR flip.", default: "true" },
+      { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit the instant spot crosses back through the Bollinger Band (failed breakout) — runs per-tick (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. Cuts loss bleed before the slower PSAR flip.", default: "true" },
+      { key: "SCALP_BB_REENTRY_ARM_PTS", label: "BB Re-Entry Arm (pts)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Only arm the BB Re-Entry Exit once the breakout has extended this many points PAST the band. Stops a fresh entry that's sitting right at the band from being knocked out by an immediate noise wick back to it. 0 = arm immediately (no guard).", default: "10" },
       // ── Risk management ──
       // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
       // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
@@ -545,7 +546,7 @@ const SESSION_RESTART_KEYS = new Set([
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
   "SCALP_USE_SUPERTREND", "SCALP_SUPERTREND_PERIOD", "SCALP_SUPERTREND_MULT",
   "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
-  "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT",
+  "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT", "SCALP_BB_REENTRY_ARM_PTS",
   "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
   "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
   "SCALP_SLIPPAGE_PTS",

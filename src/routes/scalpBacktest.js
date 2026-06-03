@@ -265,12 +265,24 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       //    (PE→high, CE→low) against the band fixed at the bar's start (prior completed
       //    candles) and exit AT the band line — the per-bar proxy for the per-tick band
       //    stop (cf. the hard stop above, which likewise exits at its level).
+      //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
+      //    ≥ SCALP_BB_REENTRY_ARM_PTS past the band. Track max favourable penetration
+      //    via the bar's favourable extreme (PE→low, CE→high) so a fresh entry sitting
+      //    right at the band isn't stopped by an immediate noise wick.
       if (!exitReason && (process.env.SCALP_BB_REENTRY_EXIT || "true") === "true") {
         const _bb = scalpStrategy.bbLevels(window.slice(0, -1));
-        if (_bb && position.side === "PE" && candle.high > _bb.lower) {
-          exitPrice = parseFloat(_bb.lower.toFixed(2)); exitReason = "BB re-entry";
-        } else if (_bb && position.side === "CE" && candle.low < _bb.upper) {
-          exitPrice = parseFloat(_bb.upper.toFixed(2)); exitReason = "BB re-entry";
+        if (_bb) {
+          const _band = position.side === "PE" ? _bb.lower : _bb.upper;
+          const _penBar = position.side === "PE" ? (_band - candle.low) : (candle.high - _band);
+          if (_penBar > (position._bbMaxPen || 0)) position._bbMaxPen = _penBar;
+          const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+          if ((position._bbMaxPen || 0) >= _armPts) {
+            if (position.side === "PE" && candle.high > _band) {
+              exitPrice = parseFloat(_band.toFixed(2)); exitReason = "BB re-entry";
+            } else if (position.side === "CE" && candle.low < _band) {
+              exitPrice = parseFloat(_band.toFixed(2)); exitReason = "BB re-entry";
+            }
+          }
         }
       }
 

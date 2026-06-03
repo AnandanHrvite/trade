@@ -620,19 +620,30 @@ function onTick(tick) {
     //    so a one-candle V-reversal exits at the band line instead of giving back to
     //    the bar close. Band is from completed candles (fixed during the forming bar),
     //    recomputed only when a new candle closes. Same gate/inputs as bbReentryExit.
+    //    ARMING GUARD: only arm once the breakout has extended ≥ SCALP_BB_REENTRY_ARM_PTS
+    //    past the band (track max favourable penetration). A fresh entry sitting only a
+    //    few pts beyond the band would otherwise be stopped by an immediate noise wick
+    //    back to the band before it can work (e.g. 2026-06-03 10:15 PE, entered 8pts
+    //    below the band, tagged it 27s later for a needless loss).
     if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
       if (!state._bbTickCache || state._bbTickCache.n !== state.candles.length) {
         const _lv = scalpStrategy.bbLevels(state.candles);
         state._bbTickCache = { n: state.candles.length, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
       }
       const _bb = state._bbTickCache;
-      const _reentered = pos.side === "CE"
-        ? (_bb.upper != null && price < _bb.upper)
-        : (_bb.lower != null && price > _bb.lower);
-      if (_reentered) {
-        pos.slSource = "BB re-entry";
-        simulateSell(price, "BB re-entry", price);
-        return;
+      const _band = pos.side === "CE" ? _bb.upper : _bb.lower;
+      if (_band != null) {
+        // favourable penetration past the band (PE: below the lower band, CE: above the upper)
+        const _pen = pos.side === "CE" ? (price - _band) : (_band - price);
+        if (_pen > (pos._bbMaxPen || 0)) pos._bbMaxPen = _pen;
+        const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+        const _armed = (pos._bbMaxPen || 0) >= _armPts;
+        const _reentered = pos.side === "CE" ? (price < _band) : (price > _band);
+        if (_armed && _reentered) {
+          pos.slSource = "BB re-entry";
+          simulateSell(price, "BB re-entry", price);
+          return;
+        }
       }
     }
 
