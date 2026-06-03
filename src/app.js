@@ -765,10 +765,13 @@ app.get("/", (req, res) => {
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
-    .brokers { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:0; }
+    .brokers { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:0; }
     .brokers > .brk-expiry { grid-column:1 / -1; }
+    /* flex-wrap:wrap (not nowrap) so the login button drops to its own line
+       when the column is narrow instead of overflowing the clipped body and
+       becoming invisible (13" MacBook / un-maximized window / zoomed view). */
     .brk-row {
-      display:flex; align-items:center; gap:10px; flex-wrap:nowrap;
+      display:flex; align-items:center; gap:6px 10px; flex-wrap:wrap;
       padding:5px 12px; border-radius:9px;
       border:1px solid #1a2236; background:#0d1320;
       min-width:0;
@@ -781,7 +784,10 @@ app.get("/", (req, res) => {
     .brk-wallet-sub .pos { color:#34d399; }
     .brk-wallet-sub .neg { color:#f87171; }
     .brk-wallet-sub .zero { color:#7d8aa3; }
-    @media (max-width:720px) { .brokers { grid-template-columns:1fr; } }
+    /* Stack the two broker rows on laptop/small-desktop widths so each gets the
+       full content width and the login button always fits (was 720px — too low,
+       it skipped the 13" MacBook band). */
+    @media (max-width:1200px) { .brokers { grid-template-columns:1fr; } }
     .brk-row.ok   { border-color:#0d3a1e; background:#04100a; }
     .brk-row.ok.blue { border-color:#0d2545; background:#030b18; }
     .brk-row.bad  { border-color:#3a0f1c; background:#100408; }
@@ -1142,6 +1148,16 @@ app.get("/", (req, res) => {
       /* top-bar: hide meta on mobile */
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
+    }
+    /* ── LAPTOP / SMALL-DESKTOP BAND (13" MacBook etc.) ──
+       The desktop layout (fixed 200px sidebar) leaves a narrow content column
+       here, but the phone breakpoints don't start until 768px. Stack the
+       side-by-side strategy rows so they shrink cleanly instead of overflowing
+       the clipped (overflow-x:hidden) body. */
+    @media (max-width:1200px) {
+      .broker-grid { grid-template-columns:1fr; }
+      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #scalp-row .card, #pa-row .card { width:100%; flex:none; }
     }
     /* Dashboard top bar — keep title, toggle, and actions on a single line */
     .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }

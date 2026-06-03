@@ -1583,6 +1583,17 @@ router.get("/", (req, res) => {
     }
     .bulk-preview.visible { display: block; }
 
+    /* ── Laptop / small-desktop band (13" MacBook etc.) ──
+       The fixed 200px sidebar leaves a narrow content column here and the phone
+       rules below don't start until 640px. Collapse the 2-up pattern grid, let
+       rows wrap, and give inputs more room so values aren't clipped/squeezed. */
+    @media (max-width:1200px) {
+      .pattern-grid { grid-template-columns: 1fr; }
+      .pattern-grid .setting-row { border-right: none; }
+      .setting-row { flex-wrap: wrap; }
+      input[type="text"], input[type="number"], input[type="date"], input[type="time"], select { max-width: 360px; }
+    }
+
     /* ── Mobile ──────────────────────────────────────────── */
     @media (max-width:640px) {
       .page { padding: 16px 14px 40px; }

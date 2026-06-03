@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix: Responsive layout on 13" laptops (Dashboard login button + Settings values)
+
+- **Dashboard login button and Settings values were clipped on mid-width screens (e.g. MacBook Air).** The UI only had breakpoints for phones (`≤768/640px`) and assumed everything wider was a large desktop. On a 13" laptop — especially un-maximized, with "Larger Text" display scaling, or browser zoom >100% — the effective width fell into an untested **769–1200px band** where the fixed 200px sidebar + `overflow-x:hidden` body clipped anything that overflowed. The 2-column broker grid with `flex-wrap:nowrap` rows pushed the `🔐 Login` button off the clipped edge (only visible after zooming out), and the 2-column Settings `pattern-grid` squeezed/clipped input values.
+- **Fix.** Added a laptop/small-desktop breakpoint (`≤1200px`): the broker connection rows and side-by-side strategy rows now stack to a single column, and `.brk-row` wraps so the login button drops to its own line instead of overflowing ([app.js](src/app.js)). On Settings the `pattern-grid` collapses to one column, rows wrap, and inputs get more width so values aren't cut off ([settings.js](src/routes/settings.js)). The 32" monitor and phone layouts are unchanged. CSS only — no env keys or routes.
+
 ### Feature: Contract-note Report (gross / charges breakdown / net P&L) on History + Replay
 
 - **New "📄 Report" button on every Paper Trade History page (Scalp / Swing / ORB, plus PA / Straddle).** It opens a broker-style **contract note** in a popup: a per-trade table (segment · exchange · buy price · sell price · qty · gross profit), then **Total gross profit / Total charges / Net P&L**, then a **Charges breakdown** (Brokerage, Exchange txn charge, Stamp duty, STT, GST, SEBI). Two scopes: a per-day **Report** button on each session card, and a top-bar **Report** button for all sessions combined.
