@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: Strategy guides show a live "as-per-settings" status panel
+
+- **Each strategy guide (Docs → Documents) now opens with a "Live Configuration" panel that reflects this server's current Settings.** The documented **Default** columns in the tables below are unchanged — the new panel adds a per-feature **ENABLED / DISABLED** badge showing what's actually active right now (e.g. VIX filter, wick/VWAP/volume filters, premium gate, expiry-day-only, candle trail, ADX filter, per-strategy mode toggle). Live Orders renders as a tri-state: **DISABLED → DRY-RUN → LIVE · REAL ORDERS** (honouring the global `LIVE_HARNESS_DRY_RUN` kill-switch and each strategy's own `*_LIVE_DRY_RUN` override). The Application Setup guide gets a system panel (global gates + all five strategy master toggles).
+- **How it works.** Each guide HTML carries a `<!--LIVE_STATUS_PANEL-->` marker; [docs.js](src/routes/docs.js) replaces it at serve-time, resolving each toggle from the live runtime config (`process.env`, kept in sync with `.env` by Settings) with the documented default as fallback — the same resolution the strategy code uses. Files without the marker (e.g. PDFs) are served unchanged. No new env keys or routes; the panel is regenerated on every page load, so it always matches Settings.
+
 ### Fix: Charges schedule corrected to current NSE / statutory rates (matches Zerodha)
 
 - **Options exchange-transaction charge was 0.05%; the current NSE rate is 0.03553% of premium turnover.** This single stale rate (plus its 18% GST knock-on) was inflating every option trade's modelled charges — e.g. a 4-trade Swing session billed ₹336.06 vs Zerodha's ₹317.21. Corrected the default in [charges.js](src/utils/charges.js), [settings.js](src/routes/settings.js), and [README.md](README.md). Futures exchange txn likewise corrected 0.002% → 0.00183%.

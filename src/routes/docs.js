@@ -266,14 +266,162 @@ async function deleteDoc(name) {
 </body></html>`);
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// Live "as-per-settings" status injection for the strategy guides.
+//
+// The guide HTML files are static and keep their documented DEFAULT columns
+// intact. Each guide carries a single <!--LIVE_STATUS_PANEL--> marker; at
+// serve-time we replace it with a panel showing which toggles are ENABLED /
+// DISABLED on THIS server right now. Values are resolved from the live runtime
+// config (process.env — kept in sync with .env by settings.js) with the
+// documented default as fallback, exactly how the strategy code resolves them.
+// A file without the marker is served untouched, so non-guide docs (PDF, etc.)
+// are unaffected.
+// ════════════════════════════════════════════════════════════════════════
+const STATUS_MARKER = "<!--LIVE_STATUS_PANEL-->";
+
+function envIsOn(key, def) {
+  const v = process.env[key];
+  const eff = (v === undefined || v === null || v === "") ? def : String(v);
+  return eff.toLowerCase() === "true";
+}
+
+function statusBadge(text, kind) {
+  const c = {
+    on:   { bg: "#0d2e1a", fg: "#3fb950", bd: "#238636" },
+    off:  { bg: "#21262d", fg: "#8b949e", bd: "#30363d" },
+    dry:  { bg: "#33270a", fg: "#d29922", bd: "#9e6a03" },
+    live: { bg: "#3a1216", fg: "#f85149", bd: "#b62324" },
+  }[kind] || { bg: "#21262d", fg: "#8b949e", bd: "#30363d" };
+  return `<span style="display:inline-block;padding:2px 10px;border-radius:11px;font-size:0.72rem;font-weight:700;letter-spacing:0.4px;background:${c.bg};color:${c.fg};border:1px solid ${c.bd};white-space:nowrap;font-family:'SF Mono','JetBrains Mono',Consolas,monospace;">${text}</span>`;
+}
+
+// Live order state is a tri-state: DISABLED → DRY-RUN (logged, no order) → LIVE.
+function liveOrdersBadge(enableKey, dryKey) {
+  if (!envIsOn(enableKey, "false")) return statusBadge("DISABLED", "off");
+  const dry = envIsOn("LIVE_HARNESS_DRY_RUN", "true") || (dryKey && envIsOn(dryKey, "false"));
+  return dry ? statusBadge("DRY-RUN", "dry") : statusBadge("LIVE · REAL ORDERS", "live");
+}
+
+function rowBadge(row) {
+  if (row.type === "live")     return liveOrdersBadge(row.enableKey, row.dryKey);
+  if (row.type === "globaldry") return envIsOn(row.key, "true")
+    ? statusBadge("DRY-RUN (safe)", "dry")
+    : statusBadge("LIVE ARMED", "live");
+  return envIsOn(row.key, row.def) ? statusBadge("ENABLED", "on") : statusBadge("DISABLED", "off");
+}
+
+function rowEnvKeys(row) {
+  if (row.type === "live") return [row.enableKey, row.dryKey].filter(Boolean);
+  return [row.key];
+}
+
+// Per-guide feature lists. Defaults mirror the settings.js schema.
+const GUIDE_STATUS = {
+  "ORB_Strategy_Guide.html": { title: "ORB — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "ORB Mode (sidebar + Settings section)", key: "ORB_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "ORB_LIVE_ENABLED", dryKey: "ORB_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Regime Filter", key: "ORB_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "Wick-Rejection Filter", key: "ORB_WICK_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "VWAP Alignment Filter", key: "ORB_VWAP_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "Volume Confirmation Filter", key: "ORB_VOL_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "Premium-Range Gate", key: "ORB_PREMIUM_GATE_ENABLED", def: "true" },
+    { type: "bool", label: "Expiry-Day-Only", key: "ORB_EXPIRY_DAY_ONLY", def: "false" },
+  ] }] },
+  "Swing_Strategy_Guide.html": { title: "Swing — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Swing Mode (sidebar + Settings section)", key: "SWING_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "SWING_LIVE_ENABLED", dryKey: "SWING_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "Candle Trail", key: "SWING_CANDLE_TRAIL_ENABLED", def: "false" },
+    { type: "bool", label: "Opposite-Side Cooldown", key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
+    { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
+  ] }] },
+  "Scalping_Strategy_Guide.html": { title: "Scalp — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Scalp Mode (sidebar + Settings section)", key: "SCALP_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "SCALP_ENABLED", dryKey: "SCALP_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter", key: "SCALP_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "ADX Trend Filter", key: "SCALP_ADX_ENABLED", def: "false" },
+    { type: "bool", label: "Expiry-Day-Only", key: "SCALP_EXPIRY_DAY_ONLY", def: "false" },
+  ] }] },
+  "Price_Action_Strategy_Guide.html": { title: "Price Action — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "PA Mode (sidebar + Settings section)", key: "PA_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "PA_ENABLED", dryKey: "PA_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter", key: "PA_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "Expiry-Day-Only", key: "PA_EXPIRY_DAY_ONLY", def: "false" },
+  ] }] },
+  "Straddle_Strategy_Guide.html": { title: "Straddle — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Straddle Mode (sidebar + Settings section)", key: "STRADDLE_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, both legs)", enableKey: "STRADDLE_LIVE_ENABLED", dryKey: "STRADDLE_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter", key: "STRADDLE_VIX_ENABLED", def: "true" },
+    { type: "bool", label: "Expiry-Day-Only", key: "STRADDLE_EXPIRY_DAY_ONLY", def: "false" },
+  ] }] },
+  "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
+    { heading: "Global gates", rows: [
+      { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
+      { type: "bool", label: "Tick Recorder (for Replay)", key: "TICK_RECORDER_ENABLED", def: "true" },
+      { type: "bool", label: "Telegram Alerts (master)", key: "TG_ENABLED", def: "true" },
+      { type: "bool", label: "Daily Data Backup", key: "BACKUP_ENABLED", def: "true" },
+      { type: "bool", label: "Live NIFTY Chart", key: "CHART_ENABLED", def: "true" },
+    ] },
+    { heading: "Strategy master toggles", rows: [
+      { type: "bool", label: "Swing Mode", key: "SWING_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Scalp Mode", key: "SCALP_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Straddle Mode", key: "STRADDLE_MODE_ENABLED", def: "true" },
+    ] },
+  ] },
+};
+
+function renderStatusPanel(filename) {
+  const cfg = GUIDE_STATUS[filename];
+  if (!cfg) return "";
+  const groupsHtml = cfg.groups.map(g => {
+    const head = g.heading
+      ? `<div style="font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#8b949e;margin:14px 0 8px;">${g.heading}</div>`
+      : "";
+    const rows = g.rows.map(r => {
+      const keys = rowEnvKeys(r).map(k => `<code style="background:rgba(110,118,129,0.16);color:#8b949e;padding:1px 6px;border-radius:4px;font-size:0.7rem;font-family:'SF Mono',monospace;">${k}</code>`).join(" ");
+      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid rgba(48,54,61,0.6);">
+        <div style="flex:1;min-width:0;">
+          <div style="color:#e6edf3;font-size:0.9rem;font-weight:500;">${r.label}</div>
+          <div style="margin-top:3px;">${keys}</div>
+        </div>
+        <div style="flex-shrink:0;">${rowBadge(r)}</div>
+      </div>`;
+    }).join("");
+    return head + rows;
+  }).join("");
+
+  const stamp = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour12: false }) + " IST";
+
+  return `<div style="max-width:900px;margin:28px auto 0;padding:22px 26px;background:#161b22;border:1px solid #30363d;border-left:4px solid #58a6ff;border-radius:10px;box-shadow:0 4px 24px rgba(0,0,0,0.4);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+    <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px;">
+      <span style="width:9px;height:9px;border-radius:50%;background:#3fb950;box-shadow:0 0 8px #3fb950;flex-shrink:0;"></span>
+      <span style="font-size:1.05rem;font-weight:700;color:#58a6ff;">${cfg.title}</span>
+    </div>
+    <div style="font-size:0.78rem;color:#6e7681;margin-bottom:6px;">Reflects this server's current Settings — the tables below show documented <em>defaults</em>; these badges show what's <strong>active right now</strong>. As of ${stamp}.</div>
+    ${groupsHtml}
+  </div>`;
+}
+
 router.get("/file/:filename", (req, res) => {
   const filename = path.basename(req.params.filename); // prevent path traversal
   const filepath = path.join(process.cwd(), "documents", filename);
-  if (fs.existsSync(filepath)) {
-    res.sendFile(filepath);
-  } else {
-    res.status(404).send("File not found");
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).send("File not found");
   }
+  // HTML guides with a status marker get a live "as-per-settings" panel injected.
+  if (filename.toLowerCase().endsWith(".html") && GUIDE_STATUS[filename]) {
+    try {
+      const html = fs.readFileSync(filepath, "utf-8");
+      if (html.includes(STATUS_MARKER)) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        return res.send(html.replace(STATUS_MARKER, renderStatusPanel(filename)));
+      }
+    } catch (e) { /* fall through to static send on any read error */ }
+  }
+  res.sendFile(filepath);
 });
 
 router.delete("/file/:filename", (req, res) => {
