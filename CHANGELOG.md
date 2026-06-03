@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix: Charges schedule corrected to current NSE / statutory rates (matches Zerodha)
+
+- **Options exchange-transaction charge was 0.05%; the current NSE rate is 0.03553% of premium turnover.** This single stale rate (plus its 18% GST knock-on) was inflating every option trade's modelled charges — e.g. a 4-trade Swing session billed ₹336.06 vs Zerodha's ₹317.21. Corrected the default in [charges.js](src/utils/charges.js), [settings.js](src/routes/settings.js), and [README.md](README.md). Futures exchange txn likewise corrected 0.002% → 0.00183%.
+- **GST base now includes SEBI charges** (`18% × (brokerage + exchange txn + SEBI)`), per the exchange schedule — previously SEBI was omitted from the GST base.
+- **Exchange txn is no longer broker-specific.** It's an NSE charge, identical for every broker, so the hard-coded Fyers override (0.0445%) was removed — Scalp / PA / ORB / Straddle now use the same env-driven NSE rate as Swing. STT (0.15% options / 0.05% futures), SEBI (₹10/cr), stamp duty (0.003%) and flat brokerage (₹20/order) were already correct and are unchanged.
+- **Contract-note report now derives gross from the trade prices** (`gross = (sell − buy) × qty`) and `net = gross − charges`, the way a broker contract note does — instead of reading back the stored net and adding charges. This keeps the Gross column and the charges breakdown self-consistent after a rate change and makes the note match Zerodha's calculator exactly. For a trade booked at the current rates this net equals the stored P&L; trades booked **before** this fix keep their stored (higher-charge) dashboard P&L, so the note will read slightly better than the dashboard for those — re-run via `/replay` in current-settings mode to see them fully recomputed.
+- **Note:** these are *defaults*. If a value for any of these keys is already persisted in the server environment (from a prior Settings save), update it in Settings → Charges so the new rate takes effect.
+
 ### Fix: Responsive layout on 13" laptops (Dashboard login button + Settings values)
 
 - **Dashboard cards (broker connections, strategy charts) were cut off on the right on narrower desktops (e.g. 13" MacBook ~1440px), hiding the broker Login buttons.** Root cause: `.main-content` is a flex item but only got `min-width:0` inside the mobile (`≤768px`) block. On every wider screen it kept the flex default `min-width:auto`, so it **grew wider than the viewport** to fit its widest multi-column grid, and `body{overflow-x:hidden}` clipped the overflowing right edge (unreachable — couldn't even scroll to it). Zooming out only appeared to help because it shrank everything below the overflow point.

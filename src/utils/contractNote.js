@@ -7,10 +7,12 @@
  * by the Paper Trade History pages (via paperHistoryUI.js) and the Replay page.
  *
  * Charges are computed with the SAME canonical calcCharges() used by every
- * paper/live/replay engine, so the note's numbers match what the dashboard
- * shows. Net P&L is anchored to the trade's stored `pnl` (the net-of-charges
- * value displayed everywhere) and gross is derived as net + charges, so the
- * note's arithmetic is always self-consistent: gross − charges = net.
+ * paper/live/replay engine, at the current statutory rates. Gross is the raw
+ * market move ((sell − buy) × qty) — matching the buy/sell columns and a
+ * broker's "gross profit" — and net is derived as gross − charges, exactly how
+ * a real contract note / brokerage calculator works. For a trade booked at the
+ * current rates this net equals the stored `pnl`; if a rate is later corrected,
+ * the note recomputes cleanly (gross stays the market move, the breakdown sums).
  *
  * Server-side (Node):  contractRow(), attachContractNotes(), brokerForMode()
  * Client-side (string): contractNoteModalHTML(), contractNoteClientJS()
@@ -67,12 +69,23 @@ function contractRow(t, broker) {
     charges = { stt: 0, exchangeTxn: 0, sebi: 0, gst: 0, stampDuty: 0, brokerage: 40, total, estimated: true };
   }
 
-  const net = (typeof t.pnl === "number")
-    ? t.pnl
-    : (buy !== null && sell !== null && qty !== null)
-      ? parseFloat(((sell - buy) * qty - charges.total).toFixed(2))
-      : 0;
-  const gross = parseFloat((net + charges.total).toFixed(2));
+  // Gross = pure market move (matches the buy/sell columns and a broker's
+  // "gross profit"); net = gross − charges, recomputed at the current statutory
+  // rates the way a brokerage calculator does. We derive from prices rather than
+  // reading back the stored t.pnl so that, if a charge rate is corrected, the
+  // gross column stays clean and the breakdown stays self-consistent. At the
+  // rate that booked the trade, net == stored pnl.
+  let gross, net;
+  if (buy !== null && sell !== null && qty !== null) {
+    gross = parseFloat(((sell - buy) * qty).toFixed(2));
+    net = parseFloat((gross - charges.total).toFixed(2));
+  } else if (typeof t.pnl === "number") {
+    net = t.pnl;
+    gross = parseFloat((net + charges.total).toFixed(2));
+  } else {
+    gross = 0;
+    net = 0;
+  }
 
   return {
     side: t.side || t.optionType || "",
@@ -101,8 +114,9 @@ function attachContractNotes(trades, broker) {
 /** The contract-note modal shell (white "document" styled for screen + print). */
 function contractNoteModalHTML() {
   return `
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');</style>
 <div id="cnModal" style="display:none;position:fixed;inset:0;z-index:11000;background:rgba(0,0,0,0.78);backdrop-filter:blur(3px);align-items:flex-start;justify-content:center;padding:28px 16px;overflow:auto;">
-  <div id="cnDoc" style="background:#ffffff;color:#1f2733;border-radius:14px;max-width:840px;width:100%;box-shadow:0 24px 80px rgba(0,0,0,0.55);font-family:Inter,system-ui,sans-serif;">
+  <div id="cnDoc" style="background:#ffffff;color:#1f2733;border-radius:14px;max-width:840px;width:100%;box-shadow:0 24px 80px rgba(0,0,0,0.55);font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid #eef0f3;">
       <div style="font-size:0.72rem;font-weight:700;color:#6b7280;letter-spacing:0.06em;">CONTRACT NOTE</div>
       <div style="display:flex;gap:8px;">
@@ -145,38 +159,47 @@ function _cnAggregate(trades){
 
 function _cnRenderDoc(title, sub, agg){
   var h='';
-  h+='<div style="text-align:center;padding:16px 0 12px;"><div style="font-size:1.25rem;font-weight:700;color:#111827;">'+_cnEsc(title)+'</div>';
-  if(sub) h+='<div style="font-size:0.8rem;color:#6b7280;margin-top:3px;">'+_cnEsc(sub)+'</div>';
+  h+='<div style="text-align:center;padding:20px 0 18px;"><div style="font-size:1.35rem;font-weight:600;color:#434b59;letter-spacing:0.01em;">'+_cnEsc(title)+'</div>';
+  if(sub) h+='<div style="font-size:0.82rem;color:#9aa3af;margin-top:5px;">'+_cnEsc(sub)+'</div>';
   h+='</div>';
   if(!agg.count){ h+='<div style="padding:24px;text-align:center;color:#9ca3af;">No trades to report.</div>'; return h; }
-  h+='<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
-  h+='<thead><tr style="background:#f3f4f6;color:#374151;text-align:left;">'
-    +'<th style="padding:8px 10px;">#</th><th style="padding:8px 10px;">Segment</th><th style="padding:8px 10px;">Exchange</th>'
-    +'<th style="padding:8px 10px;text-align:right;">Buy Price</th><th style="padding:8px 10px;text-align:right;">Sell Price</th>'
-    +'<th style="padding:8px 10px;text-align:right;">Qty</th><th style="padding:8px 10px;text-align:right;">Gross profit</th></tr></thead><tbody>';
+  // Section heading (Zerodha shows "Equity & Currency"; we name the actual segment(s)).
+  var segs={}; for(var s=0;s<agg.rows.length;s++){ segs[agg.rows[s].segment]=1; }
+  var segLabel=Object.keys(segs).join('  ·  ')||'F&O';
+  h+='<div style="font-size:1.05rem;font-weight:600;color:#1f2733;margin:4px 2px 12px;">'+_cnEsc(segLabel)+'</div>';
+  // Boxed table.
+  h+='<div style="border:1px solid #e7e9ec;border-radius:10px;overflow:hidden;">';
+  h+='<table style="width:100%;border-collapse:collapse;font-size:0.84rem;">';
+  h+='<thead><tr style="background:#f6f7f9;color:#6b7280;text-align:left;">'
+    +'<th style="padding:11px 14px;font-weight:600;">#</th><th style="padding:11px 14px;font-weight:600;">Segment</th><th style="padding:11px 14px;font-weight:600;">Exchange</th>'
+    +'<th style="padding:11px 14px;font-weight:600;text-align:right;">Buy Price</th><th style="padding:11px 14px;font-weight:600;text-align:right;">Sell Price</th>'
+    +'<th style="padding:11px 14px;font-weight:600;text-align:right;">Qty</th><th style="padding:11px 14px;font-weight:600;text-align:right;">Gross profit</th></tr></thead><tbody>';
   for(var i=0;i<agg.rows.length;i++){
     var r=agg.rows[i], gpos=(+r.gross>=0);
-    var sideTag = r.side ? (' <span style="color:#6b7280;">'+_cnEsc(r.side)+(r.strike?(' '+_cnEsc(r.strike)):'')+'</span>') : '';
-    h+='<tr style="border-bottom:1px solid #eef0f3;">'
-      +'<td style="padding:7px 10px;color:#6b7280;">'+(i+1)+'</td>'
-      +'<td style="padding:7px 10px;">'+_cnEsc(r.segment)+sideTag+'</td>'
-      +'<td style="padding:7px 10px;">'+_cnEsc(r.exchange)+'</td>'
-      +'<td style="padding:7px 10px;text-align:right;">'+_cnPlain(r.buy)+'</td>'
-      +'<td style="padding:7px 10px;text-align:right;">'+_cnPlain(r.sell)+'</td>'
-      +'<td style="padding:7px 10px;text-align:right;">'+(r.qty==null?'—':r.qty)+'</td>'
-      +'<td style="padding:7px 10px;text-align:right;font-weight:600;color:'+(gpos?'#047857':'#b91c1c')+';">'+(+r.gross).toFixed(2)+'</td>'
+    var sideTag = r.side ? (' <span style="color:#9aa3af;font-weight:400;">'+_cnEsc(r.side)+(r.strike?(' '+_cnEsc(r.strike)):'')+'</span>') : '';
+    h+='<tr style="border-top:1px solid #f0f1f3;">'
+      +'<td style="padding:11px 14px;color:#9aa3af;">'+(i+1)+'</td>'
+      +'<td style="padding:11px 14px;color:#1f2733;">'+_cnEsc(r.segment)+sideTag+'</td>'
+      +'<td style="padding:11px 14px;color:#1f2733;">'+_cnEsc(r.exchange)+'</td>'
+      +'<td style="padding:11px 14px;text-align:right;color:#1f2733;">'+_cnPlain(r.buy)+'</td>'
+      +'<td style="padding:11px 14px;text-align:right;color:#1f2733;">'+_cnPlain(r.sell)+'</td>'
+      +'<td style="padding:11px 14px;text-align:right;color:#1f2733;">'+(r.qty==null?'—':r.qty)+'</td>'
+      +'<td style="padding:11px 14px;text-align:right;font-weight:600;color:'+(gpos?'#0b9b63':'#d23f3f')+';">'+(+r.gross).toFixed(2)+'</td>'
       +'</tr>';
   }
-  h+='</tbody></table>';
+  h+='</tbody></table></div>';
+  // Summary — inline "label  value" groups spread across (Zerodha layout).
   var npos=(agg.net>=0);
-  h+='<div style="display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;padding:16px 6px 8px;border-top:1px solid #eef0f3;margin-top:2px;">';
-  h+='<div><div style="font-size:0.66rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Total gross profit</div><div style="font-size:1.05rem;font-weight:700;color:#111827;">'+_cnMoney(agg.gross)+'</div></div>';
-  h+='<div><div style="font-size:0.66rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Total charges</div><div style="font-size:1.05rem;font-weight:700;color:#b91c1c;">'+_cnMoney(agg.charges.total)+'</div></div>';
-  h+='<div><div style="font-size:0.66rem;color:#9ca3af;text-transform:uppercase;letter-spacing:0.05em;">Net P&amp;L</div><div style="font-size:1.05rem;font-weight:800;color:'+(npos?'#047857':'#b91c1c')+';">'+_cnMoney(agg.net)+'</div></div>';
+  function sumItem(lbl,val,color,bold){ return '<div style="display:flex;align-items:baseline;gap:12px;"><span style="color:#6b7280;font-size:0.9rem;">'+lbl+'</span><span style="color:'+color+';font-weight:'+bold+';font-size:1.04rem;">'+val+'</span></div>'; }
+  h+='<div style="display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:baseline;padding:18px 6px;border-bottom:1px solid #eef0f3;margin-top:6px;">';
+  h+=sumItem('Total gross profit', _cnMoney(agg.gross), '#111827', 700);
+  h+=sumItem('Total charges', _cnMoney(agg.charges.total), '#d23f3f', 700);
+  h+=sumItem('Net P&amp;L', _cnMoney(agg.net), (npos?'#0b9b63':'#d23f3f'), 800);
   h+='</div>';
-  h+='<div style="margin-top:18px;"><div style="font-size:0.92rem;font-weight:700;color:#111827;margin-bottom:11px;">Charges breakdown</div>';
-  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px 20px;font-size:0.82rem;">';
-  function cnRow(lbl,val){ return '<div style="display:flex;justify-content:space-between;border-bottom:1px dashed #e5e7eb;padding-bottom:4px;"><span style="color:#6b7280;">'+lbl+'</span><span style="color:#111827;font-weight:600;">'+val+'</span></div>'; }
+  // Charges breakdown — clean 3-col grid (no dashed rules), Zerodha order.
+  h+='<div style="margin-top:20px;"><div style="font-size:1.05rem;font-weight:600;color:#1f2733;margin-bottom:14px;">Charges breakdown</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px 28px;font-size:0.86rem;">';
+  function cnRow(lbl,val){ return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;"><span style="color:#6b7280;">'+lbl+'</span><span style="color:#1f2733;font-weight:600;">'+val+'</span></div>'; }
   h+=cnRow('Brokerage', _cnPlain(agg.charges.brokerage));
   h+=cnRow('Exchange txn charge', _cnPlain(agg.charges.exchangeTxn));
   h+=cnRow('Stamp duty', _cnPlain(agg.charges.stampDuty));
@@ -184,8 +207,8 @@ function _cnRenderDoc(title, sub, agg){
   h+=cnRow('GST', _cnPlain(agg.charges.gst));
   h+=cnRow('SEBI charges', _cnPlain(agg.charges.sebi));
   h+='</div>';
-  if(agg.estimated) h+='<div style="margin-top:11px;font-size:0.72rem;color:#b45309;">⚠ Some trades had no recorded premium — their charges use a flat estimate.</div>';
-  h+='<div style="margin-top:12px;font-size:0.72rem;color:#9ca3af;line-height:1.5;">Net P&amp;L is net of all statutory &amp; brokerage charges and matches the dashboard P&amp;L. Slippage / bid-ask spread is not modelled.</div>';
+  if(agg.estimated) h+='<div style="margin-top:14px;font-size:0.72rem;color:#b45309;">⚠ Some trades had no recorded premium — their charges use a flat estimate.</div>';
+  h+='<div style="margin-top:14px;font-size:0.72rem;color:#9ca3af;line-height:1.5;">Charges use the current statutory schedule (STT, NSE exchange txn, SEBI, stamp, GST) + flat brokerage; Net P&amp;L = gross − charges. Slippage / bid-ask spread is not modelled.</div>';
   h+='</div>';
   return h;
 }
@@ -203,7 +226,8 @@ function exportContractNotePDF(){
   var w=window.open('', '_blank');
   if(!w){ alert('Pop-up blocked — allow pop-ups for this site to export the contract note as PDF.'); return; }
   var doc='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+_cnEsc(_CN_DOC.file)+'</title>'
-    +'<style>body{font-family:Inter,Arial,sans-serif;color:#1f2733;margin:22px;}table{width:100%;}@media print{@page{margin:14mm;}}</style></head><body>'
+    +'<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">'
+    +'<style>body{font-family:\\'Inter\\',system-ui,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1f2733;margin:22px;}table{width:100%;}@media print{@page{margin:14mm;}}</style></head><body>'
     + _CN_DOC.body + '</body></html>';
   w.document.open(); w.document.write(doc); w.document.close();
   w.focus();

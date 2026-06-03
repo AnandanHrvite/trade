@@ -11,12 +11,12 @@
  *   const netPnl = rawPnl - charges.total;
  *
  * Env keys (all optional — sensible defaults baked in):
- *   STT_OPT_SELL_PCT          Options STT on sell side (default 0.15 → 0.15%)
- *   STT_FUT_SELL_PCT          Futures STT on sell side (default 0.05 → 0.05%)
- *   EXCHANGE_TXN_OPT_PCT      Exchange txn charges for options (default 0.05 → 0.05%)
- *   EXCHANGE_TXN_FUT_PCT      Exchange txn charges for futures (default 0.002 → 0.002%)
+ *   STT_OPT_SELL_PCT          Options STT on sell side (default 0.15 → 0.15% of premium)
+ *   STT_FUT_SELL_PCT          Futures STT on sell side (default 0.05 → 0.05% of turnover)
+ *   EXCHANGE_TXN_OPT_PCT      NSE options exchange txn (default 0.03553 → 0.03553% of premium turnover)
+ *   EXCHANGE_TXN_FUT_PCT      NSE futures exchange txn (default 0.00183 → 0.00183% of turnover)
  *   SEBI_CHARGES_PER_CRORE    SEBI turnover fee ₹ per crore (default 10)
- *   GST_PCT                   GST on brokerage+exchange (default 18 → 18%)
+ *   GST_PCT                   GST on (brokerage + exchange txn + SEBI) (default 18 → 18%)
  *   STAMP_DUTY_PCT            Stamp duty on buy side (default 0.003 → 0.003%)
  *   BROKER_FLAT_PER_ORDER     Flat brokerage per executed order (default 20)
  * ─────────────────────────────────────────────────────────────────────────────
@@ -39,18 +39,19 @@ function env(key, fallback) {
  * @returns {{ stt, exchangeTxn, sebi, gst, stampDuty, brokerage, total }}
  */
 function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
-  // ── Fyers-specific rates (scalping) ─────────────────────────────────────
-  const isFyers = broker === "fyers";
-
-  // ── Rates from env (or defaults — April 2026 rates) ─────────────────────
-  const sttOptPct       = env("STT_OPT_SELL_PCT", 0.15);                     // % of sell-side premium turnover (govt tax — same for all brokers)
-  const sttFutPct       = env("STT_FUT_SELL_PCT",       0.05);    // % of sell-side turnover
-  const exchOptPct      = isFyers ? 0.0445 : env("EXCHANGE_TXN_OPT_PCT", 0.05);    // % — options exchange txn (Fyers: 0.0445%)
-  const exchFutPct      = env("EXCHANGE_TXN_FUT_PCT",   0.002);   // % — futures exchange txn (much lower)
-  const sebiPerCrore    = env("SEBI_CHARGES_PER_CRORE", 10);      // ₹ per crore
-  const gstPct          = env("GST_PCT",                18);      // % on (brokerage + exchange charges)
-  const stampDutyPct    = env("STAMP_DUTY_PCT",         0.003);   // % on buy-side turnover
-  const brokerFlat      = env("BROKER_FLAT_PER_ORDER",  20);      // ₹ per order
+  // ── Rates from env (or defaults — current NSE / statutory schedule) ──────
+  // STT is a central-govt tax and exchange transaction charges are levied by
+  // the exchange (NSE) — BOTH are identical for every broker (Zerodha, Fyers,
+  // …). There is deliberately no broker-specific override here; the `broker`
+  // arg is kept only for call-site compatibility.
+  const sttOptPct       = env("STT_OPT_SELL_PCT",     0.15);     // % of sell-side premium  (govt STT — Apr 2026)
+  const sttFutPct       = env("STT_FUT_SELL_PCT",     0.05);     // % of sell-side turnover (govt STT)
+  const exchOptPct      = env("EXCHANGE_TXN_OPT_PCT", 0.03553);  // % — NSE options txn on premium turnover
+  const exchFutPct      = env("EXCHANGE_TXN_FUT_PCT", 0.00183);  // % — NSE futures txn on turnover
+  const sebiPerCrore    = env("SEBI_CHARGES_PER_CRORE", 10);     // ₹ per crore (turnover)
+  const gstPct          = env("GST_PCT",                18);     // % on (brokerage + exchange txn + SEBI)
+  const stampDutyPct    = env("STAMP_DUTY_PCT",         0.003);  // % on buy-side turnover
+  const brokerFlat      = env("BROKER_FLAT_PER_ORDER",  20);     // ₹ per executed order (flat)
 
   const _qty = qty || 1;
 
@@ -76,8 +77,8 @@ function calcCharges({ isFutures, exitPremium, entryPremium, qty, broker }) {
   // ── Brokerage (flat per order × 2 legs) ─────────────────────────────────
   const brokerage = brokerFlat * 2;
 
-  // ── GST (18% on brokerage + exchange txn) ───────────────────────────────
-  const gst = parseFloat(((gstPct / 100) * (brokerage + exchangeTxn)).toFixed(2));
+  // ── GST (18% on brokerage + exchange txn + SEBI charges) ────────────────
+  const gst = parseFloat(((gstPct / 100) * (brokerage + exchangeTxn + sebi)).toFixed(2));
 
   // ── Stamp duty (buy side only) ──────────────────────────────────────────
   const stampDuty = parseFloat(((stampDutyPct / 100) * buyTurnover).toFixed(2));

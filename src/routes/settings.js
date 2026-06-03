@@ -325,10 +325,10 @@ const SETTINGS_SCHEMA = [
     fields: [
       { key: "STT_OPT_SELL_PCT",       label: "Options STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on option sell side (% of premium turnover). Apr 2026: 0.15%", default: "0.15" },
       { key: "STT_FUT_SELL_PCT",       label: "Futures STT (%)",      type: "number", min: 0, max: 1,  step: 0.01,  effect: EFFECT.INSTANT, desc: "STT on futures sell side (% of turnover). Apr 2026: 0.05%", default: "0.05" },
-      { key: "EXCHANGE_TXN_OPT_PCT",   label: "Exchange Txn Opt (%)",  type: "number", min: 0, max: 0.5,  step: 0.005, effect: EFFECT.INSTANT, desc: "NSE exchange txn charges for options (% of turnover)", default: "0.05" },
-      { key: "EXCHANGE_TXN_FUT_PCT",   label: "Exchange Txn Fut (%)",  type: "number", min: 0, max: 0.1,  step: 0.001, effect: EFFECT.INSTANT, desc: "NSE exchange txn charges for futures (% of turnover)", default: "0.002" },
+      { key: "EXCHANGE_TXN_OPT_PCT",   label: "Exchange Txn Opt (%)",  type: "number", min: 0, max: 0.5,  step: 0.00001, effect: EFFECT.INSTANT, desc: "NSE options exchange txn (% of premium turnover). Current NSE: 0.03553%", default: "0.03553" },
+      { key: "EXCHANGE_TXN_FUT_PCT",   label: "Exchange Txn Fut (%)",  type: "number", min: 0, max: 0.1,  step: 0.00001, effect: EFFECT.INSTANT, desc: "NSE futures exchange txn (% of turnover). Current NSE: 0.00183%", default: "0.00183" },
       { key: "SEBI_CHARGES_PER_CRORE", label: "SEBI Charges (₹/Cr)",  type: "number", min: 0, max: 100, step: 1,     effect: EFFECT.INSTANT, desc: "SEBI turnover fee in ₹ per crore", default: "10" },
-      { key: "GST_PCT",               label: "GST (%)",               type: "number", min: 0, max: 30,  step: 1,     effect: EFFECT.INSTANT, desc: "GST on brokerage + exchange charges", default: "18" },
+      { key: "GST_PCT",               label: "GST (%)",               type: "number", min: 0, max: 30,  step: 1,     effect: EFFECT.INSTANT, desc: "GST on (brokerage + exchange txn + SEBI charges)", default: "18" },
       { key: "STAMP_DUTY_PCT",        label: "Stamp Duty (%)",        type: "number", min: 0, max: 0.1, step: 0.001, effect: EFFECT.INSTANT, desc: "Stamp duty on buy-side turnover", default: "0.003" },
       { key: "BROKER_FLAT_PER_ORDER",  label: "Broker Fee (₹/order)", type: "number", min: 0, max: 100, step: 5,     effect: EFFECT.INSTANT, desc: "Flat brokerage per executed order (×2 for buy+sell)", default: "20" },
     ],

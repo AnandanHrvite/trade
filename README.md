@@ -467,11 +467,11 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 |-----|---------|-------|
 | `STT_OPT_SELL_PCT` | `0.15` | STT on options sell-side (%) |
 | `STT_FUT_SELL_PCT` | `0.05` | STT on futures sell-side (%) |
-| `EXCHANGE_TXN_OPT_PCT` | `0.05` | NSE exchange txn for options (%) |
-| `EXCHANGE_TXN_FUT_PCT` | `0.002` | NSE exchange txn for futures (%) |
+| `EXCHANGE_TXN_OPT_PCT` | `0.03553` | NSE options exchange txn — % of premium turnover |
+| `EXCHANGE_TXN_FUT_PCT` | `0.00183` | NSE futures exchange txn — % of turnover |
 | `SEBI_CHARGES_PER_CRORE` | `10` | SEBI turnover fee (₹/Cr) |
 | `STAMP_DUTY_PCT` | `0.003` | Stamp duty on buy-side turnover (%) |
-| `GST_PCT` | `18` | GST on brokerage + exchange charges |
+| `GST_PCT` | `18` | GST on brokerage + exchange txn + SEBI |
 | `BROKER_FLAT_PER_ORDER` | `20` | Flat brokerage per order (×2 for buy+sell) |
 
 ## Routes
