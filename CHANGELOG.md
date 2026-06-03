@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: Contract-note Report (gross / charges breakdown / net P&L) on History + Replay
+
+- **New "📄 Report" button on every Paper Trade History page (Scalp / Swing / ORB, plus PA / Straddle).** It opens a broker-style **contract note** in a popup: a per-trade table (segment · exchange · buy price · sell price · qty · gross profit), then **Total gross profit / Total charges / Net P&L**, then a **Charges breakdown** (Brokerage, Exchange txn charge, Stamp duty, STT, GST, SEBI). Two scopes: a per-day **Report** button on each session card, and a top-bar **Report** button for all sessions combined.
+- **Same Report on the Replay page** — a per-session **Report** under each replayed session's trades, a **Report (all)** button covering the whole range run, and a Report on the single-session result.
+- **Export PDF** — the popup has an Export PDF button that opens a clean print view (Save as PDF) of the contract note.
+- **Numbers match the dashboard.** Charges use the same canonical `calcCharges()` the engines use (broker schedule per strategy — Swing = Zerodha rates, others = Fyers), and **Net P&L is anchored to the stored trade P&L**, so the report total equals the P&L shown everywhere; gross is derived as `net + charges`. Slippage / bid-ask spread is not modelled (same as paper/live). New shared module [contractNote.js](src/utils/contractNote.js); wired through [paperHistoryUI.js](src/utils/paperHistoryUI.js) and [replay.js](src/routes/replay.js). No new env keys or routes — the note is built client-side from data already on the page.
+
 ### Change: Scalp — BB re-entry stop is now per-tick (band touch), not candle-close
 
 - **BB re-entry exits the instant spot crosses back through the band.** The `SCALP_BB_REENTRY_EXIT` stop previously only evaluated on 5-min candle **close** (`close > BB.lower` for PE / `close < BB.upper` for CE). On a one-candle V-reversal that let the bar print far past the band before exiting — e.g. the 2026-06-03 12:05 PE gave back to a 23236 close (−65.75 spot pts) when the band sat near 23195. The stop is now checked **per-tick** against the band fixed at the bar's start (from completed candles), so it exits at the band line. Applies to Scalp **paper + live** (canonical paper logic); **backtest** mirrors it via the bar's adverse extreme vs the band, exiting at the band level (profit-lock still takes priority within a bar). Same `SCALP_BB_REENTRY_EXIT` gate (default on); the candle-close check is kept as a backstop. New helper `bbLevels()` in [scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js).

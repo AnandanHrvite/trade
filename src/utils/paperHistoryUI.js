@@ -20,6 +20,10 @@ const {
   buildSidebar, sidebarCSS, modalCSS, modalJS,
   tableEnhancerCSS, tableEnhancerJS, faviconLink,
 } = require("./sharedNav");
+const {
+  attachContractNotes, brokerForRoute,
+  contractNoteModalHTML, contractNoteClientJS,
+} = require("./contractNote");
 
 function inr(n) {
   return typeof n === "number"
@@ -1116,6 +1120,7 @@ function buildSessionCards(sessions, opts) {
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           ${replayMode && s.date ? `<a class="copy-btn" href="/replay?from=${String(s.date).slice(0,10)}&to=${String(s.date).slice(0,10)}&mode=${replayMode}&settings=snapshot&run=1" target="_blank" rel="noopener" onclick="event.stopPropagation();" title="Open this session's candlestick chart + trade markers in Replay" style="text-decoration:none;">📈 View chart</a>` : ""}
+          <button class="copy-btn" onclick="event.stopPropagation();openContractNote('session',${actualIdx})" title="Contract note (gross, charges, net P&L) for this day">📄 Report</button>
           <button class="copy-btn" onclick="event.stopPropagation();copySessionLog(this,${actualIdx})">📋 Copy Trade Log</button>
           <button class="reset-btn" onclick="event.stopPropagation();deleteSession(${actualIdx}, 'Session ${sIdx} (${String(s.date || "").slice(0,10)})')">🗑 Delete Session</button>
         </div>
@@ -1162,7 +1167,11 @@ function buildSessionCards(sessions, opts) {
  *                 (called whenever Analytics renders, always on full data).
  */
 function renderHistoryPage(cfg) {
-  const sessions = cfg.sessions || [];
+  // Attach a contract-note row (_cn) to every trade so the Report modal can be
+  // built entirely client-side from the embedded data — broker is derived from
+  // the route prefix (swing → Zerodha rates, others → Fyers).
+  const cnBroker = (cfg.broker !== undefined) ? cfg.broker : brokerForRoute(cfg.routePrefix);
+  const sessions = (cfg.sessions || []).map(s => ({ ...s, trades: attachContractNotes(s.trades || [], cnBroker) }));
   const allTrades = sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.date })));
   const totalWins   = allTrades.filter(t => t.pnl > 0).length;
   const totalLosses = allTrades.filter(t => t.pnl < 0).length;
@@ -1218,6 +1227,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
       ${filterSelectHTML}
       <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()" title="Day-wise P&L summary">👁 Day P&L</button>
       <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()" title="Performance Analytics">📊 Analytics</button>
+      <button onclick="openContractNote('all')" class="export-btn" title="Contract note (gross, charges breakdown, net P&L) for all sessions">📄 Report</button>
       <button onclick="copyAllJsonl(this)" class="export-btn" title="Copy the full per-trade JSONL log to clipboard">📋 Copy JSONL</button>
       <a href="${cfg.routePrefix}/download/trades.jsonl" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative per-trade log (.txt) — full field capture for offline analysis">⬇ tradeLogs</a>
       <a href="${cfg.routePrefix}/download/skips-all" class="export-btn" style="text-decoration:none;display:inline-block;" title="Cumulative skip log (.txt) — all daily skip files concatenated">⬇ skipLogs</a>
@@ -1269,6 +1279,7 @@ ${buildSidebar(cfg.sidebarKey, cfg.liveActive)}
 
 ${tradeModalHTML(cfg.modalLabel)}
 ${jsonlModalHTML()}
+${contractNoteModalHTML()}
 
 <script>${modalJS()}</script>
 <script id="trades-data" type="application/json">${JSON.stringify(allTrades).replace(/<\/script>/gi, "<\\/script>")}</script>
@@ -1276,6 +1287,23 @@ ${jsonlModalHTML()}
 <script>
 var ALL_TRADES_JSON = JSON.parse(document.getElementById('trades-data').textContent);
 var ALL_SESSIONS_JSON = JSON.parse(document.getElementById('sessions-data').textContent);
+var CN_STRAT_LABEL = ${JSON.stringify(cfg.modalLabel || "Contract")};
+${contractNoteClientJS()}
+// Resolve the trade set for a Report click and open the contract-note modal.
+function openContractNote(scope, idx){
+  var trades, sub, file;
+  if(scope==='session'){
+    var s=(ALL_SESSIONS_JSON||[])[idx]||{}; trades=s.trades||[];
+    var d=s.date?String(s.date).slice(0,10):'';
+    sub='Session '+(idx+1)+(d?(' · '+d):'')+' · '+trades.length+' trade'+(trades.length!==1?'s':'');
+    file=CN_STRAT_LABEL.replace(/\\s+/g,'-').toLowerCase()+'-'+(d||('session-'+(idx+1)));
+  } else {
+    trades=ALL_TRADES_JSON||[];
+    sub='All sessions · '+trades.length+' trade'+(trades.length!==1?'s':'');
+    file=CN_STRAT_LABEL.replace(/\\s+/g,'-').toLowerCase()+'-all-sessions';
+  }
+  openContractNoteFor(CN_STRAT_LABEL+' — Contract Note', sub, trades, file);
+}
 ${tradeModalJS()}
 ${dayViewAnalyticsJS({ routePrefix: cfg.routePrefix, startCap, filter })}
 ${cfg.extraAnalyticsJS || ""}

@@ -34,6 +34,10 @@ const fs      = require("fs");
 const { spawn } = require("child_process");
 
 const { buildSidebar, sidebarCSS, faviconLink, modalJS } = require("../utils/sharedNav");
+const {
+  attachContractNotes, brokerForMode,
+  contractNoteModalHTML, contractNoteClientJS,
+} = require("../utils/contractNote");
 const tickReplay   = require("../services/tickReplay");
 const tickRecorder = require("../utils/tickRecorder");
 
@@ -161,6 +165,16 @@ router.post("/run", express.json(), async (req, res) => {
       useCurrentSettings: !!useCurrentSettings,
       noCache: !!noCache,  // force fresh recompute + cache overwrite when true
     });
+    // Attach a contract-note row (_cn) to each trade so the Replay page's
+    // Report modal can build a contract note client-side, identical to the
+    // History pages. Broker schedule is derived from the replayed strategy.
+    const cnBroker = brokerForMode(mode);
+    if (result && Array.isArray(result.sessionTrades)) {
+      result.sessionTrades = attachContractNotes(result.sessionTrades, cnBroker);
+    }
+    if (result && result.canonical && Array.isArray(result.canonical.trades)) {
+      result.canonical.trades = attachContractNotes(result.canonical.trades, cnBroker);
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -1308,7 +1322,9 @@ function renderComparison(content, baseline, sim, header) {
 
   // Clean trades table (entry/exit reason per trade) replaces the raw JSON.
   if (sim.ok && sim.sessionTrades && sim.sessionTrades.length) {
-    html += '<div class="muted" style="margin-top:14px;">Replay trades (' + sim.sessionTrades.length + ')</div>';
+    _CN_SINGLE_TRADES = sim.sessionTrades; _CN_SINGLE_LABEL = _cnModeLabel(sim.mode);
+    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;"><span class="muted">Replay trades (' + sim.sessionTrades.length + ')</span>' +
+            '<button class="row-btn" onclick="openReplaySingleReport()" title="Contract note for this replay">📄 Report</button></div>';
     html += renderTradesTable(sim.sessionTrades);
   }
 
@@ -1664,6 +1680,8 @@ function renderRangeResult(rows, context) {
   // rows: [{ session, baseline, sim }]
   // context: { mode, label, from, to } — describes what was run
   const el = document.getElementById('range-result');
+  // Stash for the Report (contract note) buttons.
+  _CN_RANGE_ROWS = rows; _CN_RANGE_CTX = context;
 
   // NOTE: do not rename this back to modeTag — that shadows the outer
   // modeTag() helper and the const initializer would call itself before
@@ -1833,7 +1851,8 @@ function renderRangeResult(rows, context) {
     const inner =
       (hasChart ? '<div class="replay-chart" id="' + cid + '"></div>'
                 : '<div class="muted" style="margin-top:10px;">No chart data for this session.</div>') +
-      (trades.length ? '<div class="muted" style="margin-top:10px;">Replay trades (' + trades.length + ')</div>' + renderTradesTable(trades)
+      (trades.length ? '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;"><span class="muted">Replay trades (' + trades.length + ')</span>' +
+                        '<button class="row-btn" onclick="openReplayReportSession(' + idx + ')" title="Contract note for this session">📄 Report</button></div>' + renderTradesTable(trades)
                      : '<div class="muted" style="margin-top:10px;">No trades.</div>');
     chartsHtml +=
       '<details class="sess-chart"' + (open ? ' open' : '') + ' ontoggle="lazyDrawSessionChart(this,\\'' + cid + '\\')">' +
@@ -2003,6 +2022,12 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     const btnRow = document.getElementById('range-diag-btns');
     btnRow.innerHTML = '';
     btnRow.style.display = 'flex';
+    const reportBtn = document.createElement('button');
+    reportBtn.className = 'copy-btn';
+    reportBtn.textContent = '📄 Report (all)';
+    reportBtn.title = 'Contract note (gross, charges, net P&L) across the whole range';
+    reportBtn.onclick = () => openReplayReportAll();
+    btnRow.appendChild(reportBtn);
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
     copyBtn.textContent = '📋 Copy diagnostic data';
@@ -2134,6 +2159,35 @@ function applySessDateShortcut(val) {
 })();
 </script>
 <script>${modalJS()}</script>
+${contractNoteModalHTML()}
+<script>
+${contractNoteClientJS()}
+// Replay-specific Report wrappers. renderRangeResult / renderComparison stash
+// the currently-displayed trades here so a Report click can build the note.
+var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
+var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
+function _cnModeLabel(m){
+  return m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='straddle-paper'?'Straddle Paper':(m||'Replay');
+}
+function openReplayReportAll(){
+  var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }
+  var ctx=_CN_RANGE_CTX||{}; var label=_cnModeLabel(ctx.mode);
+  var sub='Replay '+(ctx.from||'')+' → '+(ctx.to||'')+' · '+trades.length+' trade'+(trades.length!==1?'s':'');
+  openContractNoteFor(label+' — Replay Contract Note', sub, trades, label.replace(/\\s+/g,'-').toLowerCase()+'-replay-'+(ctx.from||'')+'_'+(ctx.to||''));
+}
+function openReplayReportSession(idx){
+  var r=_CN_RANGE_ROWS[idx]; if(!r||!r.sim||!r.sim.sessionTrades) return;
+  var trades=r.sim.sessionTrades, label=_cnModeLabel(r.session&&r.session.mode);
+  var d=r.session&&r.session.date?String(r.session.date).slice(0,10):'';
+  var sub='Replay '+d+' · '+trades.length+' trade'+(trades.length!==1?'s':'');
+  openContractNoteFor(label+' — Replay Contract Note', sub, trades, label.replace(/\\s+/g,'-').toLowerCase()+'-replay-'+(d||('session-'+idx)));
+}
+function openReplaySingleReport(){
+  var trades=_CN_SINGLE_TRADES||[];
+  var sub='Replay · '+trades.length+' trade'+(trades.length!==1?'s':'');
+  openContractNoteFor((_CN_SINGLE_LABEL||'Replay')+' — Replay Contract Note', sub, trades, (_CN_SINGLE_LABEL||'replay').replace(/\\s+/g,'-').toLowerCase()+'-replay');
+}
+</script>
 </body></html>`;
   res.send(html);
 });
