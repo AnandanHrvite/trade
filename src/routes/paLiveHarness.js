@@ -190,10 +190,6 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 ${buildSidebar('paLiveHarness', false)}
 <div class="main">
   <h1>📐 PA LIVE — via Paper Harness</h1>
-  <div class="sub">
-    Runs PA LIVE by wrapping PA PAPER with the live harness. <strong>LIVE = PAPER by construction.</strong>
-    Strategy decisions are paper's; this layer adds real Fyers order placement on top.
-  </div>
 
   ${dryRunCurrent
     ? '<div class="warn-soft"><strong>🧪 DRY-RUN mode</strong> — no real orders will be placed. Verify decisions match paper for at least one session, then set <code>LIVE_HARNESS_DRY_RUN=false</code> in Settings to enable real orders.</div>'

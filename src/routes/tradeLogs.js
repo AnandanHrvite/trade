@@ -580,7 +580,6 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   <!-- ── FILES TAB ─────────────────────────────────────────────────── -->
   <div class="tab-pane active" id="pane-files">
-    <div class="sub">One JSONL per mode per IST date — crash-safe record of every paper trade taken that day. Use these for post-window analysis.</div>
     <div id="filesArea">Loading…</div>
   </div>
 

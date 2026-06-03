@@ -1178,7 +1178,6 @@ ${buildSidebar('dashboard', liveActive)}
   <div class="top-bar">
     <div>
       <div class="top-bar-title">⌂ Dashboard</div>
-      <div class="top-bar-meta">System overview · Broker connections · Session status</div>
     </div>
     <div class="dash-src-toggle" id="dashSrcToggle" title="Data source for all charts">
       <button type="button" class="dst-btn active" data-src="paper">PAPER</button>
