@@ -675,6 +675,26 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
+    // 0. BB BAND TOUCH — primary structural stop. Mirrors scalpPaper (the canonical
+    //    route): exit the instant spot crosses back through the band (PE: above the
+    //    lower band, CE: below the upper band), per-tick rather than at candle close,
+    //    so a one-candle V-reversal exits at the band line instead of the bar close.
+    if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
+      if (!state._bbTickCache || state._bbTickCache.n !== state.candles.length) {
+        const _lv = scalpStrategy.bbLevels(state.candles);
+        state._bbTickCache = { n: state.candles.length, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
+      }
+      const _bb = state._bbTickCache;
+      const _reentered = pos.side === "CE"
+        ? (_bb.upper != null && price < _bb.upper)
+        : (_bb.lower != null && price > _bb.lower);
+      if (_reentered) {
+        pos.slSource = "BB re-entry";
+        squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+        return;
+      }
+    }
+
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
     //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
     //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.

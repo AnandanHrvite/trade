@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Change: Scalp — BB re-entry stop is now per-tick (band touch), not candle-close
+
+- **BB re-entry exits the instant spot crosses back through the band.** The `SCALP_BB_REENTRY_EXIT` stop previously only evaluated on 5-min candle **close** (`close > BB.lower` for PE / `close < BB.upper` for CE). On a one-candle V-reversal that let the bar print far past the band before exiting — e.g. the 2026-06-03 12:05 PE gave back to a 23236 close (−65.75 spot pts) when the band sat near 23195. The stop is now checked **per-tick** against the band fixed at the bar's start (from completed candles), so it exits at the band line. Trade-off: more whipsaw on wicks — entries taken right at the band (`ptsFromBB≈0`) can stop out quickly. Applies to Scalp **paper + live** (canonical paper logic); **backtest** mirrors it via the bar's adverse extreme vs the band, exiting at the band level (profit-lock still takes priority within a bar). Same `SCALP_BB_REENTRY_EXIT` gate (default on); the candle-close check is kept as a backstop. New helper `bbLevels()` in [scalp_bb_cpr.js](src/strategies/scalp_bb_cpr.js).
+- **Scalp chart hover time fixed.** The crosshair time label defaulted to UTC (a 12:25 IST bar showed `06:55`). Added `localization.timeFormatter` to the scalp-paper chart so the hover time matches the IST axis, mirroring the fix already in [replay.js](src/routes/replay.js). The same UTC-crosshair bug still exists in the other chart routes (swing/PA/ORB/straddle paper+live) — not yet patched.
+
 ### Change: Dashboard — hide controls & broker cards while a trade is running
 
 - **Distraction-free Dashboard during active trading.** While any strategy is running (paper or live), the Dashboard now hides the top-bar action buttons (Start All (Harness) / Start All (Paper) / Reset Token), the schedule/cache pills (Expiry / Holiday / Candle cache), and the Fyers/Zerodha broker connection cards (balance, status, Login buttons). These reappear once everything is idle.

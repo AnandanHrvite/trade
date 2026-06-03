@@ -614,6 +614,28 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
+    // 0. BB BAND TOUCH — primary structural stop. The breakout that triggered the
+    //    entry has failed the instant spot crosses back THROUGH the band (PE: above
+    //    the lower band, CE: below the upper band). Runs per-tick (not candle-close)
+    //    so a one-candle V-reversal exits at the band line instead of giving back to
+    //    the bar close. Band is from completed candles (fixed during the forming bar),
+    //    recomputed only when a new candle closes. Same gate/inputs as bbReentryExit.
+    if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
+      if (!state._bbTickCache || state._bbTickCache.n !== state.candles.length) {
+        const _lv = scalpStrategy.bbLevels(state.candles);
+        state._bbTickCache = { n: state.candles.length, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
+      }
+      const _bb = state._bbTickCache;
+      const _reentered = pos.side === "CE"
+        ? (_bb.upper != null && price < _bb.upper)
+        : (_bb.lower != null && price > _bb.lower);
+      if (_reentered) {
+        pos.slSource = "BB re-entry";
+        simulateSell(price, "BB re-entry", price);
+        return;
+      }
+    }
+
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
     //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
     //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.
@@ -2201,6 +2223,11 @@ function doCopy(text,btn,label){
     rightPriceScale: { borderColor: '#1a2236', scaleMargins: { top: 0.1, bottom: 0.05 } },
     timeScale: { borderColor: '#1a2236', timeVisible: true, secondsVisible: false,
       tickMarkFormatter: function(t) { var d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+    },
+    // Without this the crosshair label defaults to UTC (showed 06:55 for a 12:25 IST bar).
+    // Mirror tickMarkFormatter so the hover time matches the axis (browser-local = IST).
+    localization: {
+      timeFormatter: function(t) { var d = new Date(t*1000); return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
     },
   });
   var cs = chart.addCandlestickSeries({ upColor:'#10b981', downColor:'#ef4444', borderUpColor:'#10b981', borderDownColor:'#ef4444', wickUpColor:'#10b981', wickDownColor:'#ef4444' });

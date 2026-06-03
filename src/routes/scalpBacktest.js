@@ -260,9 +260,18 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
-      // 3. BB re-entry — failed breakout: price closed back inside the band
-      if (!exitReason && scalpStrategy.bbReentryExit(window, position.side)) {
-        exitReason = "BB re-entry";
+      // 3. BB band touch — failed breakout. The per-tick paper logic exits the instant
+      //    spot crosses back THROUGH the band, so use the bar's adverse extreme
+      //    (PE→high, CE→low) against the band fixed at the bar's start (prior completed
+      //    candles) and exit AT the band line — the per-bar proxy for the per-tick band
+      //    stop (cf. the hard stop above, which likewise exits at its level).
+      if (!exitReason && (process.env.SCALP_BB_REENTRY_EXIT || "true") === "true") {
+        const _bb = scalpStrategy.bbLevels(window.slice(0, -1));
+        if (_bb && position.side === "PE" && candle.high > _bb.lower) {
+          exitPrice = parseFloat(_bb.lower.toFixed(2)); exitReason = "BB re-entry";
+        } else if (_bb && position.side === "CE" && candle.low < _bb.upper) {
+          exitPrice = parseFloat(_bb.upper.toFixed(2)); exitReason = "BB re-entry";
+        }
       }
 
       // 4. Trend flip — exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND)

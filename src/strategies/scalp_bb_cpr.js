@@ -387,17 +387,25 @@ function isTrendFlip(candles, side) {
 // Gated by SCALP_BB_REENTRY_EXIT (default on). Uses the same BB inputs as entry.
 function bbReentryExit(candles, side) {
   if (cfg("SCALP_BB_REENTRY_EXIT", "true") !== "true") return false;
-  var BB_PERIOD = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
-  var BB_STDDEV = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
-  var closes = candles.map(function(c) { return c.close; });
-  var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
-  if (bbArr.length < 1) return false;
-  var bb = bbArr[bbArr.length - 1];
+  var bb = bbLevels(candles);
+  if (!bb) return false;
   var close = candles[candles.length - 1].close;
   if (side === "CE") return close < bb.upper;   // closed back below the upper band
   return close > bb.lower;                        // PE: closed back above the lower band
 }
 
+// Latest BB upper/lower from the supplied (completed) candles, same inputs the
+// entry/exit use. Exposed so the routes can run the BB re-entry stop intra-candle
+// (per-tick spot vs band) instead of only on candle close. null if insufficient data.
+function bbLevels(candles) {
+  var BB_PERIOD = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
+  var BB_STDDEV = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
+  var closes = candles.map(function(c) { return c.close; });
+  var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
+  if (bbArr.length < 1) return null;
+  return bbArr[bbArr.length - 1];
+}
+
 function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null, adx: null, st: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isPSARFlip, isSuperTrendFlip, isTrendFlip, bbReentryExit, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isPSARFlip, isSuperTrendFlip, isTrendFlip, bbReentryExit, bbLevels, reset };
