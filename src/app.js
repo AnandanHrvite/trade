@@ -253,7 +253,6 @@ const OPEN_PATHS = [
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
   "/api/expiry-dates",      // read-only expiry calendar
-  "/api/cache-info",        // read-only candle cache stats
   "/login-logs",            // failed login attempts viewer
   "/login-logs/data",       // login logs JSON data
   "/login-logs/clear",      // reset login logs
@@ -473,16 +472,6 @@ app.get("/api/expiry-dates", async (req, res) => {
 });
 
 // ── Candle Cache Info ─────────────────────────────────────────────────────────
-app.get("/api/cache-info", (req, res) => {
-  try {
-    const { getCacheInfo } = require("./utils/candleCache");
-    const info = getCacheInfo("NSE:NIFTY50-INDEX", "15");
-    res.json({ success: true, cache: info });
-  } catch (e) {
-    res.json({ success: false, cache: null });
-  }
-});
-
 // Lightweight liveness probe so the dashboard can auto-swap to/from realtime view.
 app.get("/api/session-active", (req, res) => {
   res.json({ active: !!sharedSocketState.isAnyActive() });
@@ -1189,8 +1178,7 @@ ${buildSidebar('dashboard', liveActive)}
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
-      <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
-      <span id="cache-info-pill" class="top-bar-cache empty" title="NIFTY candle cache built from Fyers history">📦 Candle cache: checking…</span>`}
+      <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>`}
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
@@ -1940,26 +1928,6 @@ async function loadModuleCharts(){
 }
 
 loadModuleCharts();
-
-// ── Candle cache info (top-bar pill) ─────────────────────────────────────────
-async function loadCacheInfo(){
-  try {
-    var r = await fetch('/api/cache-info', {cache:'no-store'});
-    if (!r.ok) return;
-    var d = await r.json();
-    var el = document.getElementById('cache-info-pill');
-    if (!el) return;
-    if (d.cache) {
-      el.classList.remove('empty');
-      el.textContent = '📦 ' + d.cache.candles + ' candles · ' + d.cache.from + ' → ' + d.cache.to + ' · ' + d.cache.sizeKB + ' KB';
-    } else {
-      el.classList.add('empty');
-      el.textContent = '📦 No cache yet';
-    }
-  } catch(_){}
-}
-loadCacheInfo();
-setInterval(loadCacheInfo, 60000); // refresh once a minute
 
 // ── Market schedule pills (top bar) — independent of analytics panel ─────────
 async function loadMarketSchedulePills(){
