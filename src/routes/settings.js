@@ -1067,6 +1067,21 @@ router.get("/", (req, res) => {
     "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers":       straddleModeOn,
   };
 
+  // ── Section titles reflect their trend-source toggle (SAR/PSAR vs SuperTrend) ──
+  const swingUseST = (envData["SWING_USE_SUPERTREND"] ?? process.env.SWING_USE_SUPERTREND ?? "false").toLowerCase() === "true";
+  const scalpUseST = (envData["SCALP_USE_SUPERTREND"] ?? process.env.SCALP_USE_SUPERTREND ?? "false").toLowerCase() === "true";
+  const trendSourceTitle = (section) => {
+    if (section.includes("SAR/SuperTrend")) {
+      return section.replace("SAR/SuperTrend",
+        `<span class="trend-src" data-trend-key="SWING_USE_SUPERTREND" data-on="SuperTrend" data-off="SAR">${swingUseST ? "SuperTrend" : "SAR"}</span>`);
+    }
+    if (section.includes("BB+PSAR+RSI")) {
+      return section.replace("PSAR",
+        `<span class="trend-src" data-trend-key="SCALP_USE_SUPERTREND" data-on="SuperTrend" data-off="PSAR">${scalpUseST ? "SuperTrend" : "PSAR"}</span>`);
+    }
+    return section;
+  };
+
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
     if (SECTION_TO_MASTER[s.section] === false) return "";
     const sectionId = s.section.replace(/\s+/g, "-").toLowerCase();
@@ -1078,7 +1093,7 @@ router.get("/", (req, res) => {
     <div class="settings-section${openClass}" data-section="${sectionId}">
       <div class="section-title" onclick="toggleSection(this)">
         <span class="section-chevron">▶</span>
-        ${s.icon} ${s.section}
+        ${s.icon} ${trendSourceTitle(s.section)}
         <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">${fieldCount} settings</span>
         ${defaultsBtn}
         ${eyeBtn}
@@ -1832,6 +1847,11 @@ document.addEventListener('keydown', function(e){
     el.disabled = disabled || frozen;
     if (row && !frozen) row.style.opacity = disabled ? '0.4' : '';
   }
+  function _setTrendLabel(key, on) {
+    document.querySelectorAll('.trend-src[data-trend-key="' + key + '"]').forEach(function(sp) {
+      sp.textContent = on ? sp.getAttribute('data-on') : sp.getAttribute('data-off');
+    });
+  }
   function updateTrendSourceGating() {
     var scalp = document.querySelector('[data-key="SCALP_USE_SUPERTREND"]');
     if (scalp) {
@@ -1840,12 +1860,14 @@ document.addEventListener('keydown', function(e){
       _setSourceRowDisabled('SCALP_PSAR_MAX', sON);
       _setSourceRowDisabled('SCALP_SUPERTREND_PERIOD', !sON);
       _setSourceRowDisabled('SCALP_SUPERTREND_MULT', !sON);
+      _setTrendLabel('SCALP_USE_SUPERTREND', sON);
     }
     var swing = document.querySelector('[data-key="SWING_USE_SUPERTREND"]');
     if (swing) {
       var wON = swing.checked;  // swing SAR has no env params, so only the ST fields gate
       _setSourceRowDisabled('SWING_SUPERTREND_PERIOD', !wON);
       _setSourceRowDisabled('SWING_SUPERTREND_MULT', !wON);
+      _setTrendLabel('SWING_USE_SUPERTREND', wON);
     }
   }
   ['SCALP_USE_SUPERTREND', 'SWING_USE_SUPERTREND'].forEach(function(k) {
