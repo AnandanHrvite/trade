@@ -950,6 +950,18 @@ ${buildSidebar('paBacktest', liveActive)}
         <div id="anaRiskMetrics"></div>
       </div>
     </div>
+    <div class="ana-row3">
+      <div class="ana-mini" style="grid-column:1 / -1;">
+        <h3>📆 Day-wise Loss</h3>
+        <div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Losing Trades</th><th>Gross Loss</th><th>Day Net</th></tr></thead><tbody id="anaDayLossBody"></tbody></table></div>
+      </div>
+    </div>
+    <div class="ana-row3">
+      <div class="ana-mini" style="grid-column:1 / -1;">
+        <h3>🕯️ Losses by Candles Held</h3>
+        <div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Side</th><th>Candles Held</th><th>Loss</th><th>Exit</th></tr></thead><tbody id="anaLossCandleBody"></tbody></table></div>
+      </div>
+    </div>
 
     ${s.rejectBreakdown && s.rejectBreakdown.length > 0 ? `
     <div style="border-top:0.5px solid #0e1428;margin:16px 0 12px;padding-top:12px;">
@@ -1849,6 +1861,26 @@ function renderAnalytics(){
     });
     if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing days</td></tr>';
     document.getElementById('anaWorstDayBody').innerHTML=html;
+  })();
+
+  // ── Day-wise Loss ──
+  (function(){
+    var dlMap={};
+    trades.forEach(function(t){ var d=t.date||'?'; if(!dlMap[d])dlMap[d]={trades:0,losses:0,gross:0,net:0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++;dlMap[d].gross+=t.pnl;} });
+    var days=Object.keys(dlMap).sort();
+    var html='';
+    days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.gross<0?fmtAna(dd.gross):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAna(dd.net)+'</td></tr>'; });
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+    document.getElementById('anaDayLossBody').innerHTML=html;
+  })();
+
+  // ── Losses by Candles Held ──
+  (function(){
+    var rows=lossTrades.slice().sort(function(a,b){return (b.held==null?-1:b.held)-(a.held==null?-1:a.held);});
+    var html='';
+    rows.forEach(function(t){ var sc=t.side==='CE'?'#10b981':'#ef4444'; var ch=(typeof t.held==='number')?t.held:'—'; html+='<tr><td style="color:#c8d8f0;">'+(t.date||'—')+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+ch+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.reason||'—')+'</td></tr>'; });
+    if(!html) html='<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
+    document.getElementById('anaLossCandleBody').innerHTML=html;
   })();
 
   // ── Loss by Exit Reason ──

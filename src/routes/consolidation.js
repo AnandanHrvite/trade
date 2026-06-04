@@ -443,6 +443,12 @@ router.get("/", (req, res) => {
         <div class="ana-mini"><h3>🚪 Loss by Exit Reason</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Loss Count</th><th>Total Loss</th><th>Avg Loss</th><th>% of Losses</th></tr></thead><tbody id="anaLossReasonBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>⏰ Losing Hours</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Hour</th><th>Losses</th><th>Loss P&amp;L</th><th>Avg Loss</th><th>Loss%</th></tr></thead><tbody id="anaLossHourBody"></tbody></table></div></div>
       </div>
+      <div class="ana-row3">
+        <div class="ana-mini" style="grid-column:1 / -1;"><h3>📆 Day-wise Loss</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Losing Trades</th><th>Gross Loss</th><th>Day Net</th></tr></thead><tbody id="anaDayLossBody"></tbody></table></div></div>
+      </div>
+      <div class="ana-row3">
+        <div class="ana-mini" style="grid-column:1 / -1;"><h3>🕯️ Losses by Candles Held</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Mode</th><th>Side</th><th>Candles Held</th><th>Loss</th><th>Exit</th></tr></thead><tbody id="anaLossCandleBody"></tbody></table></div></div>
+      </div>
 
       <!-- Best trades -->
       <div class="ana-section-title gain">🏆 Best Performance</div>
@@ -1795,6 +1801,26 @@ function renderAnalytics(){
     });
     anaEnhance('anaLossHourBody', lh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
     anaEnhance('anaWinHourBody', wh, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', {});
+  })();
+
+  // ── Day-wise Loss ──
+  (function(){
+    const m = new Map();
+    trades.forEach(t => { const d=t.date||'?'; if (!m.has(d)) m.set(d, { trades:0, losses:0, gross:0, net:0 }); const b=m.get(d); b.trades++; b.net+=(t.pnl||0); if (t.pnl<0){ b.losses++; b.gross+=t.pnl; } });
+    const days = Array.from(m.keys()).sort();
+    let html = '';
+    days.forEach(d => { const b=m.get(d); const nc=b.net>=0?'#10b981':'#ef4444'; html += '<tr><td>'+d+'</td><td>'+b.trades+'</td><td style="color:#ef4444;">'+b.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(b.gross<0?fmtAnaSigned(b.gross):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAnaSigned(b.net)+'</td></tr>'; });
+    anaEnhance('anaDayLossBody', html, '<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>', { pager:true });
+  })();
+
+  // ── Losses by Candles Held ──
+  (function(){
+    const lossTrades = trades.filter(t=>t.pnl<0);
+    const ch = t => (t.candlesHeld!=null ? t.candlesHeld : (t.held!=null ? t.held : null));
+    const rows = lossTrades.slice().sort((a,b)=>{ const ca=ch(a), cb=ch(b); return (cb==null?-1:cb)-(ca==null?-1:ca); });
+    let html = '';
+    rows.forEach(t => { const c=ch(t); html += '<tr><td>'+(t.date||'—')+'</td><td><span class="badge-mode badge-'+t.mode+'">'+t.mode+'</span></td><td><span class="badge '+(t.side==='CE'?'badge-ce':'badge-pe')+'">'+(t.side||'—')+'</span></td><td style="color:#c8d8f0;font-weight:700;">'+(c==null?'—':c)+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="font-size:0.65rem;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>'; });
+    anaEnhance('anaLossCandleBody', html, '<tr><td colspan="6" style="text-align:center;color:#3a5070;">No losing trades</td></tr>', { pager:true });
   })();
 
   // ── Top 10 Best Trades ──
