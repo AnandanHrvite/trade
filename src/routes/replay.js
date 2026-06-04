@@ -1079,6 +1079,13 @@ function applyReplayDeepLink() {
   if (presetEl) presetEl.value = '';
 
   if (run === '1') {
+    // Strip run=1 from the URL so a manual page refresh doesn't re-fire the
+    // replay. The prefilled date-range + mode stay in the URL for sharing.
+    try {
+      p.delete('run');
+      const qs = p.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+    } catch (_) {}
     const btn = document.getElementById('range-run-btn');
     if (btn) setTimeout(() => runRange(btn), 0);
   }
