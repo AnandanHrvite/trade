@@ -371,7 +371,11 @@ function simulateExit(reason) {
     spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
     optionEntryLtp: pos.netDebit, optionExitLtp: parseFloat((exitCe + exitPe).toFixed(2)),
     pnl: pairPnl, sessionPnl: state.sessionPnl,
-    exitReason: reason, entryTime: pos.entryTime, exitTime, qty,
+    exitReason: reason, entryReason: pos.entryReason,
+    entryTime: pos.entryTime, exitTime, qty,
+    peakPremium: pos.peakCombined,
+    peakPnl: baseFields.mfePnl,
+    maxDrawdown: baseFields.maePnl,
   });
 
   try {

@@ -457,7 +457,7 @@ async function squareOff(exitPrice, reason) {
   let _exitInd = {};
   try { _exitInd = scalpStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
 
-  state.sessionTrades.push({
+  const _exitTrade = {
     side, symbol, qty, entryPrice, exitPrice,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: exitPrice,
@@ -504,8 +504,10 @@ async function squareOff(exitPrice, reason) {
     maePnl:          state.position ? (state.position.maePnl     || 0) : 0,
     secsToMFE:       state.position ? (state.position.secsToMFE  || 0) : 0,
     secsToMAE:       state.position ? (state.position.secsToMAE  || 0) : 0,
+    candlesHeld:     state.position ? (state.position.candlesHeld || 0) : 0,
     vixAtExit:       getCachedVix(),
-  });
+  };
+  state.sessionTrades.push(_exitTrade);
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) state._wins = (state._wins || 0) + 1;
@@ -578,9 +580,16 @@ async function squareOff(exitPrice, reason) {
     pnl: netPnl,
     sessionPnl: state.sessionPnl,
     exitReason: reason,
+    entryReason: _exitTrade.entryReason,
     entryTime,
     exitTime: istNow(),
     qty,
+    peakPremium: _exitTrade.bestOptionLtp,
+    peakPnl: _exitTrade.mfePnl,
+    maxDrawdown: _exitTrade.maePnl,
+    mfeSpotPts: _exitTrade.mfeSpotPts,
+    maeSpotPts: _exitTrade.maeSpotPts,
+    candlesHeld: _exitTrade.candlesHeld,
   });
 }
 

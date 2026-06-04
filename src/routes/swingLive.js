@@ -1068,9 +1068,14 @@ async function squareOff(exitPrice, reason) {
     pnl:            netPnl,
     sessionPnl:     tradeState.sessionPnl,
     exitReason:     reason,
+    entryReason:    tradeState.position ? (tradeState.position.reason || "") : "",
     entryTime,
     exitTime:       istNow(),
     qty,
+    peakPremium:    tradeState.position ? (tradeState.position.bestOptionLtp || null) : null,
+    mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
+    maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
+    candlesHeld:    tradeState.position ? (tradeState.position.candlesHeld || 0) : 0,
   });
 
   stopOptionPolling();

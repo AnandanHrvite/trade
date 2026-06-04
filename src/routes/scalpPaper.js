@@ -509,9 +509,16 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       pnl: netPnl,
       sessionPnl: state.sessionPnl,
       exitReason: reason,
+      entryReason: trade.entryReason,
       entryTime,
       exitTime: istNow(),
       qty,
+      peakPremium: trade.bestOptionLtp,
+      peakPnl: trade.peakPnl,
+      maxDrawdown: trade.maePnl,
+      mfeSpotPts: trade.mfeSpotPts,
+      maeSpotPts: trade.maeSpotPts,
+      candlesHeld: trade.candlesHeld,
     });
   }
 }

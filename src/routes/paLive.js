@@ -436,7 +436,7 @@ async function squareOff(exitPrice, reason) {
   const emoji     = netPnl >= 0 ? "✅" : "❌";
   log(`${emoji} [PA-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
 
-  state.sessionTrades.push({
+  const _exitTrade = {
     side, symbol, qty, entryPrice, exitPrice,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: exitPrice,
@@ -473,8 +473,10 @@ async function squareOff(exitPrice, reason) {
     secsToMFE:      state.position ? (state.position.secsToMFE  || 0) : 0,
     secsToMAE:      state.position ? (state.position.secsToMAE  || 0) : 0,
     bestOptionLtp:  state.position ? (state.position.bestOptionLtp || null) : null,   // peak option premium during trade
+    candlesHeld:    state.position ? (state.position.candlesHeld || 0) : 0,
     vixAtExit:      getCachedVix(),
-  });
+  };
+  state.sessionTrades.push(_exitTrade);
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) state._wins = (state._wins || 0) + 1;
@@ -519,9 +521,16 @@ async function squareOff(exitPrice, reason) {
     pnl: netPnl,
     sessionPnl: state.sessionPnl,
     exitReason: reason,
+    entryReason: _exitTrade.entryReason,
     entryTime,
     exitTime: istNow(),
     qty,
+    peakPremium: _exitTrade.bestOptionLtp,
+    peakPnl: _exitTrade.mfePnl,
+    maxDrawdown: _exitTrade.maePnl,
+    mfeSpotPts: _exitTrade.mfeSpotPts,
+    maeSpotPts: _exitTrade.maeSpotPts,
+    candlesHeld: _exitTrade.candlesHeld,
   });
 }
 

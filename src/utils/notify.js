@@ -346,7 +346,17 @@ function notifyEntry(p) {
  * notifyExit({ mode, side, symbol, strike, expiry,
  *              spotAtEntry, spotAtExit,
  *              optionEntryLtp, optionExitLtp,
- *              pnl, sessionPnl, exitReason, entryTime, exitTime, qty })
+ *              pnl, sessionPnl, exitReason, entryReason, entryTime, exitTime, qty,
+ *              peakPremium, peakPnl, maxDrawdown, mfeSpotPts, maeSpotPts, candlesHeld })
+ *
+ * The trailing fields are optional diagnostics — each renders only when supplied,
+ * so older call sites that pass none keep the original compact message.
+ *   peakPremium  — highest option LTP reached during the trade (bestOptionLtp / peakPremium)
+ *   peakPnl      — best unrealised P&L in ₹ (mfePnl / peakPnl)
+ *   maxDrawdown  — worst unrealised P&L in ₹ (maePnl, negative)
+ *   mfeSpotPts   — max favourable spot excursion (points)
+ *   maeSpotPts   — max adverse spot excursion (points)
+ *   candlesHeld  — number of candles the position was held
  */
 function notifyExit(p) {
   // Fire the live-order hook FIRST — see notifyEntry note on Telegram gating.
@@ -356,9 +366,22 @@ function notifyExit(p) {
   if (!isModeEnabled(group)) return;
   if (!canSend(`TG_${group}_EXIT`)) return;
 
-  const sideEmoji = p.side === "CE" ? "📈 CALL (CE)" : "📉 PUT (PE)";
+  const sideEmoji = p.side === "CE" ? "📈 CALL (CE)"
+                  : p.side === "PE" ? "📉 PUT (PE)"
+                  : `🎯 ${p.side || "—"}`;
   const pnlLine   = `PnL (net)      : ${inr(p.pnl)}  ${pnlArrow(p.pnl)}`;
   const strikeStr = p.strike ? `Strike: ${p.strike}  |  Expiry: ${p.expiry || "—"}` : "";
+
+  // Optional "how the trade travelled" block — only the fields we were handed.
+  const peakLines = [
+    p.peakPremium != null ? `Peak Premium   : ${inr(p.peakPremium)}` : null,
+    p.peakPnl     != null ? `Peak PnL       : ${inr(p.peakPnl)}`     : null,
+    p.maxDrawdown != null ? `Max Drawdown   : ${inr(p.maxDrawdown)}` : null,
+    (p.mfeSpotPts != null || p.maeSpotPts != null)
+      ? `Spot MFE/MAE   : ${p.mfeSpotPts != null ? `+${p.mfeSpotPts}` : "—"} / ${p.maeSpotPts != null ? p.maeSpotPts : "—"} pts`
+      : null,
+    p.candlesHeld != null ? `Held           : ${p.candlesHeld} candle(s)` : null,
+  ].filter(Boolean);
 
   const lines = [
     `${modeLabel(p.mode)} — EXIT`,
@@ -374,10 +397,12 @@ function notifyExit(p) {
     ``,
     pnlLine,
     `Session PnL    : ${inr(p.sessionPnl)}`,
+    ...(peakLines.length ? [``, ...peakLines] : []),
     ``,
-    `Exit Reason    : ${p.exitReason || "—"}`,
-    `Entry Time     : ${p.entryTime  || "—"}`,
-    `Exit Time      : ${p.exitTime   || "—"}`,
+    `Entry Reason   : ${p.entryReason || "—"}`,
+    `Exit Reason    : ${p.exitReason  || "—"}`,
+    `Entry Time     : ${p.entryTime   || "—"}`,
+    `Exit Time      : ${p.exitTime    || "—"}`,
   ].filter(l => l !== undefined);
 
   sendTelegram(lines.join("\n"));

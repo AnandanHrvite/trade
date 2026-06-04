@@ -336,7 +336,13 @@ function simulateSell(reason) {
     spotAtEntry: pos.entrySpot, spotAtExit: exitSpot,
     optionEntryLtp: pos.optionEntryLtp, optionExitLtp: exitOptLtp,
     pnl, sessionPnl: state.sessionPnl,
-    exitReason: reason, entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
+    exitReason: reason, entryReason: pos.entryReason,
+    entryTime: pos.entryTime, exitTime: trade.exitTime, qty,
+    peakPremium: trade.bestOptionLtp,
+    peakPnl: trade.mfePnl,
+    maxDrawdown: trade.maePnl,
+    mfeSpotPts: trade.mfeSpotPts,
+    maeSpotPts: trade.maeSpotPts,
   });
 
   try {
