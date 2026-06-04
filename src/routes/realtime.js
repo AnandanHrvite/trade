@@ -272,10 +272,10 @@ ${sidebar}
       <h1>📡 Real-Time Monitor</h1>
       <div class="sub">Live view of all enabled strategies — polls every 4s <span id="pulse" class="pulse"></span></div>
     </div>
-    <div class="toggle" id="mode-toggle">
+    ${!sessionActive ? `<div class="toggle" id="mode-toggle">
       <button data-mode="PAPER" class="active">PAPER</button>
       <button data-mode="LIVE">LIVE</button>
-    </div>
+    </div>` : ''}
   </div>
 
   ${(pools.length && !sessionActive) ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
