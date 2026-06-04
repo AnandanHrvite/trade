@@ -54,6 +54,9 @@ router.get("/", (req, res) => {
 function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false } = {}) {
   const sidebar = buildSidebar(sidebarKey, liveActive);
   const strategies = enabledStrategies();
+  // Hide the broker-balance ribbon while any session is running — mirrors the
+  // dashboard convention of hiding broker cards mid-trade so they can't distract.
+  const sessionActive = sharedSocketState.isAnyActive();
 
   const endpointsJson = JSON.stringify({
     PAPER: Object.fromEntries(strategies.map(s => [s.key, s.paperPrefix + '/status/data'])),
@@ -275,7 +278,7 @@ ${sidebar}
     </div>
   </div>
 
-  ${pools.length ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
+  ${(pools.length && !sessionActive) ? `<div class="wallets">\n${walletsHtml}\n  </div>` : ''}
 
   <div class="cols">
 ${cardsHtml}
