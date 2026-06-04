@@ -502,6 +502,12 @@ function analyticsSectionHTML(extraTopHTML) {
         <div class="ana-mini"><h3>🚪 Loss by Exit Reason</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Reason</th><th>Loss Count</th><th>Total Loss</th><th>Avg Loss</th><th>% of Losses</th></tr></thead><tbody id="anaLossReasonBody"></tbody></table></div></div>
         <div class="ana-mini"><h3>⏰ Losing Hours</h3><div style="overflow-x:auto;"><table class="ana-tbl"><thead><tr><th>Hour</th><th>Losses</th><th>Loss P&L</th><th>Avg Loss</th><th>Loss%</th></tr></thead><tbody id="anaLossHourBody"></tbody></table></div></div>
       </div>
+      <div class="ana-row3">
+        <div class="ana-mini" style="grid-column:1 / -1;"><h3>📆 Day-wise Loss</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Trades</th><th>Losing Trades</th><th>Gross Loss</th><th>Day Net</th></tr></thead><tbody id="anaDayLossBody"></tbody></table></div></div>
+      </div>
+      <div class="ana-row3">
+        <div class="ana-mini" style="grid-column:1 / -1;"><h3>🕯️ Losses by Candles Held</h3><div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table class="ana-tbl"><thead><tr><th>Date</th><th>Side</th><th>Candles Held</th><th>Loss</th><th>Exit</th></tr></thead><tbody id="anaLossCandleBody"></tbody></table></div></div>
+      </div>
     </div>`;
 }
 
@@ -771,7 +777,7 @@ function renderAnalytics(){
   var trades = ACTIVE_TRADES.slice();
   if(!trades.length){
     Object.keys(anaCharts).forEach(function(k){ if(anaCharts[k] && anaCharts[k].destroy){ anaCharts[k].destroy(); delete anaCharts[k]; } });
-    ['anaEntryBody','anaExitBody','anaDowBody','anaWorstBody','anaLossStreakBody','anaWorstDayBody','anaLossReasonBody','anaLossHourBody'].forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=''; });
+    ['anaEntryBody','anaExitBody','anaDowBody','anaWorstBody','anaLossStreakBody','anaWorstDayBody','anaLossReasonBody','anaLossHourBody','anaDayLossBody','anaLossCandleBody'].forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=''; });
     var _st=document.getElementById('anaStreaks'); if(_st) _st.innerHTML='';
     var _rm=document.getElementById('anaRiskMetrics'); if(_rm) _rm.innerHTML='';
     return;
@@ -995,6 +1001,23 @@ function renderAnalytics(){
     var html='';
     hrs.forEach(function(h){ var d=lhMap[h]; if(d.losses===0)return; var lossPct=((d.losses/d.total)*100).toFixed(0); var dangerColor=parseFloat(lossPct)>=60?'#ef4444':parseFloat(lossPct)>=45?'#f59e0b':'#10b981'; html+='<tr><td style="color:#c8d8f0;font-weight:600;">'+h+':00</td><td>'+d.losses+' / '+d.total+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAna(d.lossPnl)+'</td><td style="color:#ef4444;">'+fmtAna(Math.round(d.lossPnl/d.losses))+'</td><td style="color:'+dangerColor+';font-weight:700;">'+lossPct+'%</td></tr>'; });
     document.getElementById('anaLossHourBody').innerHTML=html;
+  })();
+
+  (function(){
+    var dlMap={};
+    trades.forEach(function(t){ var d=spGetDateStr(t); if(!dlMap[d])dlMap[d]={trades:0,losses:0,grossLoss:0,net:0}; dlMap[d].trades++; dlMap[d].net+=(t.pnl||0); if(t.pnl<0){dlMap[d].losses++; dlMap[d].grossLoss+=t.pnl;} });
+    var days=Object.keys(dlMap).sort();
+    var html='';
+    days.forEach(function(d){ var dd=dlMap[d]; var nc=dd.net>=0?'#10b981':'#ef4444'; html+='<tr><td style="color:#c8d8f0;">'+d+'</td><td>'+dd.trades+'</td><td style="color:#ef4444;">'+dd.losses+'</td><td style="color:#ef4444;font-weight:700;">'+(dd.grossLoss<0?'-'+fmtAna(dd.grossLoss):'—')+'</td><td style="color:'+nc+';font-weight:700;">'+fmtAnaSigned(dd.net)+'</td></tr>'; });
+    document.getElementById('anaDayLossBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:#3a5070;">No data</td></tr>';
+  })();
+
+  (function(){
+    var rows=lossTrades.map(function(t){ var ch=(typeof t.candlesHeld==='number')?t.candlesHeld:null; return {t:t,ch:ch}; });
+    rows.sort(function(a,b){ return (b.ch==null?-1:b.ch)-(a.ch==null?-1:a.ch); });
+    var html='';
+    rows.forEach(function(r){ var t=r.t; var sc=t.side==='CE'?'#10b981':'#ef4444'; var chTxt=r.ch==null?'—':r.ch; html+='<tr><td style="color:#c8d8f0;">'+spGetDateStr(t)+'</td><td style="color:'+sc+';font-weight:600;">'+(t.side||'—')+'</td><td style="color:#c8d8f0;font-weight:700;">'+chTxt+'</td><td style="color:#ef4444;font-weight:700;">'+fmtAnaSigned(t.pnl)+'</td><td style="color:#7a90b0;font-size:0.65rem;">'+(t.exitReason||'—')+'</td></tr>'; });
+    document.getElementById('anaLossCandleBody').innerHTML=html||'<tr><td colspan="5" style="text-align:center;color:#3a5070;">No losing trades</td></tr>';
   })();
 }
 ${filter ? `
