@@ -28,11 +28,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
-  // During market hours, hide Replay while any paper/live trade is running.
-  // Replay is for post-session analysis; keep the menu clean while a session is live.
-  // IST = UTC+5:30 (+19800s); market window 09:15–15:20 = minutes [555, 920).
-  const _istMin = ((Math.floor(Date.now() / 1000) + 19800) / 60 | 0) % 1440;
-  const _hideReplayLive = (_istMin >= 555 && _istMin < 920) && _anyTradeActive;
+  // Hide Replay while any paper/live trade is running — Replay cannot run with a
+  // live session anyway (it blocks on running modes), so keep the menu clean.
+  const _hideReplayLive = _anyTradeActive;
 
   const {
     showStopBtn  = false,
