@@ -105,6 +105,15 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const isOrbOpen      = orbKeys.includes(activePage);
   const isStraddleOpen = straddleKeys.includes(activePage);
 
+  // When a strategy's PAPER session is running, hide its Live / Live (Harness)
+  // entries — paper and live are mutually exclusive per strategy, so the live
+  // menu items are dead links during a paper session.
+  const swingPaperRunning    = _primaryMode  === 'SWING_PAPER';
+  const scalpPaperRunning    = _scalpMode    === 'SCALP_PAPER';
+  const paPaperRunning       = _paMode       === 'PA_PAPER';
+  const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
+  const straddlePaperRunning = _straddleMode === 'STRADDLE_PAPER';
+
   // Build a swing items list with per-feature toggle
   const swingItems = [
     ...(showSwingBacktest ? [{ key: 'swingBacktest', href: '/swing-backtest',       icon: '🔍', label: 'Backtest' }] : []),
@@ -112,8 +121,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showSim      ? [{ key: 'swingSim',     href: '/swing-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare  ? [{ key: 'swingCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
     ...(showTracker  ? [{ key: 'swingTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
-    ...(showSwingLive     ? [{ key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     }] : []),
-    ...(showSwingLiveHarness ? [{ key: 'swingLiveHarness', href: '/swing-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showSwingLive && !swingPaperRunning ? [{ key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     }] : []),
+    ...(showSwingLiveHarness && !swingPaperRunning ? [{ key: 'swingLiveHarness', href: '/swing-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const scalpItems = [
@@ -121,8 +130,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showScalpPaper    ? [{ key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'scalpCompare', href: '/compare/scalping',     icon: '⚖',  label: 'Compare'  }] : []),
-    ...(showScalpLive     ? [{ key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     }] : []),
-    ...(showScalpLiveHarness ? [{ key: 'scalpLiveHarness', href: '/scalp-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showScalpLive && !scalpPaperRunning ? [{ key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     }] : []),
+    ...(showScalpLiveHarness && !scalpPaperRunning ? [{ key: 'scalpLiveHarness', href: '/scalp-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const paItems = [
@@ -131,22 +140,22 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showPaPaper           ? [{ key: 'paPaper',           href: '/pa-paper/status',     icon: '📐', label: 'Paper'    }] : []),
     ...(showSim     ? [{ key: 'paSim',     href: '/pa-paper/simulate',   icon: '🎮', label: 'Simulate' }] : []),
     ...(showCompare ? [{ key: 'paCompare', href: '/compare/priceaction', icon: '⚖',  label: 'Compare'  }] : []),
-    ...(showPaLive            ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
-    ...(showPaLiveHarness     ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showPaLive && !paPaperRunning ? [{ key: 'paLive',            href: '/pa-live/status',      icon: '📐', label: 'Live'     }] : []),
+    ...(showPaLiveHarness && !paPaperRunning ? [{ key: 'paLiveHarness',     href: '/pa-live-harness',     icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const orbItems = [
     ...(showOrbBacktest ? [{ key: 'orbBacktest', href: '/orb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showOrbPaper    ? [{ key: 'orbPaper',    href: '/orb-paper/status',  icon: '📋', label: 'Paper'   }] : []),
-    ...(showOrbLive     ? [{ key: 'orbLive',     href: '/orb-live/status',   icon: '📡', label: 'Live'    }] : []),
-    ...(showOrbLiveHarness ? [{ key: 'orbLiveHarness', href: '/orb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showOrbLive && !orbPaperRunning ? [{ key: 'orbLive',     href: '/orb-live/status',   icon: '📡', label: 'Live'    }] : []),
+    ...(showOrbLiveHarness && !orbPaperRunning ? [{ key: 'orbLiveHarness', href: '/orb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
     ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
   const straddleItems = [
     ...(showStraddleBacktest ? [{ key: 'straddleBacktest', href: '/straddle-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showStraddlePaper    ? [{ key: 'straddlePaper',    href: '/straddle-paper/status',  icon: '🎯', label: 'Paper'   }] : []),
-    ...(showStraddleLive     ? [{ key: 'straddleLive',     href: '/straddle-live/status',   icon: '📡', label: 'Live'    }] : []),
+    ...(showStraddleLive && !straddlePaperRunning ? [{ key: 'straddleLive',     href: '/straddle-live/status',   icon: '📡', label: 'Live'    }] : []),
     ...(showStraddleHistory  ? [{ key: 'straddleHistory',  href: '/straddle-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
