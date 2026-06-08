@@ -1542,6 +1542,28 @@ function onTick(tick) {
     if (ptState.optionLtp && ptState.optionLtp > (_exPos.bestOptionLtp || 0)) _exPos.bestOptionLtp = parseFloat(ptState.optionLtp.toFixed(2));
   }
 
+  // ── Per-trade points stop: catastrophic spot-points cap (SWING_STOP_LOSS_PTS) ──
+  // Mirrors SCALP_STOP_LOSS_PTS — exit once spot has moved this many points against
+  // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
+  // when the trailing SL sits wider than the cap (e.g. a 70pt prevHigh/Low stop).
+  // Read live from process.env so a Settings change applies without a restart.
+  // Points-based; 0 = disabled (default — no behaviour change until set).
+  if (ptState.position && ptState.position.spotAtEntry) {
+    const _slpCap = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+    if (_slpCap > 0) {
+      const _pos2    = ptState.position;
+      const _favPts2 = (ltp - _pos2.spotAtEntry) * (_pos2.side === "CE" ? 1 : -1);
+      if (_favPts2 <= -_slpCap) {
+        const _capLvl = _pos2.side === "CE" ? _pos2.spotAtEntry - _slpCap : _pos2.spotAtEntry + _slpCap;
+        log(`🛑 [PAPER] STOP LOSS ${_slpCap}pts — spot ₹${ltp} (${_favPts2.toFixed(1)}pt vs entry ₹${_pos2.spotAtEntry})`);
+        _setSlPause(_pos2.side);
+        ptState._slHitCandleTime = ptState.currentBar ? ptState.currentBar.time : null;
+        simulateSell(_capLvl, `SL (${_slpCap}pts)`, ltp);
+        return;
+      }
+    }
+  }
+
   // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
   if (ptState.position && ptState.position.optionEntryLtp && ptState.optionLtp && _OPT_STOP_PCT > 0) {
     const _pos     = ptState.position;

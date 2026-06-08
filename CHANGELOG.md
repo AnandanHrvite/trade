@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: Swing per-trade points stop (`SWING_STOP_LOSS_PTS`)
+
+- **Added a spot-points catastrophic loss cap to Swing, mirroring `SCALP_STOP_LOSS_PTS`.** Exit once spot moves `SWING_STOP_LOSS_PTS` against entry. It's checked **before** the structural/trail SL, so it caps deep adverse excursions on trades whose prevHigh/prevLow stop sits wider than the cap (Swing's initial stop is often 40–70 pts away, so a loosely-trailed loser could bleed past the cap before the trail fired). Points-based, so it behaves identically on spot-proxy replays.
+- **Off by default (`0`)** — no behaviour change until set. Wired consistently into paper ([swingPaper.js](src/routes/swingPaper.js), canonical + drives `/replay`), live ([swingLive.js](src/routes/swingLive.js)), and the backtest engine ([backtestEngine.js](src/services/backtestEngine.js), folded into Rule 1 as the tighter-of-two stop). Exit reason: `SL (Npts)`. Arms the same-side SL cooldown like other SL hits. Exposed in Settings → Swing as **Stop Loss (pts)** (INSTANT — no restart). Validate a value via `/replay` before running it live.
+
 ### Feature: Strategy guides show a live "as-per-settings" status panel
 
 - **Each strategy guide (Docs → Documents) now opens with a "Live Configuration" panel that reflects this server's current Settings.** The documented **Default** columns in the tables below are unchanged — the new panel adds a per-feature **ENABLED / DISABLED** badge showing what's actually active right now (e.g. VIX filter, wick/VWAP/volume filters, premium gate, expiry-day-only, candle trail, ADX filter, per-strategy mode toggle). Live Orders renders as a tri-state: **DISABLED → DRY-RUN → LIVE · REAL ORDERS** (honouring the global `LIVE_HARNESS_DRY_RUN` kill-switch and each strategy's own `*_LIVE_DRY_RUN` override). The Application Setup guide gets a system panel (global gates + all five strategy master toggles).

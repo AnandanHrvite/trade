@@ -1870,6 +1870,27 @@ function onSpotTick(tick) {
   // ── EXIT: trailing SL is set per candle close (EMA/PSAR + optional candle trail).
   // The SL set there is enforced intra-tick below. Breakeven was removed.
 
+  // ── Per-trade points stop: catastrophic spot-points cap (SWING_STOP_LOSS_PTS) ──
+  // Mirrors SCALP_STOP_LOSS_PTS — exit once spot has moved this many points against
+  // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
+  // when the trailing SL sits wider than the cap. Read live from process.env so a
+  // Settings change applies without a restart. 0 = disabled (default).
+  if (tradeState.position && tradeState.position.spotAtEntry) {
+    const _slpCap = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+    if (_slpCap > 0) {
+      const _pos2    = tradeState.position;
+      const _favPts2 = (ltp - _pos2.spotAtEntry) * (_pos2.side === "CE" ? 1 : -1);
+      if (_favPts2 <= -_slpCap) {
+        const _capLvl = _pos2.side === "CE" ? _pos2.spotAtEntry - _slpCap : _pos2.spotAtEntry + _slpCap;
+        log(`🛑 [LIVE] STOP LOSS ${_slpCap}pts — spot ₹${ltp} (${_favPts2.toFixed(1)}pt vs entry ₹${_pos2.spotAtEntry})`);
+        _setSlPause(_pos2.side);
+        tradeState._slHitCandleTime = tradeState.currentBar ? tradeState.currentBar.time : null;
+        squareOff(_capLvl, `SL (${_slpCap}pts)`).catch(console.error);
+        return;
+      }
+    }
+  }
+
   // ── Option-premium stop: exit if option LTP drops OPT_STOP_PCT below entry premium ──
   if (tradeState.position && tradeState.position.optionEntryLtp && tradeState.optionLtp && _OPT_STOP_PCT > 0) {
     const _pos     = tradeState.position;

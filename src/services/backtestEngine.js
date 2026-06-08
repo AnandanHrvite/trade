@@ -176,6 +176,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
   const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
   const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
+  // Per-trade catastrophic spot-points cap (mirrors SCALP_STOP_LOSS_PTS). 0 = off.
+  const _SWING_STOP_LOSS_PTS   = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
   const OPP_COOLDOWN_ENABLED   = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const OPP_COOLDOWN_CANDLES   = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
@@ -399,6 +401,26 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
           exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}`;
           exitPrice  = position.stopLoss;
+        }
+      }
+
+      // Rule 1a: per-trade points stop (SWING_STOP_LOSS_PTS) — catastrophic spot cap.
+      // Mirrors SCALP_STOP_LOSS_PTS. Use the tighter of (structural SL, cap level):
+      // whichever sits closer to entry is hit first intra-candle. 0 = disabled.
+      if (_SWING_STOP_LOSS_PTS > 0) {
+        const adverse = position.side === "CE"
+          ? (position.entryPrice - candle.low)
+          : (candle.high - position.entryPrice);
+        if (adverse >= _SWING_STOP_LOSS_PTS) {
+          const _capLvl = position.side === "CE"
+            ? quantize(position.entryPrice - _SWING_STOP_LOSS_PTS, 2)
+            : quantize(position.entryPrice + _SWING_STOP_LOSS_PTS, 2);
+          // Override only if no structural SL fired, or the cap is tighter (closer to entry).
+          const _capTighter = !exitReason || (position.side === "CE" ? _capLvl > exitPrice : _capLvl < exitPrice);
+          if (_capTighter) {
+            exitReason = `SL (${_SWING_STOP_LOSS_PTS}pts)`;
+            exitPrice  = _capLvl;
+          }
         }
       }
 
