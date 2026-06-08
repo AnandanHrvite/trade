@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: Swing choppy-day guard (`SWING_MAX_CONSEC_LOSSES`)
+
+- **Added a consecutive-loss circuit breaker that sits Swing out for the rest of a choppy session.** After `SWING_MAX_CONSEC_LOSSES` losing trades in a row, new Swing entries are blocked until the session ends (or, in backtest, until the next trading day). Any **winning** trade resets the streak to 0 — so a day that chops early then trends is not permanently locked out. This targets range days where SuperTrend keeps flipping and the strategy dies by small stops, re-entering after each tiny loss (e.g. a −71/−71/−71/−133/−584 bleed → halt after 3 saves the tail).
+- **Keyed on realized P&L sign, not exit reason** — a "Trail SL hit" can be a winner, so the streak counts `netPnl < 0` and resets on `netPnl > 0`. It uses an independent counter (`_chopConsecLosses`), separate from the legacy 3-loss escalating *pause* (which resets itself to 0 on 5-min and would otherwise make a count-based guard never fire).
+- **Off by default (`0`)** — no behaviour change until set. Wired consistently into paper ([swingPaper.js](src/routes/swingPaper.js), canonical + drives `/replay`) at both entry gates, live ([swingLive.js](src/routes/swingLive.js)) at both entry gates, and the backtest engine ([backtestEngine.js](src/services/backtestEngine.js)). Counter resets at session start (paper/live) and per trading day (backtest). Exposed in Settings → Swing as **Chop Guard (consec losses)** (INSTANT — no restart). Validate a value via `/replay` before running it live.
+
 ### Feature: Swing per-trade points stop (`SWING_STOP_LOSS_PTS`)
 
 - **Added a spot-points catastrophic loss cap to Swing, mirroring `SCALP_STOP_LOSS_PTS`.** Exit once spot moves `SWING_STOP_LOSS_PTS` against entry. It's checked **before** the structural/trail SL, so it caps deep adverse excursions on trades whose prevHigh/prevLow stop sits wider than the cap (Swing's initial stop is often 40–70 pts away, so a loosely-trailed loser could bleed past the cap before the trail fired). Points-based, so it behaves identically on spot-proxy replays.

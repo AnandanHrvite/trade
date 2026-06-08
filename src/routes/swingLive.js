@@ -1022,6 +1022,13 @@ async function squareOff(exitPrice, reason) {
   else if (netPnl < 0) tradeState._losses = (tradeState._losses || 0) + 1;
   log(`💼 [LIVE] Session PnL so far: ₹${tradeState.sessionPnl}`);
 
+  // ── Chop-guard streak (SWING_MAX_CONSEC_LOSSES) ──────────────────────────────
+  // Independent of the legacy 3-loss pause below (which resets _consecutiveLosses
+  // to 0 on 5-min). Only grows on losses, clears on a win — lets the entry gate
+  // sit the strategy out for the rest of a choppy session.
+  if (netPnl > 0)      { tradeState._chopConsecLosses = 0; }
+  else if (netPnl < 0) { tradeState._chopConsecLosses = (tradeState._chopConsecLosses || 0) + 1; }
+
   // ── Daily loss kill switch ────────────────────────────────────────────────────
   const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
   if (!tradeState._dailyLossHit && tradeState.sessionPnl <= -Math.abs(MAX_DAILY_LOSS)) {
@@ -1311,6 +1318,13 @@ async function onCandleClose(candle) {
     if (tradeState._pauseUntilTime && Date.now() < tradeState._pauseUntilTime) {
       const resumeTime = new Date(tradeState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [LIVE] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
+      return;
+    }
+    // Chop guard: after N consecutive losses, sit out the rest of the session
+    // (any win resets _chopConsecLosses). Reads live from env; 0 = off.
+    const _chopMax = parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10);
+    if (_chopMax > 0 && (tradeState._chopConsecLosses || 0) >= _chopMax) {
+      log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — SWING halted for the session (${signal})`);
       return;
     }
     if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
@@ -1607,6 +1621,13 @@ function onSpotTick(tick) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (false) { // 50% pause DISABLED
       // 50%-rule pause active — silently skip to avoid log spam
+    } else if (parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10) > 0
+               && (tradeState._chopConsecLosses || 0) >= parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10)) {
+      // Chop guard: N consecutive losses — sit out the rest of the session.
+      if (!tradeState._chopGuardLoggedCandle || tradeState._chopGuardLoggedCandle !== _currentBarTime) {
+        log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${process.env.SWING_MAX_CONSEC_LOSSES}) — SWING halted for the session`);
+        tradeState._chopGuardLoggedCandle = _currentBarTime;
+      }
     } else if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
       // Daily max trades cap reached
       if (!tradeState._maxTradesLoggedCandle || tradeState._maxTradesLoggedCandle !== _currentBarTime) {
@@ -2011,6 +2032,7 @@ router.get("/start", async (req, res) => {
   tradeState._losses        = 0;
   tradeState._entryPending  = false;
   tradeState._consecutiveLosses    = 0;
+  tradeState._chopConsecLosses     = 0;   // chop-guard streak (SWING_MAX_CONSEC_LOSSES)
   tradeState._pauseUntilTime       = null;
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
   tradeState._slPauseUntilBySide   = { CE: 0, PE: 0 }; // reset same-side SL cooldown

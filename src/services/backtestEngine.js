@@ -178,6 +178,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   // Per-trade catastrophic spot-points cap (mirrors SCALP_STOP_LOSS_PTS). 0 = off.
   const _SWING_STOP_LOSS_PTS   = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+  // Chop guard: halt new entries for the rest of the day after N consecutive losing
+  // trades (any win resets the streak). Mirrors paper/live. 0 = off.
+  const _SWING_MAX_CONSEC_LOSSES = parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10);
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
   const OPP_COOLDOWN_ENABLED   = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
   const OPP_COOLDOWN_CANDLES   = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
@@ -240,6 +243,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   let _dailyLossHit         = false;   // latched true when daily loss >= MAX_DAILY_LOSS
   let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
   let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
+  let _chopConsecLosses     = 0;       // chop-guard streak (SWING_MAX_CONSEC_LOSSES), reset on win or new day
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
@@ -281,6 +285,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _dailyLossHit       = false;
         _consecutiveLosses  = 0;
         _consecPauseUntilTs = 0;
+        _chopConsecLosses   = 0;
         _slPauseUntilBySide.CE = 0;
         _slPauseUntilBySide.PE = 0;
         _oppositeCooldownUntilTs  = 0;
@@ -560,6 +565,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         } else {
           _consecutiveLosses = 0;
         }
+        // Chop-guard streak (SWING_MAX_CONSEC_LOSSES) — independent of the escalating
+        // pause above so it survives until a win or a new day (mirrors paper/live).
+        if (pnlRupees > 0)      { _chopConsecLosses = 0; }
+        else if (pnlRupees < 0) { _chopConsecLosses++; }
 
         // Same-side SL cooldown: after an SL hit, block new entries on THAT side
         // for SWING_SL_PAUSE_CANDLES candles (mirrors SCALP per-side pause).
@@ -595,6 +604,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                                   && _sigSide !== _oppositeCooldownLastSide
                                   && candle.time < _oppositeCooldownUntilTs;
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
+    const isChopHalted   = _SWING_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _SWING_MAX_CONSEC_LOSSES;
     const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
     const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
@@ -604,7 +614,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // instead of silently consuming the range's own opening candles as warm-up.
     const _isWarmupOnly = candle.time < activeFromTs;
 
-    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
+    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
       // Expiry-day-only filter: skip entry on non-expiry days
       if (expiryDates && !expiryDates.has(candleDate)) continue;
       // Same-side SL cooldown: skip this side until the pause expires

@@ -73,6 +73,7 @@ const SETTINGS_SCHEMA = [
       // ── Stops & exits ──
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
       { key: "SWING_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors Scalp's). 0 = disabled (default).", default: "0" },
+      { key: "SWING_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Choppy-day guard — after this many consecutive losing trades in a session, halt new Swing entries for the rest of the day (any winning trade resets the streak). Sits out range days that bleed small stops instead of repeatedly re-entering. 0 = disabled (default).", default: "0" },
       { key: "SWING_SL_MODE", label: "SL / Trail Source", type: "select", options: ["ema", "psar"], effect: EFFECT.INSTANT, desc: "Base trailing-SL source at each candle close (tighten-only). ema (default) = current EMA21 — candle touching back EMA21 is an explicit exit. psar = current Parabolic SAR — a PSAR flip against the position is an explicit exit. Layer the Candle Trail on top to also exit on structure.", default: "ema" },
       { key: "SWING_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add an N-bar candle trail on top of the EMA/PSAR SL. Each candle close the stop is set to whichever is TIGHTER (closer to price) — the EMA/PSAR line OR the N-bar low (CE) / high (PE). Banks more of a winner; never loosens the stop. Default OFF.", default: "false" },
       { key: "SWING_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "How many candles to look back for the candle-trail level: lowest low (CE) / highest high (PE) of the last N candles. 1 = tightest (just the prior candle). Only used when Candle Trail is ON.", default: "2" },
@@ -529,7 +530,7 @@ const IMMEDIATE_KEYS = new Set([
   "SWING_EMA_FAST", "SWING_EMA_SLOW",
   "SWING_SL_MODE", "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
   "SWING_USE_SUPERTREND", "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
-  "SWING_STOP_LOSS_PTS",
+  "SWING_STOP_LOSS_PTS", "SWING_MAX_CONSEC_LOSSES",
 ]);
 
 // These are cached as const at module load — need session stop+start
