@@ -255,6 +255,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |
 | `SWING_OPTION_EXPIRY_OVERRIDE` | (blank) | Swing-only expiry override — keep swing on next-week expiry while scalp/PA trade current. Blank inherits the common expiry. |
+| `SWING_OPTION_EXPIRY_TYPE` | (blank) | Swing-only expiry type (`weekly`/`monthly`) for the override above. Blank inherits the common `OPTION_EXPIRY_TYPE`. |
 | (auto) | — | Swing `/start` is **blocked** when configured expiry == today (0DTE refusal — gamma risk on holding swing through expiry). |
 
 > Common expiry knobs (`OPTION_EXPIRY_OVERRIDE`, `OPTION_EXPIRY_TYPE`) live under **Common — Instrument & Backtest** in Settings and are read by `src/config/instrument.js` for every engine that does not set its own per-mode override.

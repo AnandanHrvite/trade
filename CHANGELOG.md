@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Settings: expose `SWING_OPTION_EXPIRY_TYPE` in Swing section
+
+- **Surfaced the swing-only expiry type toggle (`weekly`/`monthly`) in Settings**, sitting next to the existing **Swing Option Expiry (override)** field — mirroring how the common section pairs `OPTION_EXPIRY_OVERRIDE` with `OPTION_EXPIRY_TYPE`. The key was already read by `src/config/instrument.js` (per-mode `${MODE}_OPTION_EXPIRY_TYPE`) but had no UI control; blank inherits the common Expiry Type.
+
 ### Feature: Swing choppy-day guard (`SWING_MAX_CONSEC_LOSSES`)
 
 - **Added a consecutive-loss circuit breaker that sits Swing out for the rest of a choppy session.** After `SWING_MAX_CONSEC_LOSSES` losing trades in a row, new Swing entries are blocked until the session ends (or, in backtest, until the next trading day). Any **winning** trade resets the streak to 0 — so a day that chops early then trends is not permanently locked out. This targets range days where SuperTrend keeps flipping and the strategy dies by small stops, re-entering after each tiny loss (e.g. a −71/−71/−71/−133/−584 bleed → halt after 3 saves the tail).
