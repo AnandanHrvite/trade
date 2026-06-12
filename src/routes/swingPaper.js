@@ -2306,10 +2306,12 @@ router.get("/status/chart-data", (req, res) => {
       });
     }
 
-    // EMA20 + EMA50 overlays (close) — the fast/slow pair the strategy decides on
-    const EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
-    const EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
-    let ema20Series = [], ema50Series = [];
+    // EMA20 + EMA50 overlays (close) — the fast/slow pair the strategy decides on.
+    // EMA9 (fastest) is also drawn — it's the entry input when the triple-stack is ON.
+    const EMA_FAST    = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
+    const EMA_SLOW    = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
+    const EMA_FASTEST = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
+    let ema9Series = [], ema20Series = [], ema50Series = [];
     const _emaLine = (period) => {
       const out = [];
       if (candles.length >= period) {
@@ -2321,6 +2323,7 @@ router.get("/status/chart-data", (req, res) => {
       }
       return out;
     };
+    ema9Series  = _emaLine(EMA_FASTEST);
     ema20Series = _emaLine(EMA_FAST);
     ema50Series = _emaLine(EMA_SLOW);
 
@@ -2388,9 +2391,10 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema20: ema20Series, ema50: ema50Series,
+    return res.json({ candles, markers, stopLoss, entryPrice, ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
-      emaFast: EMA_FAST, emaSlow: EMA_SLOW,
+      emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
+      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2926,6 +2930,7 @@ ${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
+        <span style="color:#a78bfa;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
@@ -3293,7 +3298,8 @@ ${modalJS()}
     wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
   });
 
-  // EMA20 (fast) + EMA50 (slow) lines + RSI (own bottom scale, with level lines)
+  // EMA9 (fastest) + EMA20 (fast) + EMA50 (slow) lines + RSI (own bottom scale, with level lines)
+  const ema9Series  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
@@ -3343,7 +3349,7 @@ ${modalJS()}
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema20','ema50','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema9','ema20','ema50','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
 
       _internalUpdate = true;
@@ -3360,6 +3366,7 @@ ${modalJS()}
       _lastCandleCount = d.candles.length;
 
       // Indicator overlays
+      if (d.ema9  && d.ema9.length)  ema9Series.setData(d.ema9);   else ema9Series.setData([]);
       if (d.ema20 && d.ema20.length) ema20Series.setData(d.ema20); else ema20Series.setData([]);
       if (d.ema50 && d.ema50.length) ema50Series.setData(d.ema50); else ema50Series.setData([]);
       if (d.supertrend && d.supertrend.length) stSeries.setData(d.supertrend.map(_stColor)); else stSeries.setData([]);

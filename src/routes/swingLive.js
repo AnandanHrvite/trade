@@ -2438,9 +2438,10 @@ router.get("/status/chart-data", (req, res) => {
 
     // Strategy indicator overlays: EMA20 + EMA50 (close) + SuperTrend + RSI(14)
     const { EMA, RSI } = require("technicalindicators");
-    const EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
-    const EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
-    let ema20 = [], ema50 = [], supertrend = [], rsi = [];
+    const EMA_FAST    = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
+    const EMA_SLOW    = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
+    const EMA_FASTEST = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
+    let ema9 = [], ema20 = [], ema50 = [], supertrend = [], rsi = [];
     try {
       const _emaLine = (period) => {
         if (candles.length < period) return [];
@@ -2448,6 +2449,7 @@ router.get("/status/chart-data", (req, res) => {
         const off = candles.length - arr.length;
         return arr.map((v, i) => ({ time: candles[i + off].time, value: parseFloat(v.toFixed(2)) }));
       };
+      ema9  = _emaLine(EMA_FASTEST);
       ema20 = _emaLine(EMA_FAST);
       ema50 = _emaLine(EMA_SLOW);
       // Trend overlay — SuperTrend line (the only directional source).
@@ -2467,8 +2469,9 @@ router.get("/status/chart-data", (req, res) => {
       }
     } catch (_) { /* ignore indicator calc errors */ }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema20, ema50, supertrend,
-      trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW,
+    return res.json({ candles, markers, stopLoss, entryPrice, ema9, ema20, ema50, supertrend,
+      trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
+      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2981,6 +2984,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
+        <span style="color:#a78bfa;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
@@ -3455,7 +3459,8 @@ async function manualEntry(side) {
     wickUpColor: '#10b981', wickDownColor: '#ef4444',
   });
 
-  // Strategy overlays: EMA20 (fast) + EMA50 (slow) + SuperTrend + RSI (own bottom scale, level lines)
+  // Strategy overlays: EMA9 (fastest) + EMA20 (fast) + EMA50 (slow) + SuperTrend + RSI (own bottom scale, level lines)
+  const ema9Series  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
@@ -3504,6 +3509,7 @@ async function manualEntry(side) {
       _lastCandleCount = d.candles.length;
 
       // Indicator overlays
+      ema9Series.setData((d.ema9 && d.ema9.length) ? d.ema9 : []);
       ema20Series.setData((d.ema20 && d.ema20.length) ? d.ema20 : []);
       ema50Series.setData((d.ema50 && d.ema50.length) ? d.ema50 : []);
       stSeries.setData((d.supertrend && d.supertrend.length) ? d.supertrend.map(_stColor) : []);

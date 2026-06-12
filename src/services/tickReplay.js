@@ -80,7 +80,9 @@ function requestCancel() {
 //     trend source, EMA21 the only SL. Trade results for recorded sessions are
 //     unchanged (they already ran SuperTrend + ema SL + 2-EMA), but cached
 //     chartData still carries the old SAR-dot overlay — invalidate it.
-const REPLAY_CACHE_VERSION = 5;
+// v6: SWING chartData now carries an EMA9 overlay line (the triple-stack input);
+//     results unchanged, but invalidate so re-runs regenerate the chart with EMA9.
+const REPLAY_CACHE_VERSION = 6;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
