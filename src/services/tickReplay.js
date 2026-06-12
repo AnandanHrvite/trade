@@ -76,7 +76,11 @@ function requestCancel() {
 //     PSAR) — old cached chartData would still show the library-PSAR dots.
 // v3: (reverted) pre-market candle filter — backed out; behavior restored.
 // v4: invalidate v3 (pre-market-filter) cached results after the revert.
-const REPLAY_CACHE_VERSION = 4;
+// v5: SWING Parabolic SAR fully stripped (2026-06-12) — SuperTrend is the only
+//     trend source, EMA21 the only SL. Trade results for recorded sessions are
+//     unchanged (they already ran SuperTrend + ema SL + 2-EMA), but cached
+//     chartData still carries the old SAR-dot overlay — invalidate it.
+const REPLAY_CACHE_VERSION = 5;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");

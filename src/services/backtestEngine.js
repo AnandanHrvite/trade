@@ -105,13 +105,12 @@ function getISTHHMM(unixSec) {
  * BACKTEST ENGINE — mirrors paper-trade logic.
  *
  * For SWING (redefined 2026-05-27) the entry/exit model is:
- *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA21 + RSI + SAR rules).
+ *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA alignment + RSI + SuperTrend rules).
  *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
  *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
- *            Trails EMA21 (default) or PSAR (SWING_SL_MODE), tighten-only. When
- *            SWING_CANDLE_TRAIL_ENABLED, an N-bar low/high candle trail is layered on
- *            and the tighter of the two wins.
- *   EXIT   : trail SL hit · EMA touch-back / PSAR flip · option-premium stop (OPT_STOP_PCT,
+ *            Trails EMA21, tighten-only. When SWING_CANDLE_TRAIL_ENABLED, an N-bar low/high
+ *            candle trail is layered on and the tighter of the two wins.
+ *   EXIT   : trail SL hit · EMA21 touch-back · option-premium stop (OPT_STOP_PCT,
  *            approximated via an adverse spot move in backtest) · opposite signal · EOD.
  *   RISK   : same-side SL cooldown (SWING_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
  *            3-consecutive-loss pause.
@@ -170,8 +169,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
   // ── SWING (redefined): exit/stop model ───────────────────────────────────
   //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
-  //   Trail       : EMA21 (default) or PSAR per SWING_SL_MODE, tighten-only; optional
-  //                 N-bar candle-trail overlay (SWING_CANDLE_TRAIL_*) — tighter wins.
+  //   Trail       : EMA21, tighten-only; optional N-bar candle-trail overlay
+  //                 (SWING_CANDLE_TRAIL_*) — tighter wins.
   //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
   const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
@@ -204,7 +203,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BACKTEST — ${strategy.NAME}`);
   console.log(`   Entry : signal from strategy at candle close`);
-  console.log(`   Exit  : 50% rule + trail SL + SAR SL + opposite signal + EOD/day`);
+  console.log(`   Exit  : trail SL + EMA21 touch-back + opposite signal + EOD/day`);
   console.log(`   Charges : dynamic (STT + exchange + GST + stamp + ₹40 brok) — see Settings`);
   console.log(`   PnL mode : ${OPTION_SIM ? `OPTION SIM (delta=${DELTA}, theta=₹${THETA_PER_DAY}/day, lot=${LOT_SIZE})` : "RAW INDEX POINTS (set BACKTEST_OPTION_SIM=true to enable)"}`);
   console.log(`   VIX filter : ${vixFilter.VIX_ENABLED ? `ON (max=${vixFilter.VIX_MAX_ENTRY}, strong-only=${vixFilter.VIX_STRONG_ONLY}) | ${vixCandles ? vixCandles.length + " VIX candles loaded" : "NO VIX DATA — filter bypassed"}` : "OFF"}`);
@@ -229,7 +228,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   SWING(redefined): EMA21+RSI+SAR | ${(process.env.SWING_SL_MODE || "ema").toUpperCase()} trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
+  console.log(`   SWING(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
 
   // 50%-rule exit pause: retained for non-SWING strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
@@ -335,23 +334,16 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       _rejectCounts[rKey] = (_rejectCounts[rKey] || 0) + 1;
     }
 
-    // ── TRAILING STOP (mode-aware: psar | ema, + optional candle-trail overlay) ──
-    // SWING_SL_MODE selects the base SL source (tighten-only) at each candle close:
-    //   ema (default) — current EMA21 value; candle touching back EMA21 = explicit exit
-    //   psar          — current Parabolic SAR value; PSAR flip = explicit exit
-    // When SWING_CANDLE_TRAIL_ENABLED, an N-bar low (CE) / high (PE) trail is layered
-    // on and the TIGHTER of the two wins. The window ends at the prior bar (i-1) to
-    // mirror paper's "SL from prior bars enforced on this bar" timing.
-    // The flip/touch-back exits are wired below in the EXIT CHECK block.
+    // ── TRAILING STOP (EMA21 base + optional candle-trail overlay) ──────────────
+    // Base SL source (tighten-only) at each candle close is EMA21 — a candle touching
+    // back EMA21 is an explicit exit. When SWING_CANDLE_TRAIL_ENABLED, an N-bar low (CE)
+    // / high (PE) trail is layered on and the TIGHTER of the two wins. The window ends at
+    // the prior bar (i-1) to mirror paper's "SL from prior bars enforced on this bar" timing.
+    // The touch-back exit is wired below in the EXIT CHECK block.
     if (position) {
-      const SL_MODE = (process.env.SWING_SL_MODE || "ema").toLowerCase();
       let trailRef = null;
-      if (SL_MODE === "psar") {
-        if (_sig.sar != null) trailRef = _sig.sar;
-      } else {
-        if (_sig.ema21 != null) trailRef = _sig.ema21;
-      }
-      // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of mode vs candle.
+      if (_sig.ema21 != null) trailRef = _sig.ema21;
+      // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
       const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
       const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
       if (_ctOn && i >= _ctBars) {
@@ -366,12 +358,12 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (trailRef != null) {
         if (position.side === "CE") {
           if (position.stopLoss == null || trailRef > position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE (${SL_MODE}) → ${trailRef} (was ${position.stopLoss})`);
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL CE (EMA21) → ${trailRef} (was ${position.stopLoss})`);
             position.stopLoss = quantize(trailRef, 2);
           }
         } else {
           if (position.stopLoss == null || trailRef < position.stopLoss) {
-            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE (${SL_MODE}) → ${trailRef} (was ${position.stopLoss})`);
+            if (_verbose && trailRef !== position.stopLoss) console.log(`  📐 TRAIL PE (EMA21) → ${trailRef} (was ${position.stopLoss})`);
             position.stopLoss = quantize(trailRef, 2);
           }
         }
@@ -445,20 +437,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
 
-      // Rule 1c: PSAR flip / EMA touch-back exit (mode-driven, SWING_SL_MODE)
-      if (!exitReason) {
-        const _slMode = (process.env.SWING_SL_MODE || "ema").toLowerCase();
-        if (_slMode === "psar") {
-          if ((position.side === "CE" && _sig.sarTrendInt === -1) ||
-              (position.side === "PE" && _sig.sarTrendInt ===  1)) {
-            exitReason = "PSAR flip exit";
-            exitPrice  = candle.close;
-          }
-        } else if (_slMode === "ema" && _sig.ema21 != null) {
-          if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
-            exitReason = "EMA touch-back exit";
-            exitPrice  = candle.close;
-          }
+      // Rule 1c: EMA21 touch-back exit
+      if (!exitReason && _sig.ema21 != null) {
+        if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
+          exitReason = "EMA touch-back exit";
+          exitPrice  = candle.close;
         }
       }
 

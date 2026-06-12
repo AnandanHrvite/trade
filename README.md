@@ -25,9 +25,9 @@ All five strategies run **in parallel** on the same WebSocket — different cand
 
 | Mode | Strategy | Timeframe | Broker | Route Prefix |
 |------|----------|-----------|--------|-------------|
-| **Swing Live** | EMA20/50 + RSI + SAR/ST | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
-| **Swing Paper** | EMA20/50 + RSI + SAR/ST | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
-| **Swing Backtest** | EMA20/50 + RSI + SAR/ST | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
+| **Swing Live** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
+| **Swing Paper** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
+| **Swing Backtest** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
 | **Scalp Live** | BB + PSAR + RSI (V5) | 3 / 5-min | Fyers | `/scalp-live` |
 | **Scalp Paper** | BB + PSAR + RSI (V5) | 3 / 5-min | Simulated | `/scalp-paper` |
 | **Scalp Backtest** | BB + PSAR + RSI (V5) | 3 / 5-min | Historical | `/scalp-backtest` |
@@ -65,18 +65,18 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 ## Strategies
 
-### Strategy 1: Swing — EMA20/50 + RSI + SAR/SuperTrend (entry redefined 2026-05-31; 3 / 5 / 15-min via env)
+### Strategy 1: Swing — EMA 20/50 (+9 opt) + RSI + SuperTrend (entry redefined 2026-05-31; PSAR stripped 2026-06-12; 3 / 5 / 15-min via env)
 - **Entry (intra-candle, all 3 true)**:
-  - **CE**: EMA20 **above** EMA50 (close-based, `SWING_EMA_FAST`/`SWING_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · trend source **GREEN** — SAR below price, or SuperTrend bullish when `SWING_USE_SUPERTREND=true`.
-  - **PE**: mirror — EMA20 **below** EMA50 · RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · trend source **RED** — SAR above price, or SuperTrend bearish.
-- **Initial SL** (unchanged): previous completed candle's **low (CE) / high (PE)** — used as-is (no hybrid cap). `EMA21(OHLC4)` is still computed for the `ema` SL mode + trade-record snapshot, but is no longer an entry input.
-- **Trailing**: each candle close, tighten SL to that candle's low (CE) / high (PE) — tighten-only.
-- **Exits**: EMA21 trail / EMA touch-back (or PSAR per `SWING_SL_MODE`), optional N-bar candle trail (`SWING_CANDLE_TRAIL_ENABLED`, tighter-of) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`). Choppy-day guard: halt entries after `SWING_MAX_CONSEC_LOSSES` consecutive losers (off by default).
+  - **CE**: EMA alignment bullish — 2-EMA (default) EMA20 **above** EMA50, or triple-stack (`SWING_EMA_TRIPLE_STACK_ENABLED`) EMA9 > EMA20 > EMA50 (`SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · **SuperTrend bullish**.
+  - **PE**: mirror — EMA20 **below** EMA50 (or EMA9 < EMA20 < EMA50) · RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · **SuperTrend bearish**.
+- **Initial SL** (unchanged): previous completed candle's **low (CE) / high (PE)** — used as-is (no hybrid cap). `EMA21(OHLC4)` is computed for the SL trail + trade-record snapshot, not an entry input.
+- **Trailing**: each candle close, tighten SL to **EMA21** — tighten-only; an EMA21 touch-back is an explicit exit.
+- **Exits**: EMA21 trail / EMA touch-back, optional N-bar candle trail (`SWING_CANDLE_TRAIL_ENABLED`, tighter-of) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`). Choppy-day guard: halt entries after `SWING_MAX_CONSEC_LOSSES` consecutive losers (off by default).
 - **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
 - **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
 - **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
-- **Removed** vs prior versions: EMA21-price-touch entry gate + `SWING_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE` (replaced by the EMA20/50 alignment gate); EMA9 touch, EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
-- **Chart**: EMA20 (gold) + EMA50 (blue) lines, SAR dots / SuperTrend line, RSI subplot. SuperTrend renders **green when bullish, red when bearish** (on swing, scalp & replay charts). EMA20/EMA50 values + trend source are recorded per trade in the JSON + daily JSONL (`ema20AtEntry`/`ema50AtEntry`/`ema20AtExit`/`ema50AtExit`).
+- **Removed**: **Parabolic SAR** — fully stripped 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL). The `SWING_USE_SUPERTREND` toggle and the `SWING_SL_MODE=psar` option are gone. Earlier removals: EMA21-price-touch entry gate + `SWING_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE`; EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
+- **Chart**: EMA20 (gold) + EMA50 (blue) lines, SuperTrend line (green bullish / red bearish), RSI subplot. EMA values + trend source are recorded per trade in the JSON + daily JSONL (`ema9AtEntry`/`ema20AtEntry`/`ema50AtEntry` + `*AtExit`; `ema9*` populated only when the triple-stack is ON).
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
 ### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
@@ -222,8 +222,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 
 ## Key .env Settings
 
-### Swing Strategy (EMA20/50 + RSI + SAR/SuperTrend, Zerodha)
-**Entry redefined 2026-05-31.** Entry (intra-candle, all 3 true): **CE** = EMA20 above EMA50 (`SWING_EMA_FAST`/`SWING_EMA_SLOW`, close), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, trend source GREEN (SAR below price, or SuperTrend bullish when `SWING_USE_SUPERTREND=true`). **PE** = mirror (EMA20 below EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, trend source RED). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (default `SWING_SL_MODE=ema`; EMA touch-back is an explicit exit) or **PSAR** (`psar`; flip = exit), tighten-only. Optionally layer an **N-bar candle trail** (`SWING_CANDLE_TRAIL_ENABLED` / `SWING_CANDLE_TRAIL_BARS`): each candle close the stop is set to whichever is tighter — the EMA/PSAR line or the N-bar low/high. **Exits**: trail SL · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · EMA touch-back / PSAR flip · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). **Choppy-day guard** (`SWING_MAX_CONSEC_LOSSES`, off by default): after N consecutive losing trades in a session, halt new entries for the rest of the day — any winner resets the streak. _Breakeven was removed 2026-06-02._
+### Swing Strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend, Zerodha)
+**Entry redefined 2026-05-31; PSAR stripped 2026-06-12.** Entry (intra-candle, all 3 true): **CE** = EMA alignment bullish (2-EMA default: EMA20 above EMA50; or triple-stack `SWING_EMA_TRIPLE_STACK_ENABLED`: EMA9 > EMA20 > EMA50 via `SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, **SuperTrend bullish**. **PE** = mirror (EMA20 below EMA50 / EMA9 < EMA20 < EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, **SuperTrend bearish**). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (EMA touch-back is an explicit exit), tighten-only. Optionally layer an **N-bar candle trail** (`SWING_CANDLE_TRAIL_ENABLED` / `SWING_CANDLE_TRAIL_BARS`): each candle close the stop is set to whichever is tighter — the EMA21 line or the N-bar low/high. **Exits**: trail SL · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · EMA21 touch-back · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). **Choppy-day guard** (`SWING_MAX_CONSEC_LOSSES`, off by default): after N consecutive losing trades in a session, halt new entries for the rest of the day — any winner resets the streak. _Parabolic SAR fully removed 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL); breakeven removed 2026-06-02._
 
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -236,18 +236,18 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `RSI_CE_MAX` | `80` | CE blocked when RSI at/above this (overbought guard) |
 | `RSI_PE_MAX` | `48` | PE entry: RSI(14) must be below this (bearish momentum cap) |
 | `RSI_PE_MIN` | `20` | PE blocked when RSI at/below this (oversold guard) |
-| `SWING_EMA_FAST` | `20` | Fast EMA period (close). CE needs EMA-fast above EMA-slow; PE needs it below. |
+| `SWING_EMA_FAST` | `20` | Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA. |
 | `SWING_EMA_SLOW` | `50` | Slow EMA period (close). The EMA-fast vs EMA-slow alignment is the directional entry gate. |
+| `SWING_EMA_TRIPLE_STACK_ENABLED` | `false` | Stricter EMA gate. `false` = 2-EMA cross. `true` = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries. A/B via `/replay` before enabling live. |
+| `SWING_EMA_FASTEST` | `9` | Fastest EMA period (close) in the 9>20>50 stack. Only used when `SWING_EMA_TRIPLE_STACK_ENABLED=true`. |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
 | `SWING_STOP_LOSS_PTS` | `0` | Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors `SCALP_STOP_LOSS_PTS`). `0` = disabled. |
 | `SWING_MAX_CONSEC_LOSSES` | `0` | Choppy-day guard — after this many **consecutive losing trades** in a session, halt new Swing entries for the rest of the day; any winning trade resets the streak. Sits out range days that bleed small stops instead of repeatedly re-entering. Independent of the legacy 3-loss escalating pause. `0` = disabled. |
-| `SWING_SL_MODE` | `ema` | Base trailing-SL source at candle close (tighten-only). `ema` = current EMA21 (candle touching back EMA21 = explicit exit). `psar` = current Parabolic SAR (PSAR flip = explicit exit). |
-| `SWING_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA/PSAR SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA/PSAR line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
+| `SWING_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA21 line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
 | `SWING_CANDLE_TRAIL_BARS` | `2` | Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. `1` = tightest. Only used when `SWING_CANDLE_TRAIL_ENABLED=true`. |
-| `SWING_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = Parabolic SAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** for the directional confirmation instead. Mutually exclusive; the chart shows whichever is active. |
-| `SWING_SUPERTREND_PERIOD` / `SWING_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `SWING_USE_SUPERTREND=true`). |
+| `SWING_SUPERTREND_PERIOD` / `SWING_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier — SuperTrend is the entry directional gate. |
 | `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
-| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / PSAR-flip / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
+| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
 | `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
 | `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
 | `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |
@@ -483,7 +483,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | URL | Description |
 |-----|-------------|
 | `/` | Dashboard (with Start-All Paper / Start-All Live buttons) |
-| `/swing-backtest` | Run backtest (3/5/15-min EMA20/50+RSI+SAR) |
+| `/swing-backtest` | Run backtest (3/5/15-min EMA 20/50+RSI+SuperTrend) |
 | `/swing-paper/status` | Paper trade live view + NIFTY chart |
 | `/swing-paper/history` | Past paper sessions (per-session delete + view modal) |
 | `/swing-paper/simulate` | Market scenario simulator |
@@ -582,7 +582,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 src/
   app.js                              # Express server, dashboard, route registration, Start-All
   strategies/
-    strategy1_sar_ema_rsi.js          # Swing strategy (EMA20/50 + RSI + SAR/SuperTrend) — 5-min default; 15-min via TRADE_RESOLUTION=15
+    strategy1_sar_ema_rsi.js          # Swing strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend) — 5-min default; 15-min via TRADE_RESOLUTION=15
     scalp_bb_cpr.js                   # Scalp 3/5-min V5 (BB break + PSAR side + RSI)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps + BE trigger)
     orb_breakout.js                   # ORB strategy (15-min opening range; CE/PE single-leg breakout buys)

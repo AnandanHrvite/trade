@@ -35,7 +35,7 @@ const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const tickSimulator = require("../services/tickSimulator");
-const { EMA, PSAR, RSI } = require("technicalindicators");
+const { EMA, RSI } = require("technicalindicators");
 
 // ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
 // Declared with `let` so _refreshConfig() can update them. Without this, the
@@ -51,7 +51,7 @@ let _SWING_EOD_EXIT_MINS;      // square off any open SWING position at/after th
 let _OPP_COOLDOWN_ENABLED;     // opposite-side cooldown toggle
 let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RESOLUTION → minutes)
 // Candle-trail (SWING_CANDLE_TRAIL_*) is read live from process.env on each candle close
-// — INSTANT, like SWING_SL_MODE — so a Settings toggle takes effect without a restart.
+// — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
   _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
@@ -70,7 +70,7 @@ function _refreshConfig() {
   _OPP_COOLDOWN_CANDLES = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
 }
 _refreshConfig();
-let _cachedClosedCandleSL = null; // SAR SL from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
+let _cachedClosedCandleSL = null; // seed SL (prev-candle low/high) from last FULLY CLOSED candle — updated in onCandleClose, used in every tick
 
 // ── Same-side SL cooldown ───────────────────────────────────────────────────
 // After an SL hit (price SL or option stop), block new entries on THAT side for
@@ -651,8 +651,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
 
   // ── INITIAL SL (SWING redefined) ──────────────────────────────────────────
   // The stop passed in IS the previous-candle low (CE) / high (PE) from getSignal.
-  // Used as-is; the execution layer trails it candle-by-candle from here.
-  const _origSAR_SL = stopLoss;
+  // Used as-is; the execution layer trails it candle-by-candle (EMA21) from here.
   let _capLog = null;
 
   // Data-collection metadata — frozen at entry so the trade record is self-describing for offline analysis.
@@ -672,7 +671,6 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     reason,
     stopLoss:          stopLoss || null,
     initialStopLoss:   stopLoss || null,
-    sarStopLoss:       _origSAR_SL || null,   // initial SL (prev-candle) at entry, for analysis
     entryPrevMid:      entryPrevMid,   // mid of candle BEFORE entry (retained for trade-record continuity)
     entryBarTime:      ptState.currentBar ? ptState.currentBar.time : (ptState.candles.length ? ptState.candles[ptState.candles.length - 1].time : null),
     bestPrice:         null,
@@ -699,11 +697,10 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     entryMinuteIST:    _entryMinuteIST,
     // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
     rsiAtEntry:        entryMeta.rsiAtEntry   != null ? entryMeta.rsiAtEntry   : null,
+    ema9AtEntry:       entryMeta.ema9AtEntry  != null ? entryMeta.ema9AtEntry  : null,
     ema20AtEntry:      entryMeta.ema20AtEntry != null ? entryMeta.ema20AtEntry : null,
     ema50AtEntry:      entryMeta.ema50AtEntry != null ? entryMeta.ema50AtEntry : null,
     ema21AtEntry:      entryMeta.ema21AtEntry != null ? entryMeta.ema21AtEntry : null,
-    sarAtEntry:        entryMeta.sarAtEntry   != null ? entryMeta.sarAtEntry   : null,
-    sarTrend:          entryMeta.sarTrend     || null,
     supertrendAtEntry: entryMeta.supertrendAtEntry != null ? entryMeta.supertrendAtEntry : null,
     stTrendAtEntry:    entryMeta.stTrendAtEntry    || null,
     trendSource:       entryMeta.trendSource       || null,
@@ -826,7 +823,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     entryMinuteIST:   entryMinuteIST   != null ? entryMinuteIST   : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
     initialStopLoss:  ptState.position.initialStopLoss  || null,
-    sarStopLoss:      ptState.position.sarStopLoss      || null,   // raw SAR-based SL before hybrid cap (for analysis)
     trailActivatePts: ptState.position.trailActivatePts || null,
     entryPrevMid:     ptState.position.entryPrevMid     || null,   // 50%-rule reference
     bestPrice:        ptState.position.bestPrice        || null,   // peak favorable spot during trade
@@ -834,20 +830,18 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     candlesHeld:      ptState.position.candlesHeld      || 0,
     // Entry-context diagnostics + excursion + exit VIX for post-window analysis.
     rsiAtEntry:       ptState.position.rsiAtEntry    != null ? ptState.position.rsiAtEntry    : null,
+    ema9AtEntry:      ptState.position.ema9AtEntry   != null ? ptState.position.ema9AtEntry   : null,
     ema20AtEntry:     ptState.position.ema20AtEntry  != null ? ptState.position.ema20AtEntry  : null,
     ema50AtEntry:     ptState.position.ema50AtEntry  != null ? ptState.position.ema50AtEntry  : null,
     ema21AtEntry:     ptState.position.ema21AtEntry  != null ? ptState.position.ema21AtEntry  : null,
-    sarAtEntry:       ptState.position.sarAtEntry    != null ? ptState.position.sarAtEntry    : null,
-    sarTrend:         ptState.position.sarTrend      || null,
     supertrendAtEntry: ptState.position.supertrendAtEntry != null ? ptState.position.supertrendAtEntry : null,
     stTrendAtEntry:    ptState.position.stTrendAtEntry    || null,
     trendSource:       ptState.position.trendSource       || null,
     rsiAtExit:        _exitInd.rsi        != null ? _exitInd.rsi        : null,
+    ema9AtExit:       _exitInd.ema9       != null ? _exitInd.ema9       : null,
     ema20AtExit:      _exitInd.ema20      != null ? _exitInd.ema20      : null,
     ema50AtExit:      _exitInd.ema50      != null ? _exitInd.ema50      : null,
     ema21AtExit:      _exitInd.ema21      != null ? _exitInd.ema21      : null,
-    sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
-    sarTrendAtExit:   _exitInd.sarTrend   || null,
     supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
     stTrendAtExit:    _exitInd.stTrend    || null,
     mfeSpotPts:       ptState.position.mfeSpotPts   || 0,
@@ -1001,18 +995,19 @@ async function onCandleClose(candle) {
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
   log(`   OHLC: O=${candle.open} H=${candle.high} L=${candle.low} C=${candle.close} | body=${Math.abs(candle.close - candle.open).toFixed(1)}pt`);
-  log(`   EMA20=${indicators.ema20!==undefined?indicators.ema20:"?"} EMA50=${indicators.ema50!==undefined?indicators.ema50:"?"} | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | SAR=${indicators.sar!==undefined?indicators.sar:"?"}(${indicators.sarTrend||"?"})`);
+  log(`   ${indicators.ema9!=null?`EMA9=${indicators.ema9} `:""}EMA20=${indicators.ema20!==undefined?indicators.ema20:"?"} EMA50=${indicators.ema50!==undefined?indicators.ema50:"?"} | RSI=${indicators.rsi!==undefined?indicators.rsi:"?"} | ST=${indicators.supertrend!=null?indicators.supertrend:"?"}(${indicators.stTrend||"?"})`);
   log(`   Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
   if (signal === "NONE" && !ptState.position) {
     skipLogger.appendSkipLog("swing", {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
+      ema9: indicators.ema9 ?? null,
       ema20: indicators.ema20 ?? null,
       ema50: indicators.ema50 ?? null,
       rsi: indicators.rsi ?? null,
-      sar: indicators.sar ?? null,
-      sarTrend: indicators.sarTrend ?? null,
+      supertrend: indicators.supertrend ?? null,
+      stTrend: indicators.stTrend ?? null,
     });
   }
 
@@ -1041,7 +1036,7 @@ async function onCandleClose(candle) {
       } else if (_pos.spotAtEntry) {
         _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
       }
-      // Time-stop is disabled — psar/ema modes own the SL fully (legacy candle-mode gate).
+      // Time-stop is disabled — EMA21 trail owns the SL fully (inert legacy gate; SL_MODE is no longer set).
       if ((process.env.SWING_SL_MODE || "ema").toLowerCase() === "candle") {
         const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
         if (_tsReason) {
@@ -1070,29 +1065,21 @@ async function onCandleClose(candle) {
   // It is set once in simulateBuy() = mid of the last fully closed candle at entry.
   // The 50% rule reference must not roll forward as new candles close.
 
-  // ── Trailing stop (mode-aware: psar | ema, + optional candle-trail overlay) ──
-  // SWING_SL_MODE selects the base SL source updated at each candle close (tighten-only):
-  //   ema (default) — current EMA21 value; candle range touching back EMA21 = exit
-  //   psar          — current Parabolic SAR value; PSAR flip against position = exit
+  // ── Trailing stop (EMA21 base + optional candle-trail overlay) ──────────────
+  // Base SL source updated at each candle close (tighten-only): current EMA21 —
+  // a candle range touching back EMA21 is an explicit exit.
   // When SWING_CANDLE_TRAIL_ENABLED, an N-bar low (CE) / high (PE) trail is computed
-  // and the stop is set to whichever of (mode SL, candle-trail level) is TIGHTER —
+  // and the stop is set to whichever of (EMA21, candle-trail level) is TIGHTER —
   // i.e. closer to price (higher for CE, lower for PE). Tighten-only either way.
   // pos.stopLoss is then enforced intra-candle in onTick.
   if (ptState.position) {
     const pos     = ptState.position;
-    const SL_MODE = (process.env.SWING_SL_MODE || "ema").toLowerCase();
     let _newSL    = null;
     let _flipExit = false;
     let _trailTag = "";
-    if (SL_MODE === "psar") {
-      if (indicators.sar != null) { _newSL = indicators.sar; _trailTag = "PSAR"; }
-      if ((pos.side === "CE" && indicators.sarTrendInt === -1) ||
-          (pos.side === "PE" && indicators.sarTrendInt ===  1)) _flipExit = true;
-    } else {
-      if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
-      if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
-    }
-    // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of mode vs candle.
+    if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
+    if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
+    // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
     const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
     const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
     if (_ctOn && ptState.candles && ptState.candles.length >= _ctBars) {
@@ -1107,23 +1094,21 @@ async function onCandleClose(candle) {
     if (_newSL != null) {
       if (pos.side === "CE" && (pos.stopLoss == null || _newSL > pos.stopLoss)) {
         const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] ${SL_MODE.toUpperCase()} trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+        log(`📐 [PAPER] EMA21 trail CE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       } else if (pos.side === "PE" && (pos.stopLoss == null || _newSL < pos.stopLoss)) {
         const _o = pos.stopLoss; pos.stopLoss = parseFloat(_newSL.toFixed(2));
-        log(`📐 [PAPER] ${SL_MODE.toUpperCase()} trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
+        log(`📐 [PAPER] EMA21 trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
     if (_flipExit) {
-      // EMA mode: skip touch-back on entry bar (the entry condition trivially
-      // satisfies a touch — would cause instant exit on the entry candle).
-      // PSAR mode: intra-bar SAR flip is a real trend reversal — always fire.
-      const _isEntryBar = SL_MODE === "ema" && pos.entryBarTime && candle.time === pos.entryBarTime;
+      // Skip the touch-back on the entry bar (the entry condition trivially
+      // satisfies a touch — would cause an instant exit on the entry candle).
+      const _isEntryBar = pos.entryBarTime && candle.time === pos.entryBarTime;
       if (_isEntryBar) {
         log(`⏭️ [PAPER] EMA touch-back on entry bar — skipping flip exit`);
       } else {
-        const _reason = SL_MODE === "psar" ? "PSAR flip exit" : "EMA touch-back exit";
-        log(`🔁 [PAPER] ${_reason} — ${pos.side} @ candle close ₹${candle.close}`);
-        simulateSell(candle.close, _reason, candle.close);
+        log(`🔁 [PAPER] EMA touch-back exit — ${pos.side} @ candle close ₹${candle.close}`);
+        simulateSell(candle.close, "EMA touch-back exit", candle.close);
       }
     }
   }
@@ -1291,11 +1276,10 @@ async function onCandleClose(candle) {
       simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, {
         signalStrength: "STRONG",
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
+        ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
         ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
         ema50AtEntry: indicators.ema50  != null ? indicators.ema50 : null,
         ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
-        sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
-        sarTrend:     indicators.sarTrend || null,
         supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
         stTrendAtEntry:    indicators.stTrend     || null,
         trendSource:       indicators.trendSource || null,
@@ -1521,11 +1505,10 @@ function onTick(tick) {
         simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, {
           signalStrength: "STRONG",
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
+          ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
           ema20AtEntry: indicators.ema20  != null ? indicators.ema20 : null,
           ema50AtEntry: indicators.ema50  != null ? indicators.ema50 : null,
           ema21AtEntry: indicators.ema21  != null ? indicators.ema21 : null,
-          sarAtEntry:   indicators.sar    != null ? indicators.sar   : null,
-          sarTrend:     indicators.sarTrend || null,
           supertrendAtEntry: indicators.supertrend != null ? indicators.supertrend : null,
           stTrendAtEntry:    indicators.stTrend     || null,
           trendSource:       indicators.trendSource || null,
@@ -1882,8 +1865,12 @@ router.get("/start", async (req, res) => {
   log(`   Strategy   : ${ACTIVE} — ${strategy.NAME}`);
   log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
-  log(`   Entry       : CE = EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ${(process.env.SWING_USE_SUPERTREND||"false")==="true"?"ST":"SAR"} GREEN | PE = EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ${(process.env.SWING_USE_SUPERTREND||"false")==="true"?"ST":"SAR"} RED (intra-candle)`);
-  log(`   Stop/exit   : ${(process.env.SWING_SL_MODE||"ema").toUpperCase()} trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"2",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
+  {
+    const _emaUp   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}>EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}`;
+    const _emaDn   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}<EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
+    log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED (intra-candle)`);
+  }
+  log(`   Stop/exit   : EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"2",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.SWING_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -2350,12 +2337,9 @@ router.get("/status/chart-data", (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
-    // PSAR uses the SAME hand-rolled calcSAR the strategy decides on so the dots match.
-    const useSupertrend = (process.env.SWING_USE_SUPERTREND || "false").toLowerCase() === "true";
-    let sarPoints = [];
+    // Trend overlay — SuperTrend line (the only directional source).
     let supertrend = [];
-    if (useSupertrend) {
+    {
       const { computeSuperTrend } = require("../utils/supertrend");
       const ST_PERIOD = parseInt(process.env.SWING_SUPERTREND_PERIOD || "10", 10);
       const ST_MULT   = parseFloat(process.env.SWING_SUPERTREND_MULT || "3");
@@ -2363,15 +2347,6 @@ router.get("/status/chart-data", (req, res) => {
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
           if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
-        }
-      } catch (_) { /* ignore */ }
-    } else if (candles.length >= 3) {
-      try {
-        const { calcSAR } = require("../strategies/strategy1_sar_ema_rsi");
-        const sarArr = calcSAR(candles); // [{sar,trend}], aligned to candles[1..]
-        const off = candles.length - sarArr.length;
-        for (let i = 0; i < sarArr.length; i++) {
-          sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].sar.toFixed(2)) });
         }
       } catch (_) { /* ignore */ }
     }
@@ -2414,8 +2389,8 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema20: ema20Series, ema50: ema50Series, sar: sarPoints,
-      supertrend, trendSource: useSupertrend ? "SUPERTREND" : "PSAR", rsi: rsiSeries,
+    return res.json({ candles, markers, stopLoss, entryPrice, ema20: ema20Series, ema50: ema50Series,
+      supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW,
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
@@ -2579,8 +2554,8 @@ router.get("/status", (req, res) => {
         ? pos.bestPrice - pos.entryPrice
         : pos.entryPrice - pos.bestPrice)).toFixed(2))
     : 0;
-  // Trailing-stop label: base SL source (EMA21 / PSAR) + optional candle-trail overlay
-  const _slModeLbl  = (process.env.SWING_SL_MODE || "ema").toLowerCase() === "psar" ? "PSAR" : "EMA21";
+  // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
+  const _slModeLbl  = "EMA21";
   const _ctOn       = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
   const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
   const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
@@ -2714,7 +2689,7 @@ router.get("/status", (req, res) => {
         </div>
       </div>
 
-      <!-- Secondary grid: NIFTY spot + SAR SL + Trail -->
+      <!-- Secondary grid: NIFTY spot + EMA21 SL + Trail -->
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:12px;">
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">NIFTY Spot @ Entry</div>
@@ -2954,7 +2929,6 @@ ${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
-        <span style="color:#a78bfa;">· SAR</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
         <span style="color:#22d3ee;">── RSI</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span>
@@ -3320,11 +3294,9 @@ ${modalJS()}
     wickUpColor:   '#10b981', wickDownColor:   '#ef4444',
   });
 
-  // EMA20 (fast) + EMA50 (slow) lines + PSAR (dots) + RSI (own bottom scale, with level lines)
+  // EMA20 (fast) + EMA50 (slow) lines + RSI (own bottom scale, with level lines)
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
-  // SAR as discrete dots: hide the connecting line, show only point markers.
-  const sarSeries  = chart.addLineSeries({ color:'#a78bfa', lineVisible:false, pointMarkersVisible:true, pointMarkersRadius:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'SAR' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
   const stSeries   = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   // Colour each SuperTrend point by its trend (1=up→green, -1=down→red). Falls back to green if trend missing.
@@ -3372,7 +3344,7 @@ ${modalJS()}
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema20','ema50','sar','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema20','ema50','supertrend','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
 
       _internalUpdate = true;
@@ -3391,7 +3363,6 @@ ${modalJS()}
       // Indicator overlays
       if (d.ema20 && d.ema20.length) ema20Series.setData(d.ema20); else ema20Series.setData([]);
       if (d.ema50 && d.ema50.length) ema50Series.setData(d.ema50); else ema50Series.setData([]);
-      if (d.sar   && d.sar.length)   sarSeries.setData(d.sar);     else sarSeries.setData([]);
       if (d.supertrend && d.supertrend.length) stSeries.setData(d.supertrend.map(_stColor)); else stSeries.setData([]);
       if (d.rsi   && d.rsi.length) { rsiSeries.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiSeries.setData([]);
 
@@ -4354,7 +4325,7 @@ router.post("/simulate/start", async (req, res) => {
         ptState.prevCandleLow  = lastC.low;
         ptState.prevCandleMid  = parseFloat(((lastC.high + lastC.low) / 2).toFixed(2));
       }
-      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | SAR SL: ${_cachedClosedCandleSL || "n/a"}`);
+      log(`📦 [SIM] Pre-loaded ${result.warmupCandles.length} warmup candles | seed SL: ${_cachedClosedCandleSL || "n/a"}`);
     }
   }
 

@@ -44,7 +44,7 @@ const EFFECT = {
 
 const SETTINGS_SCHEMA = [
   {
-    section: "SWING STRATEGY (EMA20/50 + RSI + SAR/SuperTrend) — Zerodha",
+    section: "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
     icon: "📊",
     fields: [
       { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
@@ -60,26 +60,26 @@ const SETTINGS_SCHEMA = [
       { key: "VIX_MAX_ENTRY", label: "Swing VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: block entries above this VIX", default: "20" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss (also latched on 3 consecutive losses)", default: "3000" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on entries per session — prevents chop-day overtrading", default: "5" },
-      // ── Entry rule (all 3 must be true): EMA20-vs-EMA50 alignment + RSI gate + PSAR/SuperTrend side ──
-      { key: "SWING_EMA_FAST", label: "EMA Fast Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA (on close). CE needs EMA-fast ABOVE EMA-slow; PE needs it below. Classic = 20.", default: "20" },
+      // ── Entry rule (all 3 must be true): EMA alignment + RSI gate + SuperTrend side ──
+      { key: "SWING_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA (on close). 2-EMA mode: CE needs EMA-fast ABOVE EMA-slow; PE below. Triple-stack: this is the MID EMA. Classic = 20.", default: "20" },
       { key: "SWING_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA (on close). The EMA-fast vs EMA-slow alignment is the directional gate. Classic = 50.", default: "50" },
+      { key: "SWING_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter EMA gate. OFF (default) = 2-EMA cross (EMA-fast vs EMA-slow). ON = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries.", default: "false" },
+      { key: "SWING_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA in the 9>20>50 stack (on close). Only used when Triple-Stack EMA is ON. Classic = 9.", default: "9" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE entry: RSI(14) must be ABOVE this (bullish momentum floor)", default: "52" },
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "CE entry blocked when RSI is at/above this (overbought — don't chase exhausted up-moves)", default: "70" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
       { key: "RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PE entry blocked when RSI is at/below this (oversold — don't chase exhausted down-moves)", default: "30" },
-      // ── Trend confirmation: PSAR (default) or SuperTrend ──
-      { key: "SWING_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.INSTANT, desc: "Trend-confirmation source for entries. OFF = Parabolic SAR. ON = SuperTrend — turns PSAR off and uses SuperTrend(10,3) for the directional confirmation instead. Mutually exclusive. Shown on the chart based on this toggle.", default: "true" },
-      { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
-      { key: "SWING_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
+      // ── Trend confirmation: SuperTrend (the only directional source) ──
+      { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend — the entry directional gate (classic = 10).", default: "10" },
+      { key: "SWING_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3).", default: "3" },
       // ── Stops & exits ──
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
       { key: "SWING_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors Scalp's). 0 = disabled.", default: "25" },
       { key: "SWING_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Choppy-day guard — after this many consecutive losing trades in a session, halt new Swing entries for the rest of the day (any winning trade resets the streak). Sits out range days that bleed small stops instead of repeatedly re-entering. 0 = disabled (default).", default: "0" },
-      { key: "SWING_SL_MODE", label: "SL / Trail Source", type: "select", options: ["ema", "psar"], effect: EFFECT.INSTANT, desc: "Base trailing-SL source at each candle close (tighten-only). ema (default) = current EMA21 — candle touching back EMA21 is an explicit exit. psar = current Parabolic SAR — a PSAR flip against the position is an explicit exit. Layer the Candle Trail on top to also exit on structure.", default: "ema" },
-      { key: "SWING_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add an N-bar candle trail on top of the EMA/PSAR SL. Each candle close the stop is set to whichever is TIGHTER (closer to price) — the EMA/PSAR line OR the N-bar low (CE) / high (PE). Banks more of a winner; never loosens the stop. Default ON.", default: "true" },
+      { key: "SWING_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is TIGHTER (closer to price) — the EMA21 line OR the N-bar low (CE) / high (PE). Banks more of a winner; never loosens the stop. Default ON.", default: "true" },
       { key: "SWING_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "How many candles to look back for the candle-trail level: lowest low (CE) / highest high (PE) of the last N candles. 1 = tightest (just the prior candle). Only used when Candle Trail is ON.", default: "2" },
       { key: "SWING_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After an SL / option-stop hit on a side, block new entries on THAT side for this many candles (0 = off)", default: "2" },
-      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, option-stop, PSAR-flip, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
+      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, option-stop, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
       { key: "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown duration in candles (multiplied by TRADE_RESOLUTION to get minutes — e.g. 3 candles × 5-min = 15 min). Only used when Opposite-Side Cooldown is ON.", default: "2" },
     ],
   },
@@ -528,9 +528,9 @@ const IMMEDIATE_KEYS = new Set([
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
   // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
-  "SWING_EMA_FAST", "SWING_EMA_SLOW",
-  "SWING_SL_MODE", "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
-  "SWING_USE_SUPERTREND", "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
+  "SWING_EMA_FAST", "SWING_EMA_SLOW", "SWING_EMA_TRIPLE_STACK_ENABLED", "SWING_EMA_FASTEST",
+  "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
+  "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
   "SWING_STOP_LOSS_PTS", "SWING_MAX_CONSEC_LOSSES",
 ]);
 
@@ -1071,14 +1071,9 @@ router.get("/", (req, res) => {
     "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers":       straddleModeOn,
   };
 
-  // ── Section titles reflect their trend-source toggle (SAR/PSAR vs SuperTrend) ──
-  const swingUseST = (envData["SWING_USE_SUPERTREND"] ?? process.env.SWING_USE_SUPERTREND ?? "false").toLowerCase() === "true";
+  // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — Scalp only ──
   const scalpUseST = (envData["SCALP_USE_SUPERTREND"] ?? process.env.SCALP_USE_SUPERTREND ?? "false").toLowerCase() === "true";
   const trendSourceTitle = (section) => {
-    if (section.includes("SAR/SuperTrend")) {
-      return section.replace("SAR/SuperTrend",
-        `<span class="trend-src" data-trend-key="SWING_USE_SUPERTREND" data-on="SuperTrend" data-off="SAR">${swingUseST ? "SuperTrend" : "SAR"}</span>`);
-    }
     if (section.includes("BB+PSAR+RSI")) {
       return section.replace("PSAR",
         `<span class="trend-src" data-trend-key="SCALP_USE_SUPERTREND" data-on="SuperTrend" data-off="PSAR">${scalpUseST ? "SuperTrend" : "PSAR"}</span>`);
@@ -1866,15 +1861,8 @@ document.addEventListener('keydown', function(e){
       _setSourceRowDisabled('SCALP_SUPERTREND_MULT', !sON);
       _setTrendLabel('SCALP_USE_SUPERTREND', sON);
     }
-    var swing = document.querySelector('[data-key="SWING_USE_SUPERTREND"]');
-    if (swing) {
-      var wON = swing.checked;  // swing SAR has no env params, so only the ST fields gate
-      _setSourceRowDisabled('SWING_SUPERTREND_PERIOD', !wON);
-      _setSourceRowDisabled('SWING_SUPERTREND_MULT', !wON);
-      _setTrendLabel('SWING_USE_SUPERTREND', wON);
-    }
   }
-  ['SCALP_USE_SUPERTREND', 'SWING_USE_SUPERTREND'].forEach(function(k) {
+  ['SCALP_USE_SUPERTREND'].forEach(function(k) {
     var t = document.querySelector('[data-key="' + k + '"]');
     if (t) t.addEventListener('change', updateTrendSourceGating);
   });
