@@ -6,7 +6,7 @@
  *   2. Clicks "Fetch & Start Tracking" — zero manual input needed
  *   3. Bot reads open NIFTY position from Zerodha (symbol, qty, avg price)
  *   4. Fetches candles + runs the swing strategy → initial SL = previous-candle low/high
- *      (SAR value as fallback when no signal is live)
+ *      (fixed-points fallback when no live signal)
  *   5. Polls NIFTY spot every 1 second via Fyers REST
  *   6. Trails SL the same way as paper/live: tighten to each completed candle's
  *      low (CE) / high (PE), plus breakeven (SL → entry after +BREAKEVEN_PTS)
@@ -82,24 +82,20 @@ async function computeSLFromSAR(side) {
     const from  = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     from.setDate(from.getDate() - 5);
     const fromStr = from.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    tlog(`📊 Loading 15-min candles for SAR SL (cache-first)...`);
+    tlog(`📊 Loading 15-min candles for initial SL (cache-first)...`);
     // Uses disk cache — only calls API for today's new bars
     const candles = await fetchCandlesCached("NSE:NIFTY50-INDEX", "15", fromStr, today, fetchCandles);
     if (candles.length < 30) { tlog(`⚠️ Only ${candles.length} candles — using fallback SL`); return null; }
     const result = getActiveStrategy().getSignal(candles.slice(-60), { silent: true });
-    // Prefer the strategy's prev-candle SL; fall back to the SAR value when no signal is live.
+    // Prev-candle SL from getSignal (low CE / high PE); null when no live signal — caller uses a fixed-points fallback.
     if (result.stopLoss && typeof result.stopLoss === "number") {
       tlog(`✅ Initial SL (prev-candle): ₹${result.stopLoss} | Signal: ${result.signal}`);
       return parseFloat(result.stopLoss.toFixed(2));
     }
-    if (result.sar && typeof result.sar === "number") {
-      tlog(`✅ Initial SL (SAR fallback): ₹${result.sar} | Signal: ${result.signal}`);
-      return parseFloat(result.sar.toFixed(2));
-    }
     tlog(`⚠️ SL not available (${result.reason ? result.reason.slice(0,60) : "no reason"})`);
     return null;
   } catch (err) {
-    tlog(`⚠️ SAR computation error: ${err.message}`);
+    tlog(`⚠️ SL computation error: ${err.message}`);
     return null;
   }
 }
@@ -221,8 +217,8 @@ router.get("/fetch-and-start", async (req, res) => {
       sl = side === "CE" ? parseFloat((spot - 60).toFixed(2)) : parseFloat((spot + 60).toFixed(2));
       tlog(`⚠️ Fallback SL: ₹${sl} (spot ± 60pt)`);
     }
-    if (side === "CE" && sl >= spot) { sl = parseFloat((spot - 60).toFixed(2)); tlog(`⚠️ SAR above spot for CE — corrected to spot-60`); }
-    if (side === "PE" && sl <= spot) { sl = parseFloat((spot + 60).toFixed(2)); tlog(`⚠️ SAR below spot for PE — corrected to spot+60`); }
+    if (side === "CE" && sl >= spot) { sl = parseFloat((spot - 60).toFixed(2)); tlog(`⚠️ SL above spot for CE — corrected to spot-60`); }
+    if (side === "PE" && sl <= spot) { sl = parseFloat((spot + 60).toFixed(2)); tlog(`⚠️ SL below spot for PE — corrected to spot+60`); }
 
     const sarGap = Math.abs(spot - sl);
     const bePts  = _bePts();
@@ -350,7 +346,7 @@ ${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos
     <div style="text-align:center;padding:40px 20px 28px;">
       <div style="font-size:0.85rem;font-weight:600;color:#e0eaf8;margin-bottom:8px;">Take your entry in Zerodha first, then click below.</div>
       <div style="font-size:0.75rem;color:#4a6080;margin-bottom:28px;max-width:480px;margin-left:auto;margin-right:auto;line-height:1.6;">
-        Bot will read your open NIFTY position from Zerodha, set the initial Stop Loss to the previous candle's low/high (SAR fallback), then trail it automatically — tightening to each completed candle's low/high plus breakeven — the same way as the live trade engine.
+        Bot will read your open NIFTY position from Zerodha, set the initial Stop Loss to the previous candle's low/high (fixed-points fallback), then trail it automatically — tightening to each completed candle's low/high plus breakeven — the same way as the live trade engine.
       </div>
       <button id="fetch-btn" onclick="handleFetch(this)"
         style="background:#0a1e3d;border:1px solid #3b82f6;color:#60a5fa;padding:14px 32px;border-radius:10px;font-size:0.95rem;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:10px;">
@@ -373,7 +369,7 @@ ${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos
       <div class="sc" style="--accent:#78350f;">
         <div class="sc-label">Stop Loss (NIFTY)</div>
         <div class="sc-val" id="d-sl" style="color:#f59e0b;">₹${pos.stopLoss.toLocaleString("en-IN",{minimumFractionDigits:2})}</div>
-        <div class="sc-sub">Initial: ₹${pos.initialStopLoss} | SAR gap: ${pos.sarGap?.toFixed(1)}pt</div>
+        <div class="sc-sub">Initial: ₹${pos.initialStopLoss} | SL gap: ${pos.sarGap?.toFixed(1)}pt</div>
       </div>
       <div class="sc" style="--accent:${slGap!==null&&slGap<20?"#7f1d1d":"#78350f"};">
         <div class="sc-label">Cushion to SL</div>
@@ -455,7 +451,7 @@ setInterval(poll,1500);
 async function handleFetch(btn){
   if(btn){btn.innerHTML='⏳ Fetching...';btn.disabled=true;}
   var msg=document.getElementById('fetch-msg');
-  if(msg)msg.innerHTML='<span style="color:#4a6080;">Reading Zerodha position + computing SAR SL...</span>';
+  if(msg)msg.innerHTML='<span style="color:#4a6080;">Reading Zerodha position + computing initial SL...</span>';
   try{
     var res=await fetch('/tracker/fetch-and-start');
     var data=await res.json();

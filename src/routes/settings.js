@@ -435,7 +435,7 @@ const SETTINGS_SCHEMA = [
 // trade behaviour (strategy + instrument/backtest + charges) — credentials,
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
-  swing:    "SWING STRATEGY (5-min) — Zerodha",
+  swing:    "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
   scalp:    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
@@ -1064,7 +1064,7 @@ router.get("/", (req, res) => {
   const showCacheBtn = (envData["UI_SHOW_CACHE_FILES"] ?? process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
-    "SWING STRATEGY (5-min) — Zerodha":                            swingModeOn,
+    "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     swingModeOn,
     "SCALP STRATEGY (BB+PSAR+RSI) — Fyers":                         scalpModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
