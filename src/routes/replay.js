@@ -612,11 +612,11 @@ function drawReplayChart(el, cd) {
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['ema9', '#c084fc'], ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
+    ['ema9', '#a855f7'], ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
     ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
   const _ovLabel = { bbUpper: 'BB↑', bbMiddle: 'BB·', bbLower: 'BB↓', ema9: 'EMA9', ema20: 'EMA20', ema50: 'EMA50', ema21: 'EMA21', orhLine: 'ORH', orlLine: 'ORL' };
-  const _wideOverlays = { ema20: 1, ema50: 1, ema21: 1 };
+  const _wideOverlays = { ema9: 1, ema20: 1, ema50: 1, ema21: 1 };
   for (const [key, color] of overlays) {
     const arr = cd[key];
     if (Array.isArray(arr) && arr.length) {

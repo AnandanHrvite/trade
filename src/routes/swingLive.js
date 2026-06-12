@@ -2984,7 +2984,7 @@ ${buildSidebar('swingLive', tradeState.running, tradeState.running, {
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
-        <span style="color:#a78bfa;">── EMA9</span> &nbsp;
+        <span style="color:#a855f7;">── EMA9</span> &nbsp;
         <span style="color:#fbbf24;">── EMA20</span> &nbsp;
         <span style="color:#3b82f6;">── EMA50</span> &nbsp;
         <span style="color:#22c55e;">──</span><span style="color:#ef4444;">──</span> ST &nbsp;
@@ -3460,7 +3460,7 @@ async function manualEntry(side) {
   });
 
   // Strategy overlays: EMA9 (fastest) + EMA20 (fast) + EMA50 (slow) + SuperTrend + RSI (own bottom scale, level lines)
-  const ema9Series  = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
+  const ema9Series  = chart.addLineSeries({ color:'#a855f7', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
   const ema20Series = chart.addLineSeries({ color:'#fbbf24', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA20' });
   const ema50Series = chart.addLineSeries({ color:'#3b82f6', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA50' });
   // SuperTrend line (solid) — per-point colour: GREEN when bullish (line below price), RED when bearish.
