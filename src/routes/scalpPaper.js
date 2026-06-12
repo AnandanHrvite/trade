@@ -516,8 +516,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       peakPremium: trade.bestOptionLtp,
       peakPnl: trade.peakPnl,
       maxDrawdown: trade.maePnl,
-      mfeSpotPts: trade.mfeSpotPts,
-      maeSpotPts: trade.maeSpotPts,
+      heldMs: trade.durationMs,
       candlesHeld: trade.candlesHeld,
     });
   }

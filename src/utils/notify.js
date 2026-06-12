@@ -239,6 +239,17 @@ function pnlArrow(pnl) {
   return pnl >= 0 ? "🟢 PROFIT" : "🔴 LOSS";
 }
 
+// Format a hold duration (ms) as "Xm Ys" / "Ys" — unambiguous clock time held,
+// unlike the candle counter which reads 0 for a trade that opens and closes
+// inside a single candle.
+function fmtHeld(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 function modeLabel(mode) {
   if (!mode) return "";
   const m = String(mode).toUpperCase();
@@ -347,16 +358,15 @@ function notifyEntry(p) {
  *              spotAtEntry, spotAtExit,
  *              optionEntryLtp, optionExitLtp,
  *              pnl, sessionPnl, exitReason, entryReason, entryTime, exitTime, qty,
- *              peakPremium, peakPnl, maxDrawdown, mfeSpotPts, maeSpotPts, candlesHeld })
+ *              peakPremium, peakPnl, maxDrawdown, heldMs, candlesHeld })
  *
  * The trailing fields are optional diagnostics — each renders only when supplied,
  * so older call sites that pass none keep the original compact message.
  *   peakPremium  — highest option LTP reached during the trade (bestOptionLtp / peakPremium)
  *   peakPnl      — best unrealised P&L in ₹ (mfePnl / peakPnl)
  *   maxDrawdown  — worst unrealised P&L in ₹ (maePnl, negative)
- *   mfeSpotPts   — max favourable spot excursion (points)
- *   maeSpotPts   — max adverse spot excursion (points)
- *   candlesHeld  — number of candles the position was held
+ *   heldMs       — hold duration in ms (clock time); preferred over candlesHeld
+ *   candlesHeld  — completed candles held; fallback when heldMs is absent
  */
 function notifyExit(p) {
   // Fire the live-order hook FIRST — see notifyEntry note on Telegram gating.
@@ -377,10 +387,9 @@ function notifyExit(p) {
     p.peakPremium != null ? `Peak Premium   : ${inr(p.peakPremium)}` : null,
     p.peakPnl     != null ? `Peak PnL       : ${inr(p.peakPnl)}`     : null,
     p.maxDrawdown != null ? `Max Drawdown   : ${inr(p.maxDrawdown)}` : null,
-    (p.mfeSpotPts != null || p.maeSpotPts != null)
-      ? `Spot MFE/MAE   : ${p.mfeSpotPts != null ? `+${p.mfeSpotPts}` : "—"} / ${p.maeSpotPts != null ? p.maeSpotPts : "—"} pts`
-      : null,
-    p.candlesHeld != null ? `Held           : ${p.candlesHeld} candle(s)` : null,
+    fmtHeld(p.heldMs) != null
+      ? `Held           : ${fmtHeld(p.heldMs)}`
+      : (p.candlesHeld != null ? `Held           : ${p.candlesHeld} candle(s)` : null),
   ].filter(Boolean);
 
   const lines = [
