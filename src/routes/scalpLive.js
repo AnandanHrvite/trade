@@ -505,6 +505,7 @@ async function squareOff(exitPrice, reason) {
     secsToMFE:       state.position ? (state.position.secsToMFE  || 0) : 0,
     secsToMAE:       state.position ? (state.position.secsToMAE  || 0) : 0,
     candlesHeld:     state.position ? (state.position.candlesHeld || 0) : 0,
+    durationMs:      state.position && state.position.entryTimeMs ? (Date.now() - state.position.entryTimeMs) : null,
     vixAtExit:       getCachedVix(),
   };
   state.sessionTrades.push(_exitTrade);
@@ -587,8 +588,7 @@ async function squareOff(exitPrice, reason) {
     peakPremium: _exitTrade.bestOptionLtp,
     peakPnl: _exitTrade.mfePnl,
     maxDrawdown: _exitTrade.maePnl,
-    mfeSpotPts: _exitTrade.mfeSpotPts,
-    maeSpotPts: _exitTrade.maeSpotPts,
+    heldMs: _exitTrade.durationMs,
     candlesHeld: _exitTrade.candlesHeld,
   });
 }

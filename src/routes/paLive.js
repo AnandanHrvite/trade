@@ -474,6 +474,7 @@ async function squareOff(exitPrice, reason) {
     secsToMAE:      state.position ? (state.position.secsToMAE  || 0) : 0,
     bestOptionLtp:  state.position ? (state.position.bestOptionLtp || null) : null,   // peak option premium during trade
     candlesHeld:    state.position ? (state.position.candlesHeld || 0) : 0,
+    durationMs:     state.position && state.position.entryTimeMs ? (Date.now() - state.position.entryTimeMs) : null,
     vixAtExit:      getCachedVix(),
   };
   state.sessionTrades.push(_exitTrade);
@@ -528,8 +529,7 @@ async function squareOff(exitPrice, reason) {
     peakPremium: _exitTrade.bestOptionLtp,
     peakPnl: _exitTrade.mfePnl,
     maxDrawdown: _exitTrade.maePnl,
-    mfeSpotPts: _exitTrade.mfeSpotPts,
-    maeSpotPts: _exitTrade.maeSpotPts,
+    heldMs: _exitTrade.durationMs,
     candlesHeld: _exitTrade.candlesHeld,
   });
 }

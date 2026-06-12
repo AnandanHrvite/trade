@@ -295,8 +295,7 @@ async function placeLiveSell(reason) {
     peakPremium: trade.bestOptionLtp,
     peakPnl: trade.mfePnl,
     maxDrawdown: trade.maePnl,
-    mfeSpotPts: trade.mfeSpotPts,
-    maeSpotPts: trade.maeSpotPts,
+    heldMs: trade.durationMs,
   });
 
   state.position = null;

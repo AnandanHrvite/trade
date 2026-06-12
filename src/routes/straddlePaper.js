@@ -376,6 +376,7 @@ function simulateExit(reason) {
     peakPremium: pos.peakCombined,
     peakPnl: baseFields.mfePnl,
     maxDrawdown: baseFields.maePnl,
+    heldMs: pos.entryTimeMs ? (Date.now() - pos.entryTimeMs) : null,
   });
 
   try {

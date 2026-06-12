@@ -1078,8 +1078,7 @@ async function squareOff(exitPrice, reason) {
     exitTime:       istNow(),
     qty,
     peakPremium:    tradeState.position ? (tradeState.position.bestOptionLtp || null) : null,
-    mfeSpotPts:     tradeState.position ? (tradeState.position.mfeSpotPts || 0) : 0,
-    maeSpotPts:     tradeState.position ? (tradeState.position.maeSpotPts || 0) : 0,
+    heldMs:         tradeState.position && tradeState.position.entryTimeMs ? (Date.now() - tradeState.position.entryTimeMs) : null,
     candlesHeld:    tradeState.position ? (tradeState.position.candlesHeld || 0) : 0,
   });
 

@@ -285,6 +285,7 @@ async function placeLiveExit(reason) {
     peakPremium: pos.peakCombined,
     peakPnl: baseFields.mfePnl,
     maxDrawdown: baseFields.maePnl,
+    heldMs: pos.entryTimeMs ? (Date.now() - pos.entryTimeMs) : null,
   });
 
   state.position = null;

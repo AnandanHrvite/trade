@@ -951,8 +951,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
       exitTime:       trade.exitTime,
       qty,
       peakPremium:    trade.bestOptionLtp,
-      mfeSpotPts:     trade.mfeSpotPts,
-      maeSpotPts:     trade.maeSpotPts,
+      heldMs:         trade.durationMs,
       candlesHeld:    trade.candlesHeld,
     });
   }

@@ -245,9 +245,12 @@ function pnlArrow(pnl) {
 function fmtHeld(ms) {
   if (ms == null || !Number.isFinite(ms) || ms < 0) return null;
   const totalSec = Math.round(ms / 1000);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  if (totalSec < 60) return `${totalSec}s`;
+  const totalMin = Math.floor(totalSec / 60);
+  if (totalMin < 60) return `${totalMin}m ${totalSec % 60}s`;
+  const totalHr = Math.floor(totalMin / 60);
+  if (totalHr < 24) return `${totalHr}h ${totalMin % 60}m`;
+  return `${Math.floor(totalHr / 24)}d ${totalHr % 24}h`;
 }
 
 function modeLabel(mode) {
