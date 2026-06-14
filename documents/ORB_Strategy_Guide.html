@@ -195,8 +195,8 @@
   <p class="subtitle">Single-Leg CE / PE Breakout of the First 15-Minute Range &mdash; Fyers Orders</p>
   <div class="meta">
     <span><span class="badge badge-orange">v4.6.0</span></span>
-    <span>Generated: 2026-05-21</span>
-    <span>NIFTY Options &mdash; 1 Trade / Day (default) &mdash; Premium Lock-In Trail</span>
+    <span>Rechecked: 2026-06-14</span>
+    <span>NIFTY Options &mdash; 1 Trade / Day (default) &mdash; Premium % + Spot OR-Edge SL</span>
   </div>
 </header>
 
@@ -389,7 +389,10 @@
   </div>
 
   <div class="note note-info">
-    <strong>Daily-count gate (pre-filter):</strong> Before any of the 9 gates evaluate, the strategy first checks <code>ORB_MAX_DAILY_TRADES</code>. With the default of <code>1</code>, after the first successful entry the strategy skips all further candles with <code>reason: "Already traded this session — ORB takes only 1 trade/day"</code>.
+    <strong>Daily-count gate (pre-filter):</strong> Before any of the gates evaluate, the strategy first checks <code>ORB_MAX_DAILY_TRADES</code>. With the default of <code>1</code>, after the first successful entry the strategy skips all further candles with <code>reason: "Already traded this session — ORB takes only 1 trade/day"</code>.
+  </div>
+  <div class="note note-warn">
+    <strong>Where each gate lives:</strong> gates 1&ndash;7 run inside <code>orb_breakout.js</code> <code>getSignal()</code> (pure signal). The <strong>premium-range gate (8)</strong> and <strong>VIX gate (9)</strong> are applied <em>after</em> the signal fires, at the route layer in <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; so their skip-log entries appear once a valid breakout has already been detected. Backtest takes neither (it seeds a fixed entry premium and ignores VIX).
   </div>
 </section>
 
@@ -406,12 +409,12 @@
     <tbody>
       <tr>
         <td><strong style="color:var(--accent-green);">STRONG</strong></td>
-        <td><code>ORB_SWEET_MIN &le; range &le; ORB_SWEET_MAX</code> <br>AND <code>body &ge; ORB_STRONG_BODY</code></td>
-        <td>Range built in the sweet spot (30&ndash;80 pts), and the breakout candle has a real commitment body (&ge; 15 pts). Highest-quality setup.</td>
+        <td><code>ORB_SWEET_MIN &le; range &le; ORB_SWEET_MAX</code> <br>AND <code>body &ge; ORB_STRONG_BODY</code><br>AND volume strong (no vol-data, or vol &ge; 1.25&times; the vol-gate threshold &asymp; 1.5&times; avg)<br>AND wick clean (wick ratio &le; 0.6&times; <code>ORB_MAX_WICK_RATIO</code> &asymp; 0.36)</td>
+        <td>Range built in the sweet spot (30&ndash;80 pts), a real commitment body (&ge; 15 pts), confirming volume and a clean (low-wick) candle. Highest-quality setup.</td>
       </tr>
       <tr>
         <td><strong style="color:var(--accent-orange);">MARGINAL</strong></td>
-        <td>All gates passed but at least one of:<br>&bull; range outside sweet spot (but inside min/max)<br>&bull; body &lt; ORB_STRONG_BODY</td>
+        <td>All entry gates passed but at least one STRONG sub-condition missed:<br>&bull; range outside sweet spot (but inside min/max)<br>&bull; body &lt; ORB_STRONG_BODY<br>&bull; volume only marginally above average<br>&bull; wick ratio above the strict 0.36 bound</td>
         <td>Valid breakout, but the setup is less optimal. Will be blocked when <code>VIX &gt; ORB_VIX_STRONG_ONLY</code>.</td>
       </tr>
     </tbody>
@@ -427,29 +430,38 @@
 <!-- 5. STOP LOSS                                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="sl">
-  <h2><span class="section-icon icon-red">&#128683;</span> 5. Stop Loss &mdash; Premium %</h2>
+  <h2><span class="section-icon icon-red">&#128683;</span> 5. Stop Loss &mdash; Premium % + Spot OR-Edge</h2>
 
-  <p>Unlike Swing or PA which compute SL from <em>spot points</em> (SAR distance, structural wick, etc.), ORB computes SL as a <strong>fraction of entry option premium</strong>. The reasoning: ORB enters at a defined breakout level and the natural retest level is the broken range edge. Sizing the SL off premium gives a consistent &#8377; risk per trade regardless of how cheap or expensive the entry option is, which matches the textbook ORB sizing convention.</p>
+  <p>ORB runs <strong>two stops in parallel</strong>, whichever triggers first: a <strong>premium %</strong> stop and a <strong>spot stop at the opposite opening-range edge</strong>. The premium stop gives a consistent &#8377; risk per trade regardless of how cheap or expensive the entry option is; the spot stop closes the trade when the breakout structurally fails back through the range.</p>
 
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Formula</th></tr></thead>
+    <thead><tr><th>Stop</th><th>Default</th><th>Formula</th></tr></thead>
     <tbody>
       <tr>
-        <td><code>ORB_STOP_PCT</code></td>
+        <td><strong>Premium %</strong> &mdash; <code>ORB_STOP_PCT</code></td>
         <td><code>0.25</code></td>
         <td>SL premium = entry premium &times; (1 &minus; ORB_STOP_PCT) &mdash; default cuts losses at &minus;25%</td>
+      </tr>
+      <tr>
+        <td><strong>Spot OR-edge</strong> (<code>slSpot</code>)</td>
+        <td>opposite OR edge</td>
+        <td>CE: exit if <code>spot &le; ORL</code> &nbsp;|&nbsp; PE: exit if <code>spot &ge; ORH</code></td>
       </tr>
     </tbody>
   </table>
 
+  <h3>Move-to-BE ratchet</h3>
+  <p>Once spot has travelled <strong>1&times; the opening-range width</strong> in favour, the <em>spot</em> SL ratchets to the entry spot (break-even) &mdash; CE: <code>slSpot &rarr; max(slSpot, entrySpot)</code>, PE: <code>slSpot &rarr; min(slSpot, entrySpot)</code>. The premium stop separately ratchets up via the lock-in trail (&sect;7).</p>
+
   <h3>Worked Example</h3>
-  <p>ATM CE entered at &#8377;120 with default <code>ORB_STOP_PCT=0.25</code>:</p>
-  <pre><code>SL premium = 120 &times; (1 &minus; 0.25) = &#8377;90
+  <p>ATM CE entered at &#8377;120 with default <code>ORB_STOP_PCT=0.25</code>, ORL = 24,300:</p>
+  <pre><code>Premium SL = 120 &times; (1 &minus; 0.25) = &#8377;90   (whichever hits first)
+Spot SL    = ORL 24,300                       (whichever hits first)
 Max loss   = (120 &minus; 90) &times; lot_size &times; LOT_MULTIPLIER
            = 30 &times; 65 &times; 2 (example) = &#8377;3,900</code></pre>
 
-  <div class="note note-warn">
-    <strong>No spot-based SL on ORB.</strong> ORB does not use the broken-range edge (ORH/ORL) as a spot SL. The premium % is the only stop. This is intentional &mdash; option premium decay is the primary risk in a directional intraday buy, and a spot-touch SL at the range edge would frequently exit on noise even when the breakout thesis is still intact.
+  <div class="note note-info">
+    <strong>Earlier guide editions said &ldquo;no spot SL on ORB&rdquo; &mdash; that is no longer accurate.</strong> The spot stop at the opposite OR edge is live and is checked every tick alongside the premium stop, with the move-to-BE ratchet above.
   </div>
 </section>
 
@@ -533,14 +545,19 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
 
   <p>On every tick + every candle close, the strategy evaluates exit conditions in this priority order. The first matching condition fires the exit.</p>
 
+  <p>Two ratchets run first (they move the stop, they don't exit), then four exit checks fire in a fixed order, then the clock-driven forced exit:</p>
   <ol style="margin-left:24px;">
-    <li><strong>Hard SL hit</strong> (every tick) &mdash; option LTP &le; current SL premium. Exits at LTP. Records exit reason <code>sl_hit</code>.</li>
-    <li><strong>Premium target hit</strong> (every tick) &mdash; option LTP &ge; entry &times; (1 + ORB_TARGET_PCT). Records <code>target_premium</code>.</li>
-    <li><strong>Spot target hit</strong> (every tick) &mdash; spot &ge; ORH + (range &times; mult) for CE, or &le; ORL &minus; (range &times; mult) for PE. Records <code>target_spot</code>.</li>
-    <li><strong>Lock-in evaluation</strong> (every tick) &mdash; if option gain &ge; <code>ORB_PREMIUM_LOCKIN_PCT</code> AND SL is still at original level, ratchet SL up. Doesn't exit by itself.</li>
-    <li><strong>Forced square-off</strong> (clock tick) &mdash; current time &ge; <code>ORB_FORCED_EXIT</code> (15:15 IST default). Records <code>forced_eod</code>.</li>
-    <li><strong>Bid-ask spread guard</strong> (every tick when checking exit fills) &mdash; if option spread &gt; <code>MAX_BID_ASK_SPREAD_PTS</code>, exit is rejected with a log warning until spread tightens. Fails open (proceeds with the exit) if quote feed is missing.</li>
+    <li><strong>Move-to-BE ratchet</strong> (every tick) &mdash; once spot moves &ge; 1&times; range in favour, the <em>spot</em> SL ratchets to entry. Doesn't exit by itself.</li>
+    <li><strong>Premium lock-in ratchet</strong> (every tick) &mdash; if option gain &ge; <code>ORB_PREMIUM_LOCKIN_PCT</code> and the lock-in hasn't fired yet, ratchet the <em>premium</em> SL up to the floor (one-shot). Doesn't exit by itself.</li>
+    <li><strong>Premium SL hit</strong> (every tick) &mdash; option LTP &le; current premium SL. Exits at LTP.</li>
+    <li><strong>Premium target hit</strong> (every tick) &mdash; option LTP &ge; entry &times; (1 + ORB_TARGET_PCT).</li>
+    <li><strong>Spot SL hit</strong> (every tick) &mdash; CE: spot &le; ORL &nbsp;|&nbsp; PE: spot &ge; ORH (the opposite OR edge, after any move-to-BE ratchet).</li>
+    <li><strong>Spot target hit</strong> (every tick) &mdash; CE: spot &ge; ORH + (range &times; mult) &nbsp;|&nbsp; PE: spot &le; ORL &minus; (range &times; mult).</li>
+    <li><strong>Forced square-off</strong> (clock tick, handled in the main loop) &mdash; time &ge; <code>ORB_FORCED_EXIT</code> (15:15 IST default).</li>
   </ol>
+  <div class="note note-warn">
+    <strong>No bid-ask spread guard on ORB exits.</strong> The shared <code>MAX_BID_ASK_SPREAD_PTS</code> guard is <em>not</em> wired into <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; ORB exits fill on the next tick without a spread check (it is a Swing/Scalp/PA guard). Confirm the spread on illiquid expiries before going live.
+  </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -581,7 +598,8 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
       <tr><td>EOD forced exit</td><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Any open position is squared off at this time</td></tr>
       <tr><td>VIX gate</td><td><code>ORB_VIX_*</code></td><td>see &sect;9</td><td>Per-mode VIX regime filter</td></tr>
       <tr><td>Expiry-day-only</td><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
-      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Shared across modes &mdash; blocks entries/exits on wide spreads</td></tr>
+      <tr><td>Move-to-BE ratchet</td><td>&mdash;</td><td>auto</td><td>Spot SL ratchets to entry once spot moves 1&times; range in favour (see &sect;5)</td></tr>
+      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><strong>Not wired into ORB</strong> &mdash; the shared guard applies to Swing/Scalp/PA, not ORB entries/exits</td></tr>
     </tbody>
   </table>
 </section>
@@ -720,21 +738,24 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
   <h2><span class="section-icon icon-red">&#9888;</span> 13. Known Gaps &amp; Roadmap</h2>
 
   <ul>
-    <li><strong>Crash-recovery gap.</strong> <code>src/utils/positionPersist.js</code> does not yet handle ORB positions. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry and reconcile against broker positions on boot; ORB does not. If a process crash happens with an open ORB Live position, the position will be orphaned at the broker and not automatically squared off. <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into <code>orbPaper.js</code> + <code>orbLive.js</code> + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
-    <li><strong>Telegram per-strategy toggles not wired.</strong> ORB session-start / entry / exit / signal alerts currently fire under the master <code>TG_ENABLED</code> gate only. There are no <code>TG_ORB_*</code> toggles in <code>src/utils/notify.js</code>. Adding them mirrors the pattern used for Swing / Scalp / PA.</li>
+    <li><strong>Crash-recovery gap (still open).</strong> <code>src/utils/positionPersist.js</code> does not handle ORB positions. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry and reconcile against broker positions on boot; ORB does not. If a process crash happens with an open ORB Live position, the position will be orphaned at the broker and not automatically squared off. <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into <code>orbPaper.js</code> + <code>orbLive.js</code> + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
     <li><strong>No <code>STRONG_ONLY</code> standalone toggle.</strong> The strength classification exists (sweet-spot tiering), but only the VIX gate uses it. Other strategies have a stand-alone <code>*_STRONG_ONLY</code> env that blocks MARGINAL regardless of VIX; ORB does not. If you want STRONG-only behaviour without VIX, this would be a small additive change in <code>src/strategies/orb_breakout.js</code>.</li>
-    <li><strong>Spot SL not implemented.</strong> By design (see &sect;5), there is no spot-touch SL at the broken range edge. If the strategy turns out to need one (e.g. on consistently-wicky days where premium decay is masked by trend), add it as an optional gate &mdash; do not change the default behaviour.</li>
+    <li><strong>No bid-ask spread guard on ORB.</strong> <code>MAX_BID_ASK_SPREAD_PTS</code> is not wired into ORB entries or exits (see &sect;8 / &sect;10). On illiquid expiries an ORB exit can fill through a wide spread.</li>
   </ul>
 
+  <div class="note note-success">
+    <strong>Resolved since earlier editions:</strong> Telegram per-strategy toggles <em>are</em> now wired &mdash; <code>TG_ORB_STARTED</code> / <code>TG_ORB_ENTRY</code> / <code>TG_ORB_EXIT</code> / <code>TG_ORB_DAYREPORT</code> exist in <code>src/utils/notify.js</code> (ORB emits no signal-level alerts, so there is no <code>TG_ORB_SIGNALS</code>). And the &ldquo;no spot SL&rdquo; gap is gone &mdash; a spot SL at the opposite OR edge plus a move-to-BE ratchet are now live (see &sect;5).
+  </div>
+
   <div class="note note-info">
-    <strong>Tuning posture:</strong> ORB is currently in the active paper-trade data-collection window (through &sim;2026-06-02). During this window: additive logging only, no strategy tuning, no backtest-focused changes. Any of the above gaps should be addressed only as <em>additive</em> features (don't touch existing fill / exit / SL math). See <code>project_paper_trade_data_collection.md</code> for the rationale.
+    <strong>Tuning posture:</strong> the paper-data-collection no-tuning window was <strong>lifted on 2026-05-27</strong> &mdash; strategy tuning and bug fixes are in scope for ORB. Caveat: don't tune thresholds on trades generated <em>before</em> a bug fix; collect clean post-fix sessions first. The remaining gaps above can be addressed directly.
   </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; 2026-05-21
+  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; rechecked 2026-06-14 against orb_breakout.js / orbPaper.js
 </footer>
 
 </body>
