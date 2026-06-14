@@ -1369,7 +1369,7 @@
     </ul>
     <table style="margin-top:10px;">
       <tr><th>Setting</th><th>Value</th></tr>
-      <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code> (&#8377;) &mdash; shared Fyers paper pool</td></tr>
       <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
       <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
     </table>
@@ -1388,8 +1388,8 @@
     </ul>
     <table style="margin-top:10px;">
       <tr><th>Setting</th><th>Value</th></tr>
-      <tr><td><code>BACKTEST_FROM</code></td><td><code>2026-01-01</code></td></tr>
-      <tr><td><code>BACKTEST_TO</code></td><td><code>2026-03-28</code></td></tr>
+      <tr><td>Date range</td><td>entered per-run in the Backtest UI (no env key)</td></tr>
+      <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
       <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td></tr>
       <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td></tr>
       <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td></tr>
@@ -1417,7 +1417,7 @@
       <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket</td><td>Fyers WebSocket</td><td>Fyers History API</td></tr>
       <tr><td><strong>Order Execution</strong></td><td>Fyers (real money)</td><td>Simulated in-memory</td><td>Simulated + Greeks</td></tr>
       <tr><td><strong>Option Premium</strong></td><td>Live LTP quotes</td><td>Live LTP quotes</td><td>&delta;=0.55, &theta;=10/day</td></tr>
-      <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>SCALP_PAPER_CAPITAL</td><td>BACKTEST_CAPITAL</td></tr>
+      <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>FYERS_INV_AMOUNT</td><td>BACKTEST_CAPITAL</td></tr>
       <tr><td><strong>Charges</strong></td><td>Real broker</td><td>Estimated</td><td>Full simulation</td></tr>
       <tr><td><strong>VIX Filter</strong></td><td>Live polling</td><td>Live polling</td><td>Historical candles</td></tr>
       <tr><td><strong>Persistence</strong></td><td>Disk (crash safe)</td><td>Disk (restart safe)</td><td>N/A</td></tr>
@@ -1467,7 +1467,7 @@
     <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest entry time (HH:MM IST)</td></tr>
     <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>No new entries after this time (HH:MM IST)</td></tr>
     <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on NIFTY weekly expiry day</td></tr>
-    <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for paper trading (&#8377;)</td></tr>
+    <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (&#8377;) &mdash; shared Fyers pool (Scalp/PA/ORB/Straddle)</td></tr>
   </tbody>
 </table>
 
