@@ -194,8 +194,8 @@
   <h1>Opening Range Breakout (ORB)</h1>
   <p class="subtitle">Single-Leg CE / PE Breakout of the First 15-Minute Range &mdash; Fyers Orders</p>
   <div class="meta">
-    <span><span class="badge badge-orange">v4.6.0</span></span>
-    <span>Rechecked: 2026-06-14</span>
+    <span><span class="badge badge-orange">v4.6.1</span></span>
+    <span>Rechecked: 2026-06-15</span>
     <span>NIFTY Options &mdash; 1 Trade / Day (default) &mdash; Premium % + Spot OR-Edge SL</span>
   </div>
 </header>
@@ -640,6 +640,7 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
     <tbody>
       <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB sidebar group AND Settings section. When off, both are hidden.</td></tr>
       <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for ORB Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
+      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; keeps ORB in dry-run (log only, no real order) even when the global <code>LIVE_HARNESS_DRY_RUN</code> is off. Lets you take Swing/etc. live while ORB stays simulated.</td></tr>
       <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow ORB entries on weekly expiry day (Tuesday)</td></tr>
     </tbody>
   </table>
@@ -726,7 +727,7 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
     <tbody>
       <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Textbook 1 trade/day &mdash; raise only if you accept the chop</td></tr>
       <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>ORB daily loss kill-switch (&#8377;)</td></tr>
-      <tr><td><code>ORB_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for ORB paper trading (&#8377;)</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting capital for ORB paper trading (&#8377;) &mdash; shared Fyers-side investment amount, not an ORB-specific key</td></tr>
     </tbody>
   </table>
 </section>
@@ -750,12 +751,16 @@ Locked-in profit captured. Trade no longer at risk of closing red.</code></pre>
   <div class="note note-info">
     <strong>Tuning posture:</strong> the paper-data-collection no-tuning window was <strong>lifted on 2026-05-27</strong> &mdash; strategy tuning and bug fixes are in scope for ORB. Caveat: don't tune thresholds on trades generated <em>before</em> a bug fix; collect clean post-fix sessions first. The remaining gaps above can be addressed directly.
   </div>
+
+  <div class="note note-warn">
+    <strong>(2026-06-15) verification recheck.</strong> Re-verified the full guide against <code>orb_breakout.js</code> / <code>orbPaper.js</code> / <code>settings.js</code>. Two corrections made: (1) the starting-capital env key is <code>FYERS_INV_AMOUNT</code>, not the previously-listed <code>ORB_PAPER_CAPITAL</code> (which exists nowhere in the codebase); (2) added the <code>ORB_LIVE_DRY_RUN</code> per-strategy DRY-RUN override (a real Settings key) to the config reference. All other rules, thresholds, defaults, gate pipeline, sweet-spot tiering, SL/target/lock-in math, and exit priority verified accurate.
+  </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; rechecked 2026-06-14 against orb_breakout.js / orbPaper.js
+  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v4.6.1 &nbsp;|&nbsp; rechecked 2026-06-15 against orb_breakout.js / orbPaper.js
 </footer>
 
 </body>

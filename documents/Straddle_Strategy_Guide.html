@@ -192,7 +192,7 @@
   <p class="subtitle">Paired CE + PE Buy on BB-Squeeze &mdash; Net-Debit Risk, Combined-Premium Exit</p>
   <div class="meta">
     <span><span class="badge badge-pink">v4.6.0</span></span>
-    <span>Generated: 2026-05-21</span>
+    <span>Generated: 2026-05-21 &middot; Rechecked: 2026-06-15</span>
     <span>NIFTY Options &mdash; Intraday Volatility Expansion</span>
   </div>
 </header>
@@ -273,12 +273,13 @@
   </table>
 
   <h3>Squeeze Math</h3>
-  <pre><code>bbWidth(t)    = bbUpper(t) - bbLower(t)
-avgWidth      = SMA(bbWidth, STRADDLE_BB_AVG_LOOKBACK)
+  <pre><code>bbWidth(t)    = (bbUpper(t) &minus; bbLower(t)) / bbMiddle(t)   &larr; NORMALISED bandwidth
+avgWidth      = mean( bbWidth over the previous STRADDLE_BB_AVG_LOOKBACK CLOSED bars )
 
-squeeze_fires = (bbWidth(t) / avgWidth) &le; STRADDLE_SQUEEZE_RATIO
+squeeze_fires = bbWidth(t) &le; avgWidth &times; STRADDLE_SQUEEZE_RATIO
 
-With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar average.</code></pre>
+With defaults: squeeze fires when current normalised BB width is &le; 85% of the 20-bar average.</code></pre>
+  <p>Two implementation details that matter for tuning: the width is <strong>normalised</strong> by the middle band (so it's a percentage-of-price bandwidth, not raw points), and the average excludes the current bar &mdash; it is computed over the <em>previous</em> <code>STRADDLE_BB_AVG_LOOKBACK</code> closed bars (<code>bb.slice(-1 - lookback, -1)</code> in <code>straddle_volatility.js</code>).</p>
 
   <h3>What the squeeze looks like in an entry-reason string</h3>
   <pre><code>BB squeeze | BBwidth=0.0023 avg=0.0028 | VIX=15.4 [STRONG]</code></pre>
@@ -286,9 +287,10 @@ With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar ave
 
   <h3>Skip States</h3>
   <ul>
-    <li><code>"BB indicator not ready"</code> &mdash; warming up, fewer than <code>STRADDLE_BB_PERIOD</code> candles available.</li>
-    <li><code>"Warming up (X/25 candles for BB squeeze detection)"</code> &mdash; have BB but not enough lookback history to compute the average yet.</li>
+    <li><code>"Warming up (X/25 candles for BB squeeze detection)"</code> &mdash; fewer than the fixed minimum of <strong>25</strong> spot candles are available; the signal is short-circuited before BB is even computed.</li>
+    <li><code>"BB indicator not ready"</code> &mdash; have &ge;25 candles but the <code>technicalindicators</code> BB calc returned an empty series.</li>
     <li><code>"No trigger — BB width X vs avg Y (squeeze&lt;0.85 of avg), VIX Z &gt;= 14 cheap-threshold, force=false"</code> &mdash; primary skip path. Surfaces all three gating conditions at once so the operator can see exactly why nothing fired.</li>
+    <li><code>"VIX 19.0 &gt; 18 — elevated regime, only STRONG signals allowed (got MARGINAL)"</code> &mdash; a squeeze fired but VIX is in the STRONG-only band and the signal classified as MARGINAL.</li>
   </ul>
 </section>
 
@@ -298,25 +300,36 @@ With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar ave
 <section class="section blue" id="vix">
   <h2><span class="section-icon icon-blue">&#9889;</span> 3. Two Entry Paths &mdash; Squeeze vs Cheap-VIX</h2>
 
-  <p>An entry can fire via two independent paths. <strong>Either is sufficient</strong> on its own &mdash; the strategy ORs the two paths, not ANDs.</p>
+  <p>An entry can fire via <strong>three independent triggers</strong>, evaluated in priority order in <code>straddle_volatility.js</code>: <code>FORCED_EVENT</code> first, then <code>BB_SQUEEZE</code>, then <code>LOW_VIX_CHEAP</code>. <strong>Any one is sufficient</strong> &mdash; the strategy ORs them, not ANDs. The chosen trigger is recorded on the trade so analysis can attribute P&amp;L by entry path.</p>
 
   <table>
-    <thead><tr><th>Path</th><th>Condition</th><th>Why</th></tr></thead>
+    <thead><tr><th>Priority</th><th>Trigger</th><th>Condition</th><th>Why</th></tr></thead>
     <tbody>
       <tr>
-        <td><strong>1. BB Squeeze</strong></td>
+        <td>1</td>
+        <td><strong>FORCED_EVENT</strong></td>
+        <td><code>STRADDLE_FORCE_ENTRY_NEXT == true</code></td>
+        <td>One-shot operator override for event days (see &sect;7). Bypasses the BB/VIX/STRONG-only gates but still respects the entry window and daily cap.</td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><strong>BB_SQUEEZE</strong></td>
         <td><code>bbWidth &le; STRADDLE_SQUEEZE_RATIO &times; avgWidth</code></td>
         <td>Realised volatility has compressed. Straddle plays the mean-reversion (expansion).</td>
       </tr>
       <tr>
-        <td><strong>2. Cheap VIX</strong></td>
+        <td>3</td>
+        <td><strong>LOW_VIX_CHEAP</strong></td>
         <td><code>VIX &lt; STRADDLE_VIX_CHEAP</code> (default <code>14</code>)</td>
         <td>Implied volatility is at a cheap floor &mdash; option premiums are unusually low. Even without a BB squeeze, the asymmetric R:R of a long straddle becomes attractive.</td>
       </tr>
     </tbody>
   </table>
 
-  <p>The two-path design is deliberate. BB-squeeze captures <em>realised</em> compression but can lag &mdash; by the time the squeeze fires, the move may already be underway. The cheap-VIX path catches <em>implied</em> compression &mdash; you're buying volatility while it's cheap by historical standards, before any structural compression has shown up in the BB envelope.</p>
+  <p>The multi-trigger design is deliberate. BB-squeeze captures <em>realised</em> compression but can lag &mdash; by the time the squeeze fires, the move may already be underway. The cheap-VIX path catches <em>implied</em> compression &mdash; you're buying volatility while it's cheap by historical standards, before any structural compression has shown up in the BB envelope. The forced path covers known scheduled events the indicators can't see in advance.</p>
+
+  <h3>Signal Strength (STRONG vs MARGINAL)</h3>
+  <p>Every fired signal is classified and the label is stored on the trade record (<code>signalStrength</code>). It is <strong>STRONG</strong> when any of: (a) a <em>deep</em> squeeze &mdash; current bandwidth &le; <code>0.75 &times; avg</code> (note: tighter than the <code>0.85</code> trigger ratio); (b) VIX is very low (<code>&lt; 12</code>); or (c) the entry was a forced event override. Otherwise it is <strong>MARGINAL</strong>. This label drives the <code>STRADDLE_VIX_STRONG_ONLY</code> gate below.</p>
 
   <h3>VIX Gating (independent of cheap-VIX path)</h3>
   <p>Separately, ALL straddle entries are subject to a VIX <em>upper</em> bound. If VIX is too high, premiums are pumped and the long-straddle R:R deteriorates.</p>
@@ -326,7 +339,7 @@ With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar ave
     <tbody>
       <tr><td><code>STRADDLE_VIX_ENABLED</code></td><td><code>true</code></td><td>Master toggle for the VIX upper bound. Defaults <strong>on</strong> &mdash; the strategy is most exposed to VIX of all five.</td></tr>
       <tr><td><code>STRADDLE_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, all straddle entries are blocked &mdash; premiums pumped, poor R:R.</td></tr>
-      <tr><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between 18 and 22, only STRONG-classified squeeze triggers fire. MARGINAL squeezes blocked.</td></tr>
+      <tr><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>When VIX &gt; this (and &le; MAX_ENTRY), only STRONG-classified signals fire; MARGINAL ones are blocked. Forced-event entries bypass this gate.</td></tr>
       <tr><td><code>STRADDLE_VIX_CHEAP</code></td><td><code>14</code></td><td>Below this VIX, the cheap-VIX path fires (additionally to BB-squeeze).</td></tr>
     </tbody>
   </table>
@@ -373,8 +386,11 @@ With defaults: squeeze fires when current BB width is &le; 85% of the 20-bar ave
   <p>In Live mode, the two legs are placed <strong>sequentially</strong> via the Fyers broker, not as a bracket. CE is placed first; on confirmation, PE is placed. The sequence is intentional &mdash; market-orders take ~50&ndash;200 ms each via the Fyers API, so doing them serially gives a clean per-leg confirmation rather than racing them.</p>
 
   <div class="note note-danger">
-    <strong>Partial-fill protection:</strong> if the PE order fails (broker error, rejection, network) after the CE order has filled, the strategy <strong>does not auto-unwind</strong> the CE leg. Instead it logs an error and sends a Telegram alert that you have a one-sided position open. <em>You</em> decide whether to unwind manually or hold &mdash; the strategy will continue to track the CE as a long call until you handle it. This is intentionally conservative; an auto-unwind path could create double-slippage on a fast-moving market.
+    <strong>Partial-fill protection:</strong> if the PE order fails (broker error, rejection, network) after the CE order has filled, the strategy <strong>does not auto-unwind</strong> the CE leg. Instead it logs a <code>🚨 PARTIAL FILL</code> warning and sends a Telegram alert that you have a one-sided position open. <em>You</em> decide whether to unwind manually or hold. This is intentionally conservative; an auto-unwind path could create double-slippage on a fast-moving market. (If the CE order itself fails, the pair is simply abandoned with no leg open.)
   </div>
+
+  <h3>Manual Entry Button</h3>
+  <p>Both <code>/straddle-paper</code> and <code>/straddle-live</code> expose a <code>POST /manualEntry</code> endpoint (a button on the status page) that opens a paired ATM CE+PE <strong>right now</strong>, bypassing the BB-squeeze / VIX / entry-window triggers entirely. It is intended for discretionary event-day entries (RBI, results). It reuses the same fill path as an automatic entry (full parity), and refuses if the session isn't running or a pair is already open. Unlike <code>STRADDLE_FORCE_ENTRY_NEXT</code> (which waits for the next candle close inside the window), the manual button fires immediately.</p>
 
   <h3>Entry-Time Constraints</h3>
   <table>
@@ -404,16 +420,16 @@ pnl(t)         = (combined(t) &minus; netDebit) &times; lot_qty
 pnl_pct(t)     = (combined(t) / netDebit) &minus; 1</code></pre>
 
   <h3>Worked Example</h3>
-  <pre><code>NIFTY at 24,000. ATM = 24000. Lot size = 65, multiplier = 2.
+  <pre><code>NIFTY at 24,000. ATM = 24000.
+Lot size = 65 (NIFTY_LOT_SIZE), LOT_MULTIPLIER = 1 (default) → qty = 65.
 
 CE entry: 100 &#8377; per option
 PE entry: 95 &#8377; per option
 netDebit = 100 + 95 = 195 &#8377;
-qty      = 65 &times; 2 = 130
 
 NIFTY moves to 24,100 (CE = 145, PE = 60):
 combined  = 145 + 60 = 205 &#8377;
-pnl       = (205 &minus; 195) &times; 130 = +&#8377;1,300
+pnl       = (205 &minus; 195) &times; 65 = +&#8377;650
 pnl_pct   = (205 / 195) - 1 = +5.1%
 
 The position is profitable even though PE has lost 35 &#8377;/leg, because CE has gained 45 &#8377;/leg.
@@ -421,10 +437,11 @@ This is the volatility-expansion thesis playing out: a unidirectional move that'
 
 If NIFTY had stayed flat at 24,000 for two hours instead:
 CE = 93, PE = 88, combined = 181 (theta decay on both)
-pnl = (181 &minus; 195) &times; 130 = &minus;&#8377;1,820
+pnl = (181 &minus; 195) &times; 65 = &minus;&#8377;910
 pnl_pct = -7.2%
 
-This is the failure mode: chop kills both legs simultaneously via theta.</code></pre>
+This is the failure mode: chop kills both legs simultaneously via theta.
+(Scale every &#8377; figure by LOT_MULTIPLIER if you run more than one lot.)</code></pre>
 
   <div class="note note-warn">
     <strong>Why combined-premium tracking matters:</strong> tracking each leg independently can produce misleading signals (e.g. "the PE is at &minus;30%, exit it"). On a long straddle, the PE losing premium <em>while CE gains more</em> is the desired outcome. Both legs must be evaluated together.
@@ -524,13 +541,15 @@ This is the failure mode: chop kills both legs simultaneously via theta.</code><
 
   <h3>Max-Loss-Per-Pair Worked Example</h3>
   <pre><code>NIFTY at 24,000. CE entry 100 + PE entry 95 = netDebit 195 &#8377;.
-Lot size 65 &times; LOT_MULTIPLIER 2 = qty 130.
+Lot size 65 &times; LOT_MULTIPLIER 1 (default) = qty 65.
 
-Total capital committed = 195 &times; 130 = &#8377;25,350
-Max loss (SL at &minus;30%) = 195 &times; 0.30 &times; 130 = &#8377;7,605
+Total capital committed = 195 &times; 65 = &#8377;12,675
+Max loss (SL at &minus;30%) = 195 &times; 0.30 &times; 65 &asymp; &#8377;3,803
 
-With STRADDLE_MAX_DAILY_LOSS = 3000 &#8377;, the daily kill-switch will fire
-BEFORE the per-trade SL on a typical NIFTY straddle. The per-trade SL is
+With STRADDLE_MAX_DAILY_LOSS = 3000 &#8377;, the daily kill-switch fires at
+roughly the same level as the per-trade SL on a typical 1-lot NIFTY straddle.
+At higher LOT_MULTIPLIER the per-trade SL loss grows linearly while the daily
+kill-switch stays fixed, so the daily kill fires first. The per-trade SL is
 mostly a backstop for unusually large overnight gaps when a trade
 straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pre>
 </section>
@@ -545,7 +564,7 @@ straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pr
   <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated paired fills. Canonical decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/straddle_paper_trades.json</code>; per-day JSONL audit at <code>~/trading-data/trades/straddle_paper_trades_YYYY-MM-DD.jsonl</code> (seeded with a settings snapshot at session start). Each entry record includes both legs (<code>pos.ce</code> + <code>pos.pe</code>), the net debit, and combined-premium tracking over the life of the trade.</p>
 
   <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/straddle-live</code></h3>
-  <p>Real Fyers orders, both legs placed sequentially. <strong>Double-gated</strong>: both <code>STRADDLE_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required. With DRY-RUN on (default), the broker calls are logged but no real orders are placed. Switch DRY-RUN off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+  <p>Real Fyers orders, both legs placed sequentially. <strong>Double-gated</strong>: both <code>STRADDLE_LIVE_ENABLED=true</code> AND DRY-RUN off are required. Dry-run is active if <em>either</em> the global <code>LIVE_HARNESS_DRY_RUN</code> OR the per-strategy <code>STRADDLE_LIVE_DRY_RUN</code> is on (the shared <code>liveDryRun.js</code> gate &mdash; overrides can only add safety). With DRY-RUN on (default), the broker calls are logged but no real orders are placed. Switch DRY-RUN off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
 
   <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/straddle-backtest</code></h3>
   <p>Date-range backtest replaying historical NIFTY candles + option chains. The backtest records option LTP polls during the run so Replay can reproduce the same pair trades deterministically.</p>
@@ -565,7 +584,8 @@ straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pr
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>STRADDLE_MODE_ENABLED</code></td><td><code>true</code></td><td>Show Straddle sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>STRADDLE_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for paired-leg Fyers live orders. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
+      <tr><td><code>STRADDLE_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for paired-leg Fyers live orders. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> (or this strategy's own dry-run override off) for real orders.</td></tr>
+      <tr><td><code>STRADDLE_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run override (via shared <code>liveDryRun.js</code>). When <code>true</code>, Straddle Live stays log-only even if the global <code>LIVE_HARNESS_DRY_RUN</code> is off. Overrides can only <em>add</em> safety, never remove it.</td></tr>
       <tr><td><code>STRADDLE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow straddle entries on weekly-expiry day (Tuesday)</td></tr>
     </tbody>
   </table>
@@ -619,7 +639,18 @@ straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pr
       <tr><td><code>STRADDLE_FORCE_ENTRY_NEXT</code></td><td><code>false</code></td><td>One-shot override &mdash; force an entry on the next candle regardless of BB/VIX. Auto-resets.</td></tr>
       <tr><td><code>STRADDLE_MAX_DAILY_PAIRS</code></td><td><code>1</code></td><td>Cap on straddle pair entries per day</td></tr>
       <tr><td><code>STRADDLE_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Straddle daily loss kill-switch (&#8377;)</td></tr>
-      <tr><td><code>STRADDLE_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for straddle paper trading (&#8377;)</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Shared Fyers paper-capital pool (Scalp + PA + ORB + Straddle). Display-only starting capital &mdash; running balance = pool + all-time paper P&amp;L. The old per-strategy <code>STRADDLE_PAPER_CAPITAL</code> key was removed. Live uses <code>STRADDLE_LIVE_CAPITAL</code> &rarr; falls back to <code>FYERS_INV_AMOUNT</code>.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Telegram alert toggles</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>TG_STRADDLE_STARTED</code></td><td><code>true</code></td><td>Alert when a Straddle paper/live session starts</td></tr>
+      <tr><td><code>TG_STRADDLE_ENTRY</code></td><td><code>true</code></td><td>Alert on every Straddle pair entry (paper + live)</td></tr>
+      <tr><td><code>TG_STRADDLE_EXIT</code></td><td><code>true</code></td><td>Alert on every Straddle pair exit (paper + live)</td></tr>
+      <tr><td><code>TG_STRADDLE_DAYREPORT</code></td><td><code>true</code></td><td>Day summary (trades, win rate, P&amp;L) when the session stops</td></tr>
     </tbody>
   </table>
 </section>
@@ -632,14 +663,18 @@ straddles a session boundary (extremely rare with intraday MAX_HOLD).</code></pr
 
   <ul>
     <li><strong>Crash-recovery gap.</strong> <code>src/utils/positionPersist.js</code> does not yet handle Straddle pairs. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry and reconcile against broker positions on boot; Straddle does not. If a process crash happens with an open Straddle Live pair, <strong>both legs</strong> will be orphaned at the broker and not automatically squared off. <strong>Mitigation:</strong> add <code>saveStraddlePosition()</code> / <code>loadStraddlePosition()</code> / <code>clearStraddlePosition()</code> helpers that persist both legs together (one JSON file with <code>{ ce: {...}, pe: {...}, netDebit, entryTime }</code>), and wire them into <code>straddlePaper.js</code> + <code>straddleLive.js</code> + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended Straddle sessions.</li>
-    <li><strong>Auto-unwind on partial fill not implemented.</strong> When the CE fills but PE fails (or vice versa), the strategy logs an alert but leaves you with a one-sided position. An optional auto-unwind path could try to cancel/exit the filled leg if the second leg fails &mdash; trade-off is potential double-slippage during a fast move. Decision deferred to post-data-collection.</li>
-    <li><strong>Telegram per-strategy toggles not wired.</strong> Straddle session-start / entry / exit / signal alerts currently fire under the master <code>TG_ENABLED</code> gate only. There are no <code>TG_STRADDLE_*</code> toggles in <code>src/utils/notify.js</code>. Adding them mirrors the pattern used for Swing / Scalp / PA.</li>
-    <li><strong>STRONG vs MARGINAL classification is implicit.</strong> The VIX <code>STRONG_ONLY</code> gate references signal strength, but the strategy does not yet attach an explicit STRONG/MARGINAL label to each entry record (other strategies do). Add the classification field to the entry log so post-window analysis can attribute P&amp;L by strength bucket.</li>
-    <li><strong>No per-side leg-specific exit logic.</strong> By design (see &sect;6), exits fire only on the combined premium. If you want to add a per-leg exit (e.g. "if PE has lost 80%, close it and let CE run as a directional bet"), it's an additive change in <code>src/strategies/straddle_volatility.js</code>. The current design intentionally avoids this complexity.</li>
+    <li><strong>Auto-unwind on partial fill not implemented.</strong> When the CE fills but PE fails, the strategy logs a <code>🚨 PARTIAL FILL</code> alert but leaves you with a one-sided position. An optional auto-unwind path could try to cancel/exit the filled leg if the second leg fails &mdash; trade-off is potential double-slippage during a fast move.</li>
+    <li><strong>No per-side leg-specific exit logic.</strong> By design (see &sect;6), exits fire only on the combined premium &mdash; the exit checks live in <code>_checkExits()</code> in <code>src/routes/straddlePaper.js</code> (mirrored in <code>straddleLive.js</code>), not in the strategy file. If you want to add a per-leg exit (e.g. "if PE has lost 80%, close it and let CE run as a directional bet"), it's an additive change in those routes. The current design intentionally avoids this complexity.</li>
+  </ul>
+
+  <h4 style="margin-top:18px;">Resolved since the previous revision</h4>
+  <ul>
+    <li><strong>Telegram per-strategy toggles &mdash; now wired.</strong> <code>TG_STRADDLE_{STARTED,ENTRY,EXIT,DAYREPORT}</code> exist (all default <code>true</code>), routed through the <code>STRADDLE</code> group in <code>src/utils/notify.js</code>. Straddle is also included in the consolidated EOD report, with leg-to-pair collapsing so a winning pair counts as one win (not 1 win + 1 loss).</li>
+    <li><strong>STRONG / MARGINAL classification &mdash; now explicit.</strong> Each entry record carries <code>signalStrength</code> (see &sect;3), so post-window analysis can attribute P&amp;L by strength bucket.</li>
   </ul>
 
   <div class="note note-info">
-    <strong>Tuning posture:</strong> Straddle is currently in the active paper-trade data-collection window (through &sim;2026-06-02). During this window: additive logging only, no strategy tuning, no backtest-focused changes. Any of the above gaps should be addressed only as <em>additive</em> features (don't touch existing entry / fill / exit math). See <code>project_paper_trade_data_collection.md</code> for the rationale.
+    <strong>Tuning posture (updated 2026-06-15):</strong> the paper-trade data-collection no-tuning window was <strong>lifted early (2026-05-27)</strong>. Strategy tuning and bug fixes are now in scope for Straddle. Caveat: trades produced <em>before</em> a bug fix came from buggy code &mdash; collect clean post-fix sessions before tuning thresholds on them. The crash-recovery and auto-unwind gaps above remain open.
   </div>
 </section>
 

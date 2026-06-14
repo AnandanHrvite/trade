@@ -371,7 +371,7 @@
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
   <div class="sub">V6.2 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
-  <div class="version">V6.2 (rechecked 2026-06-14) &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; Profit Lock + Hard Stop + BB re-entry + PSAR-Flip Exit</div>
+  <div class="version">V6.2 (rechecked 2026-06-15) &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; Profit Lock + Hard Stop + BB re-entry + PSAR-Flip Exit</div>
   <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI (70/40) &bull; VIX Filter &bull; Profit Lock &bull; Wide Hard Stop &bull; BB Re-Entry &bull; PSAR-Flip Exit</div>
 </div>
 
@@ -382,11 +382,11 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">now</span> Current State (V6.2) &mdash; the authoritative summary</h2>
 <div class="card card-green">
-  <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>scalp_bb_cpr.js</code> + <code>scalpPaper.js</code> on 2026-06-14.</p>
+  <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>scalp_bb_cpr.js</code> + <code>scalpPaper.js</code> on 2026-06-14. <em>(2026-06-15) verification recheck: corrected the BB re-entry exit &mdash; the <strong>primary</strong> stop runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>), with a candle-close BB re-entry only as a backstop; and re-ordered the exit stack to match runtime (per-tick BB band touch &rarr; hard stop &rarr; profit lock, then candle-close BB re-entry &rarr; PSAR flip). Earlier copy described BB re-entry as candle-close only.</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (40). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
     <li><strong>Initial SL = PSAR value at entry</strong> &mdash; no clamp, <strong>no trail</strong>, not an intra-tick stop. Display + risk-sizing only.</li>
-    <li><strong>Exit stack:</strong> (1) per-tick <strong>profit lock</strong> in spot points &mdash; arm at <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>SCALP_PROFIT_LOCK_PCT</code> (50%), ratchets up; (2) per-tick <strong>wide hard stop</strong> <code>SCALP_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) candle-close <strong>BB re-entry</strong> (<code>SCALP_BB_REENTRY_EXIT</code>, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>=10); (4) candle-close <strong>PSAR flip</strong>; (5) EOD / daily-loss / max-trades / per-side SL cooldown.</li>
+    <li><strong>Exit stack:</strong> per-tick checks (evaluated every tick, in order) &mdash; (1) <strong>BB re-entry / band touch</strong> (<code>SCALP_BB_REENTRY_EXIT</code>): exit the instant spot crosses back through the band, armed only after the breakout extends <code>SCALP_BB_REENTRY_ARM_PTS</code> (10) past it; (2) <strong>wide hard stop</strong> <code>SCALP_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) <strong>profit lock</strong> in spot points &mdash; arm at <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>SCALP_PROFIT_LOCK_PCT</code> (50%), ratchets up. Then on each candle close &mdash; (4) <strong>candle-close BB re-entry</strong> (close back inside the band, no arm guard) and (5) <strong>PSAR flip</strong>. Plus EOD / daily-loss / max-trades / per-side SL cooldown.</li>
     <li><strong>Optional trend source:</strong> <code>SCALP_USE_SUPERTREND</code> (off) swaps PSAR for SuperTrend(10,3) for direction, the entry SL line, and the flip exit.</li>
     <li><strong>No CPR / VWAP / EMA</strong> in the logic &mdash; the <code>scalp_bb_cpr.js</code> filename is vestigial. The hard stop coexists with the profit lock (the reverted &ldquo;V6.3&rdquo; was a <em>fixed-points trailing stop replacing the lock</em>, not this cap).</li>
   </ul>
@@ -402,7 +402,7 @@
     <li><strong>Why:</strong> the no-clamp PSAR SL made "risk" huge (often 100&ndash;400 pts), so the break-even trigger (0.7 &times; risk) almost never armed &mdash; winners round-tripped to the candle-close PSAR flip (replay: a +&#8377;650 peak gave back to &minus;&#8377;1,187).</li>
     <li><strong>Profit lock (the only intra-tick exit, spot POINTS).</strong> Once the peak favourable spot move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak. The floor <strong>ratchets up</strong>: peak 100pts &rarr; lock 50pts, peak 200pts &rarr; lock 100pts. Points-based, so it works even on spot-proxy sessions. Removed <code>SCALP_BREAKEVEN_TRIGGER_R</code> / <code>SCALP_BREAKEVEN_OFFSET_PTS</code>.</li>
     <li><strong>Far-PSAR entry filter.</strong> New <code>SCALP_MAX_ENTRY_SL_PTS</code> (default 50): skip entries where PSAR sits farther than N pts from close. A freshly-flipped SAR can be 100s of pts away &rarr; uncapped risk; this bounds it without a hard SL clamp.</li>
-    <li><strong>BB re-entry exit (failed breakout).</strong> New <code>SCALP_BB_REENTRY_EXIT</code> (default on): on candle close, if price closes back inside the band the breakout has failed &rarr; exit immediately (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>). Cuts loss bleed before the slower PSAR flip.</li>
+    <li><strong>BB re-entry exit (failed breakout).</strong> New <code>SCALP_BB_REENTRY_EXIT</code> (default on): when price crosses back inside the band the breakout has failed &rarr; exit immediately (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>). The primary version runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>=10 of breakout) so a one-candle V-reversal exits at the band line; a candle-close check (no arm guard) backstops it. Cuts loss bleed before the slower PSAR flip.</li>
     <li>Exit reasons are now <code>Profit lock</code> / <code>BB re-entry</code> / <code>PSAR flip</code> / <code>EOD square-off</code>. Applied across paper (canonical), live, backtest, replay.</li>
   </ul>
 </div>
@@ -572,7 +572,7 @@
 
 <div class="card card-purple">
   <h4 class="purple">Core Concept</h4>
-  <p>When a candle closes above the upper Bollinger Band with the PSAR below the close and RSI confirming bullish momentum (&gt; 70), buy a NIFTY ATM Call option. When a candle closes below the lower band with the PSAR above the close and bearish RSI (&lt; 40), buy an ATM Put option. The initial SL is the PSAR value at entry (no clamp, no trail — display/sizing only); the position is then managed by a per-tick <strong>profit lock</strong> (banks favourable spot points, ratchets up), a wide per-tick <strong>hard stop</strong> (catastrophic cap), and candle-close <strong>BB re-entry</strong> + <strong>PSAR-flip</strong> exits.</p>
+  <p>When a candle closes above the upper Bollinger Band with the PSAR below the close and RSI confirming bullish momentum (&gt; 70), buy a NIFTY ATM Call option. When a candle closes below the lower band with the PSAR above the close and bearish RSI (&lt; 40), buy an ATM Put option. The initial SL is the PSAR value at entry (no clamp, no trail — display/sizing only); the position is then managed by a per-tick <strong>BB re-entry / band touch</strong> (failed breakout, armed after the breakout extends past the band), a wide per-tick <strong>hard stop</strong> (catastrophic cap), a per-tick <strong>profit lock</strong> (banks favourable spot points, ratchets up), and a candle-close <strong>PSAR-flip</strong> (with a candle-close BB re-entry backstop).</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -935,26 +935,30 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">07</span> Exit Logic &mdash; Priority Ordered</h2>
 
+<div class="highlight" style="margin-bottom:14px;">
+  <p style="font-size:0.85rem;">The exit checks split into two passes. <strong>On every tick</strong> (while in position) the engine runs, in order: BB re-entry / band touch &rarr; hard stop &rarr; profit lock &rarr; EOD. <strong>On each candle close</strong> it then runs: candle-close BB re-entry &rarr; PSAR flip. The per-tick pass fires first, so most exits resolve intra-bar; the candle-close pass backstops trades that survive the bar.</p>
+</div>
+
 <div class="exit-priority">
   <div class="exit-item">
     <div class="exit-badge p1">P1</div>
     <div>
-      <strong style="color:var(--yellow);">PSAR Flip (candle close)</strong>
-      <p style="font-size:0.85rem;">On each candle close, if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. Always active &mdash; handles trend runners beyond the profit lock.</p>
+      <strong style="color:var(--red);">BB Re-Entry / Band Touch (per tick &mdash; primary structural stop)</strong>
+      <p style="font-size:0.85rem;">The breakout has failed the instant spot crosses back through the band (CE: spot below BB upper; PE: spot above BB lower). Runs <strong>per-tick</strong> (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. <strong>Arming guard:</strong> only arms once the breakout has extended &ge; <code>SCALP_BB_REENTRY_ARM_PTS</code> (default 10) past the band, so a fresh entry sitting right at the band is not knocked out by an immediate noise wick. Gated by <code>SCALP_BB_REENTRY_EXIT</code> (default on); band from completed candles.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
-      <strong style="color:var(--orange);">Profit Lock + Hard Stop (the per-tick exits)</strong>
-      <p style="font-size:0.85rem;">Per tick, both spot-points based. <strong>Profit lock</strong> (upside): once the peak favourable move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak (floor ratchets up). <strong>Hard stop</strong> (downside): exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 30) against entry &mdash; a wide catastrophic cap that only clips deep failed-fade excursions. <code>0</code> disables each.</p>
+      <strong style="color:var(--orange);">Hard Stop + Profit Lock (per tick)</strong>
+      <p style="font-size:0.85rem;">Per tick, both spot-points based. <strong>Hard stop</strong> (downside, checked first): exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 30) against entry &mdash; a wide catastrophic cap that only clips deep failed-fade excursions. <strong>Profit lock</strong> (upside): once the peak favourable move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak (floor ratchets up). <code>0</code> disables each.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p3">P3</div>
     <div>
-      <strong style="color:var(--yellow);">BB Re-Entry (failed breakout)</strong>
-      <p style="font-size:0.85rem;">On candle close, if price has closed back inside the band the breakout that triggered the entry has failed &rarr; exit. CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>. <code>SCALP_BB_REENTRY_EXIT</code> (default on). Cuts loss bleed before the PSAR flip.</p>
+      <strong style="color:var(--yellow);">Candle-Close BB Re-Entry + PSAR Flip</strong>
+      <p style="font-size:0.85rem;">On candle close, first the <strong>BB re-entry</strong> backstop: if price closed back inside the band the breakout failed &rarr; exit (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>; no arm guard on this candle-close path). Then the <strong>PSAR flip</strong>: if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. The flip handles trend runners beyond the profit lock. (Both follow SuperTrend instead when <code>SCALP_USE_SUPERTREND</code> is on.)</p>
     </div>
   </div>
   <div class="exit-item">
@@ -1033,7 +1037,7 @@
 
 <div class="card card-yellow">
   <h4 style="color:var(--yellow);">Bank small scalp profits; let runners ride</h4>
-  <p>No percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. The profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor. On the downside a <strong>wide hard stop</strong> (<code>SCALP_STOP_LOSS_PTS</code>, default 30) caps the catastrophic failed-fade losses without touching the small scalps. Both are points-based, so they are independent of option pricing. The candle-close BB re-entry / PSAR flip handle the rest.</p>
+  <p>No percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. The profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor. On the downside a <strong>wide hard stop</strong> (<code>SCALP_STOP_LOSS_PTS</code>, default 30) caps the catastrophic failed-fade losses without touching the small scalps. Both are points-based, so they are independent of option pricing. The per-tick BB re-entry (band touch) and the candle-close PSAR flip handle the rest.</p>
 </div>
 
 <table>
@@ -1151,10 +1155,10 @@
       <div class="flow-arrow-label" style="color:var(--green); font-weight:700;">YES</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-box process" style="font-size:0.75rem;">
-        Profit lock give-back? (per tick)<br/>
+        BB re-entry / band touch? (per tick)<br/>
         Hard stop hit? (per tick)<br/>
-        BB re-entry? (candle close)<br/>
-        PSAR flip reversal? (candle close)<br/>
+        Profit lock give-back? (per tick)<br/>
+        BB re-entry / PSAR flip? (candle close)<br/>
         EOD check (3:20 PM)?
       </div>
       <div class="flow-arrow">&#8595;</div>
@@ -1301,9 +1305,9 @@
 
     <rect x="20" y="228" width="200" height="80" rx="8" fill="rgba(16,185,129,0.08)" stroke="#10b981" stroke-width="1"/>
     <text x="120" y="248" fill="#10b981" font-size="9" font-weight="600" text-anchor="middle">Check Exits:</text>
-    <text x="120" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">1. Profit lock? 2. Hard stop?</text>
-    <text x="120" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">3. BB re-entry?</text>
-    <text x="120" y="292" fill="#ccc8e8" font-size="8" text-anchor="middle">4. PSAR Flip? | 5. EOD 3:20?</text>
+    <text x="120" y="264" fill="#ccc8e8" font-size="8" text-anchor="middle">Per tick: 1. BB band touch?</text>
+    <text x="120" y="278" fill="#ccc8e8" font-size="8" text-anchor="middle">2. Hard stop? 3. Profit lock?</text>
+    <text x="120" y="292" fill="#ccc8e8" font-size="8" text-anchor="middle">Close: BB re-entry / PSAR | EOD</text>
     <line x1="120" y1="308" x2="120" y2="332" stroke="#10b981" stroke-width="1.5"/>
 
     <rect x="45" y="332" width="150" height="32" rx="8" fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="1.5"/>
@@ -1551,7 +1555,7 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    Scalp V6.2 &bull; rechecked 2026-06-14 against scalp_bb_cpr.js / scalpPaper.js<br/>
+    Scalp V6.2 &bull; rechecked 2026-06-15 against scalp_bb_cpr.js / scalpPaper.js<br/>
     NIFTY Options Scalping Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; Profit Lock + Hard Stop + BB Re-Entry + PSAR-Flip exit
   </p>
 </div>
