@@ -478,6 +478,26 @@ app.get("/api/session-active", (req, res) => {
   res.json({ active: !!sharedSocketState.isAnyActive() });
 });
 
+// ── Cached paper-P&L reader (dashboard wallets) ──────────────────────────────
+// The dashboard reads totalPnl from up to 5 (growing) paper-trade files per load.
+// Guard each read by a cheap mtime+size signature so an unchanged file is served
+// from memory instead of being re-read + JSON.parsed. A trade close bumps the
+// file's mtime/size, so the next read refreshes immediately (no staleness).
+const _pnlReadCache = new Map(); // file -> { sig, pnl }
+function _readPnlCached(dir, file) {
+  const full = path.join(dir, file);
+  let sig;
+  try { const st = fs.statSync(full); sig = `${st.mtimeMs}:${st.size}`; }
+  catch { _pnlReadCache.delete(file); return 0; }
+  const hit = _pnlReadCache.get(file);
+  if (hit && hit.sig === sig) return hit.pnl;
+  let pnl = 0;
+  try { pnl = Number(JSON.parse(fs.readFileSync(full, "utf-8")).totalPnl) || 0; }
+  catch { pnl = 0; }
+  _pnlReadCache.set(file, { sig, pnl });
+  return pnl;
+}
+
 // ── Home — HTML Dashboard ─────────────────────────────────────────────────────
 app.get("/", (req, res) => {
   // Redirect to Settings when Dashboard menu is hidden (user can re-enable from Settings → MENU VISIBILITY)
@@ -547,10 +567,7 @@ app.get("/", (req, res) => {
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
   // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB + Straddle (enabled only).
   const _tradingDir = path.join(os.homedir(), "trading-data");
-  const _readPnl = (file) => {
-    try { return Number(JSON.parse(fs.readFileSync(path.join(_tradingDir, file), "utf-8")).totalPnl) || 0; }
-    catch { return 0; }
-  };
+  const _readPnl = (file) => _readPnlCached(_tradingDir, file);
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
   const zerodhaPnl = _readPnl("paper_trades.json");

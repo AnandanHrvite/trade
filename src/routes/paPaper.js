@@ -87,15 +87,24 @@ function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+// In-memory cache — avoids re-reading + JSON.parse of the growing trades file
+// on every 2s status poll and 4s Real-Time-monitor fan-out. Write-through:
+// refreshed in savePAData() (the only writer; /reset also routes through it).
+// Mirrors the pattern already used by swingPaper/orbPaper/straddlePaper.
+let _paDataCache = null;
+
 function loadPAData() {
+  if (_paDataCache) return _paDataCache;
   ensureDir();
   if (!fs.existsSync(SP_FILE)) {
     const initial = { capital: 100000, totalPnl: 0, sessions: [] };
     fs.writeFileSync(SP_FILE, JSON.stringify(initial, null, 2));
+    _paDataCache = initial;
     return initial;
   }
-  try { return JSON.parse(fs.readFileSync(SP_FILE, "utf-8")); }
-  catch (_) { return { capital: 100000, totalPnl: 0, sessions: [] }; }
+  try { _paDataCache = JSON.parse(fs.readFileSync(SP_FILE, "utf-8")); }
+  catch (_) { _paDataCache = { capital: 100000, totalPnl: 0, sessions: [] }; }
+  return _paDataCache;
 }
 
 function savePAData(data) {
@@ -103,6 +112,7 @@ function savePAData(data) {
   const tmp = SP_FILE + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, SP_FILE);
+  _paDataCache = data;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────

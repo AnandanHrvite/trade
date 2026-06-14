@@ -35,7 +35,26 @@ function safeRead(p) {
   }
 }
 
+// In-memory cache keyed by a cheap mtime+size signature of the 3 live trade
+// files. The /data endpoint polls this every few seconds; re-reading and
+// JSON.parsing the (growing) files when nothing changed is wasteful. A new
+// session bumps the file mtime/size, so the next load rebuilds immediately.
+// Mirrors the pattern already used by consolidation.js.
+let _allTradesCache = null;
+let _allTradesSig   = null;
+
+function _sourcesSig() {
+  let sig = "";
+  for (const src of SOURCES) {
+    try { const st = fs.statSync(src.file); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
+    catch (_) { sig += `${src.mode}:0|`; }
+  }
+  return sig;
+}
+
 function loadAllTrades() {
+  const sig = _sourcesSig();
+  if (_allTradesCache && sig === _allTradesSig) return _allTradesCache;
   const out = [];
   for (const src of SOURCES) {
     const data = safeRead(src.file);
@@ -71,6 +90,8 @@ function loadAllTrades() {
     }
   }
   out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  _allTradesCache = out;
+  _allTradesSig   = sig;
   return out;
 }
 
