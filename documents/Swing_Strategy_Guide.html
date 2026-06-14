@@ -475,7 +475,7 @@
     <tr><td><strong>EMA 21</strong></td><td>period 21, on <code>OHLC4</code></td><td>Trailing-stop line + record snapshot only — <em>not</em> an entry input</td></tr>
   </table>
   <p>Warm-up: <code>max(EMA_SLOW, 30) + 5</code> candles (<strong>55</strong> at defaults) before any signal. Trading window:
-  <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST (default 09:30–14:00).</p>
+  <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST (default 10:30–14:00).</p>
   <div class="note warn">Parabolic SAR was removed on 2026-06-12; SuperTrend is the sole trend confirmation. The file name
   <code>strategy1_sar_ema_rsi.js</code> is historical — there is no SAR in the entry logic anymore.</div>
 </div>
@@ -491,7 +491,7 @@
     <tr><td>Replay</td><td><code>/replay</code></td><td>Recorded ticks → drives the Paper engine</td></tr>
     <tr><td>Sim / Harness</td><td><code>/swing-paper/simulate</code></td><td>Wrap the Paper/Live engine; inherit automatically</td></tr>
   </table>
-  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>5 or 15-min</strong> (default 5). Entry is evaluated
+  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>3, 5 or 15-min</strong> (default 5). Entry is evaluated
   intra-candle on every tick; on 15-min it also re-checks at candle close. Smaller candles → tighter prev-candle stops.</p>
 </div>
 
@@ -522,7 +522,7 @@
       <div class="lc-condition">→ Initial SL = previous candle HIGH</div>
     </div>
   </div>
-  <div class="note">Defaults: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=80</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=20</code>.
+  <div class="note">Defaults: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=70</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=30</code>.
   The overbought/oversold caps stop you chasing exhausted moves. The EMA gate defaults to the 2-EMA cross
   (<code>SWING_EMA_TRIPLE_STACK_ENABLED=false</code>); set it true to require the EMA9&gt;20&gt;50 stack. Entry price = current tick LTP.</div>
 </div>
@@ -538,8 +538,9 @@
     <p><strong>Optional candle trail</strong>: with <code>SWING_CANDLE_TRAIL_ENABLED=true</code>, an N-bar low (CE) / high (PE)
     over <code>SWING_CANDLE_TRAIL_BARS</code> bars is also computed, and whichever of (EMA21, candle level) is <em>tighter</em> wins.</p>
     <p><strong>Breakeven</strong>: the scaffolding remains but is currently <strong>inert</strong> in the swing engine — there is no
-    active <code>BREAKEVEN_PTS</code> snap (that key only drives the separate Manual Tracker). A hard points cap
-    <code>SWING_STOP_LOSS_PTS</code> exists but defaults to 0 (off).</p>
+    active <code>BREAKEVEN_PTS</code> snap (that key only drives the separate Manual Tracker). A hard spot-points cap
+    <code>SWING_STOP_LOSS_PTS</code> (default 25) is checked first, so a deep adverse excursion is clipped before the
+    structural/trail SL when the prev-candle stop sits wider; set it to 0 to disable.</p>
   </div>
   <div class="note warn">Because the SL hugs EMA21, a candle whose range touches back through EMA21 is treated as an explicit
   exit (see §6). Expect frequent small stop-outs in chop; tighter timeframes amplify this.</div>
@@ -565,10 +566,10 @@
 <div class="section">
   <h2 id="s7">07 — Same-Side Cooldown</h2>
   <p>After an <strong>SL hit or option-stop</strong> on a side, new entries on <em>that</em> side are blocked for
-  <code>SWING_SL_PAUSE_CANDLES</code> candles (default 3). The other side is free. Set to <code>0</code> to disable.
+  <code>SWING_SL_PAUSE_CANDLES</code> candles (default 2). The other side is free. Set to <code>0</code> to disable.
   This prevents immediately re-entering the same losing setup tick-after-tick.</p>
   <p>Separately, an <strong>opposite-side cooldown</strong> (<code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code>, default on;
-  <code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES</code>, default 3) throttles immediate CE↔PE flips. An optional chop guard
+  <code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES</code>, default 2) throttles immediate CE↔PE flips. An optional chop guard
   (<code>SWING_MAX_CONSEC_LOSSES</code>, default 0 = off) halts the session after N consecutive losses.</p>
 </div>
 
@@ -608,7 +609,7 @@
     <div class="env-group-title">Entry — EMAs &amp; trend</div>
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>5 or 15-min candles</td></tr>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>3, 5 or 15-min candles</td></tr>
       <tr><td><code>SWING_EMA_FAST</code></td><td>20</td><td>Fast EMA (close) — top leg of the alignment gate</td></tr>
       <tr><td><code>SWING_EMA_SLOW</code></td><td>50</td><td>Slow EMA (close) — bottom leg of the alignment gate</td></tr>
       <tr><td><code>SWING_EMA_TRIPLE_STACK_ENABLED</code></td><td>false</td><td>Require EMA9&gt;20&gt;50 (CE) / EMA9&lt;20&lt;50 (PE) instead of the 2-EMA cross</td></tr>
@@ -621,9 +622,9 @@
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>CE momentum floor (RSI must be above)</td></tr>
-      <tr><td><code>RSI_CE_MAX</code></td><td>80</td><td>CE overbought cap (blocked at/above)</td></tr>
+      <tr><td><code>RSI_CE_MAX</code></td><td>70</td><td>CE overbought cap (blocked at/above)</td></tr>
       <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>PE momentum cap (RSI must be below)</td></tr>
-      <tr><td><code>RSI_PE_MIN</code></td><td>20</td><td>PE oversold floor (blocked at/below)</td></tr>
+      <tr><td><code>RSI_PE_MIN</code></td><td>30</td><td>PE oversold floor (blocked at/below)</td></tr>
     </table>
   </div>
   <div class="env-group">
@@ -631,10 +632,10 @@
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>OPT_STOP_PCT</code></td><td>0.25</td><td>Exit if option premium drops this fraction below entry</td></tr>
-      <tr><td><code>SWING_STOP_LOSS_PTS</code></td><td>0</td><td>Hard spot-points cap from entry (0 = off; EMA21 trail owns the SL)</td></tr>
+      <tr><td><code>SWING_STOP_LOSS_PTS</code></td><td>25</td><td>Hard spot-points cap from entry, checked before the structural/trail SL (0 = off)</td></tr>
       <tr><td><code>SWING_CANDLE_TRAIL_ENABLED</code> / <code>SWING_CANDLE_TRAIL_BARS</code></td><td>false / 2</td><td>Add an N-bar low/high trail; tighter of (EMA21, candle level) wins</td></tr>
-      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side cooldown after an SL/option-stop hit</td></tr>
-      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Throttle immediate CE↔PE flips</td></tr>
+      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td>2</td><td>Same-side cooldown after an SL/option-stop hit</td></tr>
+      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 2</td><td>Throttle immediate CE↔PE flips</td></tr>
       <tr><td><code>SWING_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Halt session after N consecutive losses (0 = off)</td></tr>
       <tr><td><code>SWING_EOD_EXIT_TIME</code></td><td>14:30</td><td>Square off open position ahead of the close</td></tr>
     </table>
@@ -646,7 +647,7 @@
       <tr><td><code>MAX_DAILY_LOSS</code></td><td>3000</td><td>Daily kill-switch (₹)</td></tr>
       <tr><td><code>MAX_DAILY_TRADES</code></td><td>5</td><td>Entries per session</td></tr>
       <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block entries above this VIX</td></tr>
-      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>09:30 / 14:00</td><td>Entry window (IST)</td></tr>
+      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>10:30 / 14:00</td><td>Entry window (IST)</td></tr>
       <tr><td><code>TRADE_STOP_TIME</code></td><td>15:30</td><td>EOD square-off + engine auto-stop (IST)</td></tr>
     </table>
   </div>

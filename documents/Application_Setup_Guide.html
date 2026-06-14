@@ -1347,8 +1347,7 @@
     <tbody>
       <tr><td><code>ZERODHA_API_KEY</code></td><td>&mdash;</td><td>Kite Connect API key</td></tr>
       <tr><td><code>ZERODHA_API_SECRET</code></td><td>&mdash;</td><td>Kite Connect API secret</td></tr>
-      <tr><td><code>ZERODHA_REDIRECT_URL</code></td><td><code>https://IP:3000/auth/zerodha/callback</code></td><td>OAuth callback URL</td></tr>
-      <tr><td><code>ZERODHA_ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Zerodha access token</td></tr>
+      <tr><td><code>ZERODHA_ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Zerodha access token. (The Zerodha redirect URL is configured in the Kite developer console, not via env &mdash; there is no <code>ZERODHA_REDIRECT_URL</code> reader; the old key was removed.)</td></tr>
     </tbody>
   </table>
 
@@ -1635,7 +1634,6 @@
       <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Above this VIX, allow only STRONG signals</td></tr>
       <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>ORB is textbook 1 trade/day &mdash; cap higher only if you accept the chop</td></tr>
       <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>ORB daily loss kill-switch (&#8377;)</td></tr>
-      <tr><td><code>ORB_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for ORB paper trading</td></tr>
     </tbody>
   </table>
 
@@ -1666,7 +1664,6 @@
       <tr><td><code>STRADDLE_VIX_CHEAP</code></td><td><code>14</code></td><td>VIX below this triggers the low-VIX cheap-premium entry path</td></tr>
       <tr><td><code>STRADDLE_MAX_DAILY_PAIRS</code></td><td><code>1</code></td><td>Cap on straddle pair entries per day</td></tr>
       <tr><td><code>STRADDLE_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Straddle daily loss kill-switch (&#8377;)</td></tr>
-      <tr><td><code>STRADDLE_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for straddle paper trading</td></tr>
     </tbody>
   </table>
 
@@ -1723,15 +1720,13 @@
   </table>
 
   <!-- ── Paper Trade ───────────────────────────────────── -->
-  <div class="env-group">Paper Trade Capital</div>
+  <div class="env-group">Paper Investment Pool (per broker, not per strategy)</div>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">There are no per-strategy <code>*_PAPER_CAPITAL</code> keys. Paper investment is pooled by broker: Swing reads <code>ZERODHA_INV_AMOUNT</code>; Scalp / PA / ORB / Straddle read <code>FYERS_INV_AMOUNT</code>. Paper trade P&amp;L is added to / subtracted from the pool.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SWING_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Swing</td></tr>
-      <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Scalp</td></tr>
-      <tr><td><code>PA_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Price Action</td></tr>
-      <tr><td><code>ORB_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for ORB</td></tr>
-      <tr><td><code>STRADDLE_PAPER_CAPITAL</code></td><td><code>100000</code></td><td>Paper trade capital for Straddle</td></tr>
+      <tr><td><code>ZERODHA_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Zerodha-brokered strategies (<strong>Swing</strong>)</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Fyers-brokered strategies (<strong>Scalp + PA + ORB + Straddle</strong>)</td></tr>
     </tbody>
   </table>
 
@@ -1740,10 +1735,8 @@
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>BACKTEST_FROM</code></td><td><code>2026-01-01</code></td><td>Backtest start date</td></tr>
-      <tr><td><code>BACKTEST_TO</code></td><td><code>2026-03-28</code></td><td>Backtest end date</td></tr>
-      <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for backtest</td></tr>
-      <tr><td><code>BACKTEST_OPTION_SIM</code></td><td><code>true</code></td><td>Simulate option prices from NIFTY spot</td></tr>
+      <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for backtest. (Date range is entered in the Backtest UI per-run, not via env &mdash; there are no <code>BACKTEST_FROM</code>/<code>BACKTEST_TO</code> keys.)</td></tr>
+      <tr><td><code>BACKTEST_OPTION_SIM</code></td><td><code>true</code></td><td>Simulate option prices from NIFTY spot (legacy bar-based backtest only; Replay uses recorded option ticks)</td></tr>
       <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td><td>Option delta for simulation</td></tr>
       <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td><td>Theta decay per day (points)</td></tr>
       <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points per trade</td></tr>

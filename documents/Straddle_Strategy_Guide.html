@@ -535,7 +535,7 @@ This is the failure mode: chop kills both legs simultaneously via theta.
       <tr><td>VIX upper bound</td><td><code>STRADDLE_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this, all entries blocked (premiums pumped)</td></tr>
       <tr><td>VIX STRONG-only</td><td><code>STRADDLE_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and VIX_MAX_ENTRY, only STRONG squeezes fire</td></tr>
       <tr><td>Expiry-day-only</td><td><code>STRADDLE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
-      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Shared across modes &mdash; blocks entries on wide spreads</td></tr>
+      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><strong>Not wired into Straddle.</strong> The shared <code>tradeGuards.js</code> spread check is applied in Swing / Scalp / PA entry paths, but neither <code>straddlePaper.js</code> nor <code>straddleLive.js</code> calls it &mdash; a Straddle pair can open on a wide spread today. (Gap, not a feature.)</td></tr>
     </tbody>
   </table>
 

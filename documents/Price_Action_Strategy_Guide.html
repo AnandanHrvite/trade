@@ -1631,7 +1631,7 @@ td.pe { color: var(--red); }
         <div class="table-wrap mt-2">
           <table>
             <tr><th>Setting</th><th>Value</th></tr>
-            <tr><td><code>PA_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
+            <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code> (&#8377;; shared Fyers paper pool)</td></tr>
             <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
             <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
           </table>
@@ -1678,7 +1678,7 @@ td.pe { color: var(--red); }
             <tr><td><strong>Data Source</strong></td><td>Fyers WebSocket</td><td>Fyers WebSocket</td><td>Fyers History API</td></tr>
             <tr><td><strong>Order Execution</strong></td><td>Fyers (real money)</td><td>In-memory (simulated)</td><td>Simulated + Greeks</td></tr>
             <tr><td><strong>Option Premium</strong></td><td>Live LTP quotes</td><td>Live LTP quotes</td><td>&delta;=0.55, &theta;=10/day</td></tr>
-            <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>PA_PAPER_CAPITAL</td><td>BACKTEST_CAPITAL</td></tr>
+            <tr><td><strong>Capital</strong></td><td>Fyers account</td><td>FYERS_INV_AMOUNT</td><td>BACKTEST_CAPITAL</td></tr>
             <tr><td><strong>Charges</strong></td><td>Real broker</td><td>Estimated</td><td>Full simulation</td></tr>
             <tr><td><strong>VIX Filter</strong></td><td>Live polling (60s)</td><td>Live polling (60s)</td><td>Historical candles</td></tr>
             <tr><td><strong>Persistence</strong></td><td>Disk (crash safe)</td><td>Disk (restart safe)</td><td>N/A</td></tr>

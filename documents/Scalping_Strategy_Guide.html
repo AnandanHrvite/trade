@@ -909,11 +909,11 @@
 <div class="sl-flow">
   <div class="sl-box" style="background:var(--accent); color:#fff;">Entry Signal</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">Prev Candle Low/High</div>
+  <div class="sl-box" style="background:var(--bg3); border:1px solid var(--border); color:var(--text);">PSAR value at entry</div>
   <div class="sl-arrow">&rarr;</div>
   <div class="sl-box" style="background:var(--yellow); color:#000;">Initial SL =<br/>PSAR value (no clamp)</div>
   <div class="sl-arrow">&rarr;</div>
-  <div class="sl-box" style="background:var(--red); color:#fff;">Exit on PSAR flip<br/>(BE snap = hard stop)</div>
+  <div class="sl-box" style="background:var(--red); color:#fff;">Managed by profit lock +<br/>wide hard stop + PSAR flip</div>
 </div>
 
 <div class="highlight">
@@ -1100,7 +1100,7 @@
 
 <div class="metrics">
   <div class="metric red">
-    <div class="val">&#8377;2,000</div>
+    <div class="val">&#8377;4,000</div>
     <div class="lbl">Max Daily Loss</div>
   </div>
   <div class="metric yellow">
@@ -1108,12 +1108,12 @@
     <div class="lbl">Max Trades / Day</div>
   </div>
   <div class="metric purple">
-    <div class="val">2</div>
+    <div class="val">3</div>
     <div class="lbl">SL Pause Candles</div>
   </div>
   <div class="metric green">
-    <div class="val">50 pts</div>
-    <div class="lbl">Hard SL Cap</div>
+    <div class="val">30 pts</div>
+    <div class="lbl">Wide Hard Stop</div>
   </div>
 </div>
 
@@ -1123,10 +1123,10 @@
     <thead><tr><th>Layer</th><th>Protection</th><th>Mechanism</th></tr></thead>
     <tbody>
       <tr><td>1. Per-Trade exit</td><td>Individual trade risk</td><td>PSAR-value initial SL (no clamp, far-PSAR filtered); exit on profit lock or candle-close PSAR flip</td></tr>
-      <tr><td>2. Profit Lock</td><td>Bank unrealized gains</td><td>Exit when P&amp;L gives back below 50% of peak (once peak &ge; &#8377;500)</td></tr>
-      <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Immediate exit on PSAR flip</td></tr>
+      <tr><td>2. Profit Lock</td><td>Bank unrealized gains</td><td>Exit when the favourable move gives back below 50% of peak (once peak &ge; 25 spot pts)</td></tr>
+      <tr><td>3. SAR Flip</td><td>Trend reversal detection</td><td>Exit on PSAR flip (candle close)</td></tr>
       <tr><td>4. SL Cooldown</td><td>Prevent revenge trading</td><td>N candle pause after SL, +2 per consecutive SL (per-side)</td></tr>
-      <tr><td>5. Daily Loss Limit</td><td>Session-level risk</td><td>All entries halted at -&#8377;2,000 day P&amp;L</td></tr>
+      <tr><td>5. Daily Loss Limit</td><td>Session-level risk</td><td>All entries halted at -&#8377;4,000 day P&amp;L</td></tr>
       <tr><td>6. Max Trade Count</td><td>Overtrading prevention</td><td>30 trade cap per session</td></tr>
       <tr><td>7. VIX Filter</td><td>Regime-level risk</td><td>Block entries in high-volatility markets</td></tr>
       <tr><td>8. EOD Square-off</td><td>Overnight risk</td><td>All positions closed at 3:20 PM IST</td></tr>
@@ -1179,7 +1179,7 @@
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-box process">BB + RSI Signal?</div>
       <div class="flow-arrow">&#8595;</div>
-      <div class="flow-box process">Calculate SL (Prev Candle / PSAR)</div>
+      <div class="flow-box process">Initial SL = PSAR value at entry</div>
       <div class="flow-arrow">&#8595;</div>
       <div class="flow-box entry">ENTER (ATM CE or PE)</div>
     </div>
@@ -1329,7 +1329,7 @@
     <line x1="580" y1="352" x2="580" y2="372" stroke="#fbbf24" stroke-width="1.5"/>
 
     <rect x="480" y="372" width="200" height="36" rx="8" fill="rgba(124,58,237,0.08)" stroke="#7c3aed" stroke-width="1"/>
-    <text x="580" y="395" fill="#ccc8e8" font-size="10" text-anchor="middle">Calculate SL (PSAR/Prev Candle)</text>
+    <text x="580" y="395" fill="#ccc8e8" font-size="10" text-anchor="middle">Initial SL = PSAR value at entry</text>
     <line x1="580" y1="408" x2="580" y2="428" stroke="#7c3aed" stroke-width="1.5"/>
 
     <rect x="505" y="428" width="150" height="34" rx="8" fill="rgba(16,185,129,0.15)" stroke="#10b981" stroke-width="1.5"/>
@@ -1353,7 +1353,7 @@
       <tr><th>Setting</th><th>Value</th></tr>
       <tr><td><code>SCALP_ENABLED</code></td><td><code>true</code> (to activate)</td></tr>
       <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
       <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
     </table>
   </div>
@@ -1371,7 +1371,7 @@
       <tr><th>Setting</th><th>Value</th></tr>
       <tr><td><code>SCALP_PAPER_CAPITAL</code></td><td><code>100000</code> (&#8377;)</td></tr>
       <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code> (&#8377;)</td></tr>
+      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
     </table>
   </div>
 </div>
@@ -1505,8 +1505,8 @@
   <tbody>
     <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
     <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp entries per day</td></tr>
-    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
-    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause the SL'd side after an SL hit</td></tr>
+    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
+    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause the SL'd side after an SL hit</td></tr>
     <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
     <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
     <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) hits this. <code>0</code> disables.</td></tr>

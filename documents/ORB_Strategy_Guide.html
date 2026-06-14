@@ -392,7 +392,7 @@
     <strong>Daily-count gate (pre-filter):</strong> Before any of the gates evaluate, the strategy first checks <code>ORB_MAX_DAILY_TRADES</code>. With the default of <code>1</code>, after the first successful entry the strategy skips all further candles with <code>reason: "Already traded this session — ORB takes only 1 trade/day"</code>.
   </div>
   <div class="note note-warn">
-    <strong>Where each gate lives:</strong> gates 1&ndash;7 run inside <code>orb_breakout.js</code> <code>getSignal()</code> (pure signal). The <strong>premium-range gate (8)</strong> and <strong>VIX gate (9)</strong> are applied <em>after</em> the signal fires, at the route layer in <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; so their skip-log entries appear once a valid breakout has already been detected. Backtest takes neither (it seeds a fixed entry premium and ignores VIX).
+    <strong>Where each gate lives:</strong> gates 1&ndash;7 run inside <code>orb_breakout.js</code> <code>getSignal()</code> (pure signal). The <strong>premium-range gate (8)</strong> and <strong>VIX gate (9)</strong> are applied <em>after</em> the signal fires, at the route layer in <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; so their skip-log entries appear once a valid breakout has already been detected. Backtest seeds a fixed entry premium (<code>ORB_BT_SEED_PREMIUM</code>, default 180) and ignores VIX entirely; it still evaluates the premium-range gate, but against that seeded premium &mdash; so the gate acts as a config sanity check (it skips <em>every</em> trade if the seed lies outside the band) rather than a per-trade filter.
   </div>
 </section>
 
