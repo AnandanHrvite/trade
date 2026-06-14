@@ -427,6 +427,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `UI_DASHBOARD_ANALYTICS_PANEL` | `true` | Bottom analytics panel (live P&L during market hours; rolling stats after hours) |
 | `UI_SHOW_REPLAY` | `true` | Top-level "Replay" menu (tick replay of recorded paper sessions) |
 | `UI_SHOW_PAPER_HISTORY` / `UI_SHOW_LIVE_HISTORY` | `true` | Cross-mode history menus |
+| `UI_SHOW_EDGE_ANALYTICS` | `true` | Top-level "Edge Analytics" menu (`/edge-analytics`) |
 | `{SWING,SCALP,PA,ORB,STRADDLE}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
 | `UI_SHOW_SIMULATE` | `false` | Show "Simulate" link under each mode in sidebar |
 | `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
@@ -537,6 +538,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `/all-backtest` | **Unified backtest dashboard** — runs the same date range across all enabled strategies and renders the per-strategy stats side by side. |
 | `/consolidation` | Cross-mode **paper** trade history + analytics (Swing + Scalp + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
 | `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
+| `/edge-analytics` | **Edge Analytics** — read-only edge dashboard over your recorded trades. Paper/Live book toggle + per-strategy + date-range (7D / 30D / FY / custom) filters that recompute instantly client-side. Headline cards (trades, win rate, net P&L, expectancy, profit factor, avg win/loss + payoff, max drawdown, win/loss streaks), an equity curve, P&L-by-hour-of-day and P&L-by-weekday bar charts, and **By Strategy** + **By Exit Reason** breakdown tables (worst reason first, to surface the bleed). Reads the same session files as `/consolidation` + `/live-consolidation`; writes nothing. Gated by `UI_SHOW_EDGE_ANALYTICS`. |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
 | `/compare/trading` | Paper vs Backtest comparison (swing) |
 | `/compare/scalping` | Paper vs Backtest comparison (scalping) |

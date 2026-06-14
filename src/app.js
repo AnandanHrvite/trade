@@ -397,6 +397,7 @@ app.use("/straddle-live",     require("./routes/straddleLive"));  // ← Straddl
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
+app.use("/edge-analytics",      require("./routes/edgeAnalytics"));     // ← edge metrics (WR/expectancy/PF/drawdown/by-hour) over recorded trades
 app.use("/realtime",            require("./routes/realtime"));          // ← unified real-time monitor (PAPER/LIVE toggle, all 3 strategies)
 app.use("/replay",              require("./routes/replay"));            // ← deterministic tick-replay backtest (PAPER = REPLAY = LIVE)
 app.use("/all-backtest",   require("./routes/allBacktest"));    // ← unified backtest dashboard (all 3 strategies, stats only)

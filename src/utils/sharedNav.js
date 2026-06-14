@@ -62,6 +62,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showReplay      = (process.env.UI_SHOW_REPLAY        || 'true').toLowerCase()  === 'true' && !_hideReplayLive;
   const showPaperHist   = (process.env.UI_SHOW_PAPER_HISTORY || 'true').toLowerCase()  === 'true';
   const showLiveHist    = (process.env.UI_SHOW_LIVE_HISTORY  || 'true').toLowerCase()  === 'true';
+  const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
   const showSwingBacktest = (process.env.UI_SHOW_SWING_BACKTEST || 'true').toLowerCase() === 'true';
@@ -164,6 +165,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showReplay      ? [{ key: 'replay',            href: '/replay',             icon: '📼', label: 'Replay' }] : []),
     ...(showPaperHist   ? [{ key: 'consolidation',     href: '/consolidation',      icon: '🧾', label: 'Paper Traded History' }] : []),
     ...(showLiveHist    ? [{ key: 'liveConsolidation', href: '/live-consolidation', icon: '🔴', label: 'Live Traded History' }] : []),
+    ...(showEdgeAnalytics ? [{ key: 'edgeAnalytics',   href: '/edge-analytics',     icon: '📈', label: 'Edge Analytics' }] : []),
   ];
 
   const sections = [
