@@ -30,6 +30,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const { reverseSlice, formatISTTimestamp, fmtISTDateTime, getISTMinutes: _getISTMinutesReal, getBucketStart: _getBucketStartRaw, parseOptionDetails, parseTimeToMinutes } = require("../utils/tradeUtils");
 const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
@@ -256,6 +257,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
   const _entryHourIST   = Math.floor(_entryIstMin / 60);
   const _entryMinuteIST = _entryIstMin % 60;
   const _vixAtEntry     = getCachedVix();
+  const _oiAtEntry      = oiFilter.getCachedOi();
+  const _oiRegime       = oiFilter.getCachedRegime();
   const _signalStrength = entryMeta.signalStrength || null;
 
   state.position = {
@@ -293,6 +296,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     // Data-collection fields — surfaced on the trade record in simulateSell()
     signalStrength:   _signalStrength,
     vixAtEntry:       _vixAtEntry,
+    oiAtEntry:        _oiAtEntry,
+    oiRegime:         _oiRegime,
     entryHourIST:     _entryHourIST,
     entryMinuteIST:   _entryMinuteIST,
     // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
@@ -329,7 +334,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp,
-          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = state.position;
+          signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOptionLtp = state.optionLtp || optionCurrentLtp;
 
@@ -382,6 +387,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     // Data-collection fields (captured at entry — see simulateBuy)
     signalStrength: signalStrength || null,
     vixAtEntry:     vixAtEntry     != null ? vixAtEntry     : null,
+    oiAtEntry:      oiAtEntry      != null ? oiAtEntry      : null,
+    oiRegime:       oiRegime       || null,
     entryHourIST:   entryHourIST   != null ? entryHourIST   : null,
     entryMinuteIST: entryMinuteIST != null ? entryMinuteIST : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
@@ -611,6 +618,10 @@ function onTick(tick) {
 async function onCandleClose(bar) {
   if (!state.running) return;
 
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled; live only)
+  // so the buildup series stays filled even on no-signal / in-position candles.
+  if (!state._simMode) await oiFilter.recordOiSample(bar.close);
+
   // Count candles held + exit checks
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
@@ -697,6 +708,22 @@ async function onCandleClose(bar) {
       });
       return;
     }
+  }
+
+  // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
+  // entry reason with the regime so every trade records its OI context (skip in sim).
+  const _oiSide = result.signal === "BUY_CE" ? "CE" : "PE";
+  if (!state._simMode && oiFilter.getOiEnabled("pa")) {
+    const _oi = await oiFilter.checkLiveOi(_oiSide, bar.close, { mode: "pa" });
+    if (!_oi.allowed) {
+      log(`⏭️ [PA-PAPER] SKIP: ${_oi.reason}`);
+      skipLogger.appendSkipLog("pa", {
+        gate: "oi", reason: _oi.reason || null, spot: bar.close, side: _oiSide,
+        oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
+      });
+      return;
+    }
+    if (_oi.regime) result.reason = `${result.reason} | ${_oi.reason}`;
   }
 
   const side = result.signal === "BUY_CE" ? "CE" : "PE";
@@ -894,6 +921,7 @@ router.get("/start", async (req, res) => {
   // Start VIX polling
   if (process.env.PA_VIX_ENABLED === "true") {
     resetVixCache();
+    oiFilter.resetCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
 

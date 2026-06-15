@@ -30,6 +30,7 @@ const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter = require("../services/oiFilter");
 const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
@@ -659,6 +660,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   const _entryHourIST    = Math.floor(_entryIstMin / 60);
   const _entryMinuteIST  = _entryIstMin % 60;
   const _vixAtEntry      = getCachedVix();
+  const _oiAtEntry       = oiFilter.getCachedOi();
+  const _oiRegime        = oiFilter.getCachedRegime();
   const _signalStrength  = entryMeta.signalStrength || null;
 
   ptState.position = {
@@ -693,6 +696,8 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     // Data-collection fields — surfaced on the trade record in simulateSell()
     signalStrength:    _signalStrength,
     vixAtEntry:        _vixAtEntry,
+    oiAtEntry:         _oiAtEntry,
+    oiRegime:          _oiRegime,
     entryHourIST:      _entryHourIST,
     entryMinuteIST:    _entryMinuteIST,
     // Entry-context diagnostics — already computed by getSignal(), captured for analysis.
@@ -747,7 +752,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
 
   const { side, symbol, qty, entryPrice, entryTime, spotAtEntry,
           optionEntryLtp, optionCurrentLtp,
-          signalStrength, vixAtEntry, entryHourIST, entryMinuteIST } = ptState.position;
+          signalStrength, vixAtEntry, oiAtEntry, oiRegime, entryHourIST, entryMinuteIST } = ptState.position;
 
   const INSTR = instrumentConfig.INSTRUMENT; // top-level constant
   const isFutures = INSTR === "NIFTY_FUTURES";
@@ -819,6 +824,8 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     // Data-collection fields (captured at entry — see simulateBuy)
     signalStrength:   signalStrength   || null,
     vixAtEntry:       vixAtEntry       != null ? vixAtEntry       : null,
+    oiAtEntry:        oiAtEntry        != null ? oiAtEntry        : null,
+    oiRegime:         oiRegime         || null,
     entryHourIST:     entryHourIST     != null ? entryHourIST     : null,
     entryMinuteIST:   entryMinuteIST   != null ? entryMinuteIST   : null,
     // Full-detail capture for JSONL (also surfaced in-memory for future analytics)
@@ -990,6 +997,9 @@ async function onCandleClose(candle) {
   // ── VIX filter: fetch latest VIX in background (updates cache for intra-tick checks) ──
   // Skip in simulation mode
   if (!ptState._simMode) fetchLiveVix().catch(() => {});
+  // OI buildup: sample futures OI each candle close (no-op unless an OI filter is
+  // enabled; live only) so the series stays filled even on no-signal candles.
+  if (!ptState._simMode) await oiFilter.recordOiSample(candle.close);
   const _vixDisplay = (vixFilter.VIX_ENABLED && !ptState._simMode) ? getCachedVix() : null;
 
   log(`📊 [PAPER] ──── Candle close ──────────────────────────────────────`);
@@ -1172,6 +1182,7 @@ async function onCandleClose(candle) {
   if (!ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Candle-close entry — fallback when an intra-candle tick didn't already enter.
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
+    let _oiTag = ""; // appended to the entry reason so the trade records its OI context
     // ── VIX filter: block entry in high-volatility regimes ──────────────────
     const _vixCheck = await checkLiveVix("STRONG");
     if (!_vixCheck.allowed) {
@@ -1184,6 +1195,21 @@ async function onCandleClose(candle) {
         path: "candle-close",
       });
       return;
+    }
+    // ── OI + price buildup gate (live only) — block entries fighting a buildup ─
+    if (!ptState._simMode && oiFilter.getOiEnabled("swing")) {
+      const _oiSide = signal === "BUY_CE" ? "CE" : "PE";
+      const _oi = await oiFilter.checkLiveOi(_oiSide, candle.close, { mode: "swing" });
+      if (!_oi.allowed) {
+        log(`📊 [PAPER] OI BLOCK — ${_oi.reason} | Signal: ${signal}`);
+        skipLogger.appendSkipLog("swing", {
+          gate: "oi", reason: _oi.reason || null, spot: candle.close, signal,
+          side: _oiSide, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
+          path: "candle-close",
+        });
+        return;
+      }
+      if (_oi.regime) _oiTag = ` | ${_oi.reason}`;
     }
     // ── Circuit breaker checks — must mirror intra-tick path exactly ──────────
     if (ptState._dailyLossHit) {
@@ -1272,7 +1298,7 @@ async function onCandleClose(candle) {
         }
       }
 
-      simulateBuy(symbol, side, getLotQty(), candle.close, reason, stopLoss, candle.close, false, {
+      simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
         signalStrength: "STRONG",
         rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
         ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,

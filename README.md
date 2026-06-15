@@ -386,6 +386,20 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `PA_VIX_ENABLED` | `false` | Independent toggle |
 | `PA_VIX_MAX_ENTRY` | inherits | Per-mode threshold |
 
+### OI + Price Buildup Filter (per-module)
+Blocks directional entries that fight the prevailing Open-Interest buildup: reads NIFTY current-expiry **futures OI** vs spot over a short lookback (Settings → *Open-Interest Filter*), classifies the regime, and blocks **CE in a SHORT_BUILDUP** and **PE in a LONG_BUILDUP**. Weak (short-covering / long-unwinding), neutral, warmup, and OI-missing all **fail open** (allow). **Live/paper only — never evaluated in backtest/replay** (OI is not recorded in tick files). **Straddle is excluded** (delta-neutral). Each entered trade records `oiAtEntry` + `oiRegime` and appends the regime to `entryReason`; blocks are logged to the skip log under `gate:"oi"`.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `OI_FILTER_ENABLED` | `false` | **Master switch** — OFF disables the filter for every strategy regardless of the per-mode toggles |
+| `SWING_OI_ENABLED` | `false` | Apply to Swing (requires master ON) |
+| `SCALP_OI_ENABLED` | `false` | Apply to Scalp (requires master ON) |
+| `PA_OI_ENABLED` | `false` | Apply to PA (requires master ON) |
+| `ORB_OI_ENABLED` | `false` | Apply to ORB (requires master ON) |
+| `OI_LOOKBACK_CANDLES` | `3` | Candles back to measure ΔOI / Δspot (≈15 min at 5-min) |
+| `OI_MIN_DELTA_PCT` | `1` | Noise floor — |ΔOI| below this % over the lookback = NEUTRAL (allow) |
+| `OI_FAIL_MODE` | `open` | When futures OI can't be fetched: open = allow (default), closed = block |
+
 ### Trade Guards (shared across modes)
 | Key | Default | Notes |
 |-----|---------|-------|

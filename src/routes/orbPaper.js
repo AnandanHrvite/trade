@@ -35,6 +35,7 @@ const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurre
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter    = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
@@ -222,6 +223,8 @@ async function simulateBuy(side, sigSnapshot) {
     movedToBE:      false,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
+    oiAtEntry:      oiFilter.getCachedOi(),
+    oiRegime:       oiFilter.getCachedRegime(),
     vwapAtEntry:    sigSnapshot.vwap,
     volRatio:       sigSnapshot.volRatio,
     wickRatio:      sigSnapshot.wickRatio,
@@ -307,6 +310,8 @@ function simulateSell(reason) {
     signalStrength: pos.signalStrength,
     vixAtEntry:     pos.vixAtEntry,
     vixAtExit:      getCachedVix(),
+    oiAtEntry:      pos.oiAtEntry != null ? pos.oiAtEntry : null,
+    oiRegime:       pos.oiRegime || null,
     rangePts:       pos.rangePts,
     orh:            pos.orh,
     orl:            pos.orl,
@@ -437,6 +442,10 @@ function _checkExits(spotPrice) {
 // ── Candle close handler ────────────────────────────────────────────────────
 
 async function onCandleClose(bar) {
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
+  // the buildup series stays filled even on no-signal candles.
+  await oiFilter.recordOiSample(bar && bar.close);
+
   // Already in position? Don't re-evaluate entry — exits run on tick.
   if (state.position) return;
 
@@ -478,6 +487,18 @@ async function onCandleClose(bar) {
       skipLogger.appendSkipLog("orb", { gate: "vix", reason: vixCheck.reason, spot: _spot, vix: vixCheck.vix, sig: sig.signal, strength: sig.signalStrength });
       return;
     }
+  }
+
+  // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
+  // entry reason with the regime so every trade records its OI context.
+  if (oiFilter.getOiEnabled("orb")) {
+    const _oi = await oiFilter.checkLiveOi(sig.side, _spot, { mode: "orb" });
+    if (!_oi.allowed) {
+      log(`⏸️ [ORB-PAPER] OI gate blocked: ${_oi.reason}`);
+      skipLogger.appendSkipLog("orb", { gate: "oi", reason: _oi.reason, spot: _spot, side: sig.side, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null });
+      return;
+    }
+    if (_oi.regime) sig.reason = `${sig.reason} | ${_oi.reason}`;
   }
 
   await simulateBuy(sig.side, sig);
@@ -630,6 +651,7 @@ router.get("/start", async (req, res) => {
 
   if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     resetVixCache();
+    oiFilter.resetCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
 

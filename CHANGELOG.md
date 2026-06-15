@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: OI + Price Buildup entry filter (per-strategy, default OFF)
+
+- **New directional entry gate that blocks trades fighting the Open-Interest buildup.** New service [oiFilter.js](src/services/oiFilter.js) (mirrors `vixFilter.js`) reads NIFTY current-expiry **futures OI** (via `fyers.getQuotes`) against spot over a short lookback, classifies the classic four-quadrant regime, and blocks **CE in a SHORT_BUILDUP** (price↓ + OI↑) and **PE in a LONG_BUILDUP** (price↑ + OI↑). Weak (short-covering / long-unwinding), neutral, warmup, and OI-missing all **fail open**.
+- **Wiring.** Gate inserted right after the VIX check in the four directional paper routes — [scalpPaper.js](src/routes/scalpPaper.js), [paPaper.js](src/routes/paPaper.js), [swingPaper.js](src/routes/swingPaper.js) (candle-close path), [orbPaper.js](src/routes/orbPaper.js) — each behind `!_simMode`, with a per-candle background OI sample so the buildup series stays filled. **Straddle excluded** (delta-neutral CE+PE pair has no directional side).
+- **Logged in every trade.** Entered trades record `oiAtEntry` + `oiRegime` and the regime is appended to `entryReason`; blocked entries go to the skip log under `gate:"oi"` with `oi`/`deltaOi`/`regime`.
+- **Replay-safe.** OI is not recorded in tick files, so the filter is **live/paper only** — there is deliberately no backtest path and no `*Backtest.js`/`replay.js` file imports `oiFilter`; in sim/replay the gate is skipped entirely, so existing recordings stay valid.
+- **Settings.** Dedicated **Open-Interest Filter** section with a **master toggle** (`OI_FILTER_ENABLED`) plus per-strategy toggles (`SWING_/SCALP_/PA_/ORB_OI_ENABLED`), `OI_LOOKBACK_CANDLES` (3), `OI_MIN_DELTA_PCT` (1), `OI_FAIL_MODE` (open) — all INSTANT, default OFF, snapshotted into each mode's daily JSONL. README env table updated.
+- ⚠️ The Fyers futures-quote OI field name (`oi`) should be confirmed against a live payload before relying on blocks; the filter fails open if OI is absent.
+
 ### Feature: Edge Analytics page (`/edge-analytics`)
 
 - **New read-only analytics dashboard that turns the trades you already record into edge metrics** — no new data is written, it just reads the same per-strategy session files as `/consolidation` (paper) and `/live-consolidation` (live), flattens them to one trade array, embeds it in the page, and computes everything client-side so the **Book (Paper/Live) · Strategy · Date-range (7D / 30D / This FY / custom)** filters recompute instantly with no server round-trip.

@@ -225,6 +225,20 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
+    icon: "📊",
+    fields: [
+      { key: "OI_FILTER_ENABLED", label: "OI Filter MASTER (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for the OI + price-buildup entry filter. OFF = disabled everywhere, regardless of the per-strategy toggles below. When ON, blocks entries that fight a confirmed buildup (CE in a short-buildup, PE in a long-buildup); weak/neutral/warmup regimes always allow. Reads NIFTY futures OI vs spot — LIVE/PAPER only, never evaluated in backtest/replay (OI is not recorded). Straddle excluded (delta-neutral). Default OFF.", default: "false" },
+      { key: "SWING_OI_ENABLED", label: "OI Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Swing entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "SCALP_OI_ENABLED", label: "OI Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Scalp entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "PA_OI_ENABLED", label: "OI Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Price-Action entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "ORB_OI_ENABLED", label: "OI Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to ORB entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "OI_LOOKBACK_CANDLES", label: "OI Lookback (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many candles back to measure the OI + spot change over. Default 3 (≈15 min at 5-min candles).", default: "3" },
+      { key: "OI_MIN_DELTA_PCT", label: "OI Min Change % (noise floor)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Ignore OI changes smaller than this % over the lookback (treated as NEUTRAL → entry allowed). Stops tiny OI wiggles from creating a false regime. Default 1%.", default: "1" },
+      { key: "OI_FAIL_MODE", label: "OI Unavailable (fail mode)", type: "select", options: ["open", "closed"], effect: EFFECT.INSTANT, desc: "Behaviour when futures OI can't be fetched: open = allow entries (default — safe for a non-recorded data source), closed = block. Warmup / weak / neutral regimes always allow regardless.", default: "open" },
+    ],
+  },
+  {
     section: "COMMON — Instrument & Backtest",
     icon: "📈",
     fields: [
@@ -445,6 +459,7 @@ const MODE_SECTION_TITLES = {
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "COMMON — Instrument & Backtest",
   "CHARGES & STT — Trading Costs",
+  "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
 const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set(), straddle: new Set() };
@@ -509,6 +524,8 @@ const IMMEDIATE_KEYS = new Set([
   "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
   "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
+  "OI_FILTER_ENABLED", "SWING_OI_ENABLED", "SCALP_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
+  "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
   "SWING_OPTION_EXPIRY_OVERRIDE", "SWING_OPTION_EXPIRY_TYPE",
