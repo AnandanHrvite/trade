@@ -1464,6 +1464,28 @@ function onTick(tick) {
         }
       } else {
       const side = signal === "BUY_CE" ? "CE" : "PE";
+      // ── OI buildup filter (intra): synchronous cached check — no fetch in the tick
+      //    handler; relies on the per-candle background recordOiSample to keep fresh. ──
+      let _oiTag = "";
+      let _oiIntraBlocked = false;
+      if (!ptState._simMode && oiFilter.getOiEnabled("swing")) {
+        const _oiIntra = oiFilter.checkCachedOi(side, { mode: "swing" });
+        if (!_oiIntra.allowed) {
+          _oiIntraBlocked = true;
+          if (!ptState._oiBlockLoggedCandle || ptState._oiBlockLoggedCandle !== currentBarTime) {
+            ptState._oiBlockLoggedCandle = currentBarTime;
+            log(`📊 [PAPER] OI BLOCK (intra) — ${_oiIntra.reason} | Signal: ${signal}`);
+            skipLogger.appendSkipLog("swing", {
+              gate: "oi", reason: _oiIntra.reason || null, spot: ltp, side,
+              oi: _oiIntra.oi ?? null, deltaOi: _oiIntra.deltaOi ?? null, regime: _oiIntra.regime ?? null,
+              signal, path: "intra-candle",
+            });
+          }
+        } else if (_oiIntra.regime) {
+          _oiTag = ` | ${_oiIntra.reason}`;
+        }
+      }
+      if (!_oiIntraBlocked) {
       ptState._entryPending = true; // prevent double-fire while async symbol lookup runs
       // Safety: auto-reset after 4s in case of any unhandled error path
       const _ptIntraTimer = setTimeout(() => { if (ptState._entryPending) { ptState._entryPending = false; } }, 4000);
@@ -1527,7 +1549,7 @@ function onTick(tick) {
           }
         }
 
-        simulateBuy(symbol, side, getLotQty(), ltp, reason, stopLoss, ltp, true, {
+        simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
           signalStrength: "STRONG",
           rsiAtEntry:   indicators.rsi    != null ? indicators.rsi   : null,
           ema9AtEntry:  indicators.ema9   != null ? indicators.ema9  : null,
@@ -1545,6 +1567,7 @@ function onTick(tick) {
         ptState._entryPending = false;
         clearTimeout(_ptIntraTimer);
       });
+      } // end OI-not-blocked
       } // end VIX else
     }
     } // end SL-hit candle guard
@@ -1837,6 +1860,7 @@ router.get("/start", async (req, res) => {
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // "YYYY-MM-DD" in IST
 
   // Reset session state
+  oiFilter.resetCache(); // clear the shared OI buildup series so a same-day restart starts clean
   ptState.running       = true;
   ptState.candles       = [];
   ptState.currentBar    = null;

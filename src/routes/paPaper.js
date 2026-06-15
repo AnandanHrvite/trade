@@ -919,9 +919,9 @@ router.get("/start", async (req, res) => {
   await preloadHistory();
 
   // Start VIX polling
+  oiFilter.resetCache(); // OI series is VIX-independent — reset on every start
   if (process.env.PA_VIX_ENABLED === "true") {
     resetVixCache();
-    oiFilter.resetCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
 

@@ -919,8 +919,9 @@ router.get("/", (req, res) => {
     if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
     if ((key === "SCALP_VIX_MAX_ENTRY" || key === "SCALP_VIX_STRONG_ONLY") && !scalpVixEnabled) return true;
     if (key === "PA_VIX_MAX_ENTRY" && !paVixEnabled) return true;
-    // Scalp section frozen when scalp mode is off (but not the master toggle itself)
-    if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && !scalpModeOn) return true;
+    // Scalp section frozen when scalp mode is off (but not the master toggle itself,
+    // and not SCALP_OI_ENABLED which lives in the independent OI Filter section).
+    if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && key !== "SCALP_OI_ENABLED" && !scalpModeOn) return true;
     return false;
   }
 
@@ -936,6 +937,7 @@ router.get("/", (req, res) => {
     let frozenGroup = "";
     if (f.key === "SCALP_VIX_MAX_ENTRY" || f.key === "SCALP_VIX_STRONG_ONLY") frozenGroup = "scalp-vix";
     else if (f.key === "PA_VIX_MAX_ENTRY") frozenGroup = "pa-vix";
+    else if (f.key === "SCALP_OI_ENABLED") frozenGroup = ""; // OI section is independent of Scalp mode
     else if (f.key.startsWith("SCALP_"))   frozenGroup = "scalp";
     else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";

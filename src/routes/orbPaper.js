@@ -649,9 +649,9 @@ router.get("/start", async (req, res) => {
 
   await preloadHistory();
 
+  oiFilter.resetCache(); // OI series is VIX-independent — reset on every start
   if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     resetVixCache();
-    oiFilter.resetCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
 

@@ -12,9 +12,14 @@
  *   |ΔOI| < min%   = NEUTRAL                   → allow
  *
  * Policy: only block when fighting a *confirmed* strong buildup. Weak / neutral /
- * warmup / OI-missing all fail OPEN (allow). This is a pure LIVE/PAPER overlay —
- * OI is not recorded in tick files, so it is NEVER consulted in backtest/replay
- * (there is deliberately no checkBacktestOi, and routes gate on !_simMode).
+ * warmup / OI-missing all fail OPEN (allow). This is a pure LIVE/PAPER overlay.
+ * Replay/backtest safety: no backtest engine imports this module (there is
+ * deliberately no checkBacktestOi). Tick-replay DOES drive the paper routes, but
+ * the replay harness stubs fyers.getQuotes on the shared singleton, so any OI
+ * fetch during replay returns recorded/no-data and never hits the network →
+ * the series stays empty and the gate fails open, leaving recordings untouched.
+ * The routes' !_simMode guards exist for the in-process /sim synthetic-scenario
+ * tester (which does NOT stub getQuotes); ORB has no /sim tester so needs none.
  *
  * Toggles (all OFF by default):
  *   Master  : OI_FILTER_ENABLED          — kill-switch for every strategy
@@ -43,12 +48,18 @@ function getOiEnabled(mode = "swing") {
   return process.env.SWING_OI_ENABLED === "true"; // swing
 }
 
+// `mode` is accepted for call-site symmetry but ignored — only global OI_* tuning
+// keys exist today. Add SWING_OI_LOOKBACK etc. here if per-mode tuning is ever wanted.
 function getOiLookback(mode = "swing") {
-  return parseInt(process.env.OI_LOOKBACK_CANDLES || "3", 10) || 3;
+  const n = parseInt(process.env.OI_LOOKBACK_CANDLES || "3", 10);
+  return Number.isFinite(n) && n >= 1 ? n : 3;
 }
 
 function getOiMinDelta(mode = "swing") {
-  return parseFloat(process.env.OI_MIN_DELTA_PCT || "1") || 1;
+  // Honor an explicit 0 (no noise floor) — Settings exposes min:0. Falsy `|| 1`
+  // would silently coerce 0→1, so clamp on validity instead.
+  const v = parseFloat(process.env.OI_MIN_DELTA_PCT);
+  return Number.isFinite(v) && v >= 0 ? v : 1;
 }
 
 function anyOiEnabled() {
@@ -60,6 +71,7 @@ function anyOiEnabled() {
 let _series      = [];     // newest at the end
 let _lastSampleTs = 0;
 let _lastRegime  = null;
+let _warnedNoOi  = false;  // rate-limit the "no OI" warn (avoids per-candle spam in replay/outage)
 
 function _futSymbol() {
   // Always the NIFTY futures contract — the OI buildup proxy, independent of the
@@ -90,15 +102,16 @@ async function recordOiSample(spot, { force = false } = {}) {
         if (_series.length && (now - _series[_series.length - 1].ts) > STALE_GAP_MS) _series = [];
         _lastSampleTs = now;
         _series.push({ ts: now, oi, spot });
+        _warnedNoOi = false;
         // Keep a little more than the deepest lookback we might use.
         const maxLen = Math.max(getOiLookback() + 2, 6);
         if (_series.length > maxLen) _series.splice(0, _series.length - maxLen);
         return;
       }
     }
-    console.warn(`[OI] getQuotes returned no OI for ${_futSymbol()} (s=${response && response.s})`);
+    if (!_warnedNoOi) { console.warn(`[OI] getQuotes returned no OI for ${_futSymbol()} (s=${response && response.s}) — failing open until OI returns`); _warnedNoOi = true; }
   } catch (err) {
-    console.warn(`[OI] Fetch failed: ${err.message} — failing open`);
+    if (!_warnedNoOi) { console.warn(`[OI] Fetch failed: ${err.message} — failing open`); _warnedNoOi = true; }
   }
 }
 
@@ -123,21 +136,11 @@ function classifyBuildup(dPrice, dOiPct, minDeltaPct) {
 }
 
 /**
- * Check whether a directional entry is allowed against the current OI buildup.
- * @param {"CE"|"PE"} side
- * @param {number} spot  current NIFTY spot (bar.close at the gate)
- * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
- * @returns {Promise<{allowed:boolean, oi:number|null, deltaOi:number|null, regime:string|null, reason:string}>}
+ * Classify the current series and decide allow/block for `side`. Pure — no fetch.
+ * Shared by checkLiveOi (async, samples first) and checkCachedOi (sync, no sample).
+ * Sets _lastRegime so getCachedRegime() reflects the decision for trade records.
  */
-async function checkLiveOi(side, spot, { mode = "swing" } = {}) {
-  if (!getOiEnabled(mode)) {
-    return { allowed: true, oi: null, deltaOi: null, regime: null, reason: "OI filter disabled" };
-  }
-
-  // Make sure the current candle is sampled (throttle dedupes vs the background call).
-  await recordOiSample(spot);
-
+function _evaluate(side, mode) {
   const lookback = getOiLookback(mode);
   if (_series.length < lookback + 1) {
     return { allowed: true, oi: getCachedOi(), deltaOi: null, regime: null,
@@ -152,26 +155,53 @@ async function checkLiveOi(side, spot, { mode = "swing" } = {}) {
              reason: `OI unavailable — ${failClosed ? "blocking (fail-closed)" : "allowing (fail-open)"}` };
   }
 
-  const dOiPct  = ((latest.oi - base.oi) / base.oi) * 100;
-  const dPrice  = latest.spot - base.spot;
+  const dOiPct   = ((latest.oi - base.oi) / base.oi) * 100;
+  const dPrice   = latest.spot - base.spot;
   const minDelta = getOiMinDelta(mode);
-  const regime  = classifyBuildup(dPrice, dOiPct, minDelta);
+  const regime   = classifyBuildup(dPrice, dOiPct, minDelta);
   _lastRegime = regime;
 
   const tag = `ΔOI ${dOiPct >= 0 ? "+" : ""}${dOiPct.toFixed(1)}% / Δspot ${dPrice >= 0 ? "+" : ""}${dPrice.toFixed(0)}pt over ${lookback}c`;
 
   // Block only when fighting a confirmed strong buildup.
   if (regime === "LONG_BUILDUP" && side === "PE") {
-    return { allowed: false, oi: latest.oi, deltaOi: dOiPct, regime,
-             reason: `OI LONG_BUILDUP (${tag}) — PE blocked` };
+    return { allowed: false, oi: latest.oi, deltaOi: dOiPct, regime, reason: `OI LONG_BUILDUP (${tag}) — PE blocked` };
   }
   if (regime === "SHORT_BUILDUP" && side === "CE") {
-    return { allowed: false, oi: latest.oi, deltaOi: dOiPct, regime,
-             reason: `OI SHORT_BUILDUP (${tag}) — CE blocked` };
+    return { allowed: false, oi: latest.oi, deltaOi: dOiPct, regime, reason: `OI SHORT_BUILDUP (${tag}) — CE blocked` };
   }
+  return { allowed: true, oi: latest.oi, deltaOi: dOiPct, regime, reason: `OI ${regime} (${tag}) — ${side} allowed` };
+}
 
-  return { allowed: true, oi: latest.oi, deltaOi: dOiPct, regime,
-           reason: `OI ${regime} (${tag}) — ${side} allowed` };
+/**
+ * Async gate: sample the current candle (throttle dedupes vs the background call),
+ * then evaluate. Use from candle-close entry paths.
+ * @param {"CE"|"PE"} side
+ * @param {number} spot  current NIFTY spot (bar.close at the gate)
+ * @param {object} [opts]
+ * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
+ */
+async function checkLiveOi(side, spot, { mode = "swing" } = {}) {
+  if (!getOiEnabled(mode)) {
+    return { allowed: true, oi: null, deltaOi: null, regime: null, reason: "OI filter disabled" };
+  }
+  await recordOiSample(spot);
+  return _evaluate(side, mode);
+}
+
+/**
+ * Synchronous gate: classify from the already-sampled series WITHOUT a fetch.
+ * For tick handlers (e.g. swing intra-tick entry) that can't await — relies on the
+ * per-candle background recordOiSample() to keep the series fresh.
+ * @param {"CE"|"PE"} side
+ * @param {object} [opts]
+ * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
+ */
+function checkCachedOi(side, { mode = "swing" } = {}) {
+  if (!getOiEnabled(mode)) {
+    return { allowed: true, oi: null, deltaOi: null, regime: null, reason: "OI filter disabled" };
+  }
+  return _evaluate(side, mode);
 }
 
 /** Latest sampled futures OI (for trade-record display; no fetch). */
@@ -189,6 +219,7 @@ function resetCache() {
   _series       = [];
   _lastSampleTs = 0;
   _lastRegime   = null;
+  _warnedNoOi   = false;
 }
 
 module.exports = {
@@ -199,6 +230,7 @@ module.exports = {
   recordOiSample,
   classifyBuildup,
   checkLiveOi,
+  checkCachedOi,
   getCachedOi,
   getCachedRegime,
   resetCache,
