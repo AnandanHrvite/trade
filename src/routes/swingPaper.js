@@ -1860,7 +1860,9 @@ router.get("/start", async (req, res) => {
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // "YYYY-MM-DD" in IST
 
   // Reset session state
-  oiFilter.resetCache(); // clear the shared OI buildup series so a same-day restart starts clean
+  // NOTE: the OI series is intentionally NOT reset here — it is global NIFTY-futures
+  // OI shared across the parallel strategies; resetting would wipe another running
+  // strategy's warmed series. Stale series is auto-discarded by STALE_GAP_MS.
   ptState.running       = true;
   ptState.candles       = [];
   ptState.currentBar    = null;

@@ -649,11 +649,13 @@ router.get("/start", async (req, res) => {
 
   await preloadHistory();
 
-  oiFilter.resetCache(); // OI series is VIX-independent — reset on every start
   if ((process.env.ORB_VIX_ENABLED || "false").toLowerCase() === "true") {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
+  // NOTE: do NOT reset the OI series on start — it is global NIFTY-futures OI shared
+  // by all strategies (which run in parallel); a reset here would wipe another
+  // running strategy's warmed series. Stale series is auto-discarded by STALE_GAP_MS.
 
   try {
     tickRecorder.recordSessionStart({

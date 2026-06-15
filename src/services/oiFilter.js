@@ -214,7 +214,12 @@ function getCachedRegime() {
   return _lastRegime;
 }
 
-/** Reset OI series + regime (called on session stop). */
+/**
+ * Clear the OI series + regime. NOT called on session start/stop — the series is
+ * global market data shared across the parallel strategies and stale entries are
+ * auto-discarded by STALE_GAP_MS, so a per-session reset would wrongly wipe a
+ * concurrently-running strategy's warmed series. Exported as a manual/admin utility.
+ */
 function resetCache() {
   _series       = [];
   _lastSampleTs = 0;
