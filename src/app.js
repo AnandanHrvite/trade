@@ -1592,7 +1592,7 @@ async function _startAll(endpoints){
         var isLive = /-live\\//.test(ep);
         var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
         var titleCopy   = isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended';
-        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update Swing Option Expiry in Settings instead.' : '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update Swing Option Expiry in Settings instead.)';
+        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the Swing Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the Swing Option Expiry in Settings first. Or Start Anyway to run Swing on 0DTE.';
         var ok = await showConfirm({
           icon: '⚠️',
           title: titleCopy,
@@ -1615,7 +1615,11 @@ async function _startAll(endpoints){
             results.failures.push({ endpoint: ep, error: (e2 && e2.message) || 'Network error on retry' });
           }
         } else {
-          results.failures.push({ endpoint: ep, status: 409, error: 'Skipped — 0DTE expiry-day. Update Swing Option Expiry in Settings.' });
+          // User cancelled the 0DTE warning → abort the WHOLE Start All so nothing
+          // starts. Swing is always first in the endpoint list, so at this point no
+          // other strategy has started yet — breaking here starts nothing.
+          results.aborted = true;
+          break;
         }
         continue;
       }
@@ -1633,6 +1637,12 @@ async function _startAll(endpoints){
 }
 
 async function _handleStartAllResult(btn, origText, label, result){
+  if (result.aborted){
+    // 0DTE warning cancelled → nothing was started; just reset the button.
+    btn.disabled = false;
+    btn.textContent = origText;
+    return;
+  }
   if (result.failures.length === 0){
     location.reload();
     return;
