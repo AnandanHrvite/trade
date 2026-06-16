@@ -19,6 +19,28 @@ let deployState = {
   actor: "",            // who pushed
 };
 
+// A deploy's "completed" webhook is delivered right when the PM2 restart step
+// recycles THIS process, so it routinely lands in the restart window and is
+// lost — leaving the badge stuck on "deploying" forever. Self-heal: if a deploy
+// has been "deploying" longer than any real run takes, resolve it to success.
+// Sound because the server is up enough to serve this very request, so a deploy
+// that started this long ago must have finished (real runs are ~25–90s).
+const DEPLOY_STALE_MS = 3 * 60 * 1000;
+
+function currentState() {
+  if (deployState.status === "deploying" && deployState.startedAt) {
+    const age = Date.now() - new Date(deployState.startedAt).getTime();
+    if (age > DEPLOY_STALE_MS) {
+      deployState = {
+        ...deployState,
+        status:     "success",
+        finishedAt: deployState.finishedAt || new Date().toISOString(),
+      };
+    }
+  }
+  return deployState;
+}
+
 /* ── Webhook receiver ──────────────────────────────────────────────────────── */
 router.post("/webhook", (req, res) => {
   const event  = req.headers["x-github-event"];
@@ -57,7 +79,7 @@ router.post("/webhook", (req, res) => {
 
 /* ── Status endpoint (polled by sidebar) ───────────────────────────────────── */
 router.get("/status", (req, res) => {
-  res.json(deployState);
+  res.json(currentState());
 });
 
 module.exports = router;
