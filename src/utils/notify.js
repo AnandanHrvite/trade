@@ -491,9 +491,12 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
  * notifyConsolidatedDayReport({ byMode: { SWING, SCALP, PA, ORB, STRADDLE } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
+ * Returns true if a message was dispatched, false if gated off — the EOD
+ * reporter uses this to only mark today as "sent" on an actual send (so a
+ * restart catch-up keeps retrying until the report really goes out).
  */
 function notifyConsolidatedDayReport({ byMode }) {
-  if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return;
+  if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
   const groups = ["SWING", "SCALP", "PA", "ORB", "STRADDLE"].filter(isModeEnabled);
@@ -533,6 +536,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   ];
 
   sendTelegram(lines.join("\n"));
+  return true;
 }
 
 module.exports = {

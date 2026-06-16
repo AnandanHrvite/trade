@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix: consolidated EOD Telegram report now survives post-close restarts
+
+- **The 15:32 IST combined day report no longer silently disappears when the server is restarted after market close.** The old [consolidatedEodReporter.js](src/utils/consolidatedEodReporter.js) was a pure in-memory `setTimeout` that only fired "going forward" — so any redeploy/restart after 15:32 (routine, given push-to-main auto-deploys PM2) rescheduled for *tomorrow* and dropped today's report.
+- **Now restart-safe with catch-up + per-day idempotency.** A persisted last-sent date at `~/trading-data/.eod_report_state.json` gates the send. On boot (and on every scheduled tick) the report goes out immediately if it's a trading day, now is ≥ 15:32 IST, and today hasn't been sent yet. The date is recorded only on an actual dispatch (`notifyConsolidatedDayReport` now returns whether it sent), so a gated-off toggle or transient failure is retried on the next boot rather than being marked done.
+- No new env keys; gating is unchanged (`TG_ENABLED` + `TG_DAYREPORT_CONSOLIDATED`).
+
 ### Feature: OI + Price Buildup entry filter (per-strategy, default OFF)
 
 - **New directional entry gate that blocks trades fighting the Open-Interest buildup.** New service [oiFilter.js](src/services/oiFilter.js) (mirrors `vixFilter.js`) reads NIFTY current-expiry **futures OI** (via `fyers.getQuotes`) against spot over a short lookback, classifies the classic four-quadrant regime, and blocks **CE in a SHORT_BUILDUP** (price↓ + OI↑) and **PE in a LONG_BUILDUP** (price↑ + OI↑). Weak (short-covering / long-unwinding), neutral, warmup, and OI-missing all **fail open**.
