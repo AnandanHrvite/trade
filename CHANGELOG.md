@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: one-click "Download Everything" on Trade Logs
+
+- **Trade Logs → Trade Files now has a single Download Everything (all strategies) button** above the per-mode sections, alongside the existing per-mode **Download All**. It hits the new `GET /trade-logs/download-everything`, which concatenates every mode's daily JSONL files (grouped by mode, oldest first) into one `all_strategies_paper_trades_ALL_<date>.txt`.
+- The merged file stays self-describing: each JSONL line already carries its own `mode` field, so trades from different strategies remain distinguishable regardless of ordering. No new env keys.
+
 ### Fix: deploy chip no longer counts "DEPLOYING" forever
 
 - **The top-right deploy badge could spin "DEPLOYING …" indefinitely.** Deploy state in [deploy.js](src/routes/deploy.js) is held in memory on the same process the deploy restarts; GitHub's `completed` webhook is delivered right as `pm2 startOrRestart` recycles that process, so it routinely lands in the restart window and is lost — the fresh process never flips `deploying` → `success`, even though Actions shows the run finished.

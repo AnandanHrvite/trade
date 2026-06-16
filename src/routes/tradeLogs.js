@@ -168,6 +168,34 @@ router.get("/download-all", (req, res) => {
   })(0);
 });
 
+// ── GET /trade-logs/download-everything — concat ALL daily JSONLs, ALL modes ─
+// One button to grab every strategy's logs. Grouped by mode, oldest-first within
+// each mode. Each JSONL line carries its own "mode" field, so the merged file
+// stays self-describing regardless of ordering.
+router.get("/download-everything", (req, res) => {
+  const files = []; // flat list of { mode, date }, in download order
+  for (const mode of MODES) {
+    let dates;
+    try { dates = tradeLogger.listDailyDates(mode); }
+    catch (_) { dates = []; }
+    dates.sort((a, b) => a.date.localeCompare(b.date)); // oldest-first per mode
+    for (const d of dates) files.push({ mode, date: d.date });
+  }
+  if (!files.length) return res.status(404).send("no trade logs found");
+  const today = tradeLogger.istDateString();
+  const filename = `all_strategies_paper_trades_ALL_${today}.txt`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  (function writeNext(i) {
+    if (i >= files.length) return res.end();
+    const fp = tradeLogger.dailyFilePathFor(files[i].mode, files[i].date);
+    const rs = fs.createReadStream(fp);
+    rs.on("end", () => writeNext(i + 1));
+    rs.on("error", () => writeNext(i + 1));
+    rs.pipe(res, { end: false });
+  })(0);
+});
+
 
 
 // ── POST /trade-logs/delete — delete one file (write op, gated) ─────────────
@@ -467,6 +495,8 @@ router.get("/", (req, res) => {
     .btn-restore  { background:#07140a; border-color:#14401f; color:#34d399; }
     .btn:hover { filter:brightness(1.2); }
     .actions { display:flex; gap:5px; }
+    .files-toolbar { display:flex; justify-content:flex-end; margin-bottom:14px; }
+    .btn-download-all { font-size:0.72rem; padding:7px 14px; }
     .num { font-family:'IBM Plex Mono',monospace; }
     .filt-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
     .filt-bar input, .filt-bar select { padding:6px 10px; background:#0a1528; border:1px solid #1e3a5a; border-radius:6px; color:#c8d8f0; font-family:inherit; font-size:0.72rem; outline:none; }
@@ -580,6 +610,10 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   <!-- ── FILES TAB ─────────────────────────────────────────────────── -->
   <div class="tab-pane active" id="pane-files">
+    <div class="files-toolbar">
+      <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything"
+         title="Download every strategy's daily trade logs as one combined file (grouped by mode, oldest first). Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
+    </div>
     <div id="filesArea">Loading…</div>
   </div>
 
