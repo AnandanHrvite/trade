@@ -357,6 +357,33 @@ router.get("/skips/download-all", (req, res) => {
   })(0);
 });
 
+// ── GET /trade-logs/skips/download-everything — concat ALL skip JSONLs, ALL modes ─
+// One button for every strategy's skip logs. Grouped by mode, oldest-first within
+// each mode. Each line carries its own "mode" field, so the merge stays self-describing.
+router.get("/skips/download-everything", (req, res) => {
+  const files = []; // flat list of { mode, date }, in download order
+  for (const mode of MODES) {
+    let dates;
+    try { dates = skipLogger.listDates(mode); }
+    catch (_) { dates = []; }
+    dates.sort((a, b) => a.date.localeCompare(b.date)); // oldest-first per mode
+    for (const d of dates) files.push({ mode, date: d.date });
+  }
+  if (!files.length) return res.status(404).send("no skip logs found");
+  const today = skipLogger.istDateString();
+  const filename = `all_strategies_paper_skips_ALL_${today}.txt`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  (function writeNext(i) {
+    if (i >= files.length) return res.end();
+    const fp = skipLogger.filePathFor(files[i].mode, files[i].date);
+    const rs = fs.createReadStream(fp);
+    rs.on("end", () => writeNext(i + 1));
+    rs.on("error", () => writeNext(i + 1));
+    rs.pipe(res, { end: false });
+  })(0);
+});
+
 // ── POST /trade-logs/skips/delete — delete one skip file (gated) ────────────
 router.post("/skips/delete", (req, res) => {
   const mode = String(req.query.mode || req.body?.mode || "").toLowerCase();
@@ -620,6 +647,10 @@ ${buildSidebar('tradeLogs', liveActive)}
   <!-- ── SKIPS TAB ─────────────────────────────────────────────────── -->
   <div class="tab-pane" id="pane-skips">
     <div class="sub">Strategy / VIX / spread filter rejections — every signal that <em>almost</em> entered but was blocked by a gate. Files at <code>~/trading-data/skips/</code>. Click View to see per-row reason + indicator snapshot. Operational gates (cooldown, daily-loss cap, market-hours) are NOT logged here — only strategy gates.</div>
+    <div class="files-toolbar">
+      <a class="btn btn-download btn-download-all" href="/trade-logs/skips/download-everything"
+         title="Download every strategy's daily skip logs as one combined file (grouped by mode, oldest first). Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
+    </div>
     <div id="skipsArea">Click the tab to load…</div>
   </div>
 

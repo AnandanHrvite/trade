@@ -8,8 +8,8 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ### Feature: one-click "Download Everything" on Trade Logs
 
-- **Trade Logs → Trade Files now has a single Download Everything (all strategies) button** above the per-mode sections, alongside the existing per-mode **Download All**. It hits the new `GET /trade-logs/download-everything`, which concatenates every mode's daily JSONL files (grouped by mode, oldest first) into one `all_strategies_paper_trades_ALL_<date>.txt`.
-- The merged file stays self-describing: each JSONL line already carries its own `mode` field, so trades from different strategies remain distinguishable regardless of ordering. No new env keys.
+- **Trade Logs now has a single Download Everything (all strategies) button** above the per-mode sections on both the **Trade Files** and **Skip Logs** tabs, alongside the existing per-mode **Download All**. They hit `GET /trade-logs/download-everything` and `GET /trade-logs/skips/download-everything`, which concatenate every mode's daily JSONL files (grouped by mode, oldest first) into one `all_strategies_paper_trades_ALL_<date>.txt` / `all_strategies_paper_skips_ALL_<date>.txt`.
+- The merged file stays self-describing: each JSONL line already carries its own `mode` field, so records from different strategies remain distinguishable regardless of ordering. No new env keys.
 
 ### Fix: deploy chip no longer counts "DEPLOYING" forever
 
