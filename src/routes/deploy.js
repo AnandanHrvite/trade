@@ -27,6 +27,19 @@ let deployState = {
 // that started this long ago must have finished (real runs are ~25–90s).
 const DEPLOY_STALE_MS = 3 * 60 * 1000;
 
+// The sidebar re-shows the chip and resets its OWN 5-min hide timer on every
+// 20s poll, so while the server keeps returning "success" the green
+// "DEPLOYED Ns ago" chip never disappears and counts up forever. Expire a
+// finished success chip to "idle" after this window so it shows briefly, then
+// the sidebar hides it. Failures are left sticky on purpose — you want to see
+// them until the next deploy.
+const DEPLOY_SUCCESS_TTL_MS = 60 * 1000;
+
+const IDLE_STATE = {
+  status: "idle", startedAt: null, finishedAt: null,
+  commitMsg: "", commitSha: "", actor: "",
+};
+
 function currentState() {
   if (deployState.status === "deploying" && deployState.startedAt) {
     const age = Date.now() - new Date(deployState.startedAt).getTime();
@@ -37,6 +50,10 @@ function currentState() {
         finishedAt: deployState.finishedAt || new Date().toISOString(),
       };
     }
+  }
+  if (deployState.status === "success" && deployState.finishedAt) {
+    const age = Date.now() - new Date(deployState.finishedAt).getTime();
+    if (age > DEPLOY_SUCCESS_TTL_MS) deployState = { ...IDLE_STATE };
   }
   return deployState;
 }

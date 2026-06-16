@@ -10,6 +10,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 - **The top-right deploy badge could spin "DEPLOYING …" indefinitely.** Deploy state in [deploy.js](src/routes/deploy.js) is held in memory on the same process the deploy restarts; GitHub's `completed` webhook is delivered right as `pm2 startOrRestart` recycles that process, so it routinely lands in the restart window and is lost — the fresh process never flips `deploying` → `success`, even though Actions shows the run finished.
 - **Self-heal added.** `/deploy/status` now resolves any deploy that's been "deploying" longer than 3 min (real runs are ~25–90s) to `success`. Sound because the server is up enough to serve the status request, so a deploy that started that long ago must have finished. The `completed` webhook still wins when it arrives; this is the fallback.
+- **Green "DEPLOYED Ns ago" chip no longer counts up forever.** The sidebar re-showed the chip and reset its own hide timer on every poll, so a `success` state never disappeared. The endpoint now expires a finished success chip to `idle` ~1 min after it completes, so it flashes briefly then hides. (Failures stay sticky until the next deploy.)
 
 ### Fix: consolidated EOD Telegram report now survives post-close restarts
 
