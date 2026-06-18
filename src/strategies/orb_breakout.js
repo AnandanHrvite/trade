@@ -27,8 +27,12 @@
  *   • Target: +ORB_TARGET_PCT premium (40%) OR 1.5× range on spot
  *   • SL: −ORB_STOP_PCT premium (25%) OR opposite OR edge
  *   • Trail layer A: once spot moves >= 1× range in favour, lift SL to entry
- *   • Trail layer B: once premium hits +ORB_PREMIUM_LOCKIN_PCT (25%) profit,
- *     lift premium SL to entry × (1 + ORB_PREMIUM_LOCKIN_FLOOR_PCT) (5%)
+ *   • Trail layer B (one-shot): once premium hits +ORB_PREMIUM_LOCKIN_PCT (25%)
+ *     profit, lift premium SL to entry × (1 + ORB_PREMIUM_LOCKIN_FLOOR_PCT) (5%)
+ *   • Trail layer C (continuous, ORB_TRAIL_ENABLED): once premium arms at
+ *     +ORB_TRAIL_ARM_PCT (8%), ratchet premium SL behind the peak to keep
+ *     ORB_TRAIL_LOCK_PCT (50%) of the running peak profit — stops a winner
+ *     round-tripping to a loss.
  *   • Time stop: hard square-off at 15:15 IST.
  *
  * Returns:

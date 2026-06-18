@@ -219,6 +219,7 @@ async function simulateBuy(side, sigSnapshot) {
     initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
     lockinPct, lockinFloorPct,
     lockinHit:      false,
+    trailActive:    false,
     peakPremium:    optionEntryLtp,
     movedToBE:      false,
     signalStrength: sigSnapshot.signalStrength,
@@ -408,9 +409,27 @@ function _checkExits(spotPrice) {
     }
   }
 
+  // ── Continuous peak-giveback trail: once premium arms (>= entry +ARM_PCT),
+  //    ratchet the premium SL up to lock LOCK_PCT of the running peak profit.
+  //    Unlike the one-shot lockin above, this keeps trailing as the peak climbs
+  //    — protects the whole move instead of giving it all back. Gated OFF by
+  //    default; ORB_TRAIL_ENABLED turns it on.
+  if (process.env.ORB_TRAIL_ENABLED === "true") {
+    const armPct  = parseFloat(process.env.ORB_TRAIL_ARM_PCT  || "0.08");
+    const lockPct = parseFloat(process.env.ORB_TRAIL_LOCK_PCT || "0.5");
+    if (pos.peakPremium >= pos.optionEntryLtp * (1 + armPct)) {
+      const trailFloor = parseFloat((pos.optionEntryLtp + (pos.peakPremium - pos.optionEntryLtp) * lockPct).toFixed(2));
+      if (trailFloor > pos.stopPremium) {
+        log(`📈 [ORB-PAPER] Trail: stopPremium ₹${pos.stopPremium} → ₹${trailFloor} (peak ₹${pos.peakPremium.toFixed(2)}, lock ${(lockPct*100).toFixed(0)}% of profit)`);
+        pos.stopPremium = trailFloor;
+        pos.trailActive = true;
+      }
+    }
+  }
+
   // ── Premium SL ───────────────────────────────────────────────────────────
   if (optLtp <= pos.stopPremium) {
-    const tag = pos.lockinHit ? "lockin floor" : `−${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%`;
+    const tag = pos.trailActive ? "trail lock" : pos.lockinHit ? "lockin floor" : `−${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%`;
     simulateSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}, ${tag})`);
     return;
   }

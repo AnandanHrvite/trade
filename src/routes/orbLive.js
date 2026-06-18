@@ -198,7 +198,7 @@ async function placeLiveBuy(side, sigSnapshot) {
     targetPremium:      parseFloat((optionEntryLtp * (1 + targetPct)).toFixed(2)),
     stopPremium:        parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
     initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
-    lockinPct, lockinFloorPct, lockinHit: false,
+    lockinPct, lockinFloorPct, lockinHit: false, trailActive: false,
     peakPremium: optionEntryLtp, movedToBE: false,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
     vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
@@ -337,7 +337,21 @@ function _checkExits(spotPrice) {
       }
     }
   }
-  if (optLtp <= pos.stopPremium) return placeLiveSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}${pos.lockinHit ? ", lockin floor" : ""})`);
+  // Continuous peak-giveback trail (mirrors paper): ratchet premium SL up to
+  // lock LOCK_PCT of running peak profit once armed. Gated by ORB_TRAIL_ENABLED.
+  if (process.env.ORB_TRAIL_ENABLED === "true") {
+    const armPct  = parseFloat(process.env.ORB_TRAIL_ARM_PCT  || "0.08");
+    const lockPct = parseFloat(process.env.ORB_TRAIL_LOCK_PCT || "0.5");
+    if (pos.peakPremium >= pos.optionEntryLtp * (1 + armPct)) {
+      const trailFloor = parseFloat((pos.optionEntryLtp + (pos.peakPremium - pos.optionEntryLtp) * lockPct).toFixed(2));
+      if (trailFloor > pos.stopPremium) {
+        log(`📈 Trail: stopPremium ₹${pos.stopPremium} → ₹${trailFloor} (peak ₹${pos.peakPremium.toFixed(2)}, lock ${(lockPct*100).toFixed(0)}% of profit)`);
+        pos.stopPremium = trailFloor;
+        pos.trailActive = true;
+      }
+    }
+  }
+  if (optLtp <= pos.stopPremium) return placeLiveSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}${pos.trailActive ? ", trail lock" : pos.lockinHit ? ", lockin floor" : ""})`);
   if (optLtp >= pos.targetPremium) return placeLiveSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium})`);
   if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} <= ORL ${pos.slSpot})`);
   if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} >= ORH ${pos.slSpot})`);

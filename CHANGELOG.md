@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Feature: ORB continuous profit trail (stops winners round-tripping to a loss)
+
+- **ORB now has a continuous peak-giveback trail** (`ORB_TRAIL_ENABLED`, default off, enabled in `.env`). Once the option is `ORB_TRAIL_ARM_PCT` (+8%) in profit, the premium SL ratchets up behind the running peak to always retain `ORB_TRAIL_LOCK_PCT` (50%) of the highest profit seen — so a winner that peaks at +12% can't drift all the way back to flat or a loss.
+- This fixes the gap where the old one-shot lock-in only armed at +25% premium, which real ORB trades rarely reach (recent winners peaked +7–13%), so it never fired and the entire unrealized gain was given back. Example: 17-Jun CE peaked +₹1,511 then squared off flat at −₹28; with the trail it would have exited around the locked floor instead.
+- Wired identically across paper (canonical), live, and backtest; three keys exposed in Settings. The one-shot lock-in keys remain for backward compatibility; the continuous trail supersedes them when on.
+
 ### Feature: one-click "Download Everything" on Trade Logs
 
 - **Trade Logs now has a single Download Everything (all strategies) button** above the per-mode sections on both the **Trade Files** and **Skip Logs** tabs, alongside the existing per-mode **Download All**. They hit `GET /trade-logs/download-everything` and `GET /trade-logs/skips/download-everything`, which concatenate every mode's daily JSONL files (grouped by mode, oldest first) into one `all_strategies_paper_trades_ALL_<date>.txt` / `all_strategies_paper_skips_ALL_<date>.txt`.

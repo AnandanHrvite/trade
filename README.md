@@ -115,6 +115,7 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
   - **Expiry-day-only** (`ORB_EXPIRY_DAY_ONLY`): block ORB on non-expiry sessions when set.
 - **Targets / stops**: spot target = ORH/ORL ± (range × `ORB_TARGET_RANGE_MULT=1.5`); premium target = `ORB_TARGET_PCT=0.4`; premium SL = `ORB_STOP_PCT=0.25`.
 - **Lock-in trail** (`ORB_PREMIUM_LOCKIN_PCT=0.25` / `ORB_PREMIUM_LOCKIN_FLOOR_PCT=0.05`): once option LTP gains 25%, ratchet the premium SL to entry × (1 + 5%) — a hard floor that never lets a profitable ORB give back below break-even.
+- **Continuous profit trail** (`ORB_TRAIL_ENABLED=true` / `ORB_TRAIL_ARM_PCT=0.08` / `ORB_TRAIL_LOCK_PCT=0.5`): once the option is +8% in profit, keep ratcheting the premium SL behind the running peak so it always retains 50% of the highest profit seen. Unlike the one-shot lock-in (which only fires at +25% and then sits at a fixed +5% floor), this trails the peak the whole way up — so a winner that ran to +12% can't round-trip back to flat or a loss. Off by default; when on it supersedes the one-shot lock-in.
 - **Risk caps**: 1 trade/day default (`ORB_MAX_DAILY_TRADES=1`), `ORB_MAX_DAILY_LOSS=3000`, forced square-off at `ORB_FORCED_EXIT=15:15`, last entry `ORB_ENTRY_END=12:00` (stale-breakout cutoff).
 
 ### Strategy 5: Straddle — Long Straddle (paired CE+PE, volatility expansion)
@@ -334,6 +335,9 @@ Full spec: [SCALP.md](SCALP.md).
 | `ORB_TARGET_PCT` / `ORB_STOP_PCT` | `0.4` / `0.25` | Premium target / SL (fraction of entry premium) |
 | `ORB_PREMIUM_LOCKIN_PCT` | `0.25` | Once option LTP gains 25%, lock-in trail kicks in. `0` disables. |
 | `ORB_PREMIUM_LOCKIN_FLOOR_PCT` | `0.05` | Premium SL ratchets to entry × (1 + 5%) once lock-in triggers |
+| `ORB_TRAIL_ENABLED` | `false` | Continuous peak-giveback trail — ratchets premium SL behind the running peak so a winner can't fully round-trip to a loss |
+| `ORB_TRAIL_ARM_PCT` | `0.08` | Trail starts only once option LTP gains this fraction (+8%) |
+| `ORB_TRAIL_LOCK_PCT` | `0.5` | Once armed, SL keeps this fraction of the running peak profit (0.5 = give back at most half the peak gain) |
 | `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | Reject candles whose opposing wick exceeds ratio × body |
 | `ORB_VWAP_FILTER_ENABLED` | `true` | CE only above VWAP, PE only below (falls back to TWAP for volumeless candles) |
 | `ORB_VOL_FILTER_ENABLED` | `true` | Breakout volume ≥ multiplier × avg of prior N (auto-skipped on volumeless indices) |
