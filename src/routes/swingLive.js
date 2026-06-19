@@ -1220,7 +1220,7 @@ async function onCandleClose(candle) {
     if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
     // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
     const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
     if (_ctOn && tradeState.candles && tradeState.candles.length >= _ctBars) {
       const _bars = tradeState.candles.slice(-_ctBars);
       const _candleLvl = pos.side === "CE"
@@ -2115,7 +2115,7 @@ router.get("/start", async (req, res) => {
     }
 
     // Check 4: Risk config summary (always logs)
-    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
+    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
     log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
 
     const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
@@ -2679,7 +2679,7 @@ router.get("/status", (req, res) => {
   // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
   const _slModeLbl  = "EMA21";
   const _ctOn       = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
   const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge

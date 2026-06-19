@@ -231,7 +231,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   SWING(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
+  console.log(`   SWING(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
 
   // 50%-rule exit pause: retained for non-SWING strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
@@ -348,7 +348,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (_sig.ema21 != null) trailRef = _sig.ema21;
       // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
       const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-      const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+      const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
       if (_ctOn && i >= _ctBars) {
         const _bars = candles.slice(i - _ctBars, i);
         const _candleLvl = position.side === "CE"

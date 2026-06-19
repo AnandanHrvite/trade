@@ -1100,7 +1100,7 @@ async function onCandleClose(candle) {
     if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
     // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
     const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
     if (_ctOn && ptState.candles && ptState.candles.length >= _ctBars) {
       const _bars = ptState.candles.slice(-_ctBars);
       const _candleLvl = pos.side === "CE"
@@ -1931,7 +1931,7 @@ router.get("/start", async (req, res) => {
     const _emaDn   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}<EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
     log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED (intra-candle)`);
   }
-  log(`   Stop/exit   : EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"2",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
+  log(`   Stop/exit   : EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.SWING_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);
   log(`════════════════════════════════════════════════════════════════════\n`);
 
@@ -2622,7 +2622,7 @@ router.get("/status", (req, res) => {
   // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
   const _slModeLbl  = "EMA21";
   const _ctOn       = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "2", 10));
+  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
   const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge
