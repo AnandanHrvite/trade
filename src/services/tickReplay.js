@@ -96,6 +96,36 @@ function _fileFingerprint(p) {
   catch (_) { return "missing"; }
 }
 
+// ── Expiry pinning (simulator mode) ──────────────────────────────────────────
+// These keys resolve WHICH option contract (strike-expiry / weekly-vs-monthly)
+// instrument.js builds. The recorded options.jsonl only carries ticks for the
+// expiry the session actually traded that day — so a sim run MUST use the
+// recorded day's expiry, not today's. Honoring the CURRENT OPTION_EXPIRY_*
+// against old ticks misses every quote → paper's spot-proxy fallback poisons the
+// entry/exit LTP → nonsense P&L. So in simulator mode we pin ONLY these keys to
+// the recorded snapshot; every other setting still honors current process.env.
+// A key absent from the snapshot (expiry was auto-detected, not overridden, on
+// the recorded day) is forced blank → instrument.js auto-computes the expiry
+// from the replay clock (Date.now is patched to the replay tick time), which
+// reproduces what the live recording did. Either way the current env value is
+// never allowed to leak in.
+const _EXPIRY_PIN_KEYS = [
+  "OPTION_EXPIRY_OVERRIDE",          "OPTION_EXPIRY_TYPE",
+  "SWING_OPTION_EXPIRY_OVERRIDE",    "SWING_OPTION_EXPIRY_TYPE",
+  "SCALP_OPTION_EXPIRY_OVERRIDE",    "SCALP_OPTION_EXPIRY_TYPE",
+  "PA_OPTION_EXPIRY_OVERRIDE",       "PA_OPTION_EXPIRY_TYPE",
+  "ORB_OPTION_EXPIRY_OVERRIDE",      "ORB_OPTION_EXPIRY_TYPE",
+  "STRADDLE_OPTION_EXPIRY_OVERRIDE", "STRADDLE_OPTION_EXPIRY_TYPE",
+];
+function _pinnedExpirySettings(snapshot) {
+  const snap = snapshot || {};
+  const out = {};
+  for (const k of _EXPIRY_PIN_KEYS) {
+    out[k] = (k in snap) ? snap[k] : "";  // recorded value, or blank → auto-compute from replay clock
+  }
+  return out;
+}
+
 function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) {
   const dir = path.join(ROOT_DIR, date);
   // Sim mode: the result depends on the CURRENT value of the settings the
@@ -107,9 +137,14 @@ function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) 
   // Snapshot mode keys on the recorded session-start env (immutable on disk).
   let settingsBasis;
   if (useCurrentSettings) {
+    // Expiry keys are pinned to the recorded snapshot during the run (see
+    // _pinnedExpirySettings), so key the cache on the pinned value — not the
+    // current env — or two different current-expiry values would split the
+    // cache despite producing the identical sim result.
     settingsBasis = {};
+    const pinned = _pinnedExpirySettings(sessionStart.settings);
     for (const k of Object.keys(sessionStart.settings || {})) {
-      settingsBasis[k] = process.env[k];
+      settingsBasis[k] = (k in pinned) ? pinned[k] : process.env[k];
     }
   } else {
     settingsBasis = sessionStart.settings || {};
@@ -884,8 +919,11 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  *                         values) → "simulator" mode for testing config changes
  *                         after market hours. Output is written to a separate
  *                         folder so sim runs are not mixed with snapshot runs.
- *                         NOTE: instrument/expiry/lot in current env must match
- *                         the recorded session, or results will be nonsense.
+ *                         NOTE: the option expiry is auto-pinned to the recorded
+ *                         session (the recorded ticks only cover that day's
+ *                         contract), so only the OTHER current settings apply.
+ *                         Instrument/lot in current env should still match the
+ *                         recorded session, or results will be nonsense.
  *
  * Returns:
  *   { ok, sessionId, mode, ticksReplayed, durationMs, sessionTrades, sessionPnl, error? }
@@ -942,6 +980,11 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    these ticks?".
     if (!useCurrentSettings) {
       restoreEnv = _applySettingsOverride(data.sessionStart.settings);
+    } else {
+      // Simulator mode honors current settings for everything EXCEPT the option
+      // expiry — that's pinned to the recorded session so an old day resolves
+      // its own contract instead of today's (see _pinnedExpirySettings).
+      restoreEnv = _applySettingsOverride(_pinnedExpirySettings(data.sessionStart.settings));
     }
 
     // 3. Install harness (monkey-patch deps) with recorded warmup so paper's

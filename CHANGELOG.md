@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay: "current settings" mode auto-pins the recorded day's option expiry
+
+- **Simulator (current-settings) replays now use the recorded day's option expiry instead of today's.** Previously a "My current settings" range replay applied the live `OPTION_EXPIRY_OVERRIDE` to every replayed day — so an old day was priced against this week's contract, which the recorded ticks don't cover (every quote missed → paper's spot-proxy fallback → nonsense P&L).
+- The expiry keys (`OPTION_EXPIRY_OVERRIDE`/`_TYPE` and the per-mode `SWING_`/`SCALP_`/`PA_`/`ORB_`/`STRADDLE_` variants) are now pinned to the recorded session-start snapshot; a day that auto-detected its expiry falls back to computing it from the replay clock. **Every other setting still honors current Settings** — that's the whole point of the mode. Snapshot (deterministic) mode is unchanged.
+
 ### ORB: exits replaced with a single candle-structure trailing stop
 
 - **ORB now exits on one stop only — the swing of the last `ORB_SL_CANDLES` (default 2) closed candles** (CE → lowest low, PE → highest high), recomputed and ratcheted in the favourable direction on every candle close. The same level is both the initial SL and the trail, so winners ride until structure breaks.

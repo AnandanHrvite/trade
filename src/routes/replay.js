@@ -12,6 +12,10 @@
  *                                  process.env right now (the user's Settings
  *                                  page values). Lets you test settings changes
  *                                  after market hours against real recorded ticks.
+ *                                  The option expiry is the exception: it's
+ *                                  auto-pinned to the recorded day (the recorded
+ *                                  ticks only cover that day's contract), so an
+ *                                  old day uses its own expiry, not today's.
  *                                  Output → ~/trading-data/_replay_trades_sim/
  *
  * Routes:
