@@ -384,7 +384,7 @@
 <div class="card card-green">
   <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>scalp_bb_cpr.js</code> + <code>scalpPaper.js</code> on 2026-06-14. <em>(2026-06-15) verification recheck: corrected the BB re-entry exit &mdash; the <strong>primary</strong> stop runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>), with a candle-close BB re-entry only as a backstop; and re-ordered the exit stack to match runtime (per-tick BB band touch &rarr; hard stop &rarr; profit lock, then candle-close BB re-entry &rarr; PSAR flip). Earlier copy described BB re-entry as candle-close only.</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (40). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
+    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + RSI in band <code>SCALP_RSI_CE_MIN</code> (52) &lt; RSI &lt; <code>SCALP_RSI_CE_MAX</code> (70). PE = close &le; BB lower + PSAR above close + RSI in band <code>SCALP_RSI_PE_MIN</code> (30) &lt; RSI &lt; <code>SCALP_RSI_PE_MAX</code> (49). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
     <li><strong>Initial SL = PSAR value at entry</strong> &mdash; no clamp, <strong>no trail</strong>, not an intra-tick stop. Display + risk-sizing only.</li>
     <li><strong>Exit stack:</strong> per-tick checks (evaluated every tick, in order) &mdash; (1) <strong>BB re-entry / band touch</strong> (<code>SCALP_BB_REENTRY_EXIT</code>): exit the instant spot crosses back through the band, armed only after the breakout extends <code>SCALP_BB_REENTRY_ARM_PTS</code> (10) past it; (2) <strong>wide hard stop</strong> <code>SCALP_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) <strong>profit lock</strong> in spot points &mdash; arm at <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>SCALP_PROFIT_LOCK_PCT</code> (50%), ratchets up. Then on each candle close &mdash; (4) <strong>candle-close BB re-entry</strong> (close back inside the band, no arm guard) and (5) <strong>PSAR flip</strong>. Plus EOD / daily-loss / max-trades / per-side SL cooldown.</li>
     <li><strong>Optional trend source:</strong> <code>SCALP_USE_SUPERTREND</code> (off) swaps PSAR for SuperTrend(10,3) for direction, the entry SL line, and the flip exit.</li>
@@ -679,8 +679,8 @@
 <!-- RSI Section -->
 <h3 class="blue">RSI (14) &mdash; Momentum Confirmation</h3>
 <div class="card card-blue">
-  <h4 class="blue">CE Entry: RSI &gt; 70 | PE Entry: RSI &lt; 40</h4>
-  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>SCALP_RSI_CE_THRESHOLD</code>, default 70), while PE signals need bearish momentum (RSI below <code>SCALP_RSI_PE_THRESHOLD</code>, default 40). These are the only two RSI keys &mdash; the V5 overbought/oversold caps (<code>SCALP_RSI_CE_MAX</code> / <code>SCALP_RSI_PE_MIN</code>) were removed in V6. Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
+  <h4 class="blue">CE Entry: 52 &lt; RSI &lt; 70 | PE Entry: 30 &lt; RSI &lt; 49</h4>
+  <p>RSI filters out false BB breakouts and is a <strong>band</strong>, not a single threshold. A CE signal needs RSI between <code>SCALP_RSI_CE_MIN</code> (52) and <code>SCALP_RSI_CE_MAX</code> (70) &mdash; above the floor for momentum, below the cap to skip overbought breakouts that tend to reverse. A PE signal needs RSI between <code>SCALP_RSI_PE_MIN</code> (30) and <code>SCALP_RSI_PE_MAX</code> (49). Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
 </div>
 
 <div class="rsi-gauge">
@@ -1478,8 +1478,10 @@
     <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
     <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
     <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
-    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
-    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
+    <tr><td><code>SCALP_RSI_CE_MIN</code></td><td><code>52</code></td><td>CE entry: RSI must be above this (bullish momentum floor)</td></tr>
+    <tr><td><code>SCALP_RSI_CE_MAX</code></td><td><code>70</code></td><td>CE entry blocked at/above this (skip overbought breakouts that reverse)</td></tr>
+    <tr><td><code>SCALP_RSI_PE_MAX</code></td><td><code>49</code></td><td>PE entry: RSI must be below this (bearish momentum cap)</td></tr>
+    <tr><td><code>SCALP_RSI_PE_MIN</code></td><td><code>30</code></td><td>PE entry blocked at/below this (skip oversold breakdowns that reverse)</td></tr>
     <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
     <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
     <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
