@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB: exits replaced with a single candle-structure trailing stop
+
+- **ORB now exits on one stop only — the swing of the last `ORB_SL_CANDLES` (default 2) closed candles** (CE → lowest low, PE → highest high), recomputed and ratcheted in the favourable direction on every candle close. The same level is both the initial SL and the trail, so winners ride until structure breaks.
+- **Removed** (all of them): the −25% premium SL, the opposite-OR-edge spot SL, the +40% premium / 1.5×-range spot **profit target**, move-to-breakeven, the one-shot premium lock-in, and the continuous-premium peak-giveback trail. The 15:15 EOD square-off is kept as the only non-stop exit. `ORB_TARGET_RANGE_MULT` survives only as an informational chart line.
+- Wired identically across paper (canonical), live (legacy `/orb-live` + harness), and backtest. Settings UI drops the 8 now-dead exit knobs and exposes `ORB_SL_CANDLES`. The dead env keys (`ORB_STOP_PCT`, `ORB_TARGET_PCT`, `ORB_PREMIUM_LOCKIN_*`, `ORB_TRAIL_*`) are no longer read by ORB.
+
 ### Swing: negative-candle loss-cut + looser candle trail (chop fixes)
 
 - **New `SWING_NEG_CANDLE_LIMIT` (default 2)** — asymmetric loss-cut: if a trade is still in the **red** (option premium below entry) at the close of N candles, square it off. Winners keep riding the EMA21 trail; losers don't bleed across the chop. `0` disables. Wired identically across paper (canonical), live, and backtest; exposed in Settings.

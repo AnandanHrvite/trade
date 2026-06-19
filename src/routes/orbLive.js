@@ -185,21 +185,23 @@ async function placeLiveBuy(side, sigSnapshot) {
     }
   }
 
-  const stopPct        = parseFloat(process.env.ORB_STOP_PCT                  || "0.25");
-  const targetPct      = parseFloat(process.env.ORB_TARGET_PCT                || "0.4");
-  const lockinPct      = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT        || "0.25");
-  const lockinFloorPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT  || "0.05");
+  // Candle-structure stop: SL = swing of last N closed candles (CE → lowest low,
+  // PE → highest high). Trails on each candle close. Mirrors orbPaper — the only
+  // stop; premium/spot-edge stops, move-to-BE, lock-in, premium trail and the
+  // profit target were all removed by design.
+  const slCandles = Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
+  const _slLook = (state.candles || []).slice(-slCandles).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
+  let _initSl = side === "CE"
+    ? (_slLook.length ? Math.min(..._slLook.map(c => c.low))  : sigSnapshot.slSpot)
+    : (_slLook.length ? Math.max(..._slLook.map(c => c.high)) : sigSnapshot.slSpot);
+  _initSl = Math.round(_initSl * 100) / 100;
   const pos = {
     side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
     qty, entrySpot: spot, entryPrice: spot, optionEntryLtp,
     entryTime: istNow(), entryTimeMs: Date.now(),
     orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts,
-    targetSpot: sigSnapshot.targetSpot, initialSlSpot: sigSnapshot.slSpot, slSpot: sigSnapshot.slSpot,
-    targetPremium:      parseFloat((optionEntryLtp * (1 + targetPct)).toFixed(2)),
-    stopPremium:        parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
-    initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
-    lockinPct, lockinFloorPct, lockinHit: false, trailActive: false,
-    peakPremium: optionEntryLtp, movedToBE: false,
+    targetSpot: sigSnapshot.targetSpot, slCandles, initialSlSpot: _initSl, slSpot: _initSl,
+    peakPremium: optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
     vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
     // Entry-context filter outcomes — already computed by getSignal(), captured for analysis.
@@ -304,6 +306,22 @@ async function placeLiveSell(reason) {
   stopOptionPolling();
 }
 
+// Ratchet the candle-structure stop on each candle close (mirrors orbPaper).
+function _updateCandleTrail() {
+  const pos = state.position;
+  if (!pos) return;
+  const n = pos.slCandles || Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
+  const closed = (state.candles || []).slice(-n).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
+  if (!closed.length) return;
+  if (pos.side === "CE") {
+    const swingLow = Math.round(Math.min(...closed.map(c => c.low)) * 100) / 100;
+    if (swingLow > pos.slSpot) { log(`📈 Candle trail: SL ${pos.slSpot} → ${swingLow} (low of last ${n})`); pos.slSpot = swingLow; }
+  } else {
+    const swingHigh = Math.round(Math.max(...closed.map(c => c.high)) * 100) / 100;
+    if (swingHigh < pos.slSpot) { log(`📈 Candle trail: SL ${pos.slSpot} → ${swingHigh} (high of last ${n})`); pos.slSpot = swingHigh; }
+  }
+}
+
 // ── In-position tick management (mirrors paper logic) ──────────────────────
 function _checkExits(spotPrice) {
   if (!state.position) return;
@@ -319,48 +337,15 @@ function _checkExits(spotPrice) {
   if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
-  const moveInFavour = pos.side === "CE" ? (spotPrice - pos.entrySpot) : (pos.entrySpot - spotPrice);
-  if (!pos.movedToBE && moveInFavour >= pos.rangePts) {
-    pos.movedToBE = true;
-    const newSL = pos.side === "CE" ? Math.max(pos.slSpot, pos.entrySpot) : Math.min(pos.slSpot, pos.entrySpot);
-    if (newSL !== pos.slSpot) { log(`📐 Move-to-BE: SL ${pos.slSpot} → ${newSL}`); pos.slSpot = newSL; }
-  }
-  // Premium-lockin trail
-  if (!pos.lockinHit && pos.lockinPct > 0) {
-    const trigger = pos.optionEntryLtp * (1 + pos.lockinPct);
-    if (optLtp >= trigger) {
-      pos.lockinHit = true;
-      const floor = parseFloat((pos.optionEntryLtp * (1 + pos.lockinFloorPct)).toFixed(2));
-      if (floor > pos.stopPremium) {
-        log(`📐 Premium-lockin: stopPremium ₹${pos.stopPremium} → ₹${floor} (LTP ₹${optLtp} hit +${(pos.lockinPct*100).toFixed(0)}%)`);
-        pos.stopPremium = floor;
-      }
-    }
-  }
-  // Continuous peak-giveback trail (mirrors paper): ratchet premium SL up to
-  // lock LOCK_PCT of running peak profit once armed. Gated by ORB_TRAIL_ENABLED.
-  if (process.env.ORB_TRAIL_ENABLED === "true") {
-    const armPct  = parseFloat(process.env.ORB_TRAIL_ARM_PCT  || "0.08");
-    const lockPct = parseFloat(process.env.ORB_TRAIL_LOCK_PCT || "0.5");
-    if (pos.peakPremium >= pos.optionEntryLtp * (1 + armPct)) {
-      const trailFloor = parseFloat((pos.optionEntryLtp + (pos.peakPremium - pos.optionEntryLtp) * lockPct).toFixed(2));
-      if (trailFloor > pos.stopPremium) {
-        log(`📈 Trail: stopPremium ₹${pos.stopPremium} → ₹${trailFloor} (peak ₹${pos.peakPremium.toFixed(2)}, lock ${(lockPct*100).toFixed(0)}% of profit)`);
-        pos.stopPremium = trailFloor;
-        pos.trailActive = true;
-      }
-    }
-  }
-  if (optLtp <= pos.stopPremium) return placeLiveSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}${pos.trailActive ? ", trail lock" : pos.lockinHit ? ", lockin floor" : ""})`);
-  if (optLtp >= pos.targetPremium) return placeLiveSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium})`);
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} <= ORL ${pos.slSpot})`);
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Spot SL hit (${spotPrice} >= ORH ${pos.slSpot})`);
-  if (pos.side === "CE" && spotPrice >= pos.targetSpot) return placeLiveSell(`Spot target hit (${spotPrice} >= ${pos.targetSpot})`);
-  if (pos.side === "PE" && spotPrice <= pos.targetSpot) return placeLiveSell(`Spot target hit (${spotPrice} <= ${pos.targetSpot})`);
+  // Candle-structure trailing stop (spot-based) — the only stop. No premium
+  // SL/target, no opposite-edge spot SL, no move-to-BE/lock-in/premium trail,
+  // no profit target. EOD square-off still runs in onTick.
+  if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Candle SL hit (${spotPrice} <= ${pos.slSpot}, low of last ${pos.slCandles})`);
+  if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Candle SL hit (${spotPrice} >= ${pos.slSpot}, high of last ${pos.slCandles})`);
 }
 
 async function onCandleClose(bar) {
-  if (state.position) return;
+  if (state.position) { _updateCandleTrail(); return; }
   const _spot = bar && bar.close;
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot, _live: true }); return; }

@@ -193,10 +193,17 @@ async function simulateBuy(side, sigSnapshot) {
   }
 
   const qty = instrumentConfig.getLotQty();
-  const stopPct   = parseFloat(process.env.ORB_STOP_PCT   || "0.25");
-  const targetPct = parseFloat(process.env.ORB_TARGET_PCT || "0.4");
-  const lockinPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT       || "0.25");
-  const lockinFloorPct = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT || "0.05");
+  // ── Candle-structure stop: SL = swing of the last N closed candles.
+  //    CE → lowest low, PE → highest high. Trails (ratchets) on each candle
+  //    close in _updateCandleTrail. This is the ONLY stop — the old premium
+  //    −%/spot-edge stops, move-to-BE, premium lock-in, continuous-premium
+  //    trail and the +% profit target were all removed by design.
+  const slCandles = Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
+  const _slLook = (state.candles || []).slice(-slCandles).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
+  let _initSl = side === "CE"
+    ? (_slLook.length ? Math.min(..._slLook.map(c => c.low))  : sigSnapshot.slSpot)
+    : (_slLook.length ? Math.max(..._slLook.map(c => c.high)) : sigSnapshot.slSpot);
+  _initSl = Math.round(_initSl * 100) / 100;
   const pos = {
     side,
     symbol:         optInfo.symbol,
@@ -211,17 +218,11 @@ async function simulateBuy(side, sigSnapshot) {
     orh:            sigSnapshot.orh,
     orl:            sigSnapshot.orl,
     rangePts:       sigSnapshot.rangePts,
-    targetSpot:     sigSnapshot.targetSpot,
-    initialSlSpot:  sigSnapshot.slSpot,
-    slSpot:         sigSnapshot.slSpot,
-    targetPremium:  parseFloat((optionEntryLtp * (1 + targetPct)).toFixed(2)),
-    stopPremium:    parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
-    initialStopPremium: parseFloat((optionEntryLtp * (1 - stopPct)).toFixed(2)),
-    lockinPct, lockinFloorPct,
-    lockinHit:      false,
-    trailActive:    false,
+    targetSpot:     sigSnapshot.targetSpot,   // informational only — no target exit
+    slCandles,
+    initialSlSpot:  _initSl,
+    slSpot:         _initSl,
     peakPremium:    optionEntryLtp,
-    movedToBE:      false,
     signalStrength: sigSnapshot.signalStrength,
     vixAtEntry:     getCachedVix(),
     oiAtEntry:      oiFilter.getCachedOi(),
@@ -250,7 +251,7 @@ async function simulateBuy(side, sigSnapshot) {
   state.tradesTaken++;
   startOptionPolling();
 
-  log(`🟢 [ORB-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=${optionEntryLtp} | tgt=${pos.targetSpot} sl=${pos.slSpot} | tgtPrem=${pos.targetPremium} slPrem=${pos.stopPremium}`);
+  log(`🟢 [ORB-PAPER] BUY_${side} ${optInfo.symbol} qty=${qty} @ spot=${spot} optLtp=${optionEntryLtp} | candle SL=${pos.slSpot} (${side === "CE" ? "low" : "high"} of last ${slCandles} candles)`);
 
   notifyEntry({
     mode: "ORB-PAPER",
@@ -366,12 +367,37 @@ function simulateSell(reason) {
 
 // ── In-position management (tick-level) ─────────────────────────────────────
 
+// Ratchet the candle-structure stop on each candle close. CE → lift SL to the
+// lowest low of the last N closed candles (only if higher); PE → drop it to the
+// highest high (only if lower). Never loosens. This is both the initial SL and
+// the trailing SL — the single stop for the trade.
+function _updateCandleTrail() {
+  const pos = state.position;
+  if (!pos) return;
+  const n = pos.slCandles || Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
+  const closed = (state.candles || []).slice(-n).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
+  if (!closed.length) return;
+  if (pos.side === "CE") {
+    const swingLow = Math.round(Math.min(...closed.map(c => c.low)) * 100) / 100;
+    if (swingLow > pos.slSpot) {
+      log(`📈 [ORB-PAPER] Candle trail: SL ${pos.slSpot} → ${swingLow} (low of last ${n} candles)`);
+      pos.slSpot = swingLow;
+    }
+  } else {
+    const swingHigh = Math.round(Math.max(...closed.map(c => c.high)) * 100) / 100;
+    if (swingHigh < pos.slSpot) {
+      log(`📈 [ORB-PAPER] Candle trail: SL ${pos.slSpot} → ${swingHigh} (high of last ${n} candles)`);
+      pos.slSpot = swingHigh;
+    }
+  }
+}
+
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
   const optLtp = state.optionLtp || pos.optionEntryLtp;
 
-  // Track peak option premium for BE-after-1R trail
+  // Track peak option premium (observer-only — feeds the trade record/notify).
   if (optLtp > pos.peakPremium) pos.peakPremium = optLtp;
 
   // Track max favorable / adverse excursion — spot pts in trade direction + rupee PnL.
@@ -382,78 +408,17 @@ function _checkExits(spotPrice) {
   if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
-  // ── Move-to-BE (spot-anchored): spot moves >= 1× range in favour ────────
-  const moveInFavour = pos.side === "CE" ? (spotPrice - pos.entrySpot) : (pos.entrySpot - spotPrice);
-  if (!pos.movedToBE && moveInFavour >= pos.rangePts) {
-    pos.movedToBE = true;
-    const newSL = pos.side === "CE"
-      ? Math.max(pos.slSpot, pos.entrySpot)
-      : Math.min(pos.slSpot, pos.entrySpot);
-    if (newSL !== pos.slSpot) {
-      log(`📐 [ORB-PAPER] Move-to-BE: SL ${pos.slSpot} → ${newSL} (moved 1× range in favour)`);
-      pos.slSpot = newSL;
-    }
-  }
-
-  // ── Premium-lockin trail: once premium hits +lockinPct, ratchet stop ────
-  //    up to entry × (1 + lockinFloorPct). Locks in a small profit floor.
-  if (!pos.lockinHit && pos.lockinPct > 0) {
-    const lockinTrigger = pos.optionEntryLtp * (1 + pos.lockinPct);
-    if (optLtp >= lockinTrigger) {
-      pos.lockinHit = true;
-      const floor = parseFloat((pos.optionEntryLtp * (1 + pos.lockinFloorPct)).toFixed(2));
-      if (floor > pos.stopPremium) {
-        log(`📐 [ORB-PAPER] Premium-lockin: stopPremium ₹${pos.stopPremium} → ₹${floor} (LTP ₹${optLtp} hit +${(pos.lockinPct*100).toFixed(0)}%)`);
-        pos.stopPremium = floor;
-      }
-    }
-  }
-
-  // ── Continuous peak-giveback trail: once premium arms (>= entry +ARM_PCT),
-  //    ratchet the premium SL up to lock LOCK_PCT of the running peak profit.
-  //    Unlike the one-shot lockin above, this keeps trailing as the peak climbs
-  //    — protects the whole move instead of giving it all back. Gated OFF by
-  //    default; ORB_TRAIL_ENABLED turns it on.
-  if (process.env.ORB_TRAIL_ENABLED === "true") {
-    const armPct  = parseFloat(process.env.ORB_TRAIL_ARM_PCT  || "0.08");
-    const lockPct = parseFloat(process.env.ORB_TRAIL_LOCK_PCT || "0.5");
-    if (pos.peakPremium >= pos.optionEntryLtp * (1 + armPct)) {
-      const trailFloor = parseFloat((pos.optionEntryLtp + (pos.peakPremium - pos.optionEntryLtp) * lockPct).toFixed(2));
-      if (trailFloor > pos.stopPremium) {
-        log(`📈 [ORB-PAPER] Trail: stopPremium ₹${pos.stopPremium} → ₹${trailFloor} (peak ₹${pos.peakPremium.toFixed(2)}, lock ${(lockPct*100).toFixed(0)}% of profit)`);
-        pos.stopPremium = trailFloor;
-        pos.trailActive = true;
-      }
-    }
-  }
-
-  // ── Premium SL ───────────────────────────────────────────────────────────
-  if (optLtp <= pos.stopPremium) {
-    const tag = pos.trailActive ? "trail lock" : pos.lockinHit ? "lockin floor" : `−${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%`;
-    simulateSell(`Premium SL hit (₹${optLtp} <= ₹${pos.stopPremium}, ${tag})`);
-    return;
-  }
-  // ── Premium target ───────────────────────────────────────────────────────
-  if (optLtp >= pos.targetPremium) {
-    simulateSell(`Premium target (₹${optLtp} >= ₹${pos.targetPremium}, +${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%)`);
-    return;
-  }
-  // ── Spot SL (opposite side of OR) ────────────────────────────────────────
+  // ── Candle-structure trailing stop (spot-based) — the only stop ─────────
+  //    SL = swing of the last N closed candles, ratcheted in _updateCandleTrail
+  //    on each candle close. No premium SL/target, no opposite-edge spot SL, no
+  //    move-to-BE / lock-in / premium trail, no profit target — winners ride the
+  //    trail until it breaks (or the 15:15 EOD square-off in onTick).
   if (pos.side === "CE" && spotPrice <= pos.slSpot) {
-    simulateSell(`Spot SL hit (${spotPrice} <= ORL ${pos.slSpot})`);
+    simulateSell(`Candle SL hit (${spotPrice} <= ${pos.slSpot}, low of last ${pos.slCandles} candles)`);
     return;
   }
   if (pos.side === "PE" && spotPrice >= pos.slSpot) {
-    simulateSell(`Spot SL hit (${spotPrice} >= ORH ${pos.slSpot})`);
-    return;
-  }
-  // ── Spot target (1.5× range) ────────────────────────────────────────────
-  if (pos.side === "CE" && spotPrice >= pos.targetSpot) {
-    simulateSell(`Spot target hit (${spotPrice} >= ${pos.targetSpot})`);
-    return;
-  }
-  if (pos.side === "PE" && spotPrice <= pos.targetSpot) {
-    simulateSell(`Spot target hit (${spotPrice} <= ${pos.targetSpot})`);
+    simulateSell(`Candle SL hit (${spotPrice} >= ${pos.slSpot}, high of last ${pos.slCandles} candles)`);
     return;
   }
 }
@@ -465,8 +430,9 @@ async function onCandleClose(bar) {
   // the buildup series stays filled even on no-signal candles.
   await oiFilter.recordOiSample(bar && bar.close);
 
-  // Already in position? Don't re-evaluate entry — exits run on tick.
-  if (state.position) return;
+  // Already in position? Ratchet the candle trailing stop, then bail — entries
+  // aren't re-evaluated and price-based exits run on tick.
+  if (state.position) { _updateCandleTrail(); return; }
 
   const _spot = bar && bar.close;
 

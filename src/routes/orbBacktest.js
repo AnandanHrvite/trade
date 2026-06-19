@@ -57,13 +57,10 @@ function runOrbBacktest(allCandles, expirySet) {
   // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
   // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
   const LOT_SIZE   = instrumentConfig.getLotQty();
-  const TARGET_PCT = parseFloat(process.env.ORB_TARGET_PCT || "0.4");
-  const STOP_PCT   = parseFloat(process.env.ORB_STOP_PCT   || "0.25");
-  const LOCKIN_PCT       = parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT       || "0.25");
-  const LOCKIN_FLOOR_PCT = parseFloat(process.env.ORB_PREMIUM_LOCKIN_FLOOR_PCT || "0.05");
-  const TRAIL_ON         = process.env.ORB_TRAIL_ENABLED === "true";
-  const TRAIL_ARM_PCT    = parseFloat(process.env.ORB_TRAIL_ARM_PCT  || "0.08");
-  const TRAIL_LOCK_PCT   = parseFloat(process.env.ORB_TRAIL_LOCK_PCT || "0.5");
+  // Candle-structure stop: SL = swing of last N closed candles, trails each
+  // candle. Mirrors paper/live — the only stop (premium/spot-edge stops, BE,
+  // lock-in, premium trail and the profit target were all removed by design).
+  const SL_CANDLES = Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
@@ -100,68 +97,29 @@ function runOrbBacktest(allCandles, expirySet) {
         position = null; continue;
       }
 
-      // In-position exits
+      // In-position exit: candle-structure trailing stop (spot-based).
       if (position) {
-        // Move-to-BE (spot-anchored): once spot moves >= 1× range in favour, lift
-        // SL to entry. Mirrors paper/live (_checkExits). Uses the candle's
-        // favourable extreme (high for CE / low for PE) as the intra-candle proxy
-        // for "any tick reached +1× range"; the SL check below then uses the
-        // ratcheted slSpot. Without this the backtest overstates losses on trades
-        // that ran 1× in favour then reversed.
-        const moveInFavour = position.side === "CE" ? (c.high - position.entrySpot) : (position.entrySpot - c.low);
-        if (!position.movedToBE && moveInFavour >= position.rangePts) {
-          position.movedToBE = true;
-          position.slSpot = position.side === "CE"
-            ? Math.max(position.slSpot, position.entrySpot)
-            : Math.min(position.slSpot, position.entrySpot);
+        // Ratchet the stop to the swing of the N candles closed before this one
+        // (CE → lowest low, only up; PE → highest high, only down). Mirrors
+        // _updateCandleTrail in paper/live.
+        const win = dayCandles.slice(Math.max(0, i - SL_CANDLES), i);
+        if (win.length) {
+          if (position.side === "CE") {
+            const swingLow = Math.round(Math.min(...win.map(x => x.low)) * 100) / 100;
+            if (swingLow > position.slSpot) position.slSpot = swingLow;
+          } else {
+            const swingHigh = Math.round(Math.max(...win.map(x => x.high)) * 100) / 100;
+            if (swingHigh < position.slSpot) position.slSpot = swingHigh;
+          }
         }
-        // Spot SL (opposite side of OR)
+        // Breach check against this candle's extreme.
         if (position.side === "CE" && c.low <= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Spot SL hit (${position.slSpot} = ORL)`);
+          closePos(position, position.slSpot, c.time, `Candle SL hit (${position.slSpot}, low of last ${SL_CANDLES})`);
           trades.push(buildTradeRecord(position));
           position = null; continue;
         }
         if (position.side === "PE" && c.high >= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Spot SL hit (${position.slSpot} = ORH)`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
-        }
-        // Spot target (1.5× range)
-        if (position.side === "CE" && c.high >= position.targetSpot) {
-          closePos(position, position.targetSpot, c.time, `Spot target hit (${position.targetSpot})`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
-        }
-        if (position.side === "PE" && c.low <= position.targetSpot) {
-          closePos(position, position.targetSpot, c.time, `Spot target hit (${position.targetSpot})`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
-        }
-        // Premium target / SL approximated
-        const candlesHeld = ((c.time - position.entryTime) / 60) / 5;
-        const thetaCost = (THETA_DAY * candlesHeld) / 78;
-        const spotMove = position.side === "CE" ? (c.close - position.entrySpot) : (position.entrySpot - c.close);
-        const approxPrem = Math.max(0.05, position.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
-        if (approxPrem > position.peakPremium) position.peakPremium = approxPrem;
-        // Premium-lockin trail: ratchet stopPremium up to entry × (1+floor) once +lockinPct hit
-        if (!position.lockinHit && LOCKIN_PCT > 0 && approxPrem >= position.optionEntryLtp * (1 + LOCKIN_PCT)) {
-          position.lockinHit = true;
-          const floor = parseFloat((position.optionEntryLtp * (1 + LOCKIN_FLOOR_PCT)).toFixed(2));
-          if (floor > position.stopPremium) position.stopPremium = floor;
-        }
-        // Continuous peak-giveback trail (mirrors paper): lock LOCK_PCT of peak profit once armed
-        if (TRAIL_ON && position.peakPremium >= position.optionEntryLtp * (1 + TRAIL_ARM_PCT)) {
-          const trailFloor = parseFloat((position.optionEntryLtp + (position.peakPremium - position.optionEntryLtp) * TRAIL_LOCK_PCT).toFixed(2));
-          if (trailFloor > position.stopPremium) { position.stopPremium = trailFloor; position.trailActive = true; }
-        }
-        if (approxPrem <= position.stopPremium) {
-          const tag = position.trailActive ? "trail lock" : position.lockinHit ? "lockin floor" : "SL";
-          closePos(position, c.close, c.time, `Premium ${tag} (~₹${approxPrem.toFixed(1)} <= ₹${position.stopPremium})`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
-        }
-        if (approxPrem >= position.targetPremium) {
-          closePos(position, c.close, c.time, `Premium target (~₹${approxPrem.toFixed(1)} >= ₹${position.targetPremium})`);
+          closePos(position, position.slSpot, c.time, `Candle SL hit (${position.slSpot}, high of last ${SL_CANDLES})`);
           trades.push(buildTradeRecord(position));
           position = null; continue;
         }
@@ -178,6 +136,11 @@ function runOrbBacktest(allCandles, expirySet) {
           if (PREM_GATE_ON && (SEED_PREMIUM < PREM_MIN || SEED_PREMIUM > PREM_MAX)) {
             continue;
           }
+          // Initial candle stop = swing of last N candles incl. breakout candle.
+          const win0 = dayCandles.slice(Math.max(0, i - SL_CANDLES + 1), i + 1);
+          const initSl = sig.side === "CE"
+            ? Math.round(Math.min(...win0.map(x => x.low)) * 100) / 100
+            : Math.round(Math.max(...win0.map(x => x.high)) * 100) / 100;
           position = {
             date: istDateOf(c.time),
             side: sig.side,
@@ -185,13 +148,7 @@ function runOrbBacktest(allCandles, expirySet) {
             entrySpot: c.close,
             optionEntryLtp: SEED_PREMIUM,
             orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
-            slSpot: sig.slSpot, targetSpot: sig.targetSpot,
-            targetPremium: parseFloat((SEED_PREMIUM * (1 + TARGET_PCT)).toFixed(2)),
-            stopPremium:   parseFloat((SEED_PREMIUM * (1 - STOP_PCT)).toFixed(2)),
-            lockinHit: false,
-            trailActive: false,
-            peakPremium: SEED_PREMIUM,
-            movedToBE: false,
+            slSpot: initSl, targetSpot: sig.targetSpot,
             signalStrength: sig.signalStrength,
             vwap: sig.vwap, volRatio: sig.volRatio, wickRatio: sig.wickRatio,
             entryReason: sig.reason,
@@ -369,7 +326,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route exactly: spot SL = opposite OR edge, spot target = 1.5× range, premium SL/target = −${(parseFloat(process.env.ORB_STOP_PCT||"0.25")*100).toFixed(0)}%/+${(parseFloat(process.env.ORB_TARGET_PCT||"0.4")*100).toFixed(0)}%, premium-lockin floor at +${(parseFloat(process.env.ORB_PREMIUM_LOCKIN_PCT||"0.25")*100).toFixed(0)}%${process.env.ORB_TRAIL_ENABLED==="true" ? `, continuous trail locking ${(parseFloat(process.env.ORB_TRAIL_LOCK_PCT||"0.5")*100).toFixed(0)}% of peak profit (arms +${(parseFloat(process.env.ORB_TRAIL_ARM_PCT||"0.08")*100).toFixed(0)}%)` : ""}. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route exactly: a single candle-structure trailing stop — SL = swing of the last ${process.env.ORB_SL_CANDLES || "2"} closed candles (CE → lowest low, PE → highest high), ratcheted on each candle close, with a 15:15 EOD square-off. No premium SL/target, no profit target. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>
