@@ -2480,7 +2480,7 @@ router.get("/status/chart-data", (req, res) => {
 
     return res.json({ candles, markers, stopLoss, entryPrice, ema9, ema20, ema50, supertrend,
       trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
-      tripleStack: false, // EMA9/triple-stack gate removed 2026-06-19 (kept for payload shape)
+      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });

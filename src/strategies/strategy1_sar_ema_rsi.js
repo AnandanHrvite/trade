@@ -1,25 +1,23 @@
 /**
- * STRATEGY: SAR_EMA_RSI  (SWING — entry redefined 2026-05-31, PSAR stripped 2026-06-12,
- *           EMA9/triple-stack gate removed 2026-06-19)
+ * STRATEGY: SAR_EMA_RSI  (SWING — entry redefined 2026-05-31, PSAR stripped 2026-06-12)
  *
  * Trend-following rule set driven by an EMA crossover-state gate + SuperTrend confirmation.
  *
  * Indicators: EMA20 (close) · EMA50 (close) · RSI(14) · SuperTrend(10,3).
- *             EMA9 (close) is still COMPUTED for the trade-record/chart snapshot but is
- *             NO LONGER an entry input (the 9>20>50 triple-stack gate whipsawed in chop and
- *             produced back-to-back stop-outs — removed 2026-06-19; EMA20-vs-EMA50 is the
- *             sole alignment gate now).
- *             EMA21 (OHLC4) is computed but ONLY for the SL "ema" trail and the
+ *             EMA9 (close) is computed ONLY when the triple-stack toggle is ON.
+ *             EMA21 (OHLC4) is still computed but ONLY for the SL "ema" trail and the
  *             trade-record snapshot — it is NOT part of the entry decision.
  *             (Parabolic SAR removed 2026-06-12 — SuperTrend is the only trend source.)
  *
  * ENTRY — BUY_CE (bullish), ALL must be true (evaluated every tick while flat):
- *   1. EMA alignment bullish:  EMA20 ABOVE EMA50
+ *   1. EMA alignment bullish:
+ *        2-EMA (default)      →  EMA20 ABOVE EMA50
+ *        triple-stack (opt-in) →  EMA9 > EMA20 > EMA50   (SWING_EMA_TRIPLE_STACK_ENABLED)
  *   2. RSI(14) in the CE band  →  RSI_CE_MIN < RSI < RSI_CE_MAX
  *   3. SuperTrend bullish (trend===1)
  *
  * ENTRY — BUY_PE (bearish), mirror:
- *   1. EMA alignment bearish:  EMA20 BELOW EMA50
+ *   1. EMA alignment bearish:  EMA20 BELOW EMA50  (or EMA9 < EMA20 < EMA50 when stacked)
  *   2. RSI(14) in the PE band  →  RSI_PE_MIN < RSI < RSI_PE_MAX
  *   3. SuperTrend bearish (trend===-1)
  *
@@ -36,7 +34,7 @@ const { EMA, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
 const NAME        = "SAR_EMA_RSI";
-const DESCRIPTION = "SWING | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA20-vs-EMA50 cross + RSI gate + SuperTrend side | prev-candle/EMA21 trailing SL | thresholds via Settings";
+const DESCRIPTION = "SWING | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | prev-candle/EMA21 trailing SL | thresholds via Settings";
 
 // ── Trading window ────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -80,9 +78,9 @@ function getSignal(candles, opts) {
   // EMA periods (close-based) — the fast/slow pair that gates direction.
   var EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
   var EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
-  // EMA9 — kept ONLY for the trade-record/chart snapshot; NOT an entry input.
-  // (The 9>20>50 triple-stack gate was removed 2026-06-19 — it whipsawed in chop. The
-  //  SWING_EMA_TRIPLE_STACK_ENABLED env key is now inert.)
+  // Triple-stack (opt-in): require EMA(fastest) > EMA_FAST > EMA_SLOW (CE) / reverse (PE).
+  // When OFF (default) the gate is the classic EMA_FAST-vs-EMA_SLOW cross.
+  var TRIPLE_STACK  = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true";
   var EMA_FASTEST   = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
@@ -125,9 +123,12 @@ function getSignal(candles, opts) {
   var emaFast = emaFastArr.length > 0 ? emaFastArr[emaFastArr.length - 1] : null;
   var emaSlow = emaSlowArr.length > 0 ? emaSlowArr[emaSlowArr.length - 1] : null;
 
-  // EMA9 — diagnostic for the record/chart snapshot only; not an entry input.
-  var emaFastestArr = EMA.calculate({ period: EMA_FASTEST, values: closes });
-  var emaFastest = emaFastestArr.length > 0 ? emaFastestArr[emaFastestArr.length - 1] : null;
+  // Fastest EMA — computed ONLY when the triple-stack gate is enabled.
+  var emaFastest = null;
+  if (TRIPLE_STACK) {
+    var emaFastestArr = EMA.calculate({ period: EMA_FASTEST, values: closes });
+    emaFastest = emaFastestArr.length > 0 ? emaFastestArr[emaFastestArr.length - 1] : null;
+  }
 
   // EMA21 (OHLC4) — retained ONLY for the SL "ema" trail + record snapshot. Not an entry input.
   var ema21arr = EMA.calculate({ period: 21, values: ohlc4 });
@@ -143,7 +144,8 @@ function getSignal(candles, opts) {
   var currST = stArr[stArr.length - 1];
 
   if (emaFast === null || emaSlow === null || rsi === undefined ||
-      !currST || currST.trend == null) {
+      !currST || currST.trend == null ||
+      (TRIPLE_STACK && emaFastest === null)) {
     return {
       signal: "NONE",
       reason: "Indicators not ready",
@@ -161,9 +163,15 @@ function getSignal(candles, opts) {
   var RSI_PE_MIN = parseFloat(process.env.RSI_PE_MIN || "20");  // PE oversold floor
 
   // ── The three conditions per side ─────────────────────────────────────────
-  // 1. EMA alignment — EMA20-vs-EMA50 cross (the sole alignment gate).
-  var emaUp   = emaFast > emaSlow;   // EMA20 on top of EMA50 — supports CE
-  var emaDown = emaFast < emaSlow;   // EMA20 below EMA50      — supports PE
+  // 1. EMA alignment. Default: fast-vs-slow cross. Triple-stack: fastest>fast>slow.
+  var emaUp, emaDown;
+  if (TRIPLE_STACK) {
+    emaUp   = emaFastest > emaFast && emaFast > emaSlow;   // EMA9>EMA20>EMA50 — supports CE
+    emaDown = emaFastest < emaFast && emaFast < emaSlow;   // EMA9<EMA20<EMA50 — supports PE
+  } else {
+    emaUp   = emaFast > emaSlow;   // EMA20 on top of EMA50 — supports CE
+    emaDown = emaFast < emaSlow;   // EMA20 below EMA50      — supports PE
+  }
   // 2. RSI band (unchanged).
   var rsiCE = rsi > RSI_CE_MIN && rsi < RSI_CE_MAX;  // above momentum floor, below overbought cap
   var rsiPE = rsi < RSI_PE_MAX && rsi > RSI_PE_MIN;  // below momentum cap, above oversold floor
@@ -171,14 +179,14 @@ function getSignal(candles, opts) {
   var trendUp   = currST.trend === 1;
   var trendDown = currST.trend === -1;
   var _stVal    = currST.value;
-  // EMA-alignment label for logs/reasons.
-  var _emaUpLbl   = "EMA20>50";
-  var _emaDownLbl = "EMA20<50";
+  // EMA-alignment label for logs/reasons (stack-aware).
+  var _emaUpLbl   = TRIPLE_STACK ? "EMA9>20>50" : "EMA20>50";
+  var _emaDownLbl = TRIPLE_STACK ? "EMA9<20<50" : "EMA20<50";
 
   var base = {
     ema20:          Math.round(emaFast * 100) / 100,
     ema50:          Math.round(emaSlow * 100) / 100,
-    // EMA9 — record/chart snapshot only (not an entry input since 2026-06-19).
+    // EMA9 populated only when the triple-stack gate is on (record snapshot; not always an input).
     ema9:           emaFastest != null ? Math.round(emaFastest * 100) / 100 : null,
     // EMA21 kept for SL "ema" trail + record continuity (not an entry input).
     ema21:          ema21 != null ? Math.round(ema21 * 100) / 100 : null,
@@ -197,7 +205,9 @@ function getSignal(candles, opts) {
   };
 
   var _istTime = new Date(signalCandle.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
-  var _emaStr = "EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")";
+  var _emaStr = TRIPLE_STACK
+    ? "EMA9=" + emaFastest.toFixed(1) + " EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "9>20>50" : emaDown ? "9<20<50" : "mixed") + ")"
+    : "EMA20=" + emaFast.toFixed(1) + " EMA50=" + emaSlow.toFixed(1) + "(" + (emaUp ? "20>50" : emaDown ? "20<50" : "=") + ")";
   if (!silent) console.log(
     "[STRAT " + _istTime + "] " + _emaStr +
     " | RSI=" + rsi.toFixed(1) +
@@ -237,7 +247,7 @@ function getSignal(candles, opts) {
     if (!rsiPE)     why.push("RSI=" + rsi.toFixed(1) + (rsi <= RSI_PE_MIN ? " <=" + RSI_PE_MIN + " (oversold)" : " >=" + RSI_PE_MAX + " (need <)"));
     if (!trendDown) why.push("ST not RED @ " + _stVal);
   } else {
-    why.push("EMA20=" + emaFast.toFixed(1) + " ≈ EMA50 " + emaSlow.toFixed(1) + " (no alignment)");
+    why.push(TRIPLE_STACK ? "EMA stack not aligned (9/20/50)" : "EMA20=" + emaFast.toFixed(1) + " ≈ EMA50 " + emaSlow.toFixed(1) + " (no alignment)");
   }
   if (why.length === 0) why.push("EMA " + (emaUp ? _emaUpLbl : _emaDownLbl) + " but other conditions unmet");
 

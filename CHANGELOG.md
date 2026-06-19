@@ -6,10 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### Swing: remove EMA9/triple-stack gate + add negative-candle loss-cut
+### Swing: negative-candle loss-cut + looser candle trail (chop fixes)
 
-- **EMA9 / triple-stack entry gate removed.** The Swing entry alignment is now purely **EMA20 vs EMA50** (`SWING_EMA_FAST`/`SWING_EMA_SLOW`) + RSI band + SuperTrend side. The `9>20>50` stack whipsawed in chop and produced clusters of back-to-back stop-outs (e.g. 19-Jun: 9 PE entries, 1 winner, net ≈ −₹1,988 against a ₹2,000 daily cap). EMA9 is still computed for the chart/trade-record but no longer affects entries. The `SWING_EMA_TRIPLE_STACK_ENABLED` key and its Settings toggle (plus the "EMA Fastest Period" field) are retired.
 - **New `SWING_NEG_CANDLE_LIMIT` (default 2)** — asymmetric loss-cut: if a trade is still in the **red** (option premium below entry) at the close of N candles, square it off. Winners keep riding the EMA21 trail; losers don't bleed across the chop. `0` disables. Wired identically across paper (canonical), live, and backtest; exposed in Settings.
+- **Candle-trail default loosened `2` → `3` bars** (`SWING_CANDLE_TRAIL_BARS`). The 2-bar trail sat right on the EMA cluster and stopped winners out on the first bounce in chop (19-Jun: most exits were the 2-bar trail, not the structural SL). A wider lookback gives winners room. _Note: the EMA9/triple-stack gate stays — skip-log review showed it filters flat-EMA chop entries rather than causing them; the churn came from the tight trail, not the entry gate._
 
 ### Feature: ORB continuous profit trail (stops winners round-tripping to a loss)
 

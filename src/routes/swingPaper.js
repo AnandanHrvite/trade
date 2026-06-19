@@ -1927,8 +1927,8 @@ router.get("/start", async (req, res) => {
   log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   {
-    const _emaUp   = `EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}`;
-    const _emaDn   = `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
+    const _emaUp   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}>EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}`;
+    const _emaDn   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}<EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
     log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED (intra-candle)`);
   }
   log(`   Stop/exit   : EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"2",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
@@ -2456,7 +2456,7 @@ router.get("/status/chart-data", (req, res) => {
     return res.json({ candles, markers, stopLoss, entryPrice, ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
-      tripleStack: false, // EMA9/triple-stack gate removed 2026-06-19 (kept for payload shape)
+      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
