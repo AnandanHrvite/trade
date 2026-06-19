@@ -24,20 +24,20 @@
  *     noon tend to fade.
  *
  * Exit (handled by route, not signal file):
- *   • Target: +ORB_TARGET_PCT premium (40%) OR 1.5× range on spot
- *   • SL: −ORB_STOP_PCT premium (25%) OR opposite OR edge
- *   • Trail layer A: once spot moves >= 1× range in favour, lift SL to entry
- *   • Trail layer B (one-shot): once premium hits +ORB_PREMIUM_LOCKIN_PCT (25%)
- *     profit, lift premium SL to entry × (1 + ORB_PREMIUM_LOCKIN_FLOOR_PCT) (5%)
- *   • Trail layer C (continuous, ORB_TRAIL_ENABLED): once premium arms at
- *     +ORB_TRAIL_ARM_PCT (8%), ratchet premium SL behind the peak to keep
- *     ORB_TRAIL_LOCK_PCT (50%) of the running peak profit — stops a winner
- *     round-tripping to a loss.
- *   • Time stop: hard square-off at 15:15 IST.
+ *   • Single candle-structure trailing stop (ORB_SL_CANDLES, default 2):
+ *     SL = swing of the last N closed candles — CE → lowest low, PE → highest
+ *     high — ratcheted in the favourable direction on each candle close. The
+ *     same level is both the initial stop and the trail, so a winner rides
+ *     until structure breaks. This is the ONLY stop.
+ *   • Time stop: hard square-off at 15:15 IST (the only non-stop exit).
+ *   • Removed: premium −%/+% SL & target, opposite-edge spot SL, spot target,
+ *     move-to-BE, premium lock-in and the continuous-premium trail.
  *
  * Returns:
  *   { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
  *     signalStrength, vwap, vwapAligned, volRatio, volPass, wickRatio, wickPass }
+ *   (slSpot = opposite-OR-edge fallback, targetSpot = 1.5× range — both kept as
+ *    reference values; the route sets the real stop from ORB_SL_CANDLES.)
  *   signal:  "BUY_CE" | "BUY_PE" | "NONE"
  *   strength: STRONG when range size is in the sweet spot AND breakout body
  *             strong AND all enabled filters pass. MARGINAL otherwise.

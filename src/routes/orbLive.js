@@ -743,20 +743,20 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Spot SL</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing SL${pos.slCandles ? ` (${pos.slCandles}c)` : ""}</div>
           <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Spot Target</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Spot Target <span style="color:#3a4660;">(info)</span></div>
           <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.targetSpot ? "₹" + pos.targetSpot.toFixed(2) : "—"}</div>
         </div>
-        <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Premium Stop</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.stopPremium ? "₹" + pos.stopPremium.toFixed(2) : "—"}</div>
+        <div style="background:#10131c;border:1px solid #1e2940;border-radius:8px;padding:12px 14px;">
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Initial SL</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#c8d8f0;">${pos.initialSlSpot ? "₹" + pos.initialSlSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Premium Target</div>
-          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.targetPremium ? "₹" + pos.targetPremium.toFixed(2) : "—"}</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Peak Premium</div>
+          <div style="font-size:1.05rem;font-weight:700;color:#10b981;">${pos.peakPremium ? "₹" + pos.peakPremium.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#071a12;border:1px solid #134e35;border-radius:8px;padding:12px 14px;">
           <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">OR Range</div>

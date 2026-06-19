@@ -10,7 +10,8 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 - **ORB now exits on one stop only — the swing of the last `ORB_SL_CANDLES` (default 2) closed candles** (CE → lowest low, PE → highest high), recomputed and ratcheted in the favourable direction on every candle close. The same level is both the initial SL and the trail, so winners ride until structure breaks.
 - **Removed** (all of them): the −25% premium SL, the opposite-OR-edge spot SL, the +40% premium / 1.5×-range spot **profit target**, move-to-breakeven, the one-shot premium lock-in, and the continuous-premium peak-giveback trail. The 15:15 EOD square-off is kept as the only non-stop exit. `ORB_TARGET_RANGE_MULT` survives only as an informational chart line.
-- Wired identically across paper (canonical), live (legacy `/orb-live` + harness), and backtest. Settings UI drops the 8 now-dead exit knobs and exposes `ORB_SL_CANDLES`. The dead env keys (`ORB_STOP_PCT`, `ORB_TARGET_PCT`, `ORB_PREMIUM_LOCKIN_*`, `ORB_TRAIL_*`) are no longer read by ORB.
+- Wired identically across paper (canonical), live (legacy `/orb-live` + harness), and backtest. Settings UI drops the 8 now-dead exit knobs and exposes `ORB_SL_CANDLES` (placed next to Forced Square-Off). The dead env keys (`ORB_STOP_PCT`, `ORB_TARGET_PCT`, `ORB_PREMIUM_LOCKIN_*`, `ORB_TRAIL_*`) are no longer read by ORB.
+- Status pages (paper + live) relabel the position tiles to match: **Trailing SL** (the candle stop), **Initial SL**, **Peak Premium** — replacing the now-meaningless Premium Stop / Premium Target tiles. The tick-recorder session snapshot now captures `ORB_*` keys (it previously matched every other strategy prefix but not ORB), so Replay snapshot-mode reproduces ORB config faithfully.
 
 ### Swing: negative-candle loss-cut + looser candle trail (chop fixes)
 

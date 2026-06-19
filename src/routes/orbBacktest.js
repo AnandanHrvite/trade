@@ -64,7 +64,6 @@ function runOrbBacktest(allCandles, expirySet) {
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
-  const TGT_RANGE_MULT = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
   const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "12:00");
   const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "180");
