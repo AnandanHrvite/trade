@@ -177,6 +177,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
   // Per-trade catastrophic spot-points cap (mirrors SCALP_STOP_LOSS_PTS). 0 = off.
   const _SWING_STOP_LOSS_PTS   = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+  // Negative-candle stop: square off a trade still in the RED after N candles (cut losers
+  // fast, let winners ride the EMA trail). 0 = off. Default 2 (added 2026-06-19).
+  const _SWING_NEG_CANDLE_LIMIT = parseInt(process.env.SWING_NEG_CANDLE_LIMIT || "2", 10);
   // Chop guard: halt new entries for the rest of the day after N consecutive losing
   // trades (any win resets the streak). Mirrors paper/live. 0 = off.
   const _SWING_MAX_CONSEC_LOSSES = parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10);
@@ -441,6 +444,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       if (!exitReason && _sig.ema21 != null) {
         if (candle.low <= _sig.ema21 && candle.high >= _sig.ema21) {
           exitReason = "EMA touch-back exit";
+          exitPrice  = candle.close;
+        }
+      }
+
+      // Rule 1d: Negative-candle stop — if the trade is still in the RED at this
+      // candle close after N candles held, square off (asymmetric loss-cut; winners
+      // keep riding the EMA trail above). "Negative" ≈ spot close against entry.
+      if (!exitReason && _SWING_NEG_CANDLE_LIMIT > 0 && (position.candlesHeld || 0) >= _SWING_NEG_CANDLE_LIMIT) {
+        const _closePnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
+        if (_closePnlPts < 0) {
+          exitReason = `Negative ${_SWING_NEG_CANDLE_LIMIT}-candle stop`;
           exitPrice  = candle.close;
         }
       }

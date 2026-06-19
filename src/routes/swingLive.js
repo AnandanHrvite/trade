@@ -1195,6 +1195,15 @@ async function onCandleClose(candle) {
         return;
       }
     }
+    // ── Negative-candle stop (SWING_NEG_CANDLE_LIMIT) ─────────────────────────
+    // Asymmetric loss-cut: still in the RED after N candles → square off (winners ride
+    // the EMA21 trail). Points-based on option premium (falls back to spot). 0 = off; default 2.
+    const _negLimit = parseInt(process.env.SWING_NEG_CANDLE_LIMIT || "2", 10);
+    if (_negLimit > 0 && _pnlPts != null && _pnlPts < 0 && _pos.candlesHeld >= _negLimit) {
+      log(`🔻 [LIVE] Negative ${_negLimit}-candle stop — ${_pos.candlesHeld} candles held, still red (${_pnlPts.toFixed(1)}pt) — squaring off ${_pos.side}`);
+      await squareOff(candle.close, `Negative ${_negLimit}-candle stop`);
+      return;
+    }
   }
 
   // ── Trailing stop (EMA21 base + optional candle-trail overlay) ──────────────
@@ -2471,7 +2480,7 @@ router.get("/status/chart-data", (req, res) => {
 
     return res.json({ candles, markers, stopLoss, entryPrice, ema9, ema20, ema50, supertrend,
       trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
-      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
+      tripleStack: false, // EMA9/triple-stack gate removed 2026-06-19 (kept for payload shape)
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
