@@ -81,7 +81,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 ### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
 See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
+- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI in band `SCALP_RSI_CE_MIN(52)` < RSI < `SCALP_RSI_CE_MAX(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI in band `SCALP_RSI_PE_MIN(30)` < RSI < `SCALP_RSI_PE_MAX(49)`. RSI is a **band**: the upper cap (CE) / lower floor (PE) skips overbought/oversold extremes where the breakout typically reverses. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
 - **Guards**: optional `SCALP_RSI_TURNING`, independent VIX filter.
 - **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
 - **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
@@ -268,8 +268,10 @@ Full spec: [SCALP.md](SCALP.md).
 | `SCALP_ENABLED` | `false` | Must be `true` for Fyers scalp orders |
 | `SCALP_RESOLUTION` | `5` | Scalp candle size — `3` or `5` min |
 | `SCALP_BB_PERIOD` / `SCALP_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
-| `SCALP_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
-| `SCALP_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
+| `SCALP_RSI_CE_MIN` | `52` | CE entry: RSI must be above this (bullish momentum floor) |
+| `SCALP_RSI_CE_MAX` | `70` | CE entry blocked at/above this (skip overbought breakouts that reverse) |
+| `SCALP_RSI_PE_MAX` | `49` | PE entry: RSI must be below this (bearish momentum cap) |
+| `SCALP_RSI_PE_MIN` | `30` | PE entry blocked at/below this (skip oversold breakdowns that reverse) |
 | `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
 | `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
 | `SCALP_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = PSAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** — it takes over the directional confirmation, the entry SL line **and** the candle-close trend-flip exit. Mutually exclusive; the chart shows whichever is active. |

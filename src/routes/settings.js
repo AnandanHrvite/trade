@@ -101,8 +101,10 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── RSI ──
       { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
+      { key: "SCALP_RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 40, max: 70, step: 1, effect: EFFECT.SESSION, desc: "CE entry: RSI(14) must be ABOVE this (bullish momentum floor)", default: "52" },
+      { key: "SCALP_RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 55, max: 90, step: 1, effect: EFFECT.SESSION, desc: "CE entry blocked when RSI is at/above this — skip overbought breakouts that reverse", default: "70" },
+      { key: "SCALP_RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 60, step: 1, effect: EFFECT.SESSION, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "49" },
+      { key: "SCALP_RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.SESSION, desc: "PE entry blocked when RSI is at/below this — skip oversold breakdowns that reverse", default: "30" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
       // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
@@ -560,8 +562,8 @@ const SESSION_RESTART_KEYS = new Set([
   // Scalp settings — need session restart
   "SCALP_RESOLUTION",
   "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
-  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
-  "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
+  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_MIN", "SCALP_RSI_CE_MAX",
+  "SCALP_RSI_PE_MAX", "SCALP_RSI_PE_MIN", "SCALP_RSI_TURNING",
   "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
   "SCALP_USE_SUPERTREND", "SCALP_SUPERTREND_PERIOD", "SCALP_SUPERTREND_MULT",
   "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",

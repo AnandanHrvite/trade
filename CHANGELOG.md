@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### SCALP: RSI entry is now a band (skip overbought/oversold extremes)
+
+- **SCALP RSI is now a band, not a single threshold.** CE requires `SCALP_RSI_CE_MIN(52)` < RSI < `SCALP_RSI_CE_MAX(70)`; PE requires `SCALP_RSI_PE_MIN(30)` < RSI < `SCALP_RSI_PE_MAX(49)`. Previously CE only needed RSI > 70 and PE only RSI < 40 — which both *required* the overbought/oversold extreme. The new upper cap (CE) / lower floor (PE) rejects the exhausted-extreme breakouts that tend to reverse (e.g. the RSI 80–91 CE entries that hit the −25 pt stop on 2026-06-15).
+- Mirrors SWING's existing RSI-band convention. The old `SCALP_RSI_CE_THRESHOLD` / `SCALP_RSI_PE_THRESHOLD` keys are **retired** (no longer read) — the four new keys fall back to the band defaults when absent, so the change is self-applying on deploy without a manual Settings edit.
+- Wired in the shared strategy module (`scalp_bb_cpr.js` → paper/live/backtest stay in lockstep). Settings UI replaces the two threshold fields with four min/max fields; near-miss skip logs now say "overbought"/"oversold" when the cap/floor is the blocker.
+
 ### Replay: "current settings" mode auto-pins the recorded day's option expiry
 
 - **Simulator (current-settings) replays now use the recorded day's option expiry instead of today's.** Previously a "My current settings" range replay applied the live `OPTION_EXPIRY_OVERRIDE` to every replayed day — so an old day was priced against this week's contract, which the recorded ticks don't cover (every quote missed → paper's spot-proxy fallback → nonsense P&L).

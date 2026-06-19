@@ -2,9 +2,10 @@
  * SCALP V6: Bollinger Bands + PSAR + RSI (PSAR-flip exit design)
  *
  * ENTRY:
- *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 70)
- *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 40)
- *   Two RSI keys only — no overbought/oversold caps.
+ *   CE: candle closes above BB upper + PSAR below close + RSI in band (SCALP_RSI_CE_MIN < RSI < SCALP_RSI_CE_MAX, default 52–70)
+ *   PE: candle closes below BB lower + PSAR above close + RSI in band (SCALP_RSI_PE_MIN < RSI < SCALP_RSI_PE_MAX, default 30–49)
+ *   RSI is a BAND, not a single threshold: the upper cap (CE) / lower floor (PE) skips
+ *   overbought/oversold extremes where the breakout typically reverses.
  *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
  *   ADX trend filter (optional, SCALP_ADX_ENABLED): block ALL entries when ADX(14) < SCALP_ADX_MIN
  *     — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions.
@@ -75,8 +76,12 @@ function getSignal(candles, opts) {
   var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
   var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
   var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "70"));
-  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "40"));
+  // RSI band (not a single threshold). CE: must sit ABOVE the floor but BELOW the
+  // overbought cap. PE: must sit BELOW the ceiling but ABOVE the oversold floor.
+  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_MIN", "52"));  // CE floor — rsi must be above this
+  var RSI_CE_MAX  = parseFloat(cfg("SCALP_RSI_CE_MAX", "70"));  // CE cap   — rsi must be below this (skip overbought)
+  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_MAX", "49"));  // PE ceiling — rsi must be below this
+  var RSI_PE_MIN  = parseFloat(cfg("SCALP_RSI_PE_MIN", "30"));  // PE floor   — rsi must be above this (skip oversold)
   var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
   var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
   var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
@@ -210,12 +215,12 @@ function getSignal(candles, opts) {
   var _ceAuditChecks = [
     { name: "BB upper break",      ok: sc.close >= bb.upper, detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
     { name: _srcLabel + " below",  ok: sarBelow,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
-    { name: "RSI bullish",         ok: rsi > RSI_CE,         detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE },
+    { name: "RSI bullish",         ok: rsi > RSI_CE && rsi < RSI_CE_MAX, detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_CE + "-" + RSI_CE_MAX },
   ];
   var _peAuditChecks = [
     { name: "BB lower break",      ok: sc.close <= bb.lower, detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
     { name: _srcLabel + " above",  ok: sarAbove,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
-    { name: "RSI bearish",         ok: rsi < RSI_PE,         detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE },
+    { name: "RSI bearish",         ok: rsi < RSI_PE && rsi > RSI_PE_MIN, detail: "RSI=" + rsi.toFixed(1) + " vs " + RSI_PE_MIN + "-" + RSI_PE },
   ];
   function _auditSide(checks) {
     var passed = [], failed = [];
@@ -227,8 +232,8 @@ function getSignal(candles, opts) {
   }
   base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
 
-  // CE (Long): close >= BB upper + PSAR below close + RSI > RSI_CE
-  if (sc.close >= bb.upper && sarBelow && rsi > RSI_CE) {
+  // CE (Long): close >= BB upper + PSAR below close + RSI in band (RSI_CE < rsi < RSI_CE_MAX)
+  if (sc.close >= bb.upper && sarBelow && rsi > RSI_CE && rsi < RSI_CE_MAX) {
     if (RSI_TURNING && rsi < rsiPrev) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
@@ -252,8 +257,8 @@ function getSignal(candles, opts) {
     });
   }
 
-  // PE (Short): close <= BB lower + PSAR above close + RSI < RSI_PE
-  if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE) {
+  // PE (Short): close <= BB lower + PSAR above close + RSI in band (RSI_PE_MIN < rsi < RSI_PE)
+  if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE && rsi > RSI_PE_MIN) {
     if (RSI_TURNING && rsi > rsiPrev) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
@@ -285,13 +290,15 @@ function getSignal(candles, opts) {
   if (cePrice) {
     var ceMiss = [];
     if (!sarBelow)    ceMiss.push(_srcLabel + " not below close");
-    if (!(rsi > RSI_CE)) ceMiss.push("RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
+    if (!(rsi > RSI_CE))          ceMiss.push("RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
+    else if (!(rsi < RSI_CE_MAX)) ceMiss.push("RSI=" + rsi.toFixed(0) + ">=" + RSI_CE_MAX + " overbought");
     if (ceMiss.length) parts.push("CE broke BB but " + ceMiss.join(" & "));
   }
   if (pePrice) {
     var peMiss = [];
     if (!sarAbove)    peMiss.push(_srcLabel + " not above close");
-    if (!(rsi < RSI_PE)) peMiss.push("RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
+    if (!(rsi < RSI_PE))          peMiss.push("RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
+    else if (!(rsi > RSI_PE_MIN)) peMiss.push("RSI=" + rsi.toFixed(0) + "<=" + RSI_PE_MIN + " oversold");
     if (peMiss.length) parts.push("PE broke BB but " + peMiss.join(" & "));
   }
 
