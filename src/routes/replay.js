@@ -202,7 +202,14 @@ function _renderStrategyOptions() {
   // replay-specific UI_SHOW_* toggle, so disabled strategies drop out here too.
   const enabled = STRATEGY_OPTIONS.filter(o => on(o.modeKey) && on(o.envKey));
   const list = enabled.length ? enabled : STRATEGY_OPTIONS; // never render empty
-  return list.map(o => `<option value="${o.mode}">${o.label}</option>`).join("");
+  const opts = list.map(o => `<option value="${o.mode}">${o.label}</option>`);
+  // "All strategies" runs every enabled paper mode in one batch (only worth
+  // offering when there are 2+ to combine). Default-selected so the page opens
+  // ready to replay the whole range across strategies in one shot.
+  if (list.length > 1) {
+    opts.unshift(`<option value="all" selected>⚡ All strategies</option>`);
+  }
+  return opts.join("");
 }
 
 router.get("/", (req, res) => {
@@ -1675,6 +1682,15 @@ function applyRangePreset(preset) {
   if (_rangeToFp)   _rangeToFp.setDate(t, false);   else toEl.value   = t;
 }
 
+// Every replay-able paper mode currently offered in the Strategy dropdown
+// (i.e. enabled via the *_MODE_ENABLED + UI_SHOW_* toggles), excluding the
+// synthetic "all" entry. Used to expand mode==='all' into its members.
+function _allReplayModes() {
+  const sel = document.getElementById('range-mode');
+  if (!sel) return [];
+  return Array.prototype.map.call(sel.options, o => o.value).filter(v => v && v !== 'all');
+}
+
 function pickSessionsInRange(from, to, mode) {
   // Sessions are deduped by sessionId in listRecordings, sorted newest-first.
   // We DON'T require durationMs != null. A session that crash-recovered or
@@ -1682,9 +1698,12 @@ function pickSessionsInRange(from, to, mode) {
   // tick stream — replay synthesises an end-of-window stop and processes
   // every recorded tick. Excluding these meant 18-may swing was unreachable
   // even though all its ticks were on disk.
+  // mode==='all' → every enabled paper mode; the batch runner replays each
+  // session against its own mode, so a mixed list works as-is.
+  const wanted = (mode === 'all') ? _allReplayModes() : [mode];
   return _allSessionsCache
-    .filter(s => s.mode === mode && s.date >= from && s.date <= to)
-    .sort((a, b) => (a.startTs || 0) - (b.startTs || 0));
+    .filter(s => wanted.includes(s.mode) && s.date >= from && s.date <= to)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.startTs || 0) - (b.startTs || 0)));
 }
 
 function renderRangeResult(rows, context) {
@@ -1702,9 +1721,10 @@ function renderRangeResult(rows, context) {
   const headerTagClass = context && context.mode
     ? modeTag(context.mode)
     : 'pa';
+  const headerPill = context && context.mode === 'all' ? 'all strategies' : (context ? context.mode : '');
   const headerLine = context
     ? '<div style="margin-bottom:10px;font-size:0.9rem;">' +
-        'Strategy: <span class="tag ' + headerTagClass + '">' + context.mode + '</span> ' +
+        'Strategy: <span class="tag ' + headerTagClass + '">' + headerPill + '</span> ' +
         '<span class="muted">(' + (context.label || context.mode) + ')</span> · ' +
         '<span class="muted">Range: ' + context.from + ' → ' + context.to + '</span>' +
       '</div>'
@@ -1906,11 +1926,12 @@ async function runRange(btn) {
   const context = { mode, label: modeLabel, from, to, useCurrentSettings };
   const sessions = pickSessionsInRange(from, to, mode);
   if (sessions.length === 0) {
+    const pill = mode === 'all' ? 'all strategies' : mode;
     document.getElementById('range-result').innerHTML =
       '<div style="margin-bottom:10px;font-size:0.9rem;">Strategy: <span class="tag ' +
         modeTag(mode) +
-        '">' + mode + '</span> <span class="muted">(' + modeLabel + ')</span></div>' +
-      '<div class="muted">No recorded ' + mode + ' sessions found between ' + from + ' and ' + to + '.</div>';
+        '">' + pill + '</span> <span class="muted">(' + modeLabel + ')</span></div>' +
+      '<div class="muted">No recorded ' + pill + ' sessions found between ' + from + ' and ' + to + '.</div>';
     document.getElementById('range-progress').style.display = 'none';
     return;
   }
@@ -2178,7 +2199,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='straddle-paper'?'Straddle Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='straddle-paper'?'Straddle Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }
