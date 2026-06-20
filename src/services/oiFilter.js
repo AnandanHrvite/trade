@@ -32,6 +32,7 @@
 
 const fyers            = require("../config/fyers");
 const instrumentConfig = require("../config/instrument");
+const tickRecorder     = require("../utils/tickRecorder");
 
 const PRICE_EPS_PTS = 1;       // ignore micro spot drift over the lookback
 const SAMPLE_TTL    = 60_000;  // throttle: at most one OI fetch per 60s (≈ 1/candle at 5m)
@@ -100,6 +101,9 @@ async function recordOiSample(spot, { force = false } = {}) {
         if (_series.length && (now - _series[_series.length - 1].ts) > STALE_GAP_MS) _series = [];
         _lastSampleTs = now;
         _series.push({ ts: now, oi, spot });
+        // Record OI (cache fills only, like VIX) so tick-replay can reproduce the
+        // gate instead of failing it open. No-op'd during replay by the harness.
+        try { tickRecorder.recordOi(_futSymbol(), oi); } catch (_) {}
         _warnedNoOi = false;
         // Keep a little more than the deepest lookback we might use.
         const maxLen = Math.max(getOiLookback() + 2, 6);

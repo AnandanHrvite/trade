@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Replay: snapshot mode now reproduces the OI & bid-ask spread gates
+
+- **Fixed: snapshot replay could diverge from the recorded live session** whenever the OI filter or the bid-ask spread guard was active. Both gates read live broker data — NIFTY-futures OI, and option bid/ask — that the tick recorder never captured, so during replay they **failed open** and replay took entries the live run had blocked. One such phantom entry could land on a strike the live run never traded (no recorded option ticks → `spot proxy` fill), and the fake loss could trip the daily-loss cutoff and suppress the rest of the session. Affected all four strategies (ORB most exposed, at 1 trade/day).
+- **Two new recorded streams** let replay run the exact same gates the live session did:
+  - `ticks/YYYY-MM-DD/oi.jsonl` — NIFTY-futures OI samples, recorded from `oiFilter` (cache fills only, like VIX; only while an OI filter is on).
+  - option `bid`/`ask` on the entry-time spread-guard quote, added to `options.jsonl` (`b`/`a` fields).
+- **Replay harness** now serves recorded OI for `*FUT` quote requests and bid/ask on option quotes; the new recorder calls are no-op'd during replay so a replay never writes back into the recording.
+- **Paper/live decision logic untouched** — recorder + replay only.
+- **Pre-fix recordings can't be made deterministic** (the OI/bid-ask data was never captured). Snapshot replay now logs a one-line `⚠️ snapshot not fully reproducible` warning for such sessions instead of silently failing open, so a divergent delta isn't mistaken for a strategy result.
+
 ### Removed the Straddle strategy (all modes)
 
 - **The Straddle (Long Straddle / BB-squeeze volatility) strategy has been removed entirely.** Deleted its routes (`/straddle-paper`, `/straddle-live`, `/straddle-backtest`), the `straddle_volatility.js` strategy, and the `Straddle_Strategy_Guide.html` doc. The platform now runs **four** strategies: Swing, Scalp, Price Action, and ORB.

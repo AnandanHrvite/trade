@@ -114,7 +114,7 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - **Risk caps**: 1 trade/day default (`ORB_MAX_DAILY_TRADES=1`), `ORB_MAX_DAILY_LOSS=3000`, forced square-off at `ORB_FORCED_EXIT=15:15` (the only non-stop exit), last entry `ORB_ENTRY_END=12:00` (stale-breakout cutoff).
 
 ### Tick Replay — deterministic re-run of recorded sessions
-- Every paper/live session records spot, option, and VIX ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
+- Every paper/live session records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
 - `/replay` re-runs a recorded session through the same paper `onTick()` handlers to produce **bit-identical** results.
 - Two modes: **Snapshot mode** uses the session-start settings snapshot from that day's JSONL → identical output every run; **Current-settings mode** uses the live `process.env` so you can A/B settings changes against real ticks after hours.
 - Outputs land in `~/trading-data/_replay_trades/` (snapshot) or `_replay_trades_sim/` (current-settings) — kept separate from the canonical paper logs.
@@ -193,7 +193,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
                                   # (one file per strategy per day; seeded with a settings snapshot
                                   #  + checkpoint note, re-snapshotted on every config save)
-  ticks/YYYY-MM-DD/               # Replay source: per-day spot / option / VIX tick recordings
+  ticks/YYYY-MM-DD/               # Replay source: per-day spot / option / VIX / OI tick recordings
                                   # (gated by TICK_RECORDER_ENABLED; retention TICK_RECORDER_RETAIN_DAYS)
   _replay_trades/                 # Replay output — snapshot mode (uses session-start settings)
   _replay_trades_sim/             # Replay output — current-settings mode (uses live process.env)
@@ -380,7 +380,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### Tick Recorder / Replay / Live Harness
 | Key | Default | Notes |
 |-----|---------|-------|
-| `TICK_RECORDER_ENABLED` | `true` | Record spot/option/VIX ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` during every paper/live session. Required for Replay. Pure observer — zero impact on trading. |
+| `TICK_RECORDER_ENABLED` | `true` | Record spot/option/VIX/OI ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` during every paper/live session. Required for Replay. Pure observer — zero impact on trading. |
 | `TICK_RECORDER_RETAIN_DAYS` | `30` | Auto-delete tick recordings older than this many days (~10 MB/day across streams) |
 | `SETTINGS_AUDIT_RETAIN_DAYS` | `3` | Keep only this many days of `settings-audit.jsonl` (the Trade Logs → Checkpoints & Settings Changes tab); older entries are pruned on every save and never shown |
 | `BACKUP_ENABLED` | `true` | Cut a daily self-contained `.tar.gz` snapshot of `~/trading-data` + `data/ticks` (caches & OAuth tokens excluded) into `~/trading-data/_backups/`. Download it from Settings → Backup & Restore; a banner nags on every page until the day's copy is downloaded. Pure observer — zero impact on trading. |
@@ -561,7 +561,7 @@ src/
   services/
     backtestEngine.js                 # Historical candle fetch + backtest engine
     tickSimulator.js                  # Market scenario tick generator + historical replay (zigzag ticks)
-    tickRecorder.js                   # Spot/option/VIX tick recorder (writes ~/trading-data/ticks/...) for Replay
+    tickRecorder.js                   # Spot/option/VIX/OI tick recorder (writes ~/trading-data/ticks/...) for Replay
     vixFilter.js                      # VIX market regime filter
     zerodhaBroker.js                  # Zerodha Kite order placement (swing live)
     fyersBroker.js                    # Fyers order placement (scalp + PA + ORB live)

@@ -294,10 +294,17 @@ async function loadSessionData({ date, mode, sessionId }) {
   // intermediate string allocation).
   const optionTicks = [];
   const vixTicks    = [];
+  const oiTicks     = [];
   await _streamJsonl(path.join(dir, "options.jsonl"), { filterFn: inWindow, onRec: r => optionTicks.push(r) });
   await _streamJsonl(path.join(dir, "vix.jsonl"),     { filterFn: inWindow, onRec: r => vixTicks.push(r) });
+  // oi.jsonl only exists for sessions recorded after OI capture shipped — guard it.
+  const _oiPath = path.join(dir, "oi.jsonl");
+  if (fs.existsSync(_oiPath)) {
+    await _streamJsonl(_oiPath, { filterFn: inWindow, onRec: r => oiTicks.push(r) });
+  }
   optionTicks.sort(byT);
   vixTicks.sort(byT);
+  oiTicks.sort(byT);
 
   // If session-stop missing, peek the last spot-tick timestamp as bound.
   // This requires a single streaming pass — cheap and avoids loading.
@@ -315,6 +322,7 @@ async function loadSessionData({ date, mode, sessionId }) {
     sessionStop,
     optionTicks,
     vixTicks,
+    oiTicks,
     spotPath: path.join(dir, "spot.jsonl"),
   };
 }
@@ -325,7 +333,7 @@ function _buildOptionTimeline(optionTicks) {
   for (const rec of optionTicks) {
     let arr = bySymbol.get(rec.s);
     if (!arr) { arr = []; bySymbol.set(rec.s, arr); }
-    arr.push({ t: rec.t, l: rec.l });
+    arr.push({ t: rec.t, l: rec.l, b: rec.b, a: rec.a });
   }
   // Each symbol's array is already in ascending order (input was sorted by t).
   return bySymbol;
@@ -490,7 +498,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
  * The harness exposes `pumpTick(tick)` for the engine to fan ticks through
  * the captured callbacks.
  */
-function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
+function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles, recordedDateStr = null, outputSubdir = "_replay_trades", outputSuffix = "replay" }) {
   const socketManager     = require("../utils/socketManager");
   const fyers             = require("../config/fyers");
   const notify            = require("../utils/notify");
@@ -531,7 +539,9 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     // option-LTP entries in the recording the user is replaying from).
     tr_recordSpotTick:     tickRecorder.recordSpotTick,
     tr_recordOptionLtp:    tickRecorder.recordOptionLtp,
+    tr_recordOptionQuote:  tickRecorder.recordOptionQuote,
     tr_recordVix:          tickRecorder.recordVix,
+    tr_recordOi:           tickRecorder.recordOi,
     tr_recordSessionStart: tickRecorder.recordSessionStart,
     tr_recordSessionStop:  tickRecorder.recordSessionStop,
     // skipLogger original — replay must NOT write strategy/VIX/spread skip
@@ -615,12 +625,24 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
         return { s: "ok", d: [{ v: { lp: v.l != null ? v.l : v.v } }] };
       }
 
+      // OI path: NIFTY-futures OI for the oiFilter gate. Match any *FUT symbol
+      // (the futures contract symbol can differ between record/replay time) and
+      // serve the recorded OI at-or-before the replay clock. Empty timeline
+      // (pre-OI-capture sessions) → no_data → oiFilter fails open, unchanged.
+      if (sym.endsWith("FUT")) {
+        const o = _lookupAtOrBefore(oiTimeline, replayNow);
+        if (!o) return { s: "no_data", d: [] };
+        return { s: "ok", d: [{ v: { oi: o.oi } }] };
+      }
+
       // Option path: ±2s window to absorb paper's option-poll network latency
-      // (200-500ms typical; first poll after entry lands strictly AFTER replayNow)
+      // (200-500ms typical; first poll after entry lands strictly AFTER replayNow).
+      // bid/ask are present only on spread-guard quotes (LTP-only polls and
+      // pre-capture recordings omit them → spread guard fails open, unchanged).
       const arr = optionTimeline.get(sym);
       const v = _lookupNearest(arr, replayNow, 2000);
       if (!v) return { s: "no_data", d: [] };
-      return { s: "ok", d: [{ v: { lp: v.l } }] };
+      return { s: "ok", d: [{ v: { lp: v.l, bid: v.b, ask: v.a } }] };
     };
 
     // fyers.getHistory + backtestEngine.fetchCandles + candleCache.fetchCandlesCached:
@@ -662,7 +684,9 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     // streams (phantom session rows in the Replay list, duplicate option LTPs).
     tickRecorder.recordSpotTick     = () => {};
     tickRecorder.recordOptionLtp    = () => {};
+    tickRecorder.recordOptionQuote  = () => {};
     tickRecorder.recordVix          = () => {};
+    tickRecorder.recordOi           = () => {};
     tickRecorder.recordSessionStart = () => {};
     tickRecorder.recordSessionStop  = () => {};
 
@@ -799,7 +823,9 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     Date.now                        = orig.DateNow;
     tickRecorder.recordSpotTick     = orig.tr_recordSpotTick;
     tickRecorder.recordOptionLtp    = orig.tr_recordOptionLtp;
+    tickRecorder.recordOptionQuote  = orig.tr_recordOptionQuote;
     tickRecorder.recordVix          = orig.tr_recordVix;
+    tickRecorder.recordOi           = orig.tr_recordOi;
     tickRecorder.recordSessionStart = orig.tr_recordSessionStart;
     tickRecorder.recordSessionStop  = orig.tr_recordSessionStop;
     skipLogger.appendSkipLog        = orig.sl_appendSkipLog;
@@ -982,6 +1008,26 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 
     const optionTimeline = _buildOptionTimeline(data.optionTicks);
     const vixTimeline    = data.vixTicks.map(v => ({ t: v.t, l: v.v })); // unify field name
+    const oiTimeline     = (data.oiTicks || []).map(o => ({ t: o.t, oi: o.oi }));
+
+    // Reproducibility guard (snapshot mode only): warn — don't fail — when a
+    // live-data gate was active for the recorded session but its data was never
+    // captured. Such a session can't replay deterministically for that gate
+    // (true for everything recorded before OI/bid-ask capture shipped), so a
+    // divergent delta is a recording hole, not a strategy result. Surfaces in /logs.
+    if (!useCurrentSettings) {
+      const _snap = data.sessionStart.settings || {};
+      const _warn = [];
+      if (_snap.OI_FILTER_ENABLED === "true" && oiTimeline.length === 0) {
+        _warn.push("OI filter was ON but no OI recorded — OI gate fails open in replay");
+      }
+      if (data.optionTicks.length > 0 && !data.optionTicks.some(o => o.b != null || o.a != null)) {
+        _warn.push("no recorded option bid/ask — spread guard fails open in replay");
+      }
+      if (_warn.length) {
+        console.warn(`⚠️ [replay] ${data.sessionStart.mode} ${data.sessionStart.sid}: snapshot not fully reproducible — ${_warn.join("; ")}`);
+      }
+    }
 
     // 2. Apply settings override from session-start snapshot.
     //    Skipped in simulator mode so the run uses current process.env
@@ -1003,7 +1049,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    get mixed with deterministic snapshot runs.
     const warmupCandles = data.sessionStart.warmup || [];
     harness = _createHarness({
-      optionTimeline, vixTimeline, warmupCandles,
+      optionTimeline, vixTimeline, oiTimeline, warmupCandles,
       recordedDateStr: date,
       outputSubdir: useCurrentSettings ? "_replay_trades_sim" : "_replay_trades",
       outputSuffix: useCurrentSettings ? "sim" : "replay",

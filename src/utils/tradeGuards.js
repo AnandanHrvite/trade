@@ -1,6 +1,8 @@
 // Shared live/paper-trade guards: bid-ask spread filter at entry, time-stop at exit.
 // Keeps paper and live engines aligned on real-market frictions the backtest ignores.
 
+const tickRecorder = require("./tickRecorder");
+
 const DEFAULT_MAX_SPREAD_PTS = parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2");
 const DEFAULT_TIME_STOP_CANDLES = parseInt(process.env.TIME_STOP_CANDLES || "4", 10);
 const DEFAULT_TIME_STOP_FLAT_PTS = parseFloat(process.env.TIME_STOP_FLAT_PTS || "20");
@@ -16,7 +18,12 @@ async function fetchOptionQuote(fyers, symbol) {
       );
       const bid = Number(v.bid || v.bid_price || 0);
       const ask = Number(v.ask || v.ask_price || 0);
-      if (ltp > 0) return { ltp, bid, ask };
+      if (ltp > 0) {
+        // Capture the entry-time bid/ask so tick-replay can reproduce the spread
+        // gate. No-op'd during replay by the harness (so it never writes back).
+        try { tickRecorder.recordOptionQuote(symbol, ltp, bid, ask, "spread-guard"); } catch (_) {}
+        return { ltp, bid, ask };
+      }
     }
   } catch (_) { /* swallow — caller fail-opens */ }
   return null;

@@ -7,14 +7,16 @@
  *
  * Streams recorded:
  *   spot    — every NIFTY50-INDEX spot tick (from socketManager fan-out)
- *   options — every option LTP REST poll (per-strategy)
+ *   options — every option LTP REST poll (per-strategy) + entry-time bid/ask
  *   vix     — every VIX REST fetch (live cache fills only, not cache hits)
+ *   oi      — every NIFTY-futures OI sample (only while an OI filter is on)
  *   sessions — start/stop events with full settings + warm-up snapshot
  *
  * Files (per-day rotation, IST date):
  *   data/ticks/YYYY-MM-DD/spot.jsonl
  *   data/ticks/YYYY-MM-DD/options.jsonl
  *   data/ticks/YYYY-MM-DD/vix.jsonl
+ *   data/ticks/YYYY-MM-DD/oi.jsonl
  *   data/ticks/YYYY-MM-DD/sessions.jsonl
  *
  * Performance:
@@ -50,6 +52,7 @@ const buffers = {
   spot:     [],
   options:  [],
   vix:      [],
+  oi:       [],
   sessions: [],
 };
 
@@ -160,6 +163,7 @@ function flushAll() {
   _drainBufferTo("spot",     buffers.spot);
   _drainBufferTo("options",  buffers.options);
   _drainBufferTo("vix",      buffers.vix);
+  _drainBufferTo("oi",       buffers.oi);
   _drainBufferTo("sessions", buffers.sessions);
 }
 
@@ -167,6 +171,7 @@ function flushAllSync() {
   _drainBufferToSync("spot",     buffers.spot);
   _drainBufferToSync("options",  buffers.options);
   _drainBufferToSync("vix",      buffers.vix);
+  _drainBufferToSync("oi",       buffers.oi);
   _drainBufferToSync("sessions", buffers.sessions);
 }
 
@@ -203,6 +208,22 @@ function recordOptionLtp(symbol, ltp, src) {
 }
 
 /**
+ * Record an option quote that carries bid/ask (from the entry-time spread-guard
+ * poll). Same `options` stream as recordOptionLtp, plus `b`/`a` fields so replay
+ * can reproduce the bid-ask spread gate. Missing bid/ask are omitted (replay
+ * then fails the spread guard open, matching pre-capture behaviour).
+ */
+function recordOptionQuote(symbol, ltp, bid, ask, src) {
+  if (!ENABLED || ltp == null || !symbol) return;
+  if (!_initialized) _init();
+  if (buffers.options.length >= MAX_BUFFER_RECORDS) return;
+  const rec = { t: Date.now(), s: symbol, l: ltp, src: src || null };
+  if (bid != null && bid > 0) rec.b = bid;
+  if (ask != null && ask > 0) rec.a = ask;
+  buffers.options.push(rec);
+}
+
+/**
  * Record one successful VIX REST fetch (cache fills only — cache hits should
  * NOT be recorded, otherwise replay would inflate the rate).
  */
@@ -211,6 +232,19 @@ function recordVix(value) {
   if (!_initialized) _init();
   if (buffers.vix.length >= MAX_BUFFER_RECORDS) return;  // timer-stall guard (matches spot/options)
   buffers.vix.push({ t: Date.now(), v: value });
+}
+
+/**
+ * Record one NIFTY-futures OI sample (cache fills only, like VIX). Captured so
+ * the replay can reproduce the OI buildup gate exactly instead of failing it open.
+ *   symbol — futures symbol e.g. "NSE:NIFTY25JUNFUT"
+ *   oi     — open-interest number from the REST quote
+ */
+function recordOi(symbol, oi) {
+  if (!ENABLED || oi == null || !(oi > 0) || !symbol) return;
+  if (!_initialized) _init();
+  if (buffers.oi.length >= MAX_BUFFER_RECORDS) return;
+  buffers.oi.push({ t: Date.now(), s: symbol, oi });
 }
 
 /**
@@ -321,6 +355,7 @@ function getStats() {
       spot:     buffers.spot.length,
       options:  buffers.options.length,
       vix:      buffers.vix.length,
+      oi:       buffers.oi.length,
       sessions: buffers.sessions.length,
     },
   };
@@ -329,7 +364,9 @@ function getStats() {
 module.exports = {
   recordSpotTick,
   recordOptionLtp,
+  recordOptionQuote,
   recordVix,
+  recordOi,
   recordSessionStart,
   recordSessionStop,
   snapshotSettings,
