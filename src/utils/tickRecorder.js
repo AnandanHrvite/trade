@@ -96,8 +96,13 @@ function _init() {
     _exitHandlersInstalled = true;
     const drain = () => { try { flushAllSync(); } catch (_) {} };
     process.on("beforeExit", drain);
-    process.on("SIGINT",     () => { drain(); process.exit(130); });
-    process.on("SIGTERM",    () => { drain(); process.exit(143); });
+    // Flush-only on signals — do NOT call process.exit() here. app.js's
+    // gracefulShutdown also listens for SIGINT/SIGTERM and needs its square-off
+    // window (it schedules the real process.exit after exits settle). Exiting
+    // synchronously here would pre-empt that timer and abandon an in-flight
+    // live square-off, leaving an orphaned broker position on every PM2 reload.
+    process.on("SIGINT",     () => { drain(); });
+    process.on("SIGTERM",    () => { drain(); });
     process.on("uncaughtException", (err) => {
       try { drain(); } catch (_) {}
       // re-throw so the process still crashes on real bugs
@@ -204,6 +209,7 @@ function recordOptionLtp(symbol, ltp, src) {
 function recordVix(value) {
   if (!ENABLED || typeof value !== "number" || !(value > 0)) return;
   if (!_initialized) _init();
+  if (buffers.vix.length >= MAX_BUFFER_RECORDS) return;  // timer-stall guard (matches spot/options)
   buffers.vix.push({ t: Date.now(), v: value });
 }
 

@@ -192,6 +192,28 @@ router.get("/socket-health", (req, res) => {
   res.json(socketManager.getHealth());
 });
 
+// Telegram delivery health — polled by the dashboard banner so a blocked /
+// rate-limited / mis-configured Telegram surfaces in-page instead of failing
+// silently. Returns { configured, ok, failCount, lastError, lastOkTs }.
+router.get("/telegram-health", (req, res) => {
+  try {
+    res.json(require("../utils/notify").getTelegramHealth());
+  } catch (e) {
+    res.json({ configured: false, ok: false, failCount: 0, lastError: { message: e.message, code: null, ts: Date.now() }, lastOkTs: null });
+  }
+});
+
+// Active Telegram reachability probe (getMe — sends NO chat message). Called by
+// the Settings → System Health modal so opening it genuinely tests Telegram
+// right now. Also refreshes the passive health state used by the banner.
+router.get("/telegram-ping", async (req, res) => {
+  try {
+    res.json(await require("../utils/notify").pingTelegram());
+  } catch (e) {
+    res.json({ configured: false, ok: false, error: e.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // ZERODHA AUTH
 // ─────────────────────────────────────────────────────────────────────────────

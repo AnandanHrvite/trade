@@ -339,6 +339,7 @@ async function getNearestExpiryFromOptionChain() {
       }, (res) => {
         let body = "";
         res.on("data", chunk => body += chunk);
+        res.on("error", reject);  // a response-stream error mid-download would otherwise be unhandled
         res.on("end", () => {
           try {
             // Strip any BOM or leading whitespace before parsing

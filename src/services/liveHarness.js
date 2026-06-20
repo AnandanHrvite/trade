@@ -96,7 +96,10 @@ async function _placeOrder({ broker, symbol, qty, sideAction, isFutures, tag }) 
   // sideAction: "BUY" (entry) or "SELL" (exit/squareoff)
   if (broker === "fyers") {
     const sideCode = sideAction === "BUY" ? 1 : -1;
-    return fyersBroker.placeMarketOrder(symbol, sideCode, qty, { isFutures, orderTag: tag });
+    // Signature is placeMarketOrder(symbol, side, qty, orderTag, { isFutures }).
+    // Passing the options object in the orderTag slot makes orderTag.substring()
+    // throw, so every Fyers harness order (PA/SCALP/ORB live) silently failed.
+    return fyersBroker.placeMarketOrder(symbol, sideCode, qty, tag, { isFutures });
   }
   if (broker === "zerodha") {
     if (!zerodhaBroker) throw new Error("zerodhaBroker module not loaded");

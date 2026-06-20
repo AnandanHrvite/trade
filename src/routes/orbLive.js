@@ -49,7 +49,7 @@ const tradeLogger = require("../utils/tradeLogger");
 const skipLogger  = require("../utils/skipLogger");
 const fyers       = require("../config/fyers");
 const fyersBroker = require("../services/fyersBroker");
-const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
+const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendTelegram } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { getISTMinutes, getBucketStart, fmtISTDateTime } = require("../utils/tradeUtils");
 
@@ -230,7 +230,22 @@ async function placeLiveBuy(side, sigSnapshot) {
 }
 
 // ── Live SELL / SQUARE-OFF ─────────────────────────────────────────────────
+// _checkExits / EOD call placeLiveSell un-awaited on every tick. Without an
+// in-flight guard, a fast move firing two ticks inside one broker round-trip
+// (state.position is cleared only after the await) would place a SECOND SELL —
+// opening a naked short. Mirror the proven swing/scalp _squareOffInFlight guard.
+let _squareOffInFlight = false;
 async function placeLiveSell(reason) {
+  if (_squareOffInFlight || !state.position) return;
+  _squareOffInFlight = true;
+  try {
+    await _placeLiveSellImpl(reason);
+  } finally {
+    _squareOffInFlight = false;
+  }
+}
+
+async function _placeLiveSellImpl(reason) {
   if (!state.position) return;
   const pos = state.position;
   const exitOptLtp = state.optionLtp || pos.optionEntryLtp;
@@ -246,12 +261,14 @@ async function placeLiveSell(reason) {
       const ord = await fyersBroker.placeMarketOrder(pos.symbol, -1, qty, "ORB-LIVE-X", { isFutures: false });
       if (!ord || !ord.success) {
         log(`❌ [ORB-LIVE] SELL order failed: ${JSON.stringify(ord)}`);
+        sendTelegram(`🚨 ORB EXIT FAILED: ${pos.symbol} ${pos.side} × ${qty} — ${reason}. Broker rejected — check Fyers dashboard IMMEDIATELY!`).catch(() => {});
       } else {
         exitOrderId = ord.orderId;
         log(`🔴 [ORB-LIVE] SELL order placed — orderId=${exitOrderId}`);
       }
     } catch (e) {
       log(`❌ [ORB-LIVE] SELL order threw: ${e.message}`);
+      sendTelegram(`🚨 ORB EXIT THREW: ${pos.symbol} ${pos.side} × ${qty} — ${e.message}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
     }
   }
 
