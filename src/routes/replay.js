@@ -784,6 +784,20 @@ function _rowMatchesFilter(r, f) {
   if (f.strategy && f.strategy !== 'all' && r.session.mode !== f.strategy) return false;
   return _rowMatchesShow(r, f.show || 'all');
 }
+// Rows currently visible under the active analytics filter (strategy + show).
+// The diagnostic export honours the filter so "Download/Copy diagnostic" matches
+// the table the user is looking at, not the full unfiltered run.
+function _filteredRangeRows() {
+  if (!_CN_RANGE_ROWS || !_CN_RANGE_ROWS.length) return [];
+  return _CN_RANGE_ROWS.filter(r => _rowMatchesFilter(r, _rangeFilter));
+}
+// Context tweaked so the filename/header reflect the active strategy filter
+// (e.g. 'scalp-paper' instead of 'all') when one is set.
+function _filteredRangeContext() {
+  const ctx = Object.assign({}, _CN_RANGE_CTX || {});
+  if (_rangeFilter.strategy && _rangeFilter.strategy !== 'all') ctx.mode = _rangeFilter.strategy;
+  return ctx;
+}
 // Filter toolbar above the per-session table. Strategy picker only appears when
 // the run spans more than one strategy (single-strategy runs don't need it).
 function _rangeFilterBar(rows, f) {
@@ -2212,14 +2226,24 @@ async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
     reportBtn.title = 'Contract note (gross, charges, net P&L) across the whole range';
     reportBtn.onclick = () => openReplayReportAll();
     btnRow.appendChild(reportBtn);
+    // Copy/Download honour the active analytics filter (Strategy + Show), computed
+    // at click time since the user changes the filter after the run completes.
     const copyBtn = document.createElement('button');
     copyBtn.className = 'copy-btn';
     copyBtn.textContent = '📋 Copy diagnostic data';
-    copyBtn.onclick = () => copyDiagnostic(copyBtn, context, rows);
+    copyBtn.onclick = () => {
+      const fr = _filteredRangeRows();
+      if (!fr.length) return showReplayToast('No sessions match the current filter.');
+      copyDiagnostic(copyBtn, _filteredRangeContext(), fr);
+    };
     const dlBtn = document.createElement('button');
     dlBtn.className = 'copy-btn';
     dlBtn.textContent = '⬇ Download diagnostic';
-    dlBtn.onclick = () => downloadDiagnostic(dlBtn, context, rows);
+    dlBtn.onclick = () => {
+      const fr = _filteredRangeRows();
+      if (!fr.length) return showReplayToast('No sessions match the current filter.');
+      downloadDiagnostic(dlBtn, _filteredRangeContext(), fr);
+    };
     btnRow.appendChild(copyBtn);
     btnRow.appendChild(dlBtn);
   }
