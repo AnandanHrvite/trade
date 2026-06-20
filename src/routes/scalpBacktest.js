@@ -29,12 +29,12 @@ function _deriveScalpStrength(result) {
   const rsi = typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    const floor = parseFloat(process.env.SCALP_RSI_CE_MIN || "52");
-    return rsi >= floor + 5 ? "STRONG" : "MARGINAL";
+    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    const ceil = parseFloat(process.env.SCALP_RSI_PE_MAX || "49");
-    return rsi <= ceil - 5 ? "STRONG" : "MARGINAL";
+    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
 }

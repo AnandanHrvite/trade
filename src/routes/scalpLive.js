@@ -867,12 +867,12 @@ function deriveScalpStrength(result) {
   const rsi = typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    const floor = parseFloat(process.env.SCALP_RSI_CE_MIN || "52");
-    return rsi >= floor + 5 ? "STRONG" : "MARGINAL";
+    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    const ceil = parseFloat(process.env.SCALP_RSI_PE_MAX || "49");
-    return rsi <= ceil - 5 ? "STRONG" : "MARGINAL";
+    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
 }
@@ -1432,8 +1432,8 @@ router.get("/status/chart-data", (req, res) => {
       supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
       adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
       rsi: rsiSeries,
-      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_MIN || "52"),
-      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_MAX || "49") });
+      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
+      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 

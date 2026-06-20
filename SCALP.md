@@ -29,14 +29,14 @@ Timeframe: **3 or 5-min** candles via `SCALP_RESOLUTION` (default 5). BB and RSI
 **CE (long call):**
 - Candle **closes at/above the BB upper band** — `close ≥ BB.upper`
 - **PSAR below the close** — `SAR < close`
-- **RSI in band** — `SCALP_RSI_CE_MIN(52) < RSI < SCALP_RSI_CE_MAX(70)` (above the floor, below the overbought cap)
+- `RSI > SCALP_RSI_CE_THRESHOLD(70)`
 - **PSAR not too far** — `close − SAR ≤ SCALP_MAX_ENTRY_SL_PTS(50)`
 - → Initial SL = **PSAR value at entry**
 
 **PE (long put):**
 - Candle **closes at/below the BB lower band** — `close ≤ BB.lower`
 - **PSAR above the close** — `SAR > close`
-- **RSI in band** — `SCALP_RSI_PE_MIN(30) < RSI < SCALP_RSI_PE_MAX(49)` (below the ceiling, above the oversold floor)
+- `RSI < SCALP_RSI_PE_THRESHOLD(40)`
 - **PSAR not too far** — `SAR − close ≤ SCALP_MAX_ENTRY_SL_PTS(50)`
 - → Initial SL = **PSAR value at entry**
 
@@ -82,7 +82,7 @@ After an **SL hit** on a side, new entries on **that side** are blocked for `SCA
 
 Plot these on **NIFTY 50 spot** at the same resolution (3 or 5-min) to mirror the engine:
 - **Bollinger Bands** — period **20**, std-dev **1** (not the charting default of 2).
-- **RSI(14)** — its own bottom scale, with the CE floor drawn at `SCALP_RSI_CE_MIN(52)` (top line) and the PE ceiling at `SCALP_RSI_PE_MAX(49)` (bottom line). CE also caps at `SCALP_RSI_CE_MAX(70)` and PE floors at `SCALP_RSI_PE_MIN(30)`.
+- **RSI(14)** — its own bottom scale, with the entry bands drawn at `SCALP_RSI_CE_THRESHOLD(70)` (top line) and `SCALP_RSI_PE_THRESHOLD(40)` (bottom line).
 - **Parabolic SAR** (0.02 / 0.2) — discrete **dots** (PSAR below candle confirms CE, above confirms PE).
 
 ## 10. Logging

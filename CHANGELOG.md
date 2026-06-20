@@ -37,11 +37,9 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 - **Settings → System Health modal shows Telegram, with a live probe.** A new `Telegram` row runs an active `getMe` check (`GET /auth/telegram-ping`) every time the modal opens — `getMe` validates the token and confirms reachability but **sends no chat message**, so it can run on open without spamming. Shows `OK (reachable)` / `UNREACHABLE [code]` / `Not configured`; during a block it times out (8s) and reads `UNREACHABLE`. The probe also refreshes the banner state.
 - The synchronous crash/shutdown path (`sendTelegramSync` via curl) now also records a coarse ok/fail from curl's exit code, so a blocked Telegram is visible even when only crash/circuit alerts fire.
 
-### SCALP: RSI entry is now a band (skip overbought/oversold extremes)
+### SCALP: reverted the RSI-band entry change
 
-- **SCALP RSI is now a band, not a single threshold.** CE requires `SCALP_RSI_CE_MIN(52)` < RSI < `SCALP_RSI_CE_MAX(70)`; PE requires `SCALP_RSI_PE_MIN(30)` < RSI < `SCALP_RSI_PE_MAX(49)`. Previously CE only needed RSI > 70 and PE only RSI < 40 — which both *required* the overbought/oversold extreme. The new upper cap (CE) / lower floor (PE) rejects the exhausted-extreme breakouts that tend to reverse (e.g. the RSI 80–91 CE entries that hit the −25 pt stop on 2026-06-15).
-- Mirrors SWING's existing RSI-band convention. The old `SCALP_RSI_CE_THRESHOLD` / `SCALP_RSI_PE_THRESHOLD` keys are **retired** (no longer read) — the four new keys fall back to the band defaults when absent, so the change is self-applying on deploy without a manual Settings edit.
-- Wired in the shared strategy module (`scalp_bb_cpr.js` → paper/live/backtest stay in lockstep). Settings UI replaces the two threshold fields with four min/max fields; near-miss skip logs now say "overbought"/"oversold" when the cap/floor is the blocker.
+- **Reverted the RSI-band entry filter** (commits `f95f480` + `52ff31c`, 2026-06-19) — it made SCALP worse across replayed sessions. SCALP returns to the single-threshold rule: CE requires RSI > `SCALP_RSI_CE_THRESHOLD`, PE requires RSI < `SCALP_RSI_PE_THRESHOLD`. The four band keys (`SCALP_RSI_CE_MIN`/`_MAX`, `SCALP_RSI_PE_MIN`/`_MAX`) are retired; the two threshold keys, the Settings fields, and the docs are restored to their pre-band state.
 
 ### Replay: "current settings" mode auto-pins the recorded day's option expiry
 
