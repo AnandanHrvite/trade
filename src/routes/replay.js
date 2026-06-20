@@ -282,6 +282,9 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .rf-select { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:0.8rem; }
 .rf-reset { align-self:flex-end; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer; }
 .rf-reset:hover { background:#334155; }
+.rf-dl { align-self:flex-end; background:#0f766e; color:#ccfbf1; border:1px solid #14b8a6; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer; }
+.rf-dl:hover { background:#14b8a6; }
+.rf-dl.copied { background:#15803d; border-color:#22c55e; color:#fff; }
 .rng-stats { margin-top:8px; font-size:0.8rem; color:#cbd5e1; }
 .rng-stats strong { color:#e2e8f0; }
 .rng-sep { color:#475569; margin:0 8px; }
@@ -379,6 +382,8 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .range-table tr.totals td { border-top-color:#cbd5e1 !important; }
 :root[data-theme="light"] .rf-select { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
 :root[data-theme="light"] .rf-reset { background:#f1f5f9 !important; color:#475569 !important; border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .rf-dl { background:#ecfdf5 !important; color:#047857 !important; border-color:#10b981 !important; }
+:root[data-theme="light"] .rf-dl.copied { background:#bbf7d0 !important; color:#065f46 !important; border-color:#10b981 !important; }
 :root[data-theme="light"] .rf-label { color:#64748b !important; }
 :root[data-theme="light"] .rng-stats { color:#475569 !important; }
 :root[data-theme="light"] .rng-stats strong { color:#1e293b !important; }
@@ -798,6 +803,13 @@ function _filteredRangeContext() {
   if (_rangeFilter.strategy && _rangeFilter.strategy !== 'all') ctx.mode = _rangeFilter.strategy;
   return ctx;
 }
+// Filter-bar download: same payload as the top "Download diagnostic" button but
+// co-located with the Strategy/Show controls so it's clearly the filtered set.
+function downloadFilteredRange(btn) {
+  const fr = _filteredRangeRows();
+  if (!fr.length) return showReplayToast('No sessions match the current filter.');
+  downloadDiagnostic(btn, _filteredRangeContext(), fr);
+}
 // Filter toolbar above the per-session table. Strategy picker only appears when
 // the run spans more than one strategy (single-strategy runs don't need it).
 function _rangeFilterBar(rows, f) {
@@ -819,7 +831,9 @@ function _rangeFilterBar(rows, f) {
   const showCtl = '<label class="rf-label">Show<select class="rf-select" onchange="setRangeFilter(\\'show\\',this.value)">' + showSel + '</select></label>';
   const active = (f.strategy !== 'all' || f.show !== 'all');
   const reset = active ? '<button class="rf-reset" onclick="resetRangeFilter()">✕ Clear filters</button>' : '';
-  return '<div class="rf-bar">' + stratCtl + showCtl + reset + '</div>';
+  // Download diagnostic for exactly the rows shown under the current filter.
+  const dl = '<button class="rf-dl" onclick="downloadFilteredRange(this)" title="Download diagnostic for the filtered sessions shown below">⬇ Download filtered</button>';
+  return '<div class="rf-bar">' + stratCtl + showCtl + reset + dl + '</div>';
 }
 // Per-strategy analytics rollup over the filtered view. Only rendered when ≥2
 // strategies are present (a single-strategy table would just echo the cards).
