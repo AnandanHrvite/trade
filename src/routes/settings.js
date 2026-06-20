@@ -198,36 +198,10 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
-    icon: "🎯",
-    fields: [
-      { key: "STRADDLE_LIVE_ENABLED", label: "Straddle Live Orders (gates /straddle-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for Straddle Live trading. Both legs (CE + PE) are placed sequentially when on. Partial-fill protection: if PE fails after CE fills, a Telegram alert is sent.", default: "false" },
-      { key: "STRADDLE_LIVE_DRY_RUN", label: "Straddle Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Straddle in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
-      { key: "STRADDLE_EXPIRY_DAY_ONLY", label: "Straddle Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow straddle entries on weekly expiry day", default: "false" },
-      { key: "STRADDLE_VIX_ENABLED", label: "VIX Filter (Straddle)", type: "toggle", effect: EFFECT.INSTANT, desc: "Use VIX gating for straddle entries", default: "true" },
-      { key: "STRADDLE_VIX_MAX_ENTRY", label: "Straddle VIX Max Entry", type: "number", min: 12, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block when VIX > this (premium pumped, poor R:R)", default: "22" },
-      { key: "STRADDLE_VIX_STRONG_ONLY", label: "Straddle VIX Strong Only", type: "number", min: 10, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Above this VIX only STRONG signals fire", default: "18" },
-      { key: "STRADDLE_VIX_CHEAP", label: "VIX Cheap-Premium Threshold", type: "number", min: 10, max: 18, step: 1, effect: EFFECT.INSTANT, desc: "VIX below this triggers the low-VIX cheap-premium entry path", default: "14" },
-      { key: "STRADDLE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest straddle entry (HH:MM IST)", default: "09:30" },
-      { key: "STRADDLE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "Latest straddle entry (HH:MM IST). Late straddles bleed theta", default: "11:00" },
-      { key: "STRADDLE_FORCED_EXIT", label: "Forced Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard EOD exit for an open pair", default: "15:15" },
-      { key: "STRADDLE_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band period for squeeze detection", default: "20" },
-      { key: "STRADDLE_BB_STDDEV", label: "BB Std Dev", type: "number", min: 1, max: 3, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band std deviation", default: "2" },
-      { key: "STRADDLE_BB_AVG_LOOKBACK", label: "BB Width Avg Lookback", type: "number", min: 10, max: 60, step: 5, effect: EFFECT.SESSION, desc: "Bars to average BB width over (squeeze comparison baseline)", default: "20" },
-      { key: "STRADDLE_SQUEEZE_RATIO", label: "Squeeze Ratio (× avg)", type: "number", min: 0.5, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Current BB width <= this × avg = squeeze trigger fires", default: "0.85" },
-      { key: "STRADDLE_TARGET_PCT", label: "Target (% of net debit)", type: "number", min: 0.1, max: 1, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit when combined premium >= netDebit × (1 + this). Default 0.20 = lock the rare gamma pop early on intraday paper trade.", default: "0.20" },
-      { key: "STRADDLE_STOP_PCT", label: "SL (% of net debit)", type: "number", min: 0.1, max: 0.6, step: 0.05, effect: EFFECT.INSTANT, desc: "Exit when combined premium <= netDebit × (1 − this). Default 0.30 = wider SL absorbs intraday noise.", default: "0.30" },
-      { key: "STRADDLE_MAX_HOLD_DAYS", label: "Max Hold (days)", type: "number", min: 0.1, max: 10, step: 0.1, effect: EFFECT.SESSION, desc: "Time stop — force exit after this many days. Default 0.3 = intraday-only (paper trade auto-stops at EOD anyway; this prevents surprise force-close).", default: "0.3" },
-      { key: "STRADDLE_FORCE_ENTRY_NEXT", label: "Force Next Entry (event day)", type: "toggle", effect: EFFECT.INSTANT, desc: "One-shot override — force an entry on the next candle close regardless of BB/VIX triggers. Auto-resets after firing. Use for RBI/budget/results days.", default: "false" },
-      { key: "STRADDLE_MAX_DAILY_PAIRS", label: "Max Pairs/Day", type: "number", min: 1, max: 3, step: 1, effect: EFFECT.SESSION, desc: "Cap on straddle pair entries per day", default: "1" },
-      { key: "STRADDLE_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Straddle daily loss kill-switch", default: "3000" },
-    ],
-  },
-  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     fields: [
-      { key: "OI_FILTER_ENABLED", label: "OI Filter MASTER (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for the OI + price-buildup entry filter. OFF = disabled everywhere, regardless of the per-strategy toggles below. When ON, blocks entries that fight a confirmed buildup (CE in a short-buildup, PE in a long-buildup); weak/neutral/warmup regimes always allow. Reads NIFTY futures OI vs spot — LIVE/PAPER only, never evaluated in backtest/replay (OI is not recorded). Straddle excluded (delta-neutral). Default OFF.", default: "false" },
+      { key: "OI_FILTER_ENABLED", label: "OI Filter MASTER (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for the OI + price-buildup entry filter. OFF = disabled everywhere, regardless of the per-strategy toggles below. When ON, blocks entries that fight a confirmed buildup (CE in a short-buildup, PE in a long-buildup); weak/neutral/warmup regimes always allow. Reads NIFTY futures OI vs spot — LIVE/PAPER only, never evaluated in backtest/replay (OI is not recorded). Default OFF.", default: "false" },
       { key: "SWING_OI_ENABLED", label: "OI Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Swing entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
       { key: "SCALP_OI_ENABLED", label: "OI Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Scalp entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
       { key: "PA_OI_ENABLED", label: "OI Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Price-Action entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
@@ -254,7 +228,7 @@ const SETTINGS_SCHEMA = [
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes.", default: "weekly" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record every spot/option/VIX tick to data/ticks/YYYY-MM-DD/*.jsonl during paper/live sessions. Required for Replay backtest. Pure observer — no impact on trading.", default: "true" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Auto-delete tick recordings older than this many days. ~10 MB/day across all streams — 30 days ≈ 300 MB. Lower if EBS is tight.", default: "30" },
-      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "GLOBAL kill-switch. When ON (default), ALL live routes (Swing/ORB/PA/Straddle) log the broker call but place no real order. When OFF, each strategy goes real UNLESS its own {STRATEGY}_LIVE_DRY_RUN override is ON. Switch OFF only after validating decisions match paper.", default: "true" },
+      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "GLOBAL kill-switch. When ON (default), ALL live routes (Swing/ORB/PA) log the broker call but place no real order. When OFF, each strategy goes real UNLESS its own {STRATEGY}_LIVE_DRY_RUN override is ON. Switch OFF only after validating decisions match paper.", default: "true" },
       { key: "PA_LIVE_DRY_RUN", label: "PA Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep the PA Live harness in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
       { key: "SCALP_LIVE_DRY_RUN", label: "Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Scalp in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off. (Scalp Live has no separate master-enable gate, so this is its primary safety switch.)", default: "false" },
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta. Used only by the legacy bar-based backtest; the new Replay backtest uses recorded option ticks instead." },
@@ -271,7 +245,7 @@ const SETTINGS_SCHEMA = [
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta for converting spot SL to option premium trigger price", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
       { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Zerodha-brokered strategies (Swing). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
-      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Fyers-brokered strategies (Scalp + PA + ORB + Straddle). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
+      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Fyers-brokered strategies (Scalp + PA + ORB). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
   },
@@ -308,19 +282,16 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SCALP_STARTED", label: "Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Scalp paper/live session is started", default: "true" },
       { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action paper/live session is started", default: "true" },
       { key: "TG_ORB_STARTED",      label: "ORB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ORB paper/live session is started", default: "true" },
-      { key: "TG_STRADDLE_STARTED", label: "Straddle — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Straddle paper/live session is started", default: "true" },
 
       { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade entry (paper + live)", default: "true" },
       { key: "TG_SCALP_ENTRY", label: "Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade entry (paper + live)", default: "true" },
       { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade entry (paper + live)", default: "true" },
       { key: "TG_ORB_ENTRY",      label: "ORB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade entry (paper + live)", default: "true" },
-      { key: "TG_STRADDLE_ENTRY", label: "Straddle — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Straddle trade entry (paper + live)", default: "true" },
 
       { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade exit (paper + live)", default: "true" },
       { key: "TG_SCALP_EXIT", label: "Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade exit (paper + live)", default: "true" },
       { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade exit (paper + live)", default: "true" },
       { key: "TG_ORB_EXIT",      label: "ORB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade exit (paper + live)", default: "true" },
-      { key: "TG_STRADDLE_EXIT", label: "Straddle — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Straddle trade exit (paper + live)", default: "true" },
 
       { key: "TG_SWING_SIGNALS", label: "Swing — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Swing trade was/wasn't taken)", default: "true" },
       { key: "TG_SCALP_SIGNALS", label: "Scalp — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Scalp trade was/wasn't taken)", default: "false" },
@@ -330,7 +301,6 @@ const SETTINGS_SCHEMA = [
       { key: "TG_SCALP_DAYREPORT", label: "Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Scalp day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send PA day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_ORB_DAYREPORT",      label: "ORB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send ORB day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
-      { key: "TG_STRADDLE_DAYREPORT", label: "Straddle — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Straddle day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
 
       { key: "TG_DAYREPORT_CONSOLIDATED", label: "Consolidated Day Report (Market Close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Send one combined end-of-day summary across all modes at 15:30 IST", default: "true" },
     ],
@@ -372,7 +342,6 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
-      { key: "STRADDLE_MODE_ENABLED",  label: "Straddle Mode (Long Straddle Volatility)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the STRADDLE sidebar group AND the STRADDLE strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
@@ -402,12 +371,6 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the ORB group (needs ORB_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_ORB_LIVE_HARNESS", label: "ORB → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the ORB group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
-
-      // ── Straddle submenu ──
-      { key: "UI_SHOW_STRADDLE_BACKTEST", label: "Straddle → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Straddle group", default: "true", subheader: "Straddle sub-menus" },
-      { key: "UI_SHOW_STRADDLE_PAPER",    label: "Straddle → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Straddle group", default: "true" },
-      { key: "UI_SHOW_STRADDLE_LIVE",     label: "Straddle → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Straddle group (needs STRADDLE_LIVE_ENABLED to actually start)", default: "true" },
-      { key: "UI_SHOW_STRADDLE_HISTORY",  label: "Straddle → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Straddle group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true", subheader: "System sub-menus" },
@@ -453,7 +416,6 @@ const MODE_SECTION_TITLES = {
   scalp:    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
-  straddle: "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "COMMON — Instrument & Backtest",
@@ -461,7 +423,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set(), straddle: new Set() };
+const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1078,7 +1040,6 @@ router.get("/", (req, res) => {
   const swingModeOn    = (envData["SWING_MODE_ENABLED"]    ?? process.env.SWING_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
-  const straddleModeOn = (envData["STRADDLE_MODE_ENABLED"] ?? process.env.STRADDLE_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
   const showCacheBtn = (envData["UI_SHOW_CACHE_FILES"] ?? process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
@@ -1087,7 +1048,6 @@ router.get("/", (req, res) => {
     "SCALP STRATEGY (BB+PSAR+RSI) — Fyers":                         scalpModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
-    "STRADDLE STRATEGY (Long Straddle — Volatility) — Fyers":       straddleModeOn,
   };
 
   // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — Scalp only ──
@@ -2595,6 +2555,16 @@ async function showHealthModal() {
       { label: 'Trading Mode',  value: d.activeMode || 'Idle', ok: true },
       { label: 'Scalp Mode',    value: d.scalpMode || 'Idle', ok: true },
     ];
+    // Telegram delivery — optional channel, so "not configured" is a healthy
+    // (green) state, not an error. When configured, the row is seeded from the
+    // passive last-send state, then replaced in place by a live getMe probe
+    // (see below) so opening this modal genuinely tests Telegram right now.
+    var tg = d.telegram || {};
+    if (!tg.configured) {
+      rows.push({ label: 'Telegram', value: 'Not configured', ok: true });
+    } else {
+      rows.push({ label: 'Telegram', value: 'Checking…', ok: !tg.lastError, id: 'health-tg' });
+    }
     var html = '<div style="text-align:center;margin-bottom:16px;">';
     html += allOk
       ? '<div style="font-size:2.5rem;margin-bottom:4px;">✅</div><div style="font-size:1.1rem;font-weight:800;color:#10b981;">ALL SYSTEMS OK</div>'
@@ -2605,14 +2575,38 @@ async function showHealthModal() {
       var r = rows[i];
       var bg = i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)';
       var dot = r.ok ? '<span style="color:#10b981;margin-right:6px;">●</span>' : '<span style="color:#ef4444;margin-right:6px;">●</span>';
+      var valId = r.id ? (' id="' + r.id + '-val"') : '';
       html += '<tr style="border-bottom:1px solid #0e1428;background:' + bg + '">';
       html += '<td style="padding:8px 12px;color:#8aa1bd;">' + r.label + '</td>';
-      html += '<td style="padding:8px 12px;color:#e0eaf8;text-align:right;">' + dot + r.value + '</td>';
+      html += '<td' + valId + ' style="padding:8px 12px;color:#e0eaf8;text-align:right;">' + dot + r.value + '</td>';
       html += '</tr>';
     }
     html += '</table>';
     html += '<div style="margin-top:12px;color:#4a6080;font-size:0.68rem;text-align:center;">Last checked: ' + new Date(d.timestamp).toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour12:false}) + ' IST</div>';
     body.innerHTML = html;
+
+    // Live Telegram reachability probe (getMe — sends no chat message). Updates
+    // the seeded "Checking…" cell in place; runs fire-and-forget so the modal
+    // stays responsive even if Telegram is blocked and the probe waits to time out.
+    if (document.getElementById('health-tg-val')) {
+      fetch('/auth/telegram-ping', { cache: 'no-store' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(p){
+          var cell = document.getElementById('health-tg-val');
+          if (!cell) return;
+          var pOk, txt;
+          if (!p) { pOk = false; txt = 'Probe failed'; }
+          else if (p.configured === false) { pOk = true; txt = 'Not configured'; }
+          else if (p.ok) { pOk = true; txt = 'OK (reachable)'; }
+          else { pOk = false; txt = 'UNREACHABLE' + (p.code != null ? (' [' + p.code + ']') : ''); }
+          var pDot = pOk ? '<span style="color:#10b981;margin-right:6px;">●</span>' : '<span style="color:#ef4444;margin-right:6px;">●</span>';
+          cell.innerHTML = pDot + txt;
+        })
+        .catch(function(){
+          var cell = document.getElementById('health-tg-val');
+          if (cell) cell.innerHTML = '<span style="color:#ef4444;margin-right:6px;">●</span>Probe failed';
+        });
+    }
   } catch(e) {
     body.innerHTML = '<div style="text-align:center;padding:20px;"><div style="font-size:2.5rem;margin-bottom:8px;">❌</div><div style="color:#ef4444;font-weight:700;">Health check failed</div><div style="color:#4a6080;font-size:0.75rem;margin-top:6px;">' + e.message + '</div></div>';
   }

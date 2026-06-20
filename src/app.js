@@ -15,7 +15,7 @@ const sharedSocketState = require("./utils/sharedSocketState");
 const crypto = require("crypto");
 const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
-const { sendTelegram, sendTelegramSync } = require("./utils/notify");
+const { sendTelegram, sendTelegramSync, getTelegramHealth } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
 const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
 const app = express();
@@ -110,6 +110,7 @@ app.get("/login", (req, res) => {
 // ── Login rate limiting — brute-force protection ─────────────────────────────
 // Limits are read live from env so Settings edits take effect on the next attempt.
 const _loginAttempts = {};  // { ip: { count, firstAttempt } }
+let _lastLoginSweep = 0;
 function _loginRateMax()    { const n = Number(process.env.LOGIN_RATE_MAX);        return Number.isFinite(n) && n >= 1 ? n : 5; }
 function _loginRateWindow() { const m = Number(process.env.LOGIN_RATE_WINDOW_MIN); return (Number.isFinite(m) && m >= 1 ? m : 15) * 60 * 1000; }
 
@@ -124,6 +125,15 @@ app.post("/login", (req, res) => {
   const now    = Date.now();
   const winMs  = _loginRateWindow();
   const maxTry = _loginRateMax();
+  // Throttled sweep (no standing timer): drop IPs whose window has fully expired —
+  // they'd be reset on next attempt anyway, so eviction is lossless and keeps the
+  // map from growing unbounded across many/rotating IPs hitting /login.
+  if (now - _lastLoginSweep > 60_000) {
+    _lastLoginSweep = now;
+    for (const k of Object.keys(_loginAttempts)) {
+      if (now - _loginAttempts[k].firstAttempt > winMs) delete _loginAttempts[k];
+    }
+  }
   if (_loginAttempts[ip]) {
     const entry = _loginAttempts[ip];
     if (now - entry.firstAttempt > winMs) {
@@ -249,6 +259,8 @@ const OPEN_PATHS = [
   "/result",                // read-only results
   "/result/all",
   "/auth/status",           // read-only auth status
+  "/auth/telegram-health",  // dashboard banner poll — Telegram delivery health (read-only)
+  "/auth/telegram-ping",    // health-modal active probe — Telegram getMe (sends no message)
   "/auth/zerodha/status",
   "/auth/zerodha/logout",
   "/api/holidays",          // read-only holiday list
@@ -387,13 +399,10 @@ app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
 app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← PA per-pattern backtest dashboard
-// ── ORB / Straddle routes (parallel strategies — paper, backtest, live) ─────
+// ── ORB routes (parallel strategy — paper, backtest, live) ──────────────────
 app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade
 app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest
 app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIVE — real Fyers orders (DRY-RUN gated)
-app.use("/straddle-paper",    require("./routes/straddlePaper")); // ← Straddle paper trade
-app.use("/straddle-backtest", require("./routes/straddleBacktest")); // ← Straddle date-range backtest
-app.use("/straddle-live",     require("./routes/straddleLive"));  // ← Straddle LIVE — paired real Fyers orders (DRY-RUN gated)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
@@ -527,8 +536,6 @@ app.get("/", (req, res) => {
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const orbMode     = sharedSocketState.getOrbMode ? sharedSocketState.getOrbMode() : null;
   const orbModeOn   = (process.env.ORB_MODE_ENABLED || 'true').toLowerCase() === 'true';
-  const straddleMode   = sharedSocketState.getStraddleMode ? sharedSocketState.getStraddleMode() : null;
-  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -540,32 +547,29 @@ app.get("/", (req, res) => {
   const anyModeActive = liveActive
     || (scalpModeOn && scalpMode)
     || (paModeOn && paMode)
-    || (orbModeOn && orbMode)
-    || (straddleModeOn && straddleMode);
+    || (orbModeOn && orbMode);
   // The mode-specific top-bar badges below only cover a subset of states
-  // (SWING live, SCALP_LIVE, PA_LIVE, ORB_PAPER, STRADDLE_PAPER). When some
-  // OTHER mode is active (e.g. Swing/Scalp/PA paper, ORB/Straddle live) we still
-  // want a running indicator visible — show a generic badge in that gap.
+  // (SWING live, SCALP_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
+  // active (e.g. Swing/Scalp/PA paper, ORB live) we still want a running
+  // indicator visible — show a generic badge in that gap.
   const specificBadgeShown = liveActive
     || (scalpModeOn && scalpMode === 'SCALP_LIVE')
     || (paModeOn && paMode === 'PA_LIVE')
-    || (orbModeOn && orbMode === 'ORB_PAPER')
-    || (straddleModeOn && straddleMode === 'STRADDLE_PAPER');
+    || (orbModeOn && orbMode === 'ORB_PAPER');
 
   // Strategy tiles for the dashboard "Last Session" / "Today So Far" analytics
   // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
-  // panel only shows currently-enabled strategies (and includes ORB/Straddle).
+  // panel only shows currently-enabled strategies (and includes ORB).
   const swingModeOn = (process.env.SWING_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const dashSessionTiles = [
     { key: 'SWING',    cls: 'swing',    label: 'SWING',        on: swingModeOn },
     { key: 'SCALP',    cls: 'scalp',    label: 'SCALP',        on: scalpModeOn },
     { key: 'PA',       cls: 'pa',       label: 'PRICE ACTION', on: paModeOn },
     { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
-    { key: 'STRADDLE', cls: 'straddle', label: 'STRADDLE',     on: straddleModeOn },
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
-  // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB + Straddle (enabled only).
+  // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB (enabled only).
   const _tradingDir = path.join(os.homedir(), "trading-data");
   const _readPnl = (file) => _readPnlCached(_tradingDir, file);
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
@@ -574,7 +578,6 @@ app.get("/", (req, res) => {
   let fyersPnl = scalpModeOn ? _readPnl("scalp_paper_trades.json") : 0;
   if (paModeOn)       fyersPnl += _readPnl("pa_paper_trades.json");
   if (orbModeOn)      fyersPnl += _readPnl("orb_paper_trades.json");
-  if (straddleModeOn) fyersPnl += _readPnl("straddle_paper_trades.json");
   const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
   const _walletHtml = (inv, pnl) => {
     const cls = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'zero';
@@ -592,7 +595,7 @@ app.get("/", (req, res) => {
   // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
   // tucks into that gap beside the last card; otherwise it falls back to a
   // full-width band below the grid (the default for any other card count).
-  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (straddleModeOn ? 1 : 0);
+  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0);
   const cumInlineInGrid = (dashCardCount % 3) === 1;
   const cumCardInner = `
     <div class="dash-chart-hdr">
@@ -974,7 +977,6 @@ app.get("/", (req, res) => {
     .mm-card.scalp    .mm-dot { background:#fbbf24; }
     .mm-card.pa       .mm-dot { background:#a78bfa; }
     .mm-card.orb      .mm-dot { background:#10b981; }
-    .mm-card.straddle .mm-dot { background:#ec4899; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
     .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
@@ -1119,7 +1121,6 @@ app.get("/", (req, res) => {
     .da-tile.scalp { border-top:2px solid #f59e0b; }
     .da-tile.pa    { border-top:2px solid #a78bfa; }
     .da-tile.orb      { border-top:2px solid #10b981; }
-    .da-tile.straddle { border-top:2px solid #ec4899; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
     .da-tile-hdr { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:0.6rem; font-weight:700; text-transform:uppercase; letter-spacing:0.6px; color:#7d8aa3; margin-bottom:6px; }
     .da-tile-hdr .da-pill { font-size:0.55rem; padding:1px 7px; border-radius:3px; border:1px solid rgba(74,96,128,0.30); color:#7d8aa3; }
@@ -1202,9 +1203,8 @@ ${buildSidebar('dashboard', liveActive)}
       ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
-      ${straddleModeOn && straddleMode === 'STRADDLE_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#ec4899;"><span style="width:5px;height:5px;border-radius:50%;background:#ec4899;display:inline-block;"></span>STRADDLE PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!straddleModeOn || !straddleMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -1284,17 +1284,6 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-ORB">—</div>
       <div class="mm-wrap"><canvas id="mmChart-ORB"></canvas></div>
       <div class="mm-empty" id="mm-empty-ORB" style="display:none;">No paper trades yet</div>
-    </div>
-    ` : ''}
-    ${straddleModeOn ? `
-    <div class="mm-card straddle" data-mode="STRADDLE">
-      <div class="mm-hdr">
-        <span class="mm-dot"></span>
-        <span class="mm-title">Straddle</span>
-      </div>
-      <div class="mm-stats" id="mm-stats-STRADDLE">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-STRADDLE"></canvas></div>
-      <div class="mm-empty" id="mm-empty-STRADDLE" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${cumInlineInGrid ? cumCardInline : ''}
@@ -1559,8 +1548,8 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${straddleModeOn ? ",'/straddle-paper/start'" : ""}];
-var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}${straddleModeOn ? ",'/straddle-live/start'" : ""}];
+var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}];
+var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
 // Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
 var HARNESS_ENDPOINTS = ['/swing-live-harness/start'${scalpModeOn ? ",'/scalp-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}];
 
@@ -1573,7 +1562,7 @@ function _escHtml(s){
 function _prettyEndpoint(url){
   var m = /\\/(\\w+)-(live|paper)(-harness)?\\/start/.exec(url);
   if (!m) return url;
-  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB', straddle:'Straddle' }[m[1]] || m[1];
+  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB' }[m[1]] || m[1];
   var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
   return mode + ' ' + kind;
 }
@@ -1671,8 +1660,7 @@ async function startAllPaper(btn){
   var modeList = 'Swing'
     + (${scalpModeOn ? "' + Scalp'" : "''"})
     + (${paModeOn ? "' + PA'" : "''"})
-    + (${orbModeOn ? "' + ORB'" : "''"})
-    + (${straddleModeOn ? "' + Straddle'" : "''"});
+    + (${orbModeOn ? "' + ORB'" : "''"});
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
   var result = await _startAll(PAPER_ENDPOINTS);
@@ -1723,7 +1711,6 @@ var ALL_BTN_POLL = [
   ${scalpModeOn ? ",{ url:'/scalp-paper/status/data', kind:'paper' },{ url:'/scalp-live/status/data', kind:'live' }" : ""}
   ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
   ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' },{ url:'/orb-live/status/data', kind:'live' }" : ""}
-  ${straddleModeOn ? ",{ url:'/straddle-paper/status/data', kind:'paper' },{ url:'/straddle-live/status/data', kind:'live' }" : ""}
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
@@ -1916,10 +1903,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(function(m){ _mmToggle[m] = src; });
+  ['SWING','SCALP','PA','ORB'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
+  ['SWING','SCALP','PA','ORB'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -1928,7 +1915,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper', ORB: 'paper', STRADDLE: 'paper' };
+var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper', ORB: 'paper' };
 
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
@@ -1952,7 +1939,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['SWING','SCALP','PA','ORB','STRADDLE'].forEach(_renderModuleChart);
+  ['SWING','SCALP','PA','ORB'].forEach(_renderModuleChart);
 }
 
 loadModuleCharts();
@@ -2026,8 +2013,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var SESSION_TILES = ${JSON.stringify(dashSessionTiles)};
   var LIVE_URLS = {
     SWING:'/swing-paper/status/data', SCALP:'/scalp-paper/status/data',
-    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data',
-    STRADDLE:'/straddle-paper/status/data'
+    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data'
   };
 
   function fmtINR(n) {
@@ -2094,7 +2080,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
 
   function aggregateTrades(trades, fromIso, toIso) {
     // Returns { byStrategy: {SWING:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
-    // Buckets by the trade's reliable mode field (SWING/SCALP/PA/ORB/STRADDLE),
+    // Buckets by the trade's reliable mode field (SWING/SCALP/PA/ORB),
     // limited to the enabled tiles. Trades are pre-filtered to enabled modes by
     // the /data?enabledOnly=1 fetch, so the total matches the visible cards.
     var bys = {};
@@ -2628,6 +2614,17 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    const savedPA = loadPAPosition();
+    if (savedPA && savedPA.position) {
+      const p = savedPA.position;
+      const msg = `🚨 [STARTUP] Persisted PA position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedPA.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Fyers dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     // ── Check broker positions (live API) ──
     if (zerodha.isAuthenticated()) {
       const zPos = await zerodha.getPositions();
@@ -2659,7 +2656,9 @@ async function reconcileOrphanedPositions() {
         sendTelegram(msg);
       } else {
         console.log("✅ [STARTUP] Fyers: no orphaned positions.");
+        // Scalp + PA both trade on Fyers; broker-flat means either stale snapshot is safe to clear.
         if (savedScalp) clearScalpPosition();  // broker confirms no position — safe to clear
+        if (savedPA)    clearPAPosition();
       }
     }
   } catch (err) {
@@ -2684,7 +2683,6 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getScalpMode())     activeModes.push(sharedSocketState.getScalpMode());
     if (sharedSocketState.getPAMode())        activeModes.push(sharedSocketState.getPAMode());
     if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
-    if (sharedSocketState.getStraddleMode && sharedSocketState.getStraddleMode()) activeModes.push(sharedSocketState.getStraddleMode());
 
     if (activeModes.length === 0) {
       // No Telegram here: with no live positions in play there is nothing the
@@ -2696,7 +2694,7 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE" || m === "STRADDLE_LIVE");
+    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
 
     // Call stopSession() on each active route — this triggers squareOff for live modes
@@ -2707,8 +2705,6 @@ async function gracefulShutdown(signal) {
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
       "ORB_LIVE":       require("./routes/orbLive"),
-      "STRADDLE_PAPER": require("./routes/straddlePaper"),
-      "STRADDLE_LIVE":  require("./routes/straddleLive"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];
@@ -2765,6 +2761,7 @@ app.get("/health", (req, res) => {
     zerodha: zerodha.isAuthenticated(),
     activeMode: sharedSocketState.getMode() || null,
     scalpMode: sharedSocketState.getScalpMode() || null,
+    telegram: getTelegramHealth(),
     breakers: breakerStatus(),
     timestamp: new Date().toISOString(),
   });

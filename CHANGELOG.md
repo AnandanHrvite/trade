@@ -6,6 +6,27 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Removed the Straddle strategy (all modes)
+
+- **The Straddle (Long Straddle / BB-squeeze volatility) strategy has been removed entirely.** Deleted its routes (`/straddle-paper`, `/straddle-live`, `/straddle-backtest`), the `straddle_volatility.js` strategy, and the `Straddle_Strategy_Guide.html` doc. The platform now runs **four** strategies: Swing, Scalp, Price Action, and ORB.
+- **All wiring scrubbed:** `app.js` route mounts + dashboard/monitor cards + shutdown reconciliation; `sharedSocketState` (`STRADDLE_PAPER`/`STRADDLE_LIVE` modes + helpers); `sharedNav` sidebar group; `settings.js` (the full Straddle strategy section, `STRADDLE_MODE_ENABLED`, the `UI_SHOW_STRADDLE_*` submenu toggles, and the `TG_STRADDLE_*` Telegram toggles); `realtime.js` card + position renderer; `replay.js` / `tickReplay.js` mode maps + socket-state stubs; `consolidation` / `edgeAnalytics` / `tradeLogs` / `cacheFiles` / `allBacktest` source maps + filters; `notify.js` (per-leg pair-stats + STRADDLE group); `vixFilter` per-mode readers; `tradeLogger` / `skipLogger` file maps; and the OI-filter exclusion note.
+- **Env keys retired:** `STRADDLE_*`, `UI_SHOW_STRADDLE_*`, `TG_STRADDLE_*`, `STRADDLE_MODE_ENABLED` are no longer read anywhere (leaving them set in `.env` is harmless — they're simply ignored). The consolidated Telegram day report and Real-Time monitor now cover four strategies.
+- **No impact on the other four strategies** — Swing/Scalp/PA/ORB decision, fill, exit, paper/live/backtest/replay paths are untouched. Existing `straddle_*` trade-data files in `~/trading-data/` are left in place (historical data; delete manually if desired).
+
+### Replay: date-range result now has filters + per-strategy analytics
+
+- **The date-range comparison result is now filterable.** A toolbar above the per-session table adds a **Strategy** picker (only shown for "All strategies" runs) and a **Show** picker — `All sessions` / `Improved vs live` / `Regressed vs live` / `Replay winning` / `Replay losing` / `Errored`. Filtering is instant and client-side (re-renders from the already-loaded results — no re-run), and the summary cards, verdict, stats, and charts all recompute to the filtered subset. A **Clear filters** button appears when a filter is active.
+- **New session-level stats line:** sessions shown, replay win rate (winning sessions / total), average Δ per session, and the best/worst session by Δ vs live.
+- **New per-strategy breakdown table** (shown only when a run spans ≥2 strategies, e.g. "All strategies"): per strategy — sessions, live P&L, replay P&L, Δ P&L, win rate, and improved/regressed counts. Respects the active filter.
+- Filters reset on every new range run so a stale strategy/outcome filter can't hide fresh results.
+
+### Telegram: hardened sends + in-dashboard failure banner
+
+- **Telegram sends can no longer hang or kill the process.** The async `sendTelegram` now sets an 8s request timeout and destroys the socket on stall — previously a blocked/blackholed endpoint (e.g. the current govt block) accepted the connection but never answered, so `req.on("error")` never fired and the socket leaked open indefinitely. The whole send is wrapped so it always resolves (never rejects, never throws) regardless of payload or network state.
+- **Delivery failures now surface in the UI.** `notify.js` tracks the last send failure (message, HTTP code, timestamp, consecutive-fail count) and exposes it via a new read-only `GET /auth/telegram-health` poll. A new amber banner in the shared nav (alongside the broker-socket banner) shows on every page when Telegram is failing, with the error detail; it clears on the next successful send and resets on restart. Dismiss snoozes it for 5 min. Not-configured stays silent (Telegram is optional).
+- **Settings → System Health modal shows Telegram, with a live probe.** A new `Telegram` row runs an active `getMe` check (`GET /auth/telegram-ping`) every time the modal opens — `getMe` validates the token and confirms reachability but **sends no chat message**, so it can run on open without spamming. Shows `OK (reachable)` / `UNREACHABLE [code]` / `Not configured`; during a block it times out (8s) and reads `UNREACHABLE`. The probe also refreshes the banner state.
+- The synchronous crash/shutdown path (`sendTelegramSync` via curl) now also records a coarse ok/fail from curl's exit code, so a blocked Telegram is visible even when only crash/circuit alerts fire.
+
 ### SCALP: RSI entry is now a band (skip overbought/oversold extremes)
 
 - **SCALP RSI is now a band, not a single threshold.** CE requires `SCALP_RSI_CE_MIN(52)` < RSI < `SCALP_RSI_CE_MAX(70)`; PE requires `SCALP_RSI_PE_MIN(30)` < RSI < `SCALP_RSI_PE_MAX(49)`. Previously CE only needed RSI > 70 and PE only RSI < 40 — which both *required* the overbought/oversold extreme. The new upper cap (CE) / lower floor (PE) rejects the exhausted-extreme breakouts that tend to reverse (e.g. the RSI 80–91 CE entries that hit the −25 pt stop on 2026-06-15).

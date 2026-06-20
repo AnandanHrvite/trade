@@ -24,7 +24,6 @@ const SOURCES = [
   { mode: "SCALP",    file: path.join(DATA_DIR, "scalp_paper_trades.json"),    color: "#f59e0b" },
   { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       color: "#a855f7" },
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
-  { mode: "STRADDLE", file: path.join(DATA_DIR, "straddle_paper_trades.json"), color: "#ec4899" },
 ];
 
 function safeRead(p) {
@@ -99,7 +98,7 @@ function loadAllTrades() {
 router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
-  const modeCounts = { SWING: 0, SCALP: 0, PA: 0, ORB: 0, STRADDLE: 0 };
+  const modeCounts = { SWING: 0, SCALP: 0, PA: 0, ORB: 0 };
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
     modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
@@ -306,11 +305,6 @@ router.get("/", (req, res) => {
         <div class="sc-val">${modeCounts.ORB}</div>
         <div class="sc-sub">trades</div>
       </div>
-      <div class="sc" style="--accent:#ec4899;">
-        <div class="sc-label">Straddle</div>
-        <div class="sc-val">${modeCounts.STRADDLE}</div>
-        <div class="sc-sub">leg trades</div>
-      </div>
       <div class="sc" style="--accent:#10b981;">
         <div class="sc-label">Wins</div>
         <div class="sc-val" style="color:#10b981;">${wins}</div>
@@ -332,7 +326,6 @@ router.get("/", (req, res) => {
         <option value="SCALP">Scalp</option>
         <option value="PA">Price Action</option>
         <option value="ORB">ORB</option>
-        <option value="STRADDLE">Straddle</option>
       </select>
       <label>Side</label>
       <select id="fSide">
@@ -1088,7 +1081,7 @@ function buildDayView(){
   const map = new Map();
   for (const t of _lastFiltered){
     const d = t.date || 'Unknown';
-    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0, ORB: 0, STRADDLE: 0 });
+    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0, ORB: 0 });
     const b = map.get(d);
     b.trades++;
     b.pnl += (t.pnl || 0);
@@ -2118,6 +2111,6 @@ function fmtINR(n) {
 
 module.exports = router;
 // Exposed so the consolidated EOD Telegram report computes off the exact same
-// paper-only trade set + counting as this page (no parallel source list / no
-// straddle pair-collapse) — keeps the two from drifting. See consolidatedEodReporter.js.
+// paper-only trade set + counting as this page (no parallel source list) —
+// keeps the two from drifting. See consolidatedEodReporter.js.
 module.exports.loadAllTrades = loadAllTrades;

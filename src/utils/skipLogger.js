@@ -25,7 +25,6 @@ const FILE_PREFIX_BY_MODE = {
   scalp:    "scalp_paper_skips_",
   pa:       "pa_paper_skips_",
   orb:      "orb_paper_skips_",
-  straddle: "straddle_paper_skips_",
 };
 
 try { fs.mkdirSync(SKIPS_DIR, { recursive: true }); } catch (_) {}

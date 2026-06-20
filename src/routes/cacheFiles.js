@@ -45,7 +45,7 @@ const GROUPS = [
   { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-scalp",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
   { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay. (Replay outputs/cache under the same root are listed separately below.)" },
   { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, tagged: true, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
-  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-straddle", base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, tagged: true, desc: "Replay outputs in current-settings (sim) mode." },
+  { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-sim",      base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, tagged: true, desc: "Replay outputs in current-settings (sim) mode." },
   { key: "replay_cache",   label: "Replay Cache",        icon: "⚡", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_cache"),      flat: false, tagged: true, desc: "Cached deterministic replay results — re-run hits these to skip the tick stream. Deleting forces a fresh recompute on the next run (safe)." },
   { key: "root",           label: "Root Data Files",     icon: "🗂", cls: "mode-swing",    base: DATA_DIR,                                  flat: true,  desc: "Loose JSON / JSONL state files directly under ~/trading-data (the grouped sub-folders are listed above)." },
 ];
@@ -61,7 +61,6 @@ const STRATEGY_BADGE = {
   scalp:    { label: "SCALP",    cls: "mode-scalp" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
-  straddle: { label: "STRADDLE", cls: "mode-straddle" },
 };
 
 // Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
@@ -79,11 +78,11 @@ function _istDateFromMs(ms) {
 //   _replay_trades / _replay_trades_sim → "{mode}_{suffix}.jsonl" — strat from name.
 //   _replay_cache                       → sha1-named .json; the result JSON carries
 //                                         a top-level "mode" (and now "date") field.
-// strat is a strategy key (swing|scalp|pa|orb|straddle) or null; date is "YYYY-MM-DD" or null.
+// strat is a strategy key (swing|scalp|pa|orb) or null; date is "YYYY-MM-DD" or null.
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(swing|scalp|pa|orb|straddle)\b/i);
+  const nameMatch = path.basename(rel).match(/^(swing|scalp|pa|orb)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -91,7 +90,7 @@ function detectMeta(group, rel, abs, mtimeMs) {
   let meta = { strat: null, date: null };
   try {
     const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
-    const m = String(obj && obj.mode || "").match(/^(swing|scalp|pa|orb|straddle)/i);
+    const m = String(obj && obj.mode || "").match(/^(swing|scalp|pa|orb)/i);
     if (m) meta.strat = m[1].toLowerCase();
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
@@ -367,7 +366,7 @@ router.get("/", (_req, res) => {
     .mode-scalp    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
-    .mode-straddle { color:#ec4899; }
+    .mode-sim      { color:#ec4899; }
     .mode-desc { font-size:0.66rem; color:#4a6080; margin:6px 14px 0; font-style:italic; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
@@ -498,7 +497,6 @@ ${buildSidebar('cacheFiles', liveActive)}
     scalp:    { label: 'SCALP',    cls: 'mode-scalp' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
-    straddle: { label: 'STRADDLE', cls: 'mode-straddle' },
   };
   function badgeHtml(strat) {
     var b = STRAT_BADGE[strat];

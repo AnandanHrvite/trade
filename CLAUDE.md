@@ -23,20 +23,20 @@ Fyers WebSocket (NIFTY50 spot)
         │
    socketManager  ← singleton, multi-callback fan-out ([src/utils/socketManager.js](src/utils/socketManager.js))
         │
-  ┌─────┼──────────────┬────────────────┬──────────────┐
- Swing  Scalp           PA              ORB            Straddle
- (5/15m, Zerodha)  (5m, Fyers)   (5m, Fyers)      (Fyers)        (Fyers)
-  │                │              │                │              │
-  ├─Live           ├─Live         ├─Live           ├─Live         ├─Live
-  ├─Paper          ├─Paper        ├─Paper          ├─Paper        ├─Paper
-  └─Backtest       └─Backtest     └─Backtest       └─Backtest     └─Backtest
+  ┌─────┼──────────────┬────────────────┐
+ Swing  Scalp           PA              ORB
+ (5/15m, Zerodha)  (5m, Fyers)   (5m, Fyers)      (Fyers)
+  │                │              │                │
+  ├─Live           ├─Live         ├─Live           ├─Live
+  ├─Paper          ├─Paper        ├─Paper          ├─Paper
+  └─Backtest       └─Backtest     └─Backtest       └─Backtest
 ```
 
 Key invariants:
 
 - **Never open a second Fyers socket.** Subscribe through [socketManager](src/utils/socketManager.js); fan-out is what lets all strategies coexist on one connection.
 - **[sharedSocketState](src/utils/sharedSocketState.js)** enforces per-strategy mutual exclusion (Swing Live ⊥ Swing Paper, etc.) while allowing cross-strategy parallelism. Don't bypass it when adding a new mode.
-- **Three brokers, one router**: [zerodhaBroker.js](src/services/zerodhaBroker.js) (Swing live), [fyersBroker.js](src/services/fyersBroker.js) (Scalp/PA/ORB/Straddle live + all data). Token + reconnect logic lives there — don't re-implement OAuth at the route layer.
+- **Three brokers, one router**: [zerodhaBroker.js](src/services/zerodhaBroker.js) (Swing live), [fyersBroker.js](src/services/fyersBroker.js) (Scalp/PA/ORB live + all data). Token + reconnect logic lives there — don't re-implement OAuth at the route layer.
 - **VIX gate**: [vixFilter.js](src/services/vixFilter.js) is called per strategy with its own thresholds (Swing uses `VIX_*`, others use `SCALP_VIX_*` / `PA_VIX_*` with fallback to the global keys).
 - **Trade guards** (bid-ask spread, time-stop) live in [tradeGuards.js](src/utils/tradeGuards.js) and are shared across modes. Per-mode overrides (e.g., `PA_TIME_STOP_*`) read the same helper.
 - **Crash recovery**: positions persisted via [positionPersist.js](src/utils/positionPersist.js); on boot, [app.js](src/app.js) reconciles each strategy's `.active_*_position.json` against broker state and Telegrams the user on orphan detection.
@@ -62,8 +62,8 @@ Paper routes are treated as the source of truth for decision/fill/exit semantics
 
 Everything stateful lives in `~/trading-data/` — **outside the repo**, so `git pull` and PM2 reloads never wipe it:
 
-- `{swing,scalp,pa,orb,straddle}_paper_trades.json` / `_live_trades.json` — session-grouped trades
-- `.active_{trade,scalp,pa}_position.json` — crash-recovery snapshots. **ORB and Straddle do not have crash-recovery snapshots yet** — `positionPersist.js` only handles Swing/Scalp/PA. Add helpers there if either strategy needs restart survival of an open position.
+- `{swing,scalp,pa,orb}_paper_trades.json` / `_live_trades.json` — session-grouped trades
+- `.active_{trade,scalp,pa}_position.json` — crash-recovery snapshots. **ORB does not have a crash-recovery snapshot yet** — `positionPersist.js` only handles Swing/Scalp/PA. Add helpers there if ORB needs restart survival of an open position.
 - `trades/{mode}_paper_trades_YYYY-MM-DD.jsonl` — per-day cumulative audit log (canonical export format). Seeded with a settings snapshot + checkpoint note; re-snapshotted whenever a save changes a key that affects that mode.
 - `ticks/YYYY-MM-DD/*.jsonl` — recorded spot/option/VIX ticks, gated by `TICK_RECORDER_ENABLED` (default on). Source of truth for `/replay`. Retention `TICK_RECORDER_RETAIN_DAYS` (default 30).
 - `_replay_trades/` — Replay outputs in snapshot mode (uses recorded session-start settings).

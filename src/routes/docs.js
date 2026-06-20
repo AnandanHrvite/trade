@@ -349,12 +349,6 @@ const GUIDE_STATUS = {
     { type: "bool", label: "VIX Filter", key: "PA_VIX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "PA_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
-  "Straddle_Strategy_Guide.html": { title: "Straddle — Live Configuration", groups: [{ rows: [
-    { type: "bool", label: "Straddle Mode (sidebar + Settings section)", key: "STRADDLE_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers, both legs)", enableKey: "STRADDLE_LIVE_ENABLED", dryKey: "STRADDLE_LIVE_DRY_RUN" },
-    { type: "bool", label: "VIX Filter", key: "STRADDLE_VIX_ENABLED", def: "true" },
-    { type: "bool", label: "Expiry-Day-Only", key: "STRADDLE_EXPIRY_DAY_ONLY", def: "false" },
-  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -368,7 +362,6 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Scalp Mode", key: "SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "Straddle Mode", key: "STRADDLE_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

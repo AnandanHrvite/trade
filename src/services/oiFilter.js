@@ -27,8 +27,6 @@
  *   Tuning  : OI_LOOKBACK_CANDLES (3), OI_MIN_DELTA_PCT (1.0)
  *             OI_FAIL_MODE (open) — symmetry with VIX; default & documented = open
  *
- * Straddle is intentionally excluded — it enters a delta-neutral CE+PE pair, so a
- * directional "block CE/PE" filter is meaningless there.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 

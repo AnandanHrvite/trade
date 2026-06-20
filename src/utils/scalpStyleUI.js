@@ -1,5 +1,5 @@
 /**
- * SCALP-STYLE UI HELPERS — shared shell for ORB / Straddle / Scalp paper & live pages.
+ * SCALP-STYLE UI HELPERS — shared shell for ORB / Scalp paper & live pages.
  *
  * The Scalp Paper page (src/routes/scalpPaper.js) is the canonical UI design.
  * These helpers extract the look-and-feel pieces (CSS, top bar, capital strip,

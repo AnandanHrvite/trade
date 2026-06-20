@@ -22,20 +22,18 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 // Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
-// ORB/Straddle live files are included defensively — safeRead() no-ops if absent.
+// ORB live files are included defensively — safeRead() no-ops if absent.
 const PAPER_SOURCES = [
   { mode: "SWING",    file: "paper_trades.json" },
   { mode: "SCALP",    file: "scalp_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
-  { mode: "STRADDLE", file: "straddle_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "SWING",    file: "live_trades.json" },
   { mode: "SCALP",    file: "scalp_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
-  { mode: "STRADDLE", file: "straddle_live_trades.json" },
 ];
 
 function safeRead(p) {
@@ -68,10 +66,33 @@ function loadBook(sources, book) {
   return out;
 }
 
-router.get("/", (req, res) => {
+// Cache the flattened+sorted trade list — same approach as consolidation.js.
+// Re-reading + JSON.parsing all 8 (growing) trade files on every page hit is
+// wasteful; invalidate by a cheap mtime+size signature so a new trade is picked
+// up immediately without re-parsing when nothing changed.
+let _edgeCache = null;
+let _edgeSig   = null;
+function _sourcesSig() {
+  let sig = "";
+  for (const src of [...PAPER_SOURCES, ...LIVE_SOURCES]) {
+    try { const st = fs.statSync(path.join(DATA_DIR, src.file)); sig += `${src.mode}:${st.mtimeMs}:${st.size}|`; }
+    catch (_) { sig += `${src.mode}:0|`; }
+  }
+  return sig;
+}
+function loadAllTrades() {
+  const sig = _sourcesSig();
+  if (_edgeCache && sig === _edgeSig) return _edgeCache;
   const trades = loadBook(PAPER_SOURCES, "paper").concat(loadBook(LIVE_SOURCES, "live"));
   // oldest → newest so the equity curve reads left-to-right
   trades.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  _edgeCache = trades;
+  _edgeSig   = sig;
+  return trades;
+}
+
+router.get("/", (req, res) => {
+  const trades = loadAllTrades();
 
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
   const html = `<!DOCTYPE html>
@@ -124,7 +145,6 @@ router.get("/", (req, res) => {
     .badge-SCALP{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
-    .badge-STRADDLE{background:rgba(236,72,153,0.12);color:#ec4899;border:0.5px solid rgba(236,72,153,0.3);}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
     /* light theme */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
@@ -161,7 +181,6 @@ router.get("/", (req, res) => {
         <option value="SCALP">Scalp</option>
         <option value="PA">Price Action</option>
         <option value="ORB">ORB</option>
-        <option value="STRADDLE">Straddle</option>
       </select>
       <label>Range</label>
       <select id="fRange">

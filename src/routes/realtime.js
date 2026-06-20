@@ -2,7 +2,7 @@
  * realtime.js — Unified real-time monitor for PAPER or LIVE trades
  * ─────────────────────────────────────────────────────────────────────────────
  * Read-only single screen that shows current state for every strategy that is
- * enabled in Settings (SWING / SCALP / PA / ORB / STRADDLE), side-by-side,
+ * enabled in Settings (SWING / SCALP / PA / ORB), side-by-side,
  * with a common rollup P&L table below. Toggle at the top switches between
  * PAPER and LIVE data sources. The page polls each strategy's existing
  * /status/data endpoint every 4s — no new backend aggregation; we read from
@@ -10,7 +10,7 @@
  *
  * The strategy list is gated by {STRATEGY}_MODE_ENABLED (Settings → Menu
  * Visibility). Field-shape differences between strategies are normalised in
- * the client (ORB returns `livePnl`/`tradesTaken`; Straddle has CE+PE legs).
+ * the client (ORB returns `livePnl`/`tradesTaken`).
  */
 
 const express = require("express");
@@ -19,13 +19,12 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
-// the Copy Day Log button. ORB/Straddle paper expose cumulative JSONL only.
+// the Copy Day Log button. ORB paper exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
   { key:'SWING',    label:'SWING',        accentClass:'swing',    accent:'#3b82f6', paperPrefix:'/swing-paper',    livePrefix:'/swing-live',    hasDayLog:true,  modeFlag:'SWING_MODE_ENABLED'    },
   { key:'SCALP',    label:'SCALP',        accentClass:'scalp',    accent:'#f59e0b', paperPrefix:'/scalp-paper',    livePrefix:'/scalp-live',    hasDayLog:true,  modeFlag:'SCALP_MODE_ENABLED'    },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:false, modeFlag:'ORB_MODE_ENABLED'      },
-  { key:'STRADDLE', label:'STRADDLE',     accentClass:'straddle', accent:'#ec4899', paperPrefix:'/straddle-paper', livePrefix:'/straddle-live', hasDayLog:false, modeFlag:'STRADDLE_MODE_ENABLED' },
 ];
 
 function enabledStrategies() {
@@ -33,8 +32,8 @@ function enabledStrategies() {
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
-// Swing trades through Zerodha; Scalp/PA/ORB/Straddle through Fyers.
-const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS', STRADDLE:'FYERS' };
+// Swing trades through Zerodha; Scalp/PA/ORB through Fyers.
+const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
@@ -42,7 +41,7 @@ function brokerPools(strategies) {
   if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
     pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'Swing', inv:z });
   if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
-    pools.push({ id:'FYERS', label:'FYERS', sub:'Scalp · PA · ORB · Straddle', inv:f });
+    pools.push({ id:'FYERS', label:'FYERS', sub:'Scalp · PA · ORB', inv:f });
   return pools;
 }
 
@@ -141,7 +140,6 @@ ${faviconLink()}
   .card.scalp    { border-top-color:#f59e0b; }
   .card.pa       { border-top-color:#a855f7; }
   .card.orb      { border-top-color:#10b981; }
-  .card.straddle { border-top-color:#ec4899; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -149,7 +147,6 @@ ${faviconLink()}
   .card.scalp    .card-title { color:#fbbf24; }
   .card.pa       .card-title { color:#c084fc; }
   .card.orb      .card-title { color:#34d399; }
-  .card.straddle .card-title { color:#f472b6; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -160,7 +157,6 @@ ${faviconLink()}
   .pos-side { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.72rem; font-weight:700; letter-spacing:0.5px; margin-right:6px; }
   .pos-side.CE { background:rgba(16,185,129,0.18); color:#10b981; }
   .pos-side.PE { background:rgba(239,68,68,0.18);  color:#ef4444; }
-  .pos-side.STR { background:rgba(236,72,153,0.18); color:#ec4899; }
   .pos-symbol { font-size:0.78rem; color:#cbd5e1; word-break:break-all; }
   .pos-symbol-line { display:block; }
 
@@ -199,7 +195,6 @@ ${faviconLink()}
   .card.scalp    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
-  .card.straddle .act-btn:not(.act-btn-disabled):hover { border-color:#ec4899; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -212,7 +207,6 @@ ${faviconLink()}
   .rollup tr.scalp    td:first-child { color:#fbbf24; }
   .rollup tr.pa       td:first-child { color:#c084fc; }
   .rollup tr.orb      td:first-child { color:#34d399; }
-  .rollup tr.straddle td:first-child { color:#f472b6; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
@@ -228,7 +222,6 @@ ${faviconLink()}
   :root[data-theme="light"] .card.scalp    .card-title { color:#d97706; }
   :root[data-theme="light"] .card.pa       .card-title { color:#9333ea; }
   :root[data-theme="light"] .card.orb      .card-title { color:#059669; }
-  :root[data-theme="light"] .card.straddle .card-title { color:#db2777; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#64748b; }
@@ -250,7 +243,6 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.scalp    td:first-child { color:#d97706; }
   :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#9333ea; }
   :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#059669; }
-  :root[data-theme="light"] .rollup tr.straddle td:first-child { color:#db2777; }
   :root[data-theme="light"] .pos-zero { color:#64748b !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }
@@ -330,7 +322,7 @@ const fmtINR = n => {
 const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-zero' : (+n > 0 ? 'pos-pos' : 'pos-neg');
 
-// SWING uses unrealisedPnl, SCALP/PA use unrealised, ORB/STRADDLE use livePnl.
+// SWING uses unrealisedPnl, SCALP/PA use unrealised, ORB uses livePnl.
 function openPnl(d) {
   if (!d) return 0;
   const v = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
@@ -339,12 +331,12 @@ function openPnl(d) {
           : 0);
   return v == null ? 0 : v;
 }
-// SWING/SCALP/PA: tradeCount. ORB: tradesTaken. STRADDLE: pairsTaken.
+// SWING/SCALP/PA: tradeCount. ORB: tradesTaken.
 function tradeCountOf(d) {
   if (!d) return 0;
-  return d.tradeCount ?? d.tradesTaken ?? d.pairsTaken ?? 0;
+  return d.tradeCount ?? d.tradesTaken ?? 0;
 }
-// SWING/SCALP/PA: logs[] + logTotal. ORB/STRADDLE: log[] (strings only).
+// SWING/SCALP/PA: logs[] + logTotal. ORB: log[] (strings only).
 function logsOf(d) {
   if (!d) return { lines: [], total: 0 };
   if (Array.isArray(d.logs)) return { lines: d.logs, total: d.logTotal ?? d.logs.length };
@@ -370,39 +362,6 @@ function renderActivity(strategy, d) {
   let html = '<div class="ahead"><span>Recent activity</span><span>' + total + ' entries</span></div>';
   for (const line of head) html += '<div class="arow">' + escapeHtml(line) + '</div>';
   el.innerHTML = html;
-}
-
-function renderPositionStraddle(d, pos) {
-  const upnl = openPnl(d);
-  const ceCur = pos.ce && pos.ce.curLtp;
-  const peCur = pos.pe && pos.pe.curLtp;
-  const combined = (ceCur != null && peCur != null) ? (ceCur + peCur) : (d.combined != null ? d.combined : null);
-  const netDebit = pos.netDebit;
-  const pct = (netDebit && combined != null) ? ((combined - netDebit) / netDebit) * 100 : null;
-  return \`
-    <div class="pos-block">
-      <div>
-        <span class="pos-side STR">STR</span>
-        <span class="pos-symbol">
-          <span class="pos-symbol-line">\${(pos.ce && pos.ce.symbol) || ''}</span>
-          <span class="pos-symbol-line">\${(pos.pe && pos.pe.symbol) || ''}</span>
-        </span>
-      </div>
-      <div class="pnl-big \${cls(upnl)}">\${fmtINR(upnl)}\${pct !== null ? '<span class="pct">' + (pct >= 0 ? '+' : '') + Number(pct).toFixed(2) + '%</span>' : ''}</div>
-      <div class="pos-grid">
-        <div class="lbl">Qty</div><div class="val">\${pos.qty ?? '—'}</div>
-        <div class="lbl">Entry Spot</div><div class="val">\${fmtNum(pos.entrySpot)}</div>
-        <div class="lbl">Net Debit</div><div class="val">\${fmtNum(netDebit)}</div>
-        <div class="lbl">Combined LTP</div><div class="val">\${fmtNum(combined)}</div>
-        <div class="lbl">CE Entry</div><div class="val">\${fmtNum(pos.ce && pos.ce.entryLtp)}</div>
-        <div class="lbl">CE LTP</div><div class="val">\${fmtNum(ceCur)}</div>
-        <div class="lbl">PE Entry</div><div class="val">\${fmtNum(pos.pe && pos.pe.entryLtp)}</div>
-        <div class="lbl">PE LTP</div><div class="val">\${fmtNum(peCur)}</div>
-        <div class="lbl">Target Net</div><div class="val">\${fmtNum(pos.targetNet)}</div>
-        <div class="lbl">Stop Net</div><div class="val">\${fmtNum(pos.stopNet)}</div>
-        <div class="lbl">Entry Time</div><div class="val">\${pos.entryTime || '—'}</div>
-      </div>
-    </div>\`;
 }
 
 function renderPositionStandard(d, pos) {
@@ -461,7 +420,7 @@ function renderColumn(strategy, d) {
 
   const pos = d.position;
   if (pos) {
-    bodyEl.innerHTML = (strategy === 'STRADDLE') ? renderPositionStraddle(d, pos) : renderPositionStandard(d, pos);
+    bodyEl.innerHTML = renderPositionStandard(d, pos);
   } else {
     bodyEl.innerHTML = \`<div class="flat-block">FLAT — no open position</div>\`;
   }

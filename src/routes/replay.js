@@ -193,7 +193,6 @@ const STRATEGY_OPTIONS = [
   { mode: "scalp-paper",    label: "Scalp Paper",    envKey: "UI_SHOW_SCALP_PAPER",    modeKey: "SCALP_MODE_ENABLED" },
   { mode: "swing-paper",    label: "Swing Paper",    envKey: "UI_SHOW_SWING_PAPER",    modeKey: "SWING_MODE_ENABLED" },
   { mode: "orb-paper",      label: "ORB Paper",      envKey: "UI_SHOW_ORB_PAPER",      modeKey: "ORB_MODE_ENABLED" },
-  { mode: "straddle-paper", label: "Straddle Paper", envKey: "UI_SHOW_STRADDLE_PAPER", modeKey: "STRADDLE_MODE_ENABLED" },
 ];
 
 function _renderStrategyOptions() {
@@ -238,7 +237,6 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .tag.scalp    { background:rgba(245,158,11,0.15);  color:#fbbf24; }
 .tag.pa       { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.orb      { background:rgba(16,185,129,0.15);  color:#34d399; }
-.tag.straddle { background:rgba(236,72,153,0.15);  color:#f472b6; }
 .tag-incomplete { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.65rem; font-weight:600; background:rgba(245,158,11,0.15); color:#fbbf24; border:1px solid rgba(245,158,11,0.35); margin-left:4px; }
 .row-incomplete td { opacity:0.65; }
 .row-incomplete td:last-child { opacity:1; } /* keep actions readable */
@@ -278,6 +276,18 @@ button:disabled { background:#374151; cursor:not-allowed; }
 .range-table tr.totals { font-weight:700; background:#0f172a; }
 .range-table tr.totals td { border-top:2px solid #334155; border-bottom:0; }
 .range-table .num { text-align:right; font-variant-numeric: tabular-nums; }
+/* Date-range analytics: filter toolbar, stats line, per-strategy rollup */
+.rf-bar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px; margin:12px 0 4px; }
+.rf-label { display:flex; flex-direction:column; gap:4px; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.05em; color:#94a3b8; font-weight:600; }
+.rf-select { background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:0.8rem; }
+.rf-reset { align-self:flex-end; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:6px; padding:6px 10px; font-size:0.75rem; cursor:pointer; }
+.rf-reset:hover { background:#334155; }
+.rng-stats { margin-top:8px; font-size:0.8rem; color:#cbd5e1; }
+.rng-stats strong { color:#e2e8f0; }
+.rng-sep { color:#475569; margin:0 8px; }
+.rng-analytics-title { margin-top:16px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; color:#94a3b8; font-weight:600; }
+.rollup-table { margin-top:6px; }
+.rollup-table tbody tr:hover { background:#0f172a; }
 .rp-block { margin-top:10px; background:#020617; border:1px solid #1e293b; border-radius:6px; padding:14px 16px; }
 .rp-row { display:flex; align-items:center; gap:10px; font-size:0.9rem; color:#e2e8f0; }
 .rp-spinner { width:14px; height:14px; border:2px solid #1e293b; border-top-color:#38bdf8; border-radius:50%; animation: rp-spin 0.8s linear infinite; flex:0 0 auto; }
@@ -367,6 +377,13 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .range-table th, :root[data-theme="light"] .range-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .range-table tr.totals { background:#f1f5f9 !important; color:#1e293b; }
 :root[data-theme="light"] .range-table tr.totals td { border-top-color:#cbd5e1 !important; }
+:root[data-theme="light"] .rf-select { background:#ffffff !important; color:#1e293b !important; border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .rf-reset { background:#f1f5f9 !important; color:#475569 !important; border-color:#cbd5e1 !important; }
+:root[data-theme="light"] .rf-label { color:#64748b !important; }
+:root[data-theme="light"] .rng-stats { color:#475569 !important; }
+:root[data-theme="light"] .rng-stats strong { color:#1e293b !important; }
+:root[data-theme="light"] .rng-analytics-title { color:#64748b !important; }
+:root[data-theme="light"] .rollup-table tbody tr:hover { background:#f1f5f9 !important; }
 :root[data-theme="light"] .rp-block { background:#f8fafc !important; border-color:#e2e8f0 !important; }
 :root[data-theme="light"] .rp-row { color:#1e293b !important; }
 :root[data-theme="light"] .rp-counter { color:#64748b !important; }
@@ -544,7 +561,6 @@ function modeTag(mode) {
   if (mode.startsWith('swing'))    return 'swing';
   if (mode.startsWith('scalp'))    return 'scalp';
   if (mode.startsWith('orb'))      return 'orb';
-  if (mode.startsWith('straddle')) return 'straddle';
   return 'pa';
 }
 
@@ -729,6 +745,105 @@ function drawReplayChart(el, cd) {
 // (a chart in a collapsed details has 0 width and renders blank). chartData is
 // stashed by container id so the ontoggle handler can fetch it on first expand.
 let _rangeChartData = {};
+// Client-side analytics filter for the date-range result. Re-renders from the
+// already-stashed _CN_RANGE_ROWS — no re-run needed. Reset at the start of each
+// new batch so a stale strategy filter doesn't hide a fresh run's results.
+let _rangeFilter = { strategy: 'all', show: 'all' };
+function setRangeFilter(key, val) {
+  _rangeFilter[key] = val;
+  if (_CN_RANGE_ROWS && _CN_RANGE_ROWS.length) renderRangeResult(_CN_RANGE_ROWS, _CN_RANGE_CTX);
+}
+function resetRangeFilter() {
+  _rangeFilter = { strategy: 'all', show: 'all' };
+  if (_CN_RANGE_ROWS && _CN_RANGE_ROWS.length) renderRangeResult(_CN_RANGE_ROWS, _CN_RANGE_CTX);
+}
+// Distinct strategies present (preserves first-seen order).
+function _rangeStrategiesPresent(rows) {
+  const seen = {}, out = [];
+  for (const r of rows) { const m = r.session.mode; if (!seen[m]) { seen[m] = 1; out.push(m); } }
+  return out;
+}
+// Does a row pass the active "Show" filter? Outcome categories are computed the
+// same way the cards/table classify a row (cmpDelta for improved/regressed,
+// raw replay P&L for win/loss, sim-not-ok for err).
+function _rowMatchesShow(r, show) {
+  const bOk = r.baseline && r.baseline.ok;
+  const sOk = r.sim && r.sim.ok;
+  const sPnl = sOk ? (r.sim.sessionPnl || 0) : null;
+  const d = (bOk && sOk) ? cmpDelta(r.baseline.sessionPnl, sPnl) : null;
+  switch (show) {
+    case 'improved':  return d != null && d >  0.005;
+    case 'regressed': return d != null && d < -0.005;
+    case 'win':       return sOk && sPnl >  0.005;
+    case 'loss':      return sOk && sPnl < -0.005;
+    case 'err':       return !sOk;
+    default:          return true;
+  }
+}
+function _rowMatchesFilter(r, f) {
+  if (f.strategy && f.strategy !== 'all' && r.session.mode !== f.strategy) return false;
+  return _rowMatchesShow(r, f.show || 'all');
+}
+// Filter toolbar above the per-session table. Strategy picker only appears when
+// the run spans more than one strategy (single-strategy runs don't need it).
+function _rangeFilterBar(rows, f) {
+  const strategies = _rangeStrategiesPresent(rows);
+  let stratCtl = '';
+  if (strategies.length > 1) {
+    let opts = '<option value="all"' + (f.strategy === 'all' ? ' selected' : '') + '>All strategies</option>';
+    for (const m of strategies) {
+      opts += '<option value="' + m + '"' + (f.strategy === m ? ' selected' : '') + '>' + _modeLabel(m) + '</option>';
+    }
+    stratCtl = '<label class="rf-label">Strategy<select class="rf-select" onchange="setRangeFilter(\\'strategy\\',this.value)">' + opts + '</select></label>';
+  }
+  const showOpts = [
+    ['all', 'All sessions'], ['improved', 'Improved vs live'], ['regressed', 'Regressed vs live'],
+    ['win', 'Replay winning'], ['loss', 'Replay losing'], ['err', 'Errored / no result'],
+  ];
+  let showSel = '';
+  for (const o of showOpts) showSel += '<option value="' + o[0] + '"' + (f.show === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+  const showCtl = '<label class="rf-label">Show<select class="rf-select" onchange="setRangeFilter(\\'show\\',this.value)">' + showSel + '</select></label>';
+  const active = (f.strategy !== 'all' || f.show !== 'all');
+  const reset = active ? '<button class="rf-reset" onclick="resetRangeFilter()">✕ Clear filters</button>' : '';
+  return '<div class="rf-bar">' + stratCtl + showCtl + reset + '</div>';
+}
+// Per-strategy analytics rollup over the filtered view. Only rendered when ≥2
+// strategies are present (a single-strategy table would just echo the cards).
+function _rangeRollupHtml(view) {
+  const groups = {}, order = [];
+  for (const v of view) {
+    const r = v.r, m = r.session.mode;
+    if (!groups[m]) { groups[m] = { mode: m, sess: 0, bOk: 0, bPnl: 0, sPnl: 0, sTrd: 0, dPnl: 0, imp: 0, reg: 0, wins: 0 }; order.push(m); }
+    const g = groups[m];
+    const bOk = r.baseline && r.baseline.ok, sOk = r.sim && r.sim.ok;
+    if (sOk) { g.sess++; g.sPnl += (r.sim.sessionPnl || 0); g.sTrd += (r.sim.tradeCount || 0); if ((r.sim.sessionPnl || 0) > 0.005) g.wins++; }
+    if (bOk) { g.bOk++; g.bPnl += (r.baseline.sessionPnl || 0); }
+    if (bOk && sOk) { const d = cmpDelta(r.baseline.sessionPnl, r.sim.sessionPnl); g.dPnl += d; if (d > 0.005) g.imp++; else if (d < -0.005) g.reg++; }
+  }
+  if (order.length < 2) return '';
+  let h = '<div class="rng-analytics-title">Per-strategy breakdown</div>' +
+    '<table class="range-table rollup-table"><thead><tr>' +
+      '<th>Strategy</th><th class="num">Sessions</th><th class="num">Live P&L</th>' +
+      '<th class="num">Replay P&L</th><th class="num">Δ P&L</th>' +
+      '<th class="num">Win rate</th><th class="num">Improved</th><th class="num">Regressed</th>' +
+    '</tr></thead><tbody>';
+  for (const m of order) {
+    const g = groups[m];
+    const wr = g.sess ? Math.round(100 * g.wins / g.sess) : 0;
+    h += '<tr>' +
+      '<td><span class="tag ' + modeTag(g.mode) + '">' + g.mode + '</span></td>' +
+      '<td class="num">' + g.sess + '</td>' +
+      '<td class="num">' + (g.bOk ? (g.bPnl >= 0 ? '+' : '') + '₹' + g.bPnl.toFixed(2) : '–') + '</td>' +
+      '<td class="num ' + (g.sPnl >= 0 ? 'cmp-delta-up' : 'cmp-delta-down') + '">' + (g.sPnl >= 0 ? '+' : '') + '₹' + g.sPnl.toFixed(2) + '</td>' +
+      '<td class="num ' + deltaClass(g.dPnl) + '">' + fmtRupee(g.dPnl) + '</td>' +
+      '<td class="num">' + wr + '%</td>' +
+      '<td class="num cmp-delta-up">' + g.imp + '</td>' +
+      '<td class="num cmp-delta-down">' + g.reg + '</td>' +
+    '</tr>';
+  }
+  h += '</tbody></table>';
+  return h;
+}
 function lazyDrawSessionChart(detailsEl, cid) {
   if (!detailsEl || !detailsEl.open) return;
   const el = document.getElementById(cid);
@@ -953,7 +1068,7 @@ function renderSessions() {
     const sidJs  = _jsAttr(s.sessionId);
     const dateJs = _jsAttr(s.date);
     const modeJs = _jsAttr(s.mode);
-    // Replayable: PA/Scalp/Swing always; ORB/Straddle only after the option-LTP
+    // Replayable: PA/Scalp/Swing always; ORB only after the option-LTP
     // recording fix (session-start meta has recordsOptionLtps:true). Pre-fix
     // sessions get a yellow "incomplete" chip + disabled Replay button.
     const isReplayable = s.replayable !== false;
@@ -1366,7 +1481,6 @@ function _modeLabel(mode) {
        : mode === 'scalp-paper'    ? 'Scalp Paper'
        : mode === 'pa-paper'       ? 'PA Paper'
        : mode === 'orb-paper'      ? 'ORB Paper'
-       : mode === 'straddle-paper' ? 'Straddle Paper'
        : mode;
 }
 
@@ -1735,14 +1849,33 @@ function renderRangeResult(rows, context) {
     return;
   }
 
+  // Drop a stale strategy filter that no longer matches any row in this run
+  // (otherwise the view would be empty with no obvious cause).
+  const present = _rangeStrategiesPresent(rows);
+  if (_rangeFilter.strategy !== 'all' && present.indexOf(_rangeFilter.strategy) === -1) {
+    _rangeFilter.strategy = 'all';
+  }
+  const filterBar = _rangeFilterBar(rows, _rangeFilter);
+  // Filtered view keeps the original index so per-session Report buttons still
+  // resolve against the full _CN_RANGE_ROWS array.
+  const view = [];
+  rows.forEach((r, idx) => { if (_rowMatchesFilter(r, _rangeFilter)) view.push({ r, idx }); });
+  if (view.length === 0) {
+    el.innerHTML = headerLine + filterBar + '<div class="muted">No sessions match this filter.</div>';
+    return;
+  }
+
   // Track baseline and sim independently so a row counts even if one side is
   // missing (e.g. swing-paper has no canonical record for these dates → only
   // sim totals are valid). Delta counters only iterate over rows where both
   // sides are ok, since cmpDelta needs both.
   let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0;
   let bOkCount = 0, sOkCount = 0, bothOkCount = 0;
+  let winCount = 0;
+  let bestRow = null, worstRow = null; // by per-session delta (both-ok rows)
   let simBetter = 0, simWorse = 0, totDPnl = 0;
-  for (const r of rows) {
+  for (const v of view) {
+    const r = v.r;
     const bOk = r.baseline && r.baseline.ok;
     const sOk = r.sim && r.sim.ok;
     if (bOk) {
@@ -1754,6 +1887,7 @@ function renderRangeResult(rows, context) {
       sOkCount++;
       totSPnl += (r.sim.sessionPnl  || 0);
       totSTrd += (r.sim.tradeCount  || 0);
+      if ((r.sim.sessionPnl || 0) > 0.005) winCount++;
     }
     if (bOk && sOk) {
       bothOkCount++;
@@ -1761,6 +1895,8 @@ function renderRangeResult(rows, context) {
       totDPnl += d;
       if (d >  0.005) simBetter++;
       else if (d < -0.005) simWorse++;
+      if (!bestRow  || d > bestRow.d)  bestRow  = { d, date: r.session.date, mode: r.session.mode };
+      if (!worstRow || d < worstRow.d) worstRow = { d, date: r.session.date, mode: r.session.mode };
     }
   }
   // Aggregate delta is the sum of per-session deltas (so 0-result replays
@@ -1822,13 +1958,27 @@ function renderRangeResult(rows, context) {
             ? 'Across these ' + bothOkCount + ' sessions, replay is <strong>better</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').'
             : 'Across these ' + bothOkCount + ' sessions, replay is <strong>worse</strong> than live by ' + fmtRupee(dPnl) + ' (improved ' + simBetter + ', regressed ' + simWorse + ').';
 
-  let html = headerLine;
+  // Session-level analytics over the filtered view.
+  const winRate = sOkCount ? Math.round(100 * winCount / sOkCount) : 0;
+  const avgD = bothOkCount ? (totDPnl / bothOkCount) : 0;
+  const statBits = [];
+  statBits.push('Sessions shown <strong>' + view.length + '</strong>');
+  if (sOkCount) statBits.push('Replay win rate <strong>' + winRate + '%</strong> (' + winCount + '/' + sOkCount + ')');
+  if (hasDelta) statBits.push('Avg Δ <strong>' + fmtRupee(avgD) + '</strong>/session');
+  if (bestRow)  statBits.push('Best <strong>' + bestRow.date + '</strong> ' + fmtRupee(bestRow.d));
+  if (worstRow) statBits.push('Worst <strong>' + worstRow.date + '</strong> ' + fmtRupee(worstRow.d));
+  const statsLine = '<div class="rng-stats">' + statBits.join('<span class="rng-sep">·</span>') + '</div>';
+
+  let html = headerLine + filterBar;
   html += '<div class="cmp-grid">' + colSnapshot + colSim + colDelta + '</div>';
   html += '<div class="muted" style="margin-top:10px;">' + verdict + '</div>';
+  html += statsLine;
+  html += _rangeRollupHtml(view);
 
   // Per-session breakdown
   html += '<table class="range-table"><thead><tr><th>Date</th><th>Strategy</th><th>Session ID</th><th class="num">Live P&L</th><th class="num">Trades</th><th class="num">Replay P&L</th><th class="num">Trades</th><th class="num">Δ P&L</th><th class="num">Δ Trades</th></tr></thead><tbody>';
-  for (const r of rows) {
+  for (const v of view) {
+    const r = v.r;
     const bOk = r.baseline && r.baseline.ok;
     const sOk = r.sim && r.sim.ok;
     const bPnl = bOk ? (r.baseline.sessionPnl || 0) : null;
@@ -1868,10 +2018,11 @@ function renderRangeResult(rows, context) {
   // single-session result). Single ok session → expanded + drawn immediately;
   // multiple → collapsed, each chart drawn lazily on first expand.
   _rangeChartData = {};
-  const okRows = rows.filter(r => r.sim && r.sim.ok);
+  const okRows = view.filter(v => v.r.sim && v.r.sim.ok);
   const drawNow = [];
   let chartsHtml = '';
-  rows.forEach((r, idx) => {
+  view.forEach((v) => {
+    const r = v.r, idx = v.idx;
     if (!r.sim || !r.sim.ok) return;
     const cid = 'rng-chart-' + idx;
     const cd = r.sim.chartData;
@@ -1951,6 +2102,7 @@ async function runRange(btn) {
 // Replay button in the Recorded sessions table.
 async function runSessionsBatch(sessions, context, btn, btnRestoreText) {
   const useCurrentSettings = !!context.useCurrentSettings;
+  _rangeFilter = { strategy: 'all', show: 'all' }; // fresh run → clear stale filter
   btn.disabled = true;
   const _origBtnText = btn.textContent;
   btn.textContent = '⏳ Running…';
@@ -2199,7 +2351,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='straddle-paper'?'Straddle Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

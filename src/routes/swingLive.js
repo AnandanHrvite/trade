@@ -507,6 +507,7 @@ function getCachedSymbol(side, currentSpot) {
 }
 
 let _optionPollTimer = null;
+let _optionPollBusy  = false;  // skip a 1s cycle if the previous fetch is still in flight
 
 function startOptionPolling(symbol) {
   stopOptionPolling();
@@ -537,6 +538,10 @@ function startOptionPolling(symbol) {
   }, 10000);
   // Then every 1 second
   _optionPollTimer = setInterval(async () => {
+    // A slow getQuotes (>1s) would otherwise let the next cycle fire before this
+    // one resolves, piling overlapping REST calls onto the live order path.
+    if (_optionPollBusy) return;
+    _optionPollBusy = true;
     try {
       if (!tradeState.position || !tradeState.optionSymbol) { stopOptionPolling(); return; }
       if (_rateLimitSkipCycles > 0) { _rateLimitSkipCycles--; return; }
@@ -569,6 +574,8 @@ function startOptionPolling(symbol) {
       }
     } catch (err) {
       console.error(`🚨 [LIVE] Option poll error: ${err.message}`);
+    } finally {
+      _optionPollBusy = false;
     }
   }, 1000); // 1000ms — tight option LTP SL monitoring (primary spot SL fires every tick)
 }
@@ -609,7 +616,7 @@ let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ti
 // ── DRY-RUN harness ───────────────────────────────────────────────────────
 // When LIVE_HARNESS_DRY_RUN=true (default), Swing Live logs the Zerodha call it
 // WOULD make and returns a simulated success, placing NO real order. This gives
-// Swing the same dry-run safety net the Fyers strategies (PA/ORB/Straddle) have:
+// Swing the same dry-run safety net the Fyers strategies (PA/ORB) have:
 // the engine's position / hard-SL / trail bookkeeping runs end-to-end against
 // virtual order IDs so decisions can be validated before flipping to real money.
 // Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper.

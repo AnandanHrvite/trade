@@ -90,7 +90,7 @@ function ensureDir() {
 // In-memory cache — avoids re-reading + JSON.parse of the growing trades file
 // on every 2s status poll and 4s Real-Time-monitor fan-out. Write-through:
 // refreshed in saveScalpData() (the only writer; /reset also routes through it).
-// Mirrors the pattern already used by swingPaper/orbPaper/straddlePaper.
+// Mirrors the pattern already used by swingPaper/orbPaper.
 let _scalpDataCache = null;
 
 function loadScalpData() {

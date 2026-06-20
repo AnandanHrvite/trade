@@ -12,14 +12,14 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_STARTED    — session-start alerts (per mode)
- *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_ENTRY      — trade entry alerts (per mode)
- *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_EXIT       — trade exit alerts (per mode)
+ *   TG_{SWING|SCALP|PA|ORB}_STARTED             — session-start alerts (per mode)
+ *   TG_{SWING|SCALP|PA|ORB}_ENTRY               — trade entry alerts (per mode)
+ *   TG_{SWING|SCALP|PA|ORB}_EXIT                — trade exit alerts (per mode)
  *   TG_{SWING|SCALP|PA}_SIGNALS                 — candle-close skip/signal alerts (Swing/Scalp/PA only)
- *   TG_{SWING|SCALP|PA|ORB|STRADDLE}_DAYREPORT  — per-mode day report on session stop
+ *   TG_{SWING|SCALP|PA|ORB}_DAYREPORT           — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
- *   (ORB and Straddle emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
+ *   (ORB emits no SIGNAL alerts, so it has no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -32,6 +32,51 @@ const { spawnSync } = require("child_process");
 function isConfigured() {
   return !!(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID);
 }
+
+// ── Telegram delivery health ────────────────────────────────────────────────
+// Telegram can be unreachable for reasons outside the bot's control (e.g. a
+// govt-imposed block, a firewall, an expired token). Sends must NEVER throw or
+// hang the trading process, so every send swallows its error — but a silently
+// swallowed error means the user stops getting alerts without knowing it. We
+// track the last failure here and expose it via getTelegramHealth() so the
+// dashboard can raise an in-page banner. Process-local; resets on restart and
+// clears on the next successful send.
+let _lastTgError    = null;  // { message, code, ts } of the most recent failure
+let _tgFailCount    = 0;     // consecutive failures since the last success
+let _lastTgOkTs     = null;  // epoch ms of the last successful send
+
+function _recordTgError(message, code) {
+  _lastTgError = { message: String(message || "unknown").slice(0, 300), code: code != null ? code : null, ts: Date.now() };
+  _tgFailCount += 1;
+}
+
+function _recordTgOk() {
+  _lastTgError = null;
+  _tgFailCount = 0;
+  _lastTgOkTs  = Date.now();
+}
+
+/**
+ * getTelegramHealth() — snapshot for the dashboard banner poll.
+ * `ok` is true when configured and the last send did not fail.
+ * `lastError` is null when healthy, else { message, code, ts }.
+ */
+function getTelegramHealth() {
+  return {
+    configured: isConfigured(),
+    ok: isConfigured() && !_lastTgError,
+    failCount: _tgFailCount,
+    lastError: _lastTgError,
+    lastOkTs: _lastTgOkTs,
+  };
+}
+
+// How long an outbound Telegram request may run before we abort it. A blocked
+// or blackholed endpoint (the connection is accepted but never answered) would
+// otherwise leave the socket open indefinitely — req.on("error") only fires on
+// refused/DNS failures, not on a silent drop. 8s is well above Telegram's
+// normal sub-second response.
+const TG_REQUEST_TIMEOUT_MS = 8000;
 
 function isOff(v) {
   return v === "false" || v === "0";
@@ -51,30 +96,7 @@ function modeGroup(mode) {
   if (m === "SCALP"    || m.startsWith("SCALP-")    || m.startsWith("SCALP_"))    return "SCALP";
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
-  if (m === "STRADDLE" || m.startsWith("STRADDLE-") || m.startsWith("STRADDLE_")) return "STRADDLE";
   return "SWING";
-}
-
-/**
- * Straddle persists one record per leg (CE/PE) that share a `pairId` and a
- * combined `pairPnl`. Collapse legs to pairs so trade counts and win/loss
- * tallies reflect pair outcomes, not individual legs (a winning pair otherwise
- * shows as 1 win + 1 loss). Mirrors the pairing the Straddle history page does;
- * legs without a pairId are ignored, same as the page.
- */
-function straddlePairStats(trades) {
-  const seen = new Set();
-  let count = 0, wins = 0, losses = 0, pnl = 0;
-  for (const t of (Array.isArray(trades) ? trades : [])) {
-    if (!t || !t.pairId || seen.has(t.pairId)) continue;
-    seen.add(t.pairId);
-    const p = Number(t.pairPnl) || 0;
-    count++;
-    pnl += p;
-    if (p > 0) wins++;
-    else if (p < 0) losses++;
-  }
-  return { count, wins, losses, pnl };
 }
 
 /** Is a strategy group enabled? Gated by {GROUP}_MODE_ENABLED (default on).
@@ -105,48 +127,70 @@ function canSend(toggleKey) {
 function sendTelegram(text) {
   if (!isConfigured()) return Promise.resolve();
 
-  const token  = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
-
-  let escaped;
+  // Whole body is wrapped so a malformed payload or a throw inside https.request
+  // setup can never escape — sendTelegram must always hand back a settled
+  // Promise (call sites chain .catch on it). On any failure we record it for the
+  // dashboard and resolve, never reject.
   try {
-    escaped = String(text).replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+    const token  = process.env.TELEGRAM_BOT_TOKEN;
+    const chatId = process.env.TELEGRAM_CHAT_ID;
+
+    const escaped = String(text).replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+
+    const body = JSON.stringify({
+      chat_id:    chatId,
+      text:       escaped,
+      parse_mode: "MarkdownV2",
+    });
+
+    const options = {
+      hostname: "api.telegram.org",
+      path:     `/bot${token}/sendMessage`,
+      method:   "POST",
+      timeout:  TG_REQUEST_TIMEOUT_MS,
+      headers: {
+        "Content-Type":   "application/json",
+        "Content-Length": Buffer.byteLength(body),
+      },
+    };
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = () => { if (!settled) { settled = true; resolve(); } };
+
+      const req = https.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          let raw = "";
+          res.on("data", d => { raw += d; });
+          res.on("end",  () => {
+            const detail = raw.slice(0, 200);
+            console.error(`[NOTIFY] Telegram error ${res.statusCode}: ${detail}`);
+            _recordTgError(`HTTP ${res.statusCode}: ${detail}`, res.statusCode);
+            done();
+          });
+          res.on("error", () => done());
+        } else {
+          res.resume();
+          res.on("end", () => { _recordTgOk(); done(); });
+          res.on("error", () => done());
+        }
+      });
+      // Abort a hung connection (banned/blackholed endpoint) instead of leaking
+      // the socket. destroy() fires the "error" handler below with this error.
+      req.on("timeout", () => { req.destroy(new Error(`request timed out after ${TG_REQUEST_TIMEOUT_MS}ms`)); });
+      req.on("error", (e) => {
+        console.error(`[NOTIFY] Telegram send failed: ${e.message}`);
+        _recordTgError(e.message);
+        done();
+      });
+      req.write(body);
+      req.end();
+    });
   } catch (e) {
-    console.error(`[NOTIFY] Telegram format failed: ${e.message}`);
+    console.error(`[NOTIFY] Telegram send threw: ${e.message}`);
+    _recordTgError(e.message);
     return Promise.resolve();
   }
-
-  const body = JSON.stringify({
-    chat_id:    chatId,
-    text:       escaped,
-    parse_mode: "MarkdownV2",
-  });
-
-  const options = {
-    hostname: "api.telegram.org",
-    path:     `/bot${token}/sendMessage`,
-    method:   "POST",
-    headers: {
-      "Content-Type":   "application/json",
-      "Content-Length": Buffer.byteLength(body),
-    },
-  };
-
-  return new Promise((resolve) => {
-    const req = https.request(options, (res) => {
-      if (res.statusCode !== 200) {
-        let raw = "";
-        res.on("data", d => { raw += d; });
-        res.on("end",  () => { console.error(`[NOTIFY] Telegram error ${res.statusCode}: ${raw.slice(0, 200)}`); resolve(); });
-      } else {
-        res.resume();
-        res.on("end", resolve);
-      }
-    });
-    req.on("error", (e) => { console.error(`[NOTIFY] Telegram send failed: ${e.message}`); resolve(); });
-    req.write(body);
-    req.end();
-  });
 }
 
 /**
@@ -163,14 +207,64 @@ function sendTelegramSync(text) {
   const escaped = text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
   const body = JSON.stringify({ chat_id: chatId, text: escaped, parse_mode: "MarkdownV2" });
   try {
-    spawnSync("curl", [
+    const r = spawnSync("curl", [
       "-s", "-m", "4",
       "-X", "POST",
       "-H", "Content-Type: application/json",
       "-d", body,
       `https://api.telegram.org/bot${token}/sendMessage`,
     ], { timeout: 5000, stdio: "ignore" });
+    // curl exits non-zero on connection/timeout failure; record it so a blocked
+    // Telegram is visible even when only crash/circuit alerts are firing. We
+    // can't see the API body (stdio ignored), so this is a coarse failed/ok.
+    if (r && (r.error || r.status !== 0)) _recordTgError(r.error ? r.error.message : `curl exit ${r.status}`);
+    else if (r) _recordTgOk();
   } catch (_) { /* best-effort — never throw from a crash handler */ }
+}
+
+/**
+ * pingTelegram() — active reachability probe via Telegram's getMe.
+ * getMe is a read-only bot-info call: it validates the token and confirms the
+ * API is reachable, but sends NO message to the chat (so it can run on every
+ * dashboard health-modal open without spamming). During a network block it
+ * times out exactly like a real send would. The result also refreshes the
+ * passive health store (and thus the banner), so a probe doubles as a live
+ * check. Returns a never-rejecting Promise of { configured, ok, code, error }.
+ */
+function pingTelegram() {
+  if (!isConfigured()) return Promise.resolve({ configured: false, ok: false });
+  try {
+    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const options = {
+      hostname: "api.telegram.org",
+      path:     `/bot${token}/getMe`,
+      method:   "GET",
+      timeout:  TG_REQUEST_TIMEOUT_MS,
+    };
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+      const req = https.request(options, (res) => {
+        let raw = "";
+        res.on("data", d => { raw += d; });
+        res.on("end", () => {
+          if (res.statusCode === 200) { _recordTgOk(); done({ configured: true, ok: true, code: 200 }); }
+          else {
+            const detail = raw.slice(0, 200);
+            _recordTgError(`getMe HTTP ${res.statusCode}: ${detail}`, res.statusCode);
+            done({ configured: true, ok: false, code: res.statusCode, error: detail });
+          }
+        });
+        res.on("error", (e) => { _recordTgError(`getMe ${e.message}`); done({ configured: true, ok: false, error: e.message }); });
+      });
+      req.on("timeout", () => { req.destroy(new Error(`timed out after ${TG_REQUEST_TIMEOUT_MS}ms`)); });
+      req.on("error", (e) => { _recordTgError(`getMe ${e.message}`); done({ configured: true, ok: false, error: e.message }); });
+      req.end();
+    });
+  } catch (e) {
+    _recordTgError(`getMe ${e.message}`);
+    return Promise.resolve({ configured: true, ok: false, error: e.message });
+  }
 }
 
 /**
@@ -262,12 +356,10 @@ function modeLabel(mode) {
   if (m === "SCALP-LIVE")   return "⚡ SCALP LIVE";
   if (m === "PA-PAPER")     return "📄 PA PAPER";
   if (m === "PA-LIVE")      return "⚡ PA LIVE";
-  // ORB / Straddle live modes may carry a " (DRY-RUN)" suffix — match by prefix
+  // ORB live modes may carry a " (DRY-RUN)" suffix — match by prefix
   // and preserve the suffix so the alert still shows the dry-run flag.
   if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
   if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
-  if (m.startsWith("STRADDLE-PAPER"))  return "📄 STRADDLE PAPER" + m.slice("STRADDLE-PAPER".length);
-  if (m.startsWith("STRADDLE-LIVE"))   return "⚡ STRADDLE LIVE" + m.slice("STRADDLE-LIVE".length);
   return m;
 }
 
@@ -452,18 +544,12 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
   if (!canSend(`TG_${group}_DAYREPORT`)) return;
 
   const list = Array.isArray(sessionTrades) ? sessionTrades : [];
-  let count, wins = 0, losses = 0, grossPnl = 0;
-  if (group === "STRADDLE") {
-    // Straddle records are per-leg; collapse to pairs so counts/win-rate are correct.
-    ({ count, wins, losses, pnl: grossPnl } = straddlePairStats(list));
-  } else {
-    count = list.length;
-    for (const t of list) {
-      const pnl = Number(t.pnl) || 0;
-      grossPnl += pnl;
-      if (pnl > 0) wins++;
-      else if (pnl < 0) losses++;
-    }
+  let count = list.length, wins = 0, losses = 0, grossPnl = 0;
+  for (const t of list) {
+    const pnl = Number(t.pnl) || 0;
+    grossPnl += pnl;
+    if (pnl > 0) wins++;
+    else if (pnl < 0) losses++;
   }
   const totalPnl = (sessionPnl != null) ? Number(sessionPnl) : grossPnl;
   const winRate = count ? ((wins / count) * 100).toFixed(1) + "%" : "—";
@@ -488,7 +574,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { SWING, SCALP, PA, ORB, STRADDLE } })
+ * notifyConsolidatedDayReport({ byMode: { SWING, SCALP, PA, ORB } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  * Returns true if a message was dispatched, false if gated off — the EOD
@@ -499,7 +585,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["SWING", "SCALP", "PA", "ORB", "STRADDLE"].filter(isModeEnabled);
+  const groups = ["SWING", "SCALP", "PA", "ORB"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
@@ -541,13 +627,14 @@ function notifyConsolidatedDayReport({ byMode }) {
 
 module.exports = {
   isConfigured,
+  getTelegramHealth,
+  pingTelegram,
   sendTelegram,
   sendTelegramSync,
   sendIfMaster,
   canSend,
   modeGroup,
   isModeEnabled,
-  straddlePairStats,
   notifyStarted,
   notifyEntry,
   notifyExit,

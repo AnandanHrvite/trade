@@ -91,7 +91,7 @@ function ensureDir() {
 // In-memory cache — avoids re-reading + JSON.parse of the growing trades file
 // on every 2s status poll and 4s Real-Time-monitor fan-out. Write-through:
 // refreshed in savePAData() (the only writer; /reset also routes through it).
-// Mirrors the pattern already used by swingPaper/orbPaper/straddlePaper.
+// Mirrors the pattern already used by swingPaper/orbPaper.
 let _paDataCache = null;
 
 function loadPAData() {

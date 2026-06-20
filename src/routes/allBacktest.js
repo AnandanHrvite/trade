@@ -20,14 +20,12 @@ const { ACTIVE } = require("../strategies");
 const scalpStrategy = require("../strategies/scalp_bb_cpr");
 const paStrategy    = require("../strategies/price_action");
 const orbStrategy   = require("../strategies/orb_breakout");
-const straddleStrategy = require("../strategies/straddle_volatility");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const SWING_KEY = ACTIVE;
 const SCALP_KEY = "SCALP_BACKTEST";
 const PA_KEY    = "PA_BACKTEST";
 const ORB_KEY   = "ORB_BACKTEST";
-const STRADDLE_KEY = "STRADDLE_BACKTEST";
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -135,13 +133,11 @@ router.get("/", (req, res) => {
   const scalpOn    = _modeOn("SCALP_MODE_ENABLED");
   const paOn       = _modeOn("PA_MODE_ENABLED");
   const orbOn      = _modeOn("ORB_MODE_ENABLED");
-  const straddleOn = _modeOn("STRADDLE_MODE_ENABLED");
 
   const swingResult    = swingOn    ? loadResult(SWING_KEY)    : null;
   const scalpResult    = scalpOn    ? loadResult(SCALP_KEY)    : null;
   const paResult       = paOn       ? loadResult(PA_KEY)       : null;
   const orbResult      = orbOn      ? loadResult(ORB_KEY)      : null;
-  const straddleResult = straddleOn ? loadResult(STRADDLE_KEY) : null;
 
   const swingPanel = swingOn ? renderPanel(
     "SWING", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -161,11 +157,6 @@ router.get("/", (req, res) => {
     "ORB", { bg: "rgba(16,185,129,0.12)", fg: "#10b981", border: "rgba(16,185,129,0.25)" },
     orbStrategy && orbStrategy.NAME ? orbStrategy.NAME : "ORB_15MIN",
     ORB_KEY, "/orb-backtest", orbResult
-  ) : "";
-  const straddlePanel = straddleOn ? renderPanel(
-    "STRADDLE", { bg: "rgba(236,72,153,0.12)", fg: "#ec4899", border: "rgba(236,72,153,0.25)" },
-    straddleStrategy && straddleStrategy.NAME ? straddleStrategy.NAME : "STRADDLE_VOL",
-    STRADDLE_KEY, "/straddle-backtest", straddleResult
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -306,8 +297,7 @@ ${buildSidebar('allBacktest', liveActive)}
   ${scalpPanel}
   ${paPanel}
   ${orbPanel}
-  ${straddlePanel}
-  ${(!swingOn && !scalpOn && !paOn && !orbOn && !straddleOn) ? `
+  ${(!swingOn && !scalpOn && !paOn && !orbOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

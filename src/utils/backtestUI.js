@@ -1,7 +1,7 @@
 /**
  * backtestUI.js — Shared full-featured backtest results page renderer.
  * ─────────────────────────────────────────────────────────────────────────────
- * Used by orbBacktest + straddleBacktest to render a results page with the
+ * Used by orbBacktest to render a results page with the
  * same shape as scalpBacktest/swingBacktest: sticky breadcrumb, run-bar with
  * date pickers + split-by-year/month, preset rows (week/month/year + each
  * year + each month), 14-card stat grid, cumulative P&L chart, equity /
@@ -328,7 +328,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
   <button id="dwToggle" class="dw-toggle" onclick="toggleDayWise()">👁 Day P&L</button>
   <button id="anaToggle" class="dw-toggle" onclick="toggleAnalytics()">📊 Analytics</button>
   <input id="fSearch" placeholder="Search reason…" oninput="doFilter()" style="width:150px;"/>
-  <select id="fSide" onchange="doFilter()"><option value="">All Sides</option><option value="CE">CE only</option><option value="PE">PE only</option><option value="STRADDLE">Straddle only</option></select>
+  <select id="fSide" onchange="doFilter()"><option value="">All Sides</option><option value="CE">CE only</option><option value="PE">PE only</option></select>
   <select id="fResult" onchange="doFilter()"><option value="">All Results</option><option value="win">Wins only</option><option value="loss">Losses only</option></select>
   <select id="fPP" onchange="doFilter()"><option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="9999">All</option></select>
   <span class="tbar-count" id="cntLabel"></span>
@@ -390,7 +390,7 @@ function fpts(n){ if(n==null) return '—'; var s = n>=0?'+':'−'; return s+'�
 function fmtDate(dt){ if(!dt) return '—'; var p=dt.split(', '); var d=(p[0]||'').split('/'); if(d.length===3) return d[0].padStart(2,'0')+'/'+d[1].padStart(2,'0')+'/'+d[2]; return p[0]||'—'; }
 function fmtTime(dt){ if(!dt) return '—'; var p=dt.split(', '); return p[1]||'—'; }
 // Format exit time-of-day; if exit date differs from entry date, prepend +Nd suffix
-// so the user can see at a glance that a straddle held overnight/multi-day.
+// so the user can see at a glance that a position held overnight/multi-day.
 function fmtExitTime(entryDt, exitDt){
   if(!exitDt) return '—';
   var ep = entryDt ? entryDt.split(', ')[0] : '';

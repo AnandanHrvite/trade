@@ -31,7 +31,7 @@
  *   const replay = require("./tickReplay");
  *   const result = await replay.replaySession({
  *     date:      "2026-05-15",
- *     mode:      "pa-paper",     // pa-paper | scalp-paper | swing-paper | orb-paper | straddle-paper
+ *     mode:      "pa-paper",     // pa-paper | scalp-paper | swing-paper | orb-paper
  *     sessionId: undefined,      // optional — defaults to first start of the day
  *     speed:     0,              // 0 = as-fast-as-possible, >0 = ms delay between ticks
  *   });
@@ -115,7 +115,6 @@ const _EXPIRY_PIN_KEYS = [
   "SCALP_OPTION_EXPIRY_OVERRIDE",    "SCALP_OPTION_EXPIRY_TYPE",
   "PA_OPTION_EXPIRY_OVERRIDE",       "PA_OPTION_EXPIRY_TYPE",
   "ORB_OPTION_EXPIRY_OVERRIDE",      "ORB_OPTION_EXPIRY_TYPE",
-  "STRADDLE_OPTION_EXPIRY_OVERRIDE", "STRADDLE_OPTION_EXPIRY_TYPE",
 ];
 function _pinnedExpirySettings(snapshot) {
   const snap = snapshot || {};
@@ -174,10 +173,29 @@ function _readReplayCache(key) {
   } catch (_) { return null; }
 }
 
+// Drop replay-cache entries older than the retention window. Replay runs are
+// user-triggered and infrequent, so a once-per-process prune on the first write
+// (no standing timer) is enough to stop _replay_cache growing without bound.
+const REPLAY_CACHE_RETAIN_DAYS = parseInt(process.env.REPLAY_CACHE_RETAIN_DAYS || "30", 10);
+let _replayCachePruned = false;
+function _pruneReplayCache() {
+  try {
+    const dir = _replayCacheDir();
+    if (!fs.existsSync(dir)) return;
+    const cutoff = Date.now() - REPLAY_CACHE_RETAIN_DAYS * 86400_000;
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith(".json")) continue;
+      const fp = path.join(dir, f);
+      try { if (fs.statSync(fp).mtimeMs < cutoff) fs.unlinkSync(fp); } catch (_) {}
+    }
+  } catch (_) { /* best-effort cleanup */ }
+}
+
 function _writeReplayCache(key, result) {
   try {
     const dir = _replayCacheDir();
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    if (!_replayCachePruned) { _replayCachePruned = true; _pruneReplayCache(); }
     const f = path.join(dir, `${key}.json`);
     const tmp = `${f}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(result));
@@ -390,7 +408,6 @@ const _MODE_TO_CANONICAL_FILE = {
   "scalp-paper":    "scalp_paper_trades.json",
   "swing-paper":    "paper_trades.json",
   "orb-paper":      "orb_paper_trades.json",
-  "straddle-paper": "straddle_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -402,7 +419,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   catch (_) { return null; }
   if (!data || !Array.isArray(data.sessions)) return null;
   // session.date is written two ways across modes: swing stores a date-only
-  // string ("YYYY-MM-DD" via toISOString().split); pa/scalp/orb/straddle store
+  // string ("YYYY-MM-DD" via toISOString().split); pa/scalp/orb store
   // a full ISO timestamp (date: state.sessionStart = new Date().toISOString()).
   // Normalise both to a UTC calendar day and match on that — Date.parse handles
   // either form. (The old 60s-window compare matched the ISO form but never the
@@ -537,8 +554,6 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     ss_clearPA:           sharedSocketState.clearPA,
     ss_setOrbActive:      sharedSocketState.setOrbActive,
     ss_clearOrb:          sharedSocketState.clearOrb,
-    ss_setStraddleActive: sharedSocketState.setStraddleActive,
-    ss_clearStraddle:     sharedSocketState.clearStraddle,
     // fs originals — paper /stop calls saveSession() → savePaperData() which
     // writes the canonical {strategy}_paper_trades.json via fs.writeFileSync
     // + fs.renameSync directly (NOT via tradeLogger.appendTradeLog, which we
@@ -667,8 +682,6 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     sharedSocketState.clearPA           = () => {};
     sharedSocketState.setOrbActive      = () => {};
     sharedSocketState.clearOrb          = () => {};
-    sharedSocketState.setStraddleActive = () => {};
-    sharedSocketState.clearStraddle     = () => {};
 
     // fs: intercept writes to canonical paper_trades.json (and its .tmp
     // sibling used for atomic temp+rename). Anything else passes through
@@ -730,7 +743,7 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     fyersAuthCheck.verifyFyersToken = async () => ({ ok: true, replay: true });
     nseHolidays.isTradingAllowed    = async () => ({ allowed: true, reason: "replay" });
     // Date-aware: derive expiry status from the recorded session's actual
-    // date so ORB/Straddle expiry-only sessions reproduce their entries.
+    // date so ORB expiry-only sessions reproduce their entries.
     // Falls back to false when the date is unknown (matches legacy behaviour).
     nseHolidays.isExpiryDay         = async () => {
       if (!recordedDateStr) return false;
@@ -798,8 +811,6 @@ function _createHarness({ optionTimeline, vixTimeline, warmupCandles, recordedDa
     sharedSocketState.clearPA           = orig.ss_clearPA;
     sharedSocketState.setOrbActive      = orig.ss_setOrbActive;
     sharedSocketState.clearOrb          = orig.ss_clearOrb;
-    sharedSocketState.setStraddleActive = orig.ss_setStraddleActive;
-    sharedSocketState.clearStraddle     = orig.ss_clearStraddle;
     fs.writeFileSync = orig.fs_writeFileSync;
     fs.renameSync    = orig.fs_renameSync;
     // Clear any pass-through long-delay timers BEFORE restoring originals so
@@ -845,7 +856,6 @@ const MODE_TO_MODULE = {
   "scalp-paper":    "../routes/scalpPaper",
   "swing-paper":    "../routes/swingPaper",
   "orb-paper":      "../routes/orbPaper",
-  "straddle-paper": "../routes/straddlePaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -909,7 +919,7 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Replay one recorded session end-to-end.
  *
  *   date                — "YYYY-MM-DD"
- *   mode                — pa-paper | scalp-paper | swing-paper | orb-paper | straddle-paper
+ *   mode                — pa-paper | scalp-paper | swing-paper | orb-paper
  *   sessionId           — optional
  *   speed               — 0 = as fast as possible, >0 = ms delay between ticks
  *   useCurrentSettings  — false (default): apply the recorded session-start
@@ -1129,7 +1139,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     if (statusResp && statusResp.body) {
       // /status/data trade field differs by mode:
       //   pa/scalp/swing → trades
-      //   orb/straddle   → sessionTrades
+      //   orb            → sessionTrades
       sessionTrades = statusResp.body.trades || statusResp.body.sessionTrades || [];
       sessionPnl    = statusResp.body.sessionPnl != null ? statusResp.body.sessionPnl : 0;
       tradeCount    = statusResp.body.tradeCount != null ? statusResp.body.tradeCount : sessionTrades.length;
@@ -1244,7 +1254,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
  * List recorded sessions for a given date (or all available dates if none given).
  */
 // PA/Scalp/Swing paper have always recorded option LTPs at the poll site.
-// ORB/Straddle paper only started doing so after the option-LTP recording
+// ORB paper only started doing so after the option-LTP recording
 // fix landed — their session-start meta now includes `recordsOptionLtps:true`.
 // Sessions for these modes that lack the flag in meta cannot reproduce
 // trades on replay, so the UI marks them as incomplete and disables Replay.
@@ -1304,7 +1314,6 @@ function replayPreflight() {
   if (sharedSocketState.isScalpActive())     activeModes.push(sharedSocketState.getScalpMode() || "scalp");
   if (sharedSocketState.isPAActive())        activeModes.push(sharedSocketState.getPAMode() || "pa");
   if (sharedSocketState.isOrbActive())       activeModes.push(sharedSocketState.getOrbMode() || "orb");
-  if (sharedSocketState.isStraddleActive())  activeModes.push(sharedSocketState.getStraddleMode() || "straddle");
   if (activeModes.length > 0) {
     return {
       ok: false,
@@ -1343,14 +1352,12 @@ function forceClearSharedState() {
     scalp:    sharedSocketState.getScalpMode(),
     pa:       sharedSocketState.getPAMode(),
     orb:      sharedSocketState.getOrbMode(),
-    straddle: sharedSocketState.getStraddleMode(),
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
   sharedSocketState.clearScalp();
   sharedSocketState.clearPA();
   sharedSocketState.clearOrb();
-  sharedSocketState.clearStraddle();
   _replayInProgress = false;
   return { ok: true, cleared: before };
 }

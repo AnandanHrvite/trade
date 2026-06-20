@@ -3,9 +3,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Sends one combined end-of-day Telegram report shortly after market close,
  * mirroring the Consolidation page (/consolidation) exactly: same paper-only
- * trade set and the same per-row counting (no live files, no straddle
- * pair-collapse). It computes off that page's loadAllTrades() so the two can
- * never drift — filtered to today.
+ * trade set and the same per-row counting (no live files). It computes off
+ * that page's loadAllTrades() so the two can never drift — filtered to today.
  *
  * Fires at 15:32 IST, NOT 15:30: the paper engines do their EOD square-off at
  * TRADE_STOP_TIME (15:30), so a 15:30:00 snapshot races those trades onto disk
@@ -67,7 +66,6 @@ function collectTodayStats(istDate) {
     SCALP:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
     PA:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
     ORB:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
-    STRADDLE: { trades: 0, wins: 0, losses: 0, pnl: 0 },
   };
 
   // loadAllTrades() returns flattened paper trades with `date` = session date

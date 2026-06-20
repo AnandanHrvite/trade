@@ -27,9 +27,6 @@ let paMode = null;
 // ORB (Opening Range Breakout) mode: "ORB_PAPER" | null
 let orbMode = null;
 
-// Straddle (Long Straddle) mode: "STRADDLE_PAPER" | null
-let straddleMode = null;
-
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -102,30 +99,12 @@ function getOrbMode() {
   return orbMode;
 }
 
-// ── Straddle mode (paper only for v1) ─────────────────────────────────────
-
-function setStraddleActive(mode) {
-  straddleMode = mode;
-}
-
-function clearStraddle() {
-  straddleMode = null;
-}
-
-function isStraddleActive() {
-  return straddleMode !== null;
-}
-
-function getStraddleMode() {
-  return straddleMode;
-}
-
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || scalpMode !== null || paMode !== null ||
-         orbMode !== null || straddleMode !== null;
+         orbMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -163,14 +142,6 @@ function canStart(mode) {
       if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is running — stop it first" };
       if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is already running" };
       return { allowed: true };
-    case "STRADDLE_PAPER":
-      if (straddleMode === "STRADDLE_PAPER") return { allowed: false, reason: "Straddle Paper is already running" };
-      if (straddleMode === "STRADDLE_LIVE")  return { allowed: false, reason: "Straddle Live is running — stop it first" };
-      return { allowed: true };
-    case "STRADDLE_LIVE":
-      if (straddleMode === "STRADDLE_PAPER") return { allowed: false, reason: "Straddle Paper is running — stop it first" };
-      if (straddleMode === "STRADDLE_LIVE")  return { allowed: false, reason: "Straddle Live is already running" };
-      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -185,8 +156,6 @@ module.exports = {
   setPAActive, clearPA, isPAActive, getPAMode,
   // ORB
   setOrbActive, clearOrb, isOrbActive, getOrbMode,
-  // Straddle
-  setStraddleActive, clearStraddle, isStraddleActive, getStraddleMode,
   // Combined
   isAnyActive, canStart,
 };

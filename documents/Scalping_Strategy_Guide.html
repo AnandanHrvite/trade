@@ -456,8 +456,8 @@
     <li><strong><code>SCALP_MAX_DAILY_LOSS</code> raised from <code>2000</code> &rarr; <code>4000</code> (&#8377;)</strong> &mdash; the 2000-cap was tripping on normal-loss days and stopping the strategy mid-session. 4000 matches the empirical 2&sigma; daily loss observed during the data-collection window.</li>
     <li><strong><code>SCALP_SL_PAUSE_CANDLES</code> raised from <code>1</code> &rarr; <code>3</code></strong> &mdash; 1 candle (5 min) was too short to let the post-SL chop clear; 3 candles (15 min) gives the side enough time to reset.</li>
     <li><strong><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> exposed</strong> (default <code>2</code>) &mdash; extra candles added per consecutive SL after the 2nd (2nd SL = +2, 3rd SL = +4 candles). Was previously hardcoded.</li>
-    <li><strong>Operational additions</strong>: Tick Recorder + Replay (record/replay scalp sessions deterministically via <code>/replay</code>), Live Harness DRY-RUN gate (<code>LIVE_HARNESS_DRY_RUN=true</code> default &mdash; both this AND <code>SCALP_ENABLED</code> must be set correctly for real orders), Real-Time monitor expansion (Scalp card now sits alongside Swing / PA / ORB / Straddle).</li>
-    <li><strong>Sibling strategies launched</strong> &mdash; ORB and Straddle now run on the same Fyers socket fan-out, gated by their own <code>*_MODE_ENABLED</code> toggles. Scalp can run in parallel with both.</li>
+    <li><strong>Operational additions</strong>: Tick Recorder + Replay (record/replay scalp sessions deterministically via <code>/replay</code>), Live Harness DRY-RUN gate (<code>LIVE_HARNESS_DRY_RUN=true</code> default &mdash; both this AND <code>SCALP_ENABLED</code> must be set correctly for real orders), Real-Time monitor expansion (Scalp card now sits alongside Swing / PA / ORB).</li>
+    <li><strong>Sibling strategies launched</strong> &mdash; ORB now runs on the same Fyers socket fan-out, gated by its own <code>*_MODE_ENABLED</code> toggle. Scalp can run in parallel with it.</li>
   </ul>
 </div>
 
@@ -1467,7 +1467,7 @@
     <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest entry time (HH:MM IST)</td></tr>
     <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>No new entries after this time (HH:MM IST)</td></tr>
     <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on NIFTY weekly expiry day</td></tr>
-    <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (&#8377;) &mdash; shared Fyers pool (Scalp/PA/ORB/Straddle)</td></tr>
+    <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (&#8377;) &mdash; shared Fyers pool (Scalp/PA/ORB)</td></tr>
   </tbody>
 </table>
 

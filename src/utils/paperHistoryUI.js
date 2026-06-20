@@ -7,7 +7,7 @@
  * and JSONL-viewer modals) so every strategy renders an identical page.
  *
  * Two ways to use it:
- *   1. renderHistoryPage(cfg) — full page (used by ORB & Straddle).
+ *   1. renderHistoryPage(cfg) — full page (used by ORB).
  *   2. dailyFilesSectionHTML() + dailyFilesClusterJS(prefix) — the
  *      server-side-paginated Daily Data Files cluster, used to patch the
  *      already-built Scalp/Swing/PA pages in place.
@@ -1097,7 +1097,7 @@ function buildSessionCards(sessions, opts) {
     const sessionWins   = trades.filter(t => t.pnl > 0).length;
     const sessionLosses = trades.filter(t => t.pnl < 0).length;
     const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
-    // Session PnL field name varies by strategy (scalp/pa/orb/straddle: pnl, swing: sessionPnl);
+    // Session PnL field name varies by strategy (scalp/pa/orb: pnl, swing: sessionPnl);
     // fall back to summing trade PnL so the header always shows a number.
     const sPnl = (typeof s.pnl === "number") ? s.pnl
                : (typeof s.sessionPnl === "number") ? s.sessionPnl

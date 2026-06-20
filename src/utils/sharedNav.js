@@ -11,12 +11,11 @@
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
-  // Import scalp/primary/PA/ORB/Straddle state inline to avoid circular dependency issues
+  // Import scalp/primary/PA/ORB state inline to avoid circular dependency issues
   let _scalpMode = null;
   let _primaryMode = null;
   let _paMode = null;
   let _orbMode = null;
-  let _straddleMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -24,7 +23,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _primaryMode = sss.getMode();
     _paMode = sss.getPAMode();
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
-    _straddleMode = sss.getStraddleMode ? sss.getStraddleMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -49,7 +47,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpModeOn    = (process.env.SCALP_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
-  const straddleModeOn = (process.env.STRADDLE_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -83,10 +80,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showOrbLive           = (process.env.UI_SHOW_ORB_LIVE             || 'true').toLowerCase() === 'true';
   const showOrbLiveHarness    = (process.env.UI_SHOW_ORB_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
-  const showStraddleBacktest  = (process.env.UI_SHOW_STRADDLE_BACKTEST    || 'true').toLowerCase() === 'true';
-  const showStraddlePaper     = (process.env.UI_SHOW_STRADDLE_PAPER       || 'true').toLowerCase() === 'true';
-  const showStraddleLive      = (process.env.UI_SHOW_STRADDLE_LIVE        || 'true').toLowerCase() === 'true';
-  const showStraddleHistory   = (process.env.UI_SHOW_STRADDLE_HISTORY     || 'true').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -96,13 +89,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive', 'scalpLiveHarness'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
-  const straddleKeys = ['straddleBacktest', 'straddlePaper', 'straddleLive', 'straddleHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isScalpOpen    = scalpKeys.includes(activePage);
   const isPAOpen       = paKeys.includes(activePage);
   const isOrbOpen      = orbKeys.includes(activePage);
-  const isStraddleOpen = straddleKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -111,7 +102,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpPaperRunning    = _scalpMode    === 'SCALP_PAPER';
   const paPaperRunning       = _paMode       === 'PA_PAPER';
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
-  const straddlePaperRunning = _straddleMode === 'STRADDLE_PAPER';
 
   // Build a swing items list with per-feature toggle
   const swingItems = [
@@ -151,13 +141,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
-  const straddleItems = [
-    ...(showStraddleBacktest ? [{ key: 'straddleBacktest', href: '/straddle-backtest',      icon: '🔍', label: 'Backtest' }] : []),
-    ...(showStraddlePaper    ? [{ key: 'straddlePaper',    href: '/straddle-paper/status',  icon: '🎯', label: 'Paper'   }] : []),
-    ...(showStraddleLive && !straddlePaperRunning ? [{ key: 'straddleLive',     href: '/straddle-live/status',   icon: '📡', label: 'Live'    }] : []),
-    ...(showStraddleHistory  ? [{ key: 'straddleHistory',  href: '/straddle-paper/history', icon: '📜', label: 'History' }] : []),
-  ];
-
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -192,11 +175,6 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'ORB', collapsible: true, collapsed: !isOrbOpen,
       groupId: 'nav-orb',
       items: orbItems,
-    }] : []),
-    ...(straddleModeOn ? [{
-      header: 'STRADDLE', collapsible: true, collapsed: !isStraddleOpen,
-      groupId: 'nav-straddle',
-      items: straddleItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
@@ -251,13 +229,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const straddlePaperBadge = p.key === 'straddlePaper' && _straddleMode === 'STRADDLE_PAPER'
-      ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
-      : '';
-
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}${straddlePaperBadge}
+      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}
     </a>`;
   }
 
@@ -316,6 +290,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   <span id="socket-broken-msg">⚠️ Broker socket disconnected</span>
   <a href="/auth/login" style="color:#fff;text-decoration:underline;margin-left:14px;font-weight:700;">Re-login →</a>
   <button onclick="document.getElementById('socket-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
+</div>
+<div id="telegram-broken-banner" role="alert" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99997;background:#78350f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #f59e0b;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
+  <span id="telegram-broken-msg">⚠️ Telegram alerts are failing</span>
+  <button onclick="document.getElementById('telegram-broken-banner').style.display='none';" aria-label="Dismiss" style="margin-left:14px;background:transparent;border:1px solid rgba(255,255,255,0.4);color:#fff;padding:2px 9px;border-radius:4px;font-family:inherit;font-size:0.7rem;cursor:pointer;">Dismiss</button>
 </div>
 <div id="backup-nag-banner" role="status" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99998;background:#1e3a5f;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:0.8rem;font-weight:600;padding:9px 16px;text-align:center;border-bottom:2px solid #3b82f6;box-shadow:0 4px 16px rgba(0,0,0,0.4);">
   <span id="backup-nag-msg">📦 Today's data backup is ready</span>
@@ -510,6 +488,56 @@ function toggleNavGroup(gid){
   }
   poll();
   setInterval(poll, 10000);
+})();
+
+/* ── Telegram delivery banner (alerts blocked / rate-limited / mis-configured) ─ */
+(function(){
+  var banner = document.getElementById('telegram-broken-banner');
+  var msgEl  = document.getElementById('telegram-broken-msg');
+  if(!banner || !msgEl) return;
+  var dismissedKey = 'telegram_banner_dismissed_until';
+
+  function isDismissedNow(){
+    try {
+      var until = parseInt(sessionStorage.getItem(dismissedKey) || '0', 10);
+      return until && Date.now() < until;
+    } catch(e){ return false; }
+  }
+  // Snooze re-show for 5 min when dismissed — a blocked Telegram won't recover
+  // in seconds, so re-popping the banner on every poll would be noise.
+  banner.querySelector('button').addEventListener('click', function(){
+    try { sessionStorage.setItem(dismissedKey, String(Date.now() + 300000)); } catch(e){}
+  });
+
+  function ago(ts){
+    var s = Math.floor((Date.now() - ts) / 1000);
+    if(s < 60) return s + 's ago';
+    var m = Math.floor(s / 60);
+    if(m < 60) return m + 'm ago';
+    return Math.floor(m / 60) + 'h ago';
+  }
+
+  function render(d){
+    // Only alert on an actual delivery failure. Not-configured is intentional
+    // (Telegram optional), so we stay silent unless a send was attempted and failed.
+    if(!d || !d.lastError){ banner.style.display = 'none'; return; }
+    if(isDismissedNow()){ banner.style.display = 'none'; return; }
+    var e = d.lastError;
+    var code = (e.code != null) ? (' [' + e.code + ']') : '';
+    var when = e.ts ? (' — ' + ago(e.ts)) : '';
+    var rep  = (d.failCount > 1) ? (' ×' + d.failCount) : '';
+    msgEl.textContent = '⚠️ Telegram alerts are FAILING' + code + rep + when + ': ' + (e.message || 'send failed');
+    banner.style.display = 'block';
+  }
+
+  function poll(){
+    fetch('/auth/telegram-health', { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(render)
+      .catch(function(){ /* network blip — leave banner state as-is */ });
+  }
+  poll();
+  setInterval(poll, 15000);
 })();
 
 /* ── Backup download-nag banner (stays until today's snapshot is downloaded) ─ */
