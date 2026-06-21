@@ -173,17 +173,23 @@ router.get("/download-all", (req, res) => {
 // each mode. Each JSONL line carries its own "mode" field, so the merged file
 // stays self-describing regardless of ordering.
 router.get("/download-everything", (req, res) => {
+  // Optional inclusive date-range filter. Either bound may be omitted.
+  const from = validDate(String(req.query.from || "")) ? String(req.query.from) : null;
+  const to = validDate(String(req.query.to || "")) ? String(req.query.to) : null;
+  if (from && to && from > to) return res.status(400).send("from date is after to date");
+  const inRange = (d) => (!from || d >= from) && (!to || d <= to);
   const files = []; // flat list of { mode, date }, in download order
   for (const mode of MODES) {
     let dates;
     try { dates = tradeLogger.listDailyDates(mode); }
     catch (_) { dates = []; }
     dates.sort((a, b) => a.date.localeCompare(b.date)); // oldest-first per mode
-    for (const d of dates) files.push({ mode, date: d.date });
+    for (const d of dates) if (inRange(d.date)) files.push({ mode, date: d.date });
   }
-  if (!files.length) return res.status(404).send("no trade logs found");
+  if (!files.length) return res.status(404).send("no trade logs found for the selected range");
   const today = tradeLogger.istDateString();
-  const filename = `all_strategies_paper_trades_ALL_${today}.txt`;
+  const rangeTag = (from || to) ? `_${from || "start"}_to_${to || today}` : "";
+  const filename = `all_strategies_paper_trades_ALL${rangeTag}_${today}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   (function writeNext(i) {
@@ -520,7 +526,9 @@ router.get("/", (req, res) => {
     .btn-restore  { background:#07140a; border-color:#14401f; color:#34d399; }
     .btn:hover { filter:brightness(1.2); }
     .actions { display:flex; gap:5px; }
-    .files-toolbar { display:flex; justify-content:flex-end; margin-bottom:14px; }
+    .files-toolbar { display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-bottom:14px; }
+    .dl-range-lbl { font-size:0.68rem; color:#4a6080; display:flex; align-items:center; gap:5px; }
+    .dl-range-inp { font-size:0.68rem; padding:4px 6px; border:1px solid #cfe0f4; border-radius:5px; background:#fff; color:#1d3a5f; }
     .btn-download-all { font-size:0.72rem; padding:7px 14px; }
     .num { font-family:'IBM Plex Mono',monospace; }
     .filt-bar { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; align-items:center; }
@@ -636,8 +644,10 @@ ${buildSidebar('tradeLogs', liveActive)}
   <!-- ── FILES TAB ─────────────────────────────────────────────────── -->
   <div class="tab-pane active" id="pane-files">
     <div class="files-toolbar">
-      <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything"
-         title="Download every strategy's daily trade logs as one combined file (grouped by mode, oldest first). Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
+      <label class="dl-range-lbl">From <input type="date" id="dlFrom" class="dl-range-inp"/></label>
+      <label class="dl-range-lbl">To <input type="date" id="dlTo" class="dl-range-inp"/></label>
+      <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything" onclick="return onDownloadEverything(event)"
+         title="Download every strategy's daily trade logs as one combined file (grouped by mode, oldest first). Leave the dates blank for all history, or pick a From/To range. Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
     </div>
     <div id="filesArea">Loading…</div>
   </div>
@@ -736,6 +746,20 @@ ${buildSidebar('tradeLogs', liveActive)}
   function initPageSizeSelector() {
     var el = document.getElementById('pageSizeSelect');
     if (el) el.value = String(_pageSize);
+  }
+
+  // Build the download-everything URL from the optional From/To date inputs,
+  // then navigate to it (browser handles the file download via Content-Disposition).
+  function onDownloadEverything(ev) {
+    ev.preventDefault();
+    var from = (document.getElementById('dlFrom').value || '').trim();
+    var to = (document.getElementById('dlTo').value || '').trim();
+    if (from && to && from > to) { alert('From date is after To date.'); return false; }
+    var qs = [];
+    if (from) qs.push('from=' + encodeURIComponent(from));
+    if (to) qs.push('to=' + encodeURIComponent(to));
+    window.location = '/trade-logs/download-everything' + (qs.length ? '?' + qs.join('&') : '');
+    return false;
   }
 
   function onPageSizeChange() {
