@@ -16,6 +16,7 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 - **Fixed: pushing code (which restarts the server) wiped the running session's trades and chart markers from every Paper screen** (Swing/Scalp/PA/ORB). The Session Trades table and the entry/exit markers are drawn from the in-memory `sessionTrades`, which was only persisted to the saved `sessions[]` on **Stop**. A mid-session PM2 restart cleared it, so the screen came back empty even though the trades were safe in the per-trade JSONL day log.
 - **Each paper mode now rehydrates the current session from today's JSONL on boot** — it loads today's trades that aren't already in a saved (stopped) session, restoring `sessionTrades`, `sessionPnl`, and the win/loss counts. In-memory only: **Stop** still does the persisted `sessions[]` save, so there's no double-counting. Settings-snapshot/meta lines in the day file are skipped; only real trade records are restored.
+- **Fallback so the screen is never blank after a restart**: when there are no live trades for today (e.g. a restart outside market hours), each paper screen loads the **most recent saved session** instead. It's read-only display — `Start Paper` resets it to a fresh session, so the old trades can't be re-saved or double-counted. The `SESSION START` field shows that session's date as a hint. (Finished sessions also remain available under **History**.)
 - **Decision/fill/exit logic untouched** — boot-time recovery only.
 
 ### Replay: snapshot mode now reproduces the OI & bid-ask spread gates

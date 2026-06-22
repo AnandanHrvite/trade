@@ -231,25 +231,40 @@ let ptState = {
 // restart. In-memory only — it does NOT re-save into sessions[] (Stop still does that).
 function rehydrateSessionFromJsonl() {
   try {
+    const data = loadPaperData();
+    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+
+    // 1. Today's running-session trades not yet saved to sessions[] (the in-memory
+    //    session a restart would wipe). Day files interleave settings_snapshot/meta
+    //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
-    // Day files interleave settings_snapshot/meta lines with trades — keep only
-    // real trade records (no `type`, carrying a trade signature).
     const all = tradeLogger.readDailyTrades("swing", today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
-    if (!all.length) return;
-    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
     const seen = new Set();
-    for (const s of (loadPaperData().sessions || [])) {
+    for (const s of (data.sessions || [])) {
       for (const t of (s.trades || [])) seen.add(keyOf(t));
     }
-    const missing = all.filter(t => !seen.has(keyOf(t)));
-    if (!missing.length) return;
-    ptState.sessionTrades = missing;
-    ptState.sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
-    ptState._sessionWins   = missing.filter(t => Number(t.pnl) > 0).length;
-    ptState._sessionLosses = missing.filter(t => Number(t.pnl) < 0).length;
-    if (!ptState.sessionStart) ptState.sessionStart = missing[0].entryTime || missing[0].loggedAt || null;
-    console.log(`♻️ [SWING-PAPER] Restart recovery — restored ${missing.length} trade(s) from today's JSONL (sessionPnl ₹${ptState.sessionPnl})`);
+    let trades = all.filter(t => !seen.has(keyOf(t)));
+    let source = "today's live session";
+
+    // 2. Nothing live today → show the most recent saved session so the screen
+    //    isn't blank after a restart. Read-only; Start Paper resets it.
+    if (!trades.length) {
+      const saved = (data.sessions || []).filter(s => Array.isArray(s.trades) && s.trades.length);
+      if (saved.length) {
+        const last = saved.reduce((a, b) => (String(b.date) > String(a.date) ? b : a));
+        trades = last.trades;
+        source = `last session (${last.date || "?"})`;
+      }
+    }
+    if (!trades.length) return;
+
+    ptState.sessionTrades = trades;
+    ptState.sessionPnl = parseFloat(trades.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
+    ptState._sessionWins   = trades.filter(t => Number(t.pnl) > 0).length;
+    ptState._sessionLosses = trades.filter(t => Number(t.pnl) < 0).length;
+    if (!ptState.sessionStart) ptState.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
+    console.log(`♻️ [SWING-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${ptState.sessionPnl})`);
   } catch (err) {
     console.warn(`[SWING-PAPER] session rehydrate failed: ${err.message}`);
   }
