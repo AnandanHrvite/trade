@@ -57,11 +57,31 @@ async function candlesForRestoredTrades(symbol, res, trades) {
     const from = _istDate(maxSec - 6 * DAY_SEC);
     const key  = `${symbol}|${res}|${day}`;
     if (_cache.has(key)) return _cache.get(key);
-    const candles = await fetchCandlesCached(symbol, String(res), from, day, fetchCandles);
+
+    // Prefer a DIRECT broker fetch of the full range. The candle cache for that
+    // day often holds only the morning preload from its live session (a partial
+    // day), and a partial day would clamp every afternoon marker to the chart's
+    // right edge — worse than no chart. A direct fetch returns the complete day
+    // whenever the broker token is valid (historical data works any time of day).
+    // Fall back to the cache-first path only if the direct fetch is unavailable.
+    let candles = [];
+    try { candles = await fetchCandles(symbol, String(res), from, day); }
+    catch (_) { candles = []; }
+    if (!Array.isArray(candles) || !candles.length) {
+      try { candles = await fetchCandlesCached(symbol, String(res), from, day, fetchCandles); }
+      catch (_) { candles = []; }
+    }
     const out = Array.isArray(candles) ? candles : [];
-    // Only memoise a real result — caching [] would pin the chart empty until a
-    // process restart even if a later poll (token refreshed) could succeed.
-    if (out.length) _cache.set(key, out);
+
+    // Reach-check: only use the candles if they actually extend to the latest
+    // trade. If we only got a partial day (last candle hours before the last
+    // trade), the markers would clamp to the edge — show nothing instead (the
+    // Session Trades table still lists them; full history is in Replay / History).
+    // One-bucket tolerance: the broker may omit the still-forming last bucket.
+    const resSec = (Number(res) || 5) * 60;
+    if (!out.length || out[out.length - 1].time < maxSec - resSec) return [];
+
+    _cache.set(key, out); // only memoise a real, complete result
     return out;
   } catch (_) {
     return [];
