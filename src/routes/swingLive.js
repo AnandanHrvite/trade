@@ -38,6 +38,7 @@ const { getCharges } = require("../utils/charges");
 const { saveTradePosition, clearTradePosition } = require("../utils/positionPersist");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const confirmCandle = require("../utils/confirmCandle");
 
 // ── Module-level caches (avoid repeated env reads / allocations in hot paths) ─
 const TRADE_RES = parseInt(process.env.TRADE_RESOLUTION || "5", 10); // candle resolution in minutes
@@ -302,6 +303,8 @@ let tradeState = {
   sessionTrades:  [],    // ← track live trades for P&L log
   sessionPnl:     0,     // ← running session P&L
   _entryPending:  false, // ← prevents double-entry on rapid ticks
+  // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
+  _armedSignal:   null,
   _slHitCandleTime: null, // ← blocks re-entry on same candle where SL was hit
   // Consecutive loss circuit breaker (mirrors paperTrade v36)
   _consecutiveLosses:    0,
@@ -1139,6 +1142,24 @@ async function onCandleClose(candle) {
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
 
+  // ── Confirmation candle (cross & close) — arm here; entry fires intra-bar on the
+  //    NEXT candle once price crosses this candle's close (see onTick). ──
+  if (confirmCandle.enabled("SWING")) {
+    if (tradeState._armedSignal && tradeState._armedSignal.armedBarTime !== candle.time) {
+      tradeState._armedSignal = null; // confirmation window (next candle) passed
+    }
+    if (!tradeState.position && (signal === "BUY_CE" || signal === "BUY_PE")) {
+      const _armSide = signal === "BUY_CE" ? "CE" : "PE";
+      tradeState._armedSignal = {
+        side:         _armSide,
+        triggerLevel: candle.close,
+        armedBarTime: candle.time,
+        reason, stopLoss, indicators,
+      };
+      log(`🎯 [LIVE] Signal candle closed — ARMED ${_armSide}; next candle must cross ${candle.close} to enter | ${reason}`);
+    }
+  }
+
   // ── Pre-fetch option symbols in background so entry is instant on next tick ──
   // Fire-and-forget: runs async while candle close logic continues synchronously.
   // Cached result used at entry if spot hasn't moved > 25 pts.
@@ -1313,7 +1334,9 @@ async function onCandleClose(candle) {
   // ── Entry: candle-close fallback (if intra-candle tick entry didn't fire) ───
   // isMarketHours() guard prevents entries on 5-min candles closing between TRADE_STOP_TIME-10
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
-  if (!tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  // Skipped when confirmation candle is ON — entry then waits for the next-candle
+  // intra-bar cross (handled in onTick), never on this candle's close.
+  if (!confirmCandle.enabled("SWING") && !tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Daily loss kill switch — hard block, no bypass
     if (tradeState._dailyLossHit) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
@@ -1640,9 +1663,25 @@ function onSpotTick(tick) {
     } else {
     const strategy = getActiveStrategy();
     tradeState.candles.push(bar);
-    const { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(tradeState.candles, { silent: true });
+    let { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(tradeState.candles, { silent: true });
     tradeState.candles.pop();
-    const stopLoss = strategySL || _cachedClosedCandleSL;
+    let stopLoss = strategySL || _cachedClosedCandleSL;
+
+    // ── Confirmation candle (cross & close): when ON, enter only when this candle
+    //    (the one AFTER a signal candle) crosses the armed signal candle's close. ──
+    if (confirmCandle.enabled("SWING")) {
+      const _a = tradeState._armedSignal;
+      if (_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES)
+            && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
+        signal     = _a.side === "CE" ? "BUY_CE" : "BUY_PE";
+        reason     = `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
+        stopLoss   = _a.stopLoss != null ? _a.stopLoss : stopLoss;
+        indicators = _a.indicators || indicators;
+        tradeState._armedSignal = null; // consume — prevents double-fire during async order
+      } else {
+        signal = "NONE";
+      }
+    }
 
     // ── Intra-candle entry: enter whenever a BUY signal is live (every tick while flat) ──
     if (signal === "BUY_CE" || signal === "BUY_PE") {
@@ -2012,6 +2051,7 @@ router.get("/start", async (req, res) => {
   tradeState.candles        = [];
   tradeState.log            = [];
   tradeState.position       = null;
+  tradeState._armedSignal   = null;
   tradeState.currentBar     = null;
   tradeState.barStartTime   = null;
   tradeState.optionLtp      = null;

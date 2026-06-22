@@ -70,6 +70,7 @@ const SETTINGS_SCHEMA = [
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
       { key: "RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PE entry blocked when RSI is at/below this (oversold — don't chase exhausted down-moves)", default: "30" },
       // ── Trend confirmation: SuperTrend (the only directional source) ──
+      { key: "SWING_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter as soon as the live bar meets the rules (legacy intra-candle). Filters one-candle false breakouts.", default: "true" },
       { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend — the entry directional gate (classic = 10).", default: "10" },
       { key: "SWING_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3).", default: "3" },
       // ── Stops & exits ──
@@ -104,6 +105,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
       { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
+      { key: "SCALP_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter at the signal candle's close (legacy). Filters one-candle false breakouts.", default: "true" },
       // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
@@ -509,6 +511,8 @@ const IMMEDIATE_KEYS = new Set([
   "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
   "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
   "SWING_STOP_LOSS_PTS", "SWING_MAX_CONSEC_LOSSES", "SWING_NEG_CANDLE_LIMIT",
+  // Confirmation-candle gates — read live from process.env on every candle/tick
+  "SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED",
 ]);
 
 // These are cached as const at module load — need session stop+start

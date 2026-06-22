@@ -9,6 +9,7 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { getCharges } = require("../utils/charges");
 const { fetchCandlesWithCache, fetchCandlesSmartCache } = require("../utils/backtestCache");
+const confirmCandle = require("../utils/confirmCandle");
 
 
 function maxDaysForResolution(resolution) {
@@ -249,6 +250,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
+  // Confirmation candle (cross & close, SWING only — SWING_CONFIRM_CANDLE_ENABLED).
+  // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
+  let _armedSwing = null;
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
@@ -292,6 +296,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _slPauseUntilBySide.PE = 0;
         _oppositeCooldownUntilTs  = 0;
         _oppositeCooldownLastSide = null;
+        _armedSwing               = null; // drop any arm across the day boundary
         if (_verbose) {
           // Count trades for previous day for the daily log
           // Use _dailyTradeCount (already tracked) instead of expensive trades.filter()
@@ -611,56 +616,102 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // instead of silently consuming the range's own opening candles as warm-up.
     const _isWarmupOnly = candle.time < activeFromTs;
 
-    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit && _sigSide) {
-      // Expiry-day-only filter: skip entry on non-expiry days
-      if (expiryDates && !expiryDates.has(candleDate)) continue;
-      // Same-side SL cooldown: skip this side until the pause expires
-      if (isSideCoolingDown) continue;
-      // Opposite-side cooldown: skip opposite side within cooldown window
-      if (isOppositeCoolingDown) continue;
+    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
+      const _confirmSwing = confirmCandle.enabled("SWING");
 
-      const side     = _sigSide;
-      const strength = signalStrength || "STRONG";
-
-      // ── VIX filter: block entry in high-volatility regimes ──────────────────
-      const _btVix = lookupVix(candle.time);
-      const _btVixCheck = checkBacktestVix(_btVix, strength);
-      if (!_btVixCheck.allowed) {
-        _vixBlockCount++;
-        if (_verbose && _vixBlockCount <= 5) {
-          console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} at ${toIST(candle.time)}`);
-        } else if (_verbose && _vixBlockCount === 6) {
-          console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
+      // ── Confirmation candle (cross & close): fill an armed signal when THIS
+      //    (immediately-next) candle crosses the signal candle's close. Candle-
+      //    granularity proxy for the live intra-bar cross. Valid for one candle. ──
+      if (_confirmSwing && _armedSwing) {
+        const _a = _armedSwing;
+        _armedSwing = null; // armed signal is good for exactly one candle — consume it
+        if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, candleResolutionMins)) {
+          const _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
+          if (_fill != null) {
+            let entryPrice = _fill;
+            if (SLIPPAGE_PTS > 0) {
+              entryPrice = _a.side === "CE"
+                ? quantize(entryPrice + SLIPPAGE_PTS, 2)
+                : quantize(entryPrice - SLIPPAGE_PTS, 2);
+            }
+            const initSL = _a.signalSL != null ? quantize(_a.signalSL, 2) : null;
+            position = {
+              side:            _a.side,
+              entryPrice,
+              entryTime:       candle.time,
+              entryReason:     `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`,
+              stopLoss:        initSL,
+              initialStopLoss: initSL,
+              bestPrice:       null,
+              signalStrength:  _a.strength,
+              candlesHeld:     0,
+            };
+            if (_verbose) console.log(`  ✅ CONFIRM ENTER ${_a.side} @ ${entryPrice} [${toIST(candle.time)}] x-over ${_a.triggerLevel} SL=${initSL}`);
+            continue;
+          }
         }
-        continue;
+        // not the next candle, or never crossed → armed signal expired (consumed above)
       }
 
-      // Entry at candle close — backtest's candle-granularity proxy for the
-      // live intra-candle entry. Slippage worsens it (CE buy higher, PE buy lower).
-      let entryPrice = candle.close;
-      if (SLIPPAGE_PTS > 0) {
-        entryPrice = side === "CE"
-          ? quantize(entryPrice + SLIPPAGE_PTS, 2)
-          : quantize(entryPrice - SLIPPAGE_PTS, 2);
-      }
+      if (_sigSide) {
+        // Expiry-day-only filter: skip entry on non-expiry days
+        if (expiryDates && !expiryDates.has(candleDate)) continue;
+        // Same-side SL cooldown: skip this side until the pause expires
+        if (isSideCoolingDown) continue;
+        // Opposite-side cooldown: skip opposite side within cooldown window
+        if (isOppositeCoolingDown) continue;
 
-      // Initial SL = previous completed candle's low (CE) / high (PE), from getSignal.
-      const initSL = signalSL != null ? quantize(signalSL, 2) : null;
+        const side     = _sigSide;
+        const strength = signalStrength || "STRONG";
 
-      position = {
-        side,
-        entryPrice,
-        entryTime:       candle.time,
-        entryReason:     reason,
-        stopLoss:        initSL,
-        initialStopLoss: initSL,
-        bestPrice:       null,
-        signalStrength:  strength,
-        candlesHeld:     0,
-      };
-      if (_verbose) {
-        console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL(prev-candle)=${initSL}`);
-        console.log(`     Reason: ${reason}`);
+        // ── VIX filter: block entry in high-volatility regimes ──────────────────
+        const _btVix = lookupVix(candle.time);
+        const _btVixCheck = checkBacktestVix(_btVix, strength);
+        if (!_btVixCheck.allowed) {
+          _vixBlockCount++;
+          if (_verbose && _vixBlockCount <= 5) {
+            console.log(`  🌡️ VIX BLOCK: ${_btVixCheck.reason} | Signal: ${signal} at ${toIST(candle.time)}`);
+          } else if (_verbose && _vixBlockCount === 6) {
+            console.log(`  🌡️ VIX BLOCK: (suppressing further VIX block logs — ${_vixBlockCount} blocked so far)`);
+          }
+          continue;
+        }
+
+        // ── Confirmation candle ON: arm the signal — entry fires on the NEXT
+        //    candle's cross (handled above), never on the signal candle itself. ──
+        if (_confirmSwing) {
+          _armedSwing = { side, armedBarTime: candle.time, triggerLevel: candle.close, signalSL, reason, strength };
+          if (_verbose) console.log(`  🎯 ARM ${side} @ close ${candle.close} [${toIST(candle.time)}] — await next-candle cross`);
+          continue;
+        }
+
+        // Entry at candle close — backtest's candle-granularity proxy for the
+        // live intra-candle entry. Slippage worsens it (CE buy higher, PE buy lower).
+        let entryPrice = candle.close;
+        if (SLIPPAGE_PTS > 0) {
+          entryPrice = side === "CE"
+            ? quantize(entryPrice + SLIPPAGE_PTS, 2)
+            : quantize(entryPrice - SLIPPAGE_PTS, 2);
+        }
+
+        // Initial SL = previous completed candle's low (CE) / high (PE), from getSignal.
+        const initSL = signalSL != null ? quantize(signalSL, 2) : null;
+
+        position = {
+          side,
+          entryPrice,
+          entryTime:       candle.time,
+          entryReason:     reason,
+          stopLoss:        initSL,
+          initialStopLoss: initSL,
+          bestPrice:       null,
+          signalStrength:  strength,
+          candlesHeld:     0,
+        };
+        if (_verbose) {
+          console.log(`  ✅ ENTER ${side} @ ${entryPrice} [${toIST(candle.time)}]  SL(prev-candle)=${initSL}`);
+          console.log(`     Reason: ${reason}`);
+        }
       }
     }
   }

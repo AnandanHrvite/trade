@@ -43,6 +43,7 @@ const { getCharges } = require("../utils/charges");
 const { saveScalpPosition, clearScalpPosition } = require("../utils/positionPersist");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const confirmCandle = require("../utils/confirmCandle");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID = "SCALP_LIVE";
@@ -130,6 +131,9 @@ let state = {
   _lastSLSpotBySide:   { CE: 0, PE: 0 },
   _dailyLossHit:  false,
   _entryPending:  false,
+  // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
+  _armedSignal:   null,
+  _entryInFlight: false,
 };
 
 function istNow() { return formatISTTimestamp(Date.now()); }
@@ -743,6 +747,25 @@ function onTick(tick) {
     }
   }
 
+  // ── Confirmation candle (cross & close): intra-bar entry ───────────────────
+  // While flat, if a prior candle armed a signal, enter the instant THIS (the
+  // immediately-next) candle crosses that signal candle's close. All entry gates
+  // were already cleared at arm time (onCandleClose), so no re-check here.
+  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")) {
+    const _a = state._armedSignal;
+    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, SCALP_RES)
+        && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
+        && isMarketHours()) {
+      state._armedSignal   = null; // consume
+      state._entryInFlight = true;
+      const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}` });
+      log(`⚡ [SCALP-LIVE] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+      Promise.resolve(resolveAndEnter(_a.side, price, _r))
+        .catch(e => log(`⚠️ [SCALP-LIVE] confirm entry failed: ${e.message}`))
+        .finally(() => { state._entryInFlight = false; });
+    }
+  }
+
   } catch (err) {
     // Catch-all: prevent a single bad tick/NaN from crashing the entire Node process
     console.error(`🚨 [SCALP-LIVE] onTick crash caught: ${err.message}`, err.stack);
@@ -753,6 +776,10 @@ function onTick(tick) {
 
 async function onCandleClose(bar) {
   if (!state.running) return;
+
+  // Confirmation candle (cross & close): expire an armed signal once its
+  // confirmation window (the candle that just closed) has passed without a cross.
+  if (state._armedSignal && state._armedSignal.armedBarTime !== bar.time) state._armedSignal = null;
 
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
@@ -857,6 +884,15 @@ async function onCandleClose(bar) {
 
   const side = _signalSide;
   const spot = bar.close;
+
+  // ── Confirmation candle (cross & close): arm here (all entry gates already
+  //    passed above); entry fires intra-bar on the NEXT candle once price crosses
+  //    this candle's close (see onTick). OFF = enter at this candle's close now. ──
+  if (confirmCandle.enabled("SCALP")) {
+    state._armedSignal = { side, triggerLevel: bar.close, armedBarTime: bar.time, result };
+    log(`🎯 [SCALP-LIVE] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
+    return;
+  }
 
   resolveAndEnter(side, spot, result);
 }
@@ -1181,6 +1217,7 @@ router.get("/start", async (req, res) => {
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
     _lastSLSpotBySide: { CE: 0, PE: 0 },
     _dailyLossHit: false, _entryPending: false,
+    _armedSignal: null, _entryInFlight: false,
     _expiryDayBlocked: _expiryBlocked,
   };
 

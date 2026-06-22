@@ -23,6 +23,7 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
+const confirmCandle = require("../utils/confirmCandle");
 
 // Derive signal strength for scalp: STRONG if RSI is clearly beyond threshold (+5), else MARGINAL.
 function _deriveScalpStrength(result) {
@@ -77,6 +78,8 @@ function buildDailyOHLC(candles) {
 async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onProgress) {
   const trades   = [];
   let position   = null;
+  // Confirmation candle (cross & close): { side, armedBarTime, triggerLevel, result } | null.
+  let _armed     = null;
   const LOT_SIZE  = getLotQty();
 
   // VIX
@@ -189,6 +192,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       _consecSLs = 0;
       _slPauseUntilBySide.CE = 0; _slPauseUntilBySide.PE = 0;
       _consecSLsBySide.CE    = 0; _consecSLsBySide.PE    = 0;
+      _armed = null; // drop any arm across the day boundary
     }
     _prevDate = candleDate;
 
@@ -375,6 +379,43 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     // Both-sides-paused fast path (entry-side specific check happens after signal returns)
     if (candle.time < _slPauseUntilBySide.CE && candle.time < _slPauseUntilBySide.PE) continue;
 
+    const _confirmScalp = confirmCandle.enabled("SCALP");
+
+    // ── Confirmation candle (cross & close): fill an armed signal when THIS
+    //    (immediately-next) candle crosses the signal candle's close. Candle-
+    //    granularity proxy for the live intra-bar cross; valid for one candle. ──
+    if (_confirmScalp && _armed) {
+      const _a = _armed;
+      _armed = null; // armed signal is good for exactly one candle — consume it
+      if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, SCALP_RES)
+          && candle.time >= _slPauseUntilBySide[_a.side]) {
+        const _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
+        if (_fill != null) {
+          const side = _a.side;
+          const entryPrice = parseFloat((_fill + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
+          const sl = _a.result.stopLoss;
+          const _initRiskBT = OPTION_SIM
+            ? Math.abs(entryPrice - sl) * DELTA * LOT_SIZE
+            : Math.abs(entryPrice - sl) * LOT_SIZE;
+          position = {
+            side,
+            entryPrice,
+            entryTs:         candle.time,
+            stopLoss:        sl,
+            initialStopLoss: sl,
+            slSource:        _a.result.slSource || "PSAR",
+            entryReason:     `${_a.result.reason || side + " signal"} | CONFIRM ${side} x-over @${_a.triggerLevel}`,
+            target:          null,
+            candlesHeld:     0,
+            peakPnl:         0,
+            initialRiskRupees: _initRiskBT,
+          };
+          continue;
+        }
+      }
+      // not the next candle, or never crossed → armed signal expired (consumed above)
+    }
+
     const result = scalpStrategy.getSignal(window, {
       silent: true,
       prevDayOHLC: prevDayOHLC,
@@ -411,6 +452,14 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
     // Per-side SL cooldown — block only if THIS side has an active pause
     if (candle.time < _slPauseUntilBySide[side]) continue;
+
+    // ── Confirmation candle ON: arm the signal — entry fires on the NEXT candle's
+    //    cross (handled above), never on the signal candle itself. ──
+    if (_confirmScalp) {
+      _armed = { side, armedBarTime: candle.time, triggerLevel: candle.close, result };
+      continue;
+    }
+
     const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
     // Initial SL = PSAR/SuperTrend value from the strategy (no clamp).
     const sl = result.stopLoss;

@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Swing + Scalp: two-candle "cross & close" entry confirmation
+
+- **New: entry now waits for a confirmation candle** (`SWING_CONFIRM_CANDLE_ENABLED` / `SCALP_CONFIRM_CANDLE_ENABLED`, both **default ON**). A fully-closed candle that meets all the strategy's entry rules becomes the *signal candle* — but no trade is taken on it. The **immediately-next** candle must then **cross that signal candle's close** (CE strictly above, PE strictly below); entry fires **intra-bar** the instant the cross happens. If the next candle never crosses, the armed signal expires; if that next candle is itself a fresh signal it re-arms (rolling). Filters the one-candle false breakouts that drove the losing CE entries on 22-Jun.
+- **Behaviour change per mode**: Swing previously entered intra-candle the moment the live bar met the rules; Scalp entered at the signal candle's close. Both now gate on the next-candle cross. Turn the toggle OFF (Settings → Swing/Scalp) to restore the old behaviour — A/B the two in `/replay`.
+- **Applied across all six surfaces** — `swingPaper`/`swingLive` + the shared swing `backtestEngine`, and `scalpPaper`/`scalpLive`/`scalpBacktest` — so paper, live, and backtest agree. Confirmation logic shared via [src/utils/confirmCandle.js](src/utils/confirmCandle.js) (toggle name, strict cross direction, and the backtest candle-granularity fill live in one place). Backtests model the intra-bar cross with the next candle's high/low and fill at the trigger (or the bar's open if it gapped through). All entry gates (VIX, OI, cooldowns, daily-loss, max-trades, spread) still apply — they're enforced at the cross (Swing) or at arm time on the signal candle's close (Scalp), exactly once.
+
 ### Paper screens: trades + chart markers survive a server restart
 
 - **Fixed: pushing code (which restarts the server) wiped the running session's trades and chart markers from every Paper screen** (Swing/Scalp/PA/ORB). The Session Trades table and the entry/exit markers are drawn from the in-memory `sessionTrades`, which was only persisted to the saved `sessions[]` on **Stop**. A mid-session PM2 restart cleared it, so the screen came back empty even though the trades were safe in the per-trade JSONL day log.
