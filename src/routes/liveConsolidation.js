@@ -14,7 +14,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, aiExportJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const _HOME = require("os").homedir();
@@ -298,6 +298,7 @@ router.get("/", (req, res) => {
       <button class="btn" onclick="copyGroup('yearly')">📋 Yearly</button>
       <button class="btn" onclick="copyAll()">📋 All Trades</button>
       <button class="btn" onclick="downloadCSV()">⬇ CSV</button>
+      <button class="btn" onclick="downloadAI()" title="Download the filtered live trades as an AI-friendly Markdown report (summary + field legend + tables) — paste straight into an AI for analysis">🤖 AI</button>
     </div>
 
     <!-- Danger zone — wipe live trade history per mode -->
@@ -440,6 +441,7 @@ router.get("/", (req, res) => {
 <script>
 ${modalJS()}
 ${toastJS()}
+${aiExportJS()}
 const TRADES = ${JSON.stringify(trades)};
 
 function fmtINR(n){
@@ -771,6 +773,15 @@ function downloadCSV(){
   a.download = 'live_consolidation_' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function downloadAI(){
+  if (!_lastFiltered.length){ alert('No live trades to export.'); return; }
+  const dates = _lastFiltered.map(t => t.date).filter(Boolean).sort();
+  const range = dates.length ? dates[0] + ' → ' + dates[dates.length - 1] : '';
+  downloadAiMarkdown(_lastFiltered,
+    { title: 'Live Consolidation (filtered trades)', source: 'Live Consolidation (all live modes)', range: range },
+    'live_consolidation_' + new Date().toISOString().slice(0, 10) + '_AI');
 }
 
 let _cumChart = null;

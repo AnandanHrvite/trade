@@ -32,6 +32,7 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const aiExport = require("../utils/aiExport");
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
@@ -1748,6 +1749,7 @@ ${state.sessionTrades.length > 0 ? `
     </select>
     <span id="spCount" style="font-size:0.72rem;color:#4a6080;"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    <a class="copy-btn" href="/pa-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
   </div>
   <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
@@ -2690,6 +2692,14 @@ router.get("/download/trades.jsonl", (req, res) => {
   const logPath = tradeLogger.filePathFor("pa");
   const today   = new Date().toISOString().slice(0, 10);
   const dlName  = `pa_paper_trades_log_${today}.txt`;
+  const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
+  if (ai) {
+    let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
+    const md = aiExport.jsonlToMarkdown(text, { title: "PA paper trades (full log)", source: "pa-paper" });
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="pa_paper_trades_AI_${today}.md"`);
+    return res.send(md);
+  }
   if (!fs.existsSync(logPath)) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);

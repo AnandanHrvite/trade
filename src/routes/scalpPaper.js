@@ -34,6 +34,7 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const aiExport    = require("../utils/aiExport");
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
@@ -1424,7 +1425,9 @@ router.get("/status/chart-data", (req, res) => {
     }
     const stopLoss = state.position && state.position.stopLoss ? state.position.stopLoss : null;
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, bbUpper, bbMiddle, bbLower, sar: sarPoints,
+    const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
+    const armedSide    = state._armedSignal ? state._armedSignal.side : null;
+    return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower, sar: sarPoints,
       supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
       adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
       rsi: rsiSeries,
@@ -1484,6 +1487,8 @@ router.get("/status/data", (req, res) => {
       low:   state.currentBar.low,
       close: state.currentBar.close,
     } : null,
+    // Confirmation candle: armed signal awaiting next-candle cross (null when not armed).
+    armed: state._armedSignal ? { side: state._armedSignal.side, triggerLevel: state._armedSignal.triggerLevel } : null,
     position: pos ? {
       side:              pos.side,
       symbol:            pos.symbol,
@@ -1733,8 +1738,8 @@ router.get("/status", (req, res) => {
       </div>
       ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">Entry: ${pos.reason}</div>` : ""}
     </div>` : `
-    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT \u2014 Waiting for entry signal</div>
+    <div style="background:#0d1320;border:1px solid ${state._armedSignal ? '#7a5b16' : '#1a2236'};border-radius:12px;padding:20px 24px;text-align:center;">
+      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${state._armedSignal ? '#f59e0b' : '#4a6080'};margin-bottom:14px;">${state._armedSignal ? `\ud83c\udfaf ARMED ${state._armedSignal.side} \u2014 waiting for next candle to cross ${state._armedSignal.triggerLevel} (${state._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT \u2014 Waiting for entry signal'}</div>
       ${state.running ? `<div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="spManualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25b2 Manual CE</button>
         <button onclick="spManualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">\u25bc Manual PE</button>
@@ -1956,6 +1961,7 @@ ${state.sessionTrades.length > 0 ? `
     </select>
     <span id="spCount" style="font-size:0.72rem;color:#4a6080;"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    <a class="copy-btn" href="/scalp-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
   </div>
   <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
@@ -2400,7 +2406,7 @@ function doCopy(text,btn,label){
     if (ceMin != null) _rsiLines.push(rsiS.createPriceLine({ price: ceMin, color:'#10b981', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'CE' }));
     if (peMax != null) _rsiLines.push(rsiS.createPriceLine({ price: peMax, color:'#ef4444', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'PE' }));
   }
-  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0;
+  var slLine = null, entryLine = null, selEntryLine = null, selSlLine = null, _lcc = 0, armedLine = null;
   chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false, lockVisibleTimeRangeOnResize: true });
   // Robust zoom preservation: capture user-driven range changes (subscription fires on
   // user pan/zoom AND on programmatic setData/update). We use a debounced "internal"
@@ -2472,6 +2478,9 @@ function doCopy(text,btn,label){
       if (d.stopLoss && !selEt) { slLine = cs.createPriceLine({ price:d.stopLoss, color:'#f59e0b', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'SL' }); }
       if (entryLine) { cs.removePriceLine(entryLine); entryLine = null; }
       if (d.entryPrice && !selEt) { entryLine = cs.createPriceLine({ price:d.entryPrice, color:'#3b82f6', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, axisLabelVisible:true, title:'Entry' }); }
+      // Confirmation candle — dashed line at the armed signal candle's close (the level the next candle must cross)
+      if (armedLine) { cs.removePriceLine(armedLine); armedLine = null; }
+      if (d.armedTrigger && !d.stopLoss && !selEt) { armedLine = cs.createPriceLine({ price:d.armedTrigger, color:'#f59e0b', lineWidth:2, lineStyle:LightweightCharts.LineStyle.Dashed, axisLabelVisible:true, title:'ARM ' + (d.armedSide||'') }); }
       if (selSlLine) { cs.removePriceLine(selSlLine); selSlLine = null; }
       if (selEntryLine) { cs.removePriceLine(selEntryLine); selEntryLine = null; }
       if (selEt && window._spSelectedTrade) {
@@ -2592,6 +2601,21 @@ function spUpdateBanner() {
           var el = document.getElementById('ajax-bar-' + k);
           if (el) el.textContent = INR(d.currentBar[k]);
         });
+      }
+
+      // Confirmation candle — live-update the flat banner with the armed state
+      var fbEl = document.getElementById('ajax-flat-banner');
+      if (fbEl && !d.position) {
+        var fbBox = fbEl.parentElement;
+        if (d.armed) {
+          fbEl.textContent = '\\ud83c\\udfaf ARMED ' + d.armed.side + ' \\u2014 waiting for next candle to cross ' + d.armed.triggerLevel + ' (' + (d.armed.side === 'CE' ? 'above' : 'below') + ') to enter';
+          fbEl.style.color = '#f59e0b';
+          if (fbBox) fbBox.style.borderColor = '#7a5b16';
+        } else {
+          fbEl.textContent = 'FLAT \\u2014 Waiting for entry signal';
+          fbEl.style.color = '#4a6080';
+          if (fbBox) fbBox.style.borderColor = '#1a2236';
+        }
       }
 
       // Position — reload if state changed (flat<->open)
@@ -2848,6 +2872,14 @@ router.get("/download/trades.jsonl", (req, res) => {
   const logPath = tradeLogger.filePathFor("scalp");
   const today   = new Date().toISOString().slice(0, 10);
   const dlName  = `scalp_paper_trades_log_${today}.txt`;
+  const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
+  if (ai) {
+    let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
+    const md = aiExport.jsonlToMarkdown(text, { title: "SCALP paper trades (full log)", source: "scalp-paper" });
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="scalp_paper_trades_AI_${today}.md"`);
+    return res.send(md);
+  }
   if (!fs.existsSync(logPath)) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);

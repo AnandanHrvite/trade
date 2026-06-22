@@ -37,6 +37,7 @@ const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter    = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
@@ -1248,7 +1249,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 
 <!-- Session trades -->
 <div id="orbp-trades-section" style="margin-bottom:18px;">
-  <div class="section-title">Session Trades <span id="orbp-trades-hint" style="color:#4a6080;font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} trades</span></div>
+  <div class="section-title">Session Trades <span id="orbp-trades-hint" style="color:#4a6080;font-weight:400;letter-spacing:0.5px;text-transform:none;margin-left:8px;">${state.sessionTrades.length} trades</span><a href="/orb-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="float:right;font-weight:400;font-size:0.72rem;letter-spacing:0.5px;text-transform:none;color:#4a9cf5;text-decoration:none;">🤖 AI export</a></div>
   <div id="orbp-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;${state.sessionTrades.length ? "" : "padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;"}">${state.sessionTrades.length ? "" : "No trades yet"}</div>
 </div>
 
@@ -1669,15 +1670,23 @@ router.post("/delete-session/:idx", (req, res) => {
 router.get("/download/trades.jsonl", (req, res) => {
   try {
     const data = loadData();
-    const lines = [];
+    const records = [];
     for (const s of (data.sessions || [])) {
       for (const t of (s.trades || [])) {
-        lines.push(JSON.stringify(Object.assign({ date: s.date, strategy: s.strategy }, t)));
+        records.push(Object.assign({ date: s.date, mode: "orb", strategy: s.strategy }, t));
       }
     }
+    const today = new Date().toISOString().slice(0, 10);
+    const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
+    if (ai) {
+      const md = aiExport.buildMarkdown(records, { title: "ORB paper trades (full log)", source: "orb-paper" });
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="orb_paper_trades_AI_${today}.md"`);
+      return res.send(md);
+    }
     res.setHeader("Content-Type", "application/x-ndjson");
-    res.setHeader("Content-Disposition", `attachment; filename="orb_paper_trades_${new Date().toISOString().slice(0,10)}.jsonl"`);
-    res.send(lines.join("\n"));
+    res.setHeader("Content-Disposition", `attachment; filename="orb_paper_trades_${today}.jsonl"`);
+    res.send(records.map(r => JSON.stringify(r)).join("\n"));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

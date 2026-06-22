@@ -983,6 +983,108 @@ function showToast(msg, color) {
 }
 
 /**
+ * Client-side AI-friendly export.
+ *
+ * Defines window.downloadAiMarkdown(list, meta, baseName) — turns an array of
+ * normalised trade objects (the same shape Consolidation / paper pages hold in
+ * memory) into a Markdown report and triggers a .md download. Mirrors the
+ * server-side src/utils/aiExport.js so every download site produces the same
+ * format: summary stats → field legend → per-side trade table. Used by pages
+ * that filter trades in the browser and so can't go through the server endpoint.
+ */
+function aiExportJS() {
+  return `
+var AI_LEGEND = {
+  mode:'Strategy (swing / scalp / pa / orb).',
+  side:'CE = call (bullish) · PE = put (bearish).',
+  symbol:'Option contract traded.',
+  qty:'Quantity in units (lot size × lots).',
+  entryPrice:'Option premium paid at entry (₹).',
+  exitPrice:'Option premium received at exit (₹).',
+  spotAtEntry:'NIFTY spot when entered.', spotAtExit:'NIFTY spot when exited.',
+  optionEntryLtp:'Option LTP at entry (₹).', optionExitLtp:'Option LTP at exit (₹).',
+  optionStrike:'Strike price.', optionType:'CE or PE.', optionExpiry:'Expiry date.',
+  entryTime:'Entry timestamp, IST.', exitTime:'Exit timestamp, IST.',
+  pnl:'Realised P&L in ₹ (negative = loss).',
+  pnlMode:'"option" = from option LTP · "spot proxy" = estimated from spot move.',
+  entryReason:'What triggered entry.', exitReason:'What closed the trade.',
+  date:'Trade date, IST.', instrument:'Instrument type.'
+};
+var AI_ORDER = ['date','entryTime','exitTime','side','symbol','optionStrike','optionType','qty','entryPrice','exitPrice','optionEntryLtp','optionExitLtp','spotAtEntry','spotAtExit','pnl','pnlMode','entryReason','exitReason'];
+var AI_DENY = {mode:1,strategy:1,loggedAt:1,type:1,id:1,reason:1};
+function aiNum(v){ return (typeof v==='number'&&isFinite(v))?v:null; }
+function aiFmtNum(v){ return Number.isInteger(v)?String(v):String(Math.round(v*100)/100); }
+function aiFmtPnl(v){ var n=aiNum(v); if(n===null) return '—'; return (n>=0?'+':'')+aiFmtNum(n); }
+function aiCell(v){
+  if(v==null) return '';
+  var s = (typeof v==='object')?JSON.stringify(v):(typeof v==='number'?aiFmtNum(v):String(v));
+  s = s.replace(/\\r?\\n/g,' ').replace(/\\|/g,'\\\\|');
+  return s.length>90 ? s.slice(0,89)+'…' : s;
+}
+function aiModeOf(t){ return String(t.mode||t.strategy||'trades'); }
+window.tradesToAiMarkdown = function(list, meta){
+  meta = meta||{};
+  list = (list||[]).filter(function(t){ return t && typeof t==='object'; });
+  var groups = {};
+  list.forEach(function(t){ var m=aiModeOf(t); (groups[m]=groups[m]||[]).push(t); });
+  var modes = Object.keys(groups).sort();
+  function stats(arr){
+    var w=arr.filter(function(t){return aiNum(t.pnl)>0;});
+    var l=arr.filter(function(t){return aiNum(t.pnl)<0;});
+    var net=arr.reduce(function(a,t){return a+(aiNum(t.pnl)||0);},0);
+    var aw=w.length?w.reduce(function(a,t){return a+t.pnl;},0)/w.length:0;
+    var al=l.length?l.reduce(function(a,t){return a+t.pnl;},0)/l.length:0;
+    var dec=w.length+l.length;
+    return {n:arr.length,w:w.length,l:l.length,winPct:dec?Math.round(w.length/dec*100):0,net:net,aw:aw,al:al};
+  }
+  var out=[];
+  out.push('# '+(meta.title||'Trade export')+' — AI-friendly export');
+  var m1=[]; if(meta.source) m1.push('Source: '+meta.source); if(meta.range) m1.push('Range: '+meta.range);
+  m1.push(list.length+' trade'+(list.length===1?'':'s')); if(modes.length) m1.push('modes: '+modes.join(', '));
+  out.push('> '+m1.join(' · '));
+  out.push('>');
+  out.push('> Structured for AI analysis: summary stats, a field legend, then the trades. P&L is in ₹ unless noted.');
+  out.push('');
+  if(!list.length){ out.push('_No trades in this export._'); return out.join('\\n')+'\\n'; }
+  out.push('## Summary');
+  out.push('| Mode | Trades | Wins | Losses | Win % | Net P&L | Avg win | Avg loss |');
+  out.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+  function sRow(label,s){ return '| '+label+' | '+s.n+' | '+s.w+' | '+s.l+' | '+s.winPct+'% | '+aiFmtPnl(s.net)+' | '+(s.aw?aiFmtPnl(s.aw):'—')+' | '+(s.al?aiFmtPnl(s.al):'—')+' |'; }
+  modes.forEach(function(m){ out.push(sRow(m, stats(groups[m]))); });
+  if(modes.length>1) out.push(sRow('**TOTAL**', stats(list)));
+  out.push('');
+  var present={}; list.forEach(function(t){ Object.keys(t).forEach(function(k){ present[k]=1; }); });
+  out.push('## Field legend');
+  Object.keys(AI_LEGEND).forEach(function(k){ if(present[k]) out.push('- \\\`'+k+'\\\` — '+AI_LEGEND[k]); });
+  out.push('');
+  out.push('## Trades');
+  modes.forEach(function(m){
+    var arr=groups[m], s=stats(arr);
+    var cols=[], seen={};
+    arr.forEach(function(t){ Object.keys(t).forEach(function(k){ if(!AI_DENY[k]) seen[k]=1; }); });
+    AI_ORDER.forEach(function(c){ if(seen[c]){ cols.push(c); seen[c]=0; } });
+    Object.keys(seen).forEach(function(k){ if(seen[k]) cols.push(k); });
+    out.push('### '+m+' — '+arr.length+' trade'+(arr.length===1?'':'s')+', net '+aiFmtPnl(s.net));
+    if(!cols.length){ out.push('_(no fields)_'); return; }
+    out.push('| '+cols.join(' | ')+' |');
+    out.push('| '+cols.map(function(){return '---';}).join(' | ')+' |');
+    arr.forEach(function(t){ out.push('| '+cols.map(function(c){ return c==='pnl'?aiFmtPnl(t[c]):aiCell(t[c]); }).join(' | ')+' |'); });
+    out.push('');
+  });
+  return out.join('\\n')+'\\n';
+};
+window.downloadAiMarkdown = function(list, meta, baseName){
+  var md = window.tradesToAiMarkdown(list, meta);
+  var blob = new Blob([md], { type:'text/markdown;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = (baseName||'trades_AI') + '.md';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};`;
+}
+
+/**
  * Shared log viewer HTML + JS (reused by Paper Trade and Live Trade status pages).
  * @param {string} logsJSON    - JSON string of log array (newest first)
  * @param {string} prefix      - Unique prefix for element IDs ('log' | 'ptlog')
@@ -1786,4 +1888,4 @@ ${linkHref ? `<a href="${linkHref}" class="err-link">${linkText || 'Go Back'}</a
 </div></div></div></body></html>`;
 }
 
-module.exports = { buildSidebar, sidebarCSS, toastJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };
+module.exports = { buildSidebar, sidebarCSS, toastJS, aiExportJS, logViewerHTML, faviconLink, modalCSS, modalJS, errorPage, tableEnhancerCSS, tableEnhancerJS };

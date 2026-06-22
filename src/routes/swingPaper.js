@@ -29,6 +29,7 @@ const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistory
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const aiExport    = require("../utils/aiExport");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
 const { getCharges } = require("../utils/charges");
@@ -2546,7 +2547,10 @@ router.get("/status/chart-data", (req, res) => {
       entryPrice = ptState.position.entryPrice;
     }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
+    return res.json({ candles, markers, stopLoss, entryPrice,
+      armedTrigger: ptState._armedSignal ? ptState._armedSignal.triggerLevel : null,
+      armedSide:    ptState._armedSignal ? ptState._armedSignal.side : null,
+      ema9: ema9Series, ema20: ema20Series, ema50: ema50Series,
       supertrend, trendSource: "SUPERTREND", rsi: rsiSeries,
       emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
       tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
@@ -2654,6 +2658,8 @@ router.get("/status/data", (req, res) => {
         low:   ptState.currentBar.low,
         close: ptState.currentBar.close,
       } : null,
+      // Confirmation candle: armed signal awaiting next-candle cross (null when not armed).
+      armed: ptState._armedSignal ? { side: ptState._armedSignal.side, triggerLevel: ptState._armedSignal.triggerLevel } : null,
       // Trades (mapped for client-side display — cached to avoid rebuild when trade count hasn't changed)
       trades: _getCachedTradesForPoll(),
       // Activity log — last 100 entries newest-first (avoids copying/reversing full 2000-entry buffer on every 2s poll)
@@ -2879,9 +2885,9 @@ router.get("/status", (req, res) => {
 
       ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">📝 ${pos.reason}</div>` : ""}
     </div>` : `
-    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
-      <div style="font-size:1.5rem;margin-bottom:8px;">📭</div>
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT — Waiting for entry signal</div>
+    <div style="background:#0d1320;border:1px solid ${ptState._armedSignal ? '#7a5b16' : '#1a2236'};border-radius:12px;padding:20px 24px;text-align:center;">
+      <div style="font-size:1.5rem;margin-bottom:8px;">${ptState._armedSignal ? '🎯' : '📭'}</div>
+      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${ptState._armedSignal ? '#f59e0b' : '#4a6080'};margin-bottom:14px;">${ptState._armedSignal ? `ARMED ${ptState._armedSignal.side} — waiting for next candle to cross ${ptState._armedSignal.triggerLevel} (${ptState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
       <div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
         <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
@@ -3110,6 +3116,7 @@ ${buildSidebar('swingPaper', sharedSocketState.getMode()==='SWING_LIVE', ptState
       </select>
       <span id="ptCount" style="font-size:0.72rem;color:#4a6080;"></span>
       <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+      <a class="copy-btn" href="/swing-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
     </div>
     <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;">
@@ -3701,6 +3708,21 @@ ${modalJS()}
         atpEl.style.color = PNL_COLOR(d.totalPnl);
       }
 
+      // Confirmation candle \u2014 live-update the flat banner with the armed state
+      const fbEl = document.getElementById('ajax-flat-banner');
+      if (fbEl && !d.position) {
+        const fbBox = fbEl.parentElement;
+        if (d.armed) {
+          fbEl.textContent = 'ARMED ' + d.armed.side + ' \u2014 waiting for next candle to cross ' + d.armed.triggerLevel + ' (' + (d.armed.side === 'CE' ? 'above' : 'below') + ') to enter';
+          fbEl.style.color = '#f59e0b';
+          if (fbBox) fbBox.style.borderColor = '#7a5b16';
+        } else {
+          fbEl.textContent = 'FLAT \u2014 Waiting for entry signal';
+          fbEl.style.color = '#4a6080';
+          if (fbBox) fbBox.style.borderColor = '#1a2236';
+        }
+      }
+
       // ── Position section ─────────────────────────────────────────────────
       // If position state changed (flat→open or open→flat), reload page to render
       // the full position block HTML correctly. AJAX only patches existing elements.
@@ -3887,6 +3909,14 @@ router.get("/download/trades.jsonl", (req, res) => {
   const logPath = tradeLogger.filePathFor("swing");
   const today   = new Date().toISOString().slice(0, 10);
   const dlName  = `swing_paper_trades_log_${today}.txt`;
+  const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
+  if (ai) {
+    let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
+    const md = aiExport.jsonlToMarkdown(text, { title: "SWING paper trades (full log)", source: "swing-paper" });
+    res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="swing_paper_trades_AI_${today}.md"`);
+    return res.send(md);
+  }
   if (!fs.existsSync(logPath)) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);

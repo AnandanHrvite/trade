@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### AI-friendly trade export across all trade-data download screens
+
+- **New: every trade-data download now has a "🤖 AI" option** that produces a single self-describing Markdown report instead of raw JSONL/CSV — built for pasting straight into an AI for analysis. Each report carries a **summary table** (per-mode + total: trades, wins/losses, win %, net P&L, avg win/avg loss), a **field legend** (plain-English meaning of every field actually present), the **settings snapshot** that produced the trades (where available), then **per-strategy trade tables**.
+- **Where it appears**: Trade Logs — *Download Everything* (`?format=ai`, respects the From/To range), per-mode *Download All*, and per-day *Download*; Consolidation and Live Consolidation (🤖 AI button next to ⬇ CSV — exports exactly the filtered set shown); and each Paper screen (Swing/Scalp/PA/ORB) via a *🤖 AI export* link that downloads the full per-trade log.
+- **No new pages or menu items** — the option sits inline next to the existing download buttons, so there's nothing new to enable in Settings.
+- **One shared format**: server-side file exports go through [src/utils/aiExport.js](src/utils/aiExport.js); the browser-filtered screens (Consolidation) render the identical structure via `aiExportJS()` in [src/utils/sharedNav.js](src/utils/sharedNav.js). Purely additive — no decision/fill/exit logic touched.
+
 ### Swing + Scalp: two-candle "cross & close" entry confirmation
 
 - **New: entry now waits for a confirmation candle** (`SWING_CONFIRM_CANDLE_ENABLED` / `SCALP_CONFIRM_CANDLE_ENABLED`, both **default ON**). A fully-closed candle that meets all the strategy's entry rules becomes the *signal candle* — but no trade is taken on it. The **immediately-next** candle must then **cross that signal candle's close** (CE strictly above, PE strictly below); entry fires **intra-bar** the instant the cross happens. If the next candle never crosses, the armed signal expires; if that next candle is itself a fresh signal it re-arms (rolling). Filters the one-candle false breakouts that drove the losing CE entries on 22-Jun.

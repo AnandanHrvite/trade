@@ -24,6 +24,19 @@ const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = re
 const tradeLogger   = require("../utils/tradeLogger");
 const skipLogger    = require("../utils/skipLogger");
 const settingsAudit = require("../utils/settingsAudit");
+const aiExport      = require("../utils/aiExport");
+
+// True when the caller asked for the AI-friendly Markdown format (?format=ai or ?ai=1).
+function wantsAi(req) {
+  return String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
+}
+// Send a Markdown report built from parsed JSONL records as a .md file download.
+function sendAiMarkdown(res, records, baseName, meta) {
+  const md = aiExport.buildMarkdown(records, meta);
+  res.setHeader("Content-Disposition", `attachment; filename="${baseName}.md"`);
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.send(md);
+}
 
 const MODES = ["swing", "scalp", "pa", "orb"];
 
@@ -137,6 +150,11 @@ router.get("/download", (req, res) => {
   if (!validDate(date)) return res.status(400).send("bad date");
   const fp = tradeLogger.dailyFilePathFor(mode, date);
   if (!fs.existsSync(fp)) return res.status(404).send("file not found");
+  if (wantsAi(req)) {
+    return sendAiMarkdown(res, tradeLogger.readDailyTrades(mode, date),
+      `${mode}_paper_trades_${date}_AI`,
+      { title: `${mode.toUpperCase()} paper trades`, source: `Trade Logs · ${mode} · ${date}`, range: date });
+  }
   const filename = `${mode}_paper_trades_${date}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -155,6 +173,13 @@ router.get("/download-all", (req, res) => {
   // listDailyDates is newest-first; reverse for chronological output.
   dates.sort((a, b) => a.date.localeCompare(b.date));
   const today = tradeLogger.istDateString();
+  if (wantsAi(req)) {
+    const records = [];
+    for (const d of dates) records.push(...tradeLogger.readDailyTrades(mode, d.date));
+    return sendAiMarkdown(res, records, `${mode}_paper_trades_ALL_${today}_AI`,
+      { title: `${mode.toUpperCase()} paper trades (all history)`, source: `Trade Logs · ${mode} · all days`,
+        range: dates.length ? `${dates[0].date} → ${dates[dates.length - 1].date}` : "" });
+  }
   const filename = `${mode}_paper_trades_ALL_${today}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -189,6 +214,14 @@ router.get("/download-everything", (req, res) => {
   if (!files.length) return res.status(404).send("no trade logs found for the selected range");
   const today = tradeLogger.istDateString();
   const rangeTag = (from || to) ? `_${from || "start"}_to_${to || today}` : "";
+  if (wantsAi(req)) {
+    const records = [];
+    for (const f of files) records.push(...tradeLogger.readDailyTrades(f.mode, f.date));
+    const dts = files.map(f => f.date).sort();
+    return sendAiMarkdown(res, records, `all_strategies_paper_trades_ALL${rangeTag}_${today}_AI`,
+      { title: "All strategies — paper trades", source: "Trade Logs · Download Everything",
+        range: `${from || dts[0]} → ${to || dts[dts.length - 1]}` });
+  }
   const filename = `all_strategies_paper_trades_ALL${rangeTag}_${today}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -648,6 +681,8 @@ ${buildSidebar('tradeLogs', liveActive)}
       <label class="dl-range-lbl">To <input type="date" id="dlTo" class="dl-range-inp"/></label>
       <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything" onclick="return onDownloadEverything(event)"
          title="Download every strategy's daily trade logs as one combined file (grouped by mode, oldest first). Leave the dates blank for all history, or pick a From/To range. Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
+      <a class="btn btn-download btn-download-all" href="/trade-logs/download-everything?format=ai" onclick="return onDownloadEverything(event, 'ai')"
+         title="Same data as an AI-friendly Markdown report: summary stats, a field legend, the settings that produced the trades, then per-strategy tables. Paste straight into an AI for analysis.">🤖 AI format</a>
     </div>
     <div id="filesArea">Loading…</div>
   </div>
@@ -750,7 +785,7 @@ ${buildSidebar('tradeLogs', liveActive)}
 
   // Build the download-everything URL from the optional From/To date inputs,
   // then navigate to it (browser handles the file download via Content-Disposition).
-  function onDownloadEverything(ev) {
+  function onDownloadEverything(ev, fmt) {
     ev.preventDefault();
     var from = (document.getElementById('dlFrom').value || '').trim();
     var to = (document.getElementById('dlTo').value || '').trim();
@@ -758,6 +793,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     var qs = [];
     if (from) qs.push('from=' + encodeURIComponent(from));
     if (to) qs.push('to=' + encodeURIComponent(to));
+    if (fmt === 'ai') qs.push('format=ai');
     window.location = '/trade-logs/download-everything' + (qs.length ? '?' + qs.join('&') : '');
     return false;
   }
@@ -888,12 +924,14 @@ ${buildSidebar('tradeLogs', liveActive)}
             '<td><div class="actions">' +
               '<button class="btn btn-view"     onclick="viewFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
               '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
+              '<a       class="btn btn-download" href="/trade-logs/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'&format=ai" title="AI-friendly Markdown report">🤖 AI</a>' +
               '<button class="btn btn-delete"   onclick="delFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
             '</div></td>' +
           '</tr>';
         }).join('') + '</tbody></table>';
     var dlAll = total > 0
-      ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily files concatenated, oldest first">⬇ Download All (' + total + ')</a>'
+      ? '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily files concatenated, oldest first">⬇ Download All (' + total + ')</a>' +
+        '<a class="btn btn-download" href="/trade-logs/download-all?mode=' + m.key + '&format=ai" title="All ' + total + ' files as one AI-friendly Markdown report">🤖 AI All</a>'
       : '';
     var delAll = total > 0
       ? '<button class="btn btn-delete" onclick="delAllFiles(\\''+m.key+'\\','+total+')" title="Delete every daily file for this mode">🗑 Delete All (' + total + ')</button>'

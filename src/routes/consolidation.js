@@ -14,7 +14,7 @@ const express = require("express");
 const router = express.Router();
 const fs = require("fs");
 const path = require("path");
-const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS } = require("../utils/sharedNav");
+const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, aiExportJS } = require("../utils/sharedNav");
 
 const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
@@ -353,6 +353,7 @@ router.get("/", (req, res) => {
       <button class="btn" onclick="copyGroup('yearly')">📋 Yearly</button>
       <button class="btn" onclick="copyAll()">📋 All Trades</button>
       <button class="btn" onclick="downloadCSV()">⬇ CSV</button>
+      <button class="btn" onclick="downloadAI()" title="Download the filtered trades as an AI-friendly Markdown report (summary + field legend + tables) — paste straight into an AI for analysis">🤖 AI</button>
       <button id="dvToggle" class="btn" onclick="toggleDayView()" style="margin-left:auto;" title="Day-wise P&L summary across all modes">👁 Day View</button>
       <button id="anaToggle" class="btn" onclick="toggleAnalytics()" title="Performance analytics across all modes (respects filters)">📊 Analytics</button>
     </div>
@@ -620,6 +621,7 @@ router.get("/", (req, res) => {
 </div>
 
 <script>
+${aiExportJS()}
 const TRADES = ${JSON.stringify(trades)};
 
 function fmtINR(n){
@@ -961,6 +963,15 @@ function downloadCSV(){
   a.download = 'consolidation_' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function downloadAI(){
+  if (!_lastFiltered.length){ alert('No trades to export.'); return; }
+  const dates = _lastFiltered.map(t => t.date).filter(Boolean).sort();
+  const range = dates.length ? dates[0] + ' → ' + dates[dates.length - 1] : '';
+  downloadAiMarkdown(_lastFiltered,
+    { title: 'Consolidation (filtered trades)', source: 'Consolidation (all paper modes)', range: range },
+    'consolidation_' + new Date().toISOString().slice(0, 10) + '_AI');
 }
 
 let _cumChart = null;
