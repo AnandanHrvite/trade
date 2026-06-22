@@ -215,6 +215,7 @@ async function simulateBuy(side, sigSnapshot) {
     optionEntryLtp,
     entryTime:      istNow(),
     entryTimeMs:    Date.now(),
+    entryBarTime:   Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     orh:            sigSnapshot.orh,
     orl:            sigSnapshot.orl,
     rangePts:       sigSnapshot.rangePts,
@@ -299,6 +300,8 @@ function simulateSell(reason) {
     bestOptionLtp:  pos.peakPremium  || null,   // peak option premium during trade — observer-only
     entryTime:      pos.entryTime,
     exitTime:       istNow(),
+    entryBarTime:   pos.entryBarTime,
+    exitBarTime:    Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     pnl,
     pnlMode:        `option premium: entry ₹${pos.optionEntryLtp} → exit ₹${exitOptLtp}`,
     exitReason:     reason,
@@ -820,14 +823,18 @@ router.get("/status/chart-data", (req, res) => {
 
     const markers = [];
     for (const t of state.sessionTrades) {
-      // Best-effort marker — entryTime/exitTime are IST strings; we don't have entryBarTime
-      // captured on the trade, so we approximate using the closest candle by spot price.
+      // Place markers on the candle at the trade's actual time (entryBarTime/exitBarTime
+      // are the 5-min bucket epochs captured at fill). Fall back to nearest-by-price only
+      // for legacy trades recorded before those fields existed — price-matching alone
+      // drifts to wherever spot first revisited that level, not when the trade happened.
       if (t.spotAtEntry != null) {
-        const c = candles.find(c => Math.abs(c.close - t.spotAtEntry) < 1) || candles[0];
+        const c = (t.entryBarTime != null && candles.find(c => c.time === t.entryBarTime))
+          || candles.find(c => Math.abs(c.close - t.spotAtEntry) < 1) || candles[0];
         if (c) markers.push({ time: c.time, position: 'belowBar', color: '#3b82f6', shape: 'arrowUp', text: (t.side || '') + ' @ ' + t.spotAtEntry });
       }
       if (t.spotAtExit != null) {
-        const c = candles.find(c => Math.abs(c.close - t.spotAtExit) < 1) || candles[candles.length - 1];
+        const c = (t.exitBarTime != null && candles.find(c => c.time === t.exitBarTime))
+          || candles.find(c => Math.abs(c.close - t.spotAtExit) < 1) || candles[candles.length - 1];
         if (c) markers.push({ time: c.time, position: 'aboveBar', color: t.pnl >= 0 ? '#10b981' : '#ef4444', shape: 'arrowDown', text: 'Exit ' + (t.pnl >= 0 ? '+' : '') + Math.round(t.pnl || 0) });
       }
     }
@@ -1122,6 +1129,14 @@ router.get("/status", (req, res) => {
   // Logs JSON
   const allLogs = [...state.log].reverse();
   const logsJSON = JSON.stringify(allLogs)
+    .replace(/<\/script>/gi, "<\\/script>")
+    .replace(/`/g, "\\u0060")
+    .replace(/\$/g, "\\u0024");
+
+  // Trades JSON — used to render the Session Trades table on initial load (the AJAX
+  // poll only re-renders on a count change, and only runs while the session is live;
+  // without this a stopped/reloaded session shows the count but an empty table).
+  const tradesJSON = JSON.stringify(state.sessionTrades)
     .replace(/<\/script>/gi, "<\\/script>")
     .replace(/`/g, "\\u0060")
     .replace(/\$/g, "\\u0024");
@@ -1454,6 +1469,7 @@ async function orbpManualEntry(side) {
     } catch (e) { console.warn('[orb-paper] refresh:', e.message); }
   }
 
+  renderTrades(${tradesJSON});  // paint existing trades on load (covers stopped/reloaded sessions)
   if (${state.running}) { _interval = setInterval(fetchAndUpdate, 2000); fetchAndUpdate(); }
   document.addEventListener('visibilitychange', function(){
     if (document.visibilityState === 'visible' && ${state.running}) {
