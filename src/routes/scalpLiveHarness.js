@@ -114,7 +114,10 @@ router.get("/start", async (req, res) => {
   }
 
   // Trigger scalpPaper /start — paper runs unchanged, harness intercepts its
-  // notifyEntry/Exit calls.
+  // notifyEntry/Exit calls. The confirmation-candle entry gate therefore runs
+  // here EXACTLY as in paper (this harness has no entry path of its own) — log
+  // its state so the inherited behaviour is explicit, not silent.
+  console.log(`🧪 [SCALP-LIVE-HARNESS] confirmation candle: ${(process.env.SCALP_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy candle-close)"}`);
   try {
     const startResp = await _invokePaperRoute("GET", "/start");
     if (startResp.status >= 400 && startResp.status !== 302) {

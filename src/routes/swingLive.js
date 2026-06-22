@@ -2525,7 +2525,10 @@ router.get("/status/chart-data", (req, res) => {
       }
     } catch (_) { /* ignore indicator calc errors */ }
 
-    return res.json({ candles, markers, stopLoss, entryPrice, ema9, ema20, ema50, supertrend,
+    return res.json({ candles, markers, stopLoss, entryPrice,
+      armedTrigger: tradeState._armedSignal ? tradeState._armedSignal.triggerLevel : null,
+      armedSide:    tradeState._armedSignal ? tradeState._armedSignal.side : null,
+      ema9, ema20, ema50, supertrend,
       trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
       tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
@@ -2635,6 +2638,8 @@ router.get("/status/data", (req, res) => {
         low:   tradeState.currentBar.low,
         close: tradeState.currentBar.close,
       } : null,
+      // Confirmation candle: armed signal awaiting next-candle cross (null when not armed).
+      armed: tradeState._armedSignal ? { side: tradeState._armedSignal.side, triggerLevel: tradeState._armedSignal.triggerLevel } : null,
       trades: tradeState.sessionTrades.map(t => ({
         side:    t.side           || "",
         strike:  t.optionStrike   || "",
@@ -2871,9 +2876,9 @@ router.get("/status", (req, res) => {
 
       ${pos.reason ? `<div style="padding:10px 14px;background:#071a12;border-radius:8px;font-size:0.73rem;color:#a7f3d0;line-height:1.5;">📝 ${pos.reason}</div>` : ""}
     </div>` : `
-    <div style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;padding:20px 24px;text-align:center;">
-      <div style="font-size:1.5rem;margin-bottom:8px;">📭</div>
-      <div style="font-size:0.9rem;font-weight:600;color:#4a6080;margin-bottom:14px;">FLAT — Waiting for entry signal</div>
+    <div style="background:#0d1320;border:1px solid ${tradeState._armedSignal ? '#7a5b16' : '#1a2236'};border-radius:12px;padding:20px 24px;text-align:center;">
+      <div style="font-size:1.5rem;margin-bottom:8px;">${tradeState._armedSignal ? '🎯' : '📭'}</div>
+      <div id="ajax-flat-banner" style="font-size:0.9rem;font-weight:600;color:${tradeState._armedSignal ? '#f59e0b' : '#4a6080'};margin-bottom:14px;">${tradeState._armedSignal ? `ARMED ${tradeState._armedSignal.side} — waiting for next candle to cross ${tradeState._armedSignal.triggerLevel} (${tradeState._armedSignal.side === 'CE' ? 'above' : 'below'}) to enter` : 'FLAT — Waiting for entry signal'}</div>
       <div style="display:flex;gap:10px;justify-content:center;">
         <button onclick="manualEntry('CE')" style="padding:8px 24px;background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▲ Manual CE</button>
         <button onclick="manualEntry('PE')" style="padding:8px 24px;background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.85rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;">▼ Manual PE</button>
@@ -3535,6 +3540,7 @@ async function manualEntry(side) {
 
   let slLine = null;
   let entryLine = null;
+  let armedLine = null;
   let _lastCandleCount = 0;
 
   async function fetchChart() {
@@ -3595,6 +3601,17 @@ async function manualEntry(side) {
           price: d.entryPrice, color: '#3b82f6', lineWidth: 1,
           lineStyle: LightweightCharts.LineStyle.Dotted,
           axisLabelVisible: true, title: 'Entry',
+        });
+      }
+
+      // Confirmation candle — dashed line at the armed signal candle's close
+      // (the level the next candle must cross to trigger entry)
+      if (armedLine) { candleSeries.removePriceLine(armedLine); armedLine = null; }
+      if (d.armedTrigger && !d.stopLoss) {
+        armedLine = candleSeries.createPriceLine({
+          price: d.armedTrigger, color: '#f59e0b', lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true, title: 'ARM ' + (d.armedSide || ''),
         });
       }
     } catch (e) {
@@ -3687,6 +3704,21 @@ async function manualEntry(side) {
       if (phEl) phEl.textContent = d.prevCandleHigh ? INR(d.prevCandleHigh) : '\u2014';
       const plEl = document.getElementById('ajax-lt-prev-low');
       if (plEl) plEl.textContent = d.prevCandleLow ? INR(d.prevCandleLow) : '\u2014';
+
+      // Confirmation candle — live-update the flat banner with the armed state
+      const fbEl = document.getElementById('ajax-flat-banner');
+      if (fbEl && !d.position) {
+        const fbBox = fbEl.parentElement;
+        if (d.armed) {
+          fbEl.textContent = 'ARMED ' + d.armed.side + ' — waiting for next candle to cross ' + d.armed.triggerLevel + ' (' + (d.armed.side === 'CE' ? 'above' : 'below') + ') to enter';
+          fbEl.style.color = '#f59e0b';
+          if (fbBox) fbBox.style.borderColor = '#7a5b16';
+        } else {
+          fbEl.textContent = 'FLAT — Waiting for entry signal';
+          fbEl.style.color = '#4a6080';
+          if (fbBox) fbBox.style.borderColor = '#1a2236';
+        }
+      }
 
       // ── Position section ─────────────────────────────────────────────────
       // If position state changed (flat→open or open→flat), reload page to render

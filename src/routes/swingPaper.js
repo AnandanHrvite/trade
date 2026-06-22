@@ -3484,6 +3484,8 @@ ${modalJS()}
   let slLine = null;
   // Entry price line
   let entryLine = null;
+  // Confirmation-candle armed-trigger line
+  let armedLine = null;
 
   let _lastCandleCount = 0;
 
@@ -3561,6 +3563,17 @@ ${modalJS()}
           price: d.entryPrice, color: '#3b82f6', lineWidth: 1,
           lineStyle: LightweightCharts.LineStyle.Dotted,
           axisLabelVisible: true, title: 'Entry',
+        });
+      }
+
+      // Confirmation candle — dashed line at the armed signal candle's close
+      // (the level the next candle must cross to trigger entry)
+      if (armedLine) { candleSeries.removePriceLine(armedLine); armedLine = null; }
+      if (d.armedTrigger && !d.stopLoss) {
+        armedLine = candleSeries.createPriceLine({
+          price: d.armedTrigger, color: '#f59e0b', lineWidth: 2,
+          lineStyle: LightweightCharts.LineStyle.Dashed,
+          axisLabelVisible: true, title: 'ARM ' + (d.armedSide || ''),
         });
       }
 

@@ -82,7 +82,11 @@ function requestCancel() {
 //     chartData still carries the old SAR-dot overlay — invalidate it.
 // v6: SWING chartData now carries an EMA9 overlay line (the triple-stack input);
 //     results unchanged, but invalidate so re-runs regenerate the chart with EMA9.
-const REPLAY_CACHE_VERSION = 6;
+// v7: confirmation-candle entry (SWING/SCALP). Snapshot replays of pre-feature
+//     recordings now force the toggle OFF (the key is absent from their snapshot)
+//     so they reproduce their original entries — invalidate any results cached
+//     between the feature deploy and this fix, which may have run confirmation ON.
+const REPLAY_CACHE_VERSION = 7;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -1035,12 +1039,24 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    useCurrentSettings: "what would TODAY's settings have done against
     //    these ticks?".
     if (!useCurrentSettings) {
-      restoreEnv = _applySettingsOverride(data.sessionStart.settings);
+      // Confirmation-candle reproducibility: sessions recorded BEFORE the
+      // confirmation feature existed have no *_CONFIRM_CANDLE_ENABLED key in
+      // their snapshot. The toggle defaults ON, so without this those old
+      // recordings would replay WITH confirmation and diverge from the entries
+      // they actually took. Force the toggle OFF for any confirmation key the
+      // snapshot doesn't pin, so pre-feature recordings reproduce exactly.
+      const _snapSettings = Object.assign({}, data.sessionStart.settings || {});
+      for (const _k of ["SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED"]) {
+        if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
+      }
+      restoreEnv = _applySettingsOverride(_snapSettings);
+      console.log(`📼 [replay] confirmation candle (snapshot): SWING=${process.env.SWING_CONFIRM_CANDLE_ENABLED} SCALP=${process.env.SCALP_CONFIRM_CANDLE_ENABLED}`);
     } else {
       // Simulator mode honors current settings for everything EXCEPT the option
       // expiry — that's pinned to the recorded session so an old day resolves
       // its own contract instead of today's (see _pinnedExpirySettings).
       restoreEnv = _applySettingsOverride(_pinnedExpirySettings(data.sessionStart.settings));
+      console.log(`📼 [replay] confirmation candle (current settings): SWING=${process.env.SWING_CONFIRM_CANDLE_ENABLED||'true'} SCALP=${process.env.SCALP_CONFIRM_CANDLE_ENABLED||'true'}`);
     }
 
     // 3. Install harness (monkey-patch deps) with recorded warmup so paper's
