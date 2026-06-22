@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Paper screens: trades + chart markers survive a server restart
+
+- **Fixed: pushing code (which restarts the server) wiped the running session's trades and chart markers from every Paper screen** (Swing/Scalp/PA/ORB). The Session Trades table and the entry/exit markers are drawn from the in-memory `sessionTrades`, which was only persisted to the saved `sessions[]` on **Stop**. A mid-session PM2 restart cleared it, so the screen came back empty even though the trades were safe in the per-trade JSONL day log.
+- **Each paper mode now rehydrates the current session from today's JSONL on boot** — it loads today's trades that aren't already in a saved (stopped) session, restoring `sessionTrades`, `sessionPnl`, and the win/loss counts. In-memory only: **Stop** still does the persisted `sessions[]` save, so there's no double-counting. Settings-snapshot/meta lines in the day file are skipped; only real trade records are restored.
+- **Decision/fill/exit logic untouched** — boot-time recovery only.
+
 ### Replay: snapshot mode now reproduces the OI & bid-ask spread gates
 
 - **Fixed: snapshot replay could diverge from the recorded live session** whenever the OI filter or the bid-ask spread guard was active. Both gates read live broker data — NIFTY-futures OI, and option bid/ask — that the tick recorder never captured, so during replay they **failed open** and replay took entries the live run had blocked. One such phantom entry could land on a strike the live run never traded (no recorded option ticks → `spot proxy` fill), and the fake loss could trip the daily-loss cutoff and suppress the rest of the session. Affected all four strategies (ORB most exposed, at 1 trade/day).

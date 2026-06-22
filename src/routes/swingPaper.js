@@ -35,6 +35,7 @@ const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 const { EMA, RSI } = require("technicalindicators");
 
@@ -211,6 +212,9 @@ let ptState = {
   _maxTradesLoggedCandle: null, // throttle for max-trades log (once per candle)
   _vixBlockLoggedCandle:  null, // throttle for VIX block log (once per candle)
   _entryPending:      false, // prevents double-entry on rapid ticks
+  // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
+  // { side, triggerLevel, armedBarTime, reason, stopLoss, indicators } | null.
+  _armedSignal:       null,
   _expiryDayBlocked:  false, // blocks entries on non-expiry days
   _simMode:           false, // simulation mode (fake ticks, no broker)
   _simScenario:       null,  // active scenario name
@@ -218,6 +222,39 @@ let ptState = {
   _sessionWins:   0,
   _sessionLosses: 0,
 };
+
+// ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
+// A push/PM2 restart wipes ptState.sessionTrades — it's only flushed to the persisted
+// sessions[] on Stop. The per-trade JSONL (appendTradeLog) survives, so on boot we
+// re-load today's trades that aren't already in a saved (stopped) session. This
+// restores the Session Trades table + chart markers that otherwise vanish after a
+// restart. In-memory only — it does NOT re-save into sessions[] (Stop still does that).
+function rehydrateSessionFromJsonl() {
+  try {
+    const today = tradeLogger.istDateString(Date.now());
+    // Day files interleave settings_snapshot/meta lines with trades — keep only
+    // real trade records (no `type`, carrying a trade signature).
+    const all = tradeLogger.readDailyTrades("swing", today)
+      .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+    if (!all.length) return;
+    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+    const seen = new Set();
+    for (const s of (loadPaperData().sessions || [])) {
+      for (const t of (s.trades || [])) seen.add(keyOf(t));
+    }
+    const missing = all.filter(t => !seen.has(keyOf(t)));
+    if (!missing.length) return;
+    ptState.sessionTrades = missing;
+    ptState.sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
+    ptState._sessionWins   = missing.filter(t => Number(t.pnl) > 0).length;
+    ptState._sessionLosses = missing.filter(t => Number(t.pnl) < 0).length;
+    if (!ptState.sessionStart) ptState.sessionStart = missing[0].entryTime || missing[0].loggedAt || null;
+    console.log(`♻️ [SWING-PAPER] Restart recovery — restored ${missing.length} trade(s) from today's JSONL (sessionPnl ₹${ptState.sessionPnl})`);
+  } catch (err) {
+    console.warn(`[SWING-PAPER] session rehydrate failed: ${err.message}`);
+  }
+}
+rehydrateSessionFromJsonl();
 
 // ── Simulation clock ────────────────────────────────────────────────────────
 let _simClockMs = 0;
@@ -990,6 +1027,27 @@ async function onCandleClose(candle) {
   // Cache stable SAR SL for every intra-candle tick — avoids recomputing strategy on every tick
   _cachedClosedCandleSL = stopLoss ?? null;
 
+  // ── Confirmation candle (cross & close) — arm the signal here; entry fires
+  //    intra-bar on the NEXT candle once price crosses this candle's close (onTick).
+  //    Runs BEFORE the first await so the arm is set in time for the same tick's
+  //    intra-candle entry check (sim mode hits no await at all). ──
+  if (confirmCandle.enabled("SWING")) {
+    // Expire an armed signal whose confirmation window (the next candle) has passed.
+    if (ptState._armedSignal && ptState._armedSignal.armedBarTime !== candle.time) {
+      ptState._armedSignal = null;
+    }
+    if (!ptState.position && (signal === "BUY_CE" || signal === "BUY_PE")) {
+      const _armSide = signal === "BUY_CE" ? "CE" : "PE";
+      ptState._armedSignal = {
+        side:         _armSide,
+        triggerLevel: candle.close,
+        armedBarTime: candle.time,
+        reason, stopLoss, indicators,
+      };
+      log(`🎯 [PAPER] Signal candle closed — ARMED ${_armSide}; next candle must cross ${candle.close} to enter | ${reason}`);
+    }
+  }
+
   // ── Pre-fetch option symbols in background so entry is instant on next tick ──
   // Skip in simulation mode (no broker API)
   if (!ptState.position && !ptState._simMode) prefetchOptionSymbols(candle.close).catch(() => {});
@@ -1189,7 +1247,9 @@ async function onCandleClose(candle) {
   // For 5-min resolution: fires only if intra-tick entry didn't already fire.
   // isMarketHours() guard: prevents entries on 5-min candles closing between TRADE_STOP_TIME-10
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
-  if (!ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  // Skipped entirely when confirmation candle is ON — entry then waits for the
+  // next-candle intra-bar cross (handled in onTick), never on this candle's close.
+  if (!confirmCandle.enabled("SWING") && !ptState.position && !ptState._entryPending && !ptState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Candle-close entry — fallback when an intra-candle tick didn't already enter.
     log(`📋 [PAPER] Signal — candle-close entry @ ₹${candle.close} | ${reason}`);
     let _oiTag = ""; // appended to the entry reason so the trade records its OI context
@@ -1450,9 +1510,26 @@ function onTick(tick) {
     // This avoids the expensive [...candles, bar] spread AND the duplicate getSignal call.
     // SAR stopLoss: use strategy's LIVE value (includes SAR flips), fallback to cached closed-candle SL.
     ptState.candles.push(bar);
-    const { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(ptState.candles, { silent: true });
+    let { signal, reason, signalStrength, stopLoss: strategySL, ...indicators } = strategy.getSignal(ptState.candles, { silent: true });
     ptState.candles.pop();
-    const stopLoss = strategySL || _cachedClosedCandleSL;
+    let stopLoss = strategySL || _cachedClosedCandleSL;
+    // ── Confirmation candle (cross & close): when ON, ignore the live forming-bar
+    //    signal and instead enter only when this (the candle AFTER a signal candle)
+    //    crosses the armed signal candle's close. Carries the signal candle's
+    //    reason/SL/indicators into the trade record. ──
+    if (confirmCandle.enabled("SWING")) {
+      const _a = ptState._armedSignal;
+      if (_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES)
+            && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
+        signal     = _a.side === "CE" ? "BUY_CE" : "BUY_PE";
+        reason     = `${_a.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
+        stopLoss   = _a.stopLoss != null ? _a.stopLoss : stopLoss;
+        indicators = _a.indicators || indicators;
+        ptState._armedSignal = null; // consume — prevents double-fire while symbol lookup runs
+      } else {
+        signal = "NONE";
+      }
+    }
     // ── Intra-candle entry: enter whenever a BUY signal is live (every tick while flat) ──
     if (signal === "BUY_CE" || signal === "BUY_PE") {
       // ── VIX filter: use cached VIX (updated at candle close) to avoid async in tick handler ──
@@ -1884,6 +1961,7 @@ router.get("/start", async (req, res) => {
   ptState.log           = [];
   ptState.tickCount     = 0;
   ptState._entryPending = false;
+  ptState._armedSignal  = null;
   ptState.lastTickTime  = null;
   ptState.lastTickPrice  = null;
   ptState.prevCandleHigh = null;
@@ -4347,6 +4425,7 @@ router.post("/simulate/start", async (req, res) => {
     ptState.log           = [];
     ptState.tickCount     = 0;
     ptState._entryPending = false;
+    ptState._armedSignal  = null;
     ptState.lastTickTime  = null;
     ptState.lastTickPrice = null;
     ptState.prevCandleHigh = null;

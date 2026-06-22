@@ -40,6 +40,7 @@ const { getCharges } = require("../utils/charges");
 const tradeGuards = require("../utils/tradeGuards");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
+const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -137,9 +138,46 @@ let state = {
   _consecSLsBySide:    { CE: 0, PE: 0 },
   _lastSLSpotBySide:   { CE: 0, PE: 0 },
   _dailyLossHit:  false,
+  // Confirmation candle (cross & close): armed signal awaiting next-candle cross.
+  // { side, triggerLevel, armedBarTime, result } | null.
+  _armedSignal:   null,
+  _entryInFlight: false, // true while a confirmation entry is resolving (prevents double-fire)
   _simMode:       false,
   _simScenario:   null,
 };
+
+// ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
+// A push/PM2 restart wipes state.sessionTrades — it's only flushed to the persisted
+// sessions[] on Stop. The per-trade JSONL (appendTradeLog) survives, so on boot we
+// re-load today's trades that aren't already in a saved (stopped) session. This
+// restores the Session Trades table + chart markers that otherwise vanish after a
+// restart. In-memory only — it does NOT re-save into sessions[] (Stop still does that).
+function rehydrateSessionFromJsonl() {
+  try {
+    const today = tradeLogger.istDateString(Date.now());
+    // Day files interleave settings_snapshot/meta lines with trades — keep only
+    // real trade records (no `type`, carrying a trade signature).
+    const all = tradeLogger.readDailyTrades("scalp", today)
+      .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+    if (!all.length) return;
+    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+    const seen = new Set();
+    for (const s of (loadScalpData().sessions || [])) {
+      for (const t of (s.trades || [])) seen.add(keyOf(t));
+    }
+    const missing = all.filter(t => !seen.has(keyOf(t)));
+    if (!missing.length) return;
+    state.sessionTrades = missing;
+    state.sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
+    state._wins   = missing.filter(t => Number(t.pnl) > 0).length;
+    state._losses = missing.filter(t => Number(t.pnl) < 0).length;
+    if (!state.sessionStart) state.sessionStart = missing[0].entryTime || missing[0].loggedAt || null;
+    console.log(`♻️ [SCALP-PAPER] Restart recovery — restored ${missing.length} trade(s) from today's JSONL (sessionPnl ₹${state.sessionPnl})`);
+  } catch (err) {
+    console.warn(`[SCALP-PAPER] session rehydrate failed: ${err.message}`);
+  }
+}
+rehydrateSessionFromJsonl();
 
 // ── Simulation mode time override ───────────────────────────────────────────
 // In sim mode, simulated clock advances with each tick so market-hour checks pass
@@ -703,12 +741,35 @@ function onTick(tick) {
       }
     }
   }
+
+  // ── Confirmation candle (cross & close): intra-bar entry ───────────────────
+  // While flat, if a prior candle armed a signal, enter the instant THIS (the
+  // immediately-next) candle crosses that signal candle's close. All entry gates
+  // were already cleared at arm time (onCandleClose), so no re-check here.
+  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")) {
+    const _a = state._armedSignal;
+    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, SCALP_RES)
+        && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
+        && (state._simMode || isMarketHours())) {
+      state._armedSignal   = null; // consume
+      state._entryInFlight = true;
+      const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}` });
+      log(`⚡ [SCALP-PAPER] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+      Promise.resolve(resolveAndEnter(_a.side, price, _r))
+        .catch(e => log(`⚠️ [SCALP-PAPER] confirm entry failed: ${e.message}`))
+        .finally(() => { state._entryInFlight = false; });
+    }
+  }
 }
 
 // ── onCandleClose — evaluate signal on 3-min bar close ──────────────────────
 
 async function onCandleClose(bar) {
   if (!state.running) return;
+
+  // Confirmation candle (cross & close): expire an armed signal once its
+  // confirmation window (the candle that just closed) has passed without a cross.
+  if (state._armedSignal && state._armedSignal.armedBarTime !== bar.time) state._armedSignal = null;
 
   // Sample futures OI each candle close (no-op unless an OI filter is enabled; live only)
   // so the buildup series stays filled even on no-signal / in-position candles.
@@ -836,6 +897,15 @@ async function onCandleClose(bar) {
 
   const side = _signalSide;
   const spot = bar.close;
+
+  // ── Confirmation candle (cross & close): arm here (all entry gates already
+  //    passed above); entry fires intra-bar on the NEXT candle once price crosses
+  //    this candle's close (see onTick). OFF = enter at this candle's close now. ──
+  if (confirmCandle.enabled("SCALP")) {
+    state._armedSignal = { side, triggerLevel: bar.close, armedBarTime: bar.time, result };
+    log(`🎯 [SCALP-PAPER] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
+    return;
+  }
 
   // Resolve option symbol
   resolveAndEnter(side, spot, result);
@@ -1044,6 +1114,7 @@ router.get("/start", async (req, res) => {
     _slPauseUntilBySide: { CE: 0, PE: 0 }, _consecSLsBySide: { CE: 0, PE: 0 },
     _lastSLSpotBySide: { CE: 0, PE: 0 },
     _dailyLossHit: false, _expiryDayBlocked: _expiryBlocked,
+    _armedSignal: null, _entryInFlight: false,
   };
 
   sharedSocketState.setScalpActive("SCALP_PAPER");
@@ -3021,6 +3092,7 @@ router.post("/simulate/start", async (req, res) => {
       sessionPnl: 0, _wins: 0, _losses: 0, tickCount: 0, lastTickTime: null, lastTickPrice: null,
       optionLtp: null, optionSymbol: null, _slPauseUntil: null, _dailyLossHit: false,
       _expiryDayBlocked: false,
+      _armedSignal: null, _entryInFlight: false,
       _simMode: true, _simScenario: label,
     };
     // 09:15 IST = 03:45 UTC on the same IST date

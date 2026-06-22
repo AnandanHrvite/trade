@@ -119,6 +119,38 @@ function istNow() {
   return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 }
 
+// ── Crash/restart recovery: rehydrate the in-memory session from today's JSONL ──
+// A push/PM2 restart wipes state.sessionTrades — it's only flushed to the persisted
+// sessions[] on Stop. The per-trade JSONL (appendTradeLog) survives, so on boot we
+// re-load today's trades that aren't already in a saved (stopped) session. This
+// restores the Session Trades table + chart markers that otherwise vanish after a
+// restart. In-memory only — it does NOT re-save into sessions[] (Stop still does that).
+function rehydrateSessionFromJsonl() {
+  try {
+    const today = tradeLogger.istDateString(Date.now());
+    // Day files interleave settings_snapshot/meta lines with trades — keep only
+    // real trade records (no `type`, carrying a trade signature).
+    const all = tradeLogger.readDailyTrades("orb", today)
+      .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
+    if (!all.length) return;
+    const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
+    const seen = new Set();
+    for (const s of (loadData().sessions || [])) {
+      for (const t of (s.trades || [])) seen.add(keyOf(t));
+    }
+    const missing = all.filter(t => !seen.has(keyOf(t)));
+    if (!missing.length) return;
+    state.sessionTrades = missing;
+    state.tradesTaken   = missing.length;
+    state.sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
+    if (!state.sessionStart) state.sessionStart = missing[0].entryTime || missing[0].loggedAt || null;
+    console.log(`♻️ [ORB-PAPER] Restart recovery — restored ${missing.length} trade(s) from today's JSONL (sessionPnl ₹${state.sessionPnl})`);
+  } catch (err) {
+    console.warn(`[ORB-PAPER] session rehydrate failed: ${err.message}`);
+  }
+}
+rehydrateSessionFromJsonl();
+
 // ── Option LTP polling ──────────────────────────────────────────────────────
 
 let _optionPollTimer = null;
