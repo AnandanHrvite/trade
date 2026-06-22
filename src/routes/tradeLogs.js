@@ -37,6 +37,13 @@ function sendAiMarkdown(res, records, baseName, meta) {
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
   res.send(md);
 }
+// Same, for skip (rejected-signal) logs — counts by gate, no P&L.
+function sendAiSkipMarkdown(res, records, baseName, meta) {
+  const md = aiExport.buildSkipMarkdown(records, meta);
+  res.setHeader("Content-Disposition", `attachment; filename="${baseName}.md"`);
+  res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+  res.send(md);
+}
 
 const MODES = ["swing", "scalp", "pa", "orb"];
 
@@ -367,6 +374,11 @@ router.get("/skips/download", (req, res) => {
   if (!validDate(date)) return res.status(400).send("bad date");
   const fp = skipLogger.filePathFor(mode, date);
   if (!fs.existsSync(fp)) return res.status(404).send("file not found");
+  if (wantsAi(req)) {
+    return sendAiSkipMarkdown(res, skipLogger.readDailySkips(mode, date),
+      `${mode}_paper_skips_${date}_AI`,
+      { title: `${mode.toUpperCase()} skips`, source: `Trade Logs · skips · ${mode} · ${date}`, range: date });
+  }
   const filename = `${mode}_paper_skips_${date}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -383,6 +395,13 @@ router.get("/skips/download-all", (req, res) => {
   if (!dates.length) return res.status(404).send("no files for this mode");
   dates.sort((a, b) => a.date.localeCompare(b.date));
   const today = skipLogger.istDateString();
+  if (wantsAi(req)) {
+    const records = [];
+    for (const d of dates) records.push(...skipLogger.readDailySkips(mode, d.date));
+    return sendAiSkipMarkdown(res, records, `${mode}_paper_skips_ALL_${today}_AI`,
+      { title: `${mode.toUpperCase()} skips (all history)`, source: `Trade Logs · skips · ${mode} · all days`,
+        range: dates.length ? `${dates[0].date} → ${dates[dates.length - 1].date}` : "" });
+  }
   const filename = `${mode}_paper_skips_ALL_${today}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -410,6 +429,14 @@ router.get("/skips/download-everything", (req, res) => {
   }
   if (!files.length) return res.status(404).send("no skip logs found");
   const today = skipLogger.istDateString();
+  if (wantsAi(req)) {
+    const records = [];
+    for (const f of files) records.push(...skipLogger.readDailySkips(f.mode, f.date));
+    const dts = files.map(f => f.date).sort();
+    return sendAiSkipMarkdown(res, records, `all_strategies_paper_skips_ALL_${today}_AI`,
+      { title: "All strategies — skips", source: "Trade Logs · skips · Download Everything",
+        range: dts.length ? `${dts[0]} → ${dts[dts.length - 1]}` : "" });
+  }
   const filename = `all_strategies_paper_skips_ALL_${today}.txt`;
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -693,6 +720,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="files-toolbar">
       <a class="btn btn-download btn-download-all" href="/trade-logs/skips/download-everything"
          title="Download every strategy's daily skip logs as one combined file (grouped by mode, oldest first). Each line carries its own mode field.">⬇ Download Everything (all strategies)</a>
+      <a class="btn btn-download btn-download-all" href="/trade-logs/skips/download-everything?format=ai"
+         title="Same skips as an AI-friendly Markdown report: per-gate counts, a field legend, then the rejections grouped by strategy. Paste into an AI to see why trades were blocked.">🤖 AI format</a>
     </div>
     <div id="skipsArea">Click the tab to load…</div>
   </div>
@@ -1109,12 +1138,14 @@ ${buildSidebar('tradeLogs', liveActive)}
             '<td><div class="actions">' +
               '<button class="btn btn-view"     onclick="viewSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">👁 View</button>' +
               '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'">⬇ Download</a>' +
+              '<a       class="btn btn-download" href="/trade-logs/skips/download?mode='+m.key+'&date='+encodeURIComponent(r.date)+'&format=ai" title="AI-friendly Markdown report">🤖 AI</a>' +
               '<button class="btn btn-delete"   onclick="delSkipFile(\\''+m.key+'\\',\\''+r.date+'\\')">🗑 Delete</button>' +
             '</div></td>' +
           '</tr>';
         }).join('') + '</tbody></table>';
     var dlAll = total > 0
-      ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily skip files concatenated, oldest first">⬇ Download All (' + total + ')</a>'
+      ? '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '" title="Download all ' + total + ' daily skip files concatenated, oldest first">⬇ Download All (' + total + ')</a>' +
+        '<a class="btn btn-download" href="/trade-logs/skips/download-all?mode=' + m.key + '&format=ai" title="All ' + total + ' skip files as one AI-friendly Markdown report">🤖 AI All</a>'
       : '';
     var delAll = total > 0
       ? '<button class="btn btn-delete" onclick="delAllSkips(\\''+m.key+'\\','+total+')" title="Delete every daily skip file for this mode">🗑 Delete All (' + total + ')</button>'

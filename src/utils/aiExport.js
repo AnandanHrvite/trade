@@ -263,9 +263,115 @@ function jsonlToMarkdown(text, meta = {}) {
   return buildMarkdown(parseJsonl(text), meta);
 }
 
+// ── Skip logs ───────────────────────────────────────────────────────────────
+// Skips are rejected signals (a gate blocked entry), so they carry no P&L. The
+// useful summary is "how many, broken down by which gate" — not win/loss.
+
+const SKIP_LEGEND = {
+  mode: "Strategy that produced the rejected signal (swing / scalp / pa / orb).",
+  gate: "Which gate blocked entry (e.g. vix, spread, strategy, oi).",
+  reason: "Plain-English reason the signal was rejected.",
+  side: "Intended direction — CE (call) / PE (put).",
+  ts: "When the signal was rejected (UTC ISO).",
+  istDate: "Rejection date, IST.",
+  spot: "NIFTY spot at the moment of rejection.",
+  rsi: "RSI value at rejection.",
+  adx: "ADX value at rejection.",
+  audit: "Extra gate detail / supporting numbers.",
+};
+const SKIP_ORDER = ["istDate", "ts", "side", "gate", "reason", "spot", "rsi", "adx", "audit"];
+const SKIP_DENY = new Set(["mode", "type"]);
+
+// "vix (12), spread (5), strategy (3)" — counts per gate, busiest first.
+function gateBreakdown(skips) {
+  const counts = new Map();
+  for (const s of skips) {
+    const g = String(s.gate || "—");
+    counts.set(g, (counts.get(g) || 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([g, n]) => `${g} (${n})`)
+    .join(", ") || "—";
+}
+
+/**
+ * Build a Markdown report for skip (rejected-signal) logs.
+ * @param {object[]} records parsed skip JSONL objects (any mode)
+ * @param {object}   meta    { title, source, range }
+ */
+function buildSkipMarkdown(records, meta = {}) {
+  const skips = (records || []).filter(r => r && typeof r === "object" && r.type !== "settings_snapshot");
+  const title = meta.title || "Skip log";
+
+  const byMode = new Map();
+  for (const s of skips) {
+    const m = modeOf(s);
+    if (!byMode.has(m)) byMode.set(m, []);
+    byMode.get(m).push(s);
+  }
+  const modes = Array.from(byMode.keys()).sort();
+
+  const out = [];
+  out.push(`# ${title} — AI-friendly export`);
+  const m1 = [];
+  if (meta.source) m1.push(`Source: ${meta.source}`);
+  if (meta.range) m1.push(`Range: ${meta.range}`);
+  m1.push(`${skips.length} skip${skips.length === 1 ? "" : "s"}`);
+  if (modes.length) m1.push(`modes: ${modes.join(", ")}`);
+  out.push(`> ${m1.join(" · ")}`);
+  out.push(`>`);
+  out.push(`> Skips are signals a gate blocked, so they never became trades. Structured for AI analysis: per-gate counts, a field legend, then the rejections — use it to see *why* trades didn't happen. Only strategy/VIX/spread/OI gates are logged (operational gates like cooldown and market-hours are not).`);
+  out.push("");
+
+  if (!skips.length) {
+    out.push("_No skips in this export._");
+    return out.join("\n") + "\n";
+  }
+
+  out.push("## Summary");
+  out.push("| Mode | Skips | By gate |");
+  out.push("| --- | ---: | --- |");
+  for (const m of modes) out.push(`| ${m} | ${byMode.get(m).length} | ${gateBreakdown(byMode.get(m))} |`);
+  if (modes.length > 1) out.push(`| **TOTAL** | ${skips.length} | ${gateBreakdown(skips)} |`);
+  out.push("");
+
+  const present = new Set();
+  for (const s of skips) for (const k of Object.keys(s)) present.add(k);
+  out.push("## Field legend");
+  for (const k of Object.keys(SKIP_LEGEND)) if (present.has(k)) out.push(`- \`${k}\` — ${SKIP_LEGEND[k]}`);
+  const unknown = Array.from(present).filter(k => !SKIP_LEGEND[k] && !SKIP_DENY.has(k)).sort();
+  if (unknown.length) out.push(`- _Other fields (strategy-specific):_ ${unknown.map(k => "`" + k + "`").join(", ")}`);
+  out.push("");
+
+  out.push("## Skips");
+  for (const m of modes) {
+    const list = byMode.get(m);
+    const keys = new Set();
+    for (const s of list) for (const k of Object.keys(s)) if (!SKIP_DENY.has(k)) keys.add(k);
+    const cols = SKIP_ORDER.filter(c => keys.has(c));
+    for (const k of keys) if (!cols.includes(k)) cols.push(k);
+    out.push(`### ${m} — ${list.length} skip${list.length === 1 ? "" : "s"}`);
+    if (!cols.length) { out.push("_(no fields)_"); continue; }
+    out.push("| " + cols.join(" | ") + " |");
+    out.push("| " + cols.map(() => "---").join(" | ") + " |");
+    for (const s of list) out.push("| " + cols.map(c => cell(s[c])).join(" | ") + " |");
+    out.push("");
+  }
+
+  return out.join("\n") + "\n";
+}
+
+/** Convenience: skip JSONL text → Markdown. */
+function jsonlToSkipMarkdown(text, meta = {}) {
+  return buildSkipMarkdown(parseJsonl(text), meta);
+}
+
 module.exports = {
   buildMarkdown,
   jsonlToMarkdown,
+  buildSkipMarkdown,
+  jsonlToSkipMarkdown,
   parseJsonl,
   splitRecords,
   FIELD_LEGEND,
