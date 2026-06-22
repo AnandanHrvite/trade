@@ -37,6 +37,7 @@ const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter    = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
 const fyers       = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport } = require("../utils/notify");
@@ -843,9 +844,16 @@ router.post("/manualEntry", async (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 // ── /status/chart-data — feeds Lightweight Charts live NIFTY view ────────────
-router.get("/status/chart-data", (req, res) => {
+router.get("/status/chart-data", async (req, res) => {
   try {
-    const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    // After a restart we restore the Session Trades but not the live candle series.
+    // When stopped with restored trades and no live candles, backfill the spot
+    // candles for the trades' day so the chart draws them with their markers.
+    let srcCandles = state.candles;
+    if (!state.running && srcCandles.length === 0 && (state.sessionTrades || []).length > 0) {
+      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, RES_MIN, state.sessionTrades);
+    }
+    const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     if (state.currentBar) {
       candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
     }
@@ -853,7 +861,7 @@ router.get("/status/chart-data", (req, res) => {
     // Opening Range box overlay — emit two horizontal lines at ORH and ORL
     let orhLine = [], orlLine = [];
     try {
-      const or = orbStrategy.computeOpeningRange(state.candles);
+      const or = orbStrategy.computeOpeningRange(srcCandles);
       if (or && candles.length) {
         const fromTime = candles[0].time;
         const toTime = candles[candles.length - 1].time;

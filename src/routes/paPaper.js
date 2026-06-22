@@ -32,6 +32,7 @@ const vixFilter = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const chartBackfill = require("../utils/chartBackfill");
 const aiExport = require("../utils/aiExport");
 const fyers = require("../config/fyers");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
@@ -1152,9 +1153,16 @@ router.post("/manualEntry", async (req, res) => {
 });
 
 // ── Chart data for Lightweight Charts widget ────────────────────────────────
-router.get("/status/chart-data", (req, res) => {
+router.get("/status/chart-data", async (req, res) => {
   try {
-    const candles = state.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+    // After a restart we restore the Session Trades but not the live candle series.
+    // When stopped with restored trades and no live candles, backfill the spot
+    // candles for the trades' day so the chart draws them with their markers.
+    let srcCandles = state.candles;
+    if (!state.running && srcCandles.length === 0 && (state.sessionTrades || []).length > 0) {
+      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, PA_RES, state.sessionTrades);
+    }
+    const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     // Only include the partial currentBar during market hours — pre-market quotes
     // are sparse/stale and produce a junk spike on the chart.
     if (state.currentBar && (state._simMode || isMarketHours())) {
@@ -1205,8 +1213,8 @@ router.get("/status/chart-data", (req, res) => {
       patternLevel = state.position.patternLevel || null;
     } else {
       try {
-        if (state.candles.length >= 30) {
-          const psig = paStrategy.getSignal([...state.candles], { silent: true, preview: true });
+        if (srcCandles.length >= 30) {
+          const psig = paStrategy.getSignal([...srcCandles], { silent: true, preview: true });
           if (psig) { addPivots(psig.patternPoints); if (psig.patternLevel) patternLevel = psig.patternLevel; }
         }
       } catch (_) { /* preview is best-effort */ }

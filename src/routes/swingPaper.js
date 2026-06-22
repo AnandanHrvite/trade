@@ -29,6 +29,7 @@ const { dailyFilesPaginate, renderHistoryPage } = require("../utils/paperHistory
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter = require("../services/vixFilter");
 const tradeLogger = require("../utils/tradeLogger");
+const chartBackfill = require("../utils/chartBackfill");
 const aiExport    = require("../utils/aiExport");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
 const oiFilter = require("../services/oiFilter");
@@ -2440,10 +2441,17 @@ function _getCachedTradesForPoll() {
  * Returns candle history + trade markers for the lightweight-charts widget.
  * Called every 4 s by the chart polling loop on the status page.
  */
-router.get("/status/chart-data", (req, res) => {
+router.get("/status/chart-data", async (req, res) => {
   try {
+    // After a restart we restore the Session Trades but not the live candle series.
+    // When stopped with restored trades and no live candles, backfill the spot
+    // candles for the trades' day so the chart draws them with their markers.
+    let srcCandles = ptState.candles;
+    if (!ptState.running && srcCandles.length === 0 && (ptState.sessionTrades || []).length > 0) {
+      srcCandles = await chartBackfill.candlesForRestoredTrades("NSE:NIFTY50-INDEX", TRADE_RES, ptState.sessionTrades);
+    }
     // Closed candles + the currently forming bar
-    const candles = ptState.candles.map(c => ({
+    const candles = srcCandles.map(c => ({
       time: c.time,
       open: c.open,
       high: c.high,
