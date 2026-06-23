@@ -10,7 +10,10 @@
  *   2. CONFIRMATION   — during the IMMEDIATELY-NEXT candle, price must CROSS the
  *      signal candle's close (CE: strictly above, PE: strictly below). The trade
  *      enters intra-bar at the crossing price (not at candle close).
- *   3. If the next candle never crosses, the armed signal expires. If that next
+ *      SCALP only: with SCALP_CONFIRM_OUTSIDE_BAND on (default), confirmation is
+ *      instead evaluated at that candle's CLOSE — it must close beyond the signal
+ *      close AND outside the band, and entry fires at the close (see outsideBandEnabled).
+ *   3. If the next candle never confirms, the armed signal expires. If that next
  *      candle is itself a fresh signal candle, it re-arms (rolling) for the candle
  *      after it.
  *
@@ -41,6 +44,27 @@ function isNextBar(barTimeSec, armedBarTimeSec, resMinutes) {
   return barTimeSec === armedBarTimeSec + resMinutes * 60;
 }
 
+// ── "Confirmation must close outside the band" guard (SCALP only) ──────────
+// Toggle: when ON, the confirmation is evaluated at the NEXT candle's CLOSE — that
+// candle must CLOSE beyond the signal candle's close (the cross) AND close outside
+// the band — instead of entering intra-bar on the first poke past the trigger. An
+// intra-bar poke can close back inside the band (a failed breakout), leaving the
+// entry candle visibly inside the band; requiring a close beyond the band makes
+// every entry candle genuinely outside it. Default ON. Per-strategy prefix (only
+// SCALP has Bollinger Bands; Swing never calls this).
+function outsideBandEnabled(prefix) {
+  return (process.env[prefix + "_CONFIRM_OUTSIDE_BAND"] || "true").toLowerCase() === "true";
+}
+
+// Is `price` (the confirmation candle's close) beyond the band in the signal
+// direction? Each engine passes the band at the confirmation candle's close so the
+// comparison stays identical across surfaces. Returns false if the band edge is missing.
+function beyondBand(side, price, bbUpper, bbLower) {
+  var ce = side === "CE" || side === "BUY_CE";
+  if (ce) return bbUpper != null && price > bbUpper;
+  return bbLower != null && price < bbLower;
+}
+
 // Backtest candle-granularity proxy for the intra-bar cross. Returns the spot the
 // fill would happen at, or null if the bar's range never crossed the trigger.
 //   CE: crossed if high > trigger; fill at open if the bar gapped through, else trigger.
@@ -55,4 +79,4 @@ function barCrossFill(side, candle, triggerLevel) {
   return null;
 }
 
-module.exports = { enabled, crossed, isNextBar, barCrossFill };
+module.exports = { enabled, crossed, isNextBar, barCrossFill, outsideBandEnabled, beyondBand };

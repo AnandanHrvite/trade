@@ -381,15 +381,33 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 
     const _confirmScalp = confirmCandle.enabled("SCALP");
 
-    // ── Confirmation candle (cross & close): fill an armed signal when THIS
-    //    (immediately-next) candle crosses the signal candle's close. Candle-
-    //    granularity proxy for the live intra-bar cross; valid for one candle. ──
+    // ── Confirmation candle: fill an armed signal on THIS (immediately-next)
+    //    candle. With SCALP_CONFIRM_OUTSIDE_BAND on (default) it must CLOSE beyond
+    //    the signal close AND outside the band (entry at the close); off = legacy
+    //    intra-bar cross proxy (barCrossFill). Valid for exactly one candle. ──
     if (_confirmScalp && _armed) {
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
       if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, SCALP_RES)
           && candle.time >= _slPauseUntilBySide[_a.side]) {
-        const _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
+        // Two confirmation modes (must match paper):
+        //  • OUTSIDE_BAND ON  → confirm at this candle's CLOSE: it must have closed
+        //    beyond the signal close AND outside the band; entry at the close.
+        //  • OUTSIDE_BAND OFF → legacy intra-bar cross proxy (barCrossFill); entry
+        //    at the cross fill.
+        let _fill = null, _confTag = null;
+        if (confirmCandle.outsideBandEnabled("SCALP")) {
+          if (confirmCandle.crossed(_a.side, candle.close, _a.triggerLevel)) {
+            const _bb = scalpStrategy.bbLevels(window); // window ends at THIS candle
+            if (_bb && confirmCandle.beyondBand(_a.side, candle.close, _bb.upper, _bb.lower)) {
+              _fill = candle.close;
+              _confTag = `CONFIRM ${_a.side} close ${candle.close} beyond band`;
+            }
+          }
+        } else {
+          _fill = confirmCandle.barCrossFill(_a.side, candle, _a.triggerLevel);
+          if (_fill != null) _confTag = `CONFIRM ${_a.side} x-over @${_a.triggerLevel}`;
+        }
         if (_fill != null) {
           const side = _a.side;
           const entryPrice = parseFloat((_fill + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
@@ -404,7 +422,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
             stopLoss:        sl,
             initialStopLoss: sl,
             slSource:        _a.result.slSource || "PSAR",
-            entryReason:     `${_a.result.reason || side + " signal"} | CONFIRM ${side} x-over @${_a.triggerLevel}`,
+            entryReason:     `${_a.result.reason || side + " signal"} | ${_confTag}`,
             target:          null,
             candlesHeld:     0,
             peakPnl:         0,
@@ -413,7 +431,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
           continue;
         }
       }
-      // not the next candle, or never crossed → armed signal expired (consumed above)
+      // not the next candle, or never crossed/closed-outside → armed signal expired (consumed above)
     }
 
     const result = scalpStrategy.getSignal(window, {

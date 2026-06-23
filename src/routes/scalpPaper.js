@@ -763,7 +763,12 @@ function onTick(tick) {
   // While flat, if a prior candle armed a signal, enter the instant THIS (the
   // immediately-next) candle crosses that signal candle's close. All entry gates
   // were already cleared at arm time (onCandleClose), so no re-check here.
-  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")) {
+  // When SCALP_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
+  // candle's CLOSE (in onCandleClose), not intra-bar — so this per-tick path is
+  // skipped. A candle that merely pokes past the trigger then closes back inside
+  // the band would otherwise fire an entry whose candle sits inside the band.
+  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")
+      && !confirmCandle.outsideBandEnabled("SCALP")) {
     const _a = state._armedSignal;
     if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, SCALP_RES)
         && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
@@ -783,6 +788,29 @@ function onTick(tick) {
 
 async function onCandleClose(bar) {
   if (!state.running) return;
+
+  // ── Confirmation candle with band guard (SCALP_CONFIRM_OUTSIDE_BAND) ─────────
+  // When ON, confirmation fires at THIS candle's CLOSE (not intra-bar): the just-
+  // closed bar must have CLOSED beyond the signal candle's close (the cross) AND
+  // closed outside the band — so the entry candle is genuinely outside the band,
+  // never an intra-bar poke that closes back inside. Entry is at this candle's close.
+  // Must run before the expiry line below (which clears the cross-day-old arm).
+  if (!state.position && state._armedSignal && confirmCandle.enabled("SCALP")
+      && confirmCandle.outsideBandEnabled("SCALP") && (state._simMode || isMarketHours())) {
+    const _a = state._armedSignal;
+    if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, SCALP_RES)
+        && confirmCandle.crossed(_a.side, bar.close, _a.triggerLevel)) {
+      const _bb = scalpStrategy.bbLevels(state.candles);
+      if (_bb && confirmCandle.beyondBand(_a.side, bar.close, _bb.upper, _bb.lower)) {
+        state._armedSignal = null; // consume
+        const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close} beyond band` });
+        log(`⚡ [SCALP-PAPER] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+        await resolveAndEnter(_a.side, bar.close, _r);
+        return;
+      }
+    }
+    // crossed-but-closed-inside, or no cross → fall through to expiry + re-evaluation
+  }
 
   // Confirmation candle (cross & close): expire an armed signal once its
   // confirmation window (the candle that just closed) has passed without a cross.
@@ -916,8 +944,10 @@ async function onCandleClose(bar) {
   const spot = bar.close;
 
   // ── Confirmation candle (cross & close): arm here (all entry gates already
-  //    passed above); entry fires intra-bar on the NEXT candle once price crosses
-  //    this candle's close (see onTick). OFF = enter at this candle's close now. ──
+  //    passed above). The NEXT candle confirms: with OUTSIDE_BAND on, it must CLOSE
+  //    beyond this close AND outside the band (handled at candle close, top of this
+  //    fn); with OUTSIDE_BAND off, it enters intra-bar on the first cross (see onTick).
+  //    Confirm-candle OFF entirely = enter at this candle's close now. ──
   if (confirmCandle.enabled("SCALP")) {
     state._armedSignal = { side, triggerLevel: bar.close, armedBarTime: bar.time, result };
     log(`🎯 [SCALP-PAPER] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);

@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Scalp: confirmation candle must CLOSE outside the Bollinger band
+
+- **New entry guard** (`SCALP_CONFIRM_OUTSIDE_BAND`, **default ON**; needs `SCALP_CONFIRM_CANDLE_ENABLED=true`): the confirmation is now evaluated at the next candle's **close** — that candle must **close** beyond the signal candle's close (the cross) **and** close **outside the band** (CE above upper / PE below lower). Entry fires at that close, not intra-bar.
+- **Why**: previously the confirmation entered **intra-bar** the instant price first poked past the signal candle's close. On a failed breakout that poke closes back **inside** the band, so the entry candle — which carries the entry arrow on the chart — sat visibly *inside* the band, which read as "entries taken from inside the BB". (Compounding it, a sharp signal candle whips the 20-period band wider on the next candle.) Requiring the confirmation candle to *close* beyond the band guarantees every entry candle is genuinely outside it, and filters the one-poke false breakouts that drove the churn losses.
+- **Applied across all three surfaces** — paper ([src/routes/scalpPaper.js](src/routes/scalpPaper.js)) + live ([src/routes/scalpLive.js](src/routes/scalpLive.js)) confirm at candle close in `onCandleClose` (the per-tick intra-bar path is skipped when the guard is on); backtest ([src/routes/scalpBacktest.js](src/routes/scalpBacktest.js)) mirrors it (close-cross + close-outside-band, entry at the close). The shared direction/comparison lives in [src/utils/confirmCandle.js](src/utils/confirmCandle.js) (`beyondBand` / `outsideBandEnabled`). Toggle OFF (Settings → Scalp) for the legacy intra-bar cross entry — A/B via `/replay`.
+
 ### Swing: signal candle must CLOSE beyond the base EMA (close-beyond-EMA gate)
 
 - **New entry gate** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, **default ON**): the signal candle's **close** must sit on the trade side of a *base EMA* — **CE: close above, PE: close below**. The base EMA follows the EMA-stack toggle: **EMA-fastest (9) when `SWING_EMA_TRIPLE_STACK_ENABLED` is ON, else EMA-fast (20)** — using whatever periods are configured (`SWING_EMA_FASTEST` / `SWING_EMA_FAST`), nothing hardcoded.
