@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Swing: signal candle must CLOSE beyond the base EMA (close-beyond-EMA gate)
+
+- **New entry gate** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, **default ON**): the signal candle's **close** must sit on the trade side of a *base EMA* — **CE: close above, PE: close below**. The base EMA follows the EMA-stack toggle: **EMA-fastest (9) when `SWING_EMA_TRIPLE_STACK_ENABLED` is ON, else EMA-fast (20)** — using whatever periods are configured (`SWING_EMA_FASTEST` / `SWING_EMA_FAST`), nothing hardcoded.
+- **Why**: the EMA-stack / 2-EMA gate only checks EMA *ordering* (e.g. 9>20>50), not where price sits. After a morning rally the lines stay stacked and SuperTrend stays green through a midday chop, so the strategy kept buying **CE into dips that closed *below* EMA9** — the 23-Jun false breakouts entered ~3pt and ~9pt below EMA9 (`ema9AtEntry` > `spotAtEntry`), each immediately hitting the prev-candle stop, and the two losses then latched the chop guard and sat out the afternoon trend. The gate blocks exactly those bars.
+- **Applied in the shared `getSignal`** ([src/strategies/strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js)) so **paper, live, and backtest all inherit it** (all three arm/enter off the same signal). When a bar is blocked, the skip log / no-signal reason reads `C <close> <=EMA<n> <ema> (need close above)`. Entry reasons gain a `| C <close>>EMA<n> <ema>` token. Toggle OFF (Settings → Swing) to restore the ordering-only gate — A/B via `/replay`.
+
 ### AI-friendly trade export across all trade-data download screens
 
 - **New: every trade-data download now has a "🤖 AI" option** that produces a single self-describing Markdown report instead of raw JSONL/CSV — built for pasting straight into an AI for analysis. Each report carries a **summary table** (per-mode + total: trades, wins/losses, win %, net P&L, avg win/avg loss), a **field legend** (plain-English meaning of every field actually present), the **settings snapshot** that produced the trades (where available), then **per-strategy trade tables**.

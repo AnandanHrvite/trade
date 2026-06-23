@@ -65,6 +65,7 @@ const SETTINGS_SCHEMA = [
       { key: "SWING_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA (on close). The EMA-fast vs EMA-slow alignment is the directional gate. Classic = 50.", default: "50" },
       { key: "SWING_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter EMA gate. OFF = 2-EMA cross (EMA-fast vs EMA-slow). ON = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries (skip logs show it blocks flat-EMA bars that the 2-EMA gate would take).", default: "false" },
       { key: "SWING_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA in the 9>20>50 stack (on close). Only used when Triple-Stack EMA is ON. Classic = 9.", default: "9" },
+      { key: "SWING_CLOSE_BEYOND_EMA_ENABLED", label: "Close Beyond Base EMA", type: "toggle", effect: EFFECT.INSTANT, desc: "Signal candle must CLOSE on the trade side of the base EMA — base = EMA-fastest (9) when Triple-Stack is ON, else EMA-fast (20). CE: close ABOVE it; PE: close BELOW it. The EMA-stack/cross gate only checks EMA ordering — this stops buying CE into dips that close BELOW the fast EMA while the lines stay stacked from an earlier move (the false-breakout chop that bleeds prev-candle stops). Uses the configured EMA periods. Default ON.", default: "true" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE entry: RSI(14) must be ABOVE this (bullish momentum floor)", default: "52" },
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "CE entry blocked when RSI is at/above this (overbought — don't chase exhausted up-moves)", default: "70" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
@@ -106,6 +107,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
       { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
       { key: "SCALP_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter at the signal candle's close (legacy). Filters one-candle false breakouts.", default: "true" },
+      { key: "SCALP_CONFIRM_OUTSIDE_BAND", label: "Confirm only while outside band", type: "toggle", effect: EFFECT.INSTANT, desc: "Extra confirmation guard (needs Confirmation Candle ON). ON (default): the confirmation cross only enters while price is STILL beyond the live Bollinger band — not just beyond the signal candle's close. Blocks the case where a sharp signal candle whips the band wide enough to wrap around the next candle, so the entry would otherwise sit visibly inside the band. OFF: enter on any cross of the signal candle's close.", default: "true" },
       // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
       { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
       { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
@@ -508,11 +510,12 @@ const IMMEDIATE_KEYS = new Set([
   // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
   "SWING_EMA_FAST", "SWING_EMA_SLOW", "SWING_EMA_TRIPLE_STACK_ENABLED", "SWING_EMA_FASTEST",
+  "SWING_CLOSE_BEYOND_EMA_ENABLED",
   "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
   "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
   "SWING_STOP_LOSS_PTS", "SWING_MAX_CONSEC_LOSSES", "SWING_NEG_CANDLE_LIMIT",
   // Confirmation-candle gates — read live from process.env on every candle/tick
-  "SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED",
+  "SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_OUTSIDE_BAND",
 ]);
 
 // These are cached as const at module load — need session stop+start

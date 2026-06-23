@@ -2022,9 +2022,13 @@ router.get("/start", async (req, res) => {
   log(`   Instrument : ${instrumentConfig.INSTRUMENT}`);
   log(`   Capital    : ₹${data.capital.toLocaleString("en-IN")}`);
   {
-    const _emaUp   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}>EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}`;
-    const _emaDn   = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true" ? `EMA${process.env.SWING_EMA_FASTEST||9}<EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
-    log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED (intra-candle)`);
+    const _tripleOn = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED||"false").toLowerCase()==="true";
+    const _emaUp   = _tripleOn ? `EMA${process.env.SWING_EMA_FASTEST||9}>EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}>EMA${process.env.SWING_EMA_SLOW||50}`;
+    const _emaDn   = _tripleOn ? `EMA${process.env.SWING_EMA_FASTEST||9}<EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}` : `EMA${process.env.SWING_EMA_FAST||20}<EMA${process.env.SWING_EMA_SLOW||50}`;
+    const _baseEmaLbl = `EMA${_tripleOn ? (process.env.SWING_EMA_FASTEST||9) : (process.env.SWING_EMA_FAST||20)}`;
+    const _ceGate  = (process.env.SWING_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C>${_baseEmaLbl}` : "";
+    const _peGate  = (process.env.SWING_CLOSE_BEYOND_EMA_ENABLED||"true").toLowerCase()==="true" ? ` + C<${_baseEmaLbl}` : "";
+    log(`   Entry       : CE = ${_emaUp} + RSI ${process.env.RSI_CE_MIN||52}-${process.env.RSI_CE_MAX||80} + ST GREEN${_ceGate} | PE = ${_emaDn} + RSI ${process.env.RSI_PE_MIN||20}-${process.env.RSI_PE_MAX||48} + ST RED${_peGate} (intra-candle)`);
   }
   log(`   Stop/exit   : EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED||"false").toLowerCase()==="true" ? ` + ${Math.max(1,parseInt(process.env.SWING_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail (tighter wins)` : ""} | option stop ${(parseFloat(process.env.OPT_STOP_PCT||"0.15")*100).toFixed(0)}% | opposite signal | exit-before-close ${process.env.SWING_EOD_EXIT_TIME||"15:15"} | EOD ${process.env.TRADE_STOP_TIME||"15:30"}`);
   log(`   Risk guards : MaxDailyLoss=₹${process.env.MAX_DAILY_LOSS||5000} | MaxTrades=${process.env.MAX_DAILY_TRADES||6} | same-side SL cooldown ${process.env.SWING_SL_PAUSE_CANDLES||3} candles | VIX ${(process.env.VIX_FILTER_ENABLED==="true")?("≤"+(process.env.VIX_MAX_ENTRY||20)):"off"}`);

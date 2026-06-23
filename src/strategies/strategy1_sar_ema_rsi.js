@@ -15,11 +15,16 @@
  *        triple-stack (opt-in) →  EMA9 > EMA20 > EMA50   (SWING_EMA_TRIPLE_STACK_ENABLED)
  *   2. RSI(14) in the CE band  →  RSI_CE_MIN < RSI < RSI_CE_MAX
  *   3. SuperTrend bullish (trend===1)
+ *   4. Close beyond base EMA (opt-in, default ON — SWING_CLOSE_BEYOND_EMA_ENABLED):
+ *        signal candle CLOSE > base EMA, where base = EMA9 (fastest) when the triple
+ *        stack is on, else EMA20 (fast). Blocks buying into dips that close below the
+ *        fast EMA while the lines are still stacked from an earlier move.
  *
  * ENTRY — BUY_PE (bearish), mirror:
  *   1. EMA alignment bearish:  EMA20 BELOW EMA50  (or EMA9 < EMA20 < EMA50 when stacked)
  *   2. RSI(14) in the PE band  →  RSI_PE_MIN < RSI < RSI_PE_MAX
  *   3. SuperTrend bearish (trend===-1)
+ *   4. Close beyond base EMA (opt-in, default ON):  signal candle CLOSE < base EMA.
  *
  * STOP LOSS (unchanged — set by the execution layer, value seeded here):
  *   CE: previous (last completed) candle LOW
@@ -82,6 +87,14 @@ function getSignal(candles, opts) {
   // When OFF (default) the gate is the classic EMA_FAST-vs-EMA_SLOW cross.
   var TRIPLE_STACK  = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true";
   var EMA_FASTEST   = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
+  // Close-beyond-EMA gate (opt-in, default ON): the signal candle must CLOSE on the
+  // trade side of a BASE EMA — EMA(fastest) when the triple stack is ON, else EMA(fast).
+  // The stack/2-EMA gate only checks EMA *ordering*; without this, the strategy buys CE
+  // into dips that close BELOW the base EMA while the lines stay stacked from an earlier
+  // move (the 23-Jun midday-chop false breakouts: entered ~3–9pt below EMA9). The base
+  // EMA's PERIOD is whatever its Settings value is (SWING_EMA_FASTEST / SWING_EMA_FAST) —
+  // nothing hardcoded.
+  var CLOSE_BEYOND_EMA = (process.env.SWING_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true";
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 
@@ -129,6 +142,11 @@ function getSignal(candles, opts) {
     var emaFastestArr = EMA.calculate({ period: EMA_FASTEST, values: closes });
     emaFastest = emaFastestArr.length > 0 ? emaFastestArr[emaFastestArr.length - 1] : null;
   }
+
+  // Base EMA for the close-beyond-EMA gate: fastest when stacked, else the fast EMA.
+  // (Triple-stack ON → EMA9 base; OFF → EMA20 base — both per Settings periods.)
+  var baseEma     = TRIPLE_STACK ? emaFastest : emaFast;
+  var BASE_PERIOD = TRIPLE_STACK ? EMA_FASTEST : EMA_FAST;
 
   // EMA21 (OHLC4) — retained ONLY for the SL "ema" trail + record snapshot. Not an entry input.
   var ema21arr = EMA.calculate({ period: 21, values: ohlc4 });
@@ -182,6 +200,11 @@ function getSignal(candles, opts) {
   // EMA-alignment label for logs/reasons (stack-aware).
   var _emaUpLbl   = TRIPLE_STACK ? "EMA9>20>50" : "EMA20>50";
   var _emaDownLbl = TRIPLE_STACK ? "EMA9<20<50" : "EMA20<50";
+  // 4. Close-beyond-EMA gate: the signal candle close must sit on the trade side of the
+  //    base EMA (CE: above, PE: below). Disabled → always true (legacy ordering-only gate).
+  var _baseLbl    = "EMA" + BASE_PERIOD;
+  var closeOkCE   = !CLOSE_BEYOND_EMA || (baseEma != null && signalCandle.close > baseEma);
+  var closeOkPE   = !CLOSE_BEYOND_EMA || (baseEma != null && signalCandle.close < baseEma);
 
   var base = {
     ema20:          Math.round(emaFast * 100) / 100,
@@ -216,24 +239,26 @@ function getSignal(candles, opts) {
   );
 
   // ── BUY CE ────────────────────────────────────────────────────────────────
-  if (emaUp && rsiCE && trendUp) {
+  if (emaUp && rsiCE && trendUp && closeOkCE) {
     var slCE = Math.round(prevCandle.low * 100) / 100;
-    if (!silent) console.log("  🟢 BUY_CE — " + _emaUpLbl + " | RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | ST GREEN | SL(prevLow)=" + slCE);
+    var _ceCloseTag = CLOSE_BEYOND_EMA ? " | C " + signalCandle.close + ">" + _baseLbl + " " + baseEma.toFixed(1) : "";
+    if (!silent) console.log("  🟢 BUY_CE — " + _emaUpLbl + " | RSI " + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | ST GREEN" + _ceCloseTag + " | SL(prevLow)=" + slCE);
     return Object.assign({}, base, {
       signal:   "BUY_CE",
       stopLoss: slCE,
-      reason:   "CE: " + _emaUpLbl + " | RSI=" + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | ST GREEN @ " + _stVal + " | SL=prevLow " + slCE,
+      reason:   "CE: " + _emaUpLbl + " | RSI=" + rsi.toFixed(1) + ">" + RSI_CE_MIN + " | ST GREEN @ " + _stVal + _ceCloseTag + " | SL=prevLow " + slCE,
     });
   }
 
   // ── BUY PE ────────────────────────────────────────────────────────────────
-  if (emaDown && rsiPE && trendDown) {
+  if (emaDown && rsiPE && trendDown && closeOkPE) {
     var slPE = Math.round(prevCandle.high * 100) / 100;
-    if (!silent) console.log("  🔴 BUY_PE — " + _emaDownLbl + " | RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | ST RED | SL(prevHigh)=" + slPE);
+    var _peCloseTag = CLOSE_BEYOND_EMA ? " | C " + signalCandle.close + "<" + _baseLbl + " " + baseEma.toFixed(1) : "";
+    if (!silent) console.log("  🔴 BUY_PE — " + _emaDownLbl + " | RSI " + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | ST RED" + _peCloseTag + " | SL(prevHigh)=" + slPE);
     return Object.assign({}, base, {
       signal:   "BUY_PE",
       stopLoss: slPE,
-      reason:   "PE: " + _emaDownLbl + " | RSI=" + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | ST RED @ " + _stVal + " | SL=prevHigh " + slPE,
+      reason:   "PE: " + _emaDownLbl + " | RSI=" + rsi.toFixed(1) + "<" + RSI_PE_MAX + " | ST RED @ " + _stVal + _peCloseTag + " | SL=prevHigh " + slPE,
     });
   }
 
@@ -243,9 +268,11 @@ function getSignal(candles, opts) {
     // EMA bullish → only CE possible; report CE misses
     if (!rsiCE)   why.push("RSI=" + rsi.toFixed(1) + (rsi >= RSI_CE_MAX ? " >=" + RSI_CE_MAX + " (overbought)" : " <=" + RSI_CE_MIN + " (need >)"));
     if (!trendUp) why.push("ST not GREEN @ " + _stVal);
+    if (CLOSE_BEYOND_EMA && !closeOkCE) why.push("C " + signalCandle.close + " <=" + _baseLbl + " " + (baseEma != null ? baseEma.toFixed(1) : "?") + " (need close above)");
   } else if (emaDown) {
     if (!rsiPE)     why.push("RSI=" + rsi.toFixed(1) + (rsi <= RSI_PE_MIN ? " <=" + RSI_PE_MIN + " (oversold)" : " >=" + RSI_PE_MAX + " (need <)"));
     if (!trendDown) why.push("ST not RED @ " + _stVal);
+    if (CLOSE_BEYOND_EMA && !closeOkPE) why.push("C " + signalCandle.close + " >=" + _baseLbl + " " + (baseEma != null ? baseEma.toFixed(1) : "?") + " (need close below)");
   } else {
     why.push(TRIPLE_STACK ? "EMA stack not aligned (9/20/50)" : "EMA20=" + emaFast.toFixed(1) + " ≈ EMA50 " + emaSlow.toFixed(1) + " (no alignment)");
   }
