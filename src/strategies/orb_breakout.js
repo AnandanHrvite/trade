@@ -18,8 +18,10 @@
  *     ORB_VWAP_FILTER_ENABLED toggles. Falls back to TWAP if candles carry
  *     no volume.
  *   • Volume confirmation: breakout candle volume >= ORB_VOL_MULT × prev-5
- *     candle average. ORB_VOL_FILTER_ENABLED toggles. Silently skipped if
- *     candles carry no volume (indices have no spot volume — log once).
+ *     candle average. ORB_VOL_FILTER_ENABLED toggles — DEFAULT OFF: NIFTY spot
+ *     has no real volume, so paper/live see only a per-tick COUNT while backtest
+ *     candles carry zero; the gate can't agree across modes, so it's disabled.
+ *     (Still silently skipped if somehow on and candles carry no volume.)
  *   • Entry window: 9:30 – ORB_ENTRY_END (12:00). Stale breakouts after
  *     noon tend to fade.
  *
@@ -263,7 +265,7 @@ function getSignal(candles, opts) {
   }
 
   // ── Volume confirmation ───────────────────────────────────────────────
-  const volFilterOn = (process.env.ORB_VOL_FILTER_ENABLED || "true").toLowerCase() === "true";
+  const volFilterOn = (process.env.ORB_VOL_FILTER_ENABLED || "false").toLowerCase() === "true";
   const volMult = parseFloat(process.env.ORB_VOL_MULT || "1.2");
   let volPass = null;
   if (volRatio != null) {

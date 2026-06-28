@@ -6,6 +6,20 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB: volume-confirmation filter OFF by default (NIFTY spot has no real volume)
+
+- **`ORB_VOL_FILTER_ENABLED` default flipped `true` → `false`** ([src/strategies/orb_breakout.js](src/strategies/orb_breakout.js), [src/routes/settings.js](src/routes/settings.js), [src/routes/docs.js](src/routes/docs.js), README).
+- **Why**: NIFTY spot has no traded volume. Paper/live ORB candles carried a per-tick **count** as "volume" (`currentBar.volume++`), while backtest candles (fetched from history) carry **zero** — so the volume gate was active in paper/live but silently skipped in backtest, and even when active it compared tick-counts, not real volume. The three modes could never agree on it. Disabling it makes paper, live, and backtest evaluate ORB identically.
+- The **VWAP filter is unchanged but relabelled honestly**: on a volumeless index it is always a TWAP (equal-weighted) alignment check, not a true volume-weighted VWAP. Settings label is now "VWAP / TWAP Alignment Filter".
+- **Note**: the code default only applies when the key is **absent**. If your server `.env` (written by the Settings UI) still has `ORB_VOL_FILTER_ENABLED=true`, toggle it **off** in Settings → ORB to actually disable it.
+
+### Backtest EOD square-off times now mirror paper (no more hardcoded 3:20 PM)
+
+- The Scalp, PA, and Swing backtests hardcoded a 3:20 PM (`candleMin >= 920`) end-of-day square-off. They now read the **same env keys as the paper routes** so a Settings change to the cutoff moves the backtest too, and so backtest results match paper.
+  - **Scalp** ([src/routes/scalpBacktest.js](src/routes/scalpBacktest.js)) + **PA** ([src/routes/paBacktest.js](src/routes/paBacktest.js)): EOD square-off = `TRADE_STOP_TIME − 10` (paper's `_STOP_MINS − 10`). Same as before at the 15:30 default (15:20), but now follows Settings.
+  - **Swing** ([src/services/backtestEngine.js](src/services/backtestEngine.js)): paper has **two** distinct times that the backtest had collapsed into one — exit square-off at `SWING_EOD_EXIT_TIME` (**15:15**) vs entry cutoff at `TRADE_STOP_TIME − 10` (**15:20**). They are now split: the backtest squares off at 15:15 (was 15:20, a real 5-min divergence) and blocks new entries at 15:20, matching paper exactly.
+- Backtest-only change; no live/paper behaviour changed. (The entry **cutoffs** — `SCALP_ENTRY_END` / `PA_ENTRY_END` / `ORB_ENTRY_END` — were already env-driven and unchanged.)
+
 ### Scalp: confirmation candle must CLOSE outside the Bollinger band
 
 - **New entry guard** (`SCALP_CONFIRM_OUTSIDE_BAND`, **default ON**; needs `SCALP_CONFIRM_CANDLE_ENABLED=true`): the confirmation is now evaluated at the next candle's **close** — that candle must **close** beyond the signal candle's close (the cross) **and** close **outside the band** (CE above upper / PE below lower). Entry fires at that close, not intra-bar.

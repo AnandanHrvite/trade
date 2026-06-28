@@ -324,7 +324,7 @@ const GUIDE_STATUS = {
     { type: "bool", label: "VIX Regime Filter", key: "ORB_VIX_ENABLED", def: "false" },
     { type: "bool", label: "Wick-Rejection Filter", key: "ORB_WICK_FILTER_ENABLED", def: "true" },
     { type: "bool", label: "VWAP Alignment Filter", key: "ORB_VWAP_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "Volume Confirmation Filter", key: "ORB_VOL_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "Volume Confirmation Filter", key: "ORB_VOL_FILTER_ENABLED", def: "false" },
     { type: "bool", label: "Premium-Range Gate", key: "ORB_PREMIUM_GATE_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "ORB_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },

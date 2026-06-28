@@ -107,8 +107,8 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
   - Range width `[ORB_MIN_RANGE_PTS=25, ORB_MAX_RANGE_PTS=120]` — skips tight noise and exhausted gaps.
   - Breakout body ≥ `ORB_MIN_BODY=8` pts.
   - **Wick rejection** (`ORB_WICK_FILTER_ENABLED`): opposing wick ≤ `ORB_MAX_WICK_RATIO=0.6` × body.
-  - **VWAP alignment** (`ORB_VWAP_FILTER_ENABLED`): CE only above session VWAP, PE only below. Falls back to TWAP when candles carry no volume.
-  - **Volume confirmation** (`ORB_VOL_FILTER_ENABLED`): breakout volume ≥ `ORB_VOL_MULT=1.2` × prior `ORB_VOL_LOOKBACK=5` candle avg. Auto-skipped on volumeless indices.
+  - **VWAP alignment** (`ORB_VWAP_FILTER_ENABLED`): CE only above session VWAP, PE only below. On NIFTY spot (no volume) this is always a TWAP (equal-weighted) check, not a true volume-weighted VWAP.
+  - **Volume confirmation** (`ORB_VOL_FILTER_ENABLED`, **default off**): breakout volume ≥ `ORB_VOL_MULT=1.2` × prior `ORB_VOL_LOOKBACK=5` candle avg. Disabled by default — NIFTY spot has no real volume, so it can't agree across paper/live (a tick count) and backtest (zero).
   - **Premium-range gate** (`ORB_PREMIUM_GATE_ENABLED`): ATM LTP must sit inside `[ORB_PREMIUM_MIN=80, ORB_PREMIUM_MAX=250]` to filter out deep-OTM lottery tickets and ITM-acting-like-futures.
   - **Sweet-spot tiering** (`ORB_SWEET_MIN=30` / `ORB_SWEET_MAX=80` / `ORB_STRONG_BODY=15`): outside sweet spot = MARGINAL (still allowed); inside + breakout body ≥ strong-body = STRONG.
   - **VIX gate**: `ORB_VIX_ENABLED` + `ORB_VIX_MAX_ENTRY=22` / `ORB_VIX_STRONG_ONLY=18`.
@@ -326,7 +326,7 @@ Full spec: [SCALP.md](SCALP.md).
 | `ORB_TARGET_RANGE_MULT` | `1.5` | Informational target line only (no longer an exit) |
 | `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | Reject candles whose opposing wick exceeds ratio × body |
 | `ORB_VWAP_FILTER_ENABLED` | `true` | CE only above VWAP, PE only below (falls back to TWAP for volumeless candles) |
-| `ORB_VOL_FILTER_ENABLED` | `true` | Breakout volume ≥ multiplier × avg of prior N (auto-skipped on volumeless indices) |
+| `ORB_VOL_FILTER_ENABLED` | `false` | Breakout volume ≥ multiplier × avg of prior N. **Off by default** — NIFTY spot has no real volume (paper/live see a tick count, backtest sees zero), so the gate can't agree across modes |
 | `ORB_VOL_MULT` / `ORB_VOL_LOOKBACK` | `1.2` / `5` | Volume filter inputs |
 | `ORB_PREMIUM_GATE_ENABLED` | `true` | Skip when ATM LTP is outside `[ORB_PREMIUM_MIN, ORB_PREMIUM_MAX]` |
 | `ORB_PREMIUM_MIN` / `ORB_PREMIUM_MAX` | `80` / `250` | Acceptable ATM-premium band (₹) |

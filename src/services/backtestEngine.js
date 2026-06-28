@@ -256,6 +256,16 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
+  // EOD times — mirror swingPaper EXACTLY so backtest squares off / blocks entries at
+  // the same IST minutes as paper (not a hardcoded 3:20). Paper has TWO distinct times:
+  // entry cutoff = TRADE_STOP_TIME − 10 (paper's _ENTRY_STOP_MINS, ~15:20) and exit
+  // square-off = SWING_EOD_EXIT_TIME (~15:15). Collapsing both into one 3:20 made the
+  // backtest hold ~5 min past paper's square-off.
+  const _stopMins     = (() => { const v = (process.env.TRADE_STOP_TIME || "15:30").split(":"); return parseInt(v[0], 10) * 60 + (parseInt(v[1], 10) || 0); })();
+  const _entryStopMin = _stopMins - 10;
+  const _eodExitMin   = (() => { const v = (process.env.SWING_EOD_EXIT_TIME || "15:15").split(":"); const h = parseInt(v[0], 10); return isNaN(h) ? _stopMins : (h * 60 + (parseInt(v[1], 10) || 0)); })();
+  const _eodLabel     = String(Math.floor(_eodExitMin / 60)).padStart(2, "0") + ":" + String(_eodExitMin % 60).padStart(2, "0");
+
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
     if ((i - 30) % 100 === 0) {
@@ -313,7 +323,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
     // Also check time — force EOD at 3:20 PM regardless
     const candleMin     = getISTHHMM(candle.time);
-    const isEODcandle   = isLastCandleOfDay || candleMin >= 920;
+    // Two distinct times, mirroring swingPaper: exit square-off at SWING_EOD_EXIT_TIME
+    // (~15:15) vs entry cutoff at TRADE_STOP_TIME − 10 (~15:20). Last candle of the
+    // day forces both. (Previously a single 3:20 served both, holding 5 min too long.)
+    const isEodExit      = isLastCandleOfDay || candleMin >= _eodExitMin;
+    const isEntryBlocked = isLastCandleOfDay || candleMin >= _entryStopMin;
 
     // ── Get signal from current window (entry candle included) ────────────────
     // window already contains candles[0..i] — no slice needed.
@@ -470,9 +484,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         exitPrice  = candle.close;
       }
 
-      // Rule 3: EOD square-off — PER DAY at 3:20 PM
-      if (!exitReason && isEODcandle) {
-        exitReason = `EOD square-off ${candleMin >= 920 ? "3:20 PM" : "(last candle of day)"}`;
+      // Rule 3: EOD square-off — PER DAY at SWING_EOD_EXIT_TIME (mirrors swingPaper)
+      if (!exitReason && isEodExit) {
+        exitReason = `EOD square-off ${candleMin >= _eodExitMin ? _eodLabel : "(last candle of day)"}`;
         exitPrice  = candle.close;
       }
 
@@ -616,7 +630,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // instead of silently consuming the range's own opening candles as warm-up.
     const _isWarmupOnly = candle.time < activeFromTs;
 
-    if (!position && !_isWarmupOnly && !isEODcandle && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
+    if (!position && !_isWarmupOnly && !isEntryBlocked && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
       const _confirmSwing = confirmCandle.enabled("SWING");
 
       // ── Confirmation candle (cross & close): fill an armed signal when THIS

@@ -169,6 +169,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   const _rejectCounts = {};
   const _btStartMin = (() => { const v = process.env.SCALP_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
   const _btEndMin   = (() => { const v = process.env.SCALP_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  // EOD square-off = TRADE_STOP_TIME − 10, mirroring scalpPaper (_STOP_MINS − 10) so a
+  // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
+  const _eodMin     = (() => { const v = process.env.TRADE_STOP_TIME   || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })();
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -199,7 +202,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     window.push(candle);
     if (window.length > 100) window.shift();
 
-    const isEOD = candleMin >= 920; // 3:20 PM
+    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors scalpPaper EOD square-off)
 
     // Get prev day OHLC (reference)
     const dateIdx = _dateIdx[candleDate] ?? -1;

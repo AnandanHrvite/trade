@@ -148,6 +148,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const _rejectCounts = {};
   const _btStartMin = (() => { const v = process.env.PA_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
   const _btEndMin   = (() => { const v = process.env.PA_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  // EOD square-off = TRADE_STOP_TIME − 10, mirroring paPaper (_STOP_MINS − 10) so a
+  // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
+  const _eodMin     = (() => { const v = process.env.TRADE_STOP_TIME || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })();
 
   for (let i = 30; i < candles.length; i++) {
     // Yield event loop every 100 candles — keeps server responsive during long backtests
@@ -176,7 +179,7 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
     window.push(candle);
     if (window.length > 100) window.shift();
 
-    const isEOD = candleMin >= 920; // 3:20 PM
+    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors paPaper EOD square-off)
 
     // ── EXECUTE PENDING SIGNAL on this candle's open ────────────────────────
     if (pendingSignal && !position && !isEOD) {
