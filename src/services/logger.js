@@ -61,7 +61,9 @@ function capture(level, args) {
         if (a === undefined)       return "undefined";
         if (a instanceof Error)    return a.stack || a.message;
         if (typeof a === "object") {
-          try { return JSON.stringify(a, null, 2); } catch { return String(a); }
+          // Compact (no 2-space pretty-print): cheaper CPU + smaller buffer entries
+          // on this hot path — console.log runs on the tick loop. /logs renders fine.
+          try { return JSON.stringify(a); } catch { return String(a); }
         }
         return String(a);
       })

@@ -158,11 +158,13 @@ function _makeEntryHook(cfg) {
         } else {
           _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_FAIL", symbol: p.symbol, raw: result && result.raw });
           console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY FAILED — paper opened virtual position but broker rejected. Symbol=${p.symbol} | ${JSON.stringify(result && result.raw).slice(0, 200)}`);
+          try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY REJECTED\nPaper opened a position but the broker order failed — you are NOT in this trade.\nSymbol: ${p.symbol}\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
         }
       })
       .catch(err => {
         _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY exception: ${err.message}`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY ERROR\n${p.symbol}: ${err.message}\nPaper opened a position but the broker order errored — verify manually.`); } catch (_) {}
       });
   };
 }
@@ -207,11 +209,13 @@ function _makeExitHook(cfg) {
         } else {
           _logEvent({ mode: cfg.mode, event: "REAL_EXIT_FAIL", symbol: p.symbol, raw: result && result.raw });
           console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL FAILED — paper closed virtual position but broker rejected. Symbol=${p.symbol} — MANUAL ACTION REQUIRED.`);
+          try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL REJECTED — MANUAL ACTION REQUIRED\nPaper closed but the broker still holds the position — square off ${p.symbol} manually NOW.\n${JSON.stringify(result && result.raw).slice(0, 200)}`); } catch (_) {}
         }
       })
       .catch(err => {
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] SELL exception: ${err.message}`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE SELL ERROR — MANUAL ACTION REQUIRED\n${p.symbol}: ${err.message}\nPaper closed but the broker exit errored — verify/square off manually NOW.`); } catch (_) {}
       });
   };
 }

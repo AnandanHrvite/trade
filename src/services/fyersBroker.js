@@ -72,6 +72,11 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
   if (!isAuthenticated()) {
     throw new Error("Fyers not authenticated. Complete Fyers login first.");
   }
+  // Reject malformed qty before it reaches the exchange (NaN/0/negative/non-integer).
+  if (!Number.isInteger(qty) || qty <= 0) {
+    console.error(`[FyersBroker] placeMarketOrder REJECTED — invalid qty=${qty} for ${fyersSymbol}`);
+    return { success: false, orderId: null, raw: { error: `Invalid qty: ${qty}` } };
+  }
 
   // Fyers order params
   // productType: INTRADAY (auto square-off at EOD) for options scalp
@@ -125,6 +130,15 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
 
 async function placeSLMOrder(fyersSymbol, side, qty, triggerPrice, { isFutures = false } = {}) {
   if (!isAuthenticated()) throw new Error("Fyers not authenticated.");
+  // Reject malformed qty / trigger before it reaches the exchange.
+  if (!Number.isInteger(qty) || qty <= 0) {
+    console.error(`[FyersBroker] placeSLMOrder REJECTED — invalid qty=${qty} for ${fyersSymbol}`);
+    return { success: false, orderId: null, raw: { error: `Invalid qty: ${qty}` } };
+  }
+  if (!(triggerPrice > 0)) {
+    console.error(`[FyersBroker] placeSLMOrder REJECTED — invalid triggerPrice=${triggerPrice} for ${fyersSymbol}`);
+    return { success: false, orderId: null, raw: { error: `Invalid triggerPrice: ${triggerPrice}` } };
+  }
   const sideLabel = side === 1 ? "BUY" : "SELL";
   console.log(`[FyersBroker] placeSLMOrder: ${sideLabel} ${qty} × ${fyersSymbol} @ trigger ₹${triggerPrice}`);
   const orderParams = {

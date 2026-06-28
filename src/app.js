@@ -2411,7 +2411,14 @@ process.on("unhandledRejection", (reason, promise) => {
 process.on("uncaughtException", (err) => {
   console.error(`[UncaughtException] ${err.message}\n${err.stack || ""}`);
   writeCrashMarker("uncaughtException", err);
-  try { sendTelegramSync(`🚨 UNCAUGHT EXCEPTION\n${truncate(err.message, 300)}\n\nStack:\n${truncate(err.stack || "(no stack)", 600)}`); } catch (_) {}
+  try { sendTelegramSync(`🚨 UNCAUGHT EXCEPTION — restarting\n${truncate(err.message, 300)}\n\nStack:\n${truncate(err.stack || "(no stack)", 600)}`); } catch (_) {}
+  // After an uncaught exception the process is in an undefined state — staying
+  // alive means trading real money on possibly-corrupt in-memory state. Exit so
+  // PM2 restarts into a clean process and boot-time reconciliation re-verifies
+  // every open position. We already alerted above, so mark plannedExit to skip
+  // the duplicate "PROCESS EXIT" telegram from the exit handler.
+  plannedExit = true;
+  process.exit(1);
 });
 
 // Abnormal exit (non-zero, non-signal). SIGTERM/SIGINT are handled by gracefulShutdown.

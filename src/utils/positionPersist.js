@@ -41,7 +41,20 @@ function _drain(file) {
   const dataStr = p.data;
   const done = (err) => {
     p.writing = false;
-    if (err) { _pending.delete(file); return; }
+    if (err) {
+      // Don't drop the queued state on a transient write error (EIO/ENOSPC) —
+      // a lost write here means crash recovery later reads a STALE stop-loss /
+      // position. Keep the payload queued and retry with a short backoff.
+      p.retries = (p.retries || 0) + 1;
+      if (p.retries <= 5) {
+        setTimeout(() => _drain(file), 500);
+      } else {
+        console.warn(`⚠️ [PERSIST] giving up after ${p.retries} write failures: ${file}`);
+        _pending.delete(file);
+      }
+      return;
+    }
+    p.retries = 0;
     if (p.data !== dataStr) _drain(file);   // newer state arrived mid-write
     else _pending.delete(file);
   };
