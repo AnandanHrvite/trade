@@ -287,8 +287,72 @@ function clearPAPosition() {
   console.log("[PERSIST] PA position file cleared.");
 }
 
+// ── EMA9+VWAP (5-min, Zerodha live via harness) ─────────────────────────────
+
+const EMA9VWAP_POS_FILE = path.join(DATA_DIR, ".active_ema9vwap_position.json");
+
+function saveEma9VwapPosition(position, sessionMeta) {
+  try {
+    if (!position) {
+      _persistAtomic(EMA9VWAP_POS_FILE, null);
+      return;
+    }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry,
+        stopLoss:        position.stopLoss,
+        initialStopLoss: position.initialStopLoss,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(EMA9VWAP_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] EMA9+VWAP position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save EMA9+VWAP position: ${err.message}`);
+  }
+}
+
+function loadEma9VwapPosition() {
+  try {
+    if (!fs.existsSync(EMA9VWAP_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(EMA9VWAP_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale EMA9+VWAP position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(EMA9VWAP_POS_FILE);
+      return null;
+    }
+    if (data.position) {
+      console.log(`[PERSIST] EMA9+VWAP position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    }
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load EMA9+VWAP position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearEma9VwapPosition() {
+  _persistAtomic(EMA9VWAP_POS_FILE, null);
+  console.log("[PERSIST] EMA9+VWAP position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveScalpPosition, loadScalpPosition, clearScalpPosition,
   savePAPosition, loadPAPosition, clearPAPosition,
+  saveEma9VwapPosition, loadEma9VwapPosition, clearEma9VwapPosition,
 };

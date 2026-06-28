@@ -17,7 +17,7 @@ const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
-const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
 app.use(express.json());
@@ -253,6 +253,11 @@ const OPEN_PATHS = [
   "/swing-paper/history",    // read-only history
   "/swing-paper/debug",      // read-only debug
   "/swing-paper/client.js",  // static asset
+  "/ema9vwap-paper/status",      // read-only status page
+  "/ema9vwap-paper/status/data", // dashboard AJAX poll
+  "/ema9vwap-paper/history",     // read-only history
+  "/ema9vwap-paper/client.js",   // static asset
+  "/ema9vwap-live/status/data",  // harness status poll (read-only)
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -403,6 +408,10 @@ app.use("/pa-pattern-backtest", require("./routes/paPatternBacktest")); // ← P
 app.use("/orb-paper",         require("./routes/orbPaper"));      // ← ORB paper trade
 app.use("/orb-backtest",      require("./routes/orbBacktest"));   // ← ORB date-range backtest
 app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIVE — real Fyers orders (DRY-RUN gated)
+// ── EMA9+VWAP routes (5-min, EMA9 vs VWAP±σ band; Zerodha live via harness) ──
+app.use("/ema9vwap-paper",    require("./routes/ema9vwapPaper"));       // ← EMA9+VWAP paper trade
+app.use("/ema9vwap-backtest", require("./routes/ema9vwapBacktest"));    // ← EMA9+VWAP date-range backtest
+app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← EMA9+VWAP LIVE via PAPER + harness (Zerodha orders)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
@@ -536,6 +545,8 @@ app.get("/", (req, res) => {
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const orbMode     = sharedSocketState.getOrbMode ? sharedSocketState.getOrbMode() : null;
   const orbModeOn   = (process.env.ORB_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const ema9vwapMode   = sharedSocketState.getEma9VwapMode ? sharedSocketState.getEma9VwapMode() : null;
+  const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -547,7 +558,8 @@ app.get("/", (req, res) => {
   const anyModeActive = liveActive
     || (scalpModeOn && scalpMode)
     || (paModeOn && paMode)
-    || (orbModeOn && orbMode);
+    || (orbModeOn && orbMode)
+    || (ema9vwapModeOn && ema9vwapMode);
   // The mode-specific top-bar badges below only cover a subset of states
   // (SWING live, SCALP_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
   // active (e.g. Swing/Scalp/PA paper, ORB live) we still want a running
@@ -566,6 +578,7 @@ app.get("/", (req, res) => {
     { key: 'SCALP',    cls: 'scalp',    label: 'SCALP',        on: scalpModeOn },
     { key: 'PA',       cls: 'pa',       label: 'PRICE ACTION', on: paModeOn },
     { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
+    { key: 'EMA9VWAP', cls: 'ema9vwap', label: 'EMA9+VWAP',    on: ema9vwapModeOn },
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
@@ -574,7 +587,8 @@ app.get("/", (req, res) => {
   const _readPnl = (file) => _readPnlCached(_tradingDir, file);
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
-  const zerodhaPnl = _readPnl("paper_trades.json");
+  let zerodhaPnl = _readPnl("paper_trades.json");
+  if (ema9vwapModeOn) zerodhaPnl += _readPnl("ema9vwap_paper_trades.json"); // EMA9+VWAP also trades Zerodha
   let fyersPnl = scalpModeOn ? _readPnl("scalp_paper_trades.json") : 0;
   if (paModeOn)       fyersPnl += _readPnl("pa_paper_trades.json");
   if (orbModeOn)      fyersPnl += _readPnl("orb_paper_trades.json");
@@ -595,7 +609,7 @@ app.get("/", (req, res) => {
   // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
   // tucks into that gap beside the last card; otherwise it falls back to a
   // full-width band below the grid (the default for any other card count).
-  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0);
+  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0);
   const cumInlineInGrid = (dashCardCount % 3) === 1;
   const cumCardInner = `
     <div class="dash-chart-hdr">
@@ -1204,7 +1218,7 @@ ${buildSidebar('dashboard', liveActive)}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -2632,6 +2646,17 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    const savedEma9Vwap = loadEma9VwapPosition();
+    if (savedEma9Vwap && savedEma9Vwap.position) {
+      const p = savedEma9Vwap.position;
+      const msg = `🚨 [STARTUP] Persisted EMA9+VWAP position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedEma9Vwap.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Zerodha dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     // ── Check broker positions (live API) ──
     if (zerodha.isAuthenticated()) {
       const zPos = await zerodha.getPositions();
@@ -2647,6 +2672,7 @@ async function reconcileOrphanedPositions() {
       } else {
         console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
         if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
+        if (savedEma9Vwap) clearEma9VwapPosition(); // EMA9+VWAP trades Zerodha too — safe to clear
       }
     }
 
@@ -2690,6 +2716,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getScalpMode())     activeModes.push(sharedSocketState.getScalpMode());
     if (sharedSocketState.getPAMode())        activeModes.push(sharedSocketState.getPAMode());
     if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
+    if (sharedSocketState.getEma9VwapMode && sharedSocketState.getEma9VwapMode()) activeModes.push(sharedSocketState.getEma9VwapMode());
 
     if (activeModes.length === 0) {
       // No Telegram here: with no live positions in play there is nothing the

@@ -23,6 +23,7 @@ const FILE_BY_MODE = {
   scalp:    "scalp_paper_trades_log.jsonl",
   pa:       "pa_paper_trades_log.jsonl",
   orb:      "orb_paper_trades_log.jsonl",
+  ema9vwap: "ema9vwap_paper_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
@@ -30,6 +31,7 @@ const DAILY_PREFIX_BY_MODE = {
   scalp:    "scalp_paper_trades_",
   pa:       "pa_paper_trades_",
   orb:      "orb_paper_trades_",
+  ema9vwap: "ema9vwap_paper_trades_",
 };
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.

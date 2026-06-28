@@ -27,6 +27,9 @@ let paMode = null;
 // ORB (Opening Range Breakout) mode: "ORB_PAPER" | null
 let orbMode = null;
 
+// EMA9+VWAP mode: "EMA9VWAP_PAPER" | "EMA9VWAP_LIVE" | null
+let ema9vwapMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -99,12 +102,30 @@ function getOrbMode() {
   return orbMode;
 }
 
+// ── EMA9+VWAP mode (5-min, secondary socket callback) ─────────────────────
+
+function setEma9VwapActive(mode) {
+  ema9vwapMode = mode;
+}
+
+function clearEma9Vwap() {
+  ema9vwapMode = null;
+}
+
+function isEma9VwapActive() {
+  return ema9vwapMode !== null;
+}
+
+function getEma9VwapMode() {
+  return ema9vwapMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || scalpMode !== null || paMode !== null ||
-         orbMode !== null;
+         orbMode !== null || ema9vwapMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -142,6 +163,14 @@ function canStart(mode) {
       if (orbMode === "ORB_PAPER") return { allowed: false, reason: "ORB Paper is running — stop it first" };
       if (orbMode === "ORB_LIVE")  return { allowed: false, reason: "ORB Live is already running" };
       return { allowed: true };
+    case "EMA9VWAP_PAPER":
+      if (ema9vwapMode === "EMA9VWAP_LIVE")  return { allowed: false, reason: "EMA9+VWAP Live is running — stop it first" };
+      if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is already running" };
+      return { allowed: true };
+    case "EMA9VWAP_LIVE":
+      if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is running — stop it first" };
+      if (ema9vwapMode === "EMA9VWAP_LIVE")  return { allowed: false, reason: "EMA9+VWAP Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -156,6 +185,8 @@ module.exports = {
   setPAActive, clearPA, isPAActive, getPAMode,
   // ORB
   setOrbActive, clearOrb, isOrbActive, getOrbMode,
+  // EMA9+VWAP
+  setEma9VwapActive, clearEma9Vwap, isEma9VwapActive, getEma9VwapMode,
   // Combined
   isAnyActive, canStart,
 };

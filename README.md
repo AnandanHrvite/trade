@@ -39,6 +39,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **ORB Live** | Opening Range Breakout (single-leg CE/PE) | 1-min ticks on a 15-min OR | Fyers | `/orb-live` |
 | **ORB Paper** | Opening Range Breakout | 1-min ticks on a 15-min OR | Simulated | `/orb-paper` |
 | **ORB Backtest** | Opening Range Breakout | 1-min historical | Historical | `/orb-backtest` |
+| **EMA9+VWAP Live** | EMA 9 crosses VWAP ±σ band (Zerodha via harness) | 5-min | Zerodha | `/ema9vwap-live` |
+| **EMA9+VWAP Paper** | EMA 9 crosses VWAP ±σ band | 5-min | Simulated | `/ema9vwap-paper` |
+| **EMA9+VWAP Backtest** | EMA 9 crosses VWAP ±σ band | 5-min historical | Historical | `/ema9vwap-backtest` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -115,6 +118,13 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
   - **Expiry-day-only** (`ORB_EXPIRY_DAY_ONLY`): block ORB on non-expiry sessions when set.
 - **Stop / exit — single candle-structure trailing stop** (`ORB_SL_CANDLES=2`): the SL is the swing of the last N closed candles — CE → lowest low, PE → highest high — recomputed on every candle close and ratcheted in the favourable direction only (never loosens). The same level is both the initial stop and the trail, so a winner rides until structure breaks. This is the **only** stop: the old premium −%/spot-edge stops, move-to-breakeven, premium lock-in, continuous-premium trail and the fixed profit target were all removed. (`ORB_TARGET_RANGE_MULT` is retained only as an informational target line on the chart.)
 - **Risk caps**: 1 trade/day default (`ORB_MAX_DAILY_TRADES=1`), `ORB_MAX_DAILY_LOSS=3000`, forced square-off at `ORB_FORCED_EXIT=15:15` (the only non-stop exit), last entry `ORB_ENTRY_END=12:00` (stale-breakout cutoff).
+
+### Strategy 5: EMA9 + VWAP — EMA 9 crosses the VWAP ±σ band (5-min, Zerodha)
+- **Signal source** ([src/strategies/ema9_vwap.js](src/strategies/ema9_vwap.js)): EMA 9 (on 5-min close) vs a **session-anchored VWAP with Standard-Deviation bands** — source HLC3, multiplier `EMA9VWAP_BAND_MULT=1` (= ±1σ, the TradingView default). Set the multiplier to `0` to collapse the band to the plain VWAP line.
+- **Entry** (evaluated on candle CLOSE): **CE** when EMA 9 crosses **above** the top line (`VWAP + mult·σ`); **PE** when EMA 9 crosses **below** the bottom line (`VWAP − mult·σ`). Window `EMA9VWAP_ENTRY_START=10:30` → `EMA9VWAP_ENTRY_END=14:30`.
+- **Exit — PURE signal exit**: hold the FULL position (no stop-loss / target / trail) until EMA 9 crosses back **inside** the band (CE → back below the top line, PE → back above the bottom line). A trailing position runs past 14:30; hard EOD square-off at `EMA9VWAP_EOD_EXIT_TIME=15:15`. Optional catastrophe stops (`EMA9VWAP_OPT_STOP_PCT`, `EMA9VWAP_STOP_LOSS_PTS`) default **off**.
+- **Note**: NIFTY spot has no real volume, so this VWAP is effectively a session **TWAP±σ** (HLC3) — same caveat as ORB's VWAP filter. The σ-band math and the EMA9 cross are exact; absolute VWAP values track TradingView's shape but are not tick-identical.
+- **LIVE = PAPER**: `/ema9vwap-live` runs the paper engine and places **Zerodha** orders via the harness, double-gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`. Backtest is a dedicated candle-loop engine ([src/services/ema9vwapBacktestEngine.js](src/services/ema9vwapBacktestEngine.js)) that mirrors the paper decisions exactly. Runs in parallel with the other strategies on the shared Fyers socket.
 
 ### Tick Replay — deterministic re-run of recorded sessions
 - Every paper/live session records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
@@ -336,6 +346,22 @@ Full spec: [SCALP.md](SCALP.md).
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |
 | `ORB_MAX_DAILY_LOSS` | `3000` | ORB kill-switch (INR) |
 
+### EMA9 + VWAP Mode (EMA9 vs VWAP ±σ band, Zerodha)
+| Key | Default | Notes |
+|-----|---------|-------|
+| `EMA9VWAP_MODE_ENABLED` | `true` | Show/hide EMA9+VWAP menus in sidebar (and Settings section) |
+| `EMA9VWAP_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders |
+| `EMA9VWAP_LIVE_DRY_RUN` | `false` | Hold EMA9+VWAP in dry-run even when global harness dry-run is off |
+| `EMA9VWAP_BAND_MULT` | `1` | VWAP band σ multiplier (1 = ±1σ, TradingView default; 0 = plain VWAP line) |
+| `EMA9VWAP_EMA_PERIOD` | `9` | EMA length crossed against the band |
+| `EMA9VWAP_VWAP_SESSION_START` | `09:15` | VWAP session anchor (resets daily from here) |
+| `EMA9VWAP_ENTRY_START` / `EMA9VWAP_ENTRY_END` | `10:30` / `14:30` | Entry window (IST) |
+| `EMA9VWAP_EOD_EXIT_TIME` | `15:15` | Hard square-off for any open position |
+| `EMA9VWAP_STOP_TIME` | `15:30` | Engine auto-stop time |
+| `EMA9VWAP_MAX_DAILY_TRADES` / `EMA9VWAP_MAX_DAILY_LOSS` | `20` / `5000` | Daily caps |
+| `EMA9VWAP_OPT_STOP_PCT` / `EMA9VWAP_STOP_LOSS_PTS` | `0` / `0` | Optional catastrophe stops (0 = off; pure signal exit) |
+| `EMA9VWAP_CONFIRM_CANDLE_ENABLED` / `EMA9VWAP_INTRACANDLE_ENTRY` | `false` / `false` | Both off → entry on the cross candle's close |
+
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
 | Key | Default | Notes |
@@ -504,6 +530,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/orb-paper/status` | ORB paper trade + ORH/ORL overlay |
 | `/orb-paper/history` | ORB sessions (per-session delete + view modal) |
 | `/orb-live/status` | ORB live trade (Fyers; gated by `ORB_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
+
+### EMA9 + VWAP
+| URL | Description |
+|-----|-------------|
+| `/ema9vwap-backtest` | EMA9+VWAP date-range backtest |
+| `/ema9vwap-paper/status` | EMA9+VWAP paper trade + EMA9/VWAP±σ band overlay |
+| `/ema9vwap-paper/history` | EMA9+VWAP sessions (per-session delete + view modal) |
+| `/ema9vwap-live` | EMA9+VWAP live via the paper-wrapping harness (Zerodha orders; gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
 
 ### Analytics & Tools
 | URL | Description |

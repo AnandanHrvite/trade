@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### New strategy: EMA9 + VWAP-band crossover (Paper / Backtest / Live / Replay)
+
+- **What**: a new 5-minute intraday strategy, `EMA9_VWAP`, structurally cloned from SWING but with a simpler entry/exit:
+  - **CE**: EMA 9 (on 5-min close) crosses **above** the VWAP **top line** (`VWAP + mult·σ`). **PE**: EMA 9 crosses **below** the VWAP **bottom line** (`VWAP − mult·σ`).
+  - **Exit is a PURE signal exit** — hold the full position until EMA 9 crosses back **inside** the band (CE → back below the top line, PE → back above the bottom line). No stop-loss, target, or trail. EOD hard square-off at **15:15 IST**.
+  - **Entry window 10:30 → 14:30 IST** (a trailing position keeps running past 14:30 until the re-cross or the 15:15 square-off). Signals are evaluated on **candle close** ("wait for timeframe close").
+- VWAP is **session-anchored, HLC3, with Standard-Deviation bands** matching the TradingView default (`Bands Multiplier #1 = 1`). Tunable via `EMA9VWAP_BAND_MULT` (0 collapses the band to the plain VWAP line). NIFTY spot has no real volume, so this VWAP is effectively a session **TWAP±σ** — same convention ORB already documents.
+- **Surfaces**: `/ema9vwap-paper` (canonical engine, Fyers ticks), `/ema9vwap-backtest` (dedicated candle-loop engine that mirrors the paper decisions, not the generic swing engine), `/ema9vwap-live` (LIVE = PAPER via the harness, **Zerodha** orders, double-gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`). Wired into the unified **Real-Time monitor**, **Replay**, the **Dashboard** rollup (Zerodha wallet pool), **Settings** (new "EMA9 + VWAP STRATEGY — Zerodha" section + `EMA9VWAP_MODE_ENABLED` master toggle + `UI_SHOW_EMA9VWAP_*` submenu toggles), and the sidebar (gated by `EMA9VWAP_MODE_ENABLED`).
+- Runs **in parallel** with Swing/Scalp/PA/ORB on the shared Fyers socket (registers as a secondary fan-out callback — never steals the primary feed) with its own `sharedSocketState` mode (`EMA9VWAP_PAPER`/`EMA9VWAP_LIVE`), data files (`ema9vwap_paper_trades.json`, `trades/ema9vwap_paper_trades_*.jsonl`), and crash-recovery snapshot (`.active_ema9vwap_position.json`). No existing strategy's behaviour changes.
+
 ### ORB: volume-confirmation filter OFF by default (NIFTY spot has no real volume)
 
 - **`ORB_VOL_FILTER_ENABLED` default flipped `true` → `false`** ([src/strategies/orb_breakout.js](src/strategies/orb_breakout.js), [src/routes/settings.js](src/routes/settings.js), [src/routes/docs.js](src/routes/docs.js), README).

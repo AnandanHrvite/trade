@@ -420,6 +420,7 @@ const _MODE_TO_CANONICAL_FILE = {
   "scalp-paper":    "scalp_paper_trades.json",
   "swing-paper":    "paper_trades.json",
   "orb-paper":      "orb_paper_trades.json",
+  "ema9vwap-paper": "ema9vwap_paper_trades.json",
 };
 function _lookupCanonicalSession(mode, sessionStartTs) {
   const fname = _MODE_TO_CANONICAL_FILE[mode];
@@ -886,6 +887,7 @@ const MODE_TO_MODULE = {
   "scalp-paper":    "../routes/scalpPaper",
   "swing-paper":    "../routes/swingPaper",
   "orb-paper":      "../routes/orbPaper",
+  "ema9vwap-paper": "../routes/ema9vwapPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
   // live session was recorded, replay it as the matching paper mode.
 };
@@ -1320,7 +1322,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 // fix landed — their session-start meta now includes `recordsOptionLtps:true`.
 // Sessions for these modes that lack the flag in meta cannot reproduce
 // trades on replay, so the UI marks them as incomplete and disables Replay.
-const LEGACY_ALWAYS_RECORDED_MODES = new Set(["pa-paper", "scalp-paper", "swing-paper"]);
+const LEGACY_ALWAYS_RECORDED_MODES = new Set(["pa-paper", "scalp-paper", "swing-paper", "ema9vwap-paper"]);
 
 function _sessionIsReplayable(startEvt) {
   if (!startEvt || !startEvt.mode) return false;

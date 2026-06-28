@@ -33,7 +33,8 @@ function _num(v) {
  * default rates → broker undefined); every other strategy trades on Fyers.
  */
 function brokerForMode(modeOrPrefix) {
-  return /swing/i.test(String(modeOrPrefix || "")) ? undefined : "fyers";
+  // Swing + EMA9+VWAP trade through Zerodha (Kite default → undefined); others Fyers.
+  return /swing|ema9vwap/i.test(String(modeOrPrefix || "")) ? undefined : "fyers";
 }
 const brokerForRoute = brokerForMode;
 

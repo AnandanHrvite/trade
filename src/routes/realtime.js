@@ -25,6 +25,7 @@ const STRATEGY_DEFS = [
   { key:'SCALP',    label:'SCALP',        accentClass:'scalp',    accent:'#f59e0b', paperPrefix:'/scalp-paper',    livePrefix:'/scalp-live',    hasDayLog:true,  modeFlag:'SCALP_MODE_ENABLED'    },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:false, modeFlag:'ORB_MODE_ENABLED'      },
+  { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', livePrefix:'/ema9vwap-live', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
 ];
 
 function enabledStrategies() {
@@ -33,13 +34,13 @@ function enabledStrategies() {
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
 // Swing trades through Zerodha; Scalp/PA/ORB through Fyers.
-const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS' };
+const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
   const pools = [];
   if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
-    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'Swing', inv:z });
+    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'Swing · EMA9+VWAP', inv:z });
   if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
     pools.push({ id:'FYERS', label:'FYERS', sub:'Scalp · PA · ORB', inv:f });
   return pools;
@@ -140,6 +141,7 @@ ${faviconLink()}
   .card.scalp    { border-top-color:#f59e0b; }
   .card.pa       { border-top-color:#a855f7; }
   .card.orb      { border-top-color:#10b981; }
+  .card.ema9vwap { border-top-color:#06b6d4; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
@@ -147,6 +149,7 @@ ${faviconLink()}
   .card.scalp    .card-title { color:#fbbf24; }
   .card.pa       .card-title { color:#c084fc; }
   .card.orb      .card-title { color:#34d399; }
+  .card.ema9vwap .card-title { color:#22d3ee; }
 
   .badge { font-size:0.66rem; padding:3px 8px; border-radius:4px; border:1px solid; font-weight:600; letter-spacing:0.4px; }
   .badge.run  { background:rgba(16,185,129,0.12); color:#10b981; border-color:rgba(16,185,129,0.35); }
@@ -195,6 +198,7 @@ ${faviconLink()}
   .card.scalp    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
+  .card.ema9vwap .act-btn:not(.act-btn-disabled):hover { border-color:#06b6d4; }
 
   /* Rollup table */
   .rollup { width:100%; border-collapse:collapse; background:#0a1628; border:1px solid #1c2c47; border-radius:10px; overflow:hidden; }
@@ -207,6 +211,7 @@ ${faviconLink()}
   .rollup tr.scalp    td:first-child { color:#fbbf24; }
   .rollup tr.pa       td:first-child { color:#c084fc; }
   .rollup tr.orb      td:first-child { color:#34d399; }
+  .rollup tr.ema9vwap td:first-child { color:#22d3ee; }
   .rollup tr.total    td:first-child { color:#e0eaf8; }
 
   .pulse { display:inline-block; width:7px; height:7px; border-radius:50%; background:#10b981; margin-left:6px; animation:pulse 1.5s ease-in-out infinite; vertical-align:middle; }
@@ -222,6 +227,7 @@ ${faviconLink()}
   :root[data-theme="light"] .card.scalp    .card-title { color:#d97706; }
   :root[data-theme="light"] .card.pa       .card-title { color:#9333ea; }
   :root[data-theme="light"] .card.orb      .card-title { color:#059669; }
+  :root[data-theme="light"] .card.ema9vwap .card-title { color:#0891b2; }
   :root[data-theme="light"] .pos-block,
   :root[data-theme="light"] .flat-block { background:#f8fafc !important; border-color:#e0e4ea !important; }
   :root[data-theme="light"] .flat-block { color:#64748b; }
@@ -243,6 +249,7 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup tr.scalp    td:first-child { color:#d97706; }
   :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#9333ea; }
   :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#059669; }
+  :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0891b2; }
   :root[data-theme="light"] .pos-zero { color:#64748b !important; }
   :root[data-theme="light"] .pos-pos  { color:#059669 !important; }
   :root[data-theme="light"] .pos-neg  { color:#dc2626 !important; }

@@ -200,6 +200,28 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "EMA9 + VWAP STRATEGY — Zerodha",
+    icon: "📈",
+    fields: [
+      { key: "EMA9VWAP_LIVE_ENABLED", label: "EMA9+VWAP Live Orders (gates /ema9vwap-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for EMA9+VWAP Live trading. Must be true AND LIVE_HARNESS_DRY_RUN=false for real Zerodha orders to fire.", default: "false" },
+      { key: "EMA9VWAP_LIVE_DRY_RUN", label: "EMA9+VWAP Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep EMA9+VWAP in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
+      { key: "EMA9VWAP_BAND_MULT", label: "VWAP Band σ Multiplier", type: "number", min: 0, max: 4, step: 0.5, effect: EFFECT.INSTANT, desc: "Standard-deviation multiplier for the VWAP top/bottom lines (TradingView 'Bands Multiplier #1'). 1 = ±1σ (default). 0 collapses the band to the plain VWAP line.", default: "1" },
+      { key: "EMA9VWAP_EMA_PERIOD", label: "EMA Period", type: "number", min: 2, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "EMA length crossed against the VWAP band (default 9).", default: "9" },
+      { key: "EMA9VWAP_VWAP_SESSION_START", label: "VWAP Session Anchor", type: "time", effect: EFFECT.SESSION, desc: "Session-anchor time for VWAP (HH:MM IST). VWAP resets each day from here. Default 09:15 = market open (TradingView 'Session').", default: "09:15" },
+      { key: "EMA9VWAP_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this IST time (default 10:30).", default: "10:30" },
+      { key: "EMA9VWAP_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries at/after this IST time (default 14:30). A trailing position keeps running past this.", default: "14:30" },
+      { key: "EMA9VWAP_EOD_EXIT_TIME", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time for any open position (default 15:15 IST).", default: "15:15" },
+      { key: "EMA9VWAP_STOP_TIME", label: "Engine Auto-Stop", type: "time", effect: EFFECT.SESSION, desc: "Time the engine auto-stops for the day (default 15:30 IST).", default: "15:30" },
+      { key: "EMA9VWAP_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 40, step: 1, effect: EFFECT.SESSION, desc: "Daily trade cap.", default: "20" },
+      { key: "EMA9VWAP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Daily loss kill-switch.", default: "5000" },
+      { key: "EMA9VWAP_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF by default — the EMA9-vs-band cross is itself a candle-close event so entry fires on that candle. Turn on for an extra next-candle confirmation.", default: "false" },
+      { key: "EMA9VWAP_INTRACANDLE_ENTRY", label: "Intra-Candle Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "OFF by default — entries evaluated only on 5-min candle CLOSE (matches 'wait for timeframe close'). Turn on to allow mid-candle entries.", default: "false" },
+      { key: "EMA9VWAP_OPT_STOP_PCT", label: "Safety Option-Premium Stop (fraction)", type: "number", min: 0, max: 0.5, step: 0.05, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop on option premium (0.15 = exit if premium drops 15%). 0 = OFF (pure signal exit, the default).", default: "0" },
+      { key: "EMA9VWAP_STOP_LOSS_PTS", label: "Safety Spot-Points Stop", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Optional catastrophe stop in NIFTY spot points against entry. 0 = OFF (pure signal exit, the default).", default: "0" },
+      { key: "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", label: "Option Expiry Override (YYYY-MM-DD)", type: "text", effect: EFFECT.SESSION, desc: "Force a specific weekly expiry for EMA9+VWAP option entries. Blank = nearest weekly (intraday strategy, current week is fine).", default: "" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     fields: [
@@ -344,6 +366,7 @@ const SETTINGS_SCHEMA = [
       { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "EMA9VWAP_MODE_ENABLED",  label: "EMA9+VWAP Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9+VWAP sidebar group AND the EMA9+VWAP strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
@@ -373,6 +396,12 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_ORB_LIVE",     label: "ORB → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the ORB group (needs ORB_LIVE_ENABLED to actually start)", default: "true" },
       { key: "UI_SHOW_ORB_LIVE_HARNESS", label: "ORB → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the ORB group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
       { key: "UI_SHOW_ORB_HISTORY",  label: "ORB → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the ORB group", default: "true" },
+
+      // ── EMA9+VWAP submenu ──
+      { key: "UI_SHOW_EMA9VWAP_BACKTEST", label: "EMA9+VWAP → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the EMA9+VWAP group", default: "true", subheader: "EMA9+VWAP sub-menus" },
+      { key: "UI_SHOW_EMA9VWAP_PAPER",    label: "EMA9+VWAP → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the EMA9+VWAP group", default: "true" },
+      { key: "UI_SHOW_EMA9VWAP_LIVE",     label: "EMA9+VWAP → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the EMA9+VWAP group — runs LIVE by wrapping PAPER (Zerodha orders), guaranteeing LIVE = PAPER decisions (needs EMA9VWAP_LIVE_ENABLED to actually fire)", default: "true" },
+      { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the EMA9+VWAP group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true", subheader: "System sub-menus" },
@@ -418,6 +447,7 @@ const MODE_SECTION_TITLES = {
   scalp:    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
+  ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "COMMON — Instrument & Backtest",
@@ -425,7 +455,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set() };
+const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -1045,6 +1075,7 @@ router.get("/", (req, res) => {
   const swingModeOn    = (envData["SWING_MODE_ENABLED"]    ?? process.env.SWING_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
+  const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
   const showCacheBtn = (envData["UI_SHOW_CACHE_FILES"] ?? process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
   // (scalpModeOn already computed above for isFieldFrozen)
@@ -1053,6 +1084,7 @@ router.get("/", (req, res) => {
     "SCALP STRATEGY (BB+PSAR+RSI) — Fyers":                         scalpModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
+    "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
   };
 
   // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — Scalp only ──

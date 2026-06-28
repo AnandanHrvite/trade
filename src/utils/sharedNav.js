@@ -16,6 +16,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _primaryMode = null;
   let _paMode = null;
   let _orbMode = null;
+  let _ema9vwapMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -23,6 +24,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _primaryMode = sss.getMode();
     _paMode = sss.getPAMode();
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
+    _ema9vwapMode = sss.getEma9VwapMode ? sss.getEma9VwapMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -47,6 +49,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpModeOn    = (process.env.SCALP_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
+  const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -80,6 +83,10 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showOrbLive           = (process.env.UI_SHOW_ORB_LIVE             || 'true').toLowerCase() === 'true';
   const showOrbLiveHarness    = (process.env.UI_SHOW_ORB_LIVE_HARNESS     || 'false').toLowerCase() === 'true';
   const showOrbHistory        = (process.env.UI_SHOW_ORB_HISTORY          || 'true').toLowerCase() === 'true';
+  const showEma9vwapBacktest  = (process.env.UI_SHOW_EMA9VWAP_BACKTEST    || 'true').toLowerCase() === 'true';
+  const showEma9vwapPaper     = (process.env.UI_SHOW_EMA9VWAP_PAPER       || 'true').toLowerCase() === 'true';
+  const showEma9vwapLive      = (process.env.UI_SHOW_EMA9VWAP_LIVE        || 'true').toLowerCase() === 'true';
+  const showEma9vwapHistory   = (process.env.UI_SHOW_EMA9VWAP_HISTORY     || 'true').toLowerCase() === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -89,11 +96,13 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive', 'scalpLiveHarness'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
+  const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isScalpOpen    = scalpKeys.includes(activePage);
   const isPAOpen       = paKeys.includes(activePage);
   const isOrbOpen      = orbKeys.includes(activePage);
+  const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -102,6 +111,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const scalpPaperRunning    = _scalpMode    === 'SCALP_PAPER';
   const paPaperRunning       = _paMode       === 'PA_PAPER';
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
+  const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
 
   // Build a swing items list with per-feature toggle
   const swingItems = [
@@ -141,6 +151,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showOrbHistory  ? [{ key: 'orbHistory',  href: '/orb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const ema9vwapItems = [
+    ...(showEma9vwapBacktest ? [{ key: 'ema9vwapBacktest', href: '/ema9vwap-backtest',     icon: '🔍', label: 'Backtest' }] : []),
+    ...(showEma9vwapPaper    ? [{ key: 'ema9vwapPaper',    href: '/ema9vwap-paper/status', icon: '📋', label: 'Paper'    }] : []),
+    ...(showSim         ? [{ key: 'ema9vwapSim',     href: '/ema9vwap-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
+    ...(showEma9vwapLive && !ema9vwapPaperRunning ? [{ key: 'ema9vwapLive', href: '/ema9vwap-live', icon: '●', label: 'Live' }] : []),
+    ...(showEma9vwapHistory  ? [{ key: 'ema9vwapHistory',  href: '/ema9vwap-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -175,6 +193,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'ORB', collapsible: true, collapsed: !isOrbOpen,
       groupId: 'nav-orb',
       items: orbItems,
+    }] : []),
+    ...(ema9vwapModeOn ? [{
+      header: 'EMA9+VWAP', collapsible: true, collapsed: !isEma9vwapOpen,
+      groupId: 'nav-ema9vwap',
+      items: ema9vwapItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,
