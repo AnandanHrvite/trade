@@ -24,6 +24,7 @@ const SOURCES = [
   { mode: "SCALP",    file: path.join(DATA_DIR, "scalp_paper_trades.json"),    color: "#f59e0b" },
   { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       color: "#a855f7" },
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
+  { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), color: "#06b6d4" },
 ];
 
 function safeRead(p) {
@@ -326,6 +327,7 @@ router.get("/", (req, res) => {
         <option value="SCALP">Scalp</option>
         <option value="PA">Price Action</option>
         <option value="ORB">ORB</option>
+        <option value="EMA9VWAP">EMA9+VWAP</option>
       </select>
       <label>Side</label>
       <select id="fSide">
@@ -1191,7 +1193,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { SWING: '#3b82f6', SCALP: '#f59e0b', PA: '#a855f7' };
+const _MODE_COLOR = { SWING: '#3b82f6', SCALP: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }

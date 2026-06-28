@@ -28,12 +28,14 @@ const PAPER_SOURCES = [
   { mode: "SCALP",    file: "scalp_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
+  { mode: "EMA9VWAP", file: "ema9vwap_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
   { mode: "SWING",    file: "live_trades.json" },
   { mode: "SCALP",    file: "scalp_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
+  { mode: "EMA9VWAP", file: "ema9vwap_live_trades.json" },
 ];
 
 function safeRead(p) {

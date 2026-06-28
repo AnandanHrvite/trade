@@ -588,7 +588,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["SWING", "SCALP", "PA", "ORB"].filter(isModeEnabled);
+  const groups = ["SWING", "SCALP", "PA", "ORB", "EMA9VWAP"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 
