@@ -1322,7 +1322,7 @@ async function onCandleClose(candle) {
       sharedSocketState.clear();
       stopOptionPolling();
       // Only stop socket if no scalp mode is piggybacking
-      if (!sharedSocketState.isScalpActive()) {
+      if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
         socketManager.stop();
       } else {
         log("📡 [LIVE] Socket kept alive — scalp mode still active");
@@ -2321,7 +2321,7 @@ router.get("/stop", async (req, res) => {
   }
   stopOptionPolling();
   // Only stop socket if no scalp mode is piggybacking
-  if (!sharedSocketState.isScalpActive()) {
+  if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
     socketManager.stop();
   } else {
     log("📡 [LIVE] Socket kept alive — scalp mode still active");

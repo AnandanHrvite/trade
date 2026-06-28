@@ -793,7 +793,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyEntry({
-      mode:           'PAPER',
+      mode:           'EMA9VWAP-PAPER',
       side,
       symbol,
       strike:         ptState.position.optionStrike,
@@ -1001,7 +1001,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   // ── Telegram notification (skip in simulation mode) ───────────────────────
   if (!ptState._simMode) {
     notifyExit({
-      mode:           'PAPER',
+      mode:           'EMA9VWAP-PAPER',
       side,
       symbol,
       strike:         trade.optionStrike,

@@ -96,6 +96,7 @@ function modeGroup(mode) {
   if (m === "SCALP"    || m.startsWith("SCALP-")    || m.startsWith("SCALP_"))    return "SCALP";
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
+  if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
   return "SWING";
 }
 
@@ -360,6 +361,8 @@ function modeLabel(mode) {
   // and preserve the suffix so the alert still shows the dry-run flag.
   if (m.startsWith("ORB-PAPER"))       return "📄 ORB PAPER" + m.slice("ORB-PAPER".length);
   if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
+  if (m.startsWith("EMA9VWAP-PAPER"))  return "📄 EMA9+VWAP PAPER" + m.slice("EMA9VWAP-PAPER".length);
+  if (m.startsWith("EMA9VWAP-LIVE"))   return "⚡ EMA9+VWAP LIVE" + m.slice("EMA9VWAP-LIVE".length);
   return m;
 }
 

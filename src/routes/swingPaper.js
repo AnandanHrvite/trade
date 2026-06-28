@@ -1250,7 +1250,7 @@ async function onCandleClose(candle) {
       ptState.running = false;
       saveSession();
       // Only stop socket if no scalp mode is piggybacking
-      if (!sharedSocketState.isScalpActive()) {
+      if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
         socketManager.stop();
       }
       sharedSocketState.clear();
@@ -2176,7 +2176,7 @@ router.get("/start", async (req, res) => {
         reason: "auto_stop_eod",
       });
     } catch (_) {}
-    if (!sharedSocketState.isScalpActive()) {
+    if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
       socketManager.stop();
     }
     sharedSocketState.clear();
@@ -2220,7 +2220,7 @@ router.get("/stop", async (req, res) => {
     tickSimulator.stop();
     ptState._simMode = false;
     ptState._simScenario = null;
-  } else if (!sharedSocketState.isScalpActive()) {
+  } else if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
     socketManager.stop();
   }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }

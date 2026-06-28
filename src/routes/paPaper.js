@@ -1060,7 +1060,7 @@ function stopSession() {
   socketManager.removeCallback(CALLBACK_ID);
 
   // If we were the only socket user and no primary mode is active, stop socket
-  if (!sharedSocketState.isActive() && socketManager.isRunning()) {
+  if (!sharedSocketState.isActive() && !sharedSocketState.isEma9VwapActive() && socketManager.isRunning()) {
     // Don't stop — primary mode might still need it
     // Only stop if no primary mode AND no other PA mode
     if (!sharedSocketState.isPAActive() || sharedSocketState.getPAMode() === "PA_PAPER") {
