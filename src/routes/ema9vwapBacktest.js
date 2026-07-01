@@ -112,7 +112,7 @@ ${buildSidebar('ema9vwapBacktest', true)}
         const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
 
         // ── Warm-up buffer ─────────────────────────────────────────────────────
-        // Indicators (EMA/RSI/SAR) need history to be meaningful. Instead of
+        // Indicators (EMA9 + session VWAP) need history to be meaningful. Instead of
         // consuming the start of the requested range as warm-up — which broke
         // short ranges (a 1-day backtest skipped its own morning and reset EMAs
         // each day) — fetch extra candles BEFORE `from` purely to seed indicators.
@@ -1618,7 +1618,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   </div>
   <div class="page">
     <div style="margin-bottom:20px;">
-      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">Swing (EMA20/50+RSI+SAR) Backtest</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">EMA9+VWAP Backtest</div>
       <div style="font-size:0.78rem;color:#4a6080;">Fix the error above and run again.</div>
     </div>
     <div class="card">
