@@ -63,6 +63,7 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const eodExit        = _parseMins("EMA9VWAP_EOD_EXIT_TIME", "15:15");
   const maxDailyTrades = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || "20", 10);
   const maxDailyLoss   = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || "5000");
+  const reversalExit   = (process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true";
 
   let curDay = null, dailyTrades = 0, dailyPnl = 0;
   const total = candles.length;
@@ -130,10 +131,20 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     if (position) {
       position.candlesHeld = (position.candlesHeld || 0) + 1;
       let doExit = false, exitReason = "";
-      if ((position.side === "CE" && sig.exitCE) || (position.side === "PE" && sig.exitPE)) {
+      // Exit 2.5: 2-candle reversal engulf — mirrors paper onCandleClose. CE bails on a
+      // bearish candle closing below both prior 2 lows; PE on a bullish candle closing
+      // above both prior 2 highs. Positions never carry overnight (EOD square-off), so
+      // candles[i-1]/[i-2] are always same-day while a position is open.
+      if (reversalExit && i >= 2) {
+        const prev1 = candles[i - 1], prev2 = candles[i - 2];
+        const revCE = position.side === "CE" && candle.close < candle.open && candle.close < Math.min(prev1.low, prev2.low);
+        const revPE = position.side === "PE" && candle.close > candle.open && candle.close > Math.max(prev1.high, prev2.high);
+        if (revCE || revPE) { doExit = true; exitReason = "2-candle reversal exit"; }
+      }
+      if (!doExit && ((position.side === "CE" && sig.exitCE) || (position.side === "PE" && sig.exitPE))) {
         doExit = true;
         exitReason = `EMA9 re-entered VWAP ${position.side === "CE" ? "top" : "bottom"} band`;
-      } else if (mins >= eodExit) {
+      } else if (!doExit && mins >= eodExit) {
         doExit = true;
         exitReason = "EOD square-off";
       }

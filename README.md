@@ -123,6 +123,7 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - **Signal source** ([src/strategies/ema9_vwap.js](src/strategies/ema9_vwap.js)): EMA 9 (on 5-min close) vs a **session-anchored VWAP with Standard-Deviation bands** — source HLC3, multiplier `EMA9VWAP_BAND_MULT=1` (= ±1σ, the TradingView default). Set the multiplier to `0` to collapse the band to the plain VWAP line.
 - **Entry** (evaluated on candle CLOSE): **CE** when EMA 9 crosses **above** the top line (`VWAP + mult·σ`); **PE** when EMA 9 crosses **below** the bottom line (`VWAP − mult·σ`). Window `EMA9VWAP_ENTRY_START=10:30` → `EMA9VWAP_ENTRY_END=14:30`.
 - **Exit — PURE signal exit**: hold the FULL position (no stop-loss / target / trail) until EMA 9 crosses back **inside** the band (CE → back below the top line, PE → back above the bottom line). A trailing position runs past 14:30; hard EOD square-off at `EMA9VWAP_EOD_EXIT_TIME=15:15`. Optional catastrophe stops (`EMA9VWAP_OPT_STOP_PCT`, `EMA9VWAP_STOP_LOSS_PTS`) default **off**.
+- **Exit — 2-candle reversal engulf** (`EMA9VWAP_REVERSAL_EXIT_ENABLED`, default **on**): on candle close, square off immediately if the just-closed candle reverses hard against the position — a CE bails on a **bearish** candle (`close < open`) that closes **below both** of the previous 2 candles' lows; a PE on a **bullish** candle that closes **above both** of the previous 2 candles' highs. Rolling reference (each closed candle vs its own prior 2). Turn off to hold purely to the signal / EOD exit.
 - **Note**: NIFTY spot has no real volume, so this VWAP is effectively a session **TWAP±σ** (HLC3) — same caveat as ORB's VWAP filter. The σ-band math and the EMA9 cross are exact; absolute VWAP values track TradingView's shape but are not tick-identical.
 - **LIVE = PAPER**: `/ema9vwap-live` runs the paper engine and places **Zerodha** orders via the harness, double-gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`. Backtest is a dedicated candle-loop engine ([src/services/ema9vwapBacktestEngine.js](src/services/ema9vwapBacktestEngine.js)) that mirrors the paper decisions exactly. Runs in parallel with the other strategies on the shared Fyers socket.
 
@@ -360,6 +361,7 @@ Full spec: [SCALP.md](SCALP.md).
 | `EMA9VWAP_STOP_TIME` | `15:30` | Engine auto-stop time |
 | `EMA9VWAP_MAX_DAILY_TRADES` / `EMA9VWAP_MAX_DAILY_LOSS` | `20` / `5000` | Daily caps |
 | `EMA9VWAP_OPT_STOP_PCT` / `EMA9VWAP_STOP_LOSS_PTS` | `0` / `0` | Optional catastrophe stops (0 = off; pure signal exit) |
+| `EMA9VWAP_REVERSAL_EXIT_ENABLED` | `true` | 2-candle reversal exit — square off when a candle closes hard against the position (CE: bearish close below both prior-2 lows; PE: bullish close above both prior-2 highs), evaluated on candle close |
 | `EMA9VWAP_CONFIRM_CANDLE_ENABLED` / `EMA9VWAP_INTRACANDLE_ENTRY` | `false` / `false` | Both off → entry on the cross candle's close |
 
 ### Paper Investment Pools (per broker)

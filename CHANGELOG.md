@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### EMA9 + VWAP: 2-candle reversal exit
+
+- **What**: a new candle-close exit for the EMA9+VWAP strategy — after entry, square off immediately when the just-closed candle reverses hard against the position: a **CE** bails on a **bearish** candle (`close < open`) that closes **below both** of the previous 2 candles' lows; a **PE** on a **bullish** candle that closes **above both** of the previous 2 candles' highs. Rolling reference (each closed candle is measured against its own prior 2). Evaluated on candle close only — a wick that reverses before the candle closes does not trigger it.
+- **Where**: implemented in the canonical paper engine (`ema9vwapPaper.js` `onCandleClose`, checked ahead of the pure signal exit) and mirrored in the dedicated backtest engine (`ema9vwapBacktestEngine.js`). The Live harness wraps paper, so LIVE inherits it by construction. The exit uses `simulateSell` so the existing opposite-side cooldown blocks an instant flip after the reversal.
+- **Toggle**: `EMA9VWAP_REVERSAL_EXIT_ENABLED` (default **on**), exposed in **Settings** ("2-Candle Reversal Exit"). Set to `false` to hold purely to the signal / EOD exit. Trades exit with reason `2-candle reversal exit`, grouped as "2-Candle Reversal" in the paper daily journal.
+
 ### New strategy: EMA9 + VWAP-band crossover (Paper / Backtest / Live / Replay)
 
 - **What**: a new 5-minute intraday strategy, `EMA9_VWAP`, structurally cloned from SWING but with a simpler entry/exit:

@@ -1180,6 +1180,32 @@ async function onCandleClose(candle) {
   // SL-hit is enforced intra-candle in onTick against the stop set above —
   // no separate candle-close SL check needed.
 
+  // ── Exit Rule 2.5: 2-candle reversal engulf ────────────────────────────────
+  // After entry, bail if the just-closed candle reverses HARD against the position:
+  // a candle that CLOSES opposite to our side (CE: bearish close<open; PE: bullish
+  // close>open) AND whose close crosses beyond BOTH of the previous 2 candles'
+  // extremes (CE: below both prior lows; PE: above both prior highs). Rolling
+  // reference — each closed candle is measured against the 2 candles immediately
+  // before it. Env-gated, default ON. Squares off in full and returns (the
+  // opposite-side cooldown fired by simulateSell blocks an instant flip).
+  if (
+    ptState.position &&
+    (process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true" &&
+    ptState.candles.length >= 3
+  ) {
+    const _side  = ptState.position.side;
+    const _prev1 = ptState.candles[ptState.candles.length - 2];
+    const _prev2 = ptState.candles[ptState.candles.length - 3];
+    const _revCE = _side === "CE" && candle.close < candle.open && candle.close < Math.min(_prev1.low, _prev2.low);
+    const _revPE = _side === "PE" && candle.close > candle.open && candle.close > Math.max(_prev1.high, _prev2.high);
+    if (_revCE || _revPE) {
+      const _lvl = _side === "CE" ? Math.min(_prev1.low, _prev2.low) : Math.max(_prev1.high, _prev2.high);
+      log(`🔄 [PAPER] 2-candle reversal — ${_side} candle closed ${_side === "CE" ? "bearish below prev-2 lows" : "bullish above prev-2 highs"} (C=₹${candle.close} vs ₹${_lvl}) — exit @ ₹${candle.close}`);
+      simulateSell(candle.close, "2-candle reversal exit", candle.close);
+      return;
+    }
+  }
+
   // ── Exit Rule 3: PURE signal exit — EMA9 crosses back INSIDE the VWAP band ──
   // CE exits when EMA9 re-crosses below the VWAP top line (VWAP+σ); PE exits when
   // EMA9 re-crosses above the VWAP bottom line (VWAP−σ). No SL / target / trail —
@@ -1795,6 +1821,7 @@ function generatePaperDailyReport(trades, sessionPnl) {
     trades.forEach(t => {
       const label = t.exitReason.includes("50% rule")  ? "50% Rule"
                   : t.exitReason.includes("SL hit")    ? "SL Hit"
+                  : t.exitReason.includes("reversal")  ? "2-Candle Reversal"
                   : t.exitReason.includes("trail") || t.exitReason.includes("Trail") ? "Trail SL"
                   : t.exitReason.includes("Opposite")  ? "Opposite Signal"
                   : t.exitReason.includes("EOD") || t.exitReason.includes("stop") ? "EOD/Stop"
@@ -2000,6 +2027,7 @@ router.get("/start", async (req, res) => {
     const _negLim = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
     const _slPts  = parseFloat(process.env.EMA9VWAP_STOP_LOSS_PTS || "0");
     const _parts  = [`signal exit (EMA${Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD||"9",10)||9)} re-enters band)`, "opposite signal"];
+    if ((process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true") _parts.push("2-candle reversal engulf");
     if (_slPts > 0)  _parts.push(`${_slPts}pt spot cap`);
     if (_optPct > 0) _parts.push(`option stop ${(_optPct*100).toFixed(0)}%`);
     if (_ctOn)       _parts.push(`${Math.max(1,parseInt(process.env.EMA9VWAP_CANDLE_TRAIL_BARS||"3",10))}-bar candle trail`);
