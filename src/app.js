@@ -1207,7 +1207,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (Swing + Scalp + ORB)">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (Swing + Scalp + PA + ORB + EMA9+VWAP)">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
@@ -1562,10 +1562,11 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}];
+var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}];
 var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
 // Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
-var HARNESS_ENDPOINTS = ['/swing-live-harness/start'${scalpModeOn ? ",'/scalp-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}];
+// EMA9+VWAP has no separate pure-live engine — its /ema9vwap-live route IS the harness (Zerodha orders when dry-run off).
+var HARNESS_ENDPOINTS = ['/swing-live-harness/start'${scalpModeOn ? ",'/scalp-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}];
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1576,7 +1577,7 @@ function _escHtml(s){
 function _prettyEndpoint(url){
   var m = /\\/(\\w+)-(live|paper)(-harness)?\\/start/.exec(url);
   if (!m) return url;
-  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB' }[m[1]] || m[1];
+  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP' }[m[1]] || m[1];
   var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
   return mode + ' ' + kind;
 }
