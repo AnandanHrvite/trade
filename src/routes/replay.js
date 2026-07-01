@@ -660,6 +660,23 @@ function drawReplayChart(el, cd) {
       legendItems.push({ label: _ovLabel[key] || key, color, series: ls, last: arr[arr.length - 1] });
     }
   }
+  // VWAP + σ bands (EMA9+VWAP / ORB) — solid VWAP line, dashed ±σ bands.
+  // Matches the paper chart: VWAP white, +σ green, −σ red.
+  if (Array.isArray(cd.vwap) && cd.vwap.length) {
+    const vwapLs = chart.addLineSeries({ color: '#e5e7eb', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    vwapLs.setData(cd.vwap);
+    legendItems.push({ label: 'VWAP', color: '#e5e7eb', series: vwapLs, last: cd.vwap[cd.vwap.length - 1] });
+  }
+  if (Array.isArray(cd.vwapUpper) && cd.vwapUpper.length) {
+    const upLs = chart.addLineSeries({ color: '#10b981', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+    upLs.setData(cd.vwapUpper);
+    legendItems.push({ label: 'VWAP+σ', color: '#10b981', series: upLs, last: cd.vwapUpper[cd.vwapUpper.length - 1] });
+  }
+  if (Array.isArray(cd.vwapLower) && cd.vwapLower.length) {
+    const loLs = chart.addLineSeries({ color: '#ef4444', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+    loLs.setData(cd.vwapLower);
+    legendItems.push({ label: 'VWAP−σ', color: '#ef4444', series: loLs, last: cd.vwapLower[cd.vwapLower.length - 1] });
+  }
   // SAR as discrete dots (hide connecting line, show only point markers).
   if (Array.isArray(cd.sar) && cd.sar.length) {
     const sarLs = chart.addLineSeries({ color: '#f472b6', lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2, priceLineVisible: false, lastValueVisible: false });
