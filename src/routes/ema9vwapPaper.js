@@ -3100,10 +3100,10 @@ ${buildSidebar('ema9vwapPaper', sharedSocketState.getEma9VwapMode()==='EMA9VWAP_
         <span style="color:#3b82f6;">▲ Entry</span> &nbsp;
         <span style="color:#10b981;">▼ Win</span> &nbsp;
         <span style="color:#ef4444;">▼ Loss</span> &nbsp;
-        <span style="color:#a855f7;">── EMA9</span> &nbsp;
-        <span style="color:#e5e7eb;">── VWAP</span> &nbsp;
-        <span style="color:#10b981;">╌ VWAP+σ</span> &nbsp;
-        <span style="color:#ef4444;">╌ VWAP−σ</span> &nbsp;
+        <span style="color:#e5e7eb;">── EMA9</span> &nbsp;
+        <span style="color:#2962ff;">── VWAP</span> &nbsp;
+        <span style="color:#10b981;">── VWAP+σ</span> &nbsp;
+        <span style="color:#ef4444;">── VWAP−σ</span> &nbsp;
         <span style="color:#f59e0b;">── SL</span>
       </div>
     </div>
@@ -3470,11 +3470,12 @@ ${modalJS()}
 
   // EMA9 — the strategy's only EMA input. The chart shows exactly what the strategy
   // uses: EMA9 crossing the session VWAP ±σ band (no EMA20/50, RSI, or SuperTrend).
-  const ema9Series  = chart.addLineSeries({ color:'#a855f7', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
-  // VWAP (solid) + σ bands (dashed) — the EMA9+VWAP strategy's defining lines.
-  const vwapSeries      = chart.addLineSeries({ color:'#e5e7eb', lineWidth:2, priceLineVisible:false, lastValueVisible:true,  crosshairMarkerVisible:false, title:'VWAP' });
-  const vwapUpperSeries = chart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP+σ' });
-  const vwapLowerSeries = chart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP−σ' });
+  // TradingView-matched palette: EMA9 = white (the "EMA 9 close" line), VWAP = blue.
+  const ema9Series  = chart.addLineSeries({ color:'#e5e7eb', lineWidth:2, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'EMA9' });
+  // VWAP (solid blue) + σ bands (solid green/red) — matches the TradingView setup.
+  const vwapSeries      = chart.addLineSeries({ color:'#2962ff', lineWidth:2, priceLineVisible:false, lastValueVisible:true,  crosshairMarkerVisible:false, title:'VWAP' });
+  const vwapUpperSeries = chart.addLineSeries({ color:'#10b981', lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP+σ' });
+  const vwapLowerSeries = chart.addLineSeries({ color:'#ef4444', lineWidth:1, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false, title:'VWAP−σ' });
 
   // SL line
   let slLine = null;

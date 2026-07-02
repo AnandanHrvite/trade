@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### EMA9 + VWAP: chart on Live page + TradingView-matched styling + Telegram toggles
+
+- **Live page now draws the price chart.** `/ema9vwap-live` previously showed only status + a JSON event log; it now renders the same candlestick chart as Paper/Replay, fed by the paper engine's `/ema9vwap-paper/status/chart-data` (the harness drives that engine underneath), so all three surfaces show the same picture.
+- **Chart recoloured to match the user's TradingView setup** on Paper, Live, and Replay: **EMA9 = white**, **VWAP = blue**, **VWAP ± σ = solid green / red** (was EMA9 purple, VWAP white, dashed bands). Replay's recolour is scoped to EMA9+VWAP only (detected by carrying both an `ema9` and a `vwap` series) so ORB/Swing replay charts are untouched.
+- **Telegram toggles added to Settings.** The `COMMON — Telegram` section now exposes EMA9+VWAP rows (`TG_EMA9VWAP_STARTED / _ENTRY / _EXIT / _SIGNALS / _DAYREPORT`) alongside the other strategies. `notify.js` already gated EMA9+VWAP alerts on these keys — they were just missing a UI switch (defaulted on, except `_SIGNALS` off, matching Scalp/PA).
+
 ### EMA9 + VWAP: 2-candle reversal exit
 
 - **What**: a new candle-close exit for the EMA9+VWAP strategy — after entry, square off immediately when the just-closed candle reverses hard against the position: a **CE** bails on a **bearish** candle (`close < open`) that closes **below both** of the previous 2 candles' lows; a **PE** on a **bullish** candle that closes **above both** of the previous 2 candles' highs. Rolling reference (each closed candle is measured against its own prior 2). Evaluated on candle close only — a wick that reverses before the candle closes does not trigger it.

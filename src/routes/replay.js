@@ -644,10 +644,15 @@ function drawReplayChart(el, cd) {
   });
   cs.setData(cd.candles);
   legendItems.push({ kind: 'ohlc', color: '#cbd5e1', series: cs, last: cd.candles[cd.candles.length - 1] });
+  // EMA9+VWAP is the only mode carrying BOTH an ema9 line and a vwap line (ORB has
+  // vwap but no ema9; Swing has ema9 but no vwap). Detect it so we can paint it in
+  // the same TradingView palette as its Paper/Live charts (EMA9 white, VWAP blue,
+  // solid σ bands) without recolouring the other strategies' replay charts.
+  const isEma9Vwap = Array.isArray(cd.ema9) && cd.ema9.length && Array.isArray(cd.vwap) && cd.vwap.length;
   // Line overlays differ by mode; draw whichever the payload carries.
   const overlays = [
     ['bbUpper', '#a78bfa'], ['bbMiddle', '#64748b'], ['bbLower', '#a78bfa'],
-    ['ema9', '#a855f7'], ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
+    ['ema9', isEma9Vwap ? '#e5e7eb' : '#a855f7'], ['ema20', '#fbbf24'], ['ema50', '#3b82f6'], ['ema21', '#fbbf24'],
     ['orhLine', '#34d399'], ['orlLine', '#f87171'],
   ];
   const _ovLabel = { bbUpper: 'BB↑', bbMiddle: 'BB·', bbLower: 'BB↓', ema9: 'EMA9', ema20: 'EMA20', ema50: 'EMA50', ema21: 'EMA21', orhLine: 'ORH', orlLine: 'ORL' };
@@ -660,20 +665,23 @@ function drawReplayChart(el, cd) {
       legendItems.push({ label: _ovLabel[key] || key, color, series: ls, last: arr[arr.length - 1] });
     }
   }
-  // VWAP + σ bands (EMA9+VWAP / ORB) — solid VWAP line, dashed ±σ bands.
-  // Matches the paper chart: VWAP white, +σ green, −σ red.
+  // VWAP + σ bands (EMA9+VWAP / ORB) — solid VWAP line, ±σ bands.
+  // EMA9+VWAP matches its TradingView chart (VWAP blue, solid green/red σ bands);
+  // ORB keeps its original look (VWAP white, dashed σ bands).
+  const _vwapColor = isEma9Vwap ? '#2962ff' : '#e5e7eb';
+  const _bandStyle = isEma9Vwap ? 0 : 2;
   if (Array.isArray(cd.vwap) && cd.vwap.length) {
-    const vwapLs = chart.addLineSeries({ color: '#e5e7eb', lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+    const vwapLs = chart.addLineSeries({ color: _vwapColor, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
     vwapLs.setData(cd.vwap);
-    legendItems.push({ label: 'VWAP', color: '#e5e7eb', series: vwapLs, last: cd.vwap[cd.vwap.length - 1] });
+    legendItems.push({ label: 'VWAP', color: _vwapColor, series: vwapLs, last: cd.vwap[cd.vwap.length - 1] });
   }
   if (Array.isArray(cd.vwapUpper) && cd.vwapUpper.length) {
-    const upLs = chart.addLineSeries({ color: '#10b981', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+    const upLs = chart.addLineSeries({ color: '#10b981', lineWidth: 1, lineStyle: _bandStyle, priceLineVisible: false, lastValueVisible: false });
     upLs.setData(cd.vwapUpper);
     legendItems.push({ label: 'VWAP+σ', color: '#10b981', series: upLs, last: cd.vwapUpper[cd.vwapUpper.length - 1] });
   }
   if (Array.isArray(cd.vwapLower) && cd.vwapLower.length) {
-    const loLs = chart.addLineSeries({ color: '#ef4444', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
+    const loLs = chart.addLineSeries({ color: '#ef4444', lineWidth: 1, lineStyle: _bandStyle, priceLineVisible: false, lastValueVisible: false });
     loLs.setData(cd.vwapLower);
     legendItems.push({ label: 'VWAP−σ', color: '#ef4444', series: loLs, last: cd.vwapLower[cd.vwapLower.length - 1] });
   }
