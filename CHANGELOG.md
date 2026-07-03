@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Logs hub: Login Logs, Server Logs & Cache Files folded into the Logs page as tabs
+
+- **What**: the sidebar's **Trade Logs** entry is renamed **Logs**, and the **🔐 LOGIN LOGS**, **📜 LOGS**, and **🧰 CACHE FILES** buttons are removed from the Settings top bar. Those three views now live as tabs on the Logs (`/trade-logs`) page — alongside the existing Trade Files, Skip Logs, and Checkpoints tabs.
+- **How**: `/login-logs`, `/logs`, and `/cache-files` each gained an `?embed=1` mode that drops their sidebar and own top-bar; the Logs page renders each inside an `<iframe>` (lazy-loaded on first tab open) so the pages keep all their existing logic — nothing was duplicated. The old `UI_SHOW_LOGS` / `UI_SHOW_CACHE_FILES` toggles now gate the **Server Logs** / **Cache Files** tabs (Login Logs is always shown). The standalone routes still work when visited directly.
+
 ### Settings: one-click "Reset ALL Paper" across every strategy
 
 - **What**: a new **🧹 RESET ALL PAPER** button in the Settings top bar that wipes paper-trade history and restores starting capital for **all** strategies at once — Swing, Scalp, PA, ORB, EMA9+VWAP — instead of visiting each strategy's page and resetting it individually.

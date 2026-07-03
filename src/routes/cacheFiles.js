@@ -328,8 +328,10 @@ router.post("/delete-all", (req, res) => {
 });
 
 // ── GET /cache-files — UI page ──────────────────────────────────────────────
-router.get("/", (_req, res) => {
+router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
+  const embed = req.query.embed === "1" || req.query.embed === "true";
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -443,8 +445,9 @@ router.get("/", (_req, res) => {
   </style>
 </head>
 <body>
+${embed ? '<style>.main-content{margin-left:0 !important;} .top-bar{display:none !important;}</style>' : ''}
 <div class="app-shell">
-${buildSidebar('cacheFiles', liveActive)}
+${embed ? '' : buildSidebar('cacheFiles', liveActive)}
 <div class="main-content">
 
 <div class="top-bar">

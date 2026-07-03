@@ -410,9 +410,9 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the EMA9+VWAP group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
-      { key: "UI_SHOW_LOGS",       label: "Settings → LOGS button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the 'LOGS' button in the Settings top bar (links to /logs — live server-log viewer)", default: "true", subheader: "System sub-menus" },
-      { key: "UI_SHOW_TRADE_LOGS", label: "System → Trade Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Trade Logs' inside the System group", default: "true" },
-      { key: "UI_SHOW_CACHE_FILES", label: "Settings → Cache Files button", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the '🧰 CACHE FILES' button in the Settings top bar (browse/clear backtest & candle caches, recorded ticks, replay outputs, root state files)", default: "true" },
+      { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the '📜 Server Logs' tab in the Logs page (live server-log viewer)", default: "true", subheader: "System sub-menus" },
+      { key: "UI_SHOW_TRADE_LOGS", label: "System → Logs", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Logs' inside the System group", default: "true" },
+      { key: "UI_SHOW_CACHE_FILES", label: "Logs → Cache Files tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the '🧰 Cache Files' tab in the Logs page (browse/clear backtest & candle caches, recorded ticks, replay outputs, root state files)", default: "true" },
     ],
   },
   {
@@ -1082,8 +1082,8 @@ router.get("/", (req, res) => {
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
-  const showLogsBtn = (envData["UI_SHOW_LOGS"] ?? process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
-  const showCacheBtn = (envData["UI_SHOW_CACHE_FILES"] ?? process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
+  // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
+  // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (scalpModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
     "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     swingModeOn,
@@ -1662,9 +1662,6 @@ router.get("/", (req, res) => {
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
         <button onclick="showBackupModal()" title="Download daily data snapshots so an EC2 loss never loses data" style="padding:6px 14px;background:rgba(52,211,153,0.12);color:#34d399;border:1px solid rgba(52,211,153,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📦 BACKUP</button>
         <a href="/pnl-history" style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">💰 P&amp;L HISTORY</a>
-        <a href="/login-logs" style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🔐 LOGIN LOGS</a>
-        ${showLogsBtn ? `<a href="/logs" style="padding:6px 14px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📜 LOGS</a>` : ''}
-        ${showCacheBtn ? `<a href="/cache-files" style="padding:6px 14px;background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">🧰 CACHE FILES</a>` : ''}
         <button onclick="showExpiryHolidaysModal()" title="View NIFTY weekly/monthly expiry calendar and NSE trading holidays" style="padding:6px 14px;background:rgba(34,211,238,0.12);color:#22d3ee;border:1px solid rgba(34,211,238,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📅 EXPIRY &amp; HOLIDAYS</button>
         <button onclick="showHealthModal()" title="Quick app health + link to the full EC2 instance Monitor" style="padding:6px 14px;background:rgba(16,185,129,0.12);color:#10b981;border:1px solid rgba(16,185,129,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📈 HEALTH</button>
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>

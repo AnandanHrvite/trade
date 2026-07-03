@@ -202,8 +202,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     {
       header: 'SYSTEM', collapsible: false,
       items: [
-        ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Trade Logs' }] : []),
-        // Cache Files moved into the Settings top bar (🧰 CACHE FILES button) — gated by UI_SHOW_CACHE_FILES.
+        ...(showTradeLogs  ? [{ key: 'tradeLogs',  href: '/trade-logs',  icon: '🗂', label: 'Logs' }] : []),
+        // Login Logs, Server Logs (📜 LOGS) and Cache Files now live as tabs inside the Logs (/trade-logs) page.
         { key: 'settings',   href: '/settings',    icon: '⚙',  label: 'Settings'   },
       ]
     },

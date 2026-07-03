@@ -447,7 +447,8 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `UI_SHOW_PA_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the PA group |
 | `UI_SHOW_{SWING,SCALP,ORB}_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the Swing/Scalp/ORB group — runs LIVE by wrapping PAPER (LIVE = PAPER) |
 | `UI_SHOW_PA_PATTERN_BACKTEST` | `true` | Show "Pattern Test" inside the PA group |
-| `UI_SHOW_LOGS` / `UI_SHOW_TRADE_LOGS` / `UI_SHOW_CACHE_FILES` | `true` | System menu items |
+| `UI_SHOW_TRADE_LOGS` | `true` | Show **Logs** in the System sidebar group |
+| `UI_SHOW_LOGS` / `UI_SHOW_CACHE_FILES` | `true` | Show the **Server Logs** / **Cache Files** tabs on the Logs (`/trade-logs`) page |
 
 > Per-menu / per-submenu visibility toggles are also configurable via the Settings UI — hide entire mode sections (Swing / Scalp / PA / ORB) from the sidebar without disabling the underlying engine, or hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode section. Driven by env vars + Settings UI; persists across restart.
 
@@ -557,9 +558,9 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/trade-logs` | **Renamed from JSONL viewer in v4.5.0.** Per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode **Download All** + **Delete All** buttons, plus a single **Download Everything (all strategies)** button on both the Trade Files and Skip Logs tabs (`/trade-logs/download-everything` and `/trade-logs/skips/download-everything`) that concatenates every mode's daily files into one self-describing JSONL (each line carries its own `mode`). JSONL is the canonical export format (CSV/PDF dropped — they were drifting on edge cases). The **Checkpoints & Settings Changes** tab now has a per-row **↩ Restore** button that reverts a key to its prior value (with a "restore all keys with the same note" checkbox when the entry has a note, and a one-click restart prompt when needed). Light-theme aware. |
 | `/cache-files` | Cache / generated-file browser. Groups every on-disk cache by purpose — **Backtest Cache**, **Candle Cache**, **Recorded Ticks**, **Replay Trades** (snapshot + sim), and **Root Data Files** — each with per-file **View** / **Download** / **Delete** plus group **Download All** (`.tar.gz`) + **Delete All**. Read endpoints are open; deletes require `API_SECRET`. Path-traversal-guarded. The canonical trade/skip JSONLs keep their own page (`/trade-logs`); deleting a cache here is safe (regenerated on demand). Gated by `UI_SHOW_CACHE_FILES`. Light-theme aware. |
 | `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) + maintenance actions |
-| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / swingLive / swingPaper. |
+| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / swingLive / swingPaper. Also shown as the **Server Logs** tab on the Logs (`/trade-logs`) page. |
 | `/docs` | README, CHANGELOG, documents viewer |
-| `/login-logs` | Failed login attempts with geolocation (now linked from Settings top-bar; not in sidebar) |
+| `/login-logs` | Failed login attempts with geolocation. Shown as the **Login Logs** tab on the Logs (`/trade-logs`) page; still reachable directly. |
 | `/deploy/status` | GitHub Actions deploy status |
 | `/health` | Health check endpoint |
 

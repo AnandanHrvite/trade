@@ -533,6 +533,10 @@ function enabledModesFromEnv() {
 router.get("/", (req, res) => {
   const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
   const enabled = enabledModesFromEnv();
+  // Server Logs + Cache Files tabs are gated by the same toggles that used to gate
+  // their (now-removed) Settings top-bar buttons. Login Logs is always available.
+  const showLogsTab  = (process.env.UI_SHOW_LOGS ?? "true").toLowerCase() === "true";
+  const showCacheTab = (process.env.UI_SHOW_CACHE_FILES ?? "true").toLowerCase() === "true";
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -567,6 +571,8 @@ router.get("/", (req, res) => {
     .tab .badge { display:inline-block; margin-left:6px; padding:1px 7px; font-size:0.6rem; background:#0a1528; border:1px solid #1e3a5a; border-radius:999px; color:#94a3b8; }
     .tab-pane { display:none; }
     .tab-pane.active { display:block; }
+    /* Embedded pages (Login Logs / Server Logs / Cache Files) shown in an iframe tab */
+    .embed-frame { width:100%; height:calc(100vh - 168px); min-height:480px; border:0; border-radius:10px; background:#080c14; display:block; }
     .mode-section { margin-bottom:22px; background:#0a1018; border:1px solid #1a2236; border-radius:8px; overflow:hidden; }
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
@@ -690,6 +696,9 @@ ${buildSidebar('tradeLogs', liveActive)}
       <div class="tab active" data-tab="files" onclick="setTab('files')">📁 Trade Files <span class="badge" id="filesBadge">—</span></div>
       <div class="tab" data-tab="skips" onclick="setTab('skips')">🚫 Skip Logs <span class="badge" id="skipsBadge">—</span></div>
       <div class="tab" data-tab="audit" onclick="setTab('audit')">🔖 Checkpoints &amp; Settings Changes <span class="badge" id="auditBadge">—</span></div>
+      <div class="tab" data-tab="loginlogs" onclick="setTab('loginlogs')">🔐 Login Logs</div>
+      ${showLogsTab ? `<div class="tab" data-tab="serverlogs" onclick="setTab('serverlogs')">📜 Server Logs</div>` : ''}
+      ${showCacheTab ? `<div class="tab" data-tab="cache" onclick="setTab('cache')">🧰 Cache Files</div>` : ''}
     </div>
     <div class="page-size-ctrl">
       <label for="pageSizeSelect">Rows per page</label>
@@ -747,6 +756,21 @@ ${buildSidebar('tradeLogs', liveActive)}
     </div>
     <div id="auditArea">Loading…</div>
   </div>
+
+  <!-- ── LOGIN LOGS TAB (embedded /login-logs) ─────────────────────── -->
+  <div class="tab-pane embed-pane" id="pane-loginlogs">
+    <iframe class="embed-frame" data-src="/login-logs?embed=1" title="Login Logs"></iframe>
+  </div>
+
+  <!-- ── SERVER LOGS TAB (embedded /logs) ──────────────────────────── -->
+  ${showLogsTab ? `<div class="tab-pane embed-pane" id="pane-serverlogs">
+    <iframe class="embed-frame" data-src="/logs?embed=1" title="Server Logs"></iframe>
+  </div>` : ''}
+
+  <!-- ── CACHE FILES TAB (embedded /cache-files) ───────────────────── -->
+  ${showCacheTab ? `<div class="tab-pane embed-pane" id="pane-cache">
+    <iframe class="embed-frame" data-src="/cache-files?embed=1" title="Cache Files"></iframe>
+  </div>` : ''}
 </div>
 
 <!-- Trade-view modal -->
@@ -855,6 +879,17 @@ ${buildSidebar('tradeLogs', liveActive)}
   function setTab(name) {
     document.querySelectorAll('.tab').forEach(function(t){ t.classList.toggle('active', t.dataset.tab === name); });
     document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.toggle('active', p.id === 'pane-' + name); });
+    var pane = document.getElementById('pane-' + name);
+    var isEmbed = !!(pane && pane.classList.contains('embed-pane'));
+    // "Rows per page" only applies to the file/skip/audit tables — hide it on embedded tabs
+    // (Login Logs / Server Logs / Cache Files each own their paging).
+    var pzc = document.querySelector('.page-size-ctrl');
+    if (pzc) pzc.style.visibility = isEmbed ? 'hidden' : '';
+    // Lazy-load the iframe the first time its tab is opened.
+    if (isEmbed) {
+      var fr = pane.querySelector('iframe.embed-frame');
+      if (fr && !fr.getAttribute('src') && fr.dataset.src) fr.setAttribute('src', fr.dataset.src);
+    }
     if (name === 'audit') loadAudit();
     if (name === 'skips') loadSkips();
   }
