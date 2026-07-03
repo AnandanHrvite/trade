@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["swing", "scalp", "pa", "orb"];
+const MODES = ["swing", "scalp", "pa", "orb", "ema9vwap"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -525,6 +525,7 @@ function enabledModesFromEnv() {
     scalp:    on(process.env.SCALP_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
+    ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
   };
 }
 
@@ -573,6 +574,7 @@ router.get("/", (req, res) => {
     .mode-scalp    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
+    .mode-ema9vwap { color:#06b6d4; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
@@ -769,6 +771,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
+    { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
   ];
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
@@ -782,14 +785,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { swing:1, scalp:1, pa:1, orb:1 };
-  var _skipsPage  = { swing:1, scalp:1, pa:1, orb:1 };
+  var _filesPage  = { swing:1, scalp:1, pa:1, orb:1, ema9vwap:1 };
+  var _skipsPage  = { swing:1, scalp:1, pa:1, orb:1, ema9vwap:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
   // Section totals cached so the badge survives prev/next clicks without refetching all modes.
-  var _filesTotals = { swing:0, scalp:0, pa:0, orb:0 };
-  var _skipsTotals = { swing:0, scalp:0, pa:0, orb:0 };
+  var _filesTotals = { swing:0, scalp:0, pa:0, orb:0, ema9vwap:0 };
+  var _skipsTotals = { swing:0, scalp:0, pa:0, orb:0, ema9vwap:0 };
 
   function fmtSize(n) {
     if (n < 1024) return n + ' B';
