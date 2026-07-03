@@ -1670,6 +1670,7 @@ router.get("/", (req, res) => {
         <button onclick="showEnvModal()" style="padding:6px 14px;background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">VIEW .env</button>
         <button onclick="showBulkModal()" title="Paste KEY=VALUE pairs to bulk update .env, then restart" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">📋 BULK EDIT</button>
         <button onclick="resetAndSaveAll()" title="Write every field on this page to .env (not just dirty ones). Useful after code updates that add new settings with defaults — flushes those defaults into .env. Does NOT change values shown on screen." style="padding:6px 14px;background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">💾 SAVE ALL → .env</button>
+        <button onclick="resetAllPaper(this)" title="Wipe paper-trade history + restore starting capital for ALL strategies (Swing, Scalp, PA, ORB, EMA9+VWAP) at once. Tick recordings & trade-log JSONL are KEPT — Replay still works. A strategy that is currently running is skipped." style="padding:6px 14px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.35);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;">🧹 RESET ALL PAPER</button>
       </div>
     </div>
 
@@ -2123,6 +2124,68 @@ async function resetAndSaveAll() {
   .catch(function(err) {
     var msg = err.name === 'AbortError' ? 'Request timed out' : err.message;
     showToast('Save All failed: ' + msg, 'error');
+  });
+}
+
+// ── Reset ALL paper trades across every strategy ─────────────────────────────
+// Fans out to each strategy's own /reset route (canonical reset logic). Those
+// routes only rewrite the summary *_paper_trades.json — tick recordings and the
+// per-day trade-log JSONL are left intact, so Replay is unaffected.
+async function resetAllPaper(btn) {
+  var STRATS = [
+    { name: 'Swing',     url: '/swing-paper/reset' },
+    { name: 'Scalp',     url: '/scalp-paper/reset' },
+    { name: 'PA',        url: '/pa-paper/reset' },
+    { name: 'ORB',       url: '/orb-paper/reset' },
+    { name: 'EMA9+VWAP', url: '/ema9vwap-paper/reset' },
+  ];
+  var ok = await showDoubleConfirm({
+    icon: '🧹', title: 'Reset ALL Paper Trades',
+    message: 'Wipe paper-trade history and restore starting capital for EVERY strategy:\\nSwing, Scalp, PA, ORB, EMA9+VWAP.\\n\\nTick recordings and trade-log JSONL are KEPT — Replay still works.\\nA strategy that is currently running is skipped — stop it first.\\n\\nCannot be undone.',
+    confirmText: 'Reset All', confirmClass: 'modal-btn-danger',
+    subject: 'ALL paper sessions & capital (every strategy)',
+    secondConfirmText: 'Yes, reset all'
+  });
+  if (!ok) return;
+
+  var origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '⏳ RESETTING...'; btn.disabled = true; }
+
+  var done = [], skipped = [], failed = [];
+  for (var i = 0; i < STRATS.length; i++) {
+    var s = STRATS[i];
+    try {
+      var res = await secretFetch(s.url);
+      if (!res) { // user dismissed the API-secret prompt → abort the whole run
+        if (btn) { btn.textContent = origText; btn.disabled = false; }
+        showToast('Reset cancelled', 'info');
+        return;
+      }
+      var data;
+      try { data = await res.json(); } catch (_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
+      if (data && data.success) {
+        done.push(s.name);
+      } else {
+        var err = (data && data.error) || 'failed';
+        if (/before resetting/i.test(err)) skipped.push(s.name);
+        else failed.push(s.name + ' (' + err + ')');
+      }
+    } catch (e) {
+      failed.push(s.name + ' (' + (e.name === 'AbortError' ? 'timed out' : e.message) + ')');
+    }
+  }
+
+  if (btn) { btn.textContent = origText; btn.disabled = false; }
+
+  var lines = [];
+  if (done.length)    lines.push('✅ Reset: ' + done.join(', '));
+  if (skipped.length) lines.push('⏸ Skipped (running — stop first): ' + skipped.join(', '));
+  if (failed.length)  lines.push('❌ Failed: ' + failed.join(', '));
+  showAlert({
+    icon: failed.length ? '⚠️' : '🧹',
+    title: 'Reset All Paper — Done',
+    message: lines.join('\\n') || 'Nothing was reset.',
+    btnClass: failed.length ? 'modal-btn-danger' : 'modal-btn-primary'
   });
 }
 

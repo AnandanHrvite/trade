@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Settings: one-click "Reset ALL Paper" across every strategy
+
+- **What**: a new **🧹 RESET ALL PAPER** button in the Settings top bar that wipes paper-trade history and restores starting capital for **all** strategies at once — Swing, Scalp, PA, ORB, EMA9+VWAP — instead of visiting each strategy's page and resetting it individually.
+- **How**: it fans out to each strategy's existing `/{name}-paper/reset` route (the canonical reset logic), so **tick recordings and the per-day trade-log JSONL are left intact** — Replay still works after a reset. A strategy that is currently running is skipped (its own reset guard rejects while a session is live) and reported as such; the run ends with a summary of what was reset / skipped / failed. Double-confirm gated.
+
 ### EMA9 + VWAP: chart on Live page + TradingView-matched styling + Telegram toggles
 
 - **Live page now draws the price chart.** `/ema9vwap-live` previously showed only status + a JSON event log; it now renders the same candlestick chart as Paper/Replay, fed by the paper engine's `/ema9vwap-paper/status/chart-data` (the harness drives that engine underneath), so all three surfaces show the same picture.
