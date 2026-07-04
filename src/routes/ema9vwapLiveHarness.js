@@ -97,6 +97,12 @@ router.get("/start", async (req, res) => {
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
   const dryRun = liveDryRun.isDryRun("EMA9VWAP");
 
+  // Live-order gate (the documented double-gate): real orders require EMA9VWAP_LIVE_ENABLED=true.
+  // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off.
+  if (!dryRun && (process.env.EMA9VWAP_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+    return res.status(403).json({ success: false, error: "Live trading disabled. Set EMA9VWAP_LIVE_ENABLED=true to place real orders." });
+  }
+
   // Only require broker auth when real orders will actually be placed.
   if (!dryRun && !zerodhaBroker.isAuthenticated()) {
     return res.status(401).json({ success: false, error: "Zerodha not authenticated for live orders. Complete Zerodha login first." });

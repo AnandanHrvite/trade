@@ -99,6 +99,13 @@ router.get("/start", async (req, res) => {
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
   const dryRun = liveDryRun.isDryRun("SCALP");
 
+  // Live-order gate (the documented double-gate): real orders require SCALP_LIVE_ENABLED=true.
+  // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off, matching the
+  // legacy /scalp-live route.
+  if (!dryRun && (process.env.SCALP_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+    return res.status(403).json({ success: false, error: "Live trading disabled. Set SCALP_LIVE_ENABLED=true to place real orders." });
+  }
+
   let installed;
   try {
     installed = liveHarness.installHarness({

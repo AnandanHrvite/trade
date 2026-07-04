@@ -99,6 +99,13 @@ router.get("/start", async (req, res) => {
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
   const dryRun = liveDryRun.isDryRun("ORB");
 
+  // Live-order gate (the documented double-gate): real orders require ORB_LIVE_ENABLED=true.
+  // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off, matching the
+  // legacy /orb-live route.
+  if (!dryRun && (process.env.ORB_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+    return res.status(403).json({ success: false, error: "Live trading disabled. Set ORB_LIVE_ENABLED=true to place real orders." });
+  }
+
   let installed;
   try {
     installed = liveHarness.installHarness({
