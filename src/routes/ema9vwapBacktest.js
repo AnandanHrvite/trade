@@ -150,7 +150,7 @@ ${buildSidebar('ema9vwapBacktest', true)}
 
         backtestJobs.updateProgress(id, { phase: 'Running EMA9+VWAP backtest…', pct: 5, current: 0, total: _candles.length - 30 });
         const _result = await runEma9VwapBacktest(_candles, capital,
-          (p) => backtestJobs.updateProgress(id, p), activeFromTs);
+          (p) => backtestJobs.updateProgress(id, p), activeFromTs, _vixCandles);
         _result.candleCount = _candles.length;
         saveResult(ACTIVE, { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);

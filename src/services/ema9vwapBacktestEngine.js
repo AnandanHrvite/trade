@@ -23,6 +23,7 @@ const instrumentConfig = require("../config/instrument");
 const { getLotQty } = instrumentConfig;
 const { getCharges } = require("../utils/charges");
 const strategy = require("../strategies/ema9_vwap");
+const vixFilter = require("./vixFilter");
 
 function _istMins(s) { return Math.floor((s + 19800) / 60) % 1440; }
 function _istDay(s)  { return Math.floor((s + 19800) / 86400); }
@@ -46,7 +47,7 @@ function _toIST(s) {
  * @param {number} activeFromTs  only record trades whose entry candle.time >= this (warmup gate)
  * @returns {{summary:Object, trades:Array}}
  */
-async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 0) {
+async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 0, vixCandles = []) {
   const trades   = [];
   let position   = null;
   const LOT_SIZE = getLotQty();
@@ -61,11 +62,32 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const entryStart     = _parseMins("EMA9VWAP_ENTRY_START", "10:30");
   const entryEnd       = _parseMins("EMA9VWAP_ENTRY_END", "14:30");
   const eodExit        = _parseMins("EMA9VWAP_EOD_EXIT_TIME", "15:15");
-  const maxDailyTrades = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || "20", 10);
-  const maxDailyLoss   = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || "5000");
+  // Same fallback chain as paper (_refreshConfig): per-strategy → global → default,
+  // so the backtest's daily caps mirror the canonical paper engine exactly.
+  const maxDailyTrades = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || process.env.MAX_DAILY_TRADES || "20", 10);
+  const maxDailyLoss   = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || process.env.MAX_DAILY_LOSS || "5000");
   const reversalExit   = (process.env.EMA9VWAP_REVERSAL_EXIT_ENABLED || "true").toLowerCase() === "true";
 
+  // ── Guards mirrored from paper (previously absent from this engine) ──────────
+  // Opposite-side (flip) cooldown — same keys/defaults as ema9vwapPaper._refreshConfig.
+  const oppCooldownEnabled = (process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+  const oppCooldownCandles = parseInt(process.env.EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  // Reason patterns that do NOT arm the opposite cooldown (mirror paper _setOppositeCooldown).
+  const OPP_EXEMPT_RE = /opposite signal|eod|day close|market closed|auto-stop|manual|session restart|simulation ended/i;
+  // Candle resolution in minutes (from spacing) — drives the "4 candles" pause + cooldown windows.
+  const resMins = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 5;
+  // VIX gate: paper calls checkLiveVix("STRONG") with the default (swing) thresholds;
+  // checkBacktestVix self-gates on VIX_FILTER_ENABLED and fails per VIX_FAIL_MODE.
+  const vixLookup = vixFilter.buildVixLookup(vixCandles || []);
+  let vixBlocked = 0;
+
   let curDay = null, dailyTrades = 0, dailyPnl = 0;
+  // Per-day circuit-breaker state (reset each trading day, like paper's per-session state).
+  let dailyLossHit = false;        // latched once daily loss ≥ cap (a later win does NOT clear it)
+  let consecLosses = 0;            // back-to-back losses
+  let pauseUntilTs = 0;            // block entries until this candle.time (seconds) — 3-loss pause
+  let oppCooldownUntilTs = 0;      // block opposite-side entries until this candle.time (seconds)
+  let oppCooldownLastSide = null;  // side that was last exited
   const total = candles.length;
   const reportEvery = Math.max(1, Math.floor(total / 50));
 
@@ -121,6 +143,29 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
     });
     dailyTrades++;
     dailyPnl += pnlRupees;
+
+    // ── Circuit-breaker updates (mirror ema9vwapPaper's simulateSell tail) ──────
+    const _exitedSide = position.side;
+    // Daily-loss latch: once the day's loss reaches the cap, no more entries today
+    // (a later win does NOT clear it — matches paper).
+    if (!dailyLossHit && dailyPnl <= -Math.abs(maxDailyLoss)) dailyLossHit = true;
+    // 3-consecutive-loss rule: 15-min → kill the day; 5-min → pause 4 candles + reset.
+    if (pnlRupees < 0) {
+      consecLosses += 1;
+      if (consecLosses >= 3) {
+        if (resMins >= 15) { dailyLossHit = true; }
+        else { pauseUntilTs = candle.time + 4 * resMins * 60; consecLosses = 0; }
+      }
+    } else {
+      consecLosses = 0;
+      pauseUntilTs = 0; // a profitable/flat trade clears any remaining pause (matches paper)
+    }
+    // Opposite-side (flip) cooldown: arm unless the exit reason is exempt.
+    if (oppCooldownEnabled && oppCooldownCandles > 0 && !OPP_EXEMPT_RE.test(exitReason)) {
+      oppCooldownUntilTs  = candle.time + oppCooldownCandles * resMins * 60;
+      oppCooldownLastSide = _exitedSide;
+    }
+
     position = null;
   }
 
@@ -131,8 +176,14 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
 
     const candle = candles[i];
     const day = _istDay(candle.time);
-    if (day !== curDay) { curDay = day; dailyTrades = 0; dailyPnl = 0; }
+    if (day !== curDay) {
+      curDay = day; dailyTrades = 0; dailyPnl = 0;
+      // Reset per-day circuit-breaker state (paper starts each session fresh).
+      dailyLossHit = false; consecLosses = 0; pauseUntilTs = 0;
+      oppCooldownUntilTs = 0; oppCooldownLastSide = null;
+    }
     const mins = _istMins(candle.time);
+    let exitedThisCandle = false;
 
     // Extend the rolling window by the current candle; cap at 200 (paper's in-memory
     // cap). window now equals candles[max(0,i-199) .. i] — same view getSignal saw
@@ -162,21 +213,34 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
         doExit = true;
         exitReason = "EOD square-off";
       }
-      if (doExit) _closeTrade(candle, exitReason);
+      if (doExit) { _closeTrade(candle, exitReason); exitedThisCandle = true; }
     }
 
     // ── ENTRY (candle close, inside the entry window, daily guards) ──
-    if (!position && candle.time >= activeFromTs
+    // exitedThisCandle mirrors paper's `return` after a candle-close exit — no new
+    // entry on a candle that just closed a position.
+    if (!position && !exitedThisCandle && candle.time >= activeFromTs
         && (sig.signal === "BUY_CE" || sig.signal === "BUY_PE")
-        && mins >= entryStart && mins < entryEnd
-        && dailyTrades < maxDailyTrades && dailyPnl > -maxDailyLoss) {
+        && mins >= entryStart && mins < entryEnd) {
       const side = sig.signal === "BUY_CE" ? "CE" : "PE";
-      let entryPrice = candle.close;
-      if (SLIPPAGE_PTS > 0) entryPrice = side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;
-      position = {
-        side, entryPrice: _q(entryPrice, 2), entryTime: candle.time,
-        candlesHeld: 0, signalStrength: "STRONG", entryReason: sig.reason,
-      };
+      // Circuit breakers (mirror paper's entry gate + simulateBuy cooldowns):
+      //   • max trades/day  • latched daily-loss  • 3-loss pause  • opposite-side cooldown
+      const _oppBlocked = oppCooldownEnabled && oppCooldownLastSide
+        && oppCooldownLastSide !== side && candle.time < oppCooldownUntilTs;
+      if (dailyTrades < maxDailyTrades && !dailyLossHit && candle.time >= pauseUntilTs && !_oppBlocked) {
+        // VIX gate — evaluated only when we would otherwise enter, like paper.
+        const _vc = vixFilter.checkBacktestVix(vixLookup(candle.time), "STRONG", { mode: "swing" });
+        if (_vc.allowed) {
+          let entryPrice = candle.close;
+          if (SLIPPAGE_PTS > 0) entryPrice = side === "CE" ? entryPrice + SLIPPAGE_PTS : entryPrice - SLIPPAGE_PTS;
+          position = {
+            side, entryPrice: _q(entryPrice, 2), entryTime: candle.time,
+            candlesHeld: 0, signalStrength: "STRONG", entryReason: sig.reason,
+          };
+        } else {
+          vixBlocked += 1;
+        }
+      }
     }
 
     if (onProgress && i % reportEvery === 0) {
@@ -228,9 +292,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
       marginalTrades:  0,
       marginalWinRate: "N/A",
       marginalPnl:     0,
-      vixEnabled:      false,
-      vixBlocked:      0,
-      vixMaxEntry:     null,
+      vixEnabled:      vixFilter.VIX_ENABLED,
+      vixBlocked:      vixBlocked,
+      vixMaxEntry:     vixFilter.VIX_ENABLED ? vixFilter.VIX_MAX_ENTRY : null,
       vixStrongOnly:   false,
       rejectBreakdown: [],
     },

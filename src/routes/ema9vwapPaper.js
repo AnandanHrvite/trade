@@ -75,8 +75,13 @@ let _OPP_COOLDOWN_CANDLES;     // opposite-side cooldown in candles (× TRADE_RE
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _refreshConfig() {
   TRADE_RES                              = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-  _MAX_DAILY_TRADES                      = parseInt(process.env.MAX_DAILY_TRADES || "20", 10);
-  _MAX_DAILY_LOSS                        = parseFloat(process.env.MAX_DAILY_LOSS || "5000");
+  // Per-strategy caps take precedence, then the global caps, then the default. The
+  // Settings UI + README expose EMA9VWAP_MAX_DAILY_*; honouring them here (with the
+  // global fallback) makes those fields actually work and keeps the backtest engine —
+  // which uses the same fallback chain — mirroring paper. With only the global keys
+  // set (current .env), behaviour is unchanged.
+  _MAX_DAILY_TRADES                      = parseInt(process.env.EMA9VWAP_MAX_DAILY_TRADES || process.env.MAX_DAILY_TRADES || "20", 10);
+  _MAX_DAILY_LOSS                        = parseFloat(process.env.EMA9VWAP_MAX_DAILY_LOSS || process.env.MAX_DAILY_LOSS || "5000");
   // Pure signal-exit strategy: option-premium stop OFF by default (0). Tunable.
   _OPT_STOP_PCT                          = parseFloat(process.env.EMA9VWAP_OPT_STOP_PCT || "0");
   // Engine auto-stop time (after this, no idling); EOD square-off happens earlier at _EMA9VWAP_EOD_EXIT_MINS.
