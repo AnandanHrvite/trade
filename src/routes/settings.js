@@ -2761,15 +2761,19 @@ async function loadHolidaysTable() {
     }
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
-    data.holidays.sort().forEach(function(d, i) {
+    var n = 0;
+    data.holidays.sort().forEach(function(d) {
+      if (d < todayStr) return; // hide past holidays
       var mmdd = d.slice(5);
       var name = _holidayNames[mmdd] || '—';
       var dt = new Date(d + 'T00:00:00');
       var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
       var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
-      var cls = d < todayStr ? 'past-holiday' : (d === todayStr ? 'today-holiday' : '');
-      rows += '<tr class="' + cls + '"><td>' + (i+1) + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
+      var cls = d === todayStr ? 'today-holiday' : '';
+      n++;
+      rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + name + '</td></tr>';
     });
+    if (!n) rows = '<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:20px;">No upcoming holidays</td></tr>';
     body.innerHTML = rows;
   } catch(e) {
     body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:20px;">Failed to load holidays</td></tr>';
@@ -2793,7 +2797,9 @@ async function loadExpiriesTable() {
     if (yearEl) yearEl.textContent = 'NIFTY Options Expiry Calendar ' + data.year;
     var todayStr = new Date(new Date().toLocaleString("en-US",{timeZone:"Asia/Kolkata"})).toISOString().split('T')[0];
     var rows = '';
-    data.expiries.forEach(function(e, i) {
+    var n = 0;
+    data.expiries.forEach(function(e) {
+      if (e.date < todayStr) return; // hide past expiries
       var dt = new Date(e.date + 'T00:00:00');
       var display = dt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
       var dayName = dt.toLocaleDateString('en-US', {weekday:'short'});
@@ -2803,11 +2809,13 @@ async function loadExpiriesTable() {
         var aDt = new Date(e.actual + 'T00:00:00');
         actual = aDt.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
       }
-      var cls = e.date < todayStr ? 'past-holiday' : (e.date === todayStr ? 'today-holiday' : '');
+      var cls = e.date === todayStr ? 'today-holiday' : '';
       if (e.monthly) cls += ' monthly-row';
       var preponedNote = e.preponed ? '<span class="preponed" title="Preponed due to holiday"> ⚠ ' + actual + '</span>' : '';
-      rows += '<tr class="' + cls + '"><td>' + (i+1) + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + type + '</td><td>' + (e.preponed ? preponedNote : '—') + '</td></tr>';
+      n++;
+      rows += '<tr class="' + cls + '"><td>' + n + '</td><td>' + display + '</td><td>' + dayName + '</td><td>' + type + '</td><td>' + (e.preponed ? preponedNote : '—') + '</td></tr>';
     });
+    if (!n) rows = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px;">No upcoming expiry dates</td></tr>';
     body.innerHTML = rows;
   } catch(e) {
     body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#ef4444;padding:20px;">Failed to load expiry dates</td></tr>';
@@ -2982,7 +2990,6 @@ function copySectionSummary() {
         <div class="expiry-legend">
           <span><span class="expiry-dot" style="background:#3b82f6;"></span> Monthly expiry</span>
           <span><span class="expiry-dot" style="background:#f59e0b;"></span> Preponed (holiday)</span>
-          <span style="opacity:0.4;"><span class="expiry-dot" style="background:#4a6080;"></span> Past</span>
         </div>
       </div>
       <div class="holiday-modal-body" style="padding:0 16px 16px;">
