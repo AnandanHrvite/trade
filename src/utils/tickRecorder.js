@@ -354,6 +354,29 @@ function pruneOldRecordings(retainDays) {
   return { kept, deleted, retainDays: days, cutoffDate };
 }
 
+/**
+ * Delete tick recordings whose IST date-folder falls within [from, to] (inclusive).
+ * Both bounds are optional "YYYY-MM-DD" strings — omit `from` for "everything up to
+ * `to`", omit `to` for "everything from `from` on", omit both to wipe all recordings.
+ * Returns { deleted, kept } day-folder counts. Used by /settings/reset-data.
+ */
+function deleteRecordingsInRange({ from, to } = {}) {
+  if (!fs.existsSync(ROOT_DIR)) return { deleted: 0, kept: 0 };
+  let deleted = 0, kept = 0;
+  for (const entry of fs.readdirSync(ROOT_DIR)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry)) continue;
+    const inRange = (!from || entry >= from) && (!to || entry <= to);
+    if (!inRange) { kept += 1; continue; }
+    try {
+      fs.rmSync(path.join(ROOT_DIR, entry), { recursive: true, force: true });
+      deleted += 1;
+    } catch (err) {
+      console.warn(`[tickRecorder] range-delete failed for ${entry}: ${err.message}`);
+    }
+  }
+  return { deleted, kept };
+}
+
 // ── Status (for dashboard / debugging) ───────────────────────────────────────
 function getStats() {
   return {
@@ -382,6 +405,7 @@ module.exports = {
   flushAll,
   flushAllSync,
   pruneOldRecordings,
+  deleteRecordingsInRange,
   getStats,
   // exposed for tests/replay
   _internals: { ROOT_DIR, istDateString, dayDir, ensureDayDir, MAX_BUFFER_RECORDS, RETAIN_DAYS },

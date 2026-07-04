@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Settings: **Reset Data** dialog (categories + date range)
+
+- The Settings **🧹 RESET ALL PAPER** button is now **🧹 RESET DATA** and opens a category picker instead of one-shot wiping every strategy's paper summary. Categories: **Paper trade history**, **Skip trade history**, **Cache**, **Logs**, **Ticks data** — with a **select-all** and an optional **date range**.
+  - The date range filters dated files only: paper daily JSONL (`trades/{mode}_paper_trades_*.jsonl`), skip daily JSONL (`skips/{mode}_paper_skips_*.jsonl`), and tick day-folders (`ticks/YYYY-MM-DD/`). **Cache and Logs always clear fully** (no per-day dimension).
+  - Checking **Paper** with **no** date range preserves the old behaviour: fans out to the 5 per-strategy `/{strategy}-paper/reset` routes to restore starting capital + wipe sessions (a running strategy is skipped). With a date range, only the matching daily paper files are removed — capital/sessions untouched.
+  - New `POST /settings/reset-data` (API_SECRET-gated) performs the file deletions, reusing `tradeLogger.listDailyDates`/`dailyFilePathFor`, `skipLogger.listDates`/`filePathFor`, and a new `tickRecorder.deleteRecordingsInRange({from,to})`. Cache clears `~/trading-data/{backtest_cache,candle_cache}`; Logs clears the in-memory `logStore` (same as `POST /logs/clear`).
+
 ### Performance & resilience hardening (t3.micro) — no trading-decision changes
 
 Audit-driven fixes to protect the single shared process on a 1 GB EC2 t3.micro. **None of these change any strategy's entry/exit/fill decisions** — they remove event-loop stalls, blocking calls, unbounded growth, and redundant broker/disk work.
