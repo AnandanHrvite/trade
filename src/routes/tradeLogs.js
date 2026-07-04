@@ -688,6 +688,9 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="top-bar-title">🗂 Trade Logs</div>
     <div class="top-bar-meta">Per-trade JSONL files · settings checkpoints · stored under ~/trading-data/trades</div>
   </div>
+  <div class="top-bar-right">
+    <button class="btn btn-delete" onclick="openResetDataModal()" title="Selectively reset data: paper trade history, skip history, cache, logs, or ticks — with an optional date range. Checking Paper with no date range also restores starting capital + wipes sessions for all 5 strategies (a running strategy is skipped)." style="font-size:0.72rem;padding:7px 14px;">🧹 Reset Data</button>
+  </div>
 </div>
 
 <div class="page">
@@ -787,6 +790,147 @@ ${buildSidebar('tradeLogs', liveActive)}
 <script>
   ${modalJS()}
   ${toastJS()}
+
+  // ── Reset Data dialog ──────────────────────────────────────────────────────
+  // Category picker + optional date range. paper/skip/ticks are date-scoped by
+  // the range; cache & logs always clear fully. Checking "paper" with NO date
+  // range also fans out to each strategy's /reset route (capital + sessions).
+  function openResetDataModal() {
+    ['paper','skip','cache','logs','ticks'].forEach(function(k){
+      var el = document.getElementById('rd_' + k); if (el) el.checked = false;
+    });
+    var all = document.getElementById('rd_all'); if (all) all.checked = false;
+    document.getElementById('rd_from').value = '';
+    document.getElementById('rd_to').value = '';
+    document.getElementById('resetDataModal').style.display = 'block';
+  }
+  function closeResetDataModal() { document.getElementById('resetDataModal').style.display = 'none'; }
+  function rdToggleAll(cb) {
+    ['paper','skip','cache','logs','ticks'].forEach(function(k){
+      var el = document.getElementById('rd_' + k); if (el) el.checked = cb.checked;
+    });
+  }
+  function rdSyncAll() {
+    var keys = ['paper','skip','cache','logs','ticks'];
+    var allOn = keys.every(function(k){ var el = document.getElementById('rd_' + k); return el && el.checked; });
+    var all = document.getElementById('rd_all'); if (all) all.checked = allOn;
+  }
+
+  async function runResetData(btn) {
+    var cats = {
+      paper: document.getElementById('rd_paper').checked,
+      skip:  document.getElementById('rd_skip').checked,
+      cache: document.getElementById('rd_cache').checked,
+      logs:  document.getElementById('rd_logs').checked,
+      ticks: document.getElementById('rd_ticks').checked,
+    };
+    var from = document.getElementById('rd_from').value || '';
+    var to   = document.getElementById('rd_to').value || '';
+    if (!cats.paper && !cats.skip && !cats.cache && !cats.logs && !cats.ticks) {
+      showToast('Pick at least one thing to reset', 'info'); return;
+    }
+    if (from && to && from > to) { showToast('"From" date is after "To" date', 'info'); return; }
+    var ranged = !!(from || to);
+
+    var picked = [];
+    if (cats.paper) picked.push('Paper trade history' + (ranged ? '' : ' (+ capital)'));
+    if (cats.skip)  picked.push('Skip trade history');
+    if (cats.cache) picked.push('Cache');
+    if (cats.logs)  picked.push('Logs');
+    if (cats.ticks) picked.push('Ticks data');
+    var rangeMsg = ranged ? ('\\nDate range: ' + (from || '…') + ' → ' + (to || '…')
+                              + '\\n(Cache & Logs clear fully — dates don\\'t apply.)')
+                          : '\\nNo date range — every checked category is wiped in full.';
+
+    var ok = await showDoubleConfirm({
+      icon: '🧹', title: 'Reset Data',
+      message: 'Delete the following:\\n• ' + picked.join('\\n• ') + '\\n' + rangeMsg + '\\n\\nCannot be undone.',
+      confirmText: 'Reset', confirmClass: 'modal-btn-danger',
+      subject: picked.join(', '),
+      secondConfirmText: 'Yes, reset'
+    });
+    if (!ok) return;
+
+    var origText = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = '⏳ Resetting…'; btn.disabled = true; }
+
+    var lines = [];
+
+    // 1) Full paper wipe (no range) → per-strategy canonical reset (capital + sessions).
+    if (cats.paper && !ranged) {
+      var STRATS = [
+        { name: 'Swing',     url: '/swing-paper/reset' },
+        { name: 'Scalp',     url: '/scalp-paper/reset' },
+        { name: 'PA',        url: '/pa-paper/reset' },
+        { name: 'ORB',       url: '/orb-paper/reset' },
+        { name: 'EMA9+VWAP', url: '/ema9vwap-paper/reset' },
+      ];
+      var done = [], skipped = [], failed = [];
+      for (var i = 0; i < STRATS.length; i++) {
+        var s = STRATS[i];
+        try {
+          var r = await secretFetch(s.url);
+          if (!r) { // user dismissed the API-secret prompt → abort the whole run
+            if (btn) { btn.textContent = origText; btn.disabled = false; }
+            showToast('Reset cancelled', 'info');
+            return;
+          }
+          var d;
+          try { d = await r.json(); } catch (_) { d = { success: false, error: 'Server error (status ' + r.status + ')' }; }
+          if (d && d.success) done.push(s.name);
+          else {
+            var err = (d && d.error) || 'failed';
+            if (/before resetting/i.test(err)) skipped.push(s.name);
+            else failed.push(s.name + ' (' + err + ')');
+          }
+        } catch (e) {
+          failed.push(s.name + ' (' + (e.name === 'AbortError' ? 'timed out' : e.message) + ')');
+        }
+      }
+      if (done.length)    lines.push('✅ Capital + sessions reset: ' + done.join(', '));
+      if (skipped.length) lines.push('⏸ Skipped (running — stop first): ' + skipped.join(', '));
+      if (failed.length)  lines.push('❌ Failed: ' + failed.join(', '));
+    }
+
+    // 2) File-based deletions (paper daily JSONL, skip, ticks, cache, logs).
+    try {
+      var body = { paper: cats.paper, skip: cats.skip, cache: cats.cache, logs: cats.logs, ticks: cats.ticks, from: from, to: to };
+      var res2 = await secretFetch('/settings/reset-data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      if (!res2) { // secret prompt dismissed
+        if (btn) { btn.textContent = origText; btn.disabled = false; }
+        showToast('Reset cancelled', 'info');
+        return;
+      }
+      var data2;
+      try { data2 = await res2.json(); } catch (_) { data2 = { success: false, error: 'Server error (status ' + res2.status + ')' }; }
+      if (data2 && data2.results) {
+        var rr = data2.results;
+        if (cats.paper) lines.push('✅ Paper daily files: ' + rr.paperFiles + ' removed');
+        if (cats.skip)  lines.push('✅ Skip daily files: ' + rr.skipFiles + ' removed');
+        if (cats.ticks) lines.push('✅ Tick days: ' + rr.ticksDays + ' removed');
+        if (cats.cache) lines.push('✅ Cache dirs cleared: ' + rr.cacheDirs);
+        if (cats.logs)  lines.push('✅ Logs cleared');
+        if (data2.errors && data2.errors.length) lines.push('❌ Errors: ' + data2.errors.join('; '));
+      } else {
+        lines.push('❌ File reset failed: ' + ((data2 && data2.error) || 'unknown error'));
+      }
+    } catch (e) {
+      lines.push('❌ File reset failed: ' + (e.name === 'AbortError' ? 'timed out' : e.message));
+    }
+
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
+    closeResetDataModal();
+
+    var hadError = lines.some(function(l){ return l.indexOf('❌') === 0; });
+    showAlert({
+      icon: hadError ? '⚠️' : '🧹',
+      title: 'Reset Data — Done',
+      message: lines.join('\\n') || 'Nothing was reset.',
+      btnClass: hadError ? 'modal-btn-danger' : 'modal-btn-primary'
+    });
+  }
 
   var ENABLED_MODES = ${JSON.stringify(enabled)};
 
@@ -1389,6 +1533,48 @@ ${buildSidebar('tradeLogs', liveActive)}
 </script>
 
 </div></div>
+<!-- Reset Data modal -->
+<div id="resetDataModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)closeResetDataModal()">
+  <div style="max-width:480px;margin:0 auto;background:#0d1117;border:1px solid #1a2640;border-radius:12px;overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;background:#111827;border-bottom:1px solid #1a2640;">
+      <span style="font-weight:700;font-size:0.95rem;color:#f87171;">🧹 Reset Data</span>
+      <button onclick="closeResetDataModal()" style="background:none;border:none;color:#4a6080;font-size:1.2rem;cursor:pointer;">&times;</button>
+    </div>
+    <div style="padding:18px 20px 20px;">
+      <div style="font-size:0.78rem;color:#9db4d6;margin-bottom:12px;">Pick what to reset. Deletions cannot be undone.</div>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid #1a2640;cursor:pointer;font-size:0.82rem;color:#cfe0f8;font-weight:700;">
+        <input type="checkbox" id="rd_all" onchange="rdToggleAll(this)" style="width:16px;height:16px;cursor:pointer;"> Select all
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
+        <input type="checkbox" id="rd_paper" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Paper trade history
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
+        <input type="checkbox" id="rd_skip" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Skip trade history
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
+        <input type="checkbox" id="rd_cache" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Cache <span style="color:#5a6c8a;font-size:0.7rem;">(clears fully)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
+        <input type="checkbox" id="rd_logs" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Logs <span style="color:#5a6c8a;font-size:0.7rem;">(clears fully)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;padding:7px 0;cursor:pointer;font-size:0.82rem;color:#cfe0f8;">
+        <input type="checkbox" id="rd_ticks" onchange="rdSyncAll()" style="width:16px;height:16px;cursor:pointer;"> Ticks data
+      </label>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid #1a2640;">
+        <div style="font-size:0.72rem;color:#8aa0c0;margin-bottom:6px;">Date range <span style="color:#5a6c8a;">(optional — applies to Paper, Skip &amp; Ticks; leave blank to wipe all)</span></div>
+        <div style="display:flex;gap:10px;">
+          <label style="flex:1;font-size:0.68rem;color:#8aa0c0;">From<br><input type="date" id="rd_from" style="width:100%;margin-top:3px;padding:6px 8px;background:#0a0e17;border:1px solid #1a2640;border-radius:6px;color:#cfe0f8;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;"></label>
+          <label style="flex:1;font-size:0.68rem;color:#8aa0c0;">To<br><input type="date" id="rd_to" style="width:100%;margin-top:3px;padding:6px 8px;background:#0a0e17;border:1px solid #1a2640;border-radius:6px;color:#cfe0f8;font-family:'IBM Plex Mono',monospace;font-size:0.78rem;"></label>
+        </div>
+      </div>
+      <div style="font-size:0.7rem;color:#f59e0b;margin-top:12px;line-height:1.5;">⚠️ Paper with <b>no</b> date range also restores starting capital &amp; wipes all sessions for every strategy (a running strategy is skipped). Deleting the current day while a session runs may interfere with live writes.</div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+        <button onclick="closeResetDataModal()" style="padding:8px 16px;background:#1a2640;color:#9db4d6;border:none;border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">Cancel</button>
+        <button onclick="runResetData(this)" style="padding:8px 16px;background:#7f1d1d;color:#fecaca;border:1px solid rgba(239,68,68,0.4);border-radius:6px;font-size:0.8rem;font-weight:700;cursor:pointer;">🧹 Reset</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>`);
 });
