@@ -50,7 +50,7 @@ const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(
 const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444";
 const fmtPnl   = (n, s) => {
   if (typeof n !== "number") return "\u2014";
-  if (s && s.optionSim) return (n >= 0 ? "+" : "") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  if (s && s.optionSim) return (n >= 0 ? "+" : "-") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
   return pts(n);
 };
 
@@ -355,7 +355,7 @@ function pts(n){ return typeof n==='number' ? ((n>=0?'+':'')+n.toFixed(2)+' pts'
 function pnlColor(n){ return (typeof n==='number' && n>=0) ? '#10b981' : '#ef4444'; }
 function fmtPnl(n,s){
   if(typeof n!=='number') return '\u2014';
-  if(s && s.optionSim) return (n>=0?'+':'')+'\u20b9'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+  if(s && s.optionSim) return (n>=0?'+':'-')+'\u20b9'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
   return pts(n);
 }
 function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }

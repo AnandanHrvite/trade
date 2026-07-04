@@ -2078,7 +2078,7 @@ function renderAnalytics(){
       +'<div class="ana-stat"><span class="ana-stat-val" style="color:#8b5cf6;">'+tailRatio+'</span><span class="ana-stat-label">Tail ratio (P95 win / P5 loss)</span></div>'
       +'<div class="ana-stat"><span class="ana-stat-val" style="color:'+(parseFloat(lossAfterLossPct)>=50?'#ef4444':'#10b981')+';">'+lossAfterLossPct+'%</span><span class="ana-stat-label">Loss after loss probability</span></div>'
       +'<div style="border-top:0.5px solid #0e1428;margin:8px 0;padding-top:8px;">'
-      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">\u20b9'+Math.round(Math.abs(p5)).toLocaleString('en-IN')+'</span><span class="ana-stat-label">5th percentile (worst case)</span></div>'
+      +'<div class="ana-stat"><span class="ana-stat-val" style="color:#ef4444;">\u20b9'+(p5<0?'-':'')+Math.round(Math.abs(p5)).toLocaleString('en-IN')+'</span><span class="ana-stat-label">5th percentile (worst case)</span></div>'
       +'<div class="ana-stat"><span class="ana-stat-val" style="color:#10b981;">\u20b9'+Math.round(p95).toLocaleString('en-IN')+'</span><span class="ana-stat-label">95th percentile (best case)</span></div>'
       +'</div>';
   })();
@@ -2122,7 +2122,7 @@ function showBTModal(t){
     +cell('Exit Time',      t.exit||'\u2014',    '#c8d8f0')
     +cell('NIFTY Spot @ Exit', fmt(t.xPrice), '#fff', 'Spot price at exit')
     +cell('NIFTY Move (pts)', pnlPts!=null?(pnlPts>=0?'+':'')+pnlPts+' pts':'\u2014', pnlPts!=null?(pnlPts>=0?'#10b981':'#ef4444'):'#c8d8f0', t.side==='PE'?'Entry\u2212Exit (PE profits on fall)':'Exit\u2212Entry (CE profits on rise)')
-    +cell('PnL',           t.pnl!=null?(t.pnl>=0?'+':'')+( OPT_SIM ? '\u20b9'+Math.abs(t.pnl).toLocaleString('en-IN',{maximumFractionDigits:0}) : t.pnl.toFixed(2)+' pts' ):'\u2014', pc, OPT_SIM ? 'Option sim: spot\u00d7\u03b4\u2212\u03b8\u2212brok (see pnlMode)' : 'Raw NIFTY index pts')
+    +cell('PnL',           t.pnl!=null?(t.pnl>=0?'+':'-')+( OPT_SIM ? '\u20b9'+Math.abs(t.pnl).toLocaleString('en-IN',{maximumFractionDigits:0}) : Math.abs(t.pnl).toFixed(2)+' pts' ):'\u2014', pc, OPT_SIM ? 'Option sim: spot\u00d7\u03b4\u2212\u03b8\u2212brok (see pnlMode)' : 'Raw NIFTY index pts')
     +cell('Spot PnL (pts)',t.spotPts!=null?(t.spotPts>=0?'+':'')+t.spotPts.toFixed(2)+' pts':'\u2014', t.spotPts!=null?(t.spotPts>=0?'#10b981':'#ef4444'):'#4a6080', 'Raw NIFTY index point move')
     +cell('Held (candles)',t.held!=null?t.held+' candles':'\u2014', '#94a3b8', 'Candles held \u2014 affects theta decay')
     +cell('PnL Method',   t.pnlMode||'\u2014', '#4a6080', 'How PnL was calculated')

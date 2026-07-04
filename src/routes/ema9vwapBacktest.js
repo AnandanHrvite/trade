@@ -1550,7 +1550,7 @@ function showBTModal(t){
     +cell('Exit Time',      t.exit||'—',    '#c8d8f0')
     +cell('NIFTY Spot @ Exit', fmt(t.xPrice), '#fff', 'Spot price at exit')
     +cell('NIFTY Move (pts)', pnlPts!=null?(pnlPts>=0?'+':'')+pnlPts+' pts':'—', pnlPts!=null?(pnlPts>=0?'#10b981':'#ef4444'):'#c8d8f0', t.side==='PE'?'Entry−Exit (PE profits on fall)':'Exit−Entry (CE profits on rise)')
-    +cell('PnL',           t.pnl!=null?(t.pnl>=0?'+':'')+( OPT_SIM ? '₹'+Math.abs(t.pnl).toLocaleString('en-IN',{maximumFractionDigits:0}) : t.pnl.toFixed(2)+' pts' ):'—', pc, OPT_SIM ? 'Option sim: spot×δ−θ−brok (see pnlMode)' : 'Raw NIFTY index pts')
+    +cell('PnL',           t.pnl!=null?(t.pnl>=0?'+':'-')+( OPT_SIM ? '₹'+Math.abs(t.pnl).toLocaleString('en-IN',{maximumFractionDigits:0}) : Math.abs(t.pnl).toFixed(2)+' pts' ):'—', pc, OPT_SIM ? 'Option sim: spot×δ−θ−brok (see pnlMode)' : 'Raw NIFTY index pts')
     +cell('Spot PnL (pts)',t.spotPts!=null?(t.spotPts>=0?'+':'')+t.spotPts.toFixed(2)+' pts':'—', t.spotPts!=null?(t.spotPts>=0?'#10b981':'#ef4444'):'#4a6080', 'Raw NIFTY index point move')
     +cell('Held (candles)',t.held!=null?t.held+' candles':'—', '#94a3b8', 'Candles held — affects theta decay')
     +cell('PnL Method',   t.pnlMode||'—', '#4a6080', 'How PnL was calculated')
