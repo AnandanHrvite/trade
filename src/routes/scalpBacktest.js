@@ -91,7 +91,10 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
   const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
-  const CANDLES_PER_DAY = Math.round(390 / SCALP_RES); // 6.5h trading day
+  // Candles per 6.5-hour (390-min) day for theta — derived from the ACTUAL bar spacing,
+  // not SCALP_RES, so it stays correct even if the run's ?resolution= differs from the env.
+  const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : SCALP_RES;
+  const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
 
   // Scalp config
   const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);

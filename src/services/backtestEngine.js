@@ -143,7 +143,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   //
   // 2. THETA DECAY: Options lose value every minute they're held.
   //    Approximation: ATM weekly option ≈ ₹8–12 theta/day on 15-min bars.
-  //    We deduct theta proportional to candles held (1 candle = 15 min = 1/26 of trading day).
+  //    We deduct theta proportional to candles held (candlesHeld / candles-per-day, where
+  //    candles-per-day = 390 / bar-resolution — e.g. 26 on 15-min bars, 78 on 5-min bars).
   //    THETA_PER_DAY: configurable via env, defaults to ₹10/day (conservative).
   //    This makes long holds cost more — matching real trading where theta kills
   //    a position that "wins" on spot direction but loses on time decay.
@@ -161,7 +162,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   const OPTION_SIM   = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false"); // true by default for options
   const DELTA        = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA        || "0.55");
   const THETA_PER_DAY = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY   || "10");   // ₹ per day
-  const CANDLES_PER_DAY = 26; // 15-min candles in a 6.5-hour trading day (9:15–15:30)
+  // Candles in a 6.5-hour (390-min) trading day, derived from the ACTUAL bar spacing —
+  // NOT hardcoded to 26, which only holds for 15-min bars. A 5-min run has ~78 candles/day,
+  // so a fixed 26 over-charges theta ~3×. 390/res → 15-min=26, 5-min=78, 1-min=390.
+  const _btResMins      = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 15;
+  const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
 
   // ── Slippage simulation ────────────────────────────────────────────────────
   // Real market orders on NIFTY options see 1-3 pts slippage. Without this,

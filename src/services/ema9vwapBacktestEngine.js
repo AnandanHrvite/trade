@@ -56,7 +56,10 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const OPTION_SIM     = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA          = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA      || "0.55");
   const THETA_PER_DAY  = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY  || "10");
-  const CANDLES_PER_DAY = 26;
+  // Candles per 6.5-hour (390-min) day, derived from actual bar spacing — not a fixed 26
+  // (that only holds for 15-min bars; a 5-min run has ~78, so 26 over-charges theta ~3×).
+  const _btResMins      = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 5;
+  const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
   const SLIPPAGE_PTS   = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
 
   const entryStart     = _parseMins("EMA9VWAP_ENTRY_START", "10:30");
