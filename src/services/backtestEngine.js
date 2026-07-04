@@ -253,6 +253,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // Confirmation candle (cross & close, SWING only — SWING_CONFIRM_CANDLE_ENABLED).
   // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
   let _armedSwing = null;
+  // EMA21 trail base from the PRIOR candle's close. Paper arms the EMA21 trail at a
+  // candle's close and enforces it on the NEXT candle's ticks; using this candle's own
+  // EMA21 to update the SL and then testing this candle's low/high against it is
+  // look-ahead. We carry last candle's EMA21 forward and trail on it instead.
+  let _prevEma21 = null;
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
@@ -364,7 +369,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     // The touch-back exit is wired below in the EXIT CHECK block.
     if (position) {
       let trailRef = null;
-      if (_sig.ema21 != null) trailRef = _sig.ema21;
+      // Use the PRIOR candle's EMA21 (armed at the last close), not this candle's —
+      // mirrors paper's "SL from prior bars enforced on this bar" timing (no look-ahead).
+      if (_prevEma21 != null) trailRef = _prevEma21;
       // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
       const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
       const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
@@ -397,6 +404,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         if (!position.bestPrice || candle.low < position.bestPrice) position.bestPrice = candle.low;
       }
     }
+
+    // Advance the EMA21 trail base for the NEXT candle: THIS candle's close-computed
+    // EMA21 becomes the SL reference enforced on the next candle (matches paper timing).
+    // Runs every candle (flat or in a position) and before any exit/entry `continue`.
+    _prevEma21 = _sig.ema21;
 
     // Count candles held (used for theta decay in PnL calculation)
     // Placed after trail updates but before exit check — entry candle starts at 0
@@ -570,13 +582,23 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         _dailyPnl += pnlRupees;
         _dailyTradeCount++;
 
-        // Track consecutive losses — escalating pause matching paper/live behavior
+        // Daily-loss kill switch — LATCH once the day's loss reaches the cap so a
+        // later win can't unblock it (mirrors paper's session latch). Enforced at
+        // the entry gate via _dailyLossHit (below).
+        if (_dailyPnl <= -MAX_DAILY_LOSS) _dailyLossHit = true;
+
+        // 3-consecutive-loss breaker — mirror paper EXACTLY (was an escalating pause):
+        //   15-min: 3 losses = done for the day (latch _dailyLossHit).
+        //   5-min:  pause 4 candles then resume, and reset the counter.
         if (pnlRupees < 0) {
           _consecutiveLosses++;
           if (_consecutiveLosses >= 3) {
-            // Pause for escalating duration: 3+ consecutive losses
-            const pauseMins = candleResolutionMins * (2 + (_consecutiveLosses - 2));
-            _consecPauseUntilTs = candle.time + (pauseMins * 60);
+            if (candleResolutionMins >= 15) {
+              _dailyLossHit = true; // keep _consecutiveLosses at 3 (KILLED state)
+            } else {
+              _consecPauseUntilTs = candle.time + (4 * candleResolutionMins * 60);
+              _consecutiveLosses  = 0;
+            }
           }
         } else {
           _consecutiveLosses = 0;
@@ -621,7 +643,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                                   && candle.time < _oppositeCooldownUntilTs;
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
     const isChopHalted   = _SWING_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _SWING_MAX_CONSEC_LOSSES;
-    const isDailyLossHit = _dailyPnl <= -MAX_DAILY_LOSS;
+    const isDailyLossHit = _dailyLossHit; // latched: daily-loss cap OR 3-consec-loss (15-min)
     const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
     // Warm-up gate: candles before activeFromTs only build indicators (EMA/RSI/SAR),
