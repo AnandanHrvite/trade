@@ -704,9 +704,15 @@ function onTick(tick) {
     //    back to the band before it can work (e.g. 2026-06-03 10:15 PE, entered 8pts
     //    below the band, tagged it 27s later for a needless loss).
     if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
-      if (!state._bbTickCache || state._bbTickCache.n !== state.candles.length) {
+      // Invalidate on the last CLOSED candle's time, NOT candles.length: once the
+      // array hits its 200 cap (push+shift), length is pinned at 200 forever, so a
+      // length-keyed cache would freeze the band from ~14:20 IST to session end. The
+      // band only changes when a new candle closes, so key on that candle's time
+      // (stable within a forming bar, changes on each close — the intended behaviour).
+      const _bbKey = state.candles.length ? state.candles[state.candles.length - 1].time : 0;
+      if (!state._bbTickCache || state._bbTickCache.key !== _bbKey) {
         const _lv = scalpStrategy.bbLevels(state.candles);
-        state._bbTickCache = { n: state.candles.length, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
+        state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
       }
       const _bb = state._bbTickCache;
       const _band = pos.side === "CE" ? _bb.upper : _bb.lower;
