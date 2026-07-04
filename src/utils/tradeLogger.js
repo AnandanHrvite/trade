@@ -24,6 +24,14 @@ const FILE_BY_MODE = {
   pa:       "pa_paper_trades_log.jsonl",
   orb:      "orb_paper_trades_log.jsonl",
   ema9vwap: "ema9vwap_paper_trades_log.jsonl",
+  // Live-harness log keys. The harnesses install with liveLogKey "{mode}-live"
+  // (liveHarness.js calls appendTradeLog(cfg.liveLogKey, …)); without these entries
+  // filePathFor() threw "unknown mode" and every live trade was silently dropped.
+  "swing-live":    "swing_live_trades_log.jsonl",
+  "scalp-live":    "scalp_live_trades_log.jsonl",
+  "pa-live":       "pa_live_trades_log.jsonl",
+  "orb-live":      "orb_live_trades_log.jsonl",
+  "ema9vwap-live": "ema9vwap_live_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
@@ -32,6 +40,11 @@ const DAILY_PREFIX_BY_MODE = {
   pa:       "pa_paper_trades_",
   orb:      "orb_paper_trades_",
   ema9vwap: "ema9vwap_paper_trades_",
+  "swing-live":    "swing_live_trades_",
+  "scalp-live":    "scalp_live_trades_",
+  "pa-live":       "pa_live_trades_",
+  "orb-live":      "orb_live_trades_",
+  "ema9vwap-live": "ema9vwap_live_trades_",
 };
 
 // One-time dir ensure at module load — keeps the hot-path append sync-free.

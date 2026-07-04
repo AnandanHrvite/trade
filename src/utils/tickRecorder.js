@@ -301,6 +301,15 @@ const _SETTINGS_KEY_MATCHERS = [
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
   /^INSTRUMENT/, /^OPTION_/, /^BREAKEVEN/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,
+  // Added so snapshot-mode replay pins these too (they influence paper decisions
+  // but weren't captured, so replays silently used TODAY's env for them):
+  //   EMA9VWAP_* — the whole EMA9+VWAP strategy (NOT matched by /^EMA_/, key is "EMA9…")
+  //   OI_*       — the OI-filter master switch (per-mode {PA,SWING,…}_OI_ENABLED were caught)
+  //   OPT_*      — swing's OPT_STOP_PCT (/^OPTION_/ does not match "OPT_")
+  //   TIME_STOP_*— shared tradeGuards time-stop
+  //   NIFTY*     — NIFTY_LOT_SIZE (/^LOT/ does not match "NIFTY_LOT_SIZE")
+  //   LTP_STALE* — stale-LTP fallback window
+  /^EMA9VWAP_/, /^OI_/, /^OPT_/, /^TIME_STOP_/, /^NIFTY/, /^LTP_STALE/,
 ];
 
 function snapshotSettings() {

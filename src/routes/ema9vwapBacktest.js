@@ -17,7 +17,7 @@ const pnlColor = (n) => (typeof n === "number" && n >= 0) ? "#10b981" : "#ef4444
 // Smart formatter: shows ₹ when option sim is on, pts when off
 const fmtPnl   = (n, s) => {
   if (typeof n !== "number") return "\u2014";
-  if (s && s.optionSim) return (n >= 0 ? "+" : "") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+  if (s && s.optionSim) return (n >= 0 ? "+" : "-") + "\u20b9" + Math.abs(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
   return pts(n);
 };
 
@@ -620,7 +620,7 @@ var OPT_SIM = ${s.optionSim ? "true" : "false"};
 function fpts(n, spotPts){
   if(n==null) return '\u2014';
   if(OPT_SIM){
-    var r = (n>=0?'+':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
+    var r = (n>=0?'+':'-')+'₹'+Math.abs(n).toLocaleString('en-IN',{maximumFractionDigits:0});
     if(spotPts!=null) r += '<span style="font-size:0.65rem;color:#4a6080;margin-left:4px;">('+( spotPts>=0?'+':'')+spotPts.toFixed(1)+'pt)</span>';
     return r;
   }
@@ -892,7 +892,7 @@ function toggleDayWise(){
 // ── Analytics Panel ──────────────────────────────────────────────────────────
 var anaVisible = false;
 var anaCharts = {};
-function fmtAna(v){ return OPT_SIM ? '\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN') : (typeof v==='number'?v.toFixed(2):v)+' pts'; }
+function fmtAna(v){ return OPT_SIM ? (v<0?'-':'')+'\\u20b9'+Math.round(Math.abs(v)).toLocaleString('en-IN') : (typeof v==='number'?v.toFixed(2):v)+' pts'; }
 function fmtAnaShort(v){ return OPT_SIM ? '\\u20b9'+Math.round(v/1000)+'k' : Math.round(v)+' pts'; }
 // Helper: get IST Date object from entryTs (unix seconds)
 function tsToIST(ts){ return ts ? new Date(ts * 1000) : null; }

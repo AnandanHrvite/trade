@@ -30,8 +30,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-let _telegramSync = null;
-try { _telegramSync = require("./notify").sendTelegramSync; } catch (_) { _telegramSync = null; }
+// Async, fire-and-forget Telegram. Circuit transitions happen while the process
+// is alive (mid-session), so we must NOT use sendTelegramSync here — that spawns
+// a blocking curl (up to ~5s) and would freeze the event loop (and every live SL
+// check) exactly when the broker is flaky. sendTelegram never rejects.
+let _telegram = null;
+try { _telegram = require("./notify").sendTelegram; } catch (_) { _telegram = null; }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Runtime config — read from process.env on each access so Settings page
@@ -120,7 +124,7 @@ class CircuitBreaker {
   onSuccess() {
     if (this.state === STATE.HALF_OPEN) {
       console.warn(`[CircuitBreaker:${this.name}] CLOSED — recovery confirmed`);
-      try { _telegramSync && _telegramSync(`✅ Broker ${this.name.toUpperCase()} recovered (circuit closed)`); } catch (_) {}
+      try { _telegram && _telegram(`✅ Broker ${this.name.toUpperCase()} recovered (circuit closed)`); } catch (_) {}
     }
     this.state            = STATE.CLOSED;
     this.failures         = 0;
@@ -142,7 +146,7 @@ class CircuitBreaker {
     console.error(`[CircuitBreaker:${this.name}] OPEN for ${this.openMs}ms after ${this.failures} failure(s) — last: ${reason}`);
     if (!this._notified) {
       this._notified = true;
-      try { _telegramSync && _telegramSync(`🚨 Broker ${this.name.toUpperCase()} circuit OPEN\nfailures=${this.failures} pauseMs=${this.openMs}\nlast: ${String(reason).slice(0, 180)}`); } catch (_) {}
+      try { _telegram && _telegram(`🚨 Broker ${this.name.toUpperCase()} circuit OPEN\nfailures=${this.failures} pauseMs=${this.openMs}\nlast: ${String(reason).slice(0, 180)}`); } catch (_) {}
     }
   }
 

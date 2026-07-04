@@ -6,6 +6,22 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Performance & resilience hardening (t3.micro) — no trading-decision changes
+
+Audit-driven fixes to protect the single shared process on a 1 GB EC2 t3.micro. **None of these change any strategy's entry/exit/fill decisions** — they remove event-loop stalls, blocking calls, unbounded growth, and redundant broker/disk work.
+
+- **EMA9+VWAP backtest no longer freezes the live feed.** `ema9vwapBacktestEngine.js` was `async` but had zero `await` and re-`slice()`d the candle window every iteration — a multi-year run blocked the event loop (and the live Fyers tick feed hosted in the same process) for 10–60 s. Added the standard `setImmediate` yield every 100 candles and reused a rolling 200-candle window via push/shift. `getSignal()` sees an identical view, so **backtest results are unchanged** — only the blocking is gone.
+- **Broker circuit-breaker alerts no longer block the event loop.** `brokerSafety.js` sent its "circuit OPEN / recovered" Telegram via `sendTelegramSync` (a blocking `spawnSync` curl, up to ~5 s) — firing mid-session exactly when the broker is flaky, freezing live SL checks. Switched to the async fire-and-forget `sendTelegram`. Same message, no freeze.
+- **Login-attempt log is now capped** at 2000 newest entries. It was rewritten whole-file, synchronously, on every failed login with no cap — an internet-exposed login gets bot-scanned continuously, so the file (and the per-probe parse+rewrite) grew unbounded.
+- **Boot data-backup deferred during market hours.** `backupManager.start()` cut a ~150–300 MB tar+gzip at boot if the day's snapshot was missing — pinning a vCPU and burning CPU credits while the feed warmed up after a restart. Now skipped 09:00–15:30 IST; the scheduled daily run (and manual `POST /backup/create`) still guarantee a file.
+- **Backtest-results file cached by mtime.** `resultStore.loadAll()` re-read+parsed the multi-MB `backtest_results.json` on every call, and `/all-backtest` calls it 4–5× per page view. Now memoised behind an mtime+size signature, invalidated on save.
+- **Restored-session chart backfill negative-caches misses.** `chartBackfill.js` only cached complete days, so a stopped strategy's status page re-hit the Fyers historical API every 4 s. Failed/incomplete-day lookups are now negative-cached for 60 s (≈1 broker call/min instead of 15).
+
+### Reliability fixes (live-harness logging + replay determinism)
+
+- **Live-harness trades are now actually logged.** The harnesses call `tradeLogger.appendTradeLog("{mode}-live", …)`, but `tradeLogger` had no `-live` mode keys, so every real live-harness trade threw "unknown mode" and was silently dropped. Registered `{swing,scalp,pa,orb,ema9vwap}-live` file/prefix keys. (Only fires on real orders — dry-run runs were unaffected either way.)
+- **Replay snapshots now pin more settings.** `tickRecorder`'s settings-snapshot whitelist missed `EMA9VWAP_*` (not matched by `/^EMA_/`), the `OI_FILTER_ENABLED` master switch, `OPT_*` (swing option stop), `TIME_STOP_*`, `NIFTY_LOT_SIZE`, and `LTP_STALE_*` — so snapshot-mode replays silently used *today's* env for those. Added the matchers. `tickReplay`'s expiry-pin list gained the `EMA9VWAP_OPTION_EXPIRY_*` keys so sim-mode EMA9+VWAP replays pin the recorded expiry instead of leaking the current one. (Only affects sessions recorded *after* this change.)
+
 ### Logs hub: Login Logs, Server Logs & Cache Files folded into the Logs page as tabs
 
 - **What**: the sidebar's **Trade Logs** entry is renamed **Logs**, and the **🔐 LOGIN LOGS**, **📜 LOGS**, and **🧰 CACHE FILES** buttons are removed from the Settings top bar. Those three views now live as tabs on the Logs (`/trade-logs`) page — alongside the existing Trade Files, Skip Logs, and Checkpoints tabs.

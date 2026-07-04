@@ -69,6 +69,13 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   const total = candles.length;
   const reportEvery = Math.max(1, Math.floor(total / 50));
 
+  // Rolling 200-candle window reused via push/shift (mirrors paper's in-memory cap
+  // and the shared backtestEngine's window trick). Replaces a fresh candles.slice()
+  // per iteration — that was O(n²) allocation and, combined with the missing
+  // event-loop yield below, blocked the SAME process that hosts the live Fyers feed
+  // for 10–60s on multi-year runs. getSignal() sees an identical view either way.
+  const window = total > 0 ? [candles[0]] : [];
+
   function _closeTrade(candle, exitReason) {
     let exitPrice = candle.close;
     if (SLIPPAGE_PTS > 0) exitPrice = position.side === "CE" ? exitPrice - SLIPPAGE_PTS : exitPrice + SLIPPAGE_PTS;
@@ -118,13 +125,20 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   }
 
   for (let i = 1; i < total; i++) {
+    // Yield the event loop every 100 candles so a long backtest doesn't starve
+    // the live tick feed / HTTP handlers running in this same process.
+    if (i % 100 === 0) await new Promise((r) => setImmediate(r));
+
     const candle = candles[i];
     const day = _istDay(candle.time);
     if (day !== curDay) { curDay = day; dailyTrades = 0; dailyPnl = 0; }
     const mins = _istMins(candle.time);
 
-    // Mirror paper's 200-candle in-memory cap (also bounds getSignal cost).
-    const window = candles.slice(Math.max(0, i - 199), i + 1);
+    // Extend the rolling window by the current candle; cap at 200 (paper's in-memory
+    // cap). window now equals candles[max(0,i-199) .. i] — same view getSignal saw
+    // from the old per-iteration slice, without the per-step allocation.
+    window.push(candle);
+    if (window.length > 200) window.shift();
     const sig = strategy.getSignal(window, { silent: true });
 
     // ── EXIT (checked first, like paper's onCandleClose) ──

@@ -365,11 +365,23 @@ function start() {
   ensureDir();
   const date = istDateStr();
   if (!getBackupFile(date)) {
-    // No snapshot for today yet — cut one now so there's always a file to download.
-    createSnapshot(date).then((r) => {
-      if (r.ok) console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
-      else console.warn(`[backup] boot snapshot failed: ${r.error}`);
-    });
+    // Defer the boot snapshot during market hours (09:00–15:30 IST). The archive
+    // tars ~30 days of tick recordings (~150–300 MB) and gzips them — on a t3.micro
+    // that pins a vCPU and burns burst credits exactly while the live feed is warming
+    // back up after a restart. The scheduled daily run (and POST /backup/create)
+    // still guarantee a file; we just don't cut one mid-session at boot.
+    const nowIst = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+    const [h, m] = nowIst.split(":").map(Number);
+    const istMin = (h % 24) * 60 + (m || 0);
+    if (istMin >= 540 && istMin <= 930) {
+      console.log("[backup] boot snapshot deferred (market hours) — scheduled run will create it");
+    } else {
+      // No snapshot for today yet — cut one now so there's always a file to download.
+      createSnapshot(date).then((r) => {
+        if (r.ok) console.log(`[backup] boot snapshot ready: backup-${date}.tar.gz (${(r.sizeBytes / 1048576).toFixed(2)} MB)`);
+        else console.warn(`[backup] boot snapshot failed: ${r.error}`);
+      });
+    }
   }
   scheduleNext();
   const hh = String(backupHourIST()).padStart(2, "0");

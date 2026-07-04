@@ -24,7 +24,9 @@ const { fetchCandlesCached } = require("./candleCache");
 const { fetchCandles } = require("../services/backtestEngine");
 
 const DAY_SEC = 86400;
-const _cache = new Map(); // `${symbol}|${res}|${day}` -> candles[]
+const _cache = new Map(); // `${symbol}|${res}|${day}` -> candles[]  (positive: complete day)
+const _negCache = new Map(); // key -> expiryMs  (negative: recently failed / incomplete)
+const NEG_TTL_MS = 60000; // don't re-hit the broker for a failing key more than ~1×/min
 
 // IST date string (YYYY-MM-DD) for a unix-seconds timestamp.
 function _istDate(unixSec) {
@@ -57,6 +59,11 @@ async function candlesForRestoredTrades(symbol, res, trades) {
     const from = _istDate(maxSec - 6 * DAY_SEC);
     const key  = `${symbol}|${res}|${day}`;
     if (_cache.has(key)) return _cache.get(key);
+    // Negative cache: the "stopped session, day not yet complete" state otherwise
+    // makes the 4-second chart poll fire a fresh broker fetchCandles every 4s. Serve
+    // an empty result for ~60s after a failure/incomplete day instead of re-fetching.
+    const negUntil = _negCache.get(key);
+    if (negUntil && negUntil > Date.now()) return [];
 
     // Prefer a DIRECT broker fetch of the full range. The candle cache for that
     // day often holds only the morning preload from its live session (a partial
@@ -79,9 +86,13 @@ async function candlesForRestoredTrades(symbol, res, trades) {
     // Session Trades table still lists them; full history is in Replay / History).
     // One-bucket tolerance: the broker may omit the still-forming last bucket.
     const resSec = (Number(res) || 5) * 60;
-    if (!out.length || out[out.length - 1].time < maxSec - resSec) return [];
+    if (!out.length || out[out.length - 1].time < maxSec - resSec) {
+      _negCache.set(key, Date.now() + NEG_TTL_MS); // incomplete day — back off the poll
+      return [];
+    }
 
     _cache.set(key, out); // only memoise a real, complete result
+    _negCache.delete(key);
     return out;
   } catch (_) {
     return [];

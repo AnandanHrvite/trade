@@ -24,8 +24,15 @@ function loadAll() {
   }
 }
 
+// Retention cap: this file is written synchronously on the login request path,
+// and an internet-exposed login gets scanned continuously by bots. Without a cap
+// the array — and the whole-file parse+rewrite each failed attempt does — grows
+// unbounded (tens of MB of sync I/O per probe over time). Keep newest 2000.
+const MAX_ENTRIES = 2000;
+
 function save(entries) {
   ensureDir();
+  if (entries.length > MAX_ENTRIES) entries.length = MAX_ENTRIES; // newest-first, drop oldest tail
   fs.writeFileSync(LOG_FILE, JSON.stringify(entries, null, 2));
 }
 
