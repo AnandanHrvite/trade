@@ -2,7 +2,7 @@
  * BB_RSI PAPER TRADE — /bb_rsi-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
- * Runs on 3/5-min candles with the bb_rsi BB+PSAR+RSI strategy.
+ * Runs on 3/5-min candles with the bb_rsi BB+SuperTrend+RSI strategy.
  * Can run IN PARALLEL with /trade (live) or /ema_rsi_st-paper (paper).
  *
  * Routes:
@@ -18,7 +18,7 @@ const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
 const bbRsiStrategy = require("../strategies/bb_rsi");
-const { BollingerBands, PSAR, RSI, ADX } = require("technicalindicators");
+const { BollingerBands, RSI, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 const instrumentConfig = require("../config/instrument");
 const { getSymbol, getLotQty, validateAndGetOptionSymbol } = instrumentConfig;
@@ -336,7 +336,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     reason,
     stopLoss,
     initialStopLoss:  stopLoss,
-    slSource:         slSource || "PSAR",
+    slSource:         slSource || "SUPERTREND",
     target,
     bestPrice:        null,
     bestOptionLtp:    null,   // peak (highest) option premium reached during trade — observer-only
@@ -487,7 +487,6 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     bbUpperAtExit:    _exitInd.bbUpper    != null ? _exitInd.bbUpper    : null,
     bbMiddleAtExit:   _exitInd.bbMiddle   != null ? _exitInd.bbMiddle   : null,
     bbLowerAtExit:    _exitInd.bbLower    != null ? _exitInd.bbLower    : null,
-    sarAtExit:        _exitInd.sar        != null ? _exitInd.sar        : null,
     adxAtExit:        _exitInd.adx        != null ? _exitInd.adx        : null,
     supertrendAtExit: _exitInd.supertrend != null ? _exitInd.supertrend : null,
     stTrendAtExit:    _exitInd.stTrend    || null,
@@ -613,7 +612,7 @@ function onTick(tick) {
   const bucketMs  = getBucketStart(tickMs);
 
   // Skip pre-market/pre-open candles (build only from 09:15 NSE open) so
-  // SuperTrend/SAR match Kite — the 09:00 pre-open auction bar pollutes them.
+  // SuperTrend matches Kite — the 09:00 pre-open auction bar pollutes it.
   if (isPreMarketBucket(bucketMs)) return;
 
   if (!state.currentBar || state.barStartTime !== bucketMs) {
@@ -745,7 +744,7 @@ function onTick(tick) {
 
     // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
     //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
-    //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
+    //    of peak (ratchets). Points-based; SuperTrend flip (candle close) handles bigger runners.
     {
       const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
@@ -826,7 +825,7 @@ async function onCandleClose(bar) {
   // so the buildup series stays filled even on no-signal / in-position candles.
   if (!state._simMode) await oiFilter.recordOiSample(bar.close);
 
-  // Count candles held + PSAR-based exit checks
+  // Count candles held + SuperTrend-based exit checks
   if (state.position) {
     state.position.candlesHeld = (state.position.candlesHeld || 0) + 1;
 
@@ -839,11 +838,10 @@ async function onCandleClose(bar) {
       return;
     }
 
-    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per BB_RSI_USE_SUPERTREND;
-    // trend exit, profit lock handles giveback per-tick)
+    // Trend flip → exit on SuperTrend reversal signal (trend exit; profit lock
+    // handles giveback per-tick)
     if (window.length >= 15 && bbRsiStrategy.isTrendFlip(window, state.position.side)) {
-      var _flipLbl = (process.env.BB_RSI_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
-      simulateSell(bar.close, _flipLbl, bar.close);
+      simulateSell(bar.close, "SuperTrend flip", bar.close);
       return;
     }
 
@@ -881,7 +879,7 @@ async function onCandleClose(bar) {
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [BB_RSI-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    log(`⏭️ [BB_RSI-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} ST=${result.supertrend||'?'}`);
     logNearMiss(result.filterAudit, "BB_RSI-PAPER", log);
     skipLogger.appendSkipLog("bb_rsi", {
       gate: "strategy",
@@ -890,7 +888,7 @@ async function onCandleClose(bar) {
       bbLower: result.bbLower ?? null,
       bbUpper: result.bbUpper ?? null,
       rsi: result.rsi ?? null,
-      sar: result.sar ?? null,
+      supertrend: result.supertrend ?? null,
       audit: result.filterAudit || null,
     });
     if (!state._simMode) {
@@ -996,7 +994,7 @@ async function resolveAndEnter(side, spot, result) {
       symbol = optionInfo.symbol;
     }
     const qty = getLotQty();
-    // Initial SL = PSAR value from the strategy (no clamp).
+    // Initial SL = SuperTrend value from the strategy (no clamp).
     const clampedSL = result.stopLoss;
 
     // ── Bid-ask spread guard (fail-open if broker snapshot lacks depth) ──
@@ -1333,19 +1331,19 @@ router.post("/manualEntry", async (req, res) => {
   const spot = state.lastTickPrice || (state.currentBar ? state.currentBar.close : null);
   if (!spot) return res.status(400).json({ success: false, error: "No market data yet." });
 
-  // SL = PSAR value at entry (no clamp) — matches strategy logic.
+  // SL = SuperTrend value at entry (no clamp) — matches strategy logic.
   const candles = state.candles || [];
-  let slSrcLbl = "PSAR";
+  let slSrcLbl = "SuperTrend";
   let sl = null;
   if (candles.length >= 3) {
     try {
-      const _sa = PSAR.calculate({ step: parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02"), max: parseFloat(process.env.BB_RSI_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
-      const _sar = _sa.length ? _sa[_sa.length - 1] : null;
-      if (_sar != null) sl = parseFloat(_sar.toFixed(2));
+      const _st = computeSuperTrend(candles, parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10), parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3"));
+      const _last = _st.length ? _st[_st.length - 1] : null;
+      if (_last && _last.value != null) sl = parseFloat(_last.value.toFixed(2));
     } catch (_) { /* fall back below */ }
   }
   if (sl == null) {
-    // PSAR unavailable — fall back to previous candle low/high.
+    // SuperTrend unavailable — fall back to previous candle low/high.
     const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
     sl = prevCandle ? (side === "CE" ? prevCandle.low : prevCandle.high) : (side === "CE" ? spot - 10 : spot + 10);
     slSrcLbl = "Prev Candle";
@@ -1410,11 +1408,9 @@ router.get("/status/chart-data", async (req, res) => {
       } catch (_) { /* ignore */ }
     }
 
-    // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
-    const useSupertrend = (process.env.BB_RSI_USE_SUPERTREND === "true");
-    let sarPoints = [];        // PSAR dots (active when useSupertrend=false)
-    let supertrend = [];       // SuperTrend line (active when useSupertrend=true)
-    if (useSupertrend) {
+    // Trend overlay — SuperTrend line (the sole trend source).
+    let supertrend = [];
+    {
       const ST_PERIOD = parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10);
       const ST_MULT   = parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3");
       try {
@@ -1423,18 +1419,6 @@ router.get("/status/chart-data", async (req, res) => {
           if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
         }
       } catch (_) { /* ignore */ }
-    } else {
-      const PSAR_STEP = parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02");
-      const PSAR_MAX  = parseFloat(process.env.BB_RSI_PSAR_MAX  || "0.2");
-      if (candles.length >= 3) {
-        try {
-          const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
-          const off = candles.length - sarArr.length;
-          for (let i = 0; i < sarArr.length; i++) {
-            sarPoints.push({ time: candles[i + off].time, value: parseFloat(sarArr[i].toFixed(2)) });
-          }
-        } catch (_) { /* ignore */ }
-      }
     }
 
     // ADX(14) overlay — drawn on its own bottom scale (trend-strength subplot)
@@ -1471,8 +1455,8 @@ router.get("/status/chart-data", async (req, res) => {
     const entryPrice = state.position && state.position.entryPrice ? state.position.entryPrice : null;
     const armedTrigger = state._armedSignal ? state._armedSignal.triggerLevel : null;
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
-    return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower, sar: sarPoints,
-      supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
+    return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower,
+      supertrend, adx: adxSeries, trendSource: "SUPERTREND",
       adxMin: parseFloat(process.env.BB_RSI_ADX_MIN || "20"),
       rsi: rsiSeries,
       rsiCeMin: parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "62"),
@@ -1891,7 +1875,7 @@ ${buildSidebar('bbRsiPaper', liveActive, state.running)}
 <div class="top-bar">
   <div>
     <div class="top-bar-title">BB_RSI Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: SuperTrend flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -1984,7 +1968,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
     <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
-      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#a78bfa;">· SAR</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
+      <span style="color:#3b82f6;">▲ Entry</span> &nbsp;<span style="color:#10b981;">▼ Win</span> &nbsp;<span style="color:#ef4444;">▼ Loss</span> &nbsp;<span style="color:#4a9cf5;">── BB U/L</span> &nbsp;<span style="color:#94a3b8;">-- BB Mid</span> &nbsp;<span style="color:#22c55e;">── ST</span> &nbsp;<span style="color:#f59e0b;">── SL</span> &nbsp;<span style="color:#3b82f6;">-- Entry</span>
     </div>
   </div>
 </div>` : ""}
@@ -2427,9 +2411,6 @@ function doCopy(text,btn,label){
   var bbU = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbM = chart.addLineSeries({ color:'rgba(148,163,184,0.55)', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dashed, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   var bbL = chart.addLineSeries({ color:'rgba(74,156,245,0.7)', lineWidth:1, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
-  // PSAR rendered as a thin dotted "line" (dot-per-bar look). Lightweight Charts has no scatter
-  // primitive, so a Line series with style=Dotted and lineWidth=1 closely approximates SAR dots.
-  var sarS = chart.addLineSeries({ color:'#a78bfa', lineWidth:1, lineStyle:LightweightCharts.LineStyle.Dotted, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
   // SuperTrend line (solid, on the price scale) — per-point colour: GREEN bullish / RED bearish.
   var stS  = chart.addLineSeries({ color:'#22c55e', lineWidth:2, priceLineVisible:false, lastValueVisible:true, crosshairMarkerVisible:false, title:'ST' });
   var _stColor = function(p){ return { time:p.time, value:p.value, color: (p.trend === -1 ? '#ef4444' : '#22c55e') }; };
@@ -2473,7 +2454,7 @@ function doCopy(text,btn,label){
         for (var _i=d.candles.length-1;_i>=0;_i--){ if(Math.floor((d.candles[_i].time+19800)/86400)===_dk) _cut=d.candles[_i].time; else break; }
         var _k=function(a){ return Array.isArray(a)?a.filter(function(x){return x.time>=_cut;}):a; };
         d.candles=_k(d.candles);
-        ['ema21','sar','supertrend','adx','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
+        ['ema21','supertrend','adx','rsi','bbUpper','bbMiddle','bbLower','orhLine','orlLine','vwap','markers'].forEach(function(kk){ if(d[kk]) d[kk]=_k(d[kk]); });
       })();
       _internalUpdate = true;
       if (Math.abs(d.candles.length - _lcc) > 1 || _lcc === 0) {
@@ -2482,7 +2463,6 @@ function doCopy(text,btn,label){
       _lcc = d.candles.length;
       if (d.bbUpper && d.bbUpper.length) { bbU.setData(d.bbUpper); bbM.setData(d.bbMiddle || []); bbL.setData(d.bbLower || []); }
       else { bbU.setData([]); bbM.setData([]); bbL.setData([]); }
-      if (d.sar && d.sar.length) sarS.setData(d.sar); else sarS.setData([]);
       if (d.supertrend && d.supertrend.length) stS.setData(d.supertrend.map(_stColor)); else stS.setData([]);
       if (d.adx && d.adx.length) { adxS.setData(d.adx); drawAdxLevel(d.adxMin); } else adxS.setData([]);
       if (d.rsi && d.rsi.length) { rsiS.setData(d.rsi); drawRsiLevels(d.rsiCeMin, d.rsiPeMax); } else rsiS.setData([]);

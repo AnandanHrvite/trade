@@ -145,7 +145,7 @@ router.get("/", (req, res) => {
   ) : "";
   const bbRsiPanel = bbRsiOn ? renderPanel(
     "BB_RSI", { bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", border: "rgba(245,158,11,0.25)" },
-    bbRsiStrategy && bbRsiStrategy.NAME ? bbRsiStrategy.NAME : "BB_RSI_BB_PSAR_RSI_V6.1",
+    bbRsiStrategy && bbRsiStrategy.NAME ? bbRsiStrategy.NAME : "BB_RSI_BB_SUPERTREND_RSI_V7",
     BB_RSI_KEY, "/bb_rsi-backtest", bbRsiResult
   ) : "";
   const paPanel = paOn ? renderPanel(

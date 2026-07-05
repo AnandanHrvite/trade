@@ -1,7 +1,7 @@
 /**
  * BB_RSI BACKTEST — /bb_rsi-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the bb_rsi strategy (BB break + PSAR + RSI) on 3/5-min candles.
+ * Backtests the bb_rsi strategy (BB break + SuperTrend + RSI) on 3/5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
@@ -153,9 +153,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
 
   console.log("\n══════════════════════════════════════════════");
   console.log(`🔍 BB_RSI BACKTEST — ${bbRsiStrategy.NAME}`);
-  console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
+  console.log(`   Candles: ${candles.length} | trailing SL | BB+SuperTrend+RSI entry`);
   console.log(`   MaxTrades: ${BB_RSI_MAX_TRADES}/day | MaxLoss: ₹${BB_RSI_MAX_LOSS}/day`);
-  console.log(`   Exit: profit lock + hard stop + BB re-entry + PSAR flip | Slippage: ${SLIPPAGE_PTS}pts`);
+  console.log(`   Exit: profit lock + hard stop + BB re-entry + SuperTrend flip | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
 
@@ -241,7 +241,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       if (!position.mfeSpotPts || _favPeakPts > position.mfeSpotPts) position.mfeSpotPts = _favPeakPts;
 
       // ──────────────────────────────────────────────────────────────────────
-      // EXIT: 1. Hard stop  2. Profit lock  3. BB re-entry  4. PSAR flip  5. EOD
+      // EXIT: 1. Hard stop  2. Profit lock  3. BB re-entry  4. SuperTrend flip  5. EOD
       // ──────────────────────────────────────────────────────────────────────
 
       const _favClosePts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
@@ -296,9 +296,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
-      // 4. Trend flip — exit on reversal signal (PSAR or SuperTrend, per BB_RSI_USE_SUPERTREND)
+      // 4. Trend flip — exit on SuperTrend reversal signal
       if (!exitReason && bbRsiStrategy.isTrendFlip(window, position.side)) {
-        exitReason = (process.env.BB_RSI_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+        exitReason = "SuperTrend flip";
       }
 
       // 5. EOD
@@ -427,7 +427,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
             entryTs:         candle.time,
             stopLoss:        sl,
             initialStopLoss: sl,
-            slSource:        _a.result.slSource || "PSAR",
+            slSource:        _a.result.slSource || "SUPERTREND",
             entryReason:     `${_a.result.reason || side + " signal"} | ${_confTag}`,
             target:          null,
             candlesHeld:     0,
@@ -463,7 +463,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       // Log first rejection per day for debugging
       if (!position && _dailyTradeCount === 0 && candleMin >= _btStartMin && candleMin < _btEndMin) {
         if (!_loggedReason || _loggedReason !== candleDate) {
-          console.log(`  [${candleDate} ${toIST(candle.time).split(' ')[1] || ''}] Skip: ${result.reason} | RSI=${result.rsi} BB=${result.bbMiddle}-${result.bbUpper} SAR=${result.sar}`);
+          console.log(`  [${candleDate} ${toIST(candle.time).split(' ')[1] || ''}] Skip: ${result.reason} | RSI=${result.rsi} BB=${result.bbMiddle}-${result.bbUpper} ST=${result.supertrend}`);
           _loggedReason = candleDate;
         }
       }
@@ -485,7 +485,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
     }
 
     const entryPrice = parseFloat((candle.close + SLIPPAGE_PTS * (side === "CE" ? 1 : -1)).toFixed(2));
-    // Initial SL = PSAR/SuperTrend value from the strategy (no clamp).
+    // Initial SL = SuperTrend value from the strategy (no clamp).
     const sl = result.stopLoss;
     // Initial rupee risk (recorded for analysis; no longer drives exits).
     const _initRiskBT = OPTION_SIM
@@ -497,7 +497,7 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
       entryTs:         candle.time,
       stopLoss:        sl,
       initialStopLoss: sl,
-      slSource:        result.slSource || "PSAR",
+      slSource:        result.slSource || "SUPERTREND",
       entryReason:     result.reason || `${side} signal`,
       target:          null,
       candlesHeld:     0,
@@ -1685,7 +1685,7 @@ function renderAnalytics(){
     if(r.indexOf('Profit lock')===0) r='Profit lock';
     else if(r.indexOf('SL')===0) r='Stop loss';
     else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
-    else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+    else if(r.indexOf('SuperTrend flip')===0) r='SuperTrend flip';
     else if(r.indexOf('EOD')===0) r='EOD square-off';
     if(!reasonMap[r]) reasonMap[r]={cnt:0,pnl:0};
     reasonMap[r].cnt++;
@@ -2017,7 +2017,7 @@ function renderAnalytics(){
       if(r.indexOf('Profit lock')===0) r='Profit lock';
       else if(r.indexOf('SL')===0) r='Stop loss';
       else if(r.indexOf('BB re-entry')===0) r='BB re-entry';
-      else if(r.indexOf('PSAR flip')===0) r='PSAR flip';
+      else if(r.indexOf('SuperTrend flip')===0) r='SuperTrend flip';
       else if(r.indexOf('EOD')===0) r='EOD square-off';
       if(!lrMap[r]) lrMap[r]={cnt:0,pnl:0};
       lrMap[r].cnt++;

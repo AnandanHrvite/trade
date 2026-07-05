@@ -1,16 +1,16 @@
 /**
- * BB_RSI V6: Bollinger Bands + PSAR + RSI (PSAR-flip exit design)
+ * BB_RSI V7: Bollinger Bands + SuperTrend + RSI (SuperTrend-flip exit design)
  *
  * ENTRY:
- *   CE: candle closes above BB upper + PSAR below close + RSI > BB_RSI_RSI_CE_THRESHOLD (default 70)
- *   PE: candle closes below BB lower + PSAR above close + RSI < BB_RSI_RSI_PE_THRESHOLD (default 40)
+ *   CE: candle closes above BB upper + SuperTrend bullish (line below close) + RSI > BB_RSI_RSI_CE_THRESHOLD (default 70)
+ *   PE: candle closes below BB lower + SuperTrend bearish (line above close) + RSI < BB_RSI_RSI_PE_THRESHOLD (default 40)
  *   Two RSI keys only — no overbought/oversold caps.
- *   Skip far-PSAR entries: BB_RSI_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
+ *   Skip far-SuperTrend entries: BB_RSI_MAX_ENTRY_SL_PTS (default 50) — don't open when the SuperTrend line is >N pts from close.
  *   ADX trend filter (optional, BB_RSI_ADX_ENABLED): block ALL entries when ADX(14) < BB_RSI_ADX_MIN
  *     — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions.
- *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
+ *   Initial SL = SuperTrend value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
- * EXIT (profit lock + hard stop + BB re-entry + PSAR flip):
+ * EXIT (profit lock + hard stop + BB re-entry + SuperTrend flip):
  *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ BB_RSI_PROFIT_LOCK_TRIGGER_PTS,
  *      exit when it gives back below BB_RSI_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
  *      so it is independent of option pricing. The per-tick upside exit.
@@ -18,16 +18,16 @@
  *      BB_RSI_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
  *      adverse excursions on failed fades, not the normal small scalps. The per-tick downside cap.
  *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
- *      (BB_RSI_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
- *   4. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
+ *      (BB_RSI_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower SuperTrend flip.
+ *   4. SuperTrend flip → exit on candle close (trend exit; handles runners beyond the lock).
  *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
 
-const { BollingerBands, RSI, PSAR, ADX } = require("technicalindicators");
+const { BollingerBands, RSI, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
-const NAME        = "BB_RSI_BB_PSAR_RSI_V6.1";
-const DESCRIPTION = "BB break + PSAR + RSI";
+const NAME        = "BB_RSI_BB_SUPERTREND_RSI_V7";
+const DESCRIPTION = "BB break + SuperTrend + RSI";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
 
@@ -57,7 +57,7 @@ function isInTradingWindow(unixSec) {
 // ── Indicator cache — avoid redundant recalculation on every tick ────────────
 // Cache key = last closed candle time + current candle OHLC (changes on each tick)
 // If the closed candles haven't changed AND current bar is same, reuse cached indicators.
-let _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, rsiPrev: null, sar: null, adx: null, st: null };
+let _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, rsiPrev: null, adx: null, st: null };
 
 function _makeIndicatorKey(candles) {
   if (candles.length < 2) return null;
@@ -78,22 +78,18 @@ function getSignal(candles, opts) {
   var RSI_CE      = parseFloat(cfg("BB_RSI_RSI_CE_THRESHOLD", "70"));
   var RSI_PE      = parseFloat(cfg("BB_RSI_RSI_PE_THRESHOLD", "40"));
   var RSI_TURNING = cfg("BB_RSI_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
-  var PSAR_STEP   = parseFloat(cfg("BB_RSI_PSAR_STEP", "0.02"));
-  var PSAR_MAX    = parseFloat(cfg("BB_RSI_PSAR_MAX", "0.2"));
-  var MAX_ENTRY_SL_PTS = parseFloat(cfg("BB_RSI_MAX_ENTRY_SL_PTS", "50")); // skip entries where the trend line sits farther than this from close (0 = off)
+  var MAX_ENTRY_SL_PTS = parseFloat(cfg("BB_RSI_MAX_ENTRY_SL_PTS", "50")); // skip entries where the SuperTrend line sits farther than this from close (0 = off)
   var ADX_ENABLED = cfg("BB_RSI_ADX_ENABLED", "false") === "true"; // trend filter toggle
   var ADX_MIN     = parseFloat(cfg("BB_RSI_ADX_MIN", "20"));        // block entries when ADX(14) < this (ranging/chop)
-  // Trend-confirmation source: PSAR (default) or SuperTrend(10,3). Mutually
-  // exclusive — when on, SuperTrend takes over the directional confirmation,
-  // the entry SL line AND the trend-flip exit (see isTrendFlip).
-  var USE_SUPERTREND = cfg("BB_RSI_USE_SUPERTREND", "false") === "true";
+  // Trend-confirmation source: SuperTrend(10,3). Drives the directional
+  // confirmation, the entry SL line AND the trend-flip exit (see isTrendFlip).
   var ST_PERIOD = parseInt(cfg("BB_RSI_SUPERTREND_PERIOD", "10"), 10) || 10;
   var ST_MULT   = parseFloat(cfg("BB_RSI_SUPERTREND_MULT", "3")) || 3;
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
-    rsi: null, sar: null, adx: null, supertrend: null, stTrend: null,
-    trendSource: USE_SUPERTREND ? "SUPERTREND" : "PSAR",
+    rsi: null, adx: null, supertrend: null, stTrend: null,
+    trendSource: "SUPERTREND",
     bbUpper: null, bbMiddle: null, bbLower: null,
   };
 
@@ -115,14 +111,13 @@ function getSignal(candles, opts) {
 
   // ── Indicators (with cache to avoid redundant recalculation) ──────────────
   var cacheKey = _makeIndicatorKey(candles);
-  var bb, bbMiddles, rsi, rsiPrev, sar, adx, st;
+  var bb, bbMiddles, rsi, rsiPrev, adx, st;
 
   if (cacheKey && _indicatorCache.key === cacheKey && _indicatorCache.bb) {
     bb        = _indicatorCache.bb;
     bbMiddles = _indicatorCache.bbMiddles;
     rsi       = _indicatorCache.rsi;
     rsiPrev   = _indicatorCache.rsiPrev;
-    sar       = _indicatorCache.sar;
     adx       = _indicatorCache.adx;
     st        = _indicatorCache.st;
   } else {
@@ -142,25 +137,17 @@ function getSignal(candles, opts) {
     rsi     = rsiArr[rsiArr.length - 1];
     rsiPrev = rsiArr.length >= 2 ? rsiArr[rsiArr.length - 2] : rsi;
 
-    // Parabolic SAR
-    var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
-    if (sarArr.length < 1) { base.reason = "SAR warming up"; return base; }
-    sar = sarArr[sarArr.length - 1];
-
     // ADX (trend strength) — computed every candle now so it can be charted and
     // logged at entry/exit, not just when the ADX chop-gate filter is on.
     var adxArr = ADX.calculate({ period: 14, high: highs, low: lows, close: closes });
     adx = adxArr.length > 0 ? adxArr[adxArr.length - 1].adx : null;
 
-    // SuperTrend(10,3) — only when it is the active trend source (avoids the cost otherwise)
-    st = null;
-    if (USE_SUPERTREND) {
-      var stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
-      st = stArr.length > 0 ? stArr[stArr.length - 1] : null;
-    }
+    // SuperTrend(10,3) — the sole directional confirmation, SL line and flip exit.
+    var stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
+    st = stArr.length > 0 ? stArr[stArr.length - 1] : null;
 
     // Cache for next tick with same window
-    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, rsiPrev: rsiPrev, sar: sar, adx: adx, st: st };
+    _indicatorCache = { key: cacheKey, bb: bb, bbMiddles: bbMiddles, rsi: rsi, rsiPrev: rsiPrev, adx: adx, st: st };
   }
 
   base.bbUpper  = parseFloat(bb.upper.toFixed(2));
@@ -168,14 +155,13 @@ function getSignal(candles, opts) {
   base.bbLower  = parseFloat(bb.lower.toFixed(2));
   base.bbWidth  = parseFloat((bb.upper - bb.lower).toFixed(2));
   base.rsi = parseFloat(rsi.toFixed(1));
-  base.sar = parseFloat(sar.toFixed(2));
   base.adx = adx != null ? parseFloat(adx.toFixed(1)) : null;
   base.supertrend = (st && st.value != null) ? parseFloat(st.value.toFixed(2)) : null;
   base.stTrend    = (st && st.trend != null) ? (st.trend === 1 ? "BULLISH" : "BEARISH") : null;
   base.stTrendInt = (st && st.trend != null) ? st.trend : null;
 
-  // When SuperTrend is the active source it must be warmed up before we can decide.
-  if (USE_SUPERTREND && (!st || st.trend == null)) {
+  // SuperTrend must be warmed up before we can decide.
+  if (!st || st.trend == null) {
     base.reason = "SuperTrend warming up";
     return base;
   }
@@ -192,29 +178,29 @@ function getSignal(candles, opts) {
     return base;
   }
 
-  // ── ENTRY CONDITIONS (V6: BB break + PSAR side + RSI) ─────────────────────
-  // CE: close above BB upper  + PSAR below close + RSI > RSI_CE
-  // PE: close below BB lower   + PSAR above close + RSI < RSI_PE
-  // Initial SL = PSAR value at entry (no clamp). SAR is always on the correct side
-  // here (entry requires sarBelow for CE / sarAbove for PE), so it is a valid stop.
+  // ── ENTRY CONDITIONS (V7: BB break + SuperTrend side + RSI) ───────────────
+  // CE: close above BB upper  + SuperTrend bullish + RSI > RSI_CE
+  // PE: close below BB lower   + SuperTrend bearish + RSI < RSI_PE
+  // Initial SL = SuperTrend value at entry (no clamp). The line is always on the
+  // correct side here (entry requires trendUp for CE / trendDown for PE), so it is a valid stop.
 
-  // ── Active trend source (PSAR or SuperTrend) ──────────────────────────────
-  // trendVal = the line that confirms direction AND seeds the entry SL.
-  //   PSAR: bullish when SAR sits below close. SuperTrend: bullish when trend===1.
-  var _srcLabel = USE_SUPERTREND ? "SUPERTREND" : "PSAR";
-  var trendVal  = USE_SUPERTREND ? st.value : sar;
-  var sarBelow  = USE_SUPERTREND ? (st.trend === 1)  : (sar < sc.close);   // bullish — line under price
-  var sarAbove  = USE_SUPERTREND ? (st.trend === -1) : (sar > sc.close);   // bearish — line over price
+  // ── Active trend source (SuperTrend) ──────────────────────────────────────
+  // trendVal = the SuperTrend line that confirms direction AND seeds the entry SL.
+  //   Bullish when trend===1 (line under price); bearish when trend===-1 (line over price).
+  var _srcLabel = "SUPERTREND";
+  var trendVal  = st.value;
+  var trendUp   = (st.trend === 1);    // bullish — line under price
+  var trendDown = (st.trend === -1);   // bearish — line over price
 
   // ── Near-miss filter audit (additive-only logging; does NOT affect signal) ──
   var _ceAuditChecks = [
     { name: "BB upper break",      ok: sc.close >= bb.upper, detail: "close=" + sc.close + " vs BB_U=" + bb.upper.toFixed(1) },
-    { name: _srcLabel + " below",  ok: sarBelow,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
+    { name: _srcLabel + " bullish", ok: trendUp,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
     { name: "RSI bullish",         ok: rsi > RSI_CE,         detail: "RSI=" + rsi.toFixed(1) + " vs >" + RSI_CE },
   ];
   var _peAuditChecks = [
     { name: "BB lower break",      ok: sc.close <= bb.lower, detail: "close=" + sc.close + " vs BB_L=" + bb.lower.toFixed(1) },
-    { name: _srcLabel + " above",  ok: sarAbove,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
+    { name: _srcLabel + " bearish", ok: trendDown,             detail: _srcLabel + "=" + trendVal.toFixed(1) + " vs close=" + sc.close },
     { name: "RSI bearish",         ok: rsi < RSI_PE,         detail: "RSI=" + rsi.toFixed(1) + " vs <" + RSI_PE },
   ];
   function _auditSide(checks) {
@@ -227,8 +213,8 @@ function getSignal(candles, opts) {
   }
   base.filterAudit = { ce: _auditSide(_ceAuditChecks), pe: _auditSide(_peAuditChecks) };
 
-  // CE (Long): close >= BB upper + PSAR below close + RSI > RSI_CE
-  if (sc.close >= bb.upper && sarBelow && rsi > RSI_CE) {
+  // CE (Long): close >= BB upper + SuperTrend bullish (line below close) + RSI > RSI_CE
+  if (sc.close >= bb.upper && trendUp && rsi > RSI_CE) {
     if (RSI_TURNING && rsi < rsiPrev) {
       base.reason = "CE blocked: RSI turning down (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
@@ -252,8 +238,8 @@ function getSignal(candles, opts) {
     });
   }
 
-  // PE (Short): close <= BB lower + PSAR above close + RSI < RSI_PE
-  if (sc.close <= bb.lower && sarAbove && rsi < RSI_PE) {
+  // PE (Short): close <= BB lower + SuperTrend bearish (line above close) + RSI < RSI_PE
+  if (sc.close <= bb.lower && trendDown && rsi < RSI_PE) {
     if (RSI_TURNING && rsi > rsiPrev) {
       base.reason = "PE blocked: RSI turning up (" + rsiPrev.toFixed(1) + " → " + rsi.toFixed(1) + ") — momentum fading";
       return base;
@@ -284,13 +270,13 @@ function getSignal(candles, opts) {
   var parts = [];
   if (cePrice) {
     var ceMiss = [];
-    if (!sarBelow)    ceMiss.push(_srcLabel + " not below close");
+    if (!trendUp)    ceMiss.push(_srcLabel + " not below close");
     if (!(rsi > RSI_CE)) ceMiss.push("RSI=" + rsi.toFixed(0) + "<=" + RSI_CE);
     if (ceMiss.length) parts.push("CE broke BB but " + ceMiss.join(" & "));
   }
   if (pePrice) {
     var peMiss = [];
-    if (!sarAbove)    peMiss.push(_srcLabel + " not above close");
+    if (!trendDown)    peMiss.push(_srcLabel + " not above close");
     if (!(rsi < RSI_PE)) peMiss.push("RSI=" + rsi.toFixed(0) + ">=" + RSI_PE);
     if (peMiss.length) parts.push("PE broke BB but " + peMiss.join(" & "));
   }
@@ -323,7 +309,7 @@ function profitLock(favPts, peakFavPts) {
 // moved BB_RSI_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
 // so it never touches the normal small scalps — it only clips the deep adverse
 // excursions on failed BB-break fades that would otherwise bleed to −100+ pts
-// before the candle-close BB re-entry / PSAR flip fires. 0 disables.
+// before the candle-close BB re-entry / SuperTrend flip fires. 0 disables.
 //   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
 // Returns { hit, stop }.
 function hardStop(favPts) {
@@ -332,33 +318,9 @@ function hardStop(favPts) {
   return { hit: favPts <= -stop, stop: stop };
 }
 
-// ── PSAR flip detection (SAR crosses price → exit) ──────────────────────────
-// The primary exit: on candle close, if SAR has crossed to the wrong side of price
-// the trend has flipped — exit the position.
-function isPSARFlip(candles, side) {
-  var PSAR_STEP = parseFloat(cfg("BB_RSI_PSAR_STEP", "0.02"));
-  var PSAR_MAX  = parseFloat(cfg("BB_RSI_PSAR_MAX", "0.2"));
-
-  var highs = candles.map(function(c) { return c.high; });
-  var lows  = candles.map(function(c) { return c.low; });
-
-  var sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: highs, low: lows });
-  if (sarArr.length < 2) return false;
-
-  var currentSar = sarArr[sarArr.length - 1];
-  var prevSar    = sarArr[sarArr.length - 2];
-  var currentClose = candles[candles.length - 1].close;
-
-  if (side === "CE") {
-    return prevSar < candles[candles.length - 2].close && currentSar > currentClose;
-  } else {
-    return prevSar > candles[candles.length - 2].close && currentSar < currentClose;
-  }
-}
-
 // ── SuperTrend flip detection (trend line crosses price → exit) ──────────────
-// The SuperTrend analogue of the PSAR flip: on candle close, exit when the
-// trend state has reversed against the position (CE wants bullish, PE bearish).
+// The primary trend exit: on candle close, exit when the SuperTrend state has
+// reversed against the position (CE wants bullish, PE bearish).
 function isSuperTrendFlip(candles, side) {
   var ST_PERIOD = parseInt(cfg("BB_RSI_SUPERTREND_PERIOD", "10"), 10) || 10;
   var ST_MULT   = parseFloat(cfg("BB_RSI_SUPERTREND_MULT", "3")) || 3;
@@ -371,17 +333,15 @@ function isSuperTrendFlip(candles, side) {
   return                     prev.trend === -1 && curr.trend === 1;   // bear → bull flip
 }
 
-// ── Unified trend-flip exit (dispatches to the active trend source) ──────────
-// Routes call this instead of isPSARFlip so the exit follows whichever source
-// (PSAR or SuperTrend) drove the entry. BB_RSI_USE_SUPERTREND selects it.
+// ── Unified trend-flip exit ──────────────────────────────────────────────────
+// Routes call this for the candle-close trend exit; SuperTrend is the sole source.
 function isTrendFlip(candles, side) {
-  if (cfg("BB_RSI_USE_SUPERTREND", "false") === "true") return isSuperTrendFlip(candles, side);
-  return isPSARFlip(candles, side);
+  return isSuperTrendFlip(candles, side);
 }
 
 // ── BB re-entry exit (failed-breakout) ──────────────────────────────────────
 // On candle close, if price has closed back INSIDE the band the breakout that
-// triggered the entry has failed → exit (faster than waiting for the PSAR flip).
+// triggered the entry has failed → exit (faster than waiting for the SuperTrend flip).
 //   CE entered on close ≥ BB.upper → exit when close < BB.upper.
 //   PE entered on close ≤ BB.lower → exit when close > BB.lower.
 // Gated by BB_RSI_BB_REENTRY_EXIT (default on). Uses the same BB inputs as entry.
@@ -406,6 +366,6 @@ function bbLevels(candles) {
   return bbArr[bbArr.length - 1];
 }
 
-function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, sar: null, adx: null, st: null }; }
+function reset() { _indicatorCache = { key: null, bb: null, bbMiddles: null, rsi: null, adx: null, st: null }; }
 
-module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isPSARFlip, isSuperTrendFlip, isTrendFlip, bbReentryExit, bbLevels, reset };
+module.exports = { NAME, DESCRIPTION, getSignal, profitLock, hardStop, isSuperTrendFlip, isTrendFlip, bbReentryExit, bbLevels, reset };
