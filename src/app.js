@@ -17,7 +17,7 @@ const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
-const { loadTradePosition, clearTradePosition, loadScalpPosition, clearScalpPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
 app.use(express.json());
@@ -246,13 +246,13 @@ const OPEN_PATHS = [
   "/logs/data",         // polling endpoint — read-only
   "/logs/export",       // export txt
   "/logs/export-json",  // export json
-  "/swing-live/status",          // read-only status page
-  "/swing-live/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
-  "/swing-paper/status",     // read-only status page
-  "/swing-paper/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
-  "/swing-paper/history",    // read-only history
-  "/swing-paper/debug",      // read-only debug
-  "/swing-paper/client.js",  // static asset
+  "/ema_rsi_st-live/status",          // read-only status page
+  "/ema_rsi_st-live/status/data",     // dashboard AJAX poll — must be open or 403 when API_SECRET is set
+  "/ema_rsi_st-paper/status",     // read-only status page
+  "/ema_rsi_st-paper/status/data",// dashboard AJAX poll — must be open or 403 when API_SECRET is set
+  "/ema_rsi_st-paper/history",    // read-only history
+  "/ema_rsi_st-paper/debug",      // read-only debug
+  "/ema_rsi_st-paper/client.js",  // static asset
   "/ema9vwap-paper/status",      // read-only status page
   "/ema9vwap-paper/status/data", // dashboard AJAX poll
   "/ema9vwap-paper/history",     // read-only history
@@ -293,12 +293,12 @@ const OPEN_PATHS = [
   "/cache-files/download",  // download one raw cache file
   "/cache-files/download-all", // download a whole group as .tar.gz
   // NOTE: POST /cache-files/delete and POST /cache-files/delete-all are intentionally protected (write ops)
-  // Scalp mode (read-only status/data)
-  "/scalp-live/status",
-  "/scalp-live/status/data",
-  "/scalp-paper/status",
-  "/scalp-paper/status/data",
-  "/scalp-backtest",
+  // BB_RSI mode (read-only status/data)
+  "/bb_rsi-live/status",
+  "/bb_rsi-live/status/data",
+  "/bb_rsi-paper/status",
+  "/bb_rsi-paper/status/data",
+  "/bb_rsi-backtest",
   // Price Action mode (read-only status/data)
   "/pa-live/status",
   "/pa-live/status/data",
@@ -310,8 +310,8 @@ const OPEN_PATHS = [
   "/deploy/webhook",      // GitHub Actions webhook — must be open for GitHub to reach it
   "/deploy/status",       // deploy status poll — read-only
   // NOTE: /settings/save requires API_SECRET (write operation)
-  // NOTE: /swing-live/start, /swing-live/stop, /swing-live/exit are intentionally NOT here — they require API_SECRET
-  // NOTE: /swing-paper/start, /swing-paper/stop, /swing-paper/reset, /swing-paper/exit also require secret
+  // NOTE: /ema_rsi_st-live/start, /ema_rsi_st-live/stop, /ema_rsi_st-live/exit are intentionally NOT here — they require API_SECRET
+  // NOTE: /ema_rsi_st-paper/start, /ema_rsi_st-paper/stop, /ema_rsi_st-paper/reset, /ema_rsi_st-paper/exit also require secret
   // NOTE: /api/holidays/refresh requires API_SECRET (write operation)
 ];
 app.use((req, res, next) => {
@@ -376,10 +376,10 @@ app.use((req, res, next) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/auth",       require("./routes/auth"));
-app.use("/swing-backtest",   require("./routes/swingBacktest"));
+app.use("/ema_rsi_st-backtest",   require("./routes/emaRsiStBacktest"));
 app.use("/result",     require("./routes/result"));
-app.use("/swing-paper", require("./routes/swingPaper"));
-app.use("/swing-live",      require("./routes/swingLive"));
+app.use("/ema_rsi_st-paper", require("./routes/emaRsiStPaper"));
+app.use("/ema_rsi_st-live",      require("./routes/emaRsiStLive"));
 app.use("/tracker",    require("./routes/manualTracker"));
 app.use("/logs",       require("./routes/logs"));       // ← live log viewer
 app.use("/trade-logs", require("./routes/tradeLogs"));  // ← per-trade JSONL viewer + settings checkpoints
@@ -390,16 +390,16 @@ app.use("/settings",    require("./routes/settings"));   // ← settings UI
 app.use("/docs",        require("./routes/docs"));       // ← docs viewer
 app.use("/login-logs",  require("./routes/loginLogs"));  // ← failed login log viewer
 app.use("/monitor",     require("./routes/monitor"));    // ← EC2 instance health monitor
-// ── Scalp mode routes (independent from main trade) ─────────────────────────
-app.use("/scalp-live",          require("./routes/scalpLive"));          // ← scalp live (Fyers orders)
-app.use("/scalp-paper",    require("./routes/scalpPaper"));     // ← scalp paper trade
-app.use("/scalp-backtest", require("./routes/scalpBacktest"));  // ← scalp backtest
+// ── BB_RSI mode routes (independent from main trade) ─────────────────────────
+app.use("/bb_rsi-live",          require("./routes/bbRsiLive"));          // ← bb_rsi live (Fyers orders)
+app.use("/bb_rsi-paper",    require("./routes/bbRsiPaper"));     // ← bb_rsi paper trade
+app.use("/bb_rsi-backtest", require("./routes/bbRsiBacktest"));  // ← bb_rsi backtest
 app.use("/compare",        require("./routes/compare"));        // ← paper vs backtest compare
-// ── Price Action mode routes (5-min, independent from main & scalp) ─────────
+// ── Price Action mode routes (5-min, independent from main & bb_rsi) ─────────
 app.use("/pa-live",        require("./routes/paLive"));      // ← PA live (Fyers orders) — legacy
 app.use("/pa-live-harness", require("./routes/paLiveHarness")); // ← PA live via PAPER + harness (LIVE = PAPER guaranteed)
-app.use("/swing-live-harness", require("./routes/swingLiveHarness")); // ← Swing live via PAPER + harness (Zerodha orders)
-app.use("/scalp-live-harness", require("./routes/scalpLiveHarness")); // ← Scalp live via PAPER + harness (Fyers orders)
+app.use("/ema_rsi_st-live-harness", require("./routes/emaRsiStLiveHarness")); // ← EMA_RSI_ST live via PAPER + harness (Zerodha orders)
+app.use("/bb_rsi-live-harness", require("./routes/bbRsiLiveHarness")); // ← BB_RSI live via PAPER + harness (Fyers orders)
 app.use("/orb-live-harness",   require("./routes/orbLiveHarness"));   // ← ORB live via PAPER + harness (Fyers orders)
 app.use("/pa-paper",       require("./routes/paPaper"));     // ← PA paper trade
 app.use("/pa-backtest",    require("./routes/paBacktest"));  // ← PA backtest
@@ -527,19 +527,19 @@ app.get("/", (req, res) => {
   const showRealtime = (process.env.UI_SHOW_REALTIME || 'true').toLowerCase() === 'true';
   if (showRealtime && sharedSocketState.isAnyActive()) {
     const { renderRealtimePage } = require("./routes/realtime");
-    const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+    const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
     return res.send(renderRealtimePage({ liveActive, sidebarKey: "dashboard", autoFlipBack: true }));
   }
   try {
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
   const zerodhaConf = !!process.env.ZERODHA_API_KEY;
-  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
+  const liveEnabled = process.env.EMA_RSI_ST_LIVE_ENABLED === "true";
   const liveReady   = liveEnabled && fyersOk && zerodhaOk;
-  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
-  const scalpMode   = sharedSocketState.getScalpMode();
-  const scalpEnabled = process.env.SCALP_ENABLED === "true";
-  const scalpModeOn  = (process.env.SCALP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const bbRsiMode   = sharedSocketState.getBbRsiMode();
+  const bbRsiEnabled = process.env.BB_RSI_ENABLED === "true";
+  const bbRsiModeOn  = (process.env.BB_RSI_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const paMode      = sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null;
   const paEnabled   = (process.env.PA_ENABLED || 'true').toLowerCase() === 'true';
   const paModeOn    = (process.env.PA_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -556,40 +556,40 @@ app.get("/", (req, res) => {
   // distract mid-trade — the running-status badge stays visible. Mirror of the
   // IDLE condition used for the top-bar badge below.
   const anyModeActive = liveActive
-    || (scalpModeOn && scalpMode)
+    || (bbRsiModeOn && bbRsiMode)
     || (paModeOn && paMode)
     || (orbModeOn && orbMode)
     || (ema9vwapModeOn && ema9vwapMode);
   // The mode-specific top-bar badges below only cover a subset of states
-  // (SWING live, SCALP_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
-  // active (e.g. Swing/Scalp/PA paper, ORB live) we still want a running
+  // (EMA_RSI_ST live, BB_RSI_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
+  // active (e.g. EMA_RSI_ST/BB_RSI/PA paper, ORB live) we still want a running
   // indicator visible — show a generic badge in that gap.
   const specificBadgeShown = liveActive
-    || (scalpModeOn && scalpMode === 'SCALP_LIVE')
+    || (bbRsiModeOn && bbRsiMode === 'BB_RSI_LIVE')
     || (paModeOn && paMode === 'PA_LIVE')
     || (orbModeOn && orbMode === 'ORB_PAPER');
 
   // Strategy tiles for the dashboard "Last Session" / "Today So Far" analytics
   // panel — built from the same *_MODE_ENABLED toggles the sidebar uses so the
   // panel only shows currently-enabled strategies (and includes ORB).
-  const swingModeOn = (process.env.SWING_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const emaRsiStModeOn = (process.env.EMA_RSI_ST_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const dashSessionTiles = [
-    { key: 'SWING',    cls: 'swing',    label: 'SWING',        on: swingModeOn },
-    { key: 'SCALP',    cls: 'scalp',    label: 'SCALP',        on: scalpModeOn },
+    { key: 'EMA_RSI_ST',    cls: 'ema_rsi_st',    label: 'EMA_RSI_ST',        on: emaRsiStModeOn },
+    { key: 'BB_RSI',    cls: 'bb_rsi',    label: 'BB_RSI',        on: bbRsiModeOn },
     { key: 'PA',       cls: 'pa',       label: 'PRICE ACTION', on: paModeOn },
     { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
     { key: 'EMA9VWAP', cls: 'ema9vwap', label: 'EMA9+VWAP',    on: ema9vwapModeOn },
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
-  // Zerodha pool = Swing; Fyers pool = Scalp + PA + ORB (enabled only).
+  // Zerodha pool = EMA_RSI_ST; Fyers pool = BB_RSI + PA + ORB (enabled only).
   const _tradingDir = path.join(os.homedir(), "trading-data");
   const _readPnl = (file) => _readPnlCached(_tradingDir, file);
   const zerodhaInv = parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
   const fyersInv   = parseFloat(process.env.FYERS_INV_AMOUNT   || "100000");
-  let zerodhaPnl = _readPnl("paper_trades.json");
+  let zerodhaPnl = _readPnl("ema_rsi_st_paper_trades.json");
   if (ema9vwapModeOn) zerodhaPnl += _readPnl("ema9vwap_paper_trades.json"); // EMA9+VWAP also trades Zerodha
-  let fyersPnl = scalpModeOn ? _readPnl("scalp_paper_trades.json") : 0;
+  let fyersPnl = bbRsiModeOn ? _readPnl("bb_rsi_paper_trades.json") : 0;
   if (paModeOn)       fyersPnl += _readPnl("pa_paper_trades.json");
   if (orbModeOn)      fyersPnl += _readPnl("orb_paper_trades.json");
   const _inr0 = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -605,11 +605,11 @@ app.get("/", (req, res) => {
   const zerodhaWalletHtml = _walletHtml(zerodhaInv, zerodhaPnl);
 
   // ── Cumulative P&L placement ─────────────────────────────────────────────
-  // The strategy grid is 3 columns (Swing is always shown). When the enabled
+  // The strategy grid is 3 columns (EMA_RSI_ST is always shown). When the enabled
   // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
   // tucks into that gap beside the last card; otherwise it falls back to a
   // full-width band below the grid (the default for any other card count).
-  const dashCardCount   = 1 + (scalpModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0);
+  const dashCardCount   = 1 + (bbRsiModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0);
   const cumInlineInGrid = (dashCardCount % 3) === 1;
   const cumCardInner = `
     <div class="dash-chart-hdr">
@@ -784,8 +784,8 @@ app.get("/", (req, res) => {
     @media (max-width:640px) { .broker-grid { grid-template-columns:1fr; } }
     /* ── iPhone 15 (393px) ── */
     @media (max-width:768px) {
-      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
-      #trade-row .card, #scalp-row .card, #pa-row .card { flex:none; width:100%; }
+      #trade-row, #bb_rsi-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #bb_rsi-row .card, #pa-row .card { flex:none; width:100%; }
     }
 
     /* ── BROKER CONNECTIONS — compact single-line rows ── */
@@ -987,8 +987,8 @@ app.get("/", (req, res) => {
     .mm-card { background:#0d1320; border:1px solid #1a2236; border-radius:9px; padding:8px 10px 9px; display:flex; flex-direction:column; }
     .mm-hdr { display:flex; align-items:center; gap:8px; padding-bottom:6px; border-bottom:1px solid #1a2236; margin-bottom:6px; }
     .mm-dot { width:7px; height:7px; border-radius:50%; background:#4a6080; flex-shrink:0; }
-    .mm-card.swing    .mm-dot { background:#60a5fa; }
-    .mm-card.scalp    .mm-dot { background:#fbbf24; }
+    .mm-card.ema_rsi_st    .mm-dot { background:#60a5fa; }
+    .mm-card.bb_rsi    .mm-dot { background:#fbbf24; }
     .mm-card.pa       .mm-dot { background:#a78bfa; }
     .mm-card.orb      .mm-dot { background:#10b981; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
@@ -1031,7 +1031,7 @@ app.get("/", (req, res) => {
     .ts-pos-item.pnl-pos strong { color:#4ade80; }
     .ts-pos-item.pnl-neg strong { color:#f87171; }
     .ts-flat-note { font-size:0.72rem; color:#2a3a50; font-style:italic; }
-    #trade-row, #scalp-row, #pa-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
+    #trade-row, #bb_rsi-row, #pa-row { display:flex; gap:12px; align-items:stretch; width:100%; flex-wrap:nowrap; }
     @media (max-width:900px) { .ts-grid { grid-template-columns:1fr 1fr; } }
 
     /* cfg-grid removed — config shown as strip in broker card */
@@ -1131,8 +1131,8 @@ app.get("/", (req, res) => {
     @media (max-width:900px){ .da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr 1fr; } }
     @media (max-width:560px){ .da-grid.cols-2,.da-grid.cols-3,.da-grid.cols-4,.da-grid.cols-5,.da-grid.cols-6 { grid-template-columns:1fr; } }
     .da-tile { background:#080e1a; border:1px solid #1a2236; border-radius:7px; padding:9px 11px; min-width:0; }
-    .da-tile.swing { border-top:2px solid #3b82f6; }
-    .da-tile.scalp { border-top:2px solid #f59e0b; }
+    .da-tile.ema_rsi_st { border-top:2px solid #3b82f6; }
+    .da-tile.bb_rsi { border-top:2px solid #f59e0b; }
     .da-tile.pa    { border-top:2px solid #a78bfa; }
     .da-tile.orb      { border-top:2px solid #10b981; }
     .da-tile.info  { border-top:2px solid #22d3ee; }
@@ -1168,9 +1168,9 @@ app.get("/", (req, res) => {
       .ts-grid     { grid-template-columns:1fr 1fr; }
       /* 3-col action row stacks to 1 col on mobile */
       .action-3col { grid-template-columns:1fr !important; }
-      /* trade-row + scalp-row + pa-row: stack vertically */
-      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
-      #trade-row .card, #scalp-row .card, #pa-row .card { width:100%; flex:none; }
+      /* trade-row + bb_rsi-row + pa-row: stack vertically */
+      #trade-row, #bb_rsi-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #bb_rsi-row .card, #pa-row .card { width:100%; flex:none; }
       /* top-bar: hide meta on mobile */
       .top-bar-meta { display:none; }
       .top-bar { padding:7px 10px 7px 48px; }
@@ -1182,8 +1182,8 @@ app.get("/", (req, res) => {
        the clipped (overflow-x:hidden) body. */
     @media (max-width:1200px) {
       .broker-grid { grid-template-columns:1fr; }
-      #trade-row, #scalp-row, #pa-row { flex-wrap:wrap; }
-      #trade-row .card, #scalp-row .card, #pa-row .card { width:100%; flex:none; }
+      #trade-row, #bb_rsi-row, #pa-row { flex-wrap:wrap; }
+      #trade-row .card, #bb_rsi-row .card, #pa-row .card { width:100%; flex:none; }
     }
     /* Dashboard top bar — keep title, toggle, and actions on a single line */
     .top-bar { flex-wrap:nowrap !important; overflow-x:auto; }
@@ -1207,18 +1207,18 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (Swing + Scalp + PA + ORB + EMA9+VWAP)">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (EMA_RSI_ST + BB_RSI + PA + ORB + EMA9+VWAP)">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
       <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>`}
       <div id="trading-status-alert" style="display:none;position:relative;"></div>
       ${liveActive ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span>LIVE ACTIVE</span>' : ''}
-      ${scalpModeOn && scalpMode === 'SCALP_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>SCALP LIVE</span>' : ''}
+      ${bbRsiModeOn && bbRsiMode === 'BB_RSI_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#f59e0b;"><span style="width:5px;height:5px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>BB_RSI LIVE</span>' : ''}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!scalpModeOn || !scalpMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -1258,24 +1258,24 @@ ${buildSidebar('dashboard', liveActive)}
 
   <!-- ③ PER-MODULE CUMULATIVE P&L CHARTS (Paper/Live toggle, all-time) -->
   <div class="mm-grid" style="--mm-cols:${dashCardCount};">
-    <div class="mm-card swing" data-mode="SWING">
+    <div class="mm-card ema_rsi_st" data-mode="EMA_RSI_ST">
       <div class="mm-hdr">
         <span class="mm-dot"></span>
-        <span class="mm-title">Swing</span>
+        <span class="mm-title">EMA_RSI_ST</span>
       </div>
-      <div class="mm-stats" id="mm-stats-SWING">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-SWING"></canvas></div>
-      <div class="mm-empty" id="mm-empty-SWING" style="display:none;">No paper trades yet</div>
+      <div class="mm-stats" id="mm-stats-EMA_RSI_ST">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-EMA_RSI_ST"></canvas></div>
+      <div class="mm-empty" id="mm-empty-EMA_RSI_ST" style="display:none;">No paper trades yet</div>
     </div>
-    ${scalpModeOn ? `
-    <div class="mm-card scalp" data-mode="SCALP">
+    ${bbRsiModeOn ? `
+    <div class="mm-card bb_rsi" data-mode="BB_RSI">
       <div class="mm-hdr">
         <span class="mm-dot"></span>
-        <span class="mm-title">Scalp</span>
+        <span class="mm-title">BB_RSI</span>
       </div>
-      <div class="mm-stats" id="mm-stats-SCALP">—</div>
-      <div class="mm-wrap"><canvas id="mmChart-SCALP"></canvas></div>
-      <div class="mm-empty" id="mm-empty-SCALP" style="display:none;">No paper trades yet</div>
+      <div class="mm-stats" id="mm-stats-BB_RSI">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-BB_RSI"></canvas></div>
+      <div class="mm-empty" id="mm-empty-BB_RSI" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${paModeOn ? `
@@ -1446,9 +1446,9 @@ function renderPALiveStatus(d){
     +posHtml;
 }
 ` : ''}
-${scalpModeOn ? `
-function renderScalpPaperStatus(d){
-  var rb=document.getElementById('scalp-paper-run-badge'), sb=document.getElementById('scalp-paper-stop-badge');
+${bbRsiModeOn ? `
+function renderBbRsiPaperStatus(d){
+  var rb=document.getElementById('bb_rsi-paper-run-badge'), sb=document.getElementById('bb_rsi-paper-stop-badge');
   if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
   var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
   var posHtml='';
@@ -1464,7 +1464,7 @@ function renderScalpPaperStatus(d){
     posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
   }
   var capital=d.capital!=null?'\\u20b9'+parseFloat(d.capital).toFixed(0):'—';
-  document.getElementById('scalp-paper-status-body').innerHTML=
+  document.getElementById('bb_rsi-paper-status-body').innerHTML=
     '<div class="ts-grid">'
     +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
     +'<div class="ts-cell"><div class="ts-label">Unrealised PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">spot proxy</div></div>'
@@ -1474,8 +1474,8 @@ function renderScalpPaperStatus(d){
     +posHtml;
 }
 
-function renderScalpLiveStatus(d){
-  var rb=document.getElementById('scalp-live-run-badge'), sb=document.getElementById('scalp-live-stop-badge');
+function renderBbRsiLiveStatus(d){
+  var rb=document.getElementById('bb_rsi-live-run-badge'), sb=document.getElementById('bb_rsi-live-stop-badge');
   if(rb&&sb){ rb.style.display=d.running?'inline':'none'; sb.style.display=d.running?'none':'inline'; }
   var pnl=fmtPnl(d.sessionPnl), upnl=fmtPnl(d.unrealisedPnl);
   var posHtml='';
@@ -1492,43 +1492,43 @@ function renderScalpLiveStatus(d){
   } else if(d.running){
     posHtml='<div style="padding:8px 18px 0;"><span class="ts-flat-note">Flat — watching for signal</span></div>';
   }
-  document.getElementById('scalp-live-status-body').innerHTML=
+  document.getElementById('bb_rsi-live-status-body').innerHTML=
     '<div class="ts-grid">'
     +'<div class="ts-cell"><div class="ts-label">Session PnL</div><div class="ts-val '+pnl.cls+'">'+pnl.txt+'</div><div class="ts-sub">'+d.tradeCount+' trades · '+(d.wins||0)+'W/'+(d.losses||0)+'L</div></div>'
     +'<div class="ts-cell"><div class="ts-label">Opt Premium PnL</div><div class="ts-val '+upnl.cls+'">'+upnl.txt+'</div><div class="ts-sub">Unrealised</div></div>'
     +'<div class="ts-cell"><div class="ts-label">Activity</div><div class="ts-val flat" style="font-size:0.82rem;">'+(d.tickCount||0)+' / '+(d.candleCount||0)+'</div><div class="ts-sub">Ticks / Candles</div></div>'
-    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Limit: \\u20b9${process.env.SCALP_MAX_DAILY_LOSS || "2000"}</div></div>'
+    +'<div class="ts-cell"><div class="ts-label">Daily Loss</div><div class="ts-val flat" style="font-size:0.78rem;color:'+(d.dailyLossHit?'#ef4444':'#10b981')+';">'+(d.dailyLossHit?'KILLED':'OK')+'</div><div class="ts-sub">Limit: \\u20b9${process.env.BB_RSI_MAX_DAILY_LOSS || "2000"}</div></div>'
     +'</div>'
     +posHtml;
 }
 ` : ''}
 async function pollDashboardStatus(){
   try {
-    var pr = await fetch('/swing-paper/status/data',{cache:'no-store'});
+    var pr = await fetch('/ema_rsi_st-paper/status/data',{cache:'no-store'});
     if(pr.ok){ var pd=await pr.json(); renderPaperStatus(pd); }
     else { renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'}); }
   } catch(e){
     renderPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null,pnlSource:'—'});
   }
   try {
-    var lr = await fetch('/swing-live/status/data',{cache:'no-store'});
+    var lr = await fetch('/ema_rsi_st-live/status/data',{cache:'no-store'});
     if(lr.ok){ var ld=await lr.json(); renderLiveStatus(ld); }
     else { renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0}); }
   } catch(e){
     renderLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,fyersOk:false,zerodhaOk:false,tickCount:0,candleCount:0});
   }
-  // Scalp Paper status
-  ${scalpModeOn ? `try {
-    var sp = await fetch('/scalp-paper/status/data',{cache:'no-store'});
-    if(sp.ok){ var spd=await sp.json(); renderScalpPaperStatus(spd); }
-    else { renderScalpPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  } catch(e){ renderScalpPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
-  // Scalp Live status
+  // BB_RSI Paper status
+  ${bbRsiModeOn ? `try {
+    var sp = await fetch('/bb_rsi-paper/status/data',{cache:'no-store'});
+    if(sp.ok){ var spd=await sp.json(); renderBbRsiPaperStatus(spd); }
+    else { renderBbRsiPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  } catch(e){ renderBbRsiPaperStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,capital:null,totalPnl:null}); }
+  // BB_RSI Live status
   try {
-    var sr = await fetch('/scalp-live/status/data',{cache:'no-store'});
-    if(sr.ok){ var sd=await sr.json(); renderScalpLiveStatus(sd); }
-    else { renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
-  } catch(e){ renderScalpLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
+    var sr = await fetch('/bb_rsi-live/status/data',{cache:'no-store'});
+    if(sr.ok){ var sd=await sr.json(); renderBbRsiLiveStatus(sd); }
+    else { renderBbRsiLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }
+  } catch(e){ renderBbRsiLiveStatus({running:false,sessionPnl:0,unrealisedPnl:null,tradeCount:0,wins:0,losses:0,tickCount:0,candleCount:0}); }` : ''}
   // PA Paper status
   ${paModeOn ? `try {
     var pp = await fetch('/pa-paper/status/data',{cache:'no-store'});
@@ -1546,14 +1546,14 @@ async function pollDashboardStatus(){
   function _isOn(id){ var el=document.getElementById(id); return !!(el && el.style.display!=='none'); }
   if(bPaper){
     var allOn = _isOn('paper-run-badge')
-      && (${scalpModeOn ? "_isOn('scalp-paper-run-badge')" : "true"})
+      && (${bbRsiModeOn ? "_isOn('bb_rsi-paper-run-badge')" : "true"})
       && (${paModeOn ? "_isOn('pa-paper-run-badge')" : "true"});
     if(allOn){ bPaper.disabled=true; bPaper.textContent='✓ ALL PAPER RUNNING'; bPaper.style.borderColor='#166534'; bPaper.style.opacity='0.6'; }
     else { bPaper.disabled=false; bPaper.textContent='▶ START ALL PAPER TRADES'; bPaper.style.opacity='1'; }
   }
   if(bLive){
     var allLiveOn = _isOn('live-run-badge')
-      && (${scalpModeOn ? "_isOn('scalp-live-run-badge')" : "true"})
+      && (${bbRsiModeOn ? "_isOn('bb_rsi-live-run-badge')" : "true"})
       && (${paModeOn ? "_isOn('pa-live-run-badge')" : "true"});
     if(allLiveOn){ bLive.disabled=true; bLive.textContent='✓ ALL LIVE RUNNING'; bLive.style.borderColor='#7f1d1d'; bLive.style.opacity='0.6'; }
     else { bLive.disabled=false; bLive.textContent='▶ START ALL LIVE TRADES'; bLive.style.opacity='1'; }
@@ -1562,11 +1562,11 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/swing-paper/start'${scalpModeOn ? ",'/scalp-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}];
-var LIVE_ENDPOINTS  = ['/swing-live/start'${scalpModeOn ? ",'/scalp-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
+var PAPER_ENDPOINTS = ['/ema_rsi_st-paper/start'${bbRsiModeOn ? ",'/bb_rsi-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}];
+var LIVE_ENDPOINTS  = ['/ema_rsi_st-live/start'${bbRsiModeOn ? ",'/bb_rsi-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
 // Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
 // EMA9+VWAP has no separate pure-live engine — its /ema9vwap-live route IS the harness (Zerodha orders when dry-run off).
-var HARNESS_ENDPOINTS = ['/swing-live-harness/start'${scalpModeOn ? ",'/scalp-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}];
+var HARNESS_ENDPOINTS = ['/ema_rsi_st-live-harness/start'${bbRsiModeOn ? ",'/bb_rsi-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}];
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1577,7 +1577,7 @@ function _escHtml(s){
 function _prettyEndpoint(url){
   var m = /\\/(\\w+)-(live|paper)(-harness)?\\/start/.exec(url);
   if (!m) return url;
-  var mode = { swing:'Swing', scalp:'Scalp', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP' }[m[1]] || m[1];
+  var mode = { ema_rsi_st:'EMA_RSI_ST', bb_rsi:'BB_RSI', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP' }[m[1]] || m[1];
   var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
   return mode + ' ' + kind;
 }
@@ -1596,7 +1596,7 @@ async function _startAll(endpoints){
         var isLive = /-live\\//.test(ep);
         var confirmCopy = isLive ? 'Start Anyway (Real Money)' : 'Start Anyway';
         var titleCopy   = isLive ? '0DTE Expiry Day — REAL MONEY at Risk' : '0DTE Expiry Day — Not Recommended';
-        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the Swing Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the Swing Option Expiry in Settings first. Or Start Anyway to run Swing on 0DTE.';
+        var extraNote   = isLive ? '\\n\\nThis is LIVE trading with real capital. Cancel stops the ENTIRE Start All — nothing starts — so you can fix the EMA_RSI_ST Option Expiry in Settings first.' : '\\n\\nCancel stops the ENTIRE Start All — nothing starts — so you can fix the EMA_RSI_ST Option Expiry in Settings first. Or Start Anyway to run EMA_RSI_ST on 0DTE.';
         var ok = await showConfirm({
           icon: '⚠️',
           title: titleCopy,
@@ -1620,7 +1620,7 @@ async function _startAll(endpoints){
           }
         } else {
           // User cancelled the 0DTE warning → abort the WHOLE Start All so nothing
-          // starts. Swing is always first in the endpoint list, so at this point no
+          // starts. EMA_RSI_ST is always first in the endpoint list, so at this point no
           // other strategy has started yet — breaking here starts nothing.
           results.aborted = true;
           break;
@@ -1672,8 +1672,8 @@ async function _handleStartAllResult(btn, origText, label, result){
 }
 
 async function startAllPaper(btn){
-  var modeList = 'Swing'
-    + (${scalpModeOn ? "' + Scalp'" : "''"})
+  var modeList = 'EMA_RSI_ST'
+    + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
     + (${paModeOn ? "' + PA'" : "''"})
     + (${orbModeOn ? "' + ORB'" : "''"});
   var orig = btn.textContent;
@@ -1685,7 +1685,7 @@ async function startAllPaper(btn){
 async function startAllLive(btn){
   var ok = await showConfirm({
     icon: '⚠️', title: 'Start ALL Live Trades',
-    message: 'Start Swing Live'+(${scalpModeOn ? "' + Scalp Live'" : "''"})+(${paModeOn ? "' + PA Live'" : "''"})+'?\\nReal orders will be placed on broker accounts.',
+    message: 'Start EMA_RSI_ST Live'+(${bbRsiModeOn ? "' + BB_RSI Live'" : "''"})+(${paModeOn ? "' + PA Live'" : "''"})+'?\\nReal orders will be placed on broker accounts.',
     confirmText: 'Start All', confirmClass: 'modal-btn-danger'
   });
   if(!ok) return;
@@ -1696,8 +1696,8 @@ async function startAllLive(btn){
 }
 
 async function startAllHarness(btn){
-  var modeList = 'Swing'
-    + (${scalpModeOn ? "' + Scalp'" : "''"})
+  var modeList = 'EMA_RSI_ST'
+    + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
     + (${paModeOn ? "' + PA'" : "''"})
     + (${orbModeOn ? "' + ORB'" : "''"});
   var ok = await showConfirm({
@@ -1721,9 +1721,9 @@ function startAll(btn){
 var _dashSrc = 'paper';            // top-bar toggle source; also drives the charts
 var _allBtnState = { paperOn:false, liveOn:false };
 var ALL_BTN_POLL = [
-  { url:'/swing-paper/status/data', kind:'paper' },
-  { url:'/swing-live/status/data',  kind:'live'  }
-  ${scalpModeOn ? ",{ url:'/scalp-paper/status/data', kind:'paper' },{ url:'/scalp-live/status/data', kind:'live' }" : ""}
+  { url:'/ema_rsi_st-paper/status/data', kind:'paper' },
+  { url:'/ema_rsi_st-live/status/data',  kind:'live'  }
+  ${bbRsiModeOn ? ",{ url:'/bb_rsi-paper/status/data', kind:'paper' },{ url:'/bb_rsi-live/status/data', kind:'live' }" : ""}
   ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
   ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' },{ url:'/orb-live/status/data', kind:'live' }" : ""}
 ];
@@ -1918,10 +1918,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['SWING','SCALP','PA','ORB'].forEach(function(m){ _mmToggle[m] = src; });
+  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['SWING','SCALP','PA','ORB'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -1930,7 +1930,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { SWING: 'paper', SCALP: 'paper', PA: 'paper', ORB: 'paper' };
+var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper' };
 
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
@@ -1954,7 +1954,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['SWING','SCALP','PA','ORB'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(_renderModuleChart);
 }
 
 loadModuleCharts();
@@ -2027,7 +2027,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   // the live and post-market views so disabled strategies never appear here.
   var SESSION_TILES = ${JSON.stringify(dashSessionTiles)};
   var LIVE_URLS = {
-    SWING:'/swing-paper/status/data', SCALP:'/scalp-paper/status/data',
+    EMA_RSI_ST:'/ema_rsi_st-paper/status/data', BB_RSI:'/bb_rsi-paper/status/data',
     PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data'
   };
 
@@ -2069,7 +2069,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   }
 
   function renderLive(data) {
-    // data: { SWING, SCALP, ... } keyed by tile, each from /{strat}-paper/status/data
+    // data: { EMA_RSI_ST, BB_RSI, ... } keyed by tile, each from /{strat}-paper/status/data
     var html = '<div class="da-grid cols-' + Math.min(SESSION_TILES.length, 6) + '">';
     SESSION_TILES.forEach(function(t){
       var d = data[t.key];
@@ -2094,8 +2094,8 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   }
 
   function aggregateTrades(trades, fromIso, toIso) {
-    // Returns { byStrategy: {SWING:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
-    // Buckets by the trade's reliable mode field (SWING/SCALP/PA/ORB),
+    // Returns { byStrategy: {EMA_RSI_ST:{net,trades,w,l}, ...}, total: {...}, byDate: { 'YYYY-MM-DD': net } }
+    // Buckets by the trade's reliable mode field (EMA_RSI_ST/BB_RSI/PA/ORB),
     // limited to the enabled tiles. Trades are pre-filtered to enabled modes by
     // the /data?enabledOnly=1 fetch, so the total matches the visible cards.
     var bys = {};
@@ -2554,8 +2554,8 @@ server.listen(PORT, HOST, () => {
   console.log(`   Lot Size         : ${instrumentConfig.getLotQty()}`);
   console.log(`   Fyers Login      : ${process.env.ACCESS_TOKEN ? "✅ token set" : "❌ not logged in"}`);
   console.log(`   Zerodha Login    : ${zerodha.isAuthenticated() ? "✅ token set" : "❌ not logged in"}`);
-  console.log(`   Live Trading     : ${process.env.SWING_LIVE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
-  console.log(`   Scalp Mode       : ${(process.env.SCALP_MODE_ENABLED || "true") === "true" ? "✅ ENABLED" : "🔒 disabled"} | SCALP_ENABLED: ${process.env.SCALP_ENABLED === "true" ? "✅" : "❌"}`);
+  console.log(`   Live Trading     : ${process.env.EMA_RSI_ST_LIVE_ENABLED === "true" ? "✅ ENABLED" : "🔒 disabled"}`);
+  console.log(`   BB_RSI Mode       : ${(process.env.BB_RSI_MODE_ENABLED || "true") === "true" ? "✅ ENABLED" : "🔒 disabled"} | BB_RSI_ENABLED: ${process.env.BB_RSI_ENABLED === "true" ? "✅" : "❌"}`);
   console.log(`   VIX Filter       : ${process.env.VIX_FILTER_ENABLED !== "false" ? `✅ max=${process.env.VIX_MAX_ENTRY || "20"} strong=${process.env.VIX_STRONG_ONLY || "16"}` : "🔒 disabled"}`);
   console.log(`   Hard SL          : ${process.env.HARD_SL_ENABLED === "true" ? `✅ delta=${process.env.HARD_SL_DELTA || "0.5"}` : "🔒 disabled"}`);
   console.log(`   Telegram         : ${process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID ? "✅ configured" : "❌ not set"}`);
@@ -2625,12 +2625,12 @@ async function reconcileOrphanedPositions() {
       // Don't clear — keep file until user manually starts a new session
     }
 
-    const savedScalp = loadScalpPosition();
-    if (savedScalp && savedScalp.position) {
-      const p = savedScalp.position;
-      const msg = `🚨 [STARTUP] Persisted SCALP position found (crash recovery)!\n` +
+    const savedBbRsi = loadBbRsiPosition();
+    if (savedBbRsi && savedBbRsi.position) {
+      const p = savedBbRsi.position;
+      const msg = `🚨 [STARTUP] Persisted BB_RSI position found (crash recovery)!\n` +
         `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
-        `  Saved at: ${new Date(savedScalp.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `  Saved at: ${new Date(savedBbRsi.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
         `Bot was tracking this before crash. Check Fyers dashboard!`;
       console.warn(msg);
       sendTelegram(msg);
@@ -2690,8 +2690,8 @@ async function reconcileOrphanedPositions() {
         sendTelegram(msg);
       } else {
         console.log("✅ [STARTUP] Fyers: no orphaned positions.");
-        // Scalp + PA both trade on Fyers; broker-flat means either stale snapshot is safe to clear.
-        if (savedScalp) clearScalpPosition();  // broker confirms no position — safe to clear
+        // BB_RSI + PA both trade on Fyers; broker-flat means either stale snapshot is safe to clear.
+        if (savedBbRsi) clearBbRsiPosition();  // broker confirms no position — safe to clear
         if (savedPA)    clearPAPosition();
       }
     }
@@ -2714,7 +2714,7 @@ async function gracefulShutdown(signal) {
     // Identify which modes are active
     const activeModes = [];
     if (sharedSocketState.getMode())          activeModes.push(sharedSocketState.getMode());
-    if (sharedSocketState.getScalpMode())     activeModes.push(sharedSocketState.getScalpMode());
+    if (sharedSocketState.getBbRsiMode())     activeModes.push(sharedSocketState.getBbRsiMode());
     if (sharedSocketState.getPAMode())        activeModes.push(sharedSocketState.getPAMode());
     if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
     if (sharedSocketState.getEma9VwapMode && sharedSocketState.getEma9VwapMode()) activeModes.push(sharedSocketState.getEma9VwapMode());
@@ -2729,13 +2729,13 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    const hasLive = activeModes.some(m => m === "SWING_LIVE" || m === "SCALP_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE");
+    const hasLive = activeModes.some(m => m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE");
     console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
 
     // Call stopSession() on each active route — this triggers squareOff for live modes
     const routeMap = {
-      "SCALP_LIVE":     require("./routes/scalpLive"),
-      "SCALP_PAPER":    require("./routes/scalpPaper"),
+      "BB_RSI_LIVE":     require("./routes/bbRsiLive"),
+      "BB_RSI_PAPER":    require("./routes/bbRsiPaper"),
       "PA_LIVE":        require("./routes/paLive"),
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
@@ -2795,7 +2795,7 @@ app.get("/health", (req, res) => {
     fyers: !!process.env.ACCESS_TOKEN,
     zerodha: zerodha.isAuthenticated(),
     activeMode: sharedSocketState.getMode() || null,
-    scalpMode: sharedSocketState.getScalpMode() || null,
+    bbRsiMode: sharedSocketState.getBbRsiMode() || null,
     telegram: getTelegramHealth(),
     breakers: breakerStatus(),
     timestamp: new Date().toISOString(),

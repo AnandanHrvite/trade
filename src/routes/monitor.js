@@ -124,7 +124,7 @@ router.get("/data", (_req, res) => {
 
 // ── Main UI page ────────────────────────────────────────────────────────────
 router.get("/", (_req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   res.send(`<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -480,8 +480,8 @@ ${toastJS()}
 // Let the user reclaim memory without SSHing into the box.
 function isAnyLiveActive() {
   const s = sharedSocketState;
-  return (s.getMode && s.getMode() === "SWING_LIVE")
-      || (s.getScalpMode && s.getScalpMode() === "SCALP_LIVE")
+  return (s.getMode && s.getMode() === "EMA_RSI_ST_LIVE")
+      || (s.getBbRsiMode && s.getBbRsiMode() === "BB_RSI_LIVE")
       || (s.getPAMode && s.getPAMode() === "PA_LIVE");
 }
 

@@ -441,8 +441,8 @@ async function validateAndGetOptionSymbol(spot, side, mode) {
   console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}${mode ? `, mode=${mode}` : ""}`);
 
   // ── Manual expiry override — skip all auto-detection ──────────────────────
-  // Per-mode override takes precedence over the common override. e.g. SWING_OPTION_EXPIRY_OVERRIDE
-  // lets swing trade next-week options (avoid 0DTE) while scalp/PA continue on common expiry.
+  // Per-mode override takes precedence over the common override. e.g. EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE
+  // lets EMA_RSI_ST trade next-week options (avoid 0DTE) while bb_rsi/PA continue on common expiry.
   const modeKey = mode ? String(mode).toUpperCase() : null;
   const modeOverride = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
   const modeType     = modeKey ? (process.env[`${modeKey}_OPTION_EXPIRY_TYPE`]     || "").trim().toLowerCase() : "";

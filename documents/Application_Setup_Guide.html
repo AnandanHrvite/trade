@@ -486,7 +486,7 @@
   <div class="meta">
     <span><span class="badge badge-blue">v4.6.0</span></span>
     <span>Generated: 2026-05-21 &middot; Rechecked: 2026-06-15</span>
-    <span>NIFTY Options Algo Trading &mdash; Swing + Scalp + Price Action + ORB</span>
+    <span>NIFTY Options Algo Trading &mdash; EMA_RSI_ST + BB_RSI + Price Action + ORB</span>
   </div>
 </header>
 
@@ -524,12 +524,12 @@
   <p>The version-history entries below are preserved as written. This pass corrected drift between the guide and the live code (<code>src/app.js</code> route mounts, <code>src/routes/settings.js</code> schema, <code>ecosystem.config.js</code>, <code>src/utils/positionPersist.js</code>). No version number was minted &mdash; the corrections are reconciliations, not features.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Price Action rebuilt to 4 chart patterns only.</strong> PA was gutted to <strong>Double Bottom (W)</strong>, <strong>Double Top (M)</strong>, <strong>Ascending Triangle</strong>, <strong>Descending Triangle</strong> &mdash; all now default <code>true</code> in <code>settings.js</code>. The old patterns (Engulfing, Pin Bar, Break-of-Structure, Inside Bar) and their env keys are <strong>deleted</strong>. Likewise gone from the schema: <code>PA_RSI_*</code>, <code>PA_ADX_*</code>, <code>PA_SR_*</code>, <code>PA_MIN_BODY</code>, <code>PA_PIN_WICK_RATIO</code>, <code>PA_MAX_SL_PTS</code>/<code>PA_MIN_SL_PTS</code>/<code>PA_MAX_STRUCT_SL_PTS</code>, <code>PA_TRAIL_*</code>, <code>PA_CANDLE_TRAIL_*</code>, <code>PA_TIME_STOP_*</code>, <code>PA_OPT_STOP_PCT</code>. The PA env table and pattern table below were rewritten to match. <code>PA_BREAKEVEN_TRIGGER</code>/<code>PA_BREAKEVEN_BUFFER</code> are still in the Settings UI but remain inert (no PA reader).</li>
-    <li><strong>Swing strategy rebuilt to EMA 20/50 + RSI + SuperTrend.</strong> Parabolic SAR was fully removed (2026-06-12); breakeven removed (2026-06-02). Stale Swing keys (<code>MAX_SAR_DISTANCE</code>, <code>MIN_SAR_DISTANCE</code>, <code>BREAKEVEN_PTS</code>, <code>EMA30_FILTER</code>, <code>ADX_MIN_TREND</code>, <code>EMA_SLOPE_MIN</code>, <code>STRONG_*</code>, <code>LOGIC3_*</code>, <code>TRAIL_TIER*</code>, <code>SWING_PREV_CANDLE_TRAIL_*</code>, hybrid-SL caps) were replaced by the current set (<code>SWING_EMA_*</code>, <code>SWING_SUPERTREND_*</code>, <code>SWING_STOP_LOSS_PTS</code>, <code>SWING_CANDLE_TRAIL_*</code>, <code>SWING_MAX_CONSEC_LOSSES</code>, cooldown keys) in the Swing env table.</li>
-    <li><strong>Telegram is now fully per-strategy for all four.</strong> <code>settings.js</code> defines <code>TG_{SWING,SCALP,PA,ORB}_{STARTED,ENTRY,EXIT,DAYREPORT}</code> plus <code>TG_{SWING,SCALP,PA}_SIGNALS</code> (no SIGNALS toggle for ORB) &mdash; <strong>21 <code>TG_*</code> toggles</strong> incl. the master <code>TG_ENABLED</code> and the standalone <code>TG_DAYREPORT_CONSOLIDATED</code>. The old "17 per-mode" count and the "ORB not yet wired" note were stale and have been corrected.</li>
+    <li><strong>EMA_RSI_ST strategy rebuilt to EMA 20/50 + RSI + SuperTrend.</strong> Parabolic SAR was fully removed (2026-06-12); breakeven removed (2026-06-02). Stale EMA_RSI_ST keys (<code>MAX_SAR_DISTANCE</code>, <code>MIN_SAR_DISTANCE</code>, <code>BREAKEVEN_PTS</code>, <code>EMA30_FILTER</code>, <code>ADX_MIN_TREND</code>, <code>EMA_SLOPE_MIN</code>, <code>STRONG_*</code>, <code>LOGIC3_*</code>, <code>TRAIL_TIER*</code>, <code>EMA_RSI_ST_PREV_CANDLE_TRAIL_*</code>, hybrid-SL caps) were replaced by the current set (<code>EMA_RSI_ST_EMA_*</code>, <code>EMA_RSI_ST_SUPERTREND_*</code>, <code>EMA_RSI_ST_STOP_LOSS_PTS</code>, <code>EMA_RSI_ST_CANDLE_TRAIL_*</code>, <code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code>, cooldown keys) in the EMA_RSI_ST env table.</li>
+    <li><strong>Telegram is now fully per-strategy for all four.</strong> <code>settings.js</code> defines <code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_{STARTED,ENTRY,EXIT,DAYREPORT}</code> plus <code>TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS</code> (no SIGNALS toggle for ORB) &mdash; <strong>21 <code>TG_*</code> toggles</strong> incl. the master <code>TG_ENABLED</code> and the standalone <code>TG_DAYREPORT_CONSOLIDATED</code>. The old "17 per-mode" count and the "ORB not yet wired" note were stale and have been corrected.</li>
     <li><strong>PM2 config corrected.</strong> <code>ecosystem.config.js</code> uses <code>--max-old-space-size=900</code> and <code>max_memory_restart 940M</code> (not 768/800), plus <code>stop_exit_codes: [10]</code>, <code>kill_timeout 8000</code>, <code>restart_delay 5000</code>, and <code>UV_THREADPOOL_SIZE=2</code>. Production reload uses <code>pm2 startOrRestart ecosystem.config.js --update-env</code> (the GitHub Actions deploy command, Node 16).</li>
-    <li><strong>Crash-recovery scope confirmed unchanged.</strong> <code>positionPersist.js</code> still handles <strong>Swing / Scalp / PA only</strong> (<code>.active_{trade,scalp,pa}_position.json</code>). ORB has <strong>no</strong> crash-recovery snapshot. The boot reconciliation in <code>app.js</code> reads the persisted Swing/Scalp files and cross-checks Zerodha + Fyers broker positions for orphans (alert-only, never auto-closes).</li>
-    <li><strong>Default corrections (from <code>settings.js</code>):</strong> <code>MAX_DAILY_LOSS=3000</code> (was 5000), <code>MAX_DAILY_TRADES=5</code> (was 6), and the stale Scalp "V6.3" knobs (<code>SCALP_MAX_SL_PTS</code>, <code>SCALP_TRAIL_START</code>, <code>SCALP_TRAIL_TIERS</code>) referenced in the v4.6.0 note below do <strong>not</strong> exist &mdash; current Scalp is the points-based profit-lock V6 (<code>SCALP_PROFIT_LOCK_*</code>, <code>SCALP_STOP_LOSS_PTS</code>, <code>SCALP_BB_REENTRY_*</code>).</li>
-    <li><strong>Routes verified.</strong> All strategy Live/Paper/Backtest routes plus the harness routes are mounted in <code>app.js</code>: <code>/pa-live-harness</code>, <code>/swing-live-harness</code>, <code>/scalp-live-harness</code>, <code>/orb-live-harness</code> (each gated by its own <code>UI_SHOW_*_LIVE_HARNESS</code>, default off). The routes table now notes the four harness routes. Auth routes section gained <code>/auth/socket-health</code>.</li>
+    <li><strong>Crash-recovery scope confirmed unchanged.</strong> <code>positionPersist.js</code> still handles <strong>EMA_RSI_ST / BB_RSI / PA only</strong> (<code>.active_{trade,bb_rsi,pa}_position.json</code>). ORB has <strong>no</strong> crash-recovery snapshot. The boot reconciliation in <code>app.js</code> reads the persisted EMA_RSI_ST/BB_RSI files and cross-checks Zerodha + Fyers broker positions for orphans (alert-only, never auto-closes).</li>
+    <li><strong>Default corrections (from <code>settings.js</code>):</strong> <code>MAX_DAILY_LOSS=3000</code> (was 5000), <code>MAX_DAILY_TRADES=5</code> (was 6), and the stale BB_RSI "V6.3" knobs (<code>BB_RSI_MAX_SL_PTS</code>, <code>BB_RSI_TRAIL_START</code>, <code>BB_RSI_TRAIL_TIERS</code>) referenced in the v4.6.0 note below do <strong>not</strong> exist &mdash; current BB_RSI is the points-based profit-lock V6 (<code>BB_RSI_PROFIT_LOCK_*</code>, <code>BB_RSI_STOP_LOSS_PTS</code>, <code>BB_RSI_BB_REENTRY_*</code>).</li>
+    <li><strong>Routes verified.</strong> All strategy Live/Paper/Backtest routes plus the harness routes are mounted in <code>app.js</code>: <code>/pa-live-harness</code>, <code>/ema_rsi_st-live-harness</code>, <code>/bb_rsi-live-harness</code>, <code>/orb-live-harness</code> (each gated by its own <code>UI_SHOW_*_LIVE_HARNESS</code>, default off). The routes table now notes the four harness routes. Auth routes section gained <code>/auth/socket-health</code>.</li>
   </ul>
 </section>
 
@@ -538,7 +538,7 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue" id="whatsnew60">
   <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.6.0 (2026-05-21)</h2>
-  <p>A new strategy (<strong>ORB</strong>) joins Swing / Scalp / Price Action; a deterministic <strong>tick-replay</strong> backtest replaces ad-hoc bar-based simulation for new feature work; and a <strong>Live Harness</strong> + global DRY-RUN gate makes Live = Paper by construction. Setup is largely unchanged &mdash; you'll see new env-var sections below for ORB / Tick Recorder / Live Harness, and a few stale defaults in the old sections have been corrected.</p>
+  <p>A new strategy (<strong>ORB</strong>) joins EMA_RSI_ST / BB_RSI / Price Action; a deterministic <strong>tick-replay</strong> backtest replaces ad-hoc bar-based simulation for new feature work; and a <strong>Live Harness</strong> + global DRY-RUN gate makes Live = Paper by construction. Setup is largely unchanged &mdash; you'll see new env-var sections below for ORB / Tick Recorder / Live Harness, and a few stale defaults in the old sections have been corrected.</p>
 
   <h3>New Strategy</h3>
   <ul style="padding-left:22px; line-height:1.85;">
@@ -560,22 +560,22 @@
 
   <h3>Real-Time Monitor / Dashboard Rollups</h3>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Real-Time Monitor</strong> (<code>/realtime</code>) now renders cards for <strong>every</strong> strategy enabled in Settings &mdash; Swing, Scalp, PA, ORB. Each card is gated by <code>{STRATEGY}_MODE_ENABLED</code> and disappears when that toggle is off. Card grid auto-fits strategies responsively (was hardcoded 3-column).</li>
+    <li><strong>Real-Time Monitor</strong> (<code>/realtime</code>) now renders cards for <strong>every</strong> strategy enabled in Settings &mdash; EMA_RSI_ST, BB_RSI, PA, ORB. Each card is gated by <code>{STRATEGY}_MODE_ENABLED</code> and disappears when that toggle is off. Card grid auto-fits strategies responsively (was hardcoded 3-column).</li>
   </ul>
 
   <h3>Strategy &amp; Settings Adjustments</h3>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>PA breakeven trigger &mdash; Settings UI knobs only, engine reader reverted.</strong> <code>PA_BREAKEVEN_TRIGGER</code> (default <code>300</code> &#8377;) + <code>PA_BREAKEVEN_BUFFER</code> (default <code>1</code> pt) appear in the Settings UI but the strategy reader code was reverted on 2026-05-21 (commit <code>5f1944d</code> reverted <code>c131923</code>). Same zombie state as <code>PA_ADX_DIRECTIONAL</code> before its UI row was removed &mdash; UI implies behaviour the engine doesn't perform. Either re-add the readers in <code>paPaper.js</code> / <code>paLive.js</code> / <code>paBacktest.js</code>, or drop the UI rows.</li>
     <li><strong>PA_ADX_DIRECTIONAL removed from Settings UI</strong> &mdash; the toggle advertised a +DI/&minus;DI directional gate that no reader in <code>price_action.js</code> ever enforced. The row was misleading the operator. The gate itself can be re-introduced after the paper-trade data-collection window closes (&sim;2026-06-02).</li>
-    <li><strong>Scalp default corrections</strong> &mdash; <code>SCALP_MAX_DAILY_LOSS</code> raised to <code>4000</code> (was <code>2000</code>). <span style="color:var(--accent-orange);">(2026-06-15: the <code>SCALP_MAX_SL_PTS</code> / <code>SCALP_TRAIL_START</code> / <code>SCALP_TRAIL_TIERS</code> tweaks originally listed here referenced a trail design that no longer exists &mdash; current Scalp is the points-based profit-lock V6; see the Scalp env table below.)</span></li>
-    <li><strong>Swing <code>MAX_DAILY_TRADES</code></strong> default is <code>5</code> in <code>settings.js</code> (anti-overtrade on chop days). <span style="color:var(--accent-orange);">(2026-06-15 correction &mdash; was shown as 6.)</span></li>
-    <li><strong>Per-mode option expiry overrides</strong> &mdash; <code>SWING_OPTION_EXPIRY_OVERRIDE</code> / <code>SWING_OPTION_EXPIRY_TYPE</code> let Swing roll to next-week expiry while Scalp/PA stay on current. Blank values inherit the common expiry.</li>
+    <li><strong>BB_RSI default corrections</strong> &mdash; <code>BB_RSI_MAX_DAILY_LOSS</code> raised to <code>4000</code> (was <code>2000</code>). <span style="color:var(--accent-orange);">(2026-06-15: the <code>BB_RSI_MAX_SL_PTS</code> / <code>BB_RSI_TRAIL_START</code> / <code>BB_RSI_TRAIL_TIERS</code> tweaks originally listed here referenced a trail design that no longer exists &mdash; current BB_RSI is the points-based profit-lock V6; see the BB_RSI env table below.)</span></li>
+    <li><strong>EMA_RSI_ST <code>MAX_DAILY_TRADES</code></strong> default is <code>5</code> in <code>settings.js</code> (anti-overtrade on chop days). <span style="color:var(--accent-orange);">(2026-06-15 correction &mdash; was shown as 6.)</span></li>
+    <li><strong>Per-mode option expiry overrides</strong> &mdash; <code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>EMA_RSI_ST_OPTION_EXPIRY_TYPE</code> let EMA_RSI_ST roll to next-week expiry while BB_RSI/PA stay on current. Blank values inherit the common expiry.</li>
   </ul>
 
   <h3>Persistence &amp; Storage</h3>
   <ul style="padding-left:22px; line-height:1.85;">
     <li>New file groups under <code>~/trading-data/</code> &mdash; <code>orb_paper_trades.json</code> / <code>orb_live_trades.json</code>, <code>ticks/YYYY-MM-DD/</code>, <code>_replay_trades/</code>, <code>_replay_trades_sim/</code>.</li>
-    <li><strong>Persistence gap</strong> &mdash; <code>.active_orb_position.json</code> does not exist yet. ORB positions do not survive a crash; only Swing/Scalp/PA do. Track that in <code>src/utils/positionPersist.js</code> if/when ORB needs restart-survival of an open position.</li>
+    <li><strong>Persistence gap</strong> &mdash; <code>.active_orb_position.json</code> does not exist yet. ORB positions do not survive a crash; only EMA_RSI_ST/BB_RSI/PA do. Track that in <code>src/utils/positionPersist.js</code> if/when ORB needs restart-survival of an open position.</li>
   </ul>
 
   <h3>Auth / Security</h3>
@@ -585,7 +585,7 @@
   </ul>
 
   <div class="note note-info">
-    <strong>Backward-compatible:</strong> Every new strategy and feature is opt-in via env / Settings toggle (<code>ORB_MODE_ENABLED</code>, <code>UI_SHOW_REPLAY</code>, <code>TICK_RECORDER_ENABLED</code>). Existing Swing/Scalp/PA workflows are unchanged. The Live Harness DRY-RUN gate defaults <code>true</code>, so a fresh checkout cannot place a real order until you explicitly disable it.
+    <strong>Backward-compatible:</strong> Every new strategy and feature is opt-in via env / Settings toggle (<code>ORB_MODE_ENABLED</code>, <code>UI_SHOW_REPLAY</code>, <code>TICK_RECORDER_ENABLED</code>). Existing EMA_RSI_ST/BB_RSI/PA workflows are unchanged. The Live Harness DRY-RUN gate defaults <code>true</code>, so a fresh checkout cannot place a real order until you explicitly disable it.
   </div>
 </section>
 
@@ -594,21 +594,21 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue" id="whatsnew50">
   <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.5.0 Highlights (2026-05-14)</h2>
-  <p>Strategy tuning + auth hardening + observability. Most setup steps are unchanged; new env vars listed below, plus a Swing default change worth knowing if you maintain a custom <code>.env</code>.</p>
+  <p>Strategy tuning + auth hardening + observability. Most setup steps are unchanged; new env vars listed below, plus a EMA_RSI_ST default change worth knowing if you maintain a custom <code>.env</code>.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Swing default candle resolution changed:</strong> <code>TRADE_RESOLUTION</code> default is now <code>5</code> (was <code>15</code>). 15-min wasn't taking entries during the paper-trade data-collection window. The strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code>, so flipping <code>TRADE_RESOLUTION=15</code> in <code>.env</code> (or via Settings UI) restores the prior behavior with no code change.</li>
-    <li><strong>New Swing env var:</strong> <code>SWING_STRONG_ONLY</code> (default <code>false</code>) &mdash; blocks MARGINAL signals on the candle-close entry path; intra-candle path was already STRONG-only.</li>
-    <li><strong>New Scalp env vars:</strong> <code>SCALP_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>), <code>SCALP_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>) &mdash; release per-side SL cooldown early on retest-and-resume. <code>SCALP_CPR_NARROW_PCT</code> is now editable via Settings UI (was code-only).</li>
-    <li><strong>0DTE handling:</strong> Swing <code>/start</code> is blocked when configured expiry == today (gamma risk). Per-mode option expiry override now supported (each mode can roll independently of the global setting). Dashboard surfaces 0DTE refusal in the All-Paper / All-Live error modal; red banner appears when a stale manual expiry-override session has ended.</li>
+    <li><strong>EMA_RSI_ST default candle resolution changed:</strong> <code>TRADE_RESOLUTION</code> default is now <code>5</code> (was <code>15</code>). 15-min wasn't taking entries during the paper-trade data-collection window. The strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code>, so flipping <code>TRADE_RESOLUTION=15</code> in <code>.env</code> (or via Settings UI) restores the prior behavior with no code change.</li>
+    <li><strong>New EMA_RSI_ST env var:</strong> <code>EMA_RSI_ST_STRONG_ONLY</code> (default <code>false</code>) &mdash; blocks MARGINAL signals on the candle-close entry path; intra-candle path was already STRONG-only.</li>
+    <li><strong>New BB_RSI env vars:</strong> <code>BB_RSI_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>), <code>BB_RSI_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>) &mdash; release per-side SL cooldown early on retest-and-resume. <code>BB_RSI_CPR_NARROW_PCT</code> is now editable via Settings UI (was code-only).</li>
+    <li><strong>0DTE handling:</strong> EMA_RSI_ST <code>/start</code> is blocked when configured expiry == today (gamma risk). Per-mode option expiry override now supported (each mode can roll independently of the global setting). Dashboard surfaces 0DTE refusal in the All-Paper / All-Live error modal; red banner appears when a stale manual expiry-override session has ended.</li>
     <li><strong>Auth hardening:</strong> mobile-friendly login flow end-to-end; <strong>pre-start broker token verification</strong> (Fyers/Zerodha tokens validated before engines boot, so a position can't open with a dead token); access token displayed with Copy button after manual login; Fyers socket auth failure (code &minus;15) now bails out + sends Telegram alert instead of silently retrying.</li>
     <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL canonical format (CSV/PDF dropped &mdash; they were drifting on edge cases).</li>
     <li><strong>Settings checkpoint notes</strong> &mdash; every Settings save can be tagged with a one-line note. Daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's trades.</li>
-    <li><strong>Sidebar visibility:</strong> per-menu and per-submenu toggles &mdash; hide entire mode sections (Swing/Scalp/PA) or individual links (e.g., hide Backtest but keep Paper + Live), via env vars + Settings UI.</li>
+    <li><strong>Sidebar visibility:</strong> per-menu and per-submenu toggles &mdash; hide entire mode sections (EMA_RSI_ST/BB_RSI/PA) or individual links (e.g., hide Backtest but keep Paper + Live), via env vars + Settings UI.</li>
     <li><strong>PA logic fixes (additive to setup):</strong> reversal patterns (Engulfing, Pin Bar, Double Top/Bottom) RSI logic inverted; BOS / Inside-Bar / reversal patterns exempt from ADX directional gate; BOS/IB pending state now persisted across restart. See PA strategy guide for details.</li>
-    <li><strong>Scalp logic fixes (additive to setup):</strong> trail uses PnL floor (was spot-delta); breakeven snap fires per-tick (was per-bar); each trade record now logs BB/RSI/trend context + MFE.</li>
+    <li><strong>BB_RSI logic fixes (additive to setup):</strong> trail uses PnL floor (was spot-delta); breakeven snap fires per-tick (was per-bar); each trade record now logs BB/RSI/trend context + MFE.</li>
     <li><strong>Performance:</strong> gzip middleware on all HTTP responses (~80% reduction; <code>/settings</code> dropped from 329 KB &rarr; 61 KB).</li>
     <li><strong>Realtime monitor:</strong> per-card Open Status + Copy Day Log buttons; Copy Day Log copies raw entry + skip JSONL, not the human-readable summary.</li>
-    <li><strong>Activity log Copy button</strong> on swingLive / swingPaper / paLive / paPaper status pages.</li>
+    <li><strong>Activity log Copy button</strong> on emaRsiStLive / emaRsiStPaper / paLive / paPaper status pages.</li>
     <li><strong>Misc:</strong> expiry calendar now shows Tue dates correctly (UTC shift bug); paper charts preserve zoom + drop pre-market junk + add strategy overlays; <code>/data</code> directory in <code>.gitignore</code>.</li>
   </ul>
 </section>
@@ -622,11 +622,11 @@
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>New route <code>/realtime</code></strong> (<code>src/routes/realtime.js</code>) and sidebar entry <strong>&#128225; Real-Time</strong>, sitting between Backtest and Paper Traded History.</li>
     <li><strong>One screen, PAPER &harr; LIVE toggle</strong> &mdash; blue PAPER / red LIVE pill at the top right; polls every 4 seconds.</li>
-    <li><strong>Three side-by-side cards</strong> (SWING / SCALP / PRICE ACTION) &mdash; each shows RUNNING/STOPPED/OFFLINE badge, open position (side, symbol, qty, entry spot/option, current option LTP, points moved, SL, entry time, unrealised P&amp;L with %), or "FLAT &mdash; no open position"; plus today's stat tiles (Trades, Wins/Losses, Session P&amp;L) and a footer with live LTP, last tick time, and tick count.</li>
+    <li><strong>Three side-by-side cards</strong> (EMA_RSI_ST / BB_RSI / PRICE ACTION) &mdash; each shows RUNNING/STOPPED/OFFLINE badge, open position (side, symbol, qty, entry spot/option, current option LTP, points moved, SL, entry time, unrealised P&amp;L with %), or "FLAT &mdash; no open position"; plus today's stat tiles (Trades, Wins/Losses, Session P&amp;L) and a footer with live LTP, last tick time, and tick count.</li>
     <li><strong>Rollup table</strong> &mdash; one row per strategy + a TOTAL row, columns: Strategy, Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Page is today-only &mdash; cumulative-across-all-sessions number is intentionally absent here.</li>
-    <li><strong>Read-only</strong> &mdash; no Start/Stop/Exit buttons; drill-down still happens on the dedicated <code>/swing-paper</code>, <code>/swing-live</code>, etc. pages. Page stays reachable while any live session is active (not in the sidebar's <code>blocked</code> list, since it can't disturb broker state).</li>
+    <li><strong>Read-only</strong> &mdash; no Start/Stop/Exit buttons; drill-down still happens on the dedicated <code>/ema_rsi_st-paper</code>, <code>/ema_rsi_st-live</code>, etc. pages. Page stays reachable while any live session is active (not in the sidebar's <code>blocked</code> list, since it can't disturb broker state).</li>
     <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes via <code>!important</code> semantic color classes (so light-mode <code>.rollup td</code> overrides can't beat them by selector specificity).</li>
-    <li><strong>No new backend aggregation</strong> &mdash; the browser polls each strategy's existing <code>/{mode}-{paper|live}/status/data</code> endpoint in parallel, so the unified screen always reads the same source the dedicated status pages already trust. One normalised key handles <code>unrealisedPnl</code> (swing) vs <code>unrealised</code> (scalp/PA).</li>
+    <li><strong>No new backend aggregation</strong> &mdash; the browser polls each strategy's existing <code>/{mode}-{paper|live}/status/data</code> endpoint in parallel, so the unified screen always reads the same source the dedicated status pages already trust. One normalised key handles <code>unrealisedPnl</code> (swing) vs <code>unrealised</code> (bb_rsi/PA).</li>
   </ul>
 </section>
 
@@ -635,17 +635,17 @@
 <!-- ═══════════════════════════════════════════════════════════ -->
 <section class="section blue">
   <h2><span class="section-icon icon-blue">&#9734;</span> 0b. v4.4.0 Highlights (2026-04-27)</h2>
-  <p>Hybrid initial SL cap for Swing, one-click <em>Sync to Local</em> for the EC2 trading-data directory, paper-history restore from append-only JSONL, and a paper-parity sweep across all 3 live engines. Setup is unchanged from v4.3.0; new env vars and routes are listed below.</p>
+  <p>Hybrid initial SL cap for EMA_RSI_ST, one-click <em>Sync to Local</em> for the EC2 trading-data directory, paper-history restore from append-only JSONL, and a paper-parity sweep across all 3 live engines. Setup is unchanged from v4.3.0; new env vars and routes are listed below.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Swing hybrid initial SL cap</strong> &mdash; new env knobs <code>SWING_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>SWING_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>SWING_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL now takes the tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code> floored at <code>MIN_PTS</code>. Wired into Swing Paper + Swing Live; backtest is intentionally untouched during the paper-data-collection window. New trade-record field <code>sarStopLoss</code> preserves raw SAR distance for analysis.</li>
+    <li><strong>EMA_RSI_ST hybrid initial SL cap</strong> &mdash; new env knobs <code>EMA_RSI_ST_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>EMA_RSI_ST_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>EMA_RSI_ST_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL now takes the tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code> floored at <code>MIN_PTS</code>. Wired into EMA_RSI_ST Paper + EMA_RSI_ST Live; backtest is intentionally untouched during the paper-data-collection window. New trade-record field <code>sarStopLoss</code> preserves raw SAR distance for analysis.</li>
     <li><strong>One-click "Sync to Local"</strong> &mdash; Dashboard button hits <code>/sync/info</code> (size preview) then streams <code>/sync/download-all</code> (a <code>tar.gz</code> of <code>~/trading-data/</code>) to the browser. Server &rarr; client only; no upload path. Mirror EC2 trade data without SSH.</li>
-    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /{swing|scalp|pa}-paper/history/restore</code> rebuilds a deleted session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
-    <li><strong>Live paper-parity sweep</strong> &mdash; <code>swingLive</code> gains <code>pauseUntil</code>/<code>MAX_DAILY_TRADES</code> guards on candle-close path; <code>scalpLive</code> ports <code>SCALP_TRAIL_GRACE_SECS</code>; <code>paLive</code> mirrors PA Paper's audit + skip-log wiring (sharing the same JSONL skip file as PA Paper). All three now capture <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surface them on exit.</li>
-    <li><strong>Settings cleanup</strong> &mdash; UI was drifting from code: <code>BACKTEST_GAMMA</code>, <code>ZERODHA_REDIRECT_URL</code> removed (no readers); <code>PA_ENABLED</code>, <code>PA_OPT_STOP_PCT</code>, <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>, <code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code> added. <code>BACKTEST_FROM/TO/GAMMA</code> removed from <code>IMMEDIATE_KEYS</code>. Two unimported legacy scalp strategies deleted.</li>
-    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from the Swing section into <strong>Common &mdash; Instrument</strong> in the Settings UI (read by <code>src/config/instrument.js</code> for all 3 engines). Pure UI move; keys + <code>.env</code> + <code>IMMEDIATE_KEYS</code> classification unchanged.</li>
+    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /{swing|bb_rsi|pa}-paper/history/restore</code> rebuilds a deleted session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
+    <li><strong>Live paper-parity sweep</strong> &mdash; <code>emaRsiStLive</code> gains <code>pauseUntil</code>/<code>MAX_DAILY_TRADES</code> guards on candle-close path; <code>bbRsiLive</code> ports <code>BB_RSI_TRAIL_GRACE_SECS</code>; <code>paLive</code> mirrors PA Paper's audit + skip-log wiring (sharing the same JSONL skip file as PA Paper). All three now capture <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surface them on exit.</li>
+    <li><strong>Settings cleanup</strong> &mdash; UI was drifting from code: <code>BACKTEST_GAMMA</code>, <code>ZERODHA_REDIRECT_URL</code> removed (no readers); <code>PA_ENABLED</code>, <code>PA_OPT_STOP_PCT</code>, <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>, <code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code> added. <code>BACKTEST_FROM/TO/GAMMA</code> removed from <code>IMMEDIATE_KEYS</code>. Two unimported legacy bb_rsi strategies deleted.</li>
+    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from the EMA_RSI_ST section into <strong>Common &mdash; Instrument</strong> in the Settings UI (read by <code>src/config/instrument.js</code> for all 3 engines). Pure UI move; keys + <code>.env</code> + <code>IMMEDIATE_KEYS</code> classification unchanged.</li>
     <li><strong>Consolidation date normalization</strong> &mdash; session date on <code>/consolidation</code> normalized to <code>YYYY-MM-DD</code> so daily/monthly/yearly roll-ups stay consistent across older sessions stored in mixed formats.</li>
     <li><strong>SSL-cert failure hardening at startup</strong> &mdash; on missing/invalid <code>certs/cert.pem</code>/<code>key.pem</code>, bootstrap now clears the Telegram crash-marker and skips non-restart code so a misconfigured cert no longer triggers a phantom "recovered from crash" alert.</li>
-    <li><strong>Misc swing-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/Scalp); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
+    <li><strong>Misc ema_rsi_st-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/BB_RSI); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
   </ul>
 </section>
 
@@ -656,14 +656,14 @@
   <h2><span class="section-icon icon-blue">&#9734;</span> 0c. v4.3.0 Highlights (2026-04-24)</h2>
   <p>Live-side analytics, per-module dashboard, trade guards, audit trails. Setup is unchanged from v4.2.0; new env vars and routes are listed below and reflected in the rest of this guide.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (Swing + Scalp + PA Live), parity with <code>/consolidation</code>.</li>
-    <li><strong>Per-mode <code>/reset</code> endpoints</strong> &mdash; <code>POST /swing-live/reset</code>, <code>POST /scalp-live/reset</code>, <code>POST /pa-live/reset</code> from each live status page (gated when a session is active).</li>
+    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (EMA_RSI_ST + BB_RSI + PA Live), parity with <code>/consolidation</code>.</li>
+    <li><strong>Per-mode <code>/reset</code> endpoints</strong> &mdash; <code>POST /ema_rsi_st-live/reset</code>, <code>POST /bb_rsi-live/reset</code>, <code>POST /pa-live/reset</code> from each live status page (gated when a session is active).</li>
     <li><strong>Per-module dashboard cards</strong> &mdash; one card per strategy with its own Paper/Live toggle, stats, and cumulative P&amp;L chart (red/green by sign). Mutual lock between Start-All Paper and Start-All Live.</li>
-    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>SCALP_VIX_MAX_ENTRY</code>, <code>SCALP_VIX_STRONG_ONLY</code>, <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (each falls back to the swing values if unset).</li>
+    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>BB_RSI_VIX_MAX_ENTRY</code>, <code>BB_RSI_VIX_STRONG_ONLY</code>, <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (each falls back to the swing values if unset).</li>
     <li><strong>Trade guards</strong> shared across modes &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>), <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>); PA tightens to <code>PA_TIME_STOP_CANDLES=3</code>, <code>PA_TIME_STOP_FLAT_PTS=10</code>.</li>
-    <li><strong>Scalp trend filter</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks counter-trend BB breakouts. Tunables: <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>, <code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>.</li>
+    <li><strong>BB_RSI trend filter</strong> &mdash; <code>BB_RSI_TREND_FILTER</code> (default <code>true</code>) blocks counter-trend BB breakouts. Tunables: <code>BB_RSI_TREND_MOMENTUM_PCT=0.15</code>, <code>BB_RSI_TREND_MOMENTUM_LOOKBACK=5</code>, <code>BB_RSI_TREND_MID_SLOPE_LOOKBACK=3</code>.</li>
     <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS/Inside-Bar setups with too-wide structural SL.</li>
-    <li><strong>Crash-safe JSONL trade log</strong> &mdash; new files <code>~/trading-data/{swing|scalp|pa}_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Append-only, atomic, downloadable per date from history pages.</li>
+    <li><strong>Crash-safe JSONL trade log</strong> &mdash; new files <code>~/trading-data/{swing|bb_rsi|pa}_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Append-only, atomic, downloadable per date from history pages.</li>
     <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs candles that missed entry by exactly one filter, visible in <code>/logs</code> SSE feed. Quantifies opportunity cost per filter.</li>
     <li><strong>Sidebar accordion + UI toggles</strong> &mdash; <code>UI_SHOW_SIMULATE</code>, <code>UI_SHOW_COMPARE</code>, <code>UI_SHOW_TRACKER</code> (all default <code>false</code>) hide optional menus. Login Logs moved out of the sidebar into the Settings top-bar; breadcrumbs added to Settings, Monitor, Docs, P&amp;L History.</li>
     <li><strong>Bulk Edit modal</strong> &mdash; "<code>📋 BULK EDIT</code>" top-bar button on Settings opens a focused modal; lines starting with <code>-KEY</code> delete that key from <code>.env</code>.</li>
@@ -676,11 +676,11 @@
   <h2><span class="section-icon icon-blue">&#9734;</span> 0d. v4.2.0 Highlights (2026-04-20)</h2>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode paper trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
-    <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (Swing / Scalp / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
-    <li><strong>Dashboard Start-All buttons</strong> launch every enabled mode (Swing + Scalp + PA) with one click.</li>
-    <li><strong>Telegram restructured</strong>: 17 per-mode toggles (<code>TG_{SWING|SCALP|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}</code>) + master <code>TG_ENABLED</code> gate + consolidated 15:30 IST day report (<code>TG_DAYREPORT_CONSOLIDATED</code>).</li>
+    <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (EMA_RSI_ST / BB_RSI / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
+    <li><strong>Dashboard Start-All buttons</strong> launch every enabled mode (EMA_RSI_ST + BB_RSI + PA) with one click.</li>
+    <li><strong>Telegram restructured</strong>: 17 per-mode toggles (<code>TG_{EMA_RSI_ST|BB_RSI|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}</code>) + master <code>TG_ENABLED</code> gate + consolidated 15:30 IST day report (<code>TG_DAYREPORT_CONSOLIDATED</code>).</li>
     <li><strong>Settings UI</strong>: bulk paste config (KEY=VALUE pairs), one-click server restart, frozen dependent fields.</li>
-    <li><strong>Scalp V4 quality filters</strong> exposed in Settings UI: <code>SCALP_REQUIRE_APPROACH</code>, <code>SCALP_MIN_BODY_RATIO</code>, <code>SCALP_TRAIL_GRACE_SECS</code>.</li>
+    <li><strong>BB_RSI V4 quality filters</strong> exposed in Settings UI: <code>BB_RSI_REQUIRE_APPROACH</code>, <code>BB_RSI_MIN_BODY_RATIO</code>, <code>BB_RSI_TRAIL_GRACE_SECS</code>.</li>
     <li><strong>Login cookie</strong> now uses <code>SameSite=Lax</code> (was Strict) to fix mobile OAuth redirect loop.</li>
     <li><strong>New persistent file</strong>: <code>~/trading-data/historical_pnl.json</code> holds one-time P&amp;L baselines per broker.</li>
   </ul>
@@ -692,12 +692,12 @@
 <section class="section blue" id="architecture">
   <h2><span class="section-icon icon-blue">&#9881;</span> 1. System Architecture Overview</h2>
 
-  <p>The trading system connects two brokers and orchestrates <strong>four independent strategy engines</strong> (Swing, Scalp, Price Action, ORB), all running on a single HTTPS Node.js server on AWS EC2. Every engine reads from one shared Fyers WebSocket via a singleton fan-out &mdash; <em>never open a second socket</em>.</p>
+  <p>The trading system connects two brokers and orchestrates <strong>four independent strategy engines</strong> (EMA_RSI_ST, BB_RSI, Price Action, ORB), all running on a single HTTPS Node.js server on AWS EC2. Every engine reads from one shared Fyers WebSocket via a singleton fan-out &mdash; <em>never open a second socket</em>.</p>
 
   <div class="arch-diagram">
     <div class="arch-box arch-fyers">
       Fyers API
-      <small>Single WebSocket<br>Historical Candles<br>Scalp / PA / ORB Orders</small>
+      <small>Single WebSocket<br>Historical Candles<br>BB_RSI / PA / ORB Orders</small>
     </div>
     <div class="arch-arrow">&#10145;</div>
     <div class="arch-box arch-candle">
@@ -707,12 +707,12 @@
     <div class="arch-arrow">&#10145;</div>
     <div class="arch-box arch-engine">
       Strategy Engines
-      <small>Swing (EMA20/50+RSI+SuperTrend)<br>Scalp (BB+PSAR+RSI)<br>PA (4 chart patterns)<br>ORB (15-min OR breakout)</small>
+      <small>EMA_RSI_ST (EMA20/50+RSI+SuperTrend)<br>BB_RSI (BB+PSAR+RSI)<br>PA (4 chart patterns)<br>ORB (15-min OR breakout)</small>
     </div>
     <div class="arch-arrow">&#10145;</div>
     <div class="arch-box arch-zerodha">
       Zerodha Kite
-      <small>Order Placement<br>Swing Live Only</small>
+      <small>Order Placement<br>EMA_RSI_ST Live Only</small>
     </div>
   </div>
 
@@ -743,12 +743,12 @@
     <tbody>
       <tr>
         <td><strong>Fyers API</strong></td>
-        <td>Real-time data feed (single WebSocket, multi-callback fan-out via <code>socketManager</code>), historical candle data, order execution for <strong>Scalp / PA / ORB</strong></td>
+        <td>Real-time data feed (single WebSocket, multi-callback fan-out via <code>socketManager</code>), historical candle data, order execution for <strong>BB_RSI / PA / ORB</strong></td>
         <td>REST + WSS</td>
       </tr>
       <tr>
         <td><strong>Zerodha Kite Connect</strong></td>
-        <td>Order placement exclusively for <strong>Swing</strong> live trades</td>
+        <td>Order placement exclusively for <strong>EMA_RSI_ST</strong> live trades</td>
         <td>REST</td>
       </tr>
       <tr>
@@ -791,7 +791,7 @@
 <section class="section purple" id="modes">
   <h2><span class="section-icon icon-purple">&#9654;</span> Trading Modes &mdash; Backtest, Paper, Live, Replay</h2>
 
-  <p>Each of the four strategies (Swing, Scalp, Price Action, ORB) runs in <strong>three primary execution modes</strong> (Backtest, Paper, Live), plus a deterministic <strong>Replay</strong> mode that re-plays recorded paper ticks through the same Paper <code>onTick()</code> handlers. The strategy logic is shared across all modes &mdash; only data source and order execution differ.</p>
+  <p>Each of the four strategies (EMA_RSI_ST, BB_RSI, Price Action, ORB) runs in <strong>three primary execution modes</strong> (Backtest, Paper, Live), plus a deterministic <strong>Replay</strong> mode that re-plays recorded paper ticks through the same Paper <code>onTick()</code> handlers. The strategy logic is shared across all modes &mdash; only data source and order execution differ.</p>
 
   <!-- ── Grand Overview SVG ── -->
   <div style="margin:20px 0; padding:24px 16px; background:linear-gradient(135deg,rgba(13,17,23,0.8),rgba(28,35,51,0.5)); border:1px solid var(--border); border-radius:var(--radius);">
@@ -822,16 +822,16 @@
       <line x1="215" y1="124" x2="245" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
 
       <rect x="250" y="82" width="155" height="86" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="328" y="98" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Swing: EMA+RSI+SuperTrend</text>
-      <text x="328" y="112" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">Scalp: BB+PSAR+RSI</text>
+      <text x="328" y="98" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">EMA_RSI_ST: EMA+RSI+SuperTrend</text>
+      <text x="328" y="112" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">BB_RSI: BB+PSAR+RSI</text>
       <text x="328" y="126" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">PA: 4 chart patterns</text>
       <text x="328" y="140" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">ORB: 15-min OR break</text>
 
       <line x1="405" y1="124" x2="435" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
 
       <rect x="440" y="82" width="155" height="86" rx="8" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.25)" stroke-width="1"/>
-      <text x="518" y="98" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">Swing: Zerodha Kite</text>
-      <text x="518" y="112" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">Scalp: Fyers Orders</text>
+      <text x="518" y="98" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">EMA_RSI_ST: Zerodha Kite</text>
+      <text x="518" y="112" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">BB_RSI: Fyers Orders</text>
       <text x="518" y="126" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">PA: Fyers (+ Harness)</text>
       <text x="518" y="140" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">ORB: Fyers Orders</text>
 
@@ -932,19 +932,19 @@
     </thead>
     <tbody>
       <tr>
-        <td><strong>Swing</strong> (EMA 20/50 + RSI + SuperTrend, 5/15-min)</td>
-        <td><code>/swing-live</code><br><code>/swing-live-harness</code></td>
-        <td><code>/swing-paper</code></td>
-        <td><code>/swing-backtest</code></td>
-        <td><code>POST /swing-live/reset</code></td>
+        <td><strong>EMA_RSI_ST</strong> (EMA 20/50 + RSI + SuperTrend, 5/15-min)</td>
+        <td><code>/ema_rsi_st-live</code><br><code>/ema_rsi_st-live-harness</code></td>
+        <td><code>/ema_rsi_st-paper</code></td>
+        <td><code>/ema_rsi_st-backtest</code></td>
+        <td><code>POST /ema_rsi_st-live/reset</code></td>
         <td>Zerodha Kite</td>
       </tr>
       <tr>
-        <td><strong>Scalp</strong> (BB+PSAR+RSI V6, 3/5-min)</td>
-        <td><code>/scalp-live</code><br><code>/scalp-live-harness</code></td>
-        <td><code>/scalp-paper</code></td>
-        <td><code>/scalp-backtest</code></td>
-        <td><code>POST /scalp-live/reset</code></td>
+        <td><strong>BB_RSI</strong> (BB+PSAR+RSI V6, 3/5-min)</td>
+        <td><code>/bb_rsi-live</code><br><code>/bb_rsi-live-harness</code></td>
+        <td><code>/bb_rsi-paper</code></td>
+        <td><code>/bb_rsi-backtest</code></td>
+        <td><code>POST /bb_rsi-live/reset</code></td>
         <td>Fyers</td>
       </tr>
       <tr>
@@ -965,8 +965,8 @@
       </tr>
     </tbody>
   </table>
-  <p style="margin-top:10px;"><strong>Live routes are double-gated.</strong> Each strategy's <code>*_LIVE_ENABLED</code> / <code>*_ENABLED</code> toggle (Swing/ORB use <code>*_LIVE_ENABLED</code>; Scalp uses <code>SCALP_ENABLED</code>; PA uses <code>PA_ENABLED</code>) must be <code>true</code> AND the global <code>LIVE_HARNESS_DRY_RUN</code> must be <code>false</code> for real broker orders to fire. With DRY-RUN on (default), the Harness logs the broker call it would have made but places no real order.</p>
-  <p style="margin-top:6px;"><strong>Harness routes.</strong> Swing, Scalp, PA, and ORB each have a <em>Live (Harness)</em> route (<code>/swing-live-harness</code>, <code>/scalp-live-harness</code>, <code>/pa-live-harness</code>, <code>/orb-live-harness</code>) that runs Live by wrapping the Paper engine so Live = Paper by construction. Each is hidden by default behind its <code>UI_SHOW_{STRATEGY}_LIVE_HARNESS</code> toggle (default <code>false</code>).</p>
+  <p style="margin-top:10px;"><strong>Live routes are double-gated.</strong> Each strategy's <code>*_LIVE_ENABLED</code> / <code>*_ENABLED</code> toggle (EMA_RSI_ST/ORB use <code>*_LIVE_ENABLED</code>; BB_RSI uses <code>BB_RSI_ENABLED</code>; PA uses <code>PA_ENABLED</code>) must be <code>true</code> AND the global <code>LIVE_HARNESS_DRY_RUN</code> must be <code>false</code> for real broker orders to fire. With DRY-RUN on (default), the Harness logs the broker call it would have made but places no real order.</p>
+  <p style="margin-top:6px;"><strong>Harness routes.</strong> EMA_RSI_ST, BB_RSI, PA, and ORB each have a <em>Live (Harness)</em> route (<code>/ema_rsi_st-live-harness</code>, <code>/bb_rsi-live-harness</code>, <code>/pa-live-harness</code>, <code>/orb-live-harness</code>) that runs Live by wrapping the Paper engine so Live = Paper by construction. Each is hidden by default behind its <code>UI_SHOW_{STRATEGY}_LIVE_HARNESS</code> toggle (default <code>false</code>).</p>
 
   <h3>Cross-Mode &amp; Analytics Routes</h3>
   <table>
@@ -1088,7 +1088,7 @@
   </ul>
 
   <div class="note note-info">
-    <strong>Note:</strong> The Fyers token is used for both data feed (WebSocket, candles) and order placement for Scalp and Price Action strategies. Strategy 1 live orders go through Zerodha.
+    <strong>Note:</strong> The Fyers token is used for both data feed (WebSocket, candles) and order placement for BB_RSI and Price Action strategies. Strategy 1 live orders go through Zerodha.
   </div>
 </section>
 
@@ -1281,16 +1281,16 @@
   </ol>
 
   <h3>Notification Toggles (21 <code>TG_*</code> + master gate)</h3>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">All four strategies now have per-strategy STARTED / ENTRY / EXIT / DAYREPORT toggles. SIGNALS exists only for Swing / Scalp / PA (no ORB SIGNALS toggle).</p>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">All four strategies now have per-strategy STARTED / ENTRY / EXIT / DAYREPORT toggles. SIGNALS exists only for EMA_RSI_ST / BB_RSI / PA (no ORB SIGNALS toggle).</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
       <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, no alerts sent regardless of below</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_SWING_SIGNALS</code> / <code>TG_SCALP_SIGNALS</code> / <code>TG_PA_SIGNALS</code></td><td><code>true</code>/<code>false</code>/<code>false</code></td><td>Candle-close skip/signal reasoning (Swing/Scalp/PA only)</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop (4 toggles)</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy (4 toggles)</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy (4 toggles)</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy (4 toggles)</td></tr>
+      <tr><td><code>TG_EMA_RSI_ST_SIGNALS</code> / <code>TG_BB_RSI_SIGNALS</code> / <code>TG_PA_SIGNALS</code></td><td><code>true</code>/<code>false</code>/<code>false</code></td><td>Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only)</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop (4 toggles)</td></tr>
       <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined EOD summary across all modes at 15:30 IST (weekdays only)</td></tr>
       <tr><td><code>BACKUP_TG_ENABLED</code></td><td><code>false</code></td><td>(Backup section) Telegram heartbeat when the daily data backup snapshot is ready</td></tr>
     </tbody>
@@ -1317,7 +1317,7 @@
   <p>All environment variables grouped by section. Copy <code>.env.example</code> to <code>.env</code> and fill in values.</p>
 
   <!-- ── Fyers ─────────────────────────────────────────── -->
-  <div class="env-group">Fyers &mdash; Data Feed, WebSocket, Historical Candles, Scalp Orders</div>
+  <div class="env-group">Fyers &mdash; Data Feed, WebSocket, Historical Candles, BB_RSI Orders</div>
   <table>
     <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
     <tbody>
@@ -1375,24 +1375,24 @@
     </tbody>
   </table>
 
-  <!-- ── Swing ────────────────────────────────────────── -->
-  <div class="env-group g-purple">Swing Strategy &mdash; EMA 20/50 + RSI + SuperTrend (5/15-min, Zerodha Orders)</div>
+  <!-- ── EMA_RSI_ST ────────────────────────────────────────── -->
+  <div class="env-group g-purple">EMA_RSI_ST Strategy &mdash; EMA 20/50 + RSI + SuperTrend (5/15-min, Zerodha Orders)</div>
   <p style="margin:6px 0 10px 0; color:var(--accent-orange);">Rebuilt 2026-05/06: <strong>Parabolic SAR fully removed (2026-06-12)</strong> &mdash; SuperTrend is the only trend source and EMA21 the only trail SL; breakeven removed (2026-06-02). The old SAR / EMA9 / ADX-slope / Logic-3 / hybrid-SL-cap / 3-tier-trail keys no longer exist in <code>settings.js</code>.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SWING_MODE_ENABLED</code></td><td><code>true</code></td><td>Show Swing sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>SWING_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for Zerodha order placement. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for live orders to fire.</td></tr>
-      <tr><td><code>SWING_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>)</td></tr>
+      <tr><td><code>EMA_RSI_ST_MODE_ENABLED</code></td><td><code>true</code></td><td>Show EMA_RSI_ST sidebar group AND Settings section. When off, both are hidden.</td></tr>
+      <tr><td><code>EMA_RSI_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for Zerodha order placement. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for live orders to fire.</td></tr>
+      <tr><td><code>EMA_RSI_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>)</td></tr>
       <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes. Strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code>; set <code>15</code> for the slower variant.</td></tr>
       <tr><td><code>TRADE_START_TIME</code></td><td><code>09:15</code></td><td>Trading window start (IST) &mdash; Common section</td></tr>
       <tr><td><code>TRADE_STOP_TIME</code></td><td><code>15:30</code></td><td>Trading window end (IST) &mdash; Common section</td></tr>
       <tr><td><code>TRADE_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest entry time (IST)</td></tr>
       <tr><td><code>TRADE_ENTRY_END</code></td><td><code>14:00</code></td><td>Latest entry time (IST)</td></tr>
-      <tr><td><code>SWING_EOD_EXIT_TIME</code></td><td><code>14:30</code></td><td>Exit any open Swing position before this time (exit-before-close)</td></tr>
-      <tr><td><code>TRADE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day. Swing <code>/start</code> is also auto-blocked when configured expiry == today (0DTE refusal &mdash; gamma risk).</td></tr>
-      <tr><td><code>SWING_OPTION_EXPIRY_OVERRIDE</code></td><td><em>(blank)</em></td><td>Swing-only expiry override. Use to keep swing on next-week expiry while Scalp/PA trade current. Blank inherits the common expiry.</td></tr>
-      <tr><td><code>SWING_OPTION_EXPIRY_TYPE</code></td><td><em>(blank)</em></td><td>Swing-only expiry type (<code>weekly</code> / <code>monthly</code>). Blank inherits common.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EOD_EXIT_TIME</code></td><td><code>14:30</code></td><td>Exit any open EMA_RSI_ST position before this time (exit-before-close)</td></tr>
+      <tr><td><code>TRADE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day. EMA_RSI_ST <code>/start</code> is also auto-blocked when configured expiry == today (0DTE refusal &mdash; gamma risk).</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code></td><td><em>(blank)</em></td><td>EMA_RSI_ST-only expiry override. Use to keep swing on next-week expiry while BB_RSI/PA trade current. Blank inherits the common expiry.</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPTION_EXPIRY_TYPE</code></td><td><em>(blank)</em></td><td>EMA_RSI_ST-only expiry type (<code>weekly</code> / <code>monthly</code>). Blank inherits common.</td></tr>
     </tbody>
   </table>
 
@@ -1401,16 +1401,16 @@
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SWING_EMA_FAST</code></td><td><code>20</code></td><td>Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA.</td></tr>
-      <tr><td><code>SWING_EMA_SLOW</code></td><td><code>50</code></td><td>Slow EMA period (close) &mdash; the EMA-fast vs EMA-slow alignment is the directional gate</td></tr>
-      <tr><td><code>SWING_EMA_TRIPLE_STACK_ENABLED</code></td><td><code>false</code></td><td><code>false</code> = 2-EMA cross. <code>true</code> = require EMA-fastest &gt; EMA-mid &gt; EMA-slow (CE) / reverse (PE).</td></tr>
-      <tr><td><code>SWING_EMA_FASTEST</code></td><td><code>9</code></td><td>Fastest EMA period in the 9&gt;20&gt;50 stack. Only used when triple-stack is on.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_FAST</code></td><td><code>20</code></td><td>Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_SLOW</code></td><td><code>50</code></td><td>Slow EMA period (close) &mdash; the EMA-fast vs EMA-slow alignment is the directional gate</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED</code></td><td><code>false</code></td><td><code>false</code> = 2-EMA cross. <code>true</code> = require EMA-fastest &gt; EMA-mid &gt; EMA-slow (CE) / reverse (PE).</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_FASTEST</code></td><td><code>9</code></td><td>Fastest EMA period in the 9&gt;20&gt;50 stack. Only used when triple-stack is on.</td></tr>
       <tr><td><code>RSI_CE_MIN</code></td><td><code>52</code></td><td>CE entry: RSI(14) must be above this</td></tr>
       <tr><td><code>RSI_CE_MAX</code></td><td><code>70</code></td><td>CE entry: RSI(14) must be below this (overbought guard)</td></tr>
       <tr><td><code>RSI_PE_MAX</code></td><td><code>48</code></td><td>PE entry: RSI(14) must be below this</td></tr>
       <tr><td><code>RSI_PE_MIN</code></td><td><code>30</code></td><td>PE entry: RSI(14) must be above this (oversold guard)</td></tr>
-      <tr><td><code>SWING_SUPERTREND_PERIOD</code></td><td><code>10</code></td><td>SuperTrend ATR period &mdash; SuperTrend is the directional trend gate</td></tr>
-      <tr><td><code>SWING_SUPERTREND_MULT</code></td><td><code>3</code></td><td>SuperTrend ATR multiplier</td></tr>
+      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code></td><td><code>10</code></td><td>SuperTrend ATR period &mdash; SuperTrend is the directional trend gate</td></tr>
+      <tr><td><code>EMA_RSI_ST_SUPERTREND_MULT</code></td><td><code>3</code></td><td>SuperTrend ATR multiplier</td></tr>
     </tbody>
   </table>
 
@@ -1422,13 +1422,13 @@
       <tr><td><code>MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Daily kill-switch in INR (also latched on 3 consecutive losses). Common section.</td></tr>
       <tr><td><code>MAX_DAILY_TRADES</code></td><td><code>5</code></td><td>Hard cap on entries per session &mdash; anti-overtrade on chop days. Common section.</td></tr>
       <tr><td><code>OPT_STOP_PCT</code></td><td><code>0.25</code></td><td>Option-premium stop &mdash; exit if the option premium drops this fraction below entry premium</td></tr>
-      <tr><td><code>SWING_STOP_LOSS_PTS</code></td><td><code>25</code></td><td>Per-trade catastrophic loss cap (spot points against entry), checked before the structural/trail SL. <code>0</code> = disabled.</td></tr>
-      <tr><td><code>SWING_CANDLE_TRAIL_ENABLED</code></td><td><code>true</code></td><td>Layer an N-bar candle trail on top of the EMA21 SL (tighter-of). Banks more of a winner; never loosens.</td></tr>
-      <tr><td><code>SWING_CANDLE_TRAIL_BARS</code></td><td><code>2</code></td><td>Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. <code>1</code> = tightest.</td></tr>
-      <tr><td><code>SWING_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Choppy-day guard: halt new entries after N consecutive losers (any winner resets). <code>0</code> = off.</td></tr>
-      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Same-side cooldown candles after an SL hit</td></tr>
-      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>Pause the opposite side too after an SL hit</td></tr>
-      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>Opposite-side cooldown duration in candles</td></tr>
+      <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td><code>25</code></td><td>Per-trade catastrophic loss cap (spot points against entry), checked before the structural/trail SL. <code>0</code> = disabled.</td></tr>
+      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code></td><td><code>true</code></td><td>Layer an N-bar candle trail on top of the EMA21 SL (tighter-of). Banks more of a winner; never loosens.</td></tr>
+      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_BARS</code></td><td><code>2</code></td><td>Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. <code>1</code> = tightest.</td></tr>
+      <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Choppy-day guard: halt new entries after N consecutive losers (any winner resets). <code>0</code> = off.</td></tr>
+      <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Same-side cooldown candles after an SL hit</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>Pause the opposite side too after an SL hit</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>Opposite-side cooldown duration in candles</td></tr>
     </tbody>
   </table>
 
@@ -1437,13 +1437,13 @@
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Enable VIX-based entry blocking (Swing)</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Swing &mdash; block all entries when VIX exceeds this</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Swing &mdash; only strong signals when VIX &gt; this</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Enable VIX-based entry blocking (EMA_RSI_ST)</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>EMA_RSI_ST &mdash; block all entries when VIX exceeds this</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>EMA_RSI_ST &mdash; only strong signals when VIX &gt; this</td></tr>
       <tr><td><code>VIX_FAIL_MODE</code></td><td><code>closed</code></td><td>When VIX feed unavailable: <code>closed</code> = block (safe), <code>open</code> = allow</td></tr>
-      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Scalp (independent toggle)</td></tr>
-      <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for Scalp</td></tr>
-      <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for Scalp</td></tr>
+      <tr><td><code>BB_RSI_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for BB_RSI (independent toggle)</td></tr>
+      <tr><td><code>BB_RSI_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for BB_RSI</td></tr>
+      <tr><td><code>BB_RSI_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for BB_RSI</td></tr>
       <tr><td><code>PA_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Price Action (independent toggle)</td></tr>
       <tr><td><code>PA_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for PA</td></tr>
       <tr><td><code>PA_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for PA</td></tr>
@@ -1463,76 +1463,76 @@
     </tbody>
   </table>
 
-  <!-- ── Scalp ─────────────────────────────────────────── -->
-  <div class="env-group g-cyan">Scalping &mdash; BB+PSAR+RSI V5 Strategy (Fyers Orders)</div>
+  <!-- ── BB_RSI ─────────────────────────────────────────── -->
+  <div class="env-group g-cyan">BB_RSI &mdash; BB+PSAR+RSI V5 Strategy (Fyers Orders)</div>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide scalp UI and engine in sidebar + Settings</td></tr>
-      <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Live-orders master switch (Scalp uses <code>SCALP_ENABLED</code>, not <code>SCALP_LIVE_ENABLED</code>). Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
-      <tr><td><code>SCALP_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>). Common section.</td></tr>
-      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes &mdash; <code>3</code> or <code>5</code></td></tr>
-      <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
-      <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
-      <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
+      <tr><td><code>BB_RSI_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide bb_rsi UI and engine in sidebar + Settings</td></tr>
+      <tr><td><code>BB_RSI_ENABLED</code></td><td><code>false</code></td><td>Live-orders master switch (BB_RSI uses <code>BB_RSI_ENABLED</code>, not <code>BB_RSI_LIVE_ENABLED</code>). Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
+      <tr><td><code>BB_RSI_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>). Common section.</td></tr>
+      <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes &mdash; <code>3</code> or <code>5</code></td></tr>
+      <tr><td><code>BB_RSI_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
+      <tr><td><code>BB_RSI_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
+      <tr><td><code>BB_RSI_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp Signal Params (BB + PSAR + RSI)</h4>
+  <h4>BB_RSI Signal Params (BB + PSAR + RSI)</h4>
   <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Entry (at candle close): CE = close &ge; BB upper + PSAR below close + RSI &gt; CE threshold; PE = mirror. Overbought/oversold guards block exhausted moves.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
-      <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
-      <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
-      <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
-      <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
-      <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
-      <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
-      <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
-      <tr><td><code>SCALP_USE_SUPERTREND</code></td><td><code>false</code></td><td>Optional SuperTrend confirmation gate</td></tr>
-      <tr><td><code>SCALP_SUPERTREND_PERIOD</code> / <code>SCALP_SUPERTREND_MULT</code></td><td><code>10</code> / <code>3</code></td><td>SuperTrend ATR period / multiplier (used only when <code>SCALP_USE_SUPERTREND=true</code>)</td></tr>
-      <tr><td><code>SCALP_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional ADX trend-strength filter</td></tr>
-      <tr><td><code>SCALP_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX when the ADX filter is on (below = block)</td></tr>
+      <tr><td><code>BB_RSI_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
+      <tr><td><code>BB_RSI_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
+      <tr><td><code>BB_RSI_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
+      <tr><td><code>BB_RSI_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
+      <tr><td><code>BB_RSI_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
+      <tr><td><code>BB_RSI_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
+      <tr><td><code>BB_RSI_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
+      <tr><td><code>BB_RSI_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
+      <tr><td><code>BB_RSI_USE_SUPERTREND</code></td><td><code>false</code></td><td>Optional SuperTrend confirmation gate</td></tr>
+      <tr><td><code>BB_RSI_SUPERTREND_PERIOD</code> / <code>BB_RSI_SUPERTREND_MULT</code></td><td><code>10</code> / <code>3</code></td><td>SuperTrend ATR period / multiplier (used only when <code>BB_RSI_USE_SUPERTREND=true</code>)</td></tr>
+      <tr><td><code>BB_RSI_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional ADX trend-strength filter</td></tr>
+      <tr><td><code>BB_RSI_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX when the ADX filter is on (below = block)</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp Stops &amp; Break-even</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6.1: initial SL = the PSAR value at entry (no clamp; far-PSAR entries filtered by <code>SCALP_MAX_ENTRY_SL_PTS</code>); exit on a per-tick <strong>profit lock</strong> (the only intra-tick exit) plus two candle-close exits: <strong>BB re-entry</strong> (failed breakout) and the <strong>PSAR flip</strong>. No break-even-to-entry snap, no %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
+  <h4>BB_RSI Stops &amp; Break-even</h4>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6.1: initial SL = the PSAR value at entry (no clamp; far-PSAR entries filtered by <code>BB_RSI_MAX_ENTRY_SL_PTS</code>); exit on a per-tick <strong>profit lock</strong> (the only intra-tick exit) plus two candle-close exits: <strong>BB re-entry</strong> (failed breakout) and the <strong>PSAR flip</strong>. No break-even-to-entry snap, no %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
-      <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) reaches this &mdash; the per-tick upside exit. Points-based. <code>0</code> disables.</td></tr>
-      <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
-      <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap &mdash; exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
-      <tr><td><code>SCALP_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the Bollinger Band (failed breakout)</td></tr>
-      <tr><td><code>SCALP_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm the BB-re-entry exit once price has moved this many points beyond the band first (avoids chopping out on a marginal break)</td></tr>
-      <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction (already listed under signal params)</td></tr>
-      <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
+      <tr><td><code>BB_RSI_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
+      <tr><td><code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) reaches this &mdash; the per-tick upside exit. Points-based. <code>0</code> disables.</td></tr>
+      <tr><td><code>BB_RSI_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
+      <tr><td><code>BB_RSI_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap &mdash; exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
+      <tr><td><code>BB_RSI_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the Bollinger Band (failed breakout)</td></tr>
+      <tr><td><code>BB_RSI_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm the BB-re-entry exit once price has moved this many points beyond the band first (avoids chopping out on a marginal break)</td></tr>
+      <tr><td><code>BB_RSI_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction (already listed under signal params)</td></tr>
+      <tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp Risk &amp; SL-Pause Controls</h4>
+  <h4>BB_RSI Risk &amp; SL-Pause Controls</h4>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp trades per day</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Max daily scalp loss (&#8377;) &mdash; kill switch</td></tr>
-      <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit</td></tr>
-      <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd</td></tr>
-      <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
+      <tr><td><code>BB_RSI_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max bb_rsi trades per day</td></tr>
+      <tr><td><code>BB_RSI_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Max daily bb_rsi loss (&#8377;) &mdash; kill switch</td></tr>
+      <tr><td><code>BB_RSI_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit</td></tr>
+      <tr><td><code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd</td></tr>
+      <tr><td><code>BB_RSI_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
     </tbody>
   </table>
 
-  <h4>Scalp VIX Filter (per-module)</h4>
+  <h4>BB_RSI VIX Filter (per-module)</h4>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for scalp (independent toggle)</td></tr>
-      <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode block-entry threshold</td></tr>
-      <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold</td></tr>
+      <tr><td><code>BB_RSI_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for bb_rsi (independent toggle)</td></tr>
+      <tr><td><code>BB_RSI_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode block-entry threshold</td></tr>
+      <tr><td><code>BB_RSI_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold</td></tr>
     </tbody>
   </table>
 
@@ -1669,9 +1669,9 @@
       <tr><td><code>UI_DASHBOARD_ANALYTICS_PANEL</code></td><td><code>true</code></td><td>Show bottom analytics panel on the Dashboard. Market hours: live session P&amp;L per strategy + next expiry. After-hours: last-session breakdown, 7-day rolling, next holiday.</td></tr>
       <tr><td><code>UI_SHOW_REPLAY</code></td><td><code>true</code></td><td>Show the top-level Replay menu (tick replay of recorded paper sessions)</td></tr>
       <tr><td><code>UI_SHOW_PAPER_HISTORY</code> / <code>UI_SHOW_LIVE_HISTORY</code></td><td><code>true</code></td><td>Cross-mode history menus</td></tr>
-      <tr><td><code>SWING_MODE_ENABLED</code> / <code>SCALP_MODE_ENABLED</code> / <code>PA_MODE_ENABLED</code> / <code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Master toggle per strategy &mdash; hides sidebar group AND Settings section</td></tr>
+      <tr><td><code>EMA_RSI_ST_MODE_ENABLED</code> / <code>BB_RSI_MODE_ENABLED</code> / <code>PA_MODE_ENABLED</code> / <code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Master toggle per strategy &mdash; hides sidebar group AND Settings section</td></tr>
       <tr><td><code>UI_SHOW_SIMULATE</code> / <code>UI_SHOW_COMPARE</code> / <code>UI_SHOW_TRACKER</code></td><td><code>false</code></td><td>Optional sub-menus under each strategy group</td></tr>
-      <tr><td><code>UI_SHOW_{SWING,SCALP,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}</code></td><td><code>true</code></td><td>Per-strategy submenu toggles &mdash; hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode</td></tr>
+      <tr><td><code>UI_SHOW_{EMA_RSI_ST,BB_RSI,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}</code></td><td><code>true</code></td><td>Per-strategy submenu toggles &mdash; hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode</td></tr>
       <tr><td><code>UI_SHOW_PA_LIVE_HARNESS</code></td><td><code>false</code></td><td>Show "Live (Harness)" inside the PA group</td></tr>
       <tr><td><code>UI_SHOW_PA_PATTERN_BACKTEST</code></td><td><code>true</code></td><td>Show "Pattern Test" inside the PA group</td></tr>
       <tr><td><code>UI_SHOW_LOGS</code> / <code>UI_SHOW_TRADE_LOGS</code></td><td><code>true</code></td><td>System menu items (LOGS button on Settings top-bar; Trade Logs in System group)</td></tr>
@@ -1680,12 +1680,12 @@
 
   <!-- ── Paper Trade ───────────────────────────────────── -->
   <div class="env-group">Paper Investment Pool (per broker, not per strategy)</div>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">There are no per-strategy <code>*_PAPER_CAPITAL</code> keys. Paper investment is pooled by broker: Swing reads <code>ZERODHA_INV_AMOUNT</code>; Scalp / PA / ORB read <code>FYERS_INV_AMOUNT</code>. Paper trade P&amp;L is added to / subtracted from the pool.</p>
+  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">There are no per-strategy <code>*_PAPER_CAPITAL</code> keys. Paper investment is pooled by broker: EMA_RSI_ST reads <code>ZERODHA_INV_AMOUNT</code>; BB_RSI / PA / ORB read <code>FYERS_INV_AMOUNT</code>. Paper trade P&amp;L is added to / subtracted from the pool.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
     <tbody>
-      <tr><td><code>ZERODHA_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Zerodha-brokered strategies (<strong>Swing</strong>)</td></tr>
-      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Fyers-brokered strategies (<strong>Scalp + PA + ORB</strong>)</td></tr>
+      <tr><td><code>ZERODHA_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Zerodha-brokered strategies (<strong>EMA_RSI_ST</strong>)</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Fyers-brokered strategies (<strong>BB_RSI + PA + ORB</strong>)</td></tr>
     </tbody>
   </table>
 
@@ -1721,11 +1721,11 @@
       <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td><em>(blank)</em></td><td>Bot token from @BotFather</td></tr>
       <tr><td><code>TELEGRAM_CHAT_ID</code></td><td><em>(blank)</em></td><td>Your Telegram chat ID</td></tr>
       <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, mutes all alerts</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA}_SIGNALS</code></td><td><code>true/false/false</code></td><td>Candle-close skip/signal reasoning (Swing/Scalp/PA only &mdash; no ORB SIGNALS)</td></tr>
-      <tr><td><code>TG_{SWING,SCALP,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS</code></td><td><code>true/false/false</code></td><td>Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only &mdash; no ORB SIGNALS)</td></tr>
+      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop</td></tr>
       <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined day report at 15:30 IST across all modes</td></tr>
     </tbody>
   </table>
@@ -1832,15 +1832,15 @@
     <thead><tr><th>File / Directory</th><th>Purpose</th><th>Lifecycle</th></tr></thead>
     <tbody>
       <tr><td><code>.fyers_token</code> / <code>.zerodha_token</code></td><td>Broker OAuth tokens</td><td>Refreshed daily</td></tr>
-      <tr><td><code>paper_trades.json</code> / <code>scalp_paper_trades.json</code> / <code>pa_paper_trades.json</code> / <code>orb_paper_trades.json</code></td><td>Per-mode paper trade sessions (one row per session)</td><td>Persistent, in-place updates</td></tr>
-      <tr><td><code>live_trades.json</code> / <code>scalp_live_trades.json</code> / <code>pa_live_trades.json</code> / <code>orb_live_trades.json</code></td><td>Per-mode live trade sessions</td><td>Persistent, in-place updates</td></tr>
-      <tr><td><code>{swing|scalp|pa|orb}_paper_trades_log.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0+)</span></td><td>Crash-safe per-trade JSONL audit (cumulative)</td><td>Append-only; survives crashes via <code>O_APPEND</code></td></tr>
+      <tr><td><code>paper_trades.json</code> / <code>bb_rsi_paper_trades.json</code> / <code>pa_paper_trades.json</code> / <code>orb_paper_trades.json</code></td><td>Per-mode paper trade sessions (one row per session)</td><td>Persistent, in-place updates</td></tr>
+      <tr><td><code>live_trades.json</code> / <code>bb_rsi_live_trades.json</code> / <code>pa_live_trades.json</code> / <code>orb_live_trades.json</code></td><td>Per-mode live trade sessions</td><td>Persistent, in-place updates</td></tr>
+      <tr><td><code>{swing|bb_rsi|pa|orb}_paper_trades_log.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0+)</span></td><td>Crash-safe per-trade JSONL audit (cumulative)</td><td>Append-only; survives crashes via <code>O_APPEND</code></td></tr>
       <tr><td><code>trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0)</span></td><td>Per-day trade JSONL files. Seeded with a settings snapshot + checkpoint note at session start; re-snapshotted on every Settings save that affects the mode.</td><td>Append-only; downloadable per date from <code>/trade-logs</code></td></tr>
       <tr><td><code>ticks/YYYY-MM-DD/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Recorded spot / option / VIX ticks &mdash; source of truth for <code>/replay</code>. Gated by <code>TICK_RECORDER_ENABLED</code>.</td><td>Append-only; auto-pruned per <code>TICK_RECORDER_RETAIN_DAYS</code> (default 30)</td></tr>
       <tr><td><code>_replay_trades/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Replay outputs &mdash; <strong>snapshot mode</strong> (uses session-start settings; deterministic A/A)</td><td>Per-replay folders; never merged with canonical paper logs</td></tr>
       <tr><td><code>_replay_trades_sim/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Replay outputs &mdash; <strong>current-settings mode</strong> (uses live <code>process.env</code>; deterministic A/B)</td><td>Per-replay folders; safe to delete after analysis</td></tr>
       <tr><td><code>historical_pnl.json</code></td><td>One-time past P&amp;L baselines per broker (Kite + Fyers)</td><td>Persistent</td></tr>
-      <tr><td><code>.active_trade_position.json</code> / <code>.active_scalp_position.json</code> / <code>.active_pa_position.json</code></td><td>Crash recovery &mdash; persisted active position per mode (Swing / Scalp / PA only)</td><td>Created on entry, removed on exit. ORB does <strong>not</strong> currently persist (gap).</td></tr>
+      <tr><td><code>.active_ema_rsi_st_position.json</code> / <code>.active_bb_rsi_position.json</code> / <code>.active_pa_position.json</code></td><td>Crash recovery &mdash; persisted active position per mode (EMA_RSI_ST / BB_RSI / PA only)</td><td>Created on entry, removed on exit. ORB does <strong>not</strong> currently persist (gap).</td></tr>
       <tr><td><code>backtest_cache/</code></td><td>Cached historical candles</td><td>90-day auto-prune</td></tr>
       <tr><td><code>candle_cache/</code></td><td>Live candle cache</td><td>60-day trim (<code>CACHE_MAX_DAYS</code>)</td></tr>
       <tr><td><code>reports/</code></td><td>Daily trade reports</td><td>Persistent</td></tr>
@@ -1850,24 +1850,24 @@
   <h3>Directory Structure</h3>
   <pre><code><span class="var">~/trading-data/</span>
   <span class="cmt">|--</span> <span class="str">.fyers_token</span> / <span class="str">.zerodha_token</span>                <span class="cmt"># Broker OAuth tokens</span>
-  <span class="cmt">|--</span> <span class="str">paper_trades.json</span>                            <span class="cmt"># Swing paper sessions</span>
-  <span class="cmt">|--</span> <span class="str">scalp_paper_trades.json</span>                      <span class="cmt"># Scalp paper sessions</span>
+  <span class="cmt">|--</span> <span class="str">paper_trades.json</span>                            <span class="cmt"># EMA_RSI_ST paper sessions</span>
+  <span class="cmt">|--</span> <span class="str">bb_rsi_paper_trades.json</span>                      <span class="cmt"># BB_RSI paper sessions</span>
   <span class="cmt">|--</span> <span class="str">pa_paper_trades.json</span>                         <span class="cmt"># PA paper sessions</span>
   <span class="cmt">|--</span> <span class="str">orb_paper_trades.json</span>                        <span class="cmt"># ORB paper sessions (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="str">live_trades.json</span>                             <span class="cmt"># Swing live sessions</span>
-  <span class="cmt">|--</span> <span class="str">scalp_live_trades.json</span>                       <span class="cmt"># Scalp live sessions</span>
+  <span class="cmt">|--</span> <span class="str">live_trades.json</span>                             <span class="cmt"># EMA_RSI_ST live sessions</span>
+  <span class="cmt">|--</span> <span class="str">bb_rsi_live_trades.json</span>                       <span class="cmt"># BB_RSI live sessions</span>
   <span class="cmt">|--</span> <span class="str">pa_live_trades.json</span>                          <span class="cmt"># PA live sessions</span>
   <span class="cmt">|--</span> <span class="str">orb_live_trades.json</span>                         <span class="cmt"># ORB live sessions (v4.6.0)</span>
   <span class="cmt">|--</span> <span class="str">historical_pnl.json</span>                          <span class="cmt"># One-time P&amp;L baselines per broker</span>
-  <span class="cmt">|--</span> <span class="str">{swing|scalp|pa|orb}_paper_trades_log.jsonl</span> <span class="cmt"># Cumulative JSONL audit</span>
+  <span class="cmt">|--</span> <span class="str">{swing|bb_rsi|pa|orb}_paper_trades_log.jsonl</span> <span class="cmt"># Cumulative JSONL audit</span>
   <span class="cmt">|--</span> <span class="var">trades/</span>                                      <span class="cmt"># Per-day JSONL trade files</span>
   <span class="cmt">|     |--</span> <span class="str">{mode}_paper_trades_YYYY-MM-DD.jsonl</span>     <span class="cmt"># Seeded with settings snapshot</span>
   <span class="cmt">|--</span> <span class="var">ticks/YYYY-MM-DD/</span>                            <span class="cmt"># Spot/option/VIX tick recordings (v4.6.0)</span>
   <span class="cmt">|     |--</span> <span class="str">*.jsonl</span>                                 <span class="cmt"># Source of truth for /replay</span>
   <span class="cmt">|--</span> <span class="var">_replay_trades/</span>                              <span class="cmt"># Replay output - snapshot mode (v4.6.0)</span>
   <span class="cmt">|--</span> <span class="var">_replay_trades_sim/</span>                          <span class="cmt"># Replay output - current settings (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="str">.active_trade_position.json</span>                  <span class="cmt"># Crash recovery (swing)</span>
-  <span class="cmt">|--</span> <span class="str">.active_scalp_position.json</span>                  <span class="cmt"># Crash recovery (scalp)</span>
+  <span class="cmt">|--</span> <span class="str">.active_ema_rsi_st_position.json</span>                  <span class="cmt"># Crash recovery (swing)</span>
+  <span class="cmt">|--</span> <span class="str">.active_bb_rsi_position.json</span>                  <span class="cmt"># Crash recovery (bb_rsi)</span>
   <span class="cmt">|--</span> <span class="str">.active_pa_position.json</span>                     <span class="cmt"># Crash recovery (PA)</span>
   <span class="cmt">|     (ORB positions don't persist yet - see note below)</span>
   <span class="cmt">|--</span> <span class="var">backtest_cache/</span>                              <span class="cmt"># Historical candles (90-day auto-prune)</span>
@@ -1879,7 +1879,7 @@
   </div>
 
   <div class="note note-danger">
-    <strong>Crash-recovery gap (v4.6.0):</strong> <code>src/utils/positionPersist.js</code> currently only handles Swing / Scalp / PA. ORB positions do <strong>not</strong> survive a process crash &mdash; if ORB holds an open position when the bot restarts, the position is orphaned at the broker and not reconciled by <code>app.js</code> boot logic. Add a <code>saveORBPosition()</code> helper (mirroring the existing Swing/Scalp/PA pattern) before relying on ORB for unattended live trading.
+    <strong>Crash-recovery gap (v4.6.0):</strong> <code>src/utils/positionPersist.js</code> currently only handles EMA_RSI_ST / BB_RSI / PA. ORB positions do <strong>not</strong> survive a process crash &mdash; if ORB holds an open position when the bot restarts, the position is orphaned at the broker and not reconciled by <code>app.js</code> boot logic. Add a <code>saveORBPosition()</code> helper (mirroring the existing EMA_RSI_ST/BB_RSI/PA pattern) before relying on ORB for unattended live trading.
   </div>
 
   <div class="note note-info">

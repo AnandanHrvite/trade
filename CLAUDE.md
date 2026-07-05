@@ -24,7 +24,7 @@ Fyers WebSocket (NIFTY50 spot)
    socketManager  ← singleton, multi-callback fan-out ([src/utils/socketManager.js](src/utils/socketManager.js))
         │
   ┌─────┼──────────────┬────────────────┐
- Swing  Scalp           PA              ORB
+ EMA_RSI_ST  BB_RSI           PA              ORB
  (5/15m, Zerodha)  (5m, Fyers)   (5m, Fyers)      (Fyers)
   │                │              │                │
   ├─Live           ├─Live         ├─Live           ├─Live
@@ -35,9 +35,9 @@ Fyers WebSocket (NIFTY50 spot)
 Key invariants:
 
 - **Never open a second Fyers socket.** Subscribe through [socketManager](src/utils/socketManager.js); fan-out is what lets all strategies coexist on one connection.
-- **[sharedSocketState](src/utils/sharedSocketState.js)** enforces per-strategy mutual exclusion (Swing Live ⊥ Swing Paper, etc.) while allowing cross-strategy parallelism. Don't bypass it when adding a new mode.
-- **Three brokers, one router**: [zerodhaBroker.js](src/services/zerodhaBroker.js) (Swing live), [fyersBroker.js](src/services/fyersBroker.js) (Scalp/PA/ORB live + all data). Token + reconnect logic lives there — don't re-implement OAuth at the route layer.
-- **VIX gate**: [vixFilter.js](src/services/vixFilter.js) is called per strategy with its own thresholds (Swing uses `VIX_*`, others use `SCALP_VIX_*` / `PA_VIX_*` with fallback to the global keys).
+- **[sharedSocketState](src/utils/sharedSocketState.js)** enforces per-strategy mutual exclusion (EMA_RSI_ST Live ⊥ EMA_RSI_ST Paper, etc.) while allowing cross-strategy parallelism. Don't bypass it when adding a new mode.
+- **Three brokers, one router**: [zerodhaBroker.js](src/services/zerodhaBroker.js) (EMA_RSI_ST live), [fyersBroker.js](src/services/fyersBroker.js) (BB_RSI/PA/ORB live + all data). Token + reconnect logic lives there — don't re-implement OAuth at the route layer.
+- **VIX gate**: [vixFilter.js](src/services/vixFilter.js) is called per strategy with its own thresholds (EMA_RSI_ST uses `VIX_*`, others use `BB_RSI_VIX_*` / `PA_VIX_*` with fallback to the global keys).
 - **Trade guards** (bid-ask spread, time-stop) live in [tradeGuards.js](src/utils/tradeGuards.js) and are shared across modes. Per-mode overrides (e.g., `PA_TIME_STOP_*`) read the same helper.
 - **Crash recovery**: positions persisted via [positionPersist.js](src/utils/positionPersist.js); on boot, [app.js](src/app.js) reconciles each strategy's `.active_*_position.json` against broker state and Telegrams the user on orphan detection.
 
@@ -62,8 +62,8 @@ Paper routes are treated as the source of truth for decision/fill/exit semantics
 
 Everything stateful lives in `~/trading-data/` — **outside the repo**, so `git pull` and PM2 reloads never wipe it:
 
-- `{swing,scalp,pa,orb}_paper_trades.json` / `_live_trades.json` — session-grouped trades
-- `.active_{trade,scalp,pa}_position.json` — crash-recovery snapshots. **ORB does not have a crash-recovery snapshot yet** — `positionPersist.js` only handles Swing/Scalp/PA. Add helpers there if ORB needs restart survival of an open position.
+- `{swing,bb_rsi,pa,orb}_paper_trades.json` / `_live_trades.json` — session-grouped trades
+- `.active_{trade,bb_rsi,pa}_position.json` — crash-recovery snapshots. **ORB does not have a crash-recovery snapshot yet** — `positionPersist.js` only handles EMA_RSI_ST/BB_RSI/PA. Add helpers there if ORB needs restart survival of an open position.
 - `trades/{mode}_paper_trades_YYYY-MM-DD.jsonl` — per-day cumulative audit log (canonical export format). Seeded with a settings snapshot + checkpoint note; re-snapshotted whenever a save changes a key that affects that mode.
 - `ticks/YYYY-MM-DD/*.jsonl` — recorded spot/option/VIX ticks, gated by `TICK_RECORDER_ENABLED` (default on). Source of truth for `/replay`. Retention `TICK_RECORDER_RETAIN_DAYS` (default 30).
 - `_replay_trades/` — Replay outputs in snapshot mode (uses recorded session-start settings).
@@ -77,7 +77,7 @@ JSONL day files include settings snapshots written by [settings.js](src/routes/s
 
 - **Autonomous push**: commits to `main` are expected to push immediately (IDE auto-sync). Stage *only* task files; no review window after commit. See `feedback_autonomous_push.md`.
 - **Never** `--force` push, `--no-verify`, or bundle unrelated WIP into a commit.
-- **Tuning is OPEN (deadline lifted 2026-05-27).** The paper-data-collection no-tuning window was ended early by the user; strategy tuning and bug fixes are now in scope for all strategies. The per-strategy notes in `project_{scalp,pa,swing}_post_window_observations.md` are still useful context (hypotheses + daily P&L track) — read them before tuning, but they are no longer a freeze. Caveat: trades generated *before* a bug fix were produced by buggy code — don't tune thresholds on pre-fix data; collect clean post-fix sessions first.
+- **Tuning is OPEN (deadline lifted 2026-05-27).** The paper-data-collection no-tuning window was ended early by the user; strategy tuning and bug fixes are now in scope for all strategies. The per-strategy notes in `project_{bb_rsi,pa,swing}_post_window_observations.md` are still useful context (hypotheses + daily P&L track) — read them before tuning, but they are no longer a freeze. Caveat: trades generated *before* a bug fix were produced by buggy code — don't tune thresholds on pre-fix data; collect clean post-fix sessions first.
 - **README.md is the user-facing spec** for env vars, routes, and per-strategy behaviour. Keep it in sync when adding env keys or routes.
 - **CHANGELOG.md** is hand-maintained; add an entry for user-visible changes.
 - **Live order placement is double-gated**: a strategy's `*_LIVE_ENABLED` toggle plus the global `LIVE_HARNESS_DRY_RUN`. When `LIVE_HARNESS_DRY_RUN=true` (default) the live engines log the broker call they would have made but place no real order. Flip the harness OFF only after the strategy's Paper and Live decisions match on a recorded session via `/replay`.

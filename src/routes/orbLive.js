@@ -41,7 +41,7 @@ const liveDryRun         = require("../utils/liveDryRun");
 const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
-const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurrentBar, scalpActivityLog } = require("../utils/scalpStyleUI");
+const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog } = require("../utils/bbRsiStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -108,7 +108,7 @@ function log(msg) {
 function istNow() { return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }); }
 
 // Per-strategy override ORB_LIVE_DRY_RUN holds ORB in dry-run even when the
-// global LIVE_HARNESS_DRY_RUN flag is off (so Swing can go real independently).
+// global LIVE_HARNESS_DRY_RUN flag is off (so EMA_RSI_ST can go real independently).
 function isDryRun() {
   return liveDryRun.isDryRun("ORB");
 }
@@ -234,7 +234,7 @@ async function placeLiveBuy(side, sigSnapshot) {
 // _checkExits / EOD call placeLiveSell un-awaited on every tick. Without an
 // in-flight guard, a fast move firing two ticks inside one broker round-trip
 // (state.position is cleared only after the await) would place a SECOND SELL —
-// opening a naked short. Mirror the proven swing/scalp _squareOffInFlight guard.
+// opening a naked short. Mirror the proven swing/bb_rsi _squareOffInFlight guard.
 let _squareOffInFlight = false;
 async function placeLiveSell(reason) {
   if (_squareOffInFlight || !state.position) return;
@@ -606,7 +606,7 @@ function _orbLiveCapital() {
 }
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const dry = isDryRun();
   const data = loadData();
   const pos  = state.position;
@@ -823,7 +823,7 @@ ${faviconLink()}
 <style>
 ${sidebarCSS()}
 ${modalCSS()}
-${scalpStyleCSS()}
+${bbRsiStyleCSS()}
 </style></head>
 <body>
 <div class="app-shell">
@@ -836,7 +836,7 @@ ${buildSidebar('orbLive', liveActive, state.running, {
 
 <div class="banner ${dry ? "banner-dry" : "banner-live"}">${dry ? "⚠️ DRY-RUN MODE — Orders are logged but NOT placed at broker. Flip LIVE_HARNESS_DRY_RUN=false in Settings to enable real orders." : "🚨 LIVE MODE — Real broker orders are being placed at Fyers. Confirm intentional."}</div>
 
-${scalpTopBar({
+${bbRsiTopBar({
   title: `ORB Live Trade${dry ? " (DRY-RUN)" : ""}`,
   metaLine: `${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Square-off ${_forcedExit} IST · ${dry ? "decisions logged only" : "real Fyers orders"}`,
   running: state.running,
@@ -846,7 +846,7 @@ ${scalpTopBar({
   liveBadge: { kind: dry ? "dry" : "live" },
 })}
 
-${scalpCapitalStrip({
+${bbRsiCapitalStrip({
   starting: _orbLiveCapital(),
   current:  data.capital,
   allTime:  data.totalPnl,
@@ -854,9 +854,9 @@ ${scalpCapitalStrip({
   note: dry ? "Capital + PnL track DRY-RUN simulated fills." : "Capital updates from real broker fills.",
 })}
 
-${scalpStatGrid(statCards)}
+${bbRsiStatGrid(statCards)}
 
-${scalpCurrentBar({ bar: state.currentBar, resMin: RES_MIN })}
+${bbRsiCurrentBar({ bar: state.currentBar, resMin: RES_MIN })}
 
 <div id="ajax-position-section" style="margin-bottom:18px;">
 ${posHtml}
@@ -877,7 +877,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<div style="margin-bottom:18px;">
   <div id="orbl-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;${state.sessionTrades.length ? "" : "padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;"}">${state.sessionTrades.length ? "" : "No trades yet"}</div>
 </div>
 
-${scalpActivityLog({ logsJSON })}
+${bbRsiActivityLog({ logsJSON })}
 
 </div><!-- /main-content -->
 </div><!-- /app-shell -->

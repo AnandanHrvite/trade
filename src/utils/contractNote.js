@@ -28,13 +28,13 @@ function _num(v) {
 }
 
 /**
- * Map a route prefix ('/scalp-paper') or strategy mode ('scalp-paper') to the
- * broker whose charge schedule applies. Swing trades on Zerodha (Kite / env
+ * Map a route prefix ('/bb_rsi-paper') or strategy mode ('bb_rsi-paper') to the
+ * broker whose charge schedule applies. EMA_RSI_ST trades on Zerodha (Kite / env
  * default rates → broker undefined); every other strategy trades on Fyers.
  */
 function brokerForMode(modeOrPrefix) {
-  // Swing + EMA9+VWAP trade through Zerodha (Kite default → undefined); others Fyers.
-  return /swing|ema9vwap/i.test(String(modeOrPrefix || "")) ? undefined : "fyers";
+  // EMA_RSI_ST + EMA9+VWAP trade through Zerodha (Kite default → undefined); others Fyers.
+  return /ema_rsi_st|ema9vwap/i.test(String(modeOrPrefix || "")) ? undefined : "fyers";
 }
 const brokerForRoute = brokerForMode;
 

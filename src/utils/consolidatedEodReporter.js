@@ -9,7 +9,7 @@
  * Fires at 15:32 IST, NOT 15:30: the paper engines do their EOD square-off at
  * TRADE_STOP_TIME (15:30), so a 15:30:00 snapshot races those trades onto disk
  * and drops the day's last (often square-off-only) trades. The 2-min buffer lets
- * every square-off trade persist first. See scalpPaper.js / paPaper.js EOD check.
+ * every square-off trade persist first. See bbRsiPaper.js / paPaper.js EOD check.
  *
  * Gated by TG_DAYREPORT_CONSOLIDATED (and master TG_ENABLED) inside notify.js.
  *
@@ -62,8 +62,8 @@ function writeLastSentDate(date) {
 
 function collectTodayStats(istDate) {
   const byMode = {
-    SWING:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
-    SCALP:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    EMA_RSI_ST:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
+    BB_RSI:    { trades: 0, wins: 0, losses: 0, pnl: 0 },
     PA:       { trades: 0, wins: 0, losses: 0, pnl: 0 },
     ORB:      { trades: 0, wins: 0, losses: 0, pnl: 0 },
     EMA9VWAP: { trades: 0, wins: 0, losses: 0, pnl: 0 },

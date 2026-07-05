@@ -31,7 +31,7 @@ const tickRecorder       = require("../utils/tickRecorder");
 const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS, toastJS, tableEnhancerCSS, tableEnhancerJS } = require("../utils/sharedNav");
 const { renderHistoryPage, dailyFilesPaginate } = require("../utils/paperHistoryUI");
-const { scalpStyleCSS, scalpTopBar, scalpCapitalStrip, scalpStatGrid, scalpCurrentBar, scalpActivityLog } = require("../utils/scalpStyleUI");
+const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurrentBar, bbRsiActivityLog } = require("../utils/bbRsiStyleUI");
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
@@ -978,7 +978,7 @@ function _orbCapital() {
 }
 
 router.get("/status", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const data = loadData();
   const pos  = state.position;
 
@@ -1061,7 +1061,7 @@ router.get("/status", (req, res) => {
     },
   ];
 
-  // Position HTML — scalp-style rich card
+  // Position HTML — bb_rsi-style rich card
   const posHtml = pos ? (() => {
     const liveOpt = state.optionLtp;
     const optMove = (liveOpt != null) ? (liveOpt - pos.optionEntryLtp) : null;
@@ -1208,7 +1208,7 @@ ${faviconLink()}
 <style>
 ${sidebarCSS()}
 ${modalCSS()}
-${scalpStyleCSS()}
+${bbRsiStyleCSS()}
 </style></head>
 <body>
 <div class="app-shell">
@@ -1219,7 +1219,7 @@ ${buildSidebar('orbPaper', liveActive, state.running, {
 })}
 <div class="main-content">
 
-${scalpTopBar({
+${bbRsiTopBar({
   title: "ORB Paper Trade",
   metaLine: `Strategy: ${orbStrategy.NAME} · OR ${_orStart}–${_orEnd} · Square-off ${_forcedExit} IST · ${state.running ? "Auto-refreshes every 2s" : "Stopped"}`,
   running: state.running,
@@ -1229,16 +1229,16 @@ ${scalpTopBar({
   historyHref: "/orb-paper/history",
 })}
 
-${scalpCapitalStrip({
+${bbRsiCapitalStrip({
   starting: _orbCapital(),
   current:  data.capital,
   allTime:  data.totalPnl,
   startingThreshold: _orbCapital(),
 })}
 
-${scalpStatGrid(statCards)}
+${bbRsiStatGrid(statCards)}
 
-${scalpCurrentBar({ bar: state.currentBar, resMin: RES_MIN })}
+${bbRsiCurrentBar({ bar: state.currentBar, resMin: RES_MIN })}
 
 <div id="ajax-position-section" style="margin-bottom:18px;">
 ${posHtml}
@@ -1261,7 +1261,7 @@ ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div id="orbp-trades-box" style="background:#0d1320;border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;${state.sessionTrades.length ? "" : "padding:24px;text-align:center;color:#4a6080;font-size:0.82rem;"}">${state.sessionTrades.length ? "" : "No trades yet"}</div>
 </div>
 
-${scalpActivityLog({ logsJSON })}
+${bbRsiActivityLog({ logsJSON })}
 
 </div><!-- /main-content -->
 </div><!-- /app-shell -->
@@ -1544,7 +1544,7 @@ async function orbpManualEntry(side) {
 
 router.get("/history", (req, res) => {
   const data = loadData();
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const startCap = parseFloat(process.env.FYERS_INV_AMOUNT || "100000");
   res.send(renderHistoryPage({
     routePrefix: "/orb-paper",

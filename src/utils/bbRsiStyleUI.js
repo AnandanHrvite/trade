@@ -1,7 +1,7 @@
 /**
- * SCALP-STYLE UI HELPERS — shared shell for ORB / Scalp paper & live pages.
+ * BB_RSI-STYLE UI HELPERS — shared shell for ORB / BB_RSI paper & live pages.
  *
- * The Scalp Paper page (src/routes/scalpPaper.js) is the canonical UI design.
+ * The BB_RSI Paper page (src/routes/bbRsiPaper.js) is the canonical UI design.
  * These helpers extract the look-and-feel pieces (CSS, top bar, capital strip,
  * stat-card grid, current-bar grid, activity log) so the other strategy pages
  * can mirror it without duplicating ~600 lines of HTML each.
@@ -17,7 +17,7 @@ function inr(n) {
     : "—";
 }
 
-function scalpStyleCSS() {
+function bbRsiStyleCSS() {
   return `
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:100vh;display:flex;flex-direction:column;}
@@ -87,13 +87,13 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
  *   metaLine        string (smaller subtitle below the title)
  *   running         boolean
  *   vix             { enabled, value, maxEntry, strongOnly? }  (or null)
- *   primaryAction   { label, href, color? }  e.g. Start Scalp Paper
+ *   primaryAction   { label, href, color? }  e.g. Start BB_RSI Paper
  *   stopAction      { label, href }          shown when running
  *   historyHref     string (or null)
  *   resetJs         string (or null) — inline onclick JS
  *   liveBadge       { kind: 'dry' | 'live' } | null
  */
-function scalpTopBar(opts) {
+function bbRsiTopBar(opts) {
   const o = opts || {};
   const vixBadge = (o.vix && o.vix.enabled)
     ? (() => {
@@ -155,7 +155,7 @@ function scalpTopBar(opts) {
  *
  * opts: { starting, current, allTime, note, currentId, allTimeId, startingThreshold }
  */
-function scalpCapitalStrip(opts) {
+function bbRsiCapitalStrip(opts) {
   const o = opts || {};
   const starting = o.starting || 0;
   const current = o.current || 0;
@@ -186,7 +186,7 @@ function scalpCapitalStrip(opts) {
  *
  * card: { label, value, valueId?, sub?, subId?, accent? (border-top color), color? (val color) }
  */
-function scalpStatCard(card) {
+function bbRsiStatCard(card) {
   const c = card || {};
   const border = c.accent ? `border-top:2px solid ${c.accent};` : "";
   const valColor = c.color ? `color:${c.color};` : "";
@@ -203,14 +203,14 @@ function scalpStatCard(card) {
 /**
  * Stat grid wrapper.
  */
-function scalpStatGrid(cards) {
-  return `<div class="stat-grid">${(cards || []).map(scalpStatCard).join("")}</div>`;
+function bbRsiStatGrid(cards) {
+  return `<div class="stat-grid">${(cards || []).map(bbRsiStatCard).join("")}</div>`;
 }
 
 /**
  * Current N-min bar (forming) — OHLC mini cards.
  */
-function scalpCurrentBar(opts) {
+function bbRsiCurrentBar(opts) {
   const o = opts || {};
   const bar = o.bar || null;
   const resMin = o.resMin || 5;
@@ -232,7 +232,7 @@ function scalpCurrentBar(opts) {
  * Activity log section + JS for search/filter/paginate.
  * Emits a <div id="logBox"> and a <div id="logPag"> plus inline script.
  */
-function scalpActivityLog(opts) {
+function bbRsiActivityLog(opts) {
   const o = opts || {};
   const logsJSON = o.logsJSON || "[]";
   return `
@@ -324,11 +324,11 @@ logFilter();
 
 module.exports = {
   inr,
-  scalpStyleCSS,
-  scalpTopBar,
-  scalpCapitalStrip,
-  scalpStatCard,
-  scalpStatGrid,
-  scalpCurrentBar,
-  scalpActivityLog,
+  bbRsiStyleCSS,
+  bbRsiTopBar,
+  bbRsiCapitalStrip,
+  bbRsiStatCard,
+  bbRsiStatGrid,
+  bbRsiCurrentBar,
+  bbRsiActivityLog,
 };

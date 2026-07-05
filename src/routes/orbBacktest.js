@@ -2,7 +2,7 @@
  * ORB BACKTEST — /orb-backtest
  * ─────────────────────────────────────────────────────────────────────────────
  * Date-range backtest of the Opening Range Breakout strategy. Reuses the
- * shared backtest UI helper for full parity with scalp/PA backtest pages.
+ * shared backtest UI helper for full parity with bb_rsi/PA backtest pages.
  *
  * Endpoints:
  *   GET /orb-backtest                → form (no params)
@@ -212,7 +212,7 @@ router.get("/idle", (req, res) => {
 router.get("/", async (req, res) => {
   let { from, to } = req.query;
   // No params → default to last 30 days so the page always renders the full
-  // results layout (matches scalp/PA backtest behaviour — no separate idle UI).
+  // results layout (matches bb_rsi/PA backtest behaviour — no separate idle UI).
   if (!from || !to) {
     const today = new Date();
     const def30 = new Date(); def30.setDate(today.getDate() - 30);
@@ -281,7 +281,7 @@ router.get("/", async (req, res) => {
 });
 
 function renderIdleForm() {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const today = new Date().toISOString().slice(0, 10);
   const def30 = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })();
   return `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>${faviconLink()}<title>ORB Backtest</title>

@@ -145,9 +145,9 @@ td.pe { color: var(--red); }
 .entry-arrow.down::after { border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid var(--red); }
 .sl-line { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--red); z-index: 1; }
 .sl-tag { position: absolute; left: 4px; font-size: 0.6rem; color: var(--red); font-weight: 700; background: var(--bg); padding: 0 4px; }
-.swing-dot { width: 10px; height: 10px; border-radius: 50%; position: absolute; z-index: 3; }
-.swing-dot.high { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
-.swing-dot.low { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
+.ema_rsi_st-dot { width: 10px; height: 10px; border-radius: 50%; position: absolute; z-index: 3; }
+.ema_rsi_st-dot.high { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.4); }
+.ema_rsi_st-dot.low { background: var(--green); box-shadow: 0 0 6px rgba(34,197,94,0.4); }
 .neckline { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--amber); z-index: 1; }
 .neckline-tag { position: absolute; right: 4px; font-size: 0.6rem; color: var(--amber); font-weight: 700; background: var(--bg); padding: 0 4px; }
 .trendline { position: absolute; z-index: 1; }
@@ -188,7 +188,7 @@ td.pe { color: var(--red); }
 
 /* ── Comparison Table colors ───────────────────────────────────────────── */
 .cmp-sar { background: rgba(59,130,246,0.08); }
-.cmp-scalp { background: rgba(168,85,247,0.08); }
+.cmp-bb_rsi { background: rgba(168,85,247,0.08); }
 .cmp-pa { background: rgba(45,212,191,0.08); }
 
 /* ── Tip box ───────────────────────────────────────────────────────────── */
@@ -220,7 +220,7 @@ td.pe { color: var(--red); }
     </div>
     <div class="pillars">
       <div class="pillar">5-Min Candle</div>
-      <div class="pillar">Swing-Based S/R</div>
+      <div class="pillar">EMA_RSI_ST-Based S/R</div>
       <div class="pillar">4 Chart Patterns</div>
       <div class="pillar">Retest-Confirmed Entry</div>
       <div class="pillar">Structural SL (cap 25pt)</div>
@@ -298,7 +298,7 @@ td.pe { color: var(--red); }
         <li><strong>New <code>PA_ADX_RISING_REQUIRED</code> (default <code>true</code>)</strong> &mdash; require <code>ADX[now] &ge; ADX[2 bars ago]</code> for every entry (engulfing, pinbar, BOS, IB, double top/bottom, triangles). Blocks counter-trend reversals when the trend is fading. Replaces the more aggressive directional gate that was advertised but never wired.</li>
         <li><strong>⚠ PA_BREAKEVEN_TRIGGER + PA_BREAKEVEN_BUFFER are UI-only, engine reverted.</strong> The feat commit <code>c131923</code> (2026-05-21) wired these into <code>paPaper.js</code> / <code>paLive.js</code> / <code>paBacktest.js</code>, but commit <code>5f1944d</code> later the same day reverted the readers. The Settings UI rows still exist (<code>settings.js:209-210</code>) but changing the values has no effect on trades. <strong>Same zombie state PA_ADX_DIRECTIONAL was in before its UI was removed.</strong> Resolution (re-add readers or drop UI rows) is deferred past 2026-06-02. If you see these rows in Settings and try to use them, they will not behave as the label suggests.</li>
         <li><strong>Sibling strategy launched</strong> &mdash; ORB (Opening Range Breakout, single-leg CE/PE) runs on the same Fyers socket fan-out via <code>socketManager</code> + <code>sharedSocketState</code>. PA remains fully independent and can run alongside it. See the new ORB guide under <code>/docs</code>.</li>
-        <li><strong>Real-Time Monitor expansion</strong> &mdash; <code>/realtime</code> now renders PA's card alongside Swing / Scalp / ORB (was hardcoded to 3 strategies). Gated by <code>PA_MODE_ENABLED</code>.</li>
+        <li><strong>Real-Time Monitor expansion</strong> &mdash; <code>/realtime</code> now renders PA's card alongside EMA_RSI_ST / BB_RSI / ORB (was hardcoded to 3 strategies). Gated by <code>PA_MODE_ENABLED</code>.</li>
         <li><strong>Tick Recorder + Replay</strong> &mdash; <code>TICK_RECORDER_ENABLED=true</code> (default) records every spot / option / VIX tick during PA paper/live sessions to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code>. The new <code>/replay</code> route re-runs a recorded session through the PA Paper <code>onTick()</code> handler for deterministic A/B settings comparison. Pure observer at the trade path &mdash; zero impact.</li>
         <li><strong>Live Harness DRY-RUN gate</strong> &mdash; global <code>LIVE_HARNESS_DRY_RUN</code> (default <code>true</code>) is a master safety. PA Live order placement requires <em>both</em> <code>PA_ENABLED=true</code> and <code>LIVE_HARNESS_DRY_RUN=false</code>. The legacy <code>/pa-live</code> stays available; the new <code>/pa-live-harness</code> route runs Live by wrapping the Paper engine so decisions match by construction.</li>
         <li><strong>Stale-default corrections in this guide</strong> (no engine change &mdash; the deployed defaults already matched, the doc was wrong): <code>PA_TRAIL_START=600</code> (was documented as <code>350</code>), <code>PA_TRAIL_TIERS=1000:50,1500:60,2500:70,4000:80</code> (was <code>500:55,...</code>), <code>PA_CANDLE_TRAIL_BARS=3</code> (was <code>2</code>).</li>
@@ -333,16 +333,16 @@ td.pe { color: var(--red); }
 
     <div class="section-header" style="margin-top:24px;">
       <h2><span class="num">0c</span> Historical — v4.4.1 (2026-05-02)</h2>
-      <p>Unified Real-Time Monitor &mdash; one screen to see PA alongside Swing and Scalp. UI / observability only; <strong>no PA pattern, S/R, RSI confluence, SL, or exit changes</strong>.</p>
+      <p>Unified Real-Time Monitor &mdash; one screen to see PA alongside EMA_RSI_ST and BB_RSI. UI / observability only; <strong>no PA pattern, S/R, RSI confluence, SL, or exit changes</strong>.</p>
     </div>
     <div class="card">
       <ul style="padding-left:22px; line-height:1.9;">
         <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
         <li><strong>PRICE ACTION card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
-        <li><strong>Rollup table</strong> includes PA's row alongside Swing + Scalp + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
+        <li><strong>Rollup table</strong> includes PA's row alongside EMA_RSI_ST + BB_RSI + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
         <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/pa-paper/status</code> and <code>/pa-live/status</code>. The Real-Time Monitor stays reachable while PA Live is active.</li>
         <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
-        <li><strong>No new backend aggregation</strong> &mdash; the browser polls PA's existing <code>/pa-paper/status/data</code> or <code>/pa-live/status/data</code> in parallel with Swing + Scalp, so the unified screen always reads the same source the dedicated PA pages already trust.</li>
+        <li><strong>No new backend aggregation</strong> &mdash; the browser polls PA's existing <code>/pa-paper/status/data</code> or <code>/pa-live/status/data</code> in parallel with EMA_RSI_ST + BB_RSI, so the unified screen always reads the same source the dedicated PA pages already trust.</li>
       </ul>
     </div>
 
@@ -357,7 +357,7 @@ td.pe { color: var(--red); }
         <li><strong>Live trade-record schema parity</strong> &mdash; PA Live now captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on the trade record at exit (matching PA Paper).</li>
         <li><strong>Paper-history Restore</strong> &mdash; <code>POST /pa-paper/history/restore</code> rebuilds a deleted PA session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>. New helper <code>readDailyTrades("pa", date)</code> in <code>src/utils/tradeLogger.js</code>.</li>
         <li><strong>Sync to Local</strong> &mdash; Dashboard button streams <code>~/trading-data/</code> as a <code>tar.gz</code> (<code>/sync/info</code> + <code>/sync/download-all</code>), so PA paper + live trade logs and the PA active-position file can be mirrored locally without SSH.</li>
-        <li><strong>Settings cleanup</strong> &mdash; <code>PA_ENABLED</code> + <code>PA_OPT_STOP_PCT</code> are now editable via Settings UI; expiry override + type moved from Swing to <strong>Common &mdash; Instrument</strong> (read by <code>src/config/instrument.js</code> for all 3 engines including PA).</li>
+        <li><strong>Settings cleanup</strong> &mdash; <code>PA_ENABLED</code> + <code>PA_OPT_STOP_PCT</code> are now editable via Settings UI; expiry override + type moved from EMA_RSI_ST to <strong>Common &mdash; Instrument</strong> (read by <code>src/config/instrument.js</code> for all 3 engines including PA).</li>
         <li><strong>Consolidation date normalized</strong> to <code>YYYY-MM-DD</code> &mdash; PA sessions in older formats now line up correctly on <code>/consolidation</code> daily/monthly/yearly roll-ups.</li>
       </ul>
     </div>
@@ -388,7 +388,7 @@ td.pe { color: var(--red); }
         <li><strong>Per-session delete + view modal</strong> on <code>/pa-paper/history</code>.</li>
         <li><strong>PA panels on dashboard</strong> with Start-All Paper / Live buttons.</li>
         <li><strong>Telegram</strong> &mdash; dedicated PA toggles + master <code>TG_ENABLED</code> + 15:30 IST consolidated report.</li>
-        <li><strong>Consolidation page</strong> aggregates PA with Swing + Scalp.</li>
+        <li><strong>Consolidation page</strong> aggregates PA with EMA_RSI_ST + BB_RSI.</li>
         <li><strong>P&amp;L History</strong> &mdash; PA live P&amp;L under Fyers totals.</li>
         <li><strong>Configurable RSI caps</strong> (<code>PA_RSI_CAPS_ENABLED</code>).</li>
         <li><strong>Candle trail with profit-lock floor</strong> &mdash; parallel exits.</li>
@@ -421,7 +421,7 @@ td.pe { color: var(--red); }
         <div>
           <ul>
             <li><strong>Zero indicator lag</strong> — reads what price IS doing</li>
-            <li><strong>Swing-based S/R</strong> from dynamic swing highs/lows (30-candle lookback)</li>
+            <li><strong>EMA_RSI_ST-based S/R</strong> from dynamic swing highs/lows (30-candle lookback)</li>
             <li><strong>Retest confirmation</strong> filters out breakout-then-instant-reversal false signals</li>
           </ul>
         </div>
@@ -438,7 +438,7 @@ td.pe { color: var(--red); }
         </div>
         <div style="text-align:center; padding: 16px;">
           <div style="font-size: 2rem; margin-bottom: 8px;">&#x1F4CA;</div>
-          <div class="fw-700" style="color:#fff;">Swing-Based S/R</div>
+          <div class="fw-700" style="color:#fff;">EMA_RSI_ST-Based S/R</div>
           <div class="fs-sm text-muted mt-1">Last two swing highs/lows (30-candle lookback)</div>
         </div>
         <div style="text-align:center; padding: 16px;">
@@ -468,7 +468,7 @@ td.pe { color: var(--red); }
   <div class="container">
     <div class="section-header">
       <h2><span class="num">2</span> Support &amp; Resistance Detection</h2>
-      <p>Swing highs and swing lows within the last 30 candles are the structural anchors that all four chart patterns are built from. The same swing points also drive the structure trail.</p>
+      <p>EMA_RSI_ST highs and swing lows within the last 30 candles are the structural anchors that all four chart patterns are built from. The same swing points also drive the structure trail.</p>
     </div>
 
     <div class="grid-2">
@@ -495,14 +495,14 @@ td.pe { color: var(--red); }
 
     <!-- S/R Visual Chart -->
     <div class="chart-box mt-2">
-      <div class="chart-title">Swing Detection — Swing Highs (Red) &amp; Swing Lows (Green)</div>
+      <div class="chart-title">EMA_RSI_ST Detection — Swing Highs (Red) &amp; Swing Lows (Green)</div>
       <!-- Resistance reference at top -->
       <div class="sr-zone resistance" style="top: 16px; height: 36px;">
-        <span class="sr-label resistance" style="top: 10px;">SWING-HIGH RESISTANCE</span>
+        <span class="sr-label resistance" style="top: 10px;">EMA_RSI_ST-HIGH RESISTANCE</span>
       </div>
       <!-- Support reference at bottom -->
       <div class="sr-zone support" style="bottom: 36px; height: 36px;">
-        <span class="sr-label support" style="bottom: 10px;">SWING-LOW SUPPORT</span>
+        <span class="sr-label support" style="bottom: 10px;">EMA_RSI_ST-LOW SUPPORT</span>
       </div>
       <div class="chart-area" style="justify-content: center; padding: 30px 0 30px;">
         <!-- Candle 1 -->
@@ -518,7 +518,7 @@ td.pe { color: var(--red); }
           <div class="wick green" style="height: 10px;"></div>
           <div class="body green" style="height: 40px;"></div>
           <div class="wick green" style="height: 8px;"></div>
-          <div class="label">Swing H</div>
+          <div class="label">EMA_RSI_ST H</div>
         </div>
         <!-- Candle 3 -->
         <div class="candle">
@@ -540,7 +540,7 @@ td.pe { color: var(--red); }
           <div class="body red" style="height: 14px;"></div>
           <div class="wick red" style="height: 36px;"></div>
           <div class="swing-dot low" style="position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);"></div>
-          <div class="label">Swing L</div>
+          <div class="label">EMA_RSI_ST L</div>
         </div>
         <!-- Candle 6 -->
         <div class="candle">
@@ -555,7 +555,7 @@ td.pe { color: var(--red); }
           <div class="wick green" style="height: 8px;"></div>
           <div class="body green" style="height: 36px;"></div>
           <div class="wick green" style="height: 10px;"></div>
-          <div class="label">Swing H</div>
+          <div class="label">EMA_RSI_ST H</div>
         </div>
         <!-- Candle 8 -->
         <div class="candle">
@@ -946,7 +946,7 @@ td.pe { color: var(--red); }
 <section id="trail">
   <div class="container">
     <div class="section-header">
-      <h2><span class="num">6</span> Breakeven, then Swing-Based Trail</h2>
+      <h2><span class="num">6</span> Breakeven, then EMA_RSI_ST-Based Trail</h2>
       <p>Stop management has two stages: a one-time <strong>breakeven lift</strong> once the trade is in profit, then a <strong>swing-structure trail</strong> that tightens to each new swing point. Both only ever move the SL the favourable way — they never widen it.</p>
     </div>
 
@@ -985,7 +985,7 @@ td.pe { color: var(--red); }
           <div class="wick green" style="height: 10px;"></div>
           <div class="label">C2</div>
         </div>
-        <!-- Swing low (SL2 trail point) -->
+        <!-- EMA_RSI_ST low (SL2 trail point) -->
         <div class="candle" style="margin-top: 20px; position: relative;">
           <div class="wick red" style="height: 6px;"></div>
           <div class="body red" style="height: 14px;"></div>
@@ -1175,7 +1175,7 @@ td.pe { color: var(--red); }
           <li>Each save records the current <strong>IST date</strong></li>
           <li>On boot, if the saved date is <strong>not today</strong>, the file is <strong>discarded</strong> — stale positions from yesterday are invalid for intraday</li>
           <li>Prevents phantom recovery of expired positions</li>
-          <li>Crash recovery handles Swing / Scalp / PA (each with its own persist file). ORB does not yet have a crash-recovery snapshot.</li>
+          <li>Crash recovery handles EMA_RSI_ST / BB_RSI / PA (each with its own persist file). ORB does not yet have a crash-recovery snapshot.</li>
         </ul>
       </div>
     </div>
@@ -1246,7 +1246,7 @@ td.pe { color: var(--red); }
           <tr>
             <th>Aspect</th>
             <th class="cmp-sar" style="color: var(--blue);">Strategy 1 (SAR+EMA)</th>
-            <th class="cmp-scalp" style="color: var(--purple);">Scalp (BB+RSI)</th>
+            <th class="cmp-bb_rsi" style="color: var(--purple);">BB_RSI (BB+RSI)</th>
             <th class="cmp-pa" style="color: var(--teal);">Price Action</th>
           </tr>
         </thead>
@@ -1254,49 +1254,49 @@ td.pe { color: var(--red); }
           <tr>
             <td><strong>Timeframe</strong></td>
             <td class="cmp-sar">15-min</td>
-            <td class="cmp-scalp">3-min</td>
+            <td class="cmp-bb_rsi">3-min</td>
             <td class="cmp-pa"><strong>5-min</strong></td>
           </tr>
           <tr>
             <td><strong>Entry Signal</strong></td>
             <td class="cmp-sar">EMA9 touch + SAR + RSI</td>
-            <td class="cmp-scalp">BB breakout + RSI</td>
+            <td class="cmp-bb_rsi">BB breakout + RSI</td>
             <td class="cmp-pa"><strong>Chart-pattern breakout + retest</strong></td>
           </tr>
           <tr>
             <td><strong>Primary SL</strong></td>
             <td class="cmp-sar">SAR value</td>
-            <td class="cmp-scalp">Previous candle</td>
+            <td class="cmp-bb_rsi">Previous candle</td>
             <td class="cmp-pa"><strong>Pattern structure (capped 8–25)</strong></td>
           </tr>
           <tr>
             <td><strong>Trail SL</strong></td>
             <td class="cmp-sar">SAR dots (tiered)</td>
-            <td class="cmp-scalp">PSAR (tighten only)</td>
+            <td class="cmp-bb_rsi">PSAR (tighten only)</td>
             <td class="cmp-pa"><strong>Breakeven → swing lows/highs</strong></td>
           </tr>
           <tr>
             <td><strong>Lag</strong></td>
             <td class="cmp-sar">Medium</td>
-            <td class="cmp-scalp">Low</td>
+            <td class="cmp-bb_rsi">Low</td>
             <td class="cmp-pa"><strong>None (pure structure)</strong></td>
           </tr>
           <tr>
             <td><strong>Confluence Filter</strong></td>
             <td class="cmp-sar">SAR + RSI</td>
-            <td class="cmp-scalp">RSI + CPR</td>
+            <td class="cmp-bb_rsi">RSI + CPR</td>
             <td class="cmp-pa"><strong>None (body size only)</strong></td>
           </tr>
           <tr>
             <td><strong>Pattern Count</strong></td>
             <td class="cmp-sar">1 (EMA touch)</td>
-            <td class="cmp-scalp">1 (BB breakout)</td>
+            <td class="cmp-bb_rsi">1 (BB breakout)</td>
             <td class="cmp-pa"><strong>4 chart patterns</strong></td>
           </tr>
           <tr>
             <td><strong>Market Filter</strong></td>
             <td class="cmp-sar">VIX (per-mode)</td>
-            <td class="cmp-scalp">VIX (per-mode)</td>
+            <td class="cmp-bb_rsi">VIX (per-mode)</td>
             <td class="cmp-pa"><strong>VIX (per-mode, optional)</strong></td>
           </tr>
         </tbody>

@@ -1,7 +1,7 @@
 /**
  * ALL BACKTEST — /all-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Unified dashboard: run SWING + SCALP + PRICE ACTION backtests from one page
+ * Unified dashboard: run EMA_RSI_ST + BB_RSI + PRICE ACTION backtests from one page
  * with a shared date/resolution form. Renders only the top stat-grid panels
  * (no trade lists). Triggers the existing backtest routes sequentially (job
  * manager is 1-at-a-time), then reads the saved summaries.
@@ -17,13 +17,13 @@ const router  = express.Router();
 const { loadResult } = require("../utils/resultStore");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
 const { ACTIVE } = require("../strategies");
-const scalpStrategy = require("../strategies/scalp_bb_cpr");
+const bbRsiStrategy = require("../strategies/bb_rsi");
 const paStrategy    = require("../strategies/price_action");
 const orbStrategy   = require("../strategies/orb_breakout");
 const sharedSocketState = require("../utils/sharedSocketState");
 
-const SWING_KEY = ACTIVE;
-const SCALP_KEY = "SCALP_BACKTEST";
+const EMA_RSI_ST_KEY = ACTIVE;
+const BB_RSI_KEY = "BB_RSI_BACKTEST";
 const PA_KEY    = "PA_BACKTEST";
 const ORB_KEY   = "ORB_BACKTEST";
 
@@ -116,7 +116,7 @@ function timeAgo(d) {
 
 // ── Dashboard page ───────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
@@ -129,24 +129,24 @@ router.get("/", (req, res) => {
   const RES = "5";
 
   // Per-strategy mode toggles — gate panels by Settings → Strategy Modes
-  const swingOn    = _modeOn("SWING_MODE_ENABLED");
-  const scalpOn    = _modeOn("SCALP_MODE_ENABLED");
+  const emaRsiStOn    = _modeOn("EMA_RSI_ST_MODE_ENABLED");
+  const bbRsiOn    = _modeOn("BB_RSI_MODE_ENABLED");
   const paOn       = _modeOn("PA_MODE_ENABLED");
   const orbOn      = _modeOn("ORB_MODE_ENABLED");
 
-  const swingResult    = swingOn    ? loadResult(SWING_KEY)    : null;
-  const scalpResult    = scalpOn    ? loadResult(SCALP_KEY)    : null;
+  const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
+  const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
   const paResult       = paOn       ? loadResult(PA_KEY)       : null;
   const orbResult      = orbOn      ? loadResult(ORB_KEY)      : null;
 
-  const swingPanel = swingOn ? renderPanel(
-    "SWING", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
-    SWING_KEY, SWING_KEY, "/swing-backtest", swingResult
+  const emaRsiStPanel = emaRsiStOn ? renderPanel(
+    "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
+    EMA_RSI_ST_KEY, EMA_RSI_ST_KEY, "/ema_rsi_st-backtest", emaRsiStResult
   ) : "";
-  const scalpPanel = scalpOn ? renderPanel(
-    "SCALP", { bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", border: "rgba(245,158,11,0.25)" },
-    scalpStrategy && scalpStrategy.NAME ? scalpStrategy.NAME : "SCALP_BB_PSAR_RSI_V6.1",
-    SCALP_KEY, "/scalp-backtest", scalpResult
+  const bbRsiPanel = bbRsiOn ? renderPanel(
+    "BB_RSI", { bg: "rgba(245,158,11,0.12)", fg: "#fbbf24", border: "rgba(245,158,11,0.25)" },
+    bbRsiStrategy && bbRsiStrategy.NAME ? bbRsiStrategy.NAME : "BB_RSI_BB_PSAR_RSI_V6.1",
+    BB_RSI_KEY, "/bb_rsi-backtest", bbRsiResult
   ) : "";
   const paPanel = paOn ? renderPanel(
     "PRICE ACTION", { bg: "rgba(139,92,246,0.12)", fg: "#a78bfa", border: "rgba(139,92,246,0.25)" },
@@ -293,11 +293,11 @@ ${buildSidebar('allBacktest', liveActive)}
     ${(() => { const mths=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']; const labels=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const curMonth=new Date().getMonth(); return mths.map((k,i) => i<=curMonth ? `<button class="preset-btn" onclick="setPreset('${k}')">${labels[i]}</button>` : `<button class="preset-btn" disabled style="opacity:0.3;cursor:not-allowed">${labels[i]}</button>`).join('\n    '); })()}
   </div>
 
-  ${swingPanel}
-  ${scalpPanel}
+  ${emaRsiStPanel}
+  ${bbRsiPanel}
   ${paPanel}
   ${orbPanel}
-  ${(!swingOn && !scalpOn && !paOn && !orbOn) ? `
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

@@ -499,7 +499,7 @@ Price rolls over. A tick prints spot 24,344 (&le; 24,345).
   </div>
 
   <div class="note note-warn">
-    <strong>No bid-ask spread guard on ORB exits.</strong> The shared <code>MAX_BID_ASK_SPREAD_PTS</code> guard is <em>not</em> wired into <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; ORB exits fill on the next tick without a spread check (it is a Swing/Scalp/PA guard). Confirm the spread on illiquid expiries before going live.
+    <strong>No bid-ask spread guard on ORB exits.</strong> The shared <code>MAX_BID_ASK_SPREAD_PTS</code> guard is <em>not</em> wired into <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; ORB exits fill on the next tick without a spread check (it is a EMA_RSI_ST/BB_RSI/PA guard). Confirm the spread on illiquid expiries before going live.
   </div>
 
   <div class="note note-danger">
@@ -555,7 +555,7 @@ Price rolls over. A tick prints spot 24,344 (&le; 24,345).
       <tr><td>EOD forced exit</td><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Any open position is squared off at this time &mdash; the only non-stop exit</td></tr>
       <tr><td>VIX gate</td><td><code>ORB_VIX_*</code></td><td>see &sect;7</td><td>Per-mode VIX regime filter (off by default)</td></tr>
       <tr><td>Expiry-day-only</td><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
-      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><strong>Not wired into ORB</strong> &mdash; the shared guard applies to Swing/Scalp/PA, not ORB entries/exits</td></tr>
+      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><strong>Not wired into ORB</strong> &mdash; the shared guard applies to EMA_RSI_ST/BB_RSI/PA, not ORB entries/exits</td></tr>
     </tbody>
   </table>
 </section>
@@ -596,7 +596,7 @@ Price rolls over. A tick prints spot 24,344 (&le; 24,345).
     <tbody>
       <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB sidebar group AND Settings section. When off, both are hidden.</td></tr>
       <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for ORB Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
-      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; keeps ORB in dry-run (log only, no real order) even when the global <code>LIVE_HARNESS_DRY_RUN</code> is off. Lets you take Swing/etc. live while ORB stays simulated.</td></tr>
+      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; keeps ORB in dry-run (log only, no real order) even when the global <code>LIVE_HARNESS_DRY_RUN</code> is off. Lets you take EMA_RSI_ST/etc. live while ORB stays simulated.</td></tr>
       <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow ORB entries on weekly expiry day (Tuesday)</td></tr>
     </tbody>
   </table>
@@ -688,7 +688,7 @@ Price rolls over. A tick prints spot 24,344 (&le; 24,345).
   <h2><span class="section-icon icon-red">&#9888;</span> 11. Known Gaps &amp; Roadmap</h2>
 
   <ul>
-    <li><strong>Crash-recovery gap (still open).</strong> <code>src/utils/positionPersist.js</code> does not handle ORB positions. The other strategies (Swing / Scalp / PA) write <code>.active_*_position.json</code> on entry via their legacy <code>*Live.js</code> routes; ORB does not, so an open ORB position is <strong>not</strong> reconciled on restart. If a process crash happens with an open ORB Live position, it will be orphaned at the broker and not automatically squared off. (<code>orbPaper.js:rehydrateSessionFromJsonl</code> restores <em>closed</em> session trades from the day JSONL for display only &mdash; it is not position recovery.) <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into the ORB routes + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
+    <li><strong>Crash-recovery gap (still open).</strong> <code>src/utils/positionPersist.js</code> does not handle ORB positions. The other strategies (EMA_RSI_ST / BB_RSI / PA) write <code>.active_*_position.json</code> on entry via their legacy <code>*Live.js</code> routes; ORB does not, so an open ORB position is <strong>not</strong> reconciled on restart. If a process crash happens with an open ORB Live position, it will be orphaned at the broker and not automatically squared off. (<code>orbPaper.js:rehydrateSessionFromJsonl</code> restores <em>closed</em> session trades from the day JSONL for display only &mdash; it is not position recovery.) <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into the ORB routes + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
     <li><strong>No per-trade unrealised-&#8377; stop.</strong> The candle-structure trail (&sect;5) and the 15:15 square-off are the only exits; <code>ORB_MAX_DAILY_LOSS</code> guards <em>entries</em> only and never closes an open trade (&sect;6). A trade can therefore sit deep red between candle closes with no rupee-cap intervention. Adding one would mean a new <code>ORB_MAX_TRADE_LOSS</code> checked in <code>_checkExits</code> on every tick.</li>
     <li><strong>Entry quality, not exits, is the loss lever.</strong> The pre-rewrite cohort (15&ndash;19 Jun, 0/4, &minus;&#8377;6,465) showed the losses came from <em>dead-on-arrival false breakouts</em> &mdash; trades that reversed straight back through the box, peak premium &asymp; entry. The candle trail exits those faster and smaller, but it cannot rescue a move that never goes in favour. The real improvement is breakout <em>confirmation</em> / entry filtering, not further exit tuning.</li>
     <li><strong>No <code>STRONG_ONLY</code> standalone toggle.</strong> The strength classification exists (sweet-spot tiering), but only the VIX gate uses it. Other strategies have a stand-alone <code>*_STRONG_ONLY</code> env that blocks MARGINAL regardless of VIX; ORB does not. (In live data STRONG essentially never fires &mdash; every real trade has been MARGINAL.) If you want STRONG-only behaviour without VIX, this would be a small additive change in <code>src/strategies/orb_breakout.js</code>.</li>

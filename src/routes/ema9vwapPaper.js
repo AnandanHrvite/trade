@@ -24,7 +24,7 @@ const sharedSocketState = require("../utils/sharedSocketState");
 const socketManager = require("../utils/socketManager"); // ← robust socket wrapper
 
 // EMA9+VWAP runs as a SECONDARY socket consumer (addCallback) so it never steals
-// SWING's primary tick feed. This id keys its fan-out callback.
+// EMA_RSI_ST's primary tick feed. This id keys its fan-out callback.
 const CALLBACK_ID = "ema9vwap-paper";
 
 // Confirmation candle OFF by default — the EMA9-vs-VWAP-band cross IS itself a
@@ -102,7 +102,7 @@ let _cachedClosedCandleSL = null; // cached getSignal stopLoss from last FULLY C
 
 // ── Same-side SL cooldown ───────────────────────────────────────────────────
 // After an SL hit (price SL or option stop), block new entries on THAT side for
-// EMA9VWAP_SL_PAUSE_CANDLES candles. Mirrors SCALP's per-side pause.
+// EMA9VWAP_SL_PAUSE_CANDLES candles. Mirrors BB_RSI's per-side pause.
 function _setSlPause(side) {
   if (!_EMA9VWAP_SL_PAUSE_CANDLES || _EMA9VWAP_SL_PAUSE_CANDLES <= 0) return;
   ptState._slPauseUntilBySide = ptState._slPauseUntilBySide || { CE: 0, PE: 0 };
@@ -422,14 +422,14 @@ function scheduleAutoStop(stopFn) {
 }
 
 function getCapitalFromEnv() {
-  // Swing trades through Zerodha — its paper capital is the shared Zerodha investment pool.
+  // EMA_RSI_ST trades through Zerodha — its paper capital is the shared Zerodha investment pool.
   return parseFloat(process.env.ZERODHA_INV_AMOUNT || "100000");
 }
 
 // ── 0DTE expiry-day detector ─────────────────────────────────────────────────
-// Swing on 0DTE = bad idea (theta+gamma crush 15-min hold times). Used by
+// EMA_RSI_ST on 0DTE = bad idea (theta+gamma crush 15-min hold times). Used by
 // /start to block the user with a warning unless ?force=1 is passed.
-function _getEffectiveSwingExpiry() {
+function _getEffectiveEmaRsiStExpiry() {
   const swing  = (process.env.EMA9VWAP_OPTION_EXPIRY_OVERRIDE || "").trim();
   const common = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
   return swing || common || null;
@@ -438,8 +438,8 @@ function _getISTDateStr() {
   const ist = new Date(Date.now() + 19800000);
   return ist.toISOString().slice(0, 10);
 }
-function isSwingExpiringToday() {
-  const expiry = _getEffectiveSwingExpiry();
+function isEmaRsiStExpiringToday() {
+  const expiry = _getEffectiveEmaRsiStExpiry();
   return expiry && expiry === _getISTDateStr();
 }
 
@@ -1697,7 +1697,7 @@ function onTick(tick) {
   }
 
   // ── Per-trade points stop: catastrophic spot-points cap (EMA9VWAP_STOP_LOSS_PTS) ──
-  // Mirrors SCALP_STOP_LOSS_PTS — exit once spot has moved this many points against
+  // Mirrors BB_RSI_STOP_LOSS_PTS — exit once spot has moved this many points against
   // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
   // when the trailing SL sits wider than the cap (e.g. a 70pt prevHigh/Low stop).
   // Read live from process.env so a Settings change applies without a restart.
@@ -1922,8 +1922,8 @@ router.get("/start", async (req, res) => {
   // ── 0DTE expiry-day warning ────────────────────────────────────────────────
   // Block start if today is the configured EMA9+VWAP expiry — EMA9+VWAP strategy bleeds
   // on 0DTE due to theta+gamma. User can override with ?force=1 if intentional.
-  if (isSwingExpiringToday() && req.query.force !== "1") {
-    const _exp = _getEffectiveSwingExpiry();
+  if (isEmaRsiStExpiringToday() && req.query.force !== "1") {
+    const _exp = _getEffectiveEmaRsiStExpiry();
     return res.status(409).json({
       success: false,
       code: "EXPIRY_DAY_0DTE",
@@ -2197,7 +2197,7 @@ router.get("/start", async (req, res) => {
 
   // Start the socket manager — single socket, spot-only to begin
   // Secondary socket consumer — register a fan-out callback so we never overwrite
-  // SWING's primary onTick. Start the socket only if nobody else has.
+  // EMA_RSI_ST's primary onTick. Start the socket only if nobody else has.
   if (socketManager.isRunning()) {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
   } else {
@@ -3903,9 +3903,9 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/ema9vwap-paper",
     sidebarKey: "ema9vwapHistory",
-    pageTitle: "📊 Swing Paper Trade History",
-    pageDocTitle: "Swing Paper — History",
-    modalLabel: "Swing Paper",
+    pageTitle: "📊 EMA_RSI_ST Paper Trade History",
+    pageDocTitle: "EMA_RSI_ST Paper — History",
+    modalLabel: "EMA_RSI_ST Paper",
     liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
@@ -4172,7 +4172,7 @@ router.get("/client.js", (req, res) => {
         const ok = await showConfirm({
           icon: '⚠️',
           title: '0DTE Expiry Day — Not Recommended',
-          message: data.message + '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update Swing Option Expiry in Settings instead.)',
+          message: data.message + '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update EMA_RSI_ST Option Expiry in Settings instead.)',
           confirmText: 'Start Anyway',
           confirmClass: 'modal-btn-danger'
         });
@@ -4251,7 +4251,7 @@ function ptExportCSV() {
   var d = new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
   var a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,\\uFEFF' + encodeURIComponent(csv);
-  a.download = 'paper_trades_' + d + '.csv';
+  a.download = 'ema_rsi_st_paper_trades_' + d + '.csv';
   a.click();
   showToast('✅ CSV downloaded — ' + PT.length + ' trades', '#10b981');
 }

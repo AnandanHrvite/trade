@@ -23,7 +23,7 @@
  *
  * Toggles (all OFF by default):
  *   Master  : OI_FILTER_ENABLED          — kill-switch for every strategy
- *   Per-mode: SWING_OI_ENABLED, SCALP_OI_ENABLED, PA_OI_ENABLED, ORB_OI_ENABLED
+ *   Per-mode: EMA_RSI_ST_OI_ENABLED, BB_RSI_OI_ENABLED, PA_OI_ENABLED, ORB_OI_ENABLED
  *   Tuning  : OI_LOOKBACK_CANDLES (3), OI_MIN_DELTA_PCT (1.0)
  *             OI_FAIL_MODE (open) — symmetry with VIX; default & documented = open
  *
@@ -39,22 +39,22 @@ const SAMPLE_TTL    = 60_000;  // throttle: at most one OI fetch per 60s (≈ 1/
 const STALE_GAP_MS  = 30 * 60_000; // gap > 30m (overnight / long pause) ⇒ discard stale series
 
 // ── Per-mode config readers (live — never cached, so toggles apply instantly) ──
-function getOiEnabled(mode = "swing") {
+function getOiEnabled(mode = "ema_rsi_st") {
   if (process.env.OI_FILTER_ENABLED !== "true") return false; // master kill-switch
-  if (mode === "scalp") return process.env.SCALP_OI_ENABLED === "true";
+  if (mode === "bb_rsi") return process.env.BB_RSI_OI_ENABLED === "true";
   if (mode === "pa")    return process.env.PA_OI_ENABLED    === "true";
   if (mode === "orb")   return process.env.ORB_OI_ENABLED   === "true";
-  return process.env.SWING_OI_ENABLED === "true"; // swing
+  return process.env.EMA_RSI_ST_OI_ENABLED === "true"; // EMA_RSI_ST
 }
 
 // `mode` is accepted for call-site symmetry but ignored — only global OI_* tuning
-// keys exist today. Add SWING_OI_LOOKBACK etc. here if per-mode tuning is ever wanted.
-function getOiLookback(mode = "swing") {
+// keys exist today. Add EMA_RSI_ST_OI_LOOKBACK etc. here if per-mode tuning is ever wanted.
+function getOiLookback(mode = "ema_rsi_st") {
   const n = parseInt(process.env.OI_LOOKBACK_CANDLES || "3", 10);
   return Number.isFinite(n) && n >= 1 ? n : 3;
 }
 
-function getOiMinDelta(mode = "swing") {
+function getOiMinDelta(mode = "ema_rsi_st") {
   // Honor an explicit 0 (no noise floor) — Settings exposes min:0. Falsy `|| 1`
   // would silently coerce 0→1, so clamp on validity instead.
   const v = parseFloat(process.env.OI_MIN_DELTA_PCT);
@@ -62,7 +62,7 @@ function getOiMinDelta(mode = "swing") {
 }
 
 function anyOiEnabled() {
-  return getOiEnabled("swing") || getOiEnabled("scalp") ||
+  return getOiEnabled("ema_rsi_st") || getOiEnabled("bb_rsi") ||
          getOiEnabled("pa")    || getOiEnabled("orb");
 }
 
@@ -181,9 +181,9 @@ function _evaluate(side, mode) {
  * @param {"CE"|"PE"} side
  * @param {number} spot  current NIFTY spot (bar.close at the gate)
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
+ * @param {"ema_rsi_st"|"bb_rsi"|"pa"|"orb"} [opts.mode="ema_rsi_st"]
  */
-async function checkLiveOi(side, spot, { mode = "swing" } = {}) {
+async function checkLiveOi(side, spot, { mode = "ema_rsi_st" } = {}) {
   if (!getOiEnabled(mode)) {
     return { allowed: true, oi: null, deltaOi: null, regime: null, reason: "OI filter disabled" };
   }
@@ -193,13 +193,13 @@ async function checkLiveOi(side, spot, { mode = "swing" } = {}) {
 
 /**
  * Synchronous gate: classify from the already-sampled series WITHOUT a fetch.
- * For tick handlers (e.g. swing intra-tick entry) that can't await — relies on the
+ * For tick handlers (e.g. EMA_RSI_ST intra-tick entry) that can't await — relies on the
  * per-candle background recordOiSample() to keep the series fresh.
  * @param {"CE"|"PE"} side
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
+ * @param {"ema_rsi_st"|"bb_rsi"|"pa"|"orb"} [opts.mode="ema_rsi_st"]
  */
-function checkCachedOi(side, { mode = "swing" } = {}) {
+function checkCachedOi(side, { mode = "ema_rsi_st" } = {}) {
   if (!getOiEnabled(mode)) {
     return { allowed: true, oi: null, deltaOi: null, regime: null, reason: "OI filter disabled" };
   }

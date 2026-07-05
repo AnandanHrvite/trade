@@ -26,7 +26,7 @@ const ema9vwapPaperRoute = require("./ema9vwapPaper");
 const liveDryRun      = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 
-// ── Programmatic invoker for the swingPaper express router ──────────────────
+// ── Programmatic invoker for the emaRsiStPaper express router ──────────────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -122,7 +122,7 @@ router.get("/start", async (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 
-  // Trigger swingPaper /start — paper runs unchanged, harness intercepts its
+  // Trigger emaRsiStPaper /start — paper runs unchanged, harness intercepts its
   // notifyEntry/Exit calls. The confirmation-candle entry gate therefore runs
   // here EXACTLY as in paper (this harness has no entry path of its own) — log
   // its state so the inherited behaviour is explicit, not silent.
@@ -133,7 +133,7 @@ router.get("/start", async (req, res) => {
       liveHarness.uninstallHarness("EMA9VWAP-LIVE");
       return res.status(startResp.status).json({
         success: false,
-        error:   `swingPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
+        error:   `emaRsiStPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
       });
     }
     return res.json({

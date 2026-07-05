@@ -1,7 +1,7 @@
 /**
  * CONSOLIDATION — /consolidation
  * ─────────────────────────────────────────────────────────────────────────────
- * Aggregated, cross-mode trade history + analytics (Swing / Scalp / Price Action).
+ * Aggregated, cross-mode trade history + analytics (EMA_RSI_ST / BB_RSI / Price Action).
  * Reads the three paper-trade JSON files, flattens every trade with its mode
  * + date, and renders a single unified view with:
  *   • Daily / Monthly / Yearly P&L roll-ups
@@ -20,8 +20,8 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
-  { mode: "SWING",    file: path.join(DATA_DIR, "paper_trades.json"),          color: "#3b82f6" },
-  { mode: "SCALP",    file: path.join(DATA_DIR, "scalp_paper_trades.json"),    color: "#f59e0b" },
+  { mode: "EMA_RSI_ST",    file: path.join(DATA_DIR, "ema_rsi_st_paper_trades.json"),          color: "#3b82f6" },
+  { mode: "BB_RSI",    file: path.join(DATA_DIR, "bb_rsi_paper_trades.json"),    color: "#f59e0b" },
   { mode: "PA",       file: path.join(DATA_DIR, "pa_paper_trades.json"),       color: "#a855f7" },
   { mode: "ORB",      file: path.join(DATA_DIR, "orb_paper_trades.json"),      color: "#10b981" },
   { mode: "EMA9VWAP", file: path.join(DATA_DIR, "ema9vwap_paper_trades.json"), color: "#06b6d4" },
@@ -99,7 +99,7 @@ function loadAllTrades() {
 router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
-  const modeCounts = { SWING: 0, SCALP: 0, PA: 0, ORB: 0 };
+  const modeCounts = { EMA_RSI_ST: 0, BB_RSI: 0, PA: 0, ORB: 0 };
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
     modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
@@ -177,8 +177,8 @@ router.get("/", (req, res) => {
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
-    .badge-SWING{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
-    .badge-SCALP{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
+    .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
+    .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
@@ -278,7 +278,7 @@ router.get("/", (req, res) => {
   ${buildSidebar('consolidation', false)}
   <div class="main-content">
     <h1 class="page-title">🧾 Consolidation</h1>
-    <div class="page-sub">Unified trade history across Swing, Scalp &amp; Price Action — with daily / monthly / yearly analytics.</div>
+    <div class="page-sub">Unified trade history across EMA_RSI_ST, BB_RSI &amp; Price Action — with daily / monthly / yearly analytics.</div>
 
     <div class="stat-grid">
       <div class="sc" style="--accent:#10b981;">
@@ -287,13 +287,13 @@ router.get("/", (req, res) => {
         <div class="sc-sub">${total} trade${total !== 1 ? 's' : ''} · ${wins}W / ${losses}L · WR ${winRate}%</div>
       </div>
       <div class="sc" style="--accent:#3b82f6;">
-        <div class="sc-label">Swing</div>
-        <div class="sc-val">${modeCounts.SWING}</div>
+        <div class="sc-label">EMA_RSI_ST</div>
+        <div class="sc-val">${modeCounts.EMA_RSI_ST}</div>
         <div class="sc-sub">trades</div>
       </div>
       <div class="sc" style="--accent:#f59e0b;">
-        <div class="sc-label">Scalp</div>
-        <div class="sc-val">${modeCounts.SCALP}</div>
+        <div class="sc-label">BB_RSI</div>
+        <div class="sc-val">${modeCounts.BB_RSI}</div>
         <div class="sc-sub">trades</div>
       </div>
       <div class="sc" style="--accent:#a855f7;">
@@ -323,8 +323,8 @@ router.get("/", (req, res) => {
       <label>Mode</label>
       <select id="fMode">
         <option value="">All</option>
-        <option value="SWING">Swing</option>
-        <option value="SCALP">Scalp</option>
+        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
+        <option value="BB_RSI">BB_RSI</option>
         <option value="PA">Price Action</option>
         <option value="ORB">ORB</option>
         <option value="EMA9VWAP">EMA9+VWAP</option>
@@ -372,8 +372,8 @@ router.get("/", (req, res) => {
           <thead><tr>
             <th>Date</th>
             <th>Trades</th>
-            <th>Swing</th>
-            <th>Scalp</th>
+            <th>EMA_RSI_ST</th>
+            <th>BB_RSI</th>
             <th>PA</th>
             <th>Wins</th>
             <th>Losses</th>
@@ -1094,7 +1094,7 @@ function buildDayView(){
   const map = new Map();
   for (const t of _lastFiltered){
     const d = t.date || 'Unknown';
-    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, SWING: 0, SCALP: 0, PA: 0, ORB: 0 });
+    if (!map.has(d)) map.set(d, { date: d, trades: 0, wins: 0, losses: 0, pnl: 0, EMA_RSI_ST: 0, BB_RSI: 0, PA: 0, ORB: 0 });
     const b = map.get(d);
     b.trades++;
     b.pnl += (t.pnl || 0);
@@ -1119,8 +1119,8 @@ function buildDayView(){
     return \`<tr style="background:\${pnlRowBg(dy.pnl)};">
       <td style="font-weight:600;">\${dy.date}</td>
       <td>\${dy.trades}</td>
-      <td>\${modeCell(dy.SWING, 'SWING')}</td>
-      <td>\${modeCell(dy.SCALP, 'SCALP')}</td>
+      <td>\${modeCell(dy.EMA_RSI_ST, 'EMA_RSI_ST')}</td>
+      <td>\${modeCell(dy.BB_RSI, 'BB_RSI')}</td>
       <td>\${modeCell(dy.PA, 'PA')}</td>
       <td style="color:#10b981;">\${dy.wins}</td>
       <td style="color:#ef4444;">\${dy.losses}</td>
@@ -1133,11 +1133,11 @@ function buildDayView(){
 
 function copyDayView(btn){
   if (!_dvDays.length){ alert('No data to copy.'); return; }
-  const lines = ['Date\\tTrades\\tSwing\\tScalp\\tPA\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
+  const lines = ['Date\\tTrades\\tSwing\\tBbRsi\\tPA\\tWins\\tLosses\\tPnL\\tCumulative PnL'];
   let cum = 0;
   for (const dy of _dvDays){
     cum += dy.pnl;
-    lines.push([dy.date, dy.trades, dy.SWING, dy.SCALP, dy.PA, dy.wins, dy.losses, dy.pnl.toFixed(2), cum.toFixed(2)].join('\\t'));
+    lines.push([dy.date, dy.trades, dy.EMA_RSI_ST, dy.BB_RSI, dy.PA, dy.wins, dy.losses, dy.pnl.toFixed(2), cum.toFixed(2)].join('\\t'));
   }
   copyText(lines.join('\\n'), btn);
 }
@@ -1193,7 +1193,7 @@ function wireTableControls(){
 // ── Analytics Panel ─────────────────────────────────────────────────────────
 let _anaVisible = false;
 const _anaCharts = {};
-const _MODE_COLOR = { SWING: '#3b82f6', SCALP: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4' };
+const _MODE_COLOR = { EMA_RSI_ST: '#3b82f6', BB_RSI: '#f59e0b', PA: '#a855f7', ORB: '#10b981', EMA9VWAP: '#06b6d4' };
 
 function fmtAna(v){ return '₹' + Math.round(Math.abs(v||0)).toLocaleString('en-IN'); }
 function fmtAnaSigned(v){ const n = v||0; return (n>=0?'+':'-') + '₹' + Math.round(Math.abs(n)).toLocaleString('en-IN'); }
@@ -1424,7 +1424,7 @@ function renderAnalytics(){
 
   // ── Cross-mode comparison ──
   (function(){
-    const modes = ['SWING','SCALP','PA'];
+    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
     const EMPTY = '<tr><td colspan="10" style="text-align:center;color:#3a5070;">No data</td></tr>';
     if (!trades.length){ anaEnhance('anaModeBody', '', EMPTY, {}); return; }
     {
@@ -1841,7 +1841,7 @@ function renderAnalytics(){
 
   // ── Cumulative P&L by Mode ──
   (function(){
-    const modes = ['SWING','SCALP','PA'];
+    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
     const sorted = trades.slice().sort((a,b) => {
       const ta = _parseTimeMs(a.entryTime), tb = _parseTimeMs(b.entryTime);
       if (ta!=null && tb!=null) return ta - tb;
@@ -1863,7 +1863,7 @@ function renderAnalytics(){
 
   // ── Monthly P&L stacked by mode ──
   (function(){
-    const modes = ['SWING','SCALP','PA'];
+    const modes = ['EMA_RSI_ST','BB_RSI','PA'];
     const monthsSet = new Set();
     const data = {}; modes.forEach(m => data[m] = new Map());
     trades.forEach(t => { const k=_monthOf(t); if (!k) return; monthsSet.add(k); if (!data[t.mode]) return; data[t.mode].set(k, (data[t.mode].get(k)||0) + (t.pnl||0)); });

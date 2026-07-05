@@ -1,21 +1,21 @@
 /**
- * SWING LIVE (HARNESS) — /swing-live-harness
+ * BB_RSI LIVE (HARNESS) — /bb_rsi-live-harness
  * ─────────────────────────────────────────────────────────────────────────────
- * Runs SWING LIVE by wrapping SWING PAPER with the live harness:
+ * Runs BB_RSI LIVE by wrapping BB_RSI PAPER with the live harness:
  *   1. Install harness (registers notify entry/exit hooks → real broker orders)
- *   2. Trigger /swing-paper/start programmatically (paper code runs unchanged)
- *   3. As paper decides entries/exits, harness places real Zerodha orders
+ *   2. Trigger /bb_rsi-paper/start programmatically (paper code runs unchanged)
+ *   3. As paper decides entries/exits, harness places real Fyers orders
  *   4. /stop reverses: stop paper + uninstall harness
  *
- * This guarantees LIVE = PAPER by construction. Strategy/SL/trail/exit logic
- * is whatever swingPaper says it is — single source of truth.
+ * This guarantees LIVE = PAPER by construction. Strategy/SL/exit logic is
+ * whatever bbRsiPaper says it is — single source of truth.
  *
- * Existing /swing-live route is unchanged (legacy fallback).
+ * Existing /bb_rsi-live route is unchanged (legacy fallback).
  *
  * Toggles:
- *   UI_SHOW_SWING_LIVE_HARNESS  — show the menu item (Settings)
+ *   UI_SHOW_BB_RSI_LIVE_HARNESS  — show the menu item (Settings)
  *   LIVE_HARNESS_DRY_RUN        — when true (default), no real orders placed
- *   SWING_LIVE_DRY_RUN          — hold SWING in dry-run even when global is off
+ *   BB_RSI_LIVE_DRY_RUN          — hold BB_RSI in dry-run even when global is off
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -23,12 +23,13 @@ const express         = require("express");
 const router          = express.Router();
 
 const liveHarness     = require("../services/liveHarness");
-const zerodhaBroker   = require("../services/zerodhaBroker");
-const swingPaperRoute = require("./swingPaper");
+const fyersBroker     = require("../services/fyersBroker");
+const bbRsiPaperRoute = require("./bbRsiPaper");
 const liveDryRun      = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
+const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 
-// ── Programmatic invoker for the swingPaper express router ──────────────────
+// ── Programmatic invoker for the bbRsiPaper express router ──────────────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -50,7 +51,7 @@ function _invokePaperRoute(method, urlPath) {
       redirect(u) { finish({ status: 302, redirect: u }); },
       end(b) { finish({ status: this.statusCode, body: b }); return this; },
     };
-    const stack = swingPaperRoute.stack || [];
+    const stack = bbRsiPaperRoute.stack || [];
     let i = 0;
     function next(err) {
       if (err) return reject(err);
@@ -75,99 +76,101 @@ function _invokePaperRoute(method, urlPath) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
-  const cfg = liveHarness.getConfig("SWING-LIVE");
+  const cfg = liveHarness.getConfig("BB_RSI-LIVE");
   res.json({
-    installed:    liveHarness.isInstalled("SWING-LIVE"),
+    installed:    liveHarness.isInstalled("BB_RSI-LIVE"),
     config:       cfg,
-    recentEvents: liveHarness.getRecentEvents(50, "SWING-LIVE"),
+    recentEvents: liveHarness.getRecentEvents(50, "BB_RSI-LIVE"),
   });
 });
 
 router.get("/start", async (req, res) => {
-  if (liveHarness.isInstalled("SWING-LIVE")) {
-    return res.status(409).json({ success: false, error: "SWING-LIVE harness is already running. Stop it first." });
+  const auth = await verifyFyersToken();
+  if (!auth.ok) return res.status(401).json({ success: false, error: auth.message });
+
+  if (!fyersBroker.isAuthenticated()) {
+    return res.status(401).json({ success: false, error: "Fyers not authenticated for orders." });
+  }
+
+  if (liveHarness.isInstalled("BB_RSI-LIVE")) {
+    return res.status(409).json({ success: false, error: "BB_RSI-LIVE harness is already running. Stop it first." });
   }
 
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
-  const dryRun = liveDryRun.isDryRun("SWING");
+  const dryRun = liveDryRun.isDryRun("BB_RSI");
 
-  // Live-order gate (the documented double-gate): real orders require SWING_LIVE_ENABLED=true.
+  // Live-order gate (the documented double-gate): real orders require BB_RSI_LIVE_ENABLED=true.
   // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off, matching the
-  // legacy /swing-live route.
-  if (!dryRun && (process.env.SWING_LIVE_ENABLED || "false").toLowerCase() !== "true") {
-    return res.status(403).json({ success: false, error: "Live trading disabled. Set SWING_LIVE_ENABLED=true to place real orders." });
-  }
-
-  // Only require broker auth when real orders will actually be placed.
-  if (!dryRun && !zerodhaBroker.isAuthenticated()) {
-    return res.status(401).json({ success: false, error: "Zerodha not authenticated for live orders. Complete Zerodha login first." });
+  // legacy /bb_rsi-live route.
+  if (!dryRun && (process.env.BB_RSI_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+    return res.status(403).json({ success: false, error: "Live trading disabled. Set BB_RSI_LIVE_ENABLED=true to place real orders." });
   }
 
   let installed;
   try {
     installed = liveHarness.installHarness({
-      mode:       "SWING-LIVE",
-      modeTag:    "PAPER",       // swingPaper's mode field in notify payloads
-      broker:     "zerodha",
+      mode:       "BB_RSI-LIVE",
+      modeTag:    "BB_RSI-PAPER",   // bbRsiPaper's mode field in notify payloads
+      broker:     "fyers",
       dryRun,
       isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
-      liveLogKey: "swing-live",
+      liveLogKey: "bb_rsi-live",
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
 
-  // Trigger swingPaper /start — paper runs unchanged, harness intercepts its
+  // Trigger bbRsiPaper /start — paper runs unchanged, harness intercepts its
   // notifyEntry/Exit calls. The confirmation-candle entry gate therefore runs
   // here EXACTLY as in paper (this harness has no entry path of its own) — log
   // its state so the inherited behaviour is explicit, not silent.
-  console.log(`🧪 [SWING-LIVE-HARNESS] confirmation candle: ${(process.env.SWING_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy intra-candle)"}`);
+  console.log(`🧪 [BB_RSI-LIVE-HARNESS] confirmation candle: ${(process.env.BB_RSI_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy candle-close)"}`);
   try {
     const startResp = await _invokePaperRoute("GET", "/start");
     if (startResp.status >= 400 && startResp.status !== 302) {
-      liveHarness.uninstallHarness("SWING-LIVE");
+      liveHarness.uninstallHarness("BB_RSI-LIVE");
       return res.status(startResp.status).json({
         success: false,
-        error:   `swingPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
+        error:   `bbRsiPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
       });
     }
     return res.json({
       success: true,
       mode:    installed.dryRun ? "DRY-RUN" : "LIVE (real orders)",
       message: installed.dryRun
-        ? "SWING-LIVE harness started in DRY-RUN. Decisions match paper, no real orders placed. Watch /swing-live-harness."
-        : "SWING-LIVE harness started — real Zerodha orders WILL be placed.",
+        ? "BB_RSI-LIVE harness started in DRY-RUN. Decisions match paper, no real orders placed. Watch /bb_rsi-live-harness."
+        : "BB_RSI-LIVE harness started — real Fyers orders WILL be placed.",
       paperStartResp: startResp,
     });
   } catch (err) {
-    liveHarness.uninstallHarness("SWING-LIVE");
+    liveHarness.uninstallHarness("BB_RSI-LIVE");
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/stop", async (req, res) => {
-  if (!liveHarness.isInstalled("SWING-LIVE")) {
+  if (!liveHarness.isInstalled("BB_RSI-LIVE")) {
     return res.status(400).json({ success: false, error: "Harness not installed." });
   }
   try {
     const stopResp = await _invokePaperRoute("GET", "/stop");
-    liveHarness.uninstallHarness("SWING-LIVE");
-    return res.json({ success: true, message: "SWING-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
+    liveHarness.uninstallHarness("BB_RSI-LIVE");
+    return res.json({ success: true, message: "BB_RSI-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
   } catch (err) {
-    try { liveHarness.uninstallHarness("SWING-LIVE"); } catch (_) {}
+    try { liveHarness.uninstallHarness("BB_RSI-LIVE"); } catch (_) {}
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/", (req, res) => {
-  const cfg = liveHarness.getConfig("SWING-LIVE");
-  const installed = liveHarness.isInstalled("SWING-LIVE");
-  const dryRunCurrent = liveDryRun.isDryRun("SWING");
+  const cfg = liveHarness.getConfig("BB_RSI-LIVE");
+  const installed = liveHarness.isInstalled("BB_RSI-LIVE");
+  const dryRunCurrent = liveDryRun.isDryRun("BB_RSI");
   const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SWING LIVE (Harness) — Real orders via Paper engine</title>
+<title>BB_RSI LIVE (Harness) — Real orders via Paper engine</title>
 ${faviconLink()}
 <style>
 ${sidebarCSS()}
@@ -191,13 +194,13 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 </style>
 </head>
 <body>
-${buildSidebar('swingLiveHarness', false)}
+${buildSidebar('bbRsiLiveHarness', false)}
 <div class="main">
-  <h1>● SWING LIVE — via Paper Harness</h1>
+  <h1>⚡ BB_RSI LIVE — via Paper Harness</h1>
 
   ${dryRunCurrent
-    ? '<div class="warn-soft"><strong>🧪 DRY-RUN mode</strong> — no real orders will be placed. Verify decisions match paper for at least one session, then set <code>LIVE_HARNESS_DRY_RUN=false</code> (and ensure <code>SWING_LIVE_DRY_RUN</code> is not true) in Settings to enable real orders.</div>'
-    : '<div class="warn"><strong>🔴 LIVE mode</strong> — real Zerodha orders WILL be placed when paper signals fire. To switch back to dry-run, set <code>LIVE_HARNESS_DRY_RUN=true</code> in Settings.</div>'
+    ? '<div class="warn-soft"><strong>🧪 DRY-RUN mode</strong> — no real orders will be placed. Verify decisions match paper for at least one session, then set <code>LIVE_HARNESS_DRY_RUN=false</code> (and ensure <code>BB_RSI_LIVE_DRY_RUN</code> is not true) in Settings to enable real orders.</div>'
+    : '<div class="warn"><strong>🔴 LIVE mode</strong> — real Fyers orders WILL be placed when paper signals fire. To switch back to dry-run, set <code>LIVE_HARNESS_DRY_RUN=true</code> in Settings.</div>'
   }
 
   <div class="card">
@@ -212,7 +215,7 @@ ${buildSidebar('swingLiveHarness', false)}
       </div>
       <div style="flex:1;">
         <div class="label">Broker</div>
-        <div class="val">${cfg ? cfg.broker : 'zerodha'}</div>
+        <div class="val">${cfg ? cfg.broker : 'fyers'}</div>
       </div>
     </div>
     <div style="margin-top:16px;">
@@ -231,7 +234,7 @@ ${buildSidebar('swingLiveHarness', false)}
 ${modalJS()}
 async function refresh() {
   try {
-    const r = await fetch('/swing-live-harness/status/data');
+    const r = await fetch('/bb_rsi-live-harness/status/data');
     const data = await r.json();
     document.getElementById('events').textContent =
       JSON.stringify(data.recentEvents, null, 2) || 'No events yet.';
@@ -243,14 +246,14 @@ async function startSession() {
   const ok = await showConfirm({
     icon: '${dryRunCurrent ? "🧪" : "🔴"}',
     title: '${dryRunCurrent ? "Start DRY-RUN session" : "Start LIVE session"}',
-    message: '${dryRunCurrent ? "Start in DRY-RUN mode (no real orders)?" : "LIVE MODE — real Zerodha orders WILL be placed. Continue?"}',
+    message: '${dryRunCurrent ? "Start in DRY-RUN mode (no real orders)?" : "LIVE MODE — real Fyers orders WILL be placed. Continue?"}',
     confirmText: '${dryRunCurrent ? "Start" : "Start (LIVE)"}',
     confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
   document.getElementById('start-btn').disabled = true;
   try {
-    const r = await fetch('/swing-live-harness/start');
+    const r = await fetch('/bb_rsi-live-harness/start');
     const data = await r.json();
     if (data.success) {
       await showAlert({ icon: '✅', title: 'Started', message: data.message, btnClass: 'modal-btn-success' });
@@ -275,7 +278,7 @@ async function stopSession() {
   if (!ok) return;
   document.getElementById('stop-btn').disabled = true;
   try {
-    const r = await fetch('/swing-live-harness/stop');
+    const r = await fetch('/bb_rsi-live-harness/stop');
     const data = await r.json();
     if (data.success) { await showAlert({ icon: '✅', title: 'Stopped', message: data.message, btnClass: 'modal-btn-success' }); location.reload(); }
     else { await showAlert({ icon: '⚠️', title: 'Stop failed', message: data.error || 'unknown', btnClass: 'modal-btn-danger' }); document.getElementById('stop-btn').disabled = false; }

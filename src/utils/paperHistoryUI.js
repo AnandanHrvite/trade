@@ -1,7 +1,7 @@
 /**
  * paperHistoryUI.js — shared builder for the per-strategy Paper Trade History page.
  *
- * The Scalp Paper history page is the canonical UI. This module reproduces that
+ * The BB_RSI Paper history page is the canonical UI. This module reproduces that
  * exact layout (top-bar, summary stat cards, server-paginated Daily Data Files,
  * Day View, full Analytics + Loss Analysis panels, session cards, trade-detail
  * and JSONL-viewer modals) so every strategy renders an identical page.
@@ -10,7 +10,7 @@
  *   1. renderHistoryPage(cfg) — full page (used by ORB).
  *   2. dailyFilesSectionHTML() + dailyFilesClusterJS(prefix) — the
  *      server-side-paginated Daily Data Files cluster, used to patch the
- *      already-built Scalp/Swing/PA pages in place.
+ *      already-built BB_RSI/EMA_RSI_ST/PA pages in place.
  *
  * Server-side pagination: the per-strategy `/download/daily-files` endpoint
  * accepts `?page=&pageSize=` and returns one slice via dailyFilesPaginate().
@@ -65,7 +65,7 @@ function themeInitScript() {
 }
 
 // Light-mode overrides for the history page's own classes (sidebarCSS only
-// themes the shell). Mirrors the Swing history page's light rules so all five
+// themes the shell). Mirrors the EMA_RSI_ST history page's light rules so all five
 // strategies look identical in either theme.
 function historyLightCSS() {
   return `
@@ -103,7 +103,7 @@ function historyLightCSS() {
     :root[data-theme="light"] .reset-btn{background:rgba(239,68,68,0.08)!important;color:#dc2626!important;border-color:rgba(239,68,68,0.3)!important;}`;
 }
 
-// ── CSS (mirrors the Scalp history page <style> block) ───────────────────────
+// ── CSS (mirrors the BB_RSI history page <style> block) ───────────────────────
 function historyCSS() {
   return `
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -1077,7 +1077,7 @@ function applyHistoryFilter(g){
 })();` : ""}`;
 }
 
-// ── Session cards (canonical Scalp column layout) ────────────────────────────
+// ── Session cards (canonical BB_RSI column layout) ────────────────────────────
 function buildSessionCards(sessions, opts) {
   opts = opts || {};
   const emptyLabel = opts.emptyLabel || "Start paper trading to record your first session.";
@@ -1097,7 +1097,7 @@ function buildSessionCards(sessions, opts) {
     const sessionWins   = trades.filter(t => t.pnl > 0).length;
     const sessionLosses = trades.filter(t => t.pnl < 0).length;
     const winRate = trades.length ? ((sessionWins / trades.length) * 100).toFixed(1) + "%" : "—";
-    // Session PnL field name varies by strategy (scalp/pa/orb: pnl, swing: sessionPnl);
+    // Session PnL field name varies by strategy (bb_rsi/pa/orb: pnl, ema_rsi_st: sessionPnl);
     // fall back to summing trade PnL so the header always shows a number.
     const sPnl = (typeof s.pnl === "number") ? s.pnl
                : (typeof s.sessionPnl === "number") ? s.sessionPnl
@@ -1192,7 +1192,7 @@ function buildSessionCards(sessions, opts) {
 function renderHistoryPage(cfg) {
   // Attach a contract-note row (_cn) to every trade so the Report modal can be
   // built entirely client-side from the embedded data — broker is derived from
-  // the route prefix (swing → Zerodha rates, others → Fyers).
+  // the route prefix (ema_rsi_st → Zerodha rates, others → Fyers).
   const cnBroker = (cfg.broker !== undefined) ? cfg.broker : brokerForRoute(cfg.routePrefix);
   const sessions = (cfg.sessions || []).map(s => ({ ...s, trades: attachContractNotes(s.trades || [], cnBroker) }));
   const allTrades = sessions.flatMap(s => (s.trades || []).map(t => ({ ...t, date: s.date })));

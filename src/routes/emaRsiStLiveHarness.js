@@ -1,21 +1,21 @@
 /**
- * SCALP LIVE (HARNESS) — /scalp-live-harness
+ * EMA_RSI_ST LIVE (HARNESS) — /ema_rsi_st-live-harness
  * ─────────────────────────────────────────────────────────────────────────────
- * Runs SCALP LIVE by wrapping SCALP PAPER with the live harness:
+ * Runs EMA_RSI_ST LIVE by wrapping EMA_RSI_ST PAPER with the live harness:
  *   1. Install harness (registers notify entry/exit hooks → real broker orders)
- *   2. Trigger /scalp-paper/start programmatically (paper code runs unchanged)
- *   3. As paper decides entries/exits, harness places real Fyers orders
+ *   2. Trigger /ema_rsi_st-paper/start programmatically (paper code runs unchanged)
+ *   3. As paper decides entries/exits, harness places real Zerodha orders
  *   4. /stop reverses: stop paper + uninstall harness
  *
- * This guarantees LIVE = PAPER by construction. Strategy/SL/exit logic is
- * whatever scalpPaper says it is — single source of truth.
+ * This guarantees LIVE = PAPER by construction. Strategy/SL/trail/exit logic
+ * is whatever emaRsiStPaper says it is — single source of truth.
  *
- * Existing /scalp-live route is unchanged (legacy fallback).
+ * Existing /ema_rsi_st-live route is unchanged (legacy fallback).
  *
  * Toggles:
- *   UI_SHOW_SCALP_LIVE_HARNESS  — show the menu item (Settings)
+ *   UI_SHOW_EMA_RSI_ST_LIVE_HARNESS  — show the menu item (Settings)
  *   LIVE_HARNESS_DRY_RUN        — when true (default), no real orders placed
- *   SCALP_LIVE_DRY_RUN          — hold SCALP in dry-run even when global is off
+ *   EMA_RSI_ST_LIVE_DRY_RUN          — hold EMA_RSI_ST in dry-run even when global is off
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -23,13 +23,12 @@ const express         = require("express");
 const router          = express.Router();
 
 const liveHarness     = require("../services/liveHarness");
-const fyersBroker     = require("../services/fyersBroker");
-const scalpPaperRoute = require("./scalpPaper");
+const zerodhaBroker   = require("../services/zerodhaBroker");
+const emaRsiStPaperRoute = require("./emaRsiStPaper");
 const liveDryRun      = require("../utils/liveDryRun");
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
-const { verifyFyersToken } = require("../utils/fyersAuthCheck");
 
-// ── Programmatic invoker for the scalpPaper express router ──────────────────
+// ── Programmatic invoker for the emaRsiStPaper express router ──────────────────
 function _invokePaperRoute(method, urlPath) {
   return new Promise((resolve, reject) => {
     let resolved = false;
@@ -51,7 +50,7 @@ function _invokePaperRoute(method, urlPath) {
       redirect(u) { finish({ status: 302, redirect: u }); },
       end(b) { finish({ status: this.statusCode, body: b }); return this; },
     };
-    const stack = scalpPaperRoute.stack || [];
+    const stack = emaRsiStPaperRoute.stack || [];
     let i = 0;
     function next(err) {
       if (err) return reject(err);
@@ -76,101 +75,99 @@ function _invokePaperRoute(method, urlPath) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 router.get("/status/data", (req, res) => {
-  const cfg = liveHarness.getConfig("SCALP-LIVE");
+  const cfg = liveHarness.getConfig("EMA_RSI_ST-LIVE");
   res.json({
-    installed:    liveHarness.isInstalled("SCALP-LIVE"),
+    installed:    liveHarness.isInstalled("EMA_RSI_ST-LIVE"),
     config:       cfg,
-    recentEvents: liveHarness.getRecentEvents(50, "SCALP-LIVE"),
+    recentEvents: liveHarness.getRecentEvents(50, "EMA_RSI_ST-LIVE"),
   });
 });
 
 router.get("/start", async (req, res) => {
-  const auth = await verifyFyersToken();
-  if (!auth.ok) return res.status(401).json({ success: false, error: auth.message });
-
-  if (!fyersBroker.isAuthenticated()) {
-    return res.status(401).json({ success: false, error: "Fyers not authenticated for orders." });
-  }
-
-  if (liveHarness.isInstalled("SCALP-LIVE")) {
-    return res.status(409).json({ success: false, error: "SCALP-LIVE harness is already running. Stop it first." });
+  if (liveHarness.isInstalled("EMA_RSI_ST-LIVE")) {
+    return res.status(409).json({ success: false, error: "EMA_RSI_ST-LIVE harness is already running. Stop it first." });
   }
 
   // Default DRY-RUN unless user explicitly set LIVE_HARNESS_DRY_RUN=false.
-  const dryRun = liveDryRun.isDryRun("SCALP");
+  const dryRun = liveDryRun.isDryRun("EMA_RSI_ST");
 
-  // Live-order gate (the documented double-gate): real orders require SCALP_LIVE_ENABLED=true.
+  // Live-order gate (the documented double-gate): real orders require EMA_RSI_ST_LIVE_ENABLED=true.
   // Enforced ONLY for real orders — dry-run runs are unaffected. Default-off, matching the
-  // legacy /scalp-live route.
-  if (!dryRun && (process.env.SCALP_LIVE_ENABLED || "false").toLowerCase() !== "true") {
-    return res.status(403).json({ success: false, error: "Live trading disabled. Set SCALP_LIVE_ENABLED=true to place real orders." });
+  // legacy /ema_rsi_st-live route.
+  if (!dryRun && (process.env.EMA_RSI_ST_LIVE_ENABLED || "false").toLowerCase() !== "true") {
+    return res.status(403).json({ success: false, error: "Live trading disabled. Set EMA_RSI_ST_LIVE_ENABLED=true to place real orders." });
+  }
+
+  // Only require broker auth when real orders will actually be placed.
+  if (!dryRun && !zerodhaBroker.isAuthenticated()) {
+    return res.status(401).json({ success: false, error: "Zerodha not authenticated for live orders. Complete Zerodha login first." });
   }
 
   let installed;
   try {
     installed = liveHarness.installHarness({
-      mode:       "SCALP-LIVE",
-      modeTag:    "SCALP-PAPER",   // scalpPaper's mode field in notify payloads
-      broker:     "fyers",
+      mode:       "EMA_RSI_ST-LIVE",
+      modeTag:    "PAPER",       // emaRsiStPaper's mode field in notify payloads
+      broker:     "zerodha",
       dryRun,
       isFutures:  process.env.INSTRUMENT === "NIFTY_FUTURES",
-      liveLogKey: "scalp-live",
+      liveLogKey: "ema_rsi_st-live",
     });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }
 
-  // Trigger scalpPaper /start — paper runs unchanged, harness intercepts its
+  // Trigger emaRsiStPaper /start — paper runs unchanged, harness intercepts its
   // notifyEntry/Exit calls. The confirmation-candle entry gate therefore runs
   // here EXACTLY as in paper (this harness has no entry path of its own) — log
   // its state so the inherited behaviour is explicit, not silent.
-  console.log(`🧪 [SCALP-LIVE-HARNESS] confirmation candle: ${(process.env.SCALP_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy candle-close)"}`);
+  console.log(`🧪 [EMA_RSI_ST-LIVE-HARNESS] confirmation candle: ${(process.env.EMA_RSI_ST_CONFIRM_CANDLE_ENABLED || "true").toLowerCase() === "true" ? "ON (2-candle cross & close)" : "OFF (legacy intra-candle)"}`);
   try {
     const startResp = await _invokePaperRoute("GET", "/start");
     if (startResp.status >= 400 && startResp.status !== 302) {
-      liveHarness.uninstallHarness("SCALP-LIVE");
+      liveHarness.uninstallHarness("EMA_RSI_ST-LIVE");
       return res.status(startResp.status).json({
         success: false,
-        error:   `scalpPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
+        error:   `emaRsiStPaper /start failed: ${JSON.stringify(startResp.body).slice(0, 300)}`,
       });
     }
     return res.json({
       success: true,
       mode:    installed.dryRun ? "DRY-RUN" : "LIVE (real orders)",
       message: installed.dryRun
-        ? "SCALP-LIVE harness started in DRY-RUN. Decisions match paper, no real orders placed. Watch /scalp-live-harness."
-        : "SCALP-LIVE harness started — real Fyers orders WILL be placed.",
+        ? "EMA_RSI_ST-LIVE harness started in DRY-RUN. Decisions match paper, no real orders placed. Watch /ema_rsi_st-live-harness."
+        : "EMA_RSI_ST-LIVE harness started — real Zerodha orders WILL be placed.",
       paperStartResp: startResp,
     });
   } catch (err) {
-    liveHarness.uninstallHarness("SCALP-LIVE");
+    liveHarness.uninstallHarness("EMA_RSI_ST-LIVE");
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/stop", async (req, res) => {
-  if (!liveHarness.isInstalled("SCALP-LIVE")) {
+  if (!liveHarness.isInstalled("EMA_RSI_ST-LIVE")) {
     return res.status(400).json({ success: false, error: "Harness not installed." });
   }
   try {
     const stopResp = await _invokePaperRoute("GET", "/stop");
-    liveHarness.uninstallHarness("SCALP-LIVE");
-    return res.json({ success: true, message: "SCALP-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
+    liveHarness.uninstallHarness("EMA_RSI_ST-LIVE");
+    return res.json({ success: true, message: "EMA_RSI_ST-LIVE harness stopped + paper session ended.", paperStopResp: stopResp });
   } catch (err) {
-    try { liveHarness.uninstallHarness("SCALP-LIVE"); } catch (_) {}
+    try { liveHarness.uninstallHarness("EMA_RSI_ST-LIVE"); } catch (_) {}
     return res.status(500).json({ success: false, error: err.message });
   }
 });
 
 router.get("/", (req, res) => {
-  const cfg = liveHarness.getConfig("SCALP-LIVE");
-  const installed = liveHarness.isInstalled("SCALP-LIVE");
-  const dryRunCurrent = liveDryRun.isDryRun("SCALP");
+  const cfg = liveHarness.getConfig("EMA_RSI_ST-LIVE");
+  const installed = liveHarness.isInstalled("EMA_RSI_ST-LIVE");
+  const dryRunCurrent = liveDryRun.isDryRun("EMA_RSI_ST");
   const html = `<!DOCTYPE html>
 <html><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SCALP LIVE (Harness) — Real orders via Paper engine</title>
+<title>EMA_RSI_ST LIVE (Harness) — Real orders via Paper engine</title>
 ${faviconLink()}
 <style>
 ${sidebarCSS()}
@@ -194,13 +191,13 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 </style>
 </head>
 <body>
-${buildSidebar('scalpLiveHarness', false)}
+${buildSidebar('emaRsiStLiveHarness', false)}
 <div class="main">
-  <h1>⚡ SCALP LIVE — via Paper Harness</h1>
+  <h1>● EMA_RSI_ST LIVE — via Paper Harness</h1>
 
   ${dryRunCurrent
-    ? '<div class="warn-soft"><strong>🧪 DRY-RUN mode</strong> — no real orders will be placed. Verify decisions match paper for at least one session, then set <code>LIVE_HARNESS_DRY_RUN=false</code> (and ensure <code>SCALP_LIVE_DRY_RUN</code> is not true) in Settings to enable real orders.</div>'
-    : '<div class="warn"><strong>🔴 LIVE mode</strong> — real Fyers orders WILL be placed when paper signals fire. To switch back to dry-run, set <code>LIVE_HARNESS_DRY_RUN=true</code> in Settings.</div>'
+    ? '<div class="warn-soft"><strong>🧪 DRY-RUN mode</strong> — no real orders will be placed. Verify decisions match paper for at least one session, then set <code>LIVE_HARNESS_DRY_RUN=false</code> (and ensure <code>EMA_RSI_ST_LIVE_DRY_RUN</code> is not true) in Settings to enable real orders.</div>'
+    : '<div class="warn"><strong>🔴 LIVE mode</strong> — real Zerodha orders WILL be placed when paper signals fire. To switch back to dry-run, set <code>LIVE_HARNESS_DRY_RUN=true</code> in Settings.</div>'
   }
 
   <div class="card">
@@ -215,7 +212,7 @@ ${buildSidebar('scalpLiveHarness', false)}
       </div>
       <div style="flex:1;">
         <div class="label">Broker</div>
-        <div class="val">${cfg ? cfg.broker : 'fyers'}</div>
+        <div class="val">${cfg ? cfg.broker : 'zerodha'}</div>
       </div>
     </div>
     <div style="margin-top:16px;">
@@ -234,7 +231,7 @@ ${buildSidebar('scalpLiveHarness', false)}
 ${modalJS()}
 async function refresh() {
   try {
-    const r = await fetch('/scalp-live-harness/status/data');
+    const r = await fetch('/ema_rsi_st-live-harness/status/data');
     const data = await r.json();
     document.getElementById('events').textContent =
       JSON.stringify(data.recentEvents, null, 2) || 'No events yet.';
@@ -246,14 +243,14 @@ async function startSession() {
   const ok = await showConfirm({
     icon: '${dryRunCurrent ? "🧪" : "🔴"}',
     title: '${dryRunCurrent ? "Start DRY-RUN session" : "Start LIVE session"}',
-    message: '${dryRunCurrent ? "Start in DRY-RUN mode (no real orders)?" : "LIVE MODE — real Fyers orders WILL be placed. Continue?"}',
+    message: '${dryRunCurrent ? "Start in DRY-RUN mode (no real orders)?" : "LIVE MODE — real Zerodha orders WILL be placed. Continue?"}',
     confirmText: '${dryRunCurrent ? "Start" : "Start (LIVE)"}',
     confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
   document.getElementById('start-btn').disabled = true;
   try {
-    const r = await fetch('/scalp-live-harness/start');
+    const r = await fetch('/ema_rsi_st-live-harness/start');
     const data = await r.json();
     if (data.success) {
       await showAlert({ icon: '✅', title: 'Started', message: data.message, btnClass: 'modal-btn-success' });
@@ -278,7 +275,7 @@ async function stopSession() {
   if (!ok) return;
   document.getElementById('stop-btn').disabled = true;
   try {
-    const r = await fetch('/scalp-live-harness/stop');
+    const r = await fetch('/ema_rsi_st-live-harness/stop');
     const data = await r.json();
     if (data.success) { await showAlert({ icon: '✅', title: 'Stopped', message: data.message, btnClass: 'modal-btn-success' }); location.reload(); }
     else { await showAlert({ icon: '⚠️', title: 'Stop failed', message: data.error || 'unknown', btnClass: 'modal-btn-danger' }); document.getElementById('stop-btn').disabled = false; }

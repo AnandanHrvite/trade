@@ -2,7 +2,7 @@
  * realtime.js — Unified real-time monitor for PAPER or LIVE trades
  * ─────────────────────────────────────────────────────────────────────────────
  * Read-only single screen that shows current state for every strategy that is
- * enabled in Settings (SWING / SCALP / PA / ORB), side-by-side,
+ * enabled in Settings (EMA_RSI_ST / BB_RSI / PA / ORB), side-by-side,
  * with a common rollup P&L table below. Toggle at the top switches between
  * PAPER and LIVE data sources. The page polls each strategy's existing
  * /status/data endpoint every 4s — no new backend aggregation; we read from
@@ -21,8 +21,8 @@ const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
 // hasDayLog: only strategies that expose /download/{trades,skips}/:date show
 // the Copy Day Log button. ORB paper exposes cumulative JSONL only.
 const STRATEGY_DEFS = [
-  { key:'SWING',    label:'SWING',        accentClass:'swing',    accent:'#3b82f6', paperPrefix:'/swing-paper',    livePrefix:'/swing-live',    hasDayLog:true,  modeFlag:'SWING_MODE_ENABLED'    },
-  { key:'SCALP',    label:'SCALP',        accentClass:'scalp',    accent:'#f59e0b', paperPrefix:'/scalp-paper',    livePrefix:'/scalp-live',    hasDayLog:true,  modeFlag:'SCALP_MODE_ENABLED'    },
+  { key:'EMA_RSI_ST',    label:'EMA_RSI_ST',        accentClass:'ema_rsi_st',    accent:'#3b82f6', paperPrefix:'/ema_rsi_st-paper',    livePrefix:'/ema_rsi_st-live',    hasDayLog:true,  modeFlag:'EMA_RSI_ST_MODE_ENABLED'    },
+  { key:'BB_RSI',    label:'BB_RSI',        accentClass:'bb_rsi',    accent:'#f59e0b', paperPrefix:'/bb_rsi-paper',    livePrefix:'/bb_rsi-live',    hasDayLog:true,  modeFlag:'BB_RSI_MODE_ENABLED'    },
   { key:'PA',       label:'PRICE ACTION', accentClass:'pa',       accent:'#a855f7', paperPrefix:'/pa-paper',       livePrefix:'/pa-live',       hasDayLog:true,  modeFlag:'PA_MODE_ENABLED'       },
   { key:'ORB',      label:'ORB',          accentClass:'orb',      accent:'#10b981', paperPrefix:'/orb-paper',      livePrefix:'/orb-live',      hasDayLog:false, modeFlag:'ORB_MODE_ENABLED'      },
   { key:'EMA9VWAP', label:'EMA9+VWAP',    accentClass:'ema9vwap', accent:'#06b6d4', paperPrefix:'/ema9vwap-paper', livePrefix:'/ema9vwap-live', hasDayLog:true,  modeFlag:'EMA9VWAP_MODE_ENABLED' },
@@ -33,21 +33,21 @@ function enabledStrategies() {
 }
 
 // Broker investment pools: each strategy's paper P&L draws from one shared pool.
-// Swing trades through Zerodha; Scalp/PA/ORB through Fyers.
-const BROKER_OF = { SWING:'ZERODHA', SCALP:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA' };
+// EMA_RSI_ST trades through Zerodha; BB_RSI/PA/ORB through Fyers.
+const BROKER_OF = { EMA_RSI_ST:'ZERODHA', BB_RSI:'FYERS', PA:'FYERS', ORB:'FYERS', EMA9VWAP:'ZERODHA' };
 function brokerPools(strategies) {
   const z = parseFloat(process.env.ZERODHA_INV_AMOUNT || '100000');
   const f = parseFloat(process.env.FYERS_INV_AMOUNT   || '100000');
   const pools = [];
   if (strategies.some(s => BROKER_OF[s.key] === 'ZERODHA'))
-    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'Swing · EMA9+VWAP', inv:z });
+    pools.push({ id:'ZERODHA', label:'ZERODHA', sub:'EMA_RSI_ST · EMA9+VWAP', inv:z });
   if (strategies.some(s => BROKER_OF[s.key] === 'FYERS'))
-    pools.push({ id:'FYERS', label:'FYERS', sub:'Scalp · PA · ORB', inv:f });
+    pools.push({ id:'FYERS', label:'FYERS', sub:'BB_RSI · PA · ORB', inv:f });
   return pools;
 }
 
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   res.send(renderPage({ liveActive, sidebarKey: "dashboard", autoFlipBack: false }));
 });
 
@@ -137,16 +137,16 @@ ${faviconLink()}
   .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:18px; }
 
   .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
-  .card.swing    { border-top-color:#3b82f6; }
-  .card.scalp    { border-top-color:#f59e0b; }
+  .card.ema_rsi_st    { border-top-color:#3b82f6; }
+  .card.bb_rsi    { border-top-color:#f59e0b; }
   .card.pa       { border-top-color:#a855f7; }
   .card.orb      { border-top-color:#10b981; }
   .card.ema9vwap { border-top-color:#06b6d4; }
 
   .card-header { display:flex; align-items:center; justify-content:space-between; }
   .card-title { font-size:1rem; font-weight:600; letter-spacing:0.5px; }
-  .card.swing    .card-title { color:#60a5fa; }
-  .card.scalp    .card-title { color:#fbbf24; }
+  .card.ema_rsi_st    .card-title { color:#60a5fa; }
+  .card.bb_rsi    .card-title { color:#fbbf24; }
   .card.pa       .card-title { color:#c084fc; }
   .card.orb      .card-title { color:#34d399; }
   .card.ema9vwap .card-title { color:#22d3ee; }
@@ -194,8 +194,8 @@ ${faviconLink()}
   .act-btn.copied { background:rgba(16,185,129,0.18); border-color:#10b981; color:#10b981; }
   .act-btn-disabled { background:#040c18; border-style:dashed; color:#5d6c87; cursor:default; }
   .act-btn-disabled:hover { background:#040c18; color:#5d6c87; border-color:#1c2c47; }
-  .card.swing    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
-  .card.scalp    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
+  .card.ema_rsi_st    .act-btn:not(.act-btn-disabled):hover { border-color:#3b82f6; }
+  .card.bb_rsi    .act-btn:not(.act-btn-disabled):hover { border-color:#f59e0b; }
   .card.pa       .act-btn:not(.act-btn-disabled):hover { border-color:#a855f7; }
   .card.orb      .act-btn:not(.act-btn-disabled):hover { border-color:#10b981; }
   .card.ema9vwap .act-btn:not(.act-btn-disabled):hover { border-color:#06b6d4; }
@@ -207,8 +207,8 @@ ${faviconLink()}
   .rollup td { padding:10px 12px; font-size:0.85rem; text-align:right; border-bottom:1px solid #15243d; font-variant-numeric:tabular-nums; }
   .rollup td:first-child { text-align:left; font-weight:600; }
   .rollup tr:last-child td { border-bottom:none; background:#0e1c33; font-weight:700; }
-  .rollup tr.swing    td:first-child { color:#60a5fa; }
-  .rollup tr.scalp    td:first-child { color:#fbbf24; }
+  .rollup tr.ema_rsi_st    td:first-child { color:#60a5fa; }
+  .rollup tr.bb_rsi    td:first-child { color:#fbbf24; }
   .rollup tr.pa       td:first-child { color:#c084fc; }
   .rollup tr.orb      td:first-child { color:#34d399; }
   .rollup tr.ema9vwap td:first-child { color:#22d3ee; }
@@ -223,8 +223,8 @@ ${faviconLink()}
   :root[data-theme="light"] .toggle { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
   :root[data-theme="light"] .toggle button { color:#64748b; }
   :root[data-theme="light"] .card { background:#fff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
-  :root[data-theme="light"] .card.swing    .card-title { color:#2563eb; }
-  :root[data-theme="light"] .card.scalp    .card-title { color:#d97706; }
+  :root[data-theme="light"] .card.ema_rsi_st    .card-title { color:#2563eb; }
+  :root[data-theme="light"] .card.bb_rsi    .card-title { color:#d97706; }
   :root[data-theme="light"] .card.pa       .card-title { color:#9333ea; }
   :root[data-theme="light"] .card.orb      .card-title { color:#059669; }
   :root[data-theme="light"] .card.ema9vwap .card-title { color:#0891b2; }
@@ -245,8 +245,8 @@ ${faviconLink()}
   :root[data-theme="light"] .rollup th { background:#f1f5f9 !important; color:#64748b !important; border-bottom-color:#e0e4ea !important; }
   :root[data-theme="light"] .rollup td { color:#334155; border-bottom-color:#e0e4ea; }
   :root[data-theme="light"] .rollup tr:last-child td { background:#f8fafc !important; color:#1e293b; }
-  :root[data-theme="light"] .rollup tr.swing    td:first-child { color:#2563eb; }
-  :root[data-theme="light"] .rollup tr.scalp    td:first-child { color:#d97706; }
+  :root[data-theme="light"] .rollup tr.ema_rsi_st    td:first-child { color:#2563eb; }
+  :root[data-theme="light"] .rollup tr.bb_rsi    td:first-child { color:#d97706; }
   :root[data-theme="light"] .rollup tr.pa       td:first-child { color:#9333ea; }
   :root[data-theme="light"] .rollup tr.orb      td:first-child { color:#059669; }
   :root[data-theme="light"] .rollup tr.ema9vwap td:first-child { color:#0891b2; }
@@ -329,7 +329,7 @@ const fmtINR = n => {
 const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—' : Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const cls = n => (n === null || n === undefined || isNaN(n) || +n === 0) ? 'pos-zero' : (+n > 0 ? 'pos-pos' : 'pos-neg');
 
-// SWING uses unrealisedPnl, SCALP/PA use unrealised, ORB uses livePnl.
+// EMA_RSI_ST uses unrealisedPnl, BB_RSI/PA use unrealised, ORB uses livePnl.
 function openPnl(d) {
   if (!d) return 0;
   const v = (d.unrealisedPnl !== undefined ? d.unrealisedPnl
@@ -338,12 +338,12 @@ function openPnl(d) {
           : 0);
   return v == null ? 0 : v;
 }
-// SWING/SCALP/PA: tradeCount. ORB: tradesTaken.
+// EMA_RSI_ST/BB_RSI/PA: tradeCount. ORB: tradesTaken.
 function tradeCountOf(d) {
   if (!d) return 0;
   return d.tradeCount ?? d.tradesTaken ?? 0;
 }
-// SWING/SCALP/PA: logs[] + logTotal. ORB: log[] (strings only).
+// EMA_RSI_ST/BB_RSI/PA: logs[] + logTotal. ORB: log[] (strings only).
 function logsOf(d) {
   if (!d) return { lines: [], total: 0 };
   if (Array.isArray(d.logs)) return { lines: d.logs, total: d.logTotal ?? d.logs.length };

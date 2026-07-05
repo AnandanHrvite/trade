@@ -8,10 +8,10 @@
  * Backtest & Paper Trade are UNAFFECTED — they never call this file.
  *
  * Routes:
- *   GET /swing-live/start   — Start live trading
- *   GET /swing-live/stop    — Stop & square off
- *   GET /swing-live/status  — Live status page
- *   GET /swing-live/exit    — Manual exit current position only (session continues)
+ *   GET /ema_rsi_st-live/start   — Start live trading
+ *   GET /ema_rsi_st-live/stop    — Stop & square off
+ *   GET /ema_rsi_st-live/status  — Live status page
+ *   GET /ema_rsi_st-live/exit    — Manual exit current position only (session continues)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -50,28 +50,28 @@ const _OPT_STOP_PCT       = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 
 
 // Same-side SL cooldown config + helper (mirrors paper)
-const _SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
+const _EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
 // Exit-before-close: square off open position at this IST time (default 15:15).
-const _SWING_EOD_EXIT_MINS = (function() {
-  const raw = process.env.SWING_EOD_EXIT_TIME || "15:15";
+const _EMA_RSI_ST_EOD_EXIT_MINS = (function() {
+  const raw = process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15";
   const [h, m] = raw.split(":").map(Number);
   return isNaN(h) ? null : (h * 60 + (isNaN(m) ? 0 : m));
 })();
 function _setSlPause(side) {
-  if (!_SWING_SL_PAUSE_CANDLES || _SWING_SL_PAUSE_CANDLES <= 0) return;
+  if (!_EMA_RSI_ST_SL_PAUSE_CANDLES || _EMA_RSI_ST_SL_PAUSE_CANDLES <= 0) return;
   tradeState._slPauseUntilBySide = tradeState._slPauseUntilBySide || { CE: 0, PE: 0 };
   const _resMin = parseInt(process.env.TRADE_RESOLUTION || "5", 10);
-  tradeState._slPauseUntilBySide[side] = Date.now() + _SWING_SL_PAUSE_CANDLES * _resMin * 60 * 1000;
-  log(`⏸️ [LIVE] ${side} SL cooldown — no new ${side} entries for ${_SWING_SL_PAUSE_CANDLES} candles`);
+  tradeState._slPauseUntilBySide[side] = Date.now() + _EMA_RSI_ST_SL_PAUSE_CANDLES * _resMin * 60 * 1000;
+  log(`⏸️ [LIVE] ${side} SL cooldown — no new ${side} entries for ${_EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
 }
 
 // ── Opposite-side (flip) cooldown ───────────────────────────────────────────
 // After any non-flip exit, block entries on the OPPOSITE side for
-// SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
+// EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES candles. Prevents whipsaw flips on chop.
 // Skipped for opposite-signal / EOD / manual exits.
-const _OPP_COOLDOWN_ENABLED = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-const _OPP_COOLDOWN_CANDLES = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
-// Candle-trail (SWING_CANDLE_TRAIL_*) is read live from process.env on each candle close
+const _OPP_COOLDOWN_ENABLED = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+const _OPP_COOLDOWN_CANDLES = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+// Candle-trail (EMA_RSI_ST_CANDLE_TRAIL_*) is read live from process.env on each candle close
 // — INSTANT — so a Settings toggle takes effect without a restart.
 function _setOppositeCooldown(exitedSide, reason) {
   if (!_OPP_COOLDOWN_ENABLED || !_OPP_COOLDOWN_CANDLES || _OPP_COOLDOWN_CANDLES <= 0) return;
@@ -83,7 +83,7 @@ function _setOppositeCooldown(exitedSide, reason) {
   log(`🔁 [LIVE] Opposite-side cooldown — no ${opp} entries for ${_OPP_COOLDOWN_CANDLES} candles (~${_OPP_COOLDOWN_CANDLES * _resMin} min)`);
 }
 
-// SWING (redefined): initial SL = the prev-candle low/high from getSignal, used as-is.
+// EMA_RSI_ST (redefined): initial SL = the prev-candle low/high from getSignal, used as-is.
 function _applyInitialSLCap(stopLoss, entrySpot, side, lastCandle) {
   return { stopLoss, capLog: null };
 }
@@ -121,10 +121,10 @@ const { fetchCandlesCached } = require("../utils/candleCache");
 // Stored at ~/trading-data/ — outside project dir, survives git pull / redeploys.
 const _HOME_LT = require("os").homedir();
 const LT_DIR   = path.join(_HOME_LT, "trading-data");
-const LT_FILE  = path.join(LT_DIR, "live_trades.json");
+const LT_FILE  = path.join(LT_DIR, "ema_rsi_st_live_trades.json");
 
-// One-time migration from old ./data/live_trades.json
-const _OLD_LT_FILE = path.join(__dirname, "../../data/live_trades.json");
+// One-time migration from old ./data/ema_rsi_st_live_trades.json
+const _OLD_LT_FILE = path.join(__dirname, "../../data/ema_rsi_st_live_trades.json");
 (function migrateLiveOnce() {
   try {
     if (!fs.existsSync(LT_FILE) && fs.existsSync(_OLD_LT_FILE)) {
@@ -231,14 +231,14 @@ function generateDailyReport(trades, sessionPnl) {
     log(`${"═".repeat(54)}\n`);
 
     // Telegram report
-    if (canSend("TG_SWING_DAYREPORT")) {
+    if (canSend("TG_EMA_RSI_ST_DAYREPORT")) {
       const exitBreakdown = Object.entries(exitGroups)
         .sort((a, b) => b[1].count - a[1].count)
         .map(([label, g]) => `  ${label}: ${g.count}x (WR${((g.wins/g.count)*100).toFixed(0)}% PnL ₹${g.pnl.toFixed(0)})`)
         .join("\n");
 
       const telegramLines = [
-        `⚡ SWING LIVE — DAY REPORT`,
+        `⚡ EMA_RSI_ST LIVE — DAY REPORT`,
         `📅 ${dateStr}`,
         ``,
         `Trades   : ${trades.length}  (${wins.length}W / ${losses.length}L)`,
@@ -399,10 +399,10 @@ function isStartAllowed() {
   return getISTMinutes() < _STOP_MINS;
 }
 
-// ── 0DTE expiry-day detector (same logic as swingPaper) ──────────────────────
-// Swing on 0DTE = bad idea. /start refuses unless ?force=1 is passed.
-function _getEffectiveSwingExpiry() {
-  const swing  = (process.env.SWING_OPTION_EXPIRY_OVERRIDE || "").trim();
+// ── 0DTE expiry-day detector (same logic as emaRsiStPaper) ──────────────────────
+// EMA_RSI_ST on 0DTE = bad idea. /start refuses unless ?force=1 is passed.
+function _getEffectiveEmaRsiStExpiry() {
+  const swing  = (process.env.EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE || "").trim();
   const common = (process.env.OPTION_EXPIRY_OVERRIDE || "").trim();
   return swing || common || null;
 }
@@ -410,8 +410,8 @@ function _getISTDateStr() {
   const ist = new Date(Date.now() + 19800000);
   return ist.toISOString().slice(0, 10);
 }
-function isSwingExpiringToday() {
-  const expiry = _getEffectiveSwingExpiry();
+function isEmaRsiStExpiringToday() {
+  const expiry = _getEffectiveEmaRsiStExpiry();
   return expiry && expiry === _getISTDateStr();
 }
 
@@ -439,7 +439,7 @@ async function fetchOptionLtp(symbol) {
           fetchOptionLtp._rlActive = false;
         }
         const _ltp = parseFloat(ltp);
-        try { tickRecorder.recordOptionLtp(symbol, _ltp, "swing-live"); } catch (_) {}
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "ema_rsi_st-live"); } catch (_) {}
         return _ltp;
       }
       log(`[DEBUG] All LTP fields null/zero for ${symbol} | v=${JSON.stringify(v).slice(0, 200)}`);
@@ -472,8 +472,8 @@ async function prefetchOptionSymbols(spot) {
   if (instrumentConfig.INSTRUMENT === 'NIFTY_FUTURES') return; // not needed for futures
   try {
     const [ce, pe] = await Promise.all([
-      validateAndGetOptionSymbol(spot, 'CE', 'swing'),
-      validateAndGetOptionSymbol(spot, 'PE', 'swing'),
+      validateAndGetOptionSymbol(spot, 'CE', 'ema_rsi_st'),
+      validateAndGetOptionSymbol(spot, 'PE', 'ema_rsi_st'),
     ]);
     
     // Only cache valid symbols (reject invalid ones to force live lookup at entry)
@@ -617,16 +617,16 @@ let _orderInFlight    = false; // prevent duplicate ENTRY orders on rapid ticks
 let _squareOffInFlight = false; // prevent concurrent EXIT calls (multiple SL ticks in-flight)
 
 // ── DRY-RUN harness ───────────────────────────────────────────────────────
-// When LIVE_HARNESS_DRY_RUN=true (default), Swing Live logs the Zerodha call it
+// When LIVE_HARNESS_DRY_RUN=true (default), EMA_RSI_ST Live logs the Zerodha call it
 // WOULD make and returns a simulated success, placing NO real order. This gives
-// Swing the same dry-run safety net the Fyers strategies (PA/ORB) have:
+// EMA_RSI_ST the same dry-run safety net the Fyers strategies (PA/ORB) have:
 // the engine's position / hard-SL / trail bookkeeping runs end-to-end against
 // virtual order IDs so decisions can be validated before flipping to real money.
 // Flip OFF (LIVE_HARNESS_DRY_RUN=false) only after decisions match paper.
-// Per-strategy override SWING_LIVE_DRY_RUN can hold Swing in dry-run even when
-// the global flag is off (lets ORB/etc. go real while Swing stays simulated).
+// Per-strategy override EMA_RSI_ST_LIVE_DRY_RUN can hold EMA_RSI_ST in dry-run even when
+// the global flag is off (lets ORB/etc. go real while EMA_RSI_ST stays simulated).
 function isDryRun() {
-  return liveDryRun.isDryRun("SWING");
+  return liveDryRun.isDryRun("EMA_RSI_ST");
 }
 let _dryRunSeq = 0;
 function _simOrder(prefix) {
@@ -1030,7 +1030,7 @@ async function squareOff(exitPrice, reason) {
   else if (netPnl < 0) tradeState._losses = (tradeState._losses || 0) + 1;
   log(`💼 [LIVE] Session PnL so far: ₹${tradeState.sessionPnl}`);
 
-  // ── Chop-guard streak (SWING_MAX_CONSEC_LOSSES) ──────────────────────────────
+  // ── Chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES) ──────────────────────────────
   // Independent of the legacy 3-loss pause below (which resets _consecutiveLosses
   // to 0 on 5-min). Only grows on losses, clears on a win — lets the entry gate
   // sit the strategy out for the rest of a choppy session.
@@ -1144,7 +1144,7 @@ async function onCandleClose(candle) {
 
   // ── Confirmation candle (cross & close) — arm here; entry fires intra-bar on the
   //    NEXT candle once price crosses this candle's close (see onTick). ──
-  if (confirmCandle.enabled("SWING")) {
+  if (confirmCandle.enabled("EMA_RSI_ST")) {
     if (tradeState._armedSignal && tradeState._armedSignal.armedBarTime !== candle.time) {
       tradeState._armedSignal = null; // confirmation window (next candle) passed
     }
@@ -1171,7 +1171,7 @@ async function onCandleClose(candle) {
   log(`📊 [LIVE] Candle @ ${candle.close} | Signal: ${signal} | VIX: ${!vixFilter.VIX_ENABLED ? "off" : _vixDisplay != null ? _vixDisplay.toFixed(1) : "n/a"} | ${reason}`);
 
   if (signal === "NONE" && !tradeState.position) {
-    skipLogger.appendSkipLog("swing", {
+    skipLogger.appendSkipLog("ema_rsi_st", {
       gate: "strategy",
       reason: reason || null,
       spot: candle.close,
@@ -1215,7 +1215,7 @@ async function onCandleClose(candle) {
       _pnlPts = (candle.close - _pos.spotAtEntry) * (_pos.side === "CE" ? 1 : -1);
     }
     // Time-stop is disabled — EMA21 trail owns the SL fully (inert legacy gate; SL_MODE is no longer set).
-    if ((process.env.SWING_SL_MODE || "ema").toLowerCase() === "candle") {
+    if ((process.env.EMA_RSI_ST_SL_MODE || "ema").toLowerCase() === "candle") {
       const _tsReason = tradeGuards.checkTimeStop(_pos.candlesHeld, _pnlPts);
       if (_tsReason) {
         log(`⏳ [LIVE] ${_tsReason}`);
@@ -1223,10 +1223,10 @@ async function onCandleClose(candle) {
         return;
       }
     }
-    // ── Negative-candle stop (SWING_NEG_CANDLE_LIMIT) ─────────────────────────
+    // ── Negative-candle stop (EMA_RSI_ST_NEG_CANDLE_LIMIT) ─────────────────────────
     // Asymmetric loss-cut: still in the RED after N candles → square off (winners ride
     // the EMA21 trail). Points-based on option premium (falls back to spot). 0 = off; default 2.
-    const _negLimit = parseInt(process.env.SWING_NEG_CANDLE_LIMIT || "2", 10);
+    const _negLimit = parseInt(process.env.EMA_RSI_ST_NEG_CANDLE_LIMIT || "2", 10);
     if (_negLimit > 0 && _pnlPts != null && _pnlPts < 0 && _pos.candlesHeld >= _negLimit) {
       log(`🔻 [LIVE] Negative ${_negLimit}-candle stop — ${_pos.candlesHeld} candles held, still red (${_pnlPts.toFixed(1)}pt) — squaring off ${_pos.side}`);
       await squareOff(candle.close, `Negative ${_negLimit}-candle stop`);
@@ -1237,7 +1237,7 @@ async function onCandleClose(candle) {
   // ── Trailing stop (EMA21 base + optional candle-trail overlay) ──────────────
   // Mirrors paper. The base SL source (tighten-only) at each candle close is EMA21 —
   // a candle range touching back EMA21 is an explicit candle-close exit. When
-  // SWING_CANDLE_TRAIL_ENABLED, an N-bar low/high trail is layered on and the TIGHTER
+  // EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low/high trail is layered on and the TIGHTER
   // of the two wins. Broker hard-SL is pushed on any change.
   if (tradeState.position) {
     const pos     = tradeState.position;
@@ -1247,8 +1247,8 @@ async function onCandleClose(candle) {
     if (indicators.ema21 != null) { _newSL = indicators.ema21; _trailTag = "EMA21"; }
     if (indicators.ema21 != null && candle.low <= indicators.ema21 && candle.high >= indicators.ema21) _flipExit = true;
     // Candle-trail overlay: N-bar low (CE) / high (PE) — keep the tighter of EMA21 vs candle.
-    const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-    const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
+    const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+    const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
     if (_ctOn && tradeState.candles && tradeState.candles.length >= _ctBars) {
       const _bars = tradeState.candles.slice(-_ctBars);
       const _candleLvl = pos.side === "CE"
@@ -1300,10 +1300,10 @@ async function onCandleClose(candle) {
   const _eodStopMins  = _STOP_MINS /* cached */;
   const _eodStopLabel = String(Math.floor(_eodStopMins/60)).padStart(2,"0") + ":" + String(_eodStopMins%60).padStart(2,"0");
 
-  // ── Exit-before-close: square off open position at SWING_EOD_EXIT_TIME ──────
+  // ── Exit-before-close: square off open position at EMA_RSI_ST_EOD_EXIT_TIME ──────
   // Fires ahead of the TRADE_STOP_TIME auto-stop; engine keeps running until _STOP_MINS.
-  if (tradeState.position && _SWING_EOD_EXIT_MINS != null && _nowMins >= _SWING_EOD_EXIT_MINS && _nowMins < _eodStopMins) {
-    const _eLbl = String(Math.floor(_SWING_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_SWING_EOD_EXIT_MINS%60).padStart(2,"0");
+  if (tradeState.position && _EMA_RSI_ST_EOD_EXIT_MINS != null && _nowMins >= _EMA_RSI_ST_EOD_EXIT_MINS && _nowMins < _eodStopMins) {
+    const _eLbl = String(Math.floor(_EMA_RSI_ST_EOD_EXIT_MINS/60)).padStart(2,"0") + ":" + String(_EMA_RSI_ST_EOD_EXIT_MINS%60).padStart(2,"0");
     log(`⏰ [LIVE] Exit-before-close ${_eLbl} — squaring off open ${tradeState.position.side}`);
     await squareOff(candle.close, `Exit before day close ${_eLbl}`);
     return;
@@ -1321,11 +1321,11 @@ async function onCandleClose(candle) {
       saveLiveSession();
       sharedSocketState.clear();
       stopOptionPolling();
-      // Only stop socket if no scalp mode is piggybacking
-      if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
+      // Only stop socket if no bb_rsi mode is piggybacking
+      if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
         socketManager.stop();
       } else {
-        log("📡 [LIVE] Socket kept alive — scalp mode still active");
+        log("📡 [LIVE] Socket kept alive — bb_rsi mode still active");
       }
     }
     return;
@@ -1336,7 +1336,7 @@ async function onCandleClose(candle) {
   // and TRADE_STOP_TIME (e.g. a 3:20 PM candle-close with TRADE_STOP_TIME=15:30).
   // Skipped when confirmation candle is ON — entry then waits for the next-candle
   // intra-bar cross (handled in onTick), never on this candle's close.
-  if (!confirmCandle.enabled("SWING") && !tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
+  if (!confirmCandle.enabled("EMA_RSI_ST") && !tradeState.position && !tradeState._entryPending && !tradeState._expiryDayBlocked && isMarketHours() && (signal === "BUY_CE" || signal === "BUY_PE")) {
     // Daily loss kill switch — hard block, no bypass
     if (tradeState._dailyLossHit) {
       log(`🛑 [LIVE] Daily loss limit active — entry blocked (${signal})`);
@@ -1349,9 +1349,9 @@ async function onCandleClose(candle) {
     }
     // Chop guard: after N consecutive losses, sit out the rest of the session
     // (any win resets _chopConsecLosses). Reads live from env; 0 = off.
-    const _chopMax = parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10);
+    const _chopMax = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
     if (_chopMax > 0 && (tradeState._chopConsecLosses || 0) >= _chopMax) {
-      log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — SWING halted for the session (${signal})`);
+      log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${_chopMax}) — EMA_RSI_ST halted for the session (${signal})`);
       return;
     }
     if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
@@ -1362,7 +1362,7 @@ async function onCandleClose(candle) {
     const _vixCheck = await checkLiveVix("STRONG");
     if (!_vixCheck.allowed) {
       log(`🌡️ [LIVE] VIX BLOCK — ${_vixCheck.reason} | Signal: ${signal}`);
-      skipLogger.appendSkipLog("swing", {
+      skipLogger.appendSkipLog("ema_rsi_st", {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: candle.close,
@@ -1408,7 +1408,7 @@ async function onCandleClose(candle) {
           ({ symbol, expiry, strike, invalid } = cachedCs);
           log(`⚡ [LIVE] Using pre-fetched symbol (candle-close): ${symbol}`);
         } else {
-          ({ symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(candle.close, side, 'swing'));
+          ({ symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(candle.close, side, 'ema_rsi_st'));
         }
         const atmStrike   = Math.round(candle.close / 50) * 50;
         const strikeLabel = strike === atmStrike ? "ATM" : "ITM";
@@ -1435,7 +1435,7 @@ async function onCandleClose(candle) {
         const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
         if (!_sp.ok) {
           log(`⏭️ [LIVE] SKIP entry — spread too wide (${_sp.reason})`);
-          skipLogger.appendSkipLog("swing", {
+          skipLogger.appendSkipLog("ema_rsi_st", {
             gate: "spread",
             reason: _sp.reason || null,
             spot: candle.close,
@@ -1645,11 +1645,11 @@ function onSpotTick(tick) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (false) { // 50% pause DISABLED
       // 50%-rule pause active — silently skip to avoid log spam
-    } else if (parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10) > 0
-               && (tradeState._chopConsecLosses || 0) >= parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10)) {
+    } else if (parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10) > 0
+               && (tradeState._chopConsecLosses || 0) >= parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10)) {
       // Chop guard: N consecutive losses — sit out the rest of the session.
       if (!tradeState._chopGuardLoggedCandle || tradeState._chopGuardLoggedCandle !== _currentBarTime) {
-        log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${process.env.SWING_MAX_CONSEC_LOSSES}) — SWING halted for the session`);
+        log(`🚫 [LIVE] Chop guard — ${tradeState._chopConsecLosses} consecutive losses (≥ ${process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES}) — EMA_RSI_ST halted for the session`);
         tradeState._chopGuardLoggedCandle = _currentBarTime;
       }
     } else if (tradeState.sessionTrades.length >= _MAX_DAILY_TRADES) {
@@ -1669,7 +1669,7 @@ function onSpotTick(tick) {
 
     // ── Confirmation candle (cross & close): when ON, enter only when this candle
     //    (the one AFTER a signal candle) crosses the armed signal candle's close. ──
-    if (confirmCandle.enabled("SWING")) {
+    if (confirmCandle.enabled("EMA_RSI_ST")) {
       const _a = tradeState._armedSignal;
       if (_a && confirmCandle.isNextBar(bar.time, _a.armedBarTime, TRADE_RES)
             && confirmCandle.crossed(_a.side, ltp, _a.triggerLevel)) {
@@ -1692,7 +1692,7 @@ function onSpotTick(tick) {
         if (!tradeState._vixBlockLoggedCandle || tradeState._vixBlockLoggedCandle !== _currentBarTime) {
           tradeState._vixBlockLoggedCandle = _currentBarTime;
           log(`🌡️ [LIVE] VIX BLOCK (intra) — VIX ${_vixIntraVal.toFixed(1)} too high | Signal: ${signal}`);
-          skipLogger.appendSkipLog("swing", {
+          skipLogger.appendSkipLog("ema_rsi_st", {
             gate: "vix",
             reason: `VIX ${_vixIntraVal.toFixed(1)} too high`,
             spot: ltp,
@@ -1738,7 +1738,7 @@ function onSpotTick(tick) {
           symbolPromise = Promise.resolve(cached);
         } else {
           log(`🔍 [LIVE] Cache miss — live symbol lookup (spot moved or first trade of session)`);
-          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'swing');
+          symbolPromise = validateAndGetOptionSymbol(ltp, side, 'ema_rsi_st');
         }
       }
 
@@ -1777,7 +1777,7 @@ function onSpotTick(tick) {
           const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
           if (!_sp.ok) {
             log(`⏭️ [LIVE] SKIP intra-tick entry — spread too wide (${_sp.reason})`);
-            skipLogger.appendSkipLog("swing", {
+            skipLogger.appendSkipLog("ema_rsi_st", {
               gate: "spread",
               reason: _sp.reason || null,
               spot: ltp,
@@ -1928,13 +1928,13 @@ function onSpotTick(tick) {
   // ── EXIT: trailing SL is set per candle close (EMA/PSAR + optional candle trail).
   // The SL set there is enforced intra-tick below. Breakeven was removed.
 
-  // ── Per-trade points stop: catastrophic spot-points cap (SWING_STOP_LOSS_PTS) ──
-  // Mirrors SCALP_STOP_LOSS_PTS — exit once spot has moved this many points against
+  // ── Per-trade points stop: catastrophic spot-points cap (EMA_RSI_ST_STOP_LOSS_PTS) ──
+  // Mirrors BB_RSI_STOP_LOSS_PTS — exit once spot has moved this many points against
   // entry. Checked BEFORE the structural/trail SL so it caps deep adverse excursions
   // when the trailing SL sits wider than the cap. Read live from process.env so a
   // Settings change applies without a restart. 0 = disabled (default).
   if (tradeState.position && tradeState.position.spotAtEntry) {
-    const _slpCap = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+    const _slpCap = parseFloat(process.env.EMA_RSI_ST_STOP_LOSS_PTS || "0");
     if (_slpCap > 0) {
       const _pos2    = tradeState.position;
       const _favPts2 = (ltp - _pos2.spotAtEntry) * (_pos2.side === "CE" ? 1 : -1);
@@ -2002,20 +2002,20 @@ router.get("/start", async (req, res) => {
   const _auth = await verifyFyersToken();
   if (!_auth.ok)                          return res.status(401).json({ success: false, error: _auth.message, code: _auth.code });
   if (!zerodha.isAuthenticated())         return res.status(401).json({ success: false, error: "Zerodha not authenticated. Visit /auth/zerodha/login first." });
-  if (process.env.SWING_LIVE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set SWING_LIVE_ENABLED=true in .env." });
+  if (process.env.EMA_RSI_ST_LIVE_ENABLED !== "true") return res.status(403).json({ success: false, error: "Live trading disabled. Set EMA_RSI_ST_LIVE_ENABLED=true in .env." });
   if (tradeState.running)                 return res.status(400).json({ success: false, error: "Trading already running." });
-  if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /swing-paper/stop" });
+  if (sharedSocketState.isActive())       return res.status(400).json({ success: false, error: "Paper Trading is active. Stop it first at /ema_rsi_st-paper/stop" });
 
   // ── 0DTE expiry-day warning ────────────────────────────────────────────────
-  // Block live start if today is the configured swing expiry — 0DTE on swing
+  // Block live start if today is the configured expiry — 0DTE on EMA_RSI_ST
   // will bleed real money via theta+gamma. User must override with ?force=1.
-  if (isSwingExpiringToday() && req.query.force !== "1") {
-    const _exp = _getEffectiveSwingExpiry();
+  if (isEmaRsiStExpiringToday() && req.query.force !== "1") {
+    const _exp = _getEffectiveEmaRsiStExpiry();
     return res.status(409).json({
       success: false,
       code: "EXPIRY_DAY_0DTE",
       expiry: _exp,
-      message: `Configured swing expiry (${_exp}) is today — that's 0DTE. Swing strategy is not designed for same-day expiry (theta+gamma will crush option premium). Update SWING_OPTION_EXPIRY_OVERRIDE to next week's expiry in Settings, or click "Start Anyway" to proceed.`,
+      message: `Configured expiry (${_exp}) is today — that's 0DTE. EMA_RSI_ST strategy is not designed for same-day expiry (theta+gamma will crush option premium). Update EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE to next week's expiry in Settings, or click "Start Anyway" to proceed.`,
     });
   }
 
@@ -2070,7 +2070,7 @@ router.get("/start", async (req, res) => {
   tradeState._losses        = 0;
   tradeState._entryPending  = false;
   tradeState._consecutiveLosses    = 0;
-  tradeState._chopConsecLosses     = 0;   // chop-guard streak (SWING_MAX_CONSEC_LOSSES)
+  tradeState._chopConsecLosses     = 0;   // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES)
   tradeState._pauseUntilTime       = null;
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
   tradeState._slPauseUntilBySide   = { CE: 0, PE: 0 }; // reset same-side SL cooldown
@@ -2132,8 +2132,8 @@ router.get("/start", async (req, res) => {
       // Check 2: Option symbols
       try {
         const [ce, pe] = await Promise.all([
-          validateAndGetOptionSymbol(spot, "CE", 'swing'),
-          validateAndGetOptionSymbol(spot, "PE", 'swing'),
+          validateAndGetOptionSymbol(spot, "CE", 'ema_rsi_st'),
+          validateAndGetOptionSymbol(spot, "PE", 'ema_rsi_st'),
         ]);
         if (!ce.invalid && ce.symbol) {
           _checks.symbol = { ok: true, msg: `${ce.symbol.split(":")[1]} / ${pe.symbol.split(":")[1]}` };
@@ -2162,7 +2162,7 @@ router.get("/start", async (req, res) => {
     }
 
     // Check 4: Risk config summary (always logs)
-    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.SWING_SL_PAUSE_CANDLES || "3"} candles`);
+    log(`   📊 Risk config — MaxLoss: ₹${_MAX_DAILY_LOSS} | MaxTrades: ${_MAX_DAILY_TRADES} | Stop: EMA21 trail${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | OptStop: ${(parseFloat(process.env.OPT_STOP_PCT || "0.15")*100).toFixed(0)}% | Cooldown: ${process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3"} candles`);
     log(`   📅 Session window: ${process.env.TRADE_START_TIME || "09:15"} → ${process.env.TRADE_STOP_TIME || "15:30"} IST`);
 
     const _allOk = _checks.fyers.ok && _checks.symbol.ok && _checks.zerodha.ok;
@@ -2177,7 +2177,7 @@ router.get("/start", async (req, res) => {
   notifyStarted({
     mode: "LIVE",
     text: [
-      `${_allOk ? "✅" : "⚠️"} SWING LIVE — STARTED`,
+      `${_allOk ? "✅" : "⚠️"} EMA_RSI_ST LIVE — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
@@ -2200,7 +2200,7 @@ router.get("/start", async (req, res) => {
     log(`📥 Pre-loading candles (${fromStr} → ${todayStr}) — fetching fresh from Fyers (no cache)...`);
     // Direct Fyers fetch (no candle cache) — guarantees a clean continuous series.
     // The cache could serve a stale partial day, leaving holes that shift the
-    // path-dependent PSAR's trend flip. See swingPaper preload for the rationale.
+    // path-dependent PSAR's trend flip. See emaRsiStPaper preload for the rationale.
     const candles = await fetchCandles(NIFTY_INDEX_SYMBOL, String(getTradeResolution()), fromStr, todayStr);
     if (candles.length > 0) {
       tradeState.candles = candles.slice(0, -1);
@@ -2261,10 +2261,10 @@ router.get("/start", async (req, res) => {
   }
 
   // Tick-recorder session-start snapshot
-  tradeState._sessionId = `swing-live:${Date.now()}`;
+  tradeState._sessionId = `ema_rsi_st-live:${Date.now()}`;
   try {
     tickRecorder.recordSessionStart({
-      mode: "swing-live",
+      mode: "ema_rsi_st-live",
       sessionId: tradeState._sessionId,
       settings: tickRecorder.snapshotSettings(),
       warmup:   tradeState.candles.map(c => ({ ...c })),
@@ -2281,7 +2281,7 @@ router.get("/start", async (req, res) => {
 
   log(`📡 Subscribing to ${NIFTY_INDEX_SYMBOL} for live tick data...`);
   socketManager.start(NIFTY_INDEX_SYMBOL, onSpotTick, log);
-  sharedSocketState.setActive("SWING_LIVE");
+  sharedSocketState.setActive("EMA_RSI_ST_LIVE");
 
   res.json({
     success:     true,
@@ -2291,7 +2291,7 @@ router.get("/start", async (req, res) => {
     instrument:  instrumentConfig.INSTRUMENT,
     strategy:    { name: strategy.NAME },
     lotQty:      getLotQty(),
-    monitorAt:   "GET /swing-live/status",
+    monitorAt:   "GET /ema_rsi_st-live/status",
   });
 });
 
@@ -2310,7 +2310,7 @@ router.get("/stop", async (req, res) => {
 
   saveLiveSession();
   // Zero-trade case: rich report is skipped (saveLiveSession returns early).
-  // Emit a basic day report so TG_SWING_DAYREPORT subscribers still get closure.
+  // Emit a basic day report so TG_EMA_RSI_ST_DAYREPORT subscribers still get closure.
   if (!_hadTradesForReport) {
     notifyDayReport({
       mode: "LIVE",
@@ -2320,11 +2320,11 @@ router.get("/stop", async (req, res) => {
     });
   }
   stopOptionPolling();
-  // Only stop socket if no scalp mode is piggybacking
-  if (!sharedSocketState.isScalpActive() && !sharedSocketState.isEma9VwapActive()) {
+  // Only stop socket if no bb_rsi mode is piggybacking
+  if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
     socketManager.stop();
   } else {
-    log("📡 [LIVE] Socket kept alive — scalp mode still active");
+    log("📡 [LIVE] Socket kept alive — bb_rsi mode still active");
   }
   tradeState.optionLtp    = null;
   tradeState.optionLtpUpdatedAt = null;
@@ -2336,7 +2336,7 @@ router.get("/stop", async (req, res) => {
 
   try {
     tickRecorder.recordSessionStop({
-      mode: "swing-live",
+      mode: "ema_rsi_st-live",
       sessionId: tradeState._sessionId || null,
       reason: "user_stop",
     });
@@ -2370,19 +2370,19 @@ router.get("/exit", async (req, res) => {
 
   await squareOff(exitSpot, "Manual exit by user");
 
-  return res.redirect("/swing-live/status");
+  return res.redirect("/ema_rsi_st-live/status");
 });
 
 /**
- * POST /swing-live/manualEntry
+ * POST /ema_rsi_st-live/manualEntry
  * Manually enter a CE or PE trade at current spot. Places REAL order via Zerodha.
  * SL = current SAR (capped). Trail/breakeven apply normally after entry.
  */
 router.post("/manualEntry", async (req, res) => {
   if (!tradeState.running) return res.status(400).json({ success: false, error: "Live trading is not running." });
   if (tradeState.position) return res.status(400).json({ success: false, error: "Already in a position." });
-  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
-  if (!liveEnabled) return res.status(400).json({ success: false, error: "SWING_LIVE_ENABLED is false." });
+  const liveEnabled = process.env.EMA_RSI_ST_LIVE_ENABLED === "true";
+  if (!liveEnabled) return res.status(400).json({ success: false, error: "EMA_RSI_ST_LIVE_ENABLED is false." });
 
   const { side } = req.body || {};
   if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
@@ -2412,7 +2412,7 @@ router.post("/manualEntry", async (req, res) => {
 
   try {
     const { validateAndGetOptionSymbol, getLotQty } = require("../config/instrument");
-    const optResult = await validateAndGetOptionSymbol(spot, side, 'swing');
+    const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st');
     const symbol = optResult.symbol;
     const qty = getLotQty();
     const orderSide = side === "CE" ? 1 : -1; // Zerodha: 1=BUY, -1=SELL for options we always BUY
@@ -2461,7 +2461,7 @@ router.post("/manualEntry", async (req, res) => {
 });
 
 /**
- * GET /swing-live/status/chart-data
+ * GET /ema_rsi_st-live/status/chart-data
  * Returns candle history + trade markers for the lightweight-charts widget.
  */
 router.get("/status/chart-data", (req, res) => {
@@ -2494,9 +2494,9 @@ router.get("/status/chart-data", (req, res) => {
 
     // Strategy indicator overlays: EMA20 + EMA50 (close) + SuperTrend + RSI(14)
     const { EMA, RSI } = require("technicalindicators");
-    const EMA_FAST    = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
-    const EMA_SLOW    = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
-    const EMA_FASTEST = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
+    const EMA_FAST    = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
+    const EMA_SLOW    = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
+    const EMA_FASTEST = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
     let ema9 = [], ema20 = [], ema50 = [], supertrend = [], rsi = [];
     try {
       const _emaLine = (period) => {
@@ -2511,8 +2511,8 @@ router.get("/status/chart-data", (req, res) => {
       // Trend overlay — SuperTrend line (the only directional source).
       {
         const { computeSuperTrend } = require("../utils/supertrend");
-        const ST_PERIOD = parseInt(process.env.SWING_SUPERTREND_PERIOD || "10", 10);
-        const ST_MULT   = parseFloat(process.env.SWING_SUPERTREND_MULT || "3");
+        const ST_PERIOD = parseInt(process.env.EMA_RSI_ST_SUPERTREND_PERIOD || "10", 10);
+        const ST_MULT   = parseFloat(process.env.EMA_RSI_ST_SUPERTREND_MULT || "3");
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
           if (stArr[i] && stArr[i].value != null) supertrend.push({ time: candles[i].time, value: stArr[i].value, trend: stArr[i].trend });
@@ -2530,7 +2530,7 @@ router.get("/status/chart-data", (req, res) => {
       armedSide:    tradeState._armedSignal ? tradeState._armedSignal.side : null,
       ema9, ema20, ema50, supertrend,
       trendSource: "SUPERTREND", rsi, emaFast: EMA_FAST, emaSlow: EMA_SLOW, emaFastest: EMA_FASTEST,
-      tripleStack: (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
+      tripleStack: (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true",
       rsiCeMin: parseFloat(process.env.RSI_CE_MIN || "52"), rsiPeMax: parseFloat(process.env.RSI_PE_MAX || "48") });
   } catch (err) {
     return res.status(500).json({ error: err.message });
@@ -2538,7 +2538,7 @@ router.get("/status/chart-data", (req, res) => {
 });
 
 /**
- * GET /swing-live/status/data
+ * GET /ema_rsi_st-live/status/data
  * JSON-only AJAX endpoint — returns all dynamic live trade state.
  * Called every 2 s by client-side setInterval when trading is active.
  */
@@ -2666,7 +2666,7 @@ router.get("/status/data", (req, res) => {
 router.get("/status", (req, res) => {
   try {
   const strategy    = getActiveStrategy();
-  const liveEnabled = process.env.SWING_LIVE_ENABLED === "true";
+  const liveEnabled = process.env.EMA_RSI_ST_LIVE_ENABLED === "true";
   const fyersOk     = !!process.env.ACCESS_TOKEN;
   const zerodhaOk   = zerodha.isAuthenticated();
 
@@ -2730,8 +2730,8 @@ router.get("/status", (req, res) => {
     : 0;
   // Trailing-stop label: EMA21 base SL + optional candle-trail overlay
   const _slModeLbl  = "EMA21";
-  const _ctOn       = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-  const _ctBars     = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
+  const _ctOn       = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+  const _ctBars     = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
   const _trailLbl   = pos ? (_slModeLbl + (_ctOn ? ` + ${_ctBars}-bar ${pos.side === "CE" ? "low" : "high"}` : "")) : _slModeLbl;
 
   // ATM/ITM badge
@@ -2930,7 +2930,7 @@ router.get("/status", (req, res) => {
 <body>
 <div class="app-shell">
 <!-- ── SIDEBAR ── -->
-${buildSidebar('swingLive', tradeState.running, tradeState.running, {
+${buildSidebar('emaRsiStLive', tradeState.running, tradeState.running, {
   showExitBtn: !!pos,
   exitBtnJs: 'ltHandleExit(this)',
   showStopBtn: tradeState.running,
@@ -3375,7 +3375,7 @@ function ltShowToast(msg, color) {
 async function ltHandleExit(btn) {
   if (btn) { btn.textContent = '⏳ Exiting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/swing-live/exit');
+    var res = await secretFetch('/ema_rsi_st-live/exit');
     if (!res) { if (btn) { btn.textContent = '🚪 Exit Trade'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -3393,7 +3393,7 @@ async function ltHandleExit(btn) {
 async function ltHandleStart(btn, force) {
   if (btn) { btn.textContent = '⏳ Starting...'; btn.disabled = true; }
   try {
-    var url = force ? '/swing-live/start?force=1' : '/swing-live/start';
+    var url = force ? '/ema_rsi_st-live/start?force=1' : '/ema_rsi_st-live/start';
     var res = await secretFetch(url);
     if (!res) { if (btn) { btn.textContent = '▶ Start'; btn.disabled = false; } return; }
     var data = await res.json();
@@ -3403,7 +3403,7 @@ async function ltHandleStart(btn, force) {
         var ok = await showConfirm({
           icon: '⚠️',
           title: '0DTE Expiry Day — REAL MONEY at Risk',
-          message: data.message + '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update Swing Option Expiry in Settings instead.',
+          message: data.message + '\\n\\nThis is LIVE trading with real capital. Strongly recommend: cancel and update EMA_RSI_ST Option Expiry in Settings instead.',
           confirmText: 'Start Anyway (Real Money)',
           confirmClass: 'modal-btn-danger'
         });
@@ -3427,7 +3427,7 @@ async function ltHandleStart(btn, force) {
 async function ltHandleStop(btn) {
   if (btn) { btn.textContent = '⏳ Stopping...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/swing-live/stop');
+    var res = await secretFetch('/ema_rsi_st-live/stop');
     if (!res) { if (btn) { btn.textContent = '■ Stop'; btn.disabled = false; } return; }
     var data = await res.json();
     ltShowToast('⏹ Live trading stopped.', '#ef4444');
@@ -3439,16 +3439,16 @@ async function ltHandleStop(btn) {
 }
 async function ltHandleReset(btn) {
   var ok = await showDoubleConfirm({
-    icon: '⚠️', title: 'Reset Swing Live History',
-    message: 'Wipe ALL swing LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
+    icon: '⚠️', title: 'Reset EMA_RSI_ST Live History',
+    message: 'Wipe ALL EMA_RSI_ST LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
     confirmText: 'Reset History', confirmClass: 'modal-btn-danger',
-    subject: 'ALL swing LIVE trade history',
+    subject: 'ALL EMA_RSI_ST LIVE trade history',
     secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/swing-live/reset', { method: 'POST' });
+    var res = await secretFetch('/ema_rsi_st-live/reset', { method: 'POST' });
     if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
@@ -3474,7 +3474,7 @@ async function manualEntry(side) {
   });
   if (!ok) return;
   try {
-    var res = await secretFetch('/swing-live/manualEntry', {
+    var res = await secretFetch('/ema_rsi_st-live/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -3545,7 +3545,7 @@ async function manualEntry(side) {
 
   async function fetchChart() {
     try {
-      const res = await fetch('/swing-live/status/chart-data', { cache: 'no-store' });
+      const res = await fetch('/ema_rsi_st-live/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
       if (!d.candles || d.candles.length === 0) return;
@@ -3645,7 +3645,7 @@ async function manualEntry(side) {
 
   async function fetchAndUpdate() {
     try {
-      const res = await fetch('/swing-live/status/data', { cache: 'no-store' });
+      const res = await fetch('/ema_rsi_st-live/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       const d = await res.json();
 
@@ -3862,22 +3862,22 @@ async function manualEntry(side) {
 });
 
 /**
- * POST /swing-live/reset
- * Wipe all swing LIVE trade history (clears live_trades.json sessions).
+ * POST /ema_rsi_st-live/reset
+ * Wipe all EMA_RSI_ST LIVE trade history (clears live_trades.json sessions).
  * Refuses when a live session is running. Does NOT touch real broker orders.
  */
 router.post("/reset", (req, res) => {
   if (tradeState.running) {
     return res.status(400).json({
       success: false,
-      error: "Stop swing live trading first before resetting history.",
+      error: "Stop EMA_RSI_ST live trading first before resetting history.",
     });
   }
   try {
     ensureLiveDir();
     fs.writeFileSync(LT_FILE, JSON.stringify({ sessions: [] }, null, 2));
-    log("🔄 [LIVE] Swing live trade history cleared.");
-    return res.json({ success: true, message: "Swing live trade history cleared." });
+    log("🔄 [LIVE] EMA_RSI_ST live trade history cleared.");
+    return res.json({ success: true, message: "EMA_RSI_ST live trade history cleared." });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

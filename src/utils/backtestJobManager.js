@@ -7,7 +7,7 @@
  *
  * Usage:
  *   const jobs = require("./backtestJobManager");
- *   const { id } = jobs.createJob("swing");
+ *   const { id } = jobs.createJob("ema_rsi_st");
  *   jobs.updateProgress(id, { phase: "Fetching…", pct: 10 });
  *   jobs.completeJob(id, result);
  *   jobs.getJob(id);
@@ -101,7 +101,7 @@ function isIdle() {
  * Polls /status every 1.5s and auto-redirects when done.
  *
  * @param {string} jobId   - Job ID to poll
- * @param {string} basePath - Route base path (e.g. "/swing-backtest")
+ * @param {string} basePath - Route base path (e.g. "/ema_rsi_st-backtest")
  * @param {string} title   - Page title prefix
  */
 function buildProgressPage(jobId, basePath, title) {

@@ -1,19 +1,19 @@
 /**
- * SCALP BACKTEST — /scalp-backtest
+ * BB_RSI BACKTEST — /bb_rsi-backtest
  * ─────────────────────────────────────────────────────────────────────────────
- * Backtests the scalp strategy (BB break + PSAR + RSI) on 3/5-min candles.
+ * Backtests the bb_rsi strategy (BB break + PSAR + RSI) on 3/5-min candles.
  * Uses Fyers historical API for candle data. Completely independent from
  * the main backtest route.
  *
  * Routes:
- *   GET /scalp-backtest  → Run backtest with query params
+ *   GET /bb_rsi-backtest  → Run backtest with query params
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 const express = require("express");
 const router  = express.Router();
 const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngine");
-const scalpStrategy    = require("../strategies/scalp_bb_cpr");
+const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -25,16 +25,16 @@ const { isExpiryDate } = require("../utils/nseHolidays");
 const { getCharges } = require("../utils/charges");
 const confirmCandle = require("../utils/confirmCandle");
 
-// Derive signal strength for scalp: STRONG if RSI is clearly beyond threshold (+5), else MARGINAL.
-function _deriveScalpStrength(result) {
+// Derive signal strength for bb_rsi: STRONG if RSI is clearly beyond threshold (+5), else MARGINAL.
+function _deriveBbRsiStrength(result) {
   const rsi = typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    const thr = parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "55");
     return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    const thr = parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "45");
     return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
@@ -74,8 +74,8 @@ function buildDailyOHLC(candles) {
   return days;
 }
 
-// ── Scalp Backtest Engine ─────────────────────────────────────────────────────
-async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onProgress) {
+// ── BB_RSI Backtest Engine ─────────────────────────────────────────────────────
+async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onProgress) {
   const trades   = [];
   let position   = null;
   // Confirmation candle (cross & close): { side, armedBarTime, triggerLevel, result } | null.
@@ -90,23 +90,23 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   const OPTION_SIM  = isFutures ? false : (process.env.BACKTEST_OPTION_SIM !== "false");
   const DELTA       = isFutures ? 1.0 : parseFloat(process.env.BACKTEST_DELTA || "0.55");
   const THETA_DAY   = isFutures ? 0   : parseFloat(process.env.BACKTEST_THETA_DAY || "10");
-  const SCALP_RES   = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
+  const BB_RSI_RES   = parseInt(process.env.BB_RSI_RESOLUTION || "5", 10);
   // Candles per 6.5-hour (390-min) day for theta — derived from the ACTUAL bar spacing,
-  // not SCALP_RES, so it stays correct even if the run's ?resolution= differs from the env.
-  const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : SCALP_RES;
+  // not BB_RSI_RES, so it stays correct even if the run's ?resolution= differs from the env.
+  const _btResMins  = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : BB_RSI_RES;
   const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
 
-  // Scalp config
-  const SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-  const SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-  const SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-  const SCALP_CONSEC_EXTRA = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
+  // BB_RSI config
+  const BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
+  const BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
+  const BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
+  const BB_RSI_CONSEC_EXTRA = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
 
   // Slippage simulation (pts added against you on entry & exit)
-  const SLIPPAGE_PTS = parseFloat(process.env.SCALP_SLIPPAGE_PTS || "0");
+  const SLIPPAGE_PTS = parseFloat(process.env.BB_RSI_SLIPPAGE_PTS || "0");
 
   // Per-side SL pause — when true, an SL on CE only pauses CE entries
-  const SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+  const BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
 
   // Memoized IST converters — avoids expensive toLocaleString/ICU on every candle
   const _istDateCache = new Map();
@@ -142,7 +142,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     return `${dd}/${mm}/${yyyy}, ${h}:${m}:${s}`;
   }
 
-  if (typeof scalpStrategy.reset === "function") scalpStrategy.reset();
+  if (typeof bbRsiStrategy.reset === "function") bbRsiStrategy.reset();
 
   // Build daily OHLC for prev-day reference
   const dailyOHLC = buildDailyOHLC(candles);
@@ -152,9 +152,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   for (let d = 0; d < sortedDates.length; d++) _dateIdx[sortedDates[d]] = d;
 
   console.log("\n══════════════════════════════════════════════");
-  console.log(`🔍 SCALP BACKTEST — ${scalpStrategy.NAME}`);
+  console.log(`🔍 BB_RSI BACKTEST — ${bbRsiStrategy.NAME}`);
   console.log(`   Candles: ${candles.length} | trailing SL | BB+PSAR+RSI entry`);
-  console.log(`   MaxTrades: ${SCALP_MAX_TRADES}/day | MaxLoss: ₹${SCALP_MAX_LOSS}/day`);
+  console.log(`   MaxTrades: ${BB_RSI_MAX_TRADES}/day | MaxLoss: ₹${BB_RSI_MAX_LOSS}/day`);
   console.log(`   Exit: profit lock + hard stop + BB re-entry + PSAR flip | Slippage: ${SLIPPAGE_PTS}pts`);
   console.log(`   Days with data: ${sortedDates.length}`);
   console.log("══════════════════════════════════════════════");
@@ -170,9 +170,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   let _prevDate = null;
   let _loggedReason = null;
   const _rejectCounts = {};
-  const _btStartMin = (() => { const v = process.env.SCALP_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  const _btEndMin   = (() => { const v = process.env.SCALP_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
-  // EOD square-off = TRADE_STOP_TIME − 10, mirroring scalpPaper (_STOP_MINS − 10) so a
+  const _btStartMin = (() => { const v = process.env.BB_RSI_ENTRY_START || "09:21"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  const _btEndMin   = (() => { const v = process.env.BB_RSI_ENTRY_END   || "14:30"; const p = v.split(":"); return parseInt(p[0],10)*60+parseInt(p[1],10); })();
+  // EOD square-off = TRADE_STOP_TIME − 10, mirroring bbRsiPaper (_STOP_MINS − 10) so a
   // Settings change to TRADE_STOP_TIME moves the backtest exit too (was hardcoded 3:20).
   const _eodMin     = (() => { const v = process.env.TRADE_STOP_TIME   || "15:30"; const p = v.split(":"); return parseInt(p[0],10)*60+(parseInt(p[1],10)||0) - 10; })();
 
@@ -182,7 +182,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       await new Promise(resolve => setImmediate(resolve));
       if (onProgress) {
         const done = i - 30, total = candles.length - 30;
-        onProgress({ phase: 'Running scalp backtest…', current: done, total, pct: Math.min(99, 5 + Math.round((done / total) * 94)) });
+        onProgress({ phase: 'Running bb_rsi backtest…', current: done, total, pct: Math.min(99, 5 + Math.round((done / total) * 94)) });
       }
     }
 
@@ -205,7 +205,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     window.push(candle);
     if (window.length > 100) window.shift();
 
-    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors scalpPaper EOD square-off)
+    const isEOD = candleMin >= _eodMin; // TRADE_STOP_TIME − 10 (mirrors bbRsiPaper EOD square-off)
 
     // Get prev day OHLC (reference)
     const dateIdx = _dateIdx[candleDate] ?? -1;
@@ -251,7 +251,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       //    at the stop level. Reason includes "SL" so it arms the per-side cooldown.
       const _worstSpot   = position.side === "CE" ? candle.low : candle.high;
       const _favWorstPts = (_worstSpot - position.entryPrice) * (position.side === "CE" ? 1 : -1);
-      const _hs = scalpStrategy.hardStop(_favWorstPts);
+      const _hs = bbRsiStrategy.hardStop(_favWorstPts);
       if (_hs.hit) {
         position.slSource = "Stop Loss";
         exitPrice  = parseFloat((position.entryPrice - _hs.stop * (position.side === "CE" ? 1 : -1)).toFixed(2));
@@ -259,10 +259,10 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       }
 
       // 2. PROFIT LOCK — the upside exit. Once peak favourable spot move ≥
-      //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
+      //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below PCT% of peak.
       //    Evaluated at candle close (per-bar proxy for the per-tick paper logic).
       if (!exitReason) {
-        const _lock = scalpStrategy.profitLock(_favClosePts, position.mfeSpotPts);
+        const _lock = bbRsiStrategy.profitLock(_favClosePts, position.mfeSpotPts);
         if (_lock.hit) {
           position.slSource = "Profit Lock";
           exitPrice  = candle.close;
@@ -276,16 +276,16 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       //    candles) and exit AT the band line — the per-bar proxy for the per-tick band
       //    stop (cf. the hard stop above, which likewise exits at its level).
       //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
-      //    ≥ SCALP_BB_REENTRY_ARM_PTS past the band. Track max favourable penetration
+      //    ≥ BB_RSI_BB_REENTRY_ARM_PTS past the band. Track max favourable penetration
       //    via the bar's favourable extreme (PE→low, CE→high) so a fresh entry sitting
       //    right at the band isn't stopped by an immediate noise wick.
-      if (!exitReason && (process.env.SCALP_BB_REENTRY_EXIT || "true") === "true") {
-        const _bb = scalpStrategy.bbLevels(window.slice(0, -1));
+      if (!exitReason && (process.env.BB_RSI_BB_REENTRY_EXIT || "true") === "true") {
+        const _bb = bbRsiStrategy.bbLevels(window.slice(0, -1));
         if (_bb) {
           const _band = position.side === "PE" ? _bb.lower : _bb.upper;
           const _penBar = position.side === "PE" ? (_band - candle.low) : (candle.high - _band);
           if (_penBar > (position._bbMaxPen || 0)) position._bbMaxPen = _penBar;
-          const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+          const _armPts = parseFloat(process.env.BB_RSI_BB_REENTRY_ARM_PTS || "10");
           if ((position._bbMaxPen || 0) >= _armPts) {
             if (position.side === "PE" && candle.high > _band) {
               exitPrice = parseFloat(_band.toFixed(2)); exitReason = "BB re-entry";
@@ -296,9 +296,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         }
       }
 
-      // 4. Trend flip — exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND)
-      if (!exitReason && scalpStrategy.isTrendFlip(window, position.side)) {
-        exitReason = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+      // 4. Trend flip — exit on reversal signal (PSAR or SuperTrend, per BB_RSI_USE_SUPERTREND)
+      if (!exitReason && bbRsiStrategy.isTrendFlip(window, position.side)) {
+        exitReason = (process.env.BB_RSI_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
       }
 
       // 5. EOD
@@ -343,18 +343,18 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         _dailyPnl += pnl;
         _dailyTradeCount++;
         if (exitReason.includes("SL")) {
-          if (SCALP_PER_SIDE_PAUSE) {
+          if (BB_RSI_PER_SIDE_PAUSE) {
             _consecSLsBySide[position.side] += 1;
           } else {
             _consecSLsBySide.CE += 1;
             _consecSLsBySide.PE += 1;
           }
-          const _streak = SCALP_PER_SIDE_PAUSE ? _consecSLsBySide[position.side] : Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
+          const _streak = BB_RSI_PER_SIDE_PAUSE ? _consecSLsBySide[position.side] : Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
           const pauseCandles = _streak >= 2
-            ? SCALP_PAUSE_CANDLES + SCALP_CONSEC_EXTRA * (_streak - 1)
-            : SCALP_PAUSE_CANDLES;
-          const _untilTs = candle.time + (pauseCandles * SCALP_RES * 60);
-          if (SCALP_PER_SIDE_PAUSE) {
+            ? BB_RSI_PAUSE_CANDLES + BB_RSI_CONSEC_EXTRA * (_streak - 1)
+            : BB_RSI_PAUSE_CANDLES;
+          const _untilTs = candle.time + (pauseCandles * BB_RSI_RES * 60);
+          if (BB_RSI_PER_SIDE_PAUSE) {
             _slPauseUntilBySide[position.side] = _untilTs;
           } else {
             _slPauseUntilBySide.CE = _untilTs;
@@ -363,7 +363,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
           _slPauseUntilTs = Math.max(_slPauseUntilBySide.CE, _slPauseUntilBySide.PE);
           _consecSLs     = Math.max(_consecSLsBySide.CE, _consecSLsBySide.PE);
         } else if (pnl > 0) {
-          if (SCALP_PER_SIDE_PAUSE) {
+          if (BB_RSI_PER_SIDE_PAUSE) {
             _consecSLsBySide[position.side] = 0;
           } else {
             _consecSLsBySide.CE = 0;
@@ -380,21 +380,21 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     if (isEOD) continue;
     // ── Expiry-day-only filter: skip entry on non-expiry days ──────────────
     if (expiryDates && !expiryDates.has(candleDate)) continue;
-    if (_dailyTradeCount >= SCALP_MAX_TRADES) continue;
-    if (_dailyPnl <= -SCALP_MAX_LOSS) continue;
+    if (_dailyTradeCount >= BB_RSI_MAX_TRADES) continue;
+    if (_dailyPnl <= -BB_RSI_MAX_LOSS) continue;
     // Both-sides-paused fast path (entry-side specific check happens after signal returns)
     if (candle.time < _slPauseUntilBySide.CE && candle.time < _slPauseUntilBySide.PE) continue;
 
-    const _confirmScalp = confirmCandle.enabled("SCALP");
+    const _confirmBbRsi = confirmCandle.enabled("BB_RSI");
 
     // ── Confirmation candle: fill an armed signal on THIS (immediately-next)
-    //    candle. With SCALP_CONFIRM_OUTSIDE_BAND on (default) it must CLOSE beyond
+    //    candle. With BB_RSI_CONFIRM_OUTSIDE_BAND on (default) it must CLOSE beyond
     //    the signal close AND outside the band (entry at the close); off = legacy
     //    intra-bar cross proxy (barCrossFill). Valid for exactly one candle. ──
-    if (_confirmScalp && _armed) {
+    if (_confirmBbRsi && _armed) {
       const _a = _armed;
       _armed = null; // armed signal is good for exactly one candle — consume it
-      if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, SCALP_RES)
+      if (confirmCandle.isNextBar(candle.time, _a.armedBarTime, BB_RSI_RES)
           && candle.time >= _slPauseUntilBySide[_a.side]) {
         // Two confirmation modes (must match paper):
         //  • OUTSIDE_BAND ON  → confirm at this candle's CLOSE: it must have closed
@@ -402,9 +402,9 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
         //  • OUTSIDE_BAND OFF → legacy intra-bar cross proxy (barCrossFill); entry
         //    at the cross fill.
         let _fill = null, _confTag = null;
-        if (confirmCandle.outsideBandEnabled("SCALP")) {
+        if (confirmCandle.outsideBandEnabled("BB_RSI")) {
           if (confirmCandle.crossed(_a.side, candle.close, _a.triggerLevel)) {
-            const _bb = scalpStrategy.bbLevels(window); // window ends at THIS candle
+            const _bb = bbRsiStrategy.bbLevels(window); // window ends at THIS candle
             if (_bb && confirmCandle.beyondBand(_a.side, candle.close, _bb.upper, _bb.lower)) {
               _fill = candle.close;
               _confTag = `CONFIRM ${_a.side} close ${candle.close} beyond band`;
@@ -440,17 +440,17 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
       // not the next candle, or never crossed/closed-outside → armed signal expired (consumed above)
     }
 
-    const result = scalpStrategy.getSignal(window, {
+    const result = bbRsiStrategy.getSignal(window, {
       silent: true,
       prevDayOHLC: prevDayOHLC,
       prevPrevDayOHLC: prevPrevDayOHLC,
     });
 
-    // VIX check — post-strategy with derived strength (scalp: SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
-    if (result.signal !== "NONE" && process.env.SCALP_VIX_ENABLED === "true") {
+    // VIX check — post-strategy with derived strength (bb_rsi: BB_RSI_VIX_MAX_ENTRY + BB_RSI_VIX_STRONG_ONLY)
+    if (result.signal !== "NONE" && process.env.BB_RSI_VIX_ENABLED === "true") {
       const _btVix = lookupVix(candle.time);
-      const _strength = _deriveScalpStrength(result);
-      const vixCheck = vixFilter.checkBacktestVix(_btVix, _strength, { mode: "scalp", force: true });
+      const _strength = _deriveBbRsiStrength(result);
+      const vixCheck = vixFilter.checkBacktestVix(_btVix, _strength, { mode: "bb_rsi", force: true });
       if (!vixCheck.allowed) continue;
     }
 
@@ -471,7 +471,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     }
 
     // Enter at the SIGNAL bar's CLOSE — matches paper, which evaluates the signal on
-    // candle close and enters immediately at bar.close (scalpPaper.onCandleClose).
+    // candle close and enters immediately at bar.close (bbRsiPaper.onCandleClose).
     // (Previously queued for the next candle's open, which shifted every trade by one bar.)
     const side = result.signal === "BUY_CE" ? "CE" : "PE";
     // Per-side SL cooldown — block only if THIS side has an active pause
@@ -479,7 +479,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 
     // ── Confirmation candle ON: arm the signal — entry fires on the NEXT candle's
     //    cross (handled above), never on the signal candle itself. ──
-    if (_confirmScalp) {
+    if (_confirmBbRsi) {
       _armed = { side, armedBarTime: candle.time, triggerLevel: candle.close, result };
       continue;
     }
@@ -564,7 +564,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
     delta:       DELTA,
     thetaPerDay: THETA_DAY,
     finalCapital: parseFloat((capital + totalPnl).toFixed(2)),
-    vixEnabled:  process.env.SCALP_VIX_ENABLED === "true",
+    vixEnabled:  process.env.BB_RSI_VIX_ENABLED === "true",
     profitFactor,
     expectancy,
     maxLoss:     parseFloat(parseFloat(maxLoss).toFixed(2)),
@@ -584,7 +584,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
   }
   summary.rejectBreakdown = sortedRejects.slice(0, 10).map(([reason, count]) => ({ reason, count }));
 
-  console.log(`\n📊 SCALP BACKTEST RESULT: ${trades.length} trades | WR ${winRate}% | PnL ${inr(totalPnl)}`);
+  console.log(`\n📊 BB_RSI BACKTEST RESULT: ${trades.length} trades | WR ${winRate}% | PnL ${inr(totalPnl)}`);
 
   return { summary, trades };
 }
@@ -593,7 +593,7 @@ async function runScalpBacktest(candles, capital, vixCandles, expiryDates, onPro
 function errorPage(title, message) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title} — Scalp Backtest</title>
+<title>${title} — BB_RSI Backtest</title>
 <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;align-items:center;justify-content:center;}
 .box{background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px;max-width:480px;text-align:center;}
 h2{color:#ef4444;margin-bottom:12px;font-size:1.1rem;}p{font-size:0.85rem;color:#8899aa;line-height:1.6;}</style>
@@ -614,13 +614,13 @@ router.get("/idle", (req, res) => {
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const now = new Date();
   const defFrom = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
   const defTo   = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
   const from       = req.query.from       || defFrom;
   const to         = req.query.to         || defTo;
-  const resolution = req.query.resolution || process.env.SCALP_RESOLUTION || "5";
+  const resolution = req.query.resolution || process.env.BB_RSI_RESOLUTION || "5";
   const capital    = parseInt(process.env.BACKTEST_CAPITAL || "100000", 10);
   const symbol     = "NSE:NIFTY50-INDEX";
   const skipCache  = req.query.skipCache === "true";
@@ -629,24 +629,24 @@ router.get("/", async (req, res) => {
     res.setHeader("Content-Type", "text/html");
     return res.status(503).send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
       <meta name="viewport" content="width=device-width,initial-scale=1"/>
-      <title>Scalp Backtest blocked — Live trade active</title>
+      <title>BB_RSI Backtest blocked — Live trade active</title>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}
       ${sidebarCSS()}
       ${modalCSS()}
       </style>
       </head><body>
 <div class="app-shell">
-${buildSidebar('scalpBacktest', true)}
+${buildSidebar('bbRsiBacktest', true)}
 <div class="main-content">
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
         <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
           <div style="font-size:2.5rem;margin-bottom:16px;">🔒</div>
-          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">Scalp Backtest blocked</h2>
+          <h2 style="color:#ef4444;margin-bottom:12px;font-size:1.1rem;">BB_RSI Backtest blocked</h2>
           <p style="font-size:0.85rem;color:#8899aa;margin-bottom:24px;line-height:1.6;">
             Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
             Stop the live trade first, then run your backtest.
           </p>
-          <a href="/swing-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+          <a href="/ema_rsi_st-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
       </div></div>
@@ -660,7 +660,7 @@ ${modalJS()}
     return res.status(401).send(errorPage("Not Authenticated", "Login with Fyers first."));
   }
 
-  console.log(`\n🔍 Scalp Backtest: ${from} to ${to} | ${resolution}m`);
+  console.log(`\n🔍 BB_RSI Backtest: ${from} to ${to} | ${resolution}m`);
 
   // ── Background Job System ──────────────────────────────────────────────────
   const jobId = req.query.jobId;
@@ -668,10 +668,10 @@ ${modalJS()}
   if (!jobId) {
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) {
-      return res.send(backtestJobs.buildQueuePage('/scalp-backtest', 'Scalp Backtest'));
+      return res.send(backtestJobs.buildQueuePage('/bb_rsi-backtest', 'BB_RSI Backtest'));
     }
 
-    const { id } = backtestJobs.createJob('scalp');
+    const { id } = backtestJobs.createJob('bb_rsi');
 
     (async () => {
       try {
@@ -679,7 +679,7 @@ ${modalJS()}
         const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
         const [_candles, _vixCandles] = await Promise.all([
           fetchCandlesCachedBT(symbol, resolution, from, to, skipCache, _onFetchProgress),
-          process.env.SCALP_VIX_ENABLED === "true"
+          process.env.BB_RSI_VIX_ENABLED === "true"
             ? fetchCandlesCachedBT(VIX_SYMBOL, "D", from, to, skipCache).catch(() => [])
             : Promise.resolve([]),
         ]);
@@ -690,33 +690,33 @@ ${modalJS()}
         }
 
         let _expiryDates = null;
-        if ((process.env.SCALP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+        if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
           const uniqueDates = [...new Set(_candles.map(c => new Date(c.time * 1000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" })))];
           const expirySet = new Set();
           for (const d of uniqueDates) { if (await isExpiryDate(d)) expirySet.add(d); }
           _expiryDates = expirySet;
         }
 
-        backtestJobs.updateProgress(id, { phase: 'Running scalp backtest…', pct: 5, current: 0, total: _candles.length - 30 });
-        const _result = await runScalpBacktest(_candles, capital, _vixCandles, _expiryDates,
+        backtestJobs.updateProgress(id, { phase: 'Running bb_rsi backtest…', pct: 5, current: 0, total: _candles.length - 30 });
+        const _result = await runBbRsiBacktest(_candles, capital, _vixCandles, _expiryDates,
           (p) => backtestJobs.updateProgress(id, p));
         _result.candleCount = _candles.length;
-        saveResult("SCALP_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
+        saveResult("BB_RSI_BACKTEST", { ..._result, params: { from, to, resolution, symbol, capital } });
         backtestJobs.completeJob(id, _result);
-        console.log(`\n ✅ Scalp backtest job ${id} complete — ${_result.trades.length} trades`);
+        console.log(`\n ✅ BB_RSI backtest job ${id} complete — ${_result.trades.length} trades`);
       } catch (err) {
-        console.error('[Scalp Backtest Job Error]', err);
+        console.error('[BB_RSI Backtest Job Error]', err);
         backtestJobs.failJob(id, err.message);
       }
     })();
 
-    return res.send(backtestJobs.buildProgressPage(id, '/scalp-backtest', 'Scalp Backtest'));
+    return res.send(backtestJobs.buildProgressPage(id, '/bb_rsi-backtest', 'BB_RSI Backtest'));
   }
 
   // ── Render results from completed job ──────────────────────────────────────
   const job = backtestJobs.getJob(jobId);
-  if (!job) return res.redirect('/scalp-backtest');
-  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/scalp-backtest', 'Scalp Backtest'));
+  if (!job) return res.redirect('/bb_rsi-backtest');
+  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/bb_rsi-backtest', 'BB_RSI Backtest'));
   if (job.status === 'error') {
     return res.status(500).send(errorPage("Backtest Failed", job.error));
   }
@@ -777,7 +777,7 @@ ${modalJS()}
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <title>Scalp Backtest — ${scalpStrategy.NAME}</title>
+  <title>BB_RSI Backtest — ${bbRsiStrategy.NAME}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;}
@@ -872,15 +872,15 @@ ${modalJS()}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('scalpBacktest', liveActive)}
+${buildSidebar('bbRsiBacktest', liveActive)}
 <div class="main-content">
 
 <div class="page">
   <!-- Context breadcrumb bar -->
   <div style="background:#06090e;border-bottom:0.5px solid #0e1428;padding:6px 20px;display:flex;align-items:center;gap:7px;margin:-16px -20px 14px;position:sticky;top:44px;z-index:90;">
-    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.12);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.25);text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">SCALP BACKTEST</span>
+    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.12);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.25);text-transform:uppercase;letter-spacing:0.5px;font-family:'IBM Plex Mono',monospace;">BB_RSI BACKTEST</span>
     <span style="color:#1e2a40;font-size:10px;">\u203a</span>
-    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);text-transform:uppercase;font-family:'IBM Plex Mono',monospace;">${scalpStrategy.NAME}</span>
+    <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(16,185,129,0.1);color:#34d399;border:0.5px solid rgba(16,185,129,0.2);text-transform:uppercase;font-family:'IBM Plex Mono',monospace;">${bbRsiStrategy.NAME}</span>
     <span style="color:#1e2a40;font-size:10px;">\u203a</span>
     <span style="font-size:0.6rem;font-weight:700;padding:2px 8px;border-radius:3px;background:rgba(245,158,11,0.1);color:#fbbf24;border:0.5px solid rgba(245,158,11,0.2);font-family:'IBM Plex Mono',monospace;">${from} \u2192 ${to}</span>
     <span style="margin-left:auto;font-size:0.6rem;color:#1e2a40;font-family:'IBM Plex Mono',monospace;">${resolution}-min \u00b7 ${candles.length.toLocaleString()} candles \u00b7 \u20b9${capital.toLocaleString("en-IN")}</span>
@@ -893,8 +893,8 @@ ${buildSidebar('scalpBacktest', liveActive)}
     <input type="hidden" id="r" value="5"/>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by months</label></div>
-    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/scalp-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
-    <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${scalpStrategy.NAME}</strong></span>
+    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'\u26a0\ufe0f',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/bb_rsi-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
+    <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#f59e0b;">${bbRsiStrategy.NAME}</strong></span>
   </div>
   <!-- Quick date presets -->
   <div style="display:flex;gap:6px;margin:-8px 0 6px;flex-wrap:wrap;align-items:center;">
@@ -1161,7 +1161,7 @@ ${buildSidebar('scalpBacktest', liveActive)}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
         <div>
           <span id="btm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\u26a1 Scalp Backtest — Full Details</span>
+          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\u26a1 BB_RSI Backtest — Full Details</span>
         </div>
         <button onclick="document.getElementById('btModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">\u2715 Close</button>
       </div>
@@ -2151,7 +2151,7 @@ document.getElementById('btModal').addEventListener('click',function(e){
 </html>`);
 
   } catch (err) {
-    console.error("Scalp backtest error:", err);
+    console.error("BB_RSI backtest error:", err);
     res.status(500).send(errorPage("Backtest Failed", err.message));
   }
 });

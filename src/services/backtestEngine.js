@@ -105,19 +105,19 @@ function getISTHHMM(unixSec) {
 /**
  * BACKTEST ENGINE — mirrors paper-trade logic.
  *
- * For SWING (redefined 2026-05-27) the entry/exit model is:
+ * For EMA_RSI_ST (redefined 2026-05-27) the entry/exit model is:
  *   ENTRY  : strategy.getSignal(window) returns BUY_CE/BUY_PE (EMA alignment + RSI + SuperTrend rules).
  *            Entry price = candle.close (candle-granularity proxy for live intra-candle entry).
  *   STOP   : initial SL = previous completed candle low (CE) / high (PE), from getSignal.
- *            Trails EMA21, tighten-only. When SWING_CANDLE_TRAIL_ENABLED, an N-bar low/high
+ *            Trails EMA21, tighten-only. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low/high
  *            candle trail is layered on and the tighter of the two wins.
  *   EXIT   : trail SL hit · EMA21 touch-back · option-premium stop (OPT_STOP_PCT,
  *            approximated via an adverse spot move in backtest) · opposite signal · EOD.
- *   RISK   : same-side SL cooldown (SWING_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
+ *   RISK   : same-side SL cooldown (EMA_RSI_ST_SL_PAUSE_CANDLES), VIX gate, MAX_DAILY_LOSS,
  *            3-consecutive-loss pause.
  *
  * Other strategies that reuse this engine keep their getSignal-driven behaviour; the
- * 50%-rule pause scaffolding is retained for them but SWING no longer triggers it.
+ * 50%-rule pause scaffolding is retained for them but EMA_RSI_ST no longer triggers it.
  */
 async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, onProgress, activeFromTs = 0) {
   const trades    = [];
@@ -173,25 +173,25 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // backtest overstates P&L vs live trading. Applied to BOTH entry and exit.
   const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
 
-  // ── SWING (redefined): exit/stop model ───────────────────────────────────
+  // ── EMA_RSI_ST (redefined): exit/stop model ───────────────────────────────────
   //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
   //   Trail       : EMA21, tighten-only; optional N-bar candle-trail overlay
-  //                 (SWING_CANDLE_TRAIL_*) — tighter wins.
+  //                 (EMA_RSI_ST_CANDLE_TRAIL_*) — tighter wins.
   //   Option stop : exit if the (simulated) option premium drops OPT_STOP_PCT from entry.
   //   Same-side cooldown: after an SL hit on a side, block that side for N candles.
-  const SWING_SL_PAUSE_CANDLES = parseInt(process.env.SWING_SL_PAUSE_CANDLES || "3", 10);
+  const EMA_RSI_ST_SL_PAUSE_CANDLES = parseInt(process.env.EMA_RSI_ST_SL_PAUSE_CANDLES || "3", 10);
   const OPT_STOP_PCT           = parseFloat(process.env.OPT_STOP_PCT || "0.15");
-  // Per-trade catastrophic spot-points cap (mirrors SCALP_STOP_LOSS_PTS). 0 = off.
-  const _SWING_STOP_LOSS_PTS   = parseFloat(process.env.SWING_STOP_LOSS_PTS || "0");
+  // Per-trade catastrophic spot-points cap (mirrors BB_RSI_STOP_LOSS_PTS). 0 = off.
+  const _EMA_RSI_ST_STOP_LOSS_PTS   = parseFloat(process.env.EMA_RSI_ST_STOP_LOSS_PTS || "0");
   // Negative-candle stop: square off a trade still in the RED after N candles (cut losers
   // fast, let winners ride the EMA trail). 0 = off. Default 2 (added 2026-06-19).
-  const _SWING_NEG_CANDLE_LIMIT = parseInt(process.env.SWING_NEG_CANDLE_LIMIT || "2", 10);
+  const _EMA_RSI_ST_NEG_CANDLE_LIMIT = parseInt(process.env.EMA_RSI_ST_NEG_CANDLE_LIMIT || "2", 10);
   // Chop guard: halt new entries for the rest of the day after N consecutive losing
   // trades (any win resets the streak). Mirrors paper/live. 0 = off.
-  const _SWING_MAX_CONSEC_LOSSES = parseInt(process.env.SWING_MAX_CONSEC_LOSSES || "0", 10);
+  const _EMA_RSI_ST_MAX_CONSEC_LOSSES = parseInt(process.env.EMA_RSI_ST_MAX_CONSEC_LOSSES || "0", 10);
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles after non-flip exit.
-  const OPP_COOLDOWN_ENABLED   = (process.env.SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
-  const OPP_COOLDOWN_CANDLES   = parseInt(process.env.SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
+  const OPP_COOLDOWN_ENABLED   = (process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED || "true").toLowerCase() === "true";
+  const OPP_COOLDOWN_CANDLES   = parseInt(process.env.EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES || "3", 10);
   // Backtest has no live option LTP — approximate the premium stop as an adverse
   // SPOT move: optStopSpotPts = (OPT_STOP_PCT × estEntryPremium) / DELTA. estEntryPremium
   // is the same 200 constant the PnL sim uses, so the two stay internally consistent.
@@ -237,9 +237,9 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     ? Math.round((candles[1].time - candles[0].time) / 60)
     : 15;
   console.log(`   Resolution: ${candleResolutionMins}-min candles | Total candles: ${candles.length} | Seed window: 30`);
-  console.log(`   SWING(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${SWING_SL_PAUSE_CANDLES} candles`);
+  console.log(`   EMA_RSI_ST(redefined): EMA+RSI+SuperTrend | EMA21 trail${(process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true" ? ` + ${Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10))}-bar candle trail (tighter wins)` : ""} | optStop ${(OPT_STOP_PCT*100).toFixed(0)}% | same-side cooldown ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
 
-  // 50%-rule exit pause: retained for non-SWING strategies that use this engine.
+  // 50%-rule exit pause: retained for non-EMA_RSI_ST strategies that use this engine.
   // Stored as unix seconds (candle.time units). Reset per day in the loop.
   let _fiftyPctPauseUntilTs = 0;
 
@@ -251,11 +251,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   let _dailyLossHit         = false;   // latched true when daily loss >= MAX_DAILY_LOSS
   let _consecutiveLosses    = 0;       // back-to-back losses (reset on win or new day)
   let _consecPauseUntilTs   = 0;       // unix seconds — block entries until this time
-  let _chopConsecLosses     = 0;       // chop-guard streak (SWING_MAX_CONSEC_LOSSES), reset on win or new day
+  let _chopConsecLosses     = 0;       // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES), reset on win or new day
   const _slPauseUntilBySide = { CE: 0, PE: 0 }; // same-side SL cooldown (unix secs), reset per day
   let _oppositeCooldownUntilTs   = 0;     // opposite-side cooldown (unix secs), reset per day
   let _oppositeCooldownLastSide  = null;  // last exited side
-  // Confirmation candle (cross & close, SWING only — SWING_CONFIRM_CANDLE_ENABLED).
+  // Confirmation candle (cross & close, EMA_RSI_ST only — EMA_RSI_ST_CONFIRM_CANDLE_ENABLED).
   // { side, armedBarTime, triggerLevel, signalSL, reason, strength } | null.
   let _armedSwing = null;
   // EMA21 trail base from the PRIOR candle's close. Paper arms the EMA21 trail at a
@@ -266,14 +266,14 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   console.log(`   Risk controls: MAX_DAILY_LOSS=₹${MAX_DAILY_LOSS} | MAX_DAILY_TRADES=${MAX_DAILY_TRADES} | 3-consec-loss=kill(15min)/pause(5min)`);
   if (SLIPPAGE_PTS > 0) console.log(`   Slippage sim : ${SLIPPAGE_PTS} pts per side (entry + exit)`);
 
-  // EOD times — mirror swingPaper EXACTLY so backtest squares off / blocks entries at
+  // EOD times — mirror emaRsiStPaper EXACTLY so backtest squares off / blocks entries at
   // the same IST minutes as paper (not a hardcoded 3:20). Paper has TWO distinct times:
   // entry cutoff = TRADE_STOP_TIME − 10 (paper's _ENTRY_STOP_MINS, ~15:20) and exit
-  // square-off = SWING_EOD_EXIT_TIME (~15:15). Collapsing both into one 3:20 made the
+  // square-off = EMA_RSI_ST_EOD_EXIT_TIME (~15:15). Collapsing both into one 3:20 made the
   // backtest hold ~5 min past paper's square-off.
   const _stopMins     = (() => { const v = (process.env.TRADE_STOP_TIME || "15:30").split(":"); return parseInt(v[0], 10) * 60 + (parseInt(v[1], 10) || 0); })();
   const _entryStopMin = _stopMins - 10;
-  const _eodExitMin   = (() => { const v = (process.env.SWING_EOD_EXIT_TIME || "15:15").split(":"); const h = parseInt(v[0], 10); return isNaN(h) ? _stopMins : (h * 60 + (parseInt(v[1], 10) || 0)); })();
+  const _eodExitMin   = (() => { const v = (process.env.EMA_RSI_ST_EOD_EXIT_TIME || "15:15").split(":"); const h = parseInt(v[0], 10); return isNaN(h) ? _stopMins : (h * 60 + (parseInt(v[1], 10) || 0)); })();
   const _eodLabel     = String(Math.floor(_eodExitMin / 60)).padStart(2, "0") + ":" + String(_eodExitMin % 60).padStart(2, "0");
 
   for (let i = 30; i < candles.length; i++) {
@@ -333,7 +333,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
     // Also check time — force EOD at 3:20 PM regardless
     const candleMin     = getISTHHMM(candle.time);
-    // Two distinct times, mirroring swingPaper: exit square-off at SWING_EOD_EXIT_TIME
+    // Two distinct times, mirroring emaRsiStPaper: exit square-off at EMA_RSI_ST_EOD_EXIT_TIME
     // (~15:15) vs entry cutoff at TRADE_STOP_TIME − 10 (~15:20). Last candle of the
     // day forces both. (Previously a single 3:20 served both, holding 5 min too long.)
     const isEodExit      = isLastCandleOfDay || candleMin >= _eodExitMin;
@@ -368,7 +368,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
 
     // ── TRAILING STOP (EMA21 base + optional candle-trail overlay) ──────────────
     // Base SL source (tighten-only) at each candle close is EMA21 — a candle touching
-    // back EMA21 is an explicit exit. When SWING_CANDLE_TRAIL_ENABLED, an N-bar low (CE)
+    // back EMA21 is an explicit exit. When EMA_RSI_ST_CANDLE_TRAIL_ENABLED, an N-bar low (CE)
     // / high (PE) trail is layered on and the TIGHTER of the two wins. The window ends at
     // the prior bar (i-1) to mirror paper's "SL from prior bars enforced on this bar" timing.
     // The touch-back exit is wired below in the EXIT CHECK block.
@@ -378,8 +378,8 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // mirrors paper's "SL from prior bars enforced on this bar" timing (no look-ahead).
       if (_prevEma21 != null) trailRef = _prevEma21;
       // Candle-trail overlay: N-bar low (CE) / high (PE), keep the tighter of EMA21 vs candle.
-      const _ctOn   = (process.env.SWING_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
-      const _ctBars = Math.max(1, parseInt(process.env.SWING_CANDLE_TRAIL_BARS || "3", 10));
+      const _ctOn   = (process.env.EMA_RSI_ST_CANDLE_TRAIL_ENABLED || "false").toLowerCase() === "true";
+      const _ctBars = Math.max(1, parseInt(process.env.EMA_RSI_ST_CANDLE_TRAIL_BARS || "3", 10));
       if (_ctOn && i >= _ctBars) {
         const _bars = candles.slice(i - _ctBars, i);
         const _candleLvl = position.side === "CE"
@@ -440,21 +440,21 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         }
       }
 
-      // Rule 1a: per-trade points stop (SWING_STOP_LOSS_PTS) — catastrophic spot cap.
-      // Mirrors SCALP_STOP_LOSS_PTS. Use the tighter of (structural SL, cap level):
+      // Rule 1a: per-trade points stop (EMA_RSI_ST_STOP_LOSS_PTS) — catastrophic spot cap.
+      // Mirrors BB_RSI_STOP_LOSS_PTS. Use the tighter of (structural SL, cap level):
       // whichever sits closer to entry is hit first intra-candle. 0 = disabled.
-      if (_SWING_STOP_LOSS_PTS > 0) {
+      if (_EMA_RSI_ST_STOP_LOSS_PTS > 0) {
         const adverse = position.side === "CE"
           ? (position.entryPrice - candle.low)
           : (candle.high - position.entryPrice);
-        if (adverse >= _SWING_STOP_LOSS_PTS) {
+        if (adverse >= _EMA_RSI_ST_STOP_LOSS_PTS) {
           const _capLvl = position.side === "CE"
-            ? quantize(position.entryPrice - _SWING_STOP_LOSS_PTS, 2)
-            : quantize(position.entryPrice + _SWING_STOP_LOSS_PTS, 2);
+            ? quantize(position.entryPrice - _EMA_RSI_ST_STOP_LOSS_PTS, 2)
+            : quantize(position.entryPrice + _EMA_RSI_ST_STOP_LOSS_PTS, 2);
           // Override only if no structural SL fired, or the cap is tighter (closer to entry).
           const _capTighter = !exitReason || (position.side === "CE" ? _capLvl > exitPrice : _capLvl < exitPrice);
           if (_capTighter) {
-            exitReason = `SL (${_SWING_STOP_LOSS_PTS}pts)`;
+            exitReason = `SL (${_EMA_RSI_ST_STOP_LOSS_PTS}pts)`;
             exitPrice  = _capLvl;
           }
         }
@@ -487,10 +487,10 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
       // Rule 1d: Negative-candle stop — if the trade is still in the RED at this
       // candle close after N candles held, square off (asymmetric loss-cut; winners
       // keep riding the EMA trail above). "Negative" ≈ spot close against entry.
-      if (!exitReason && _SWING_NEG_CANDLE_LIMIT > 0 && (position.candlesHeld || 0) >= _SWING_NEG_CANDLE_LIMIT) {
+      if (!exitReason && _EMA_RSI_ST_NEG_CANDLE_LIMIT > 0 && (position.candlesHeld || 0) >= _EMA_RSI_ST_NEG_CANDLE_LIMIT) {
         const _closePnlPts = (candle.close - position.entryPrice) * (position.side === "CE" ? 1 : -1);
         if (_closePnlPts < 0) {
-          exitReason = `Negative ${_SWING_NEG_CANDLE_LIMIT}-candle stop`;
+          exitReason = `Negative ${_EMA_RSI_ST_NEG_CANDLE_LIMIT}-candle stop`;
           exitPrice  = candle.close;
         }
       }
@@ -501,7 +501,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         exitPrice  = candle.close;
       }
 
-      // Rule 3: EOD square-off — PER DAY at SWING_EOD_EXIT_TIME (mirrors swingPaper)
+      // Rule 3: EOD square-off — PER DAY at EMA_RSI_ST_EOD_EXIT_TIME (mirrors emaRsiStPaper)
       if (!exitReason && isEodExit) {
         exitReason = `EOD square-off ${candleMin >= _eodExitMin ? _eodLabel : "(last candle of day)"}`;
         exitPrice  = candle.close;
@@ -608,17 +608,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
         } else {
           _consecutiveLosses = 0;
         }
-        // Chop-guard streak (SWING_MAX_CONSEC_LOSSES) — independent of the escalating
+        // Chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES) — independent of the escalating
         // pause above so it survives until a win or a new day (mirrors paper/live).
         if (pnlRupees > 0)      { _chopConsecLosses = 0; }
         else if (pnlRupees < 0) { _chopConsecLosses++; }
 
         // Same-side SL cooldown: after an SL hit, block new entries on THAT side
-        // for SWING_SL_PAUSE_CANDLES candles (mirrors SCALP per-side pause).
+        // for EMA_RSI_ST_SL_PAUSE_CANDLES candles (mirrors BB_RSI per-side pause).
         const isSLExit = exitReason.toLowerCase().includes("sl hit");
         if (isSLExit) {
-          _slPauseUntilBySide[position.side] = candle.time + (SWING_SL_PAUSE_CANDLES * candleResolutionMins * 60);
-          if (_verbose) console.log(`  ⏸️ ${position.side} SL pause — no ${position.side} entries for ${SWING_SL_PAUSE_CANDLES} candles`);
+          _slPauseUntilBySide[position.side] = candle.time + (EMA_RSI_ST_SL_PAUSE_CANDLES * candleResolutionMins * 60);
+          if (_verbose) console.log(`  ⏸️ ${position.side} SL pause — no ${position.side} entries for ${EMA_RSI_ST_SL_PAUSE_CANDLES} candles`);
         }
 
         // Opposite-side (flip) cooldown: after non-flip exit, block opposite-side entries.
@@ -647,7 +647,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                                   && _sigSide !== _oppositeCooldownLastSide
                                   && candle.time < _oppositeCooldownUntilTs;
     const isConsecPaused = _consecPauseUntilTs > 0 && candle.time < _consecPauseUntilTs;
-    const isChopHalted   = _SWING_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _SWING_MAX_CONSEC_LOSSES;
+    const isChopHalted   = _EMA_RSI_ST_MAX_CONSEC_LOSSES > 0 && _chopConsecLosses >= _EMA_RSI_ST_MAX_CONSEC_LOSSES;
     const isDailyLossHit = _dailyLossHit; // latched: daily-loss cap OR 3-consec-loss (15-min)
     const isMaxTradesHit = _dailyTradeCount >= MAX_DAILY_TRADES;
 
@@ -658,7 +658,7 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
     const _isWarmupOnly = candle.time < activeFromTs;
 
     if (!position && !_isWarmupOnly && !isEntryBlocked && !isConsecPaused && !isChopHalted && !isDailyLossHit && !isMaxTradesHit) {
-      const _confirmSwing = confirmCandle.enabled("SWING");
+      const _confirmSwing = confirmCandle.enabled("EMA_RSI_ST");
 
       // ── Confirmation candle (cross & close): fill an armed signal when THIS
       //    (immediately-next) candle crosses the signal candle's close. Candle-

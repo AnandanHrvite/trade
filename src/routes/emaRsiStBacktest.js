@@ -41,11 +41,11 @@ router.get("/idle", (req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  // Block during ANY live session (not just SWING_LIVE) — a heavy backtest sharing
+  // Block during ANY live session (not just EMA_RSI_ST_LIVE) — a heavy backtest sharing
   // the box with a live engine competes for Fyers API + loads a second candle heap,
   // risking an OOM kill on t3.micro. Check per-mode *_LIVE (paper sessions are fine).
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE"
-    || sharedSocketState.getScalpMode() === "SCALP_LIVE"
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE"
+    || sharedSocketState.getBbRsiMode() === "BB_RSI_LIVE"
     || sharedSocketState.getPAMode()    === "PA_LIVE"
     || (sharedSocketState.getOrbMode && sharedSocketState.getOrbMode() === "ORB_LIVE");
   const now = new Date();
@@ -68,7 +68,7 @@ router.get("/", async (req, res) => {
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#060810;color:#a0b8d8;min-height:100vh;display:flex;flex-direction:column;}</style>
       </head><body>
 <div class="app-shell">
-${buildSidebar('swingBacktest', true)}
+${buildSidebar('emaRsiStBacktest', true)}
 <div class="main-content">
       <div style="display:flex;align-items:center;justify-content:center;flex:1;padding:40px;">
         <div style="background:#0d1320;border:1px solid #7f1d1d;border-radius:14px;padding:40px 48px;max-width:480px;text-align:center;">
@@ -78,7 +78,7 @@ ${buildSidebar('swingBacktest', true)}
             Live trading is currently active. Backtest is disabled to prevent Fyers API contention and log pollution during a live session.<br><br>
             Stop the live trade first, then run your backtest.
           </p>
-          <a href="/swing-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
+          <a href="/ema_rsi_st-live/status" style="background:#ef4444;color:#fff;padding:9px 22px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">→ Go to Live Trade</a>
         </div>
       </div>
       </div></div></body></html>`);
@@ -99,10 +99,10 @@ ${buildSidebar('swingBacktest', true)}
     // No jobId → start a new background backtest
     const activeJob = backtestJobs.getActiveJob();
     if (activeJob) {
-      return res.send(backtestJobs.buildQueuePage('/swing-backtest', 'Swing Backtest'));
+      return res.send(backtestJobs.buildQueuePage('/ema_rsi_st-backtest', 'EMA_RSI_ST Backtest'));
     }
 
-    const { id } = backtestJobs.createJob('swing');
+    const { id } = backtestJobs.createJob('ema_rsi_st');
 
     // Fire-and-forget — runs in background, server stays responsive
     (async () => {
@@ -161,13 +161,13 @@ ${buildSidebar('swingBacktest', true)}
       }
     })();
 
-    return res.send(backtestJobs.buildProgressPage(id, '/swing-backtest', 'Swing Backtest'));
+    return res.send(backtestJobs.buildProgressPage(id, '/ema_rsi_st-backtest', 'EMA_RSI_ST Backtest'));
   }
 
   // ── Render results from completed job ──────────────────────────────────────
   const job = backtestJobs.getJob(jobId);
-  if (!job) return res.redirect('/swing-backtest');
-  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/swing-backtest', 'Swing Backtest'));
+  if (!job) return res.redirect('/ema_rsi_st-backtest');
+  if (job.status === 'running') return res.send(backtestJobs.buildProgressPage(jobId, '/ema_rsi_st-backtest', 'EMA_RSI_ST Backtest'));
   if (job.status === 'error') {
     const errHtml = buildBacktestPageWithToast(from, to, resolution, job.error, liveActive);
     res.setHeader("Content-Type", "text/html");
@@ -316,7 +316,7 @@ ${buildSidebar('swingBacktest', true)}
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('swingBacktest', liveActive)}
+${buildSidebar('emaRsiStBacktest', liveActive)}
 <div class="main-content">
 
 <div class="page">
@@ -337,7 +337,7 @@ ${buildSidebar('swingBacktest', liveActive)}
     <input type="hidden" id="r" value="5"/>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
     <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by months</label></div>
-    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/swing-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
+    <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/ema_rsi_st-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
     <span style="font-size:0.7rem;color:#4a6080;margin-left:auto;">Strategy: <strong style="color:#3b82f6;">${ACTIVE}</strong></span>
   </div>
   <!-- Quick date presets -->
@@ -1618,7 +1618,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
   </div>
   <div class="page">
     <div style="margin-bottom:20px;">
-      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">Swing (EMA20/50+RSI+SAR) Backtest</div>
+      <div style="font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:4px;">EMA_RSI_ST (EMA20/50+RSI+SAR) Backtest</div>
       <div style="font-size:0.78rem;color:#4a6080;">Fix the error above and run again.</div>
     </div>
     <div class="card">
@@ -1628,7 +1628,7 @@ function buildBacktestPageWithToast(from, to, resolution, errMsg, liveActive) {
         <div><label>CANDLE</label><select id="r">${resOptions}</select></div>
         <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitYears" style="accent-color:#3b82f6;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitMonths').checked=false;"/><label for="splitYears" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by years</label></div>
         <div style="display:flex;align-items:center;gap:5px;"><input type="checkbox" id="splitMonths" style="accent-color:#f59e0b;cursor:pointer;" onchange="if(this.checked)document.getElementById('splitYears').checked=false;"/><label for="splitMonths" style="font-size:0.65rem;color:#4a6080;cursor:pointer;white-space:nowrap;">Split by months</label></div>
-        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/swing-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
+        <button class="run-btn" onclick="(function(){var f=document.getElementById('f').value,t=document.getElementById('t').value,r=document.getElementById('r').value;if(!f||!t){showAlert({icon:'⚠️',title:'Missing Dates',message:'Set both From and To dates'});return;}var base='/ema_rsi_st-backtest';if(document.getElementById('splitYears').checked){var fy=parseInt(f.split('-')[0]),ty=parseInt(t.split('-')[0]);for(var y=fy;y<=ty;y++){var yf=(y===fy)?f:y+'-01-01',yt=(y===ty)?t:y+'-12-31';window.open(base+'?from='+yf+'&to='+yt+'&resolution='+r,'_blank');}}else if(document.getElementById('splitMonths').checked){var fd=new Date(f),td=new Date(t),cm=fd.getFullYear()*12+fd.getMonth(),em=td.getFullYear()*12+td.getMonth();for(var m=cm;m<=em;m++){var yr=Math.floor(m/12),mo=m%12,mf=(m===cm)?f:yr+'-'+String(mo+1).padStart(2,'0')+'-01',last=new Date(yr,mo+1,0),mt=(m===em)?t:yr+'-'+String(mo+1).padStart(2,'0')+'-'+String(last.getDate()).padStart(2,'0');window.open(base+'?from='+mf+'&to='+mt+'&resolution='+r,'_blank');}}else{window.location=base+'?from='+f+'&to='+t+'&resolution='+r;}})()">🔄 Run Again</button>
       </div>
     </div>
   </div>

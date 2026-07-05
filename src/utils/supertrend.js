@@ -2,7 +2,7 @@
  * SuperTrend(period, multiplier) — ATR-banded trend indicator.
  *
  * Built on the `technicalindicators` ATR primitive (the package has no
- * SuperTrend), mirroring how the Swing strategy hand-rolls SAR on top of the
+ * SuperTrend), mirroring how the EMA_RSI_ST strategy hand-rolls SAR on top of the
  * same package. Default 10 / 3 (the classic NIFTY scalper/swing setting).
  *
  * Returns an array aligned 1:1 with the input candles. Each element is
@@ -13,7 +13,7 @@
  *
  * A "flip" is when trend changes sign on candle close — the SuperTrend analogue
  * of a PSAR flip. The `value` is the active band the line sits on, so it doubles
- * as a stop-loss level exactly like PSAR does for the scalp engine.
+ * as a stop-loss level exactly like PSAR does for the bb_rsi engine.
  */
 
 const { ATR } = require("technicalindicators");

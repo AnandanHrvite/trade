@@ -50,96 +50,96 @@ const EFFECT = {
 
 const SETTINGS_SCHEMA = [
   {
-    section: "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
+    section: "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
     icon: "📊",
     fields: [
-      { key: "SWING_LIVE_ENABLED", label: "Swing Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
-      { key: "SWING_LIVE_DRY_RUN", label: "Swing Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Swing in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets other strategies trade real money while Swing stays simulated. Default off.", default: "false" },
-      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "Swing candle timeframe (3 / 5 / 15-min). Scalp & PA have their own resolution settings.", default: "5" },
-      { key: "SWING_OPTION_EXPIRY_OVERRIDE", label: "Swing Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "Swing-only override. When set, overrides the common Option Expiry. Use to keep swing on next-week expiry while scalp/PA trade current expiry. Leave blank to fall back to common.", default: "" },
-      { key: "SWING_OPTION_EXPIRY_TYPE", label: "Swing Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Swing-only expiry type for the override above. Weekly = Tuesday expiry, Monthly = last Thursday/preponed monthly. Leave blank to fall back to the common Expiry Type.", default: "" },
+      { key: "EMA_RSI_ST_LIVE_ENABLED", label: "EMA_RSI_ST Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live orders via Zerodha" },
+      { key: "EMA_RSI_ST_LIVE_DRY_RUN", label: "EMA_RSI_ST Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep EMA_RSI_ST in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets other strategies trade real money while EMA_RSI_ST stays simulated. Default off.", default: "false" },
+      { key: "TRADE_RESOLUTION", label: "Candle Resolution (min)", type: "select", options: ["3", "5", "15"], effect: EFFECT.SESSION, desc: "EMA_RSI_ST candle timeframe (3 / 5 / 15-min). BB_RSI & PA have their own resolution settings.", default: "5" },
+      { key: "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", label: "EMA_RSI_ST Option Expiry (override)", type: "date", effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only override. When set, overrides the common Option Expiry. Use to keep EMA_RSI_ST on next-week expiry while bb_rsi/PA trade current expiry. Leave blank to fall back to common.", default: "" },
+      { key: "EMA_RSI_ST_OPTION_EXPIRY_TYPE", label: "EMA_RSI_ST Expiry Type", type: "select", options: ["", "weekly", "monthly"], effect: EFFECT.INSTANT, desc: "EMA_RSI_ST-only expiry type for the override above. Weekly = Tuesday expiry, Monthly = last Thursday/preponed monthly. Leave blank to fall back to the common Expiry Type.", default: "" },
       { key: "TRADE_EXPIRY_DAY_ONLY", label: "Trade Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
       { key: "TRADE_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new trade entries (HH:MM IST)", default: "10:30" },
       { key: "TRADE_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new entries after this time (HH:MM IST)", default: "14:00" },
-      { key: "SWING_EOD_EXIT_TIME", label: "Exit Before Day Close", type: "time", effect: EFFECT.SESSION, desc: "Square off any open Swing position at/after this IST time — ahead of the market-close auto-stop (TRADE_STOP_TIME). Default 14:30.", default: "14:30" },
-      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block Swing entries when VIX is high (scope: Swing only)" },
-      { key: "VIX_MAX_ENTRY", label: "Swing VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Swing only: block entries above this VIX", default: "20" },
+      { key: "EMA_RSI_ST_EOD_EXIT_TIME", label: "Exit Before Day Close", type: "time", effect: EFFECT.SESSION, desc: "Square off any open EMA_RSI_ST position at/after this IST time — ahead of the market-close auto-stop (TRADE_STOP_TIME). Default 14:30.", default: "14:30" },
+      { key: "VIX_FILTER_ENABLED", label: "VIX Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block EMA_RSI_ST entries when VIX is high (scope: EMA_RSI_ST only)" },
+      { key: "VIX_MAX_ENTRY", label: "EMA_RSI_ST VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "EMA_RSI_ST only: block entries above this VIX", default: "20" },
       { key: "MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Kill-switch: stop trading after this much loss (also latched on 3 consecutive losses)", default: "3000" },
       { key: "MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Hard cap on entries per session — prevents chop-day overtrading", default: "5" },
       // ── Entry rule (all 3 must be true): EMA alignment + RSI gate + SuperTrend side ──
-      { key: "SWING_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA (on close). 2-EMA mode: CE needs EMA-fast ABOVE EMA-slow; PE below. Triple-stack: this is the MID EMA. Classic = 20.", default: "20" },
-      { key: "SWING_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA (on close). The EMA-fast vs EMA-slow alignment is the directional gate. Classic = 50.", default: "50" },
-      { key: "SWING_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter EMA gate. OFF = 2-EMA cross (EMA-fast vs EMA-slow). ON = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries (skip logs show it blocks flat-EMA bars that the 2-EMA gate would take).", default: "false" },
-      { key: "SWING_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA in the 9>20>50 stack (on close). Only used when Triple-Stack EMA is ON. Classic = 9.", default: "9" },
-      { key: "SWING_CLOSE_BEYOND_EMA_ENABLED", label: "Close Beyond Base EMA", type: "toggle", effect: EFFECT.INSTANT, desc: "Signal candle must CLOSE on the trade side of the base EMA — base = EMA-fastest (9) when Triple-Stack is ON, else EMA-fast (20). CE: close ABOVE it; PE: close BELOW it. The EMA-stack/cross gate only checks EMA ordering — this stops buying CE into dips that close BELOW the fast EMA while the lines stay stacked from an earlier move (the false-breakout chop that bleeds prev-candle stops). Uses the configured EMA periods. Default ON.", default: "true" },
+      { key: "EMA_RSI_ST_EMA_FAST", label: "EMA Fast/Mid Period", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Fast EMA (on close). 2-EMA mode: CE needs EMA-fast ABOVE EMA-slow; PE below. Triple-stack: this is the MID EMA. Classic = 20.", default: "20" },
+      { key: "EMA_RSI_ST_EMA_SLOW", label: "EMA Slow Period", type: "number", min: 20, max: 200, step: 1, effect: EFFECT.INSTANT, desc: "Slow EMA (on close). The EMA-fast vs EMA-slow alignment is the directional gate. Classic = 50.", default: "50" },
+      { key: "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", label: "Triple-Stack EMA (9>20>50)", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter EMA gate. OFF = 2-EMA cross (EMA-fast vs EMA-slow). ON = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries (skip logs show it blocks flat-EMA bars that the 2-EMA gate would take).", default: "false" },
+      { key: "EMA_RSI_ST_EMA_FASTEST", label: "EMA Fastest Period", type: "number", min: 5, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Fastest EMA in the 9>20>50 stack (on close). Only used when Triple-Stack EMA is ON. Classic = 9.", default: "9" },
+      { key: "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED", label: "Close Beyond Base EMA", type: "toggle", effect: EFFECT.INSTANT, desc: "Signal candle must CLOSE on the trade side of the base EMA — base = EMA-fastest (9) when Triple-Stack is ON, else EMA-fast (20). CE: close ABOVE it; PE: close BELOW it. The EMA-stack/cross gate only checks EMA ordering — this stops buying CE into dips that close BELOW the fast EMA while the lines stay stacked from an earlier move (the false-breakout chop that bleeds prev-candle stops). Uses the configured EMA periods. Default ON.", default: "true" },
       { key: "RSI_CE_MIN", label: "RSI CE Min (>)", type: "number", min: 45, max: 65, step: 1, effect: EFFECT.INSTANT, desc: "CE entry: RSI(14) must be ABOVE this (bullish momentum floor)", default: "52" },
       { key: "RSI_CE_MAX", label: "RSI CE Max (< overbought)", type: "number", min: 60, max: 90, step: 1, effect: EFFECT.INSTANT, desc: "CE entry blocked when RSI is at/above this (overbought — don't chase exhausted up-moves)", default: "70" },
       { key: "RSI_PE_MAX", label: "RSI PE Max (<)", type: "number", min: 35, max: 55, step: 1, effect: EFFECT.INSTANT, desc: "PE entry: RSI(14) must be BELOW this (bearish momentum cap)", default: "48" },
       { key: "RSI_PE_MIN", label: "RSI PE Min (> oversold)", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "PE entry blocked when RSI is at/below this (oversold — don't chase exhausted down-moves)", default: "30" },
       // ── Trend confirmation: SuperTrend (the only directional source) ──
-      { key: "SWING_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter as soon as the live bar meets the rules (legacy intra-candle). Filters one-candle false breakouts.", default: "true" },
-      { key: "SWING_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend — the entry directional gate (classic = 10).", default: "10" },
-      { key: "SWING_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3).", default: "3" },
+      { key: "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter as soon as the live bar meets the rules (legacy intra-candle). Filters one-candle false breakouts.", default: "true" },
+      { key: "EMA_RSI_ST_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR lookback for SuperTrend — the entry directional gate (classic = 10).", default: "10" },
+      { key: "EMA_RSI_ST_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "ATR multiplier for SuperTrend band width (classic = 3).", default: "3" },
       // ── Stops & exits ──
       { key: "OPT_STOP_PCT", label: "Option Stop %", type: "number", min: 0.05, max: 0.50, step: 0.05, effect: EFFECT.SESSION, desc: "Exit if the option premium drops this fraction below entry premium (e.g. 0.25 = 25%)", default: "0.25" },
-      { key: "SWING_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors Scalp's). 0 = disabled.", default: "25" },
-      { key: "SWING_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Choppy-day guard — after this many consecutive losing trades in a session, halt new Swing entries for the rest of the day (any winning trade resets the streak). Sits out range days that bleed small stops instead of repeatedly re-entering. 0 = disabled (default).", default: "0" },
-      { key: "SWING_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Asymmetric loss-cut — if a trade is still in the RED (option premium below entry) at the close of this many candles, square it off. Winners keep riding the EMA trail; losers don't bleed across the chop. 0 = disabled. Default 2.", default: "2" },
-      { key: "SWING_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is TIGHTER (closer to price) — the EMA21 line OR the N-bar low (CE) / high (PE). Banks more of a winner; never loosens the stop. Default ON.", default: "true" },
-      { key: "SWING_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "How many candles to look back for the candle-trail level: lowest low (CE) / highest high (PE) of the last N candles. 1 = tightest (just the prior candle); higher = looser (gives winners room, fewer chop stop-outs). Only used when Candle Trail is ON.", default: "3" },
-      { key: "SWING_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After an SL / option-stop hit on a side, block new entries on THAT side for this many candles (0 = off)", default: "2" },
-      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, option-stop, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
-      { key: "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown duration in candles (multiplied by TRADE_RESOLUTION to get minutes — e.g. 3 candles × 5-min = 15 min). Only used when Opposite-Side Cooldown is ON.", default: "2" },
+      { key: "EMA_RSI_ST_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.INSTANT, desc: "Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors BB_RSI's). 0 = disabled.", default: "25" },
+      { key: "EMA_RSI_ST_MAX_CONSEC_LOSSES", label: "Chop Guard (consec losses)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Choppy-day guard — after this many consecutive losing trades in a session, halt new EMA_RSI_ST entries for the rest of the day (any winning trade resets the streak). Sits out range days that bleed small stops instead of repeatedly re-entering. 0 = disabled (default).", default: "0" },
+      { key: "EMA_RSI_ST_NEG_CANDLE_LIMIT", label: "Negative-Candle Stop (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "Asymmetric loss-cut — if a trade is still in the RED (option premium below entry) at the close of this many candles, square it off. Winners keep riding the EMA trail; losers don't bleed across the chop. 0 = disabled. Default 2.", default: "2" },
+      { key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", label: "Candle Trail", type: "toggle", effect: EFFECT.INSTANT, desc: "Add an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is TIGHTER (closer to price) — the EMA21 line OR the N-bar low (CE) / high (PE). Banks more of a winner; never loosens the stop. Default ON.", default: "true" },
+      { key: "EMA_RSI_ST_CANDLE_TRAIL_BARS", label: "Candle Trail (candles)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "How many candles to look back for the candle-trail level: lowest low (CE) / highest high (PE) of the last N candles. 1 = tightest (just the prior candle); higher = looser (gives winners room, fewer chop stop-outs). Only used when Candle Trail is ON.", default: "3" },
+      { key: "EMA_RSI_ST_SL_PAUSE_CANDLES", label: "Same-Side SL Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "After an SL / option-stop hit on a side, block new entries on THAT side for this many candles (0 = off)", default: "2" },
+      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", label: "Opposite-Side Cooldown", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, after any non-flip exit (SL hit, trail SL, option-stop, EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown.", default: "true" },
+      { key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES", label: "Opposite-Side Cooldown (candles)", type: "number", min: 0, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Cooldown duration in candles (multiplied by TRADE_RESOLUTION to get minutes — e.g. 3 candles × 5-min = 15 min). Only used when Opposite-Side Cooldown is ON.", default: "2" },
     ],
   },
   {
-    section: "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
+    section: "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers",
     icon: "⚡",
     fields: [
-      { key: "SCALP_ENABLED", label: "Scalp Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live scalp orders via Fyers", default: "false" },
-      { key: "SCALP_EXPIRY_DAY_ONLY", label: "Scalp Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow scalp entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
-      { key: "SCALP_VIX_ENABLED", label: "VIX Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block scalp entries when VIX is high (scope: Scalp only)", default: "false" },
-      { key: "SCALP_VIX_MAX_ENTRY", label: "Scalp VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: block entries above this VIX", default: "20" },
-      { key: "SCALP_VIX_STRONG_ONLY", label: "Scalp VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Scalp only: above this VIX allow only STRONG signals (RSI beyond threshold by +5)", default: "16" },
-      { key: "SCALP_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new scalp entries (HH:MM IST)", default: "09:21" },
-      { key: "SCALP_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new scalp entries after this time (HH:MM IST)", default: "14:30" },
-      { key: "SCALP_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "Scalp candle resolution (3 or 5 min)", default: "5" },
+      { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live bb_rsi orders via Fyers", default: "false" },
+      { key: "BB_RSI_EXPIRY_DAY_ONLY", label: "BB_RSI Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow bb_rsi entries on NIFTY weekly expiry day (Tuesday, or Monday if Tuesday is holiday)", default: "false" },
+      { key: "BB_RSI_VIX_ENABLED", label: "VIX Filter (BB_RSI)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block bb_rsi entries when VIX is high (scope: BB_RSI only)", default: "false" },
+      { key: "BB_RSI_VIX_MAX_ENTRY", label: "BB_RSI VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "BB_RSI only: block entries above this VIX", default: "20" },
+      { key: "BB_RSI_VIX_STRONG_ONLY", label: "BB_RSI VIX Strong Only", type: "number", min: 8, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "BB_RSI only: above this VIX allow only STRONG signals (RSI beyond threshold by +5)", default: "16" },
+      { key: "BB_RSI_ENTRY_START", label: "Entry Start Time", type: "time", effect: EFFECT.SESSION, desc: "Earliest time for new bb_rsi entries (HH:MM IST)", default: "09:21" },
+      { key: "BB_RSI_ENTRY_END", label: "Entry End Time", type: "time", effect: EFFECT.SESSION, desc: "No new bb_rsi entries after this time (HH:MM IST)", default: "14:30" },
+      { key: "BB_RSI_RESOLUTION", label: "Candle (min)", type: "select", options: ["3", "5"], effect: EFFECT.SESSION, desc: "BB_RSI candle resolution (3 or 5 min)", default: "5" },
       // ── Bollinger Bands ──
-      { key: "SCALP_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
-      { key: "SCALP_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
+      { key: "BB_RSI_BB_PERIOD", label: "BB Period", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Bollinger Band SMA period", default: "20" },
+      { key: "BB_RSI_BB_STDDEV", label: "BB Std Dev", type: "number", min: 0.5, max: 3.0, step: 0.1, effect: EFFECT.SESSION, desc: "Bollinger Band standard deviation", default: "1" },
       // ── RSI ──
-      { key: "SCALP_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
-      { key: "SCALP_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
-      { key: "SCALP_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
-      { key: "SCALP_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
-      { key: "SCALP_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter at the signal candle's close (legacy). Filters one-candle false breakouts.", default: "true" },
-      { key: "SCALP_CONFIRM_OUTSIDE_BAND", label: "Confirmation must close outside band", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter confirmation (needs Confirmation Candle ON). ON (default): the confirmation candle must CLOSE beyond the signal candle's close AND close outside the Bollinger band — entry fires at that close — so the entry candle is genuinely outside the band. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise sit visibly inside the band). OFF: enter intra-bar on the first cross of the signal candle's close (legacy).", default: "true" },
+      { key: "BB_RSI_RSI_PERIOD", label: "RSI Period", type: "number", min: 7, max: 21, step: 1, effect: EFFECT.SESSION, desc: "RSI calculation period", default: "14" },
+      { key: "BB_RSI_RSI_CE_THRESHOLD", label: "RSI CE Entry (>)", type: "number", min: 50, max: 90, step: 1, effect: EFFECT.SESSION, desc: "Take CE entry only when RSI is above this (momentum confirmation)", default: "70" },
+      { key: "BB_RSI_RSI_PE_THRESHOLD", label: "RSI PE Entry (<)", type: "number", min: 10, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Take PE entry only when RSI is below this (momentum confirmation)", default: "40" },
+      { key: "BB_RSI_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
+      { key: "BB_RSI_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter at the signal candle's close (legacy). Filters one-candle false breakouts.", default: "true" },
+      { key: "BB_RSI_CONFIRM_OUTSIDE_BAND", label: "Confirmation must close outside band", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter confirmation (needs Confirmation Candle ON). ON (default): the confirmation candle must CLOSE beyond the signal candle's close AND close outside the Bollinger band — entry fires at that close — so the entry candle is genuinely outside the band. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise sit visibly inside the band). OFF: enter intra-bar on the first cross of the signal candle's close (legacy).", default: "true" },
       // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
-      { key: "SCALP_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
-      { key: "SCALP_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      { key: "SCALP_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where the trend line (PSAR/SuperTrend) sits farther than this from close (a freshly-flipped line can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      { key: "BB_RSI_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
+      { key: "BB_RSI_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
+      { key: "BB_RSI_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where the trend line (PSAR/SuperTrend) sits farther than this from close (a freshly-flipped line can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
       // ── Trend confirmation: PSAR (default) or SuperTrend ──
-      { key: "SCALP_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.SESSION, desc: "Trend-confirmation source. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and SuperTrend(10,3) takes over the directional confirmation, the entry SL line AND the trend-flip exit. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
-      { key: "SCALP_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
-      { key: "SCALP_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
+      { key: "BB_RSI_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.SESSION, desc: "Trend-confirmation source. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and SuperTrend(10,3) takes over the directional confirmation, the entry SL line AND the trend-flip exit. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
+      { key: "BB_RSI_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
+      { key: "BB_RSI_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
       // ── ADX trend filter (sit out choppy/ranging sessions) ──
-      { key: "SCALP_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending — block ALL entries when ADX(14) is below the threshold. The strategy wins in trends and bleeds in chop; this sits out ranging days.", default: "false" },
-      { key: "SCALP_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX(14) to allow entries when the trend filter is on. Higher = stricter (only strong trends). Typical 20–25. Ignored when the filter is off.", default: "20" },
-      // ── Profit lock (bank small scalp profits) + hard stop (catastrophic loss cap) ──
-      { key: "SCALP_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
-      { key: "SCALP_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
-      { key: "SCALP_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Catastrophic loss cap — exit if the trade moves this many spot points against entry. Set WIDE (default 30) so it only clips deep adverse excursions on failed fades, not the normal small scalps. Points-based. 0 = disabled.", default: "30" },
-      { key: "SCALP_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit the instant spot crosses back through the Bollinger Band (failed breakout) — runs per-tick (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. Cuts loss bleed before the slower PSAR flip.", default: "true" },
-      { key: "SCALP_BB_REENTRY_ARM_PTS", label: "BB Re-Entry Arm (pts)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Only arm the BB Re-Entry Exit once the breakout has extended this many points PAST the band. Stops a fresh entry that's sitting right at the band from being knocked out by an immediate noise wick back to it. 0 = arm immediately (no guard).", default: "10" },
+      { key: "BB_RSI_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending — block ALL entries when ADX(14) is below the threshold. The strategy wins in trends and bleeds in chop; this sits out ranging days.", default: "false" },
+      { key: "BB_RSI_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX(14) to allow entries when the trend filter is on. Higher = stricter (only strong trends). Typical 20–25. Ignored when the filter is off.", default: "20" },
+      // ── Profit lock (bank small bb_rsi profits) + hard stop (catastrophic loss cap) ──
+      { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
+      { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
+      { key: "BB_RSI_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Catastrophic loss cap — exit if the trade moves this many spot points against entry. Set WIDE (default 30) so it only clips deep adverse excursions on failed fades, not the normal small scalps. Points-based. 0 = disabled.", default: "30" },
+      { key: "BB_RSI_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit the instant spot crosses back through the Bollinger Band (failed breakout) — runs per-tick (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. Cuts loss bleed before the slower PSAR flip.", default: "true" },
+      { key: "BB_RSI_BB_REENTRY_ARM_PTS", label: "BB Re-Entry Arm (pts)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Only arm the BB Re-Entry Exit once the breakout has extended this many points PAST the band. Stops a fresh entry that's sitting right at the band from being knocked out by an immediate noise wick back to it. 0 = arm immediately (no guard).", default: "10" },
       // ── Risk management ──
       // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
       // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
-      { key: "SCALP_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
-      { key: "SCALP_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max scalp entries per day", default: "30" },
-      { key: "SCALP_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "Scalp kill-switch", default: "4000" },
-      { key: "SCALP_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit (5-min candles)", default: "3" },
-      { key: "SCALP_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL after the 2nd (e.g. 2 = +2 candles on 2nd SL, +4 on 3rd)", default: "2" },
-      { key: "SCALP_PER_SIDE_PAUSE", label: "Per-Side SL Pause", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, an SL on CE only pauses CE entries (PE still allowed) and vice versa. OFF = legacy global pause.", default: "true" },
+      { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
+      { key: "BB_RSI_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max bb_rsi entries per day", default: "30" },
+      { key: "BB_RSI_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "BB_RSI kill-switch", default: "4000" },
+      { key: "BB_RSI_SL_PAUSE_CANDLES", label: "SL Pause (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Pause after SL hit (5-min candles)", default: "3" },
+      { key: "BB_RSI_CONSEC_SL_EXTRA_PAUSE", label: "Consec SL Extra Pause", type: "number", min: 1, max: 8, step: 1, effect: EFFECT.SESSION, desc: "Extra candles pause per consecutive SL after the 2nd (e.g. 2 = +2 candles on 2nd SL, +4 on 3rd)", default: "2" },
+      { key: "BB_RSI_PER_SIDE_PAUSE", label: "Per-Side SL Pause", type: "toggle", effect: EFFECT.SESSION, desc: "When ON, an SL on CE only pauses CE entries (PE still allowed) and vice versa. OFF = legacy global pause.", default: "true" },
     ],
   },
   {
@@ -176,7 +176,7 @@ const SETTINGS_SCHEMA = [
     icon: "📋",
     fields: [
       { key: "ORB_LIVE_ENABLED", label: "ORB Live Orders (gates /orb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for ORB Live trading. Must be true AND LIVE_HARNESS_DRY_RUN=false for real Fyers orders to fire.", default: "false" },
-      { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets you take Swing/etc. live while ORB stays simulated. Default off.", default: "false" },
+      { key: "ORB_LIVE_DRY_RUN", label: "ORB Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep ORB in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Lets you take EMA_RSI_ST/etc. live while ORB stays simulated. Default off.", default: "false" },
       { key: "ORB_EXPIRY_DAY_ONLY", label: "ORB Only on Expiry Day", type: "toggle", effect: EFFECT.INSTANT, desc: "Only allow ORB entries on weekly expiry day (Tuesday)", default: "false" },
       { key: "ORB_VIX_ENABLED", label: "VIX Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Block ORB entries when VIX is high (scope: ORB only)", default: "false" },
       { key: "ORB_VIX_MAX_ENTRY", label: "ORB VIX Max Entry", type: "number", min: 10, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "ORB only: block entries above this VIX", default: "22" },
@@ -233,8 +233,8 @@ const SETTINGS_SCHEMA = [
     icon: "📊",
     fields: [
       { key: "OI_FILTER_ENABLED", label: "OI Filter MASTER (all strategies)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for the OI + price-buildup entry filter. OFF = disabled everywhere, regardless of the per-strategy toggles below. When ON, blocks entries that fight a confirmed buildup (CE in a short-buildup, PE in a long-buildup); weak/neutral/warmup regimes always allow. Reads NIFTY futures OI vs spot — LIVE/PAPER only, never evaluated in backtest/replay (OI is not recorded). Default OFF.", default: "false" },
-      { key: "SWING_OI_ENABLED", label: "OI Filter (Swing)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Swing entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
-      { key: "SCALP_OI_ENABLED", label: "OI Filter (Scalp)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Scalp entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "EMA_RSI_ST_OI_ENABLED", label: "OI Filter (EMA_RSI_ST)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to EMA_RSI_ST entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
+      { key: "BB_RSI_OI_ENABLED", label: "OI Filter (BB_RSI)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to BB_RSI entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
       { key: "PA_OI_ENABLED", label: "OI Filter (PA)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to Price-Action entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
       { key: "ORB_OI_ENABLED", label: "OI Filter (ORB)", type: "toggle", effect: EFFECT.INSTANT, desc: "Apply the OI buildup filter to ORB entries. Requires the MASTER switch ON. Default OFF.", default: "false" },
       { key: "OI_LOOKBACK_CANDLES", label: "OI Lookback (candles)", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.INSTANT, desc: "How many candles back to measure the OI + spot change over. Default 3 (≈15 min at 5-min candles).", default: "3" },
@@ -255,13 +255,13 @@ const SETTINGS_SCHEMA = [
       { key: "LOT_MULTIPLIER", label: "Lot Multiplier", type: "number", min: 1, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Number of lots per trade" },
       { key: "STRIKE_OFFSET_CE", label: "CE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "-50=ITM, 0=ATM, +50=OTM", default: "0" },
       { key: "STRIKE_OFFSET_PE", label: "PE Strike Offset", type: "number", min: -200, max: 200, step: 50, effect: EFFECT.INSTANT, desc: "+50=ITM, 0=ATM, -50=OTM", default: "0" },
-      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to all modes (swing/scalp/PA)." },
+      { key: "OPTION_EXPIRY_OVERRIDE", label: "Option Expiry (manual)", type: "date", effect: EFFECT.INSTANT, desc: "Override auto-detected expiry. Leave blank for auto. Applies to all modes (EMA_RSI_ST/bb_rsi/PA)." },
       { key: "OPTION_EXPIRY_TYPE", label: "Expiry Type", type: "select", options: ["weekly", "monthly"], effect: EFFECT.INSTANT, desc: "Weekly = normal Tuesday expiry. Monthly = last Thursday/preponed monthly expiry. Applies to all modes.", default: "weekly" },
       { key: "TICK_RECORDER_ENABLED", label: "Tick Recorder (for Replay)", type: "toggle", effect: EFFECT.SESSION, desc: "Record every spot/option/VIX tick to data/ticks/YYYY-MM-DD/*.jsonl during paper/live sessions. Required for Replay backtest. Pure observer — no impact on trading.", default: "true" },
       { key: "TICK_RECORDER_RETAIN_DAYS", label: "Tick Recordings Retention (days)", type: "number", min: 7, max: 180, step: 1, effect: EFFECT.SERVER, desc: "Auto-delete tick recordings older than this many days. ~10 MB/day across all streams — 30 days ≈ 300 MB. Lower if EBS is tight.", default: "30" },
-      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "GLOBAL kill-switch. When ON (default), ALL live routes (Swing/ORB/PA) log the broker call but place no real order. When OFF, each strategy goes real UNLESS its own {STRATEGY}_LIVE_DRY_RUN override is ON. Switch OFF only after validating decisions match paper.", default: "true" },
+      { key: "LIVE_HARNESS_DRY_RUN", label: "Live Harness DRY-RUN (GLOBAL)", type: "toggle", effect: EFFECT.SESSION, desc: "GLOBAL kill-switch. When ON (default), ALL live routes (EMA_RSI_ST/ORB/PA) log the broker call but place no real order. When OFF, each strategy goes real UNLESS its own {STRATEGY}_LIVE_DRY_RUN override is ON. Switch OFF only after validating decisions match paper.", default: "true" },
       { key: "PA_LIVE_DRY_RUN", label: "PA Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep the PA Live harness in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
-      { key: "SCALP_LIVE_DRY_RUN", label: "Scalp Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Scalp in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off. (Scalp Live has no separate master-enable gate, so this is its primary safety switch.)", default: "false" },
+      { key: "BB_RSI_LIVE_DRY_RUN", label: "BB_RSI Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep BB_RSI in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off. (BB_RSI Live has no separate master-enable gate, so this is its primary safety switch.)", default: "false" },
       { key: "BACKTEST_OPTION_SIM", label: "Option Simulation (legacy bar-based BT only)", type: "toggle", effect: EFFECT.BACKTEST, desc: "Simulate option P&L with delta/theta. Used only by the legacy bar-based backtest; the new Replay backtest uses recorded option ticks instead." },
       { key: "BACKTEST_DELTA", label: "Delta", type: "number", min: 0.1, max: 1.0, step: 0.05, effect: EFFECT.BACKTEST, desc: "Option delta for premium simulation" },
       { key: "BACKTEST_THETA_DAY", label: "Theta ₹/day", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.BACKTEST, desc: "Daily theta decay in rupees" },
@@ -275,8 +275,8 @@ const SETTINGS_SCHEMA = [
       { key: "HARD_SL_ENABLED", label: "Hard SL (Exchange)", type: "toggle", effect: EFFECT.SESSION, desc: "Place SL-M order at exchange on every entry. Protects against bot crash/disconnect. Options only.", default: "false" },
       { key: "HARD_SL_DELTA", label: "Hard SL Delta", type: "number", min: 0.2, max: 0.8, step: 0.05, effect: EFFECT.INSTANT, desc: "Delta for converting spot SL to option premium trigger price", default: "0.5" },
       { key: "NIFTY_SPOT_FALLBACK", label: "NIFTY Spot Fallback", type: "number", min: 15000, max: 35000, step: 50, effect: EFFECT.INSTANT, desc: "Fallback NIFTY spot price when live quote unavailable", default: "24000" },
-      { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Zerodha-brokered strategies (Swing). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
-      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Fyers-brokered strategies (Scalp + PA + ORB). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
+      { key: "ZERODHA_INV_AMOUNT", label: "Zerodha Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Zerodha-brokered strategies (EMA_RSI_ST). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
+      { key: "FYERS_INV_AMOUNT", label: "Fyers Investment Amount (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.INSTANT, desc: "Paper investment pool for Fyers-brokered strategies (BB_RSI + PA + ORB). Paper trade P&L is added to / subtracted from this amount.", default: "100000" },
       { key: "BACKTEST_CAPITAL", label: "Backtest Capital (₹)", type: "number", min: 10000, max: 10000000, step: 10000, effect: EFFECT.BACKTEST },
     ],
   },
@@ -309,31 +309,31 @@ const SETTINGS_SCHEMA = [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
       { key: "TG_ENABLED", label: "Telegram Alerts (Master)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch — when OFF, no Telegram alerts are sent regardless of the toggles below", default: "true" },
 
-      { key: "TG_SWING_STARTED", label: "Swing — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Swing (5-min) paper/live session is started", default: "true" },
-      { key: "TG_SCALP_STARTED", label: "Scalp — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Scalp paper/live session is started", default: "true" },
+      { key: "TG_EMA_RSI_ST_STARTED", label: "EMA_RSI_ST — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a EMA_RSI_ST (5-min) paper/live session is started", default: "true" },
+      { key: "TG_BB_RSI_STARTED", label: "BB_RSI — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a BB_RSI paper/live session is started", default: "true" },
       { key: "TG_PA_STARTED",    label: "Price Action — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when a Price Action paper/live session is started", default: "true" },
       { key: "TG_ORB_STARTED",      label: "ORB — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an ORB paper/live session is started", default: "true" },
       { key: "TG_EMA9VWAP_STARTED", label: "EMA9+VWAP — Session Started", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert when an EMA9+VWAP paper/live session is started", default: "true" },
 
-      { key: "TG_SWING_ENTRY", label: "Swing — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade entry (paper + live)", default: "true" },
-      { key: "TG_SCALP_ENTRY", label: "Scalp — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade entry (paper + live)", default: "true" },
+      { key: "TG_EMA_RSI_ST_ENTRY", label: "EMA_RSI_ST — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST (5-min) trade entry (paper + live)", default: "true" },
+      { key: "TG_BB_RSI_ENTRY", label: "BB_RSI — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI trade entry (paper + live)", default: "true" },
       { key: "TG_PA_ENTRY",    label: "Price Action — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade entry (paper + live)", default: "true" },
       { key: "TG_ORB_ENTRY",      label: "ORB — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade entry (paper + live)", default: "true" },
       { key: "TG_EMA9VWAP_ENTRY", label: "EMA9+VWAP — Trade Entry", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP trade entry (paper + live)", default: "true" },
 
-      { key: "TG_SWING_EXIT", label: "Swing — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Swing (5-min) trade exit (paper + live)", default: "true" },
-      { key: "TG_SCALP_EXIT", label: "Scalp — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Scalp trade exit (paper + live)", default: "true" },
+      { key: "TG_EMA_RSI_ST_EXIT", label: "EMA_RSI_ST — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA_RSI_ST (5-min) trade exit (paper + live)", default: "true" },
+      { key: "TG_BB_RSI_EXIT", label: "BB_RSI — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every BB_RSI trade exit (paper + live)", default: "true" },
       { key: "TG_PA_EXIT",    label: "Price Action — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every Price Action trade exit (paper + live)", default: "true" },
       { key: "TG_ORB_EXIT",      label: "ORB — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every ORB trade exit (paper + live)", default: "true" },
       { key: "TG_EMA9VWAP_EXIT", label: "EMA9+VWAP — Trade Exit", type: "toggle", effect: EFFECT.INSTANT, desc: "Alert on every EMA9+VWAP trade exit (paper + live)", default: "true" },
 
-      { key: "TG_SWING_SIGNALS", label: "Swing — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Swing trade was/wasn't taken)", default: "true" },
-      { key: "TG_SCALP_SIGNALS", label: "Scalp — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a Scalp trade was/wasn't taken)", default: "false" },
+      { key: "TG_EMA_RSI_ST_SIGNALS", label: "EMA_RSI_ST — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a EMA_RSI_ST trade was/wasn't taken)", default: "true" },
+      { key: "TG_BB_RSI_SIGNALS", label: "BB_RSI — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a BB_RSI trade was/wasn't taken)", default: "false" },
       { key: "TG_PA_SIGNALS",    label: "Price Action — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why a PA trade was/wasn't taken)", default: "false" },
       { key: "TG_EMA9VWAP_SIGNALS", label: "EMA9+VWAP — Signal/Skip Alerts", type: "toggle", effect: EFFECT.INSTANT, desc: "Candle-close alerts when flat (why an EMA9+VWAP trade was/wasn't taken)", default: "false" },
 
-      { key: "TG_SWING_DAYREPORT", label: "Swing — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Swing day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
-      { key: "TG_SCALP_DAYREPORT", label: "Scalp — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send Scalp day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_EMA_RSI_ST_DAYREPORT", label: "EMA_RSI_ST — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send EMA_RSI_ST day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
+      { key: "TG_BB_RSI_DAYREPORT", label: "BB_RSI — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send BB_RSI day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_PA_DAYREPORT",    label: "Price Action — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send PA day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_ORB_DAYREPORT",      label: "ORB — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send ORB day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
       { key: "TG_EMA9VWAP_DAYREPORT", label: "EMA9+VWAP — Day Report on Stop", type: "toggle", effect: EFFECT.INSTANT, desc: "Send EMA9+VWAP day summary (trades, win rate, P&L) when the session is stopped", default: "true" },
@@ -374,26 +374,26 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_PAPER_HISTORY",  label: "Show Paper Traded History", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Paper Traded History' menu in the sidebar", default: "true" },
       { key: "UI_SHOW_LIVE_HISTORY",   label: "Show Live Traded History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Live Traded History' menu in the sidebar", default: "true" },
       { key: "UI_SHOW_EDGE_ANALYTICS", label: "Show Edge Analytics",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the top-level 'Edge Analytics' menu in the sidebar — win rate / expectancy / profit factor / drawdown / equity curve / best-hour & weekday breakdown over your recorded paper + live trades (read-only).", default: "true" },
-      { key: "SWING_MODE_ENABLED",     label: "Swing Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SWING sidebar group AND the SWING strategy section in Settings. When off, both are hidden.", default: "true", subheader: "Strategy master toggles" },
-      { key: "SCALP_MODE_ENABLED",     label: "Scalp Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the SCALP sidebar group AND the SCALP strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "EMA_RSI_ST_MODE_ENABLED",     label: "EMA_RSI_ST Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA_RSI_ST sidebar group AND the EMA_RSI_ST strategy section in Settings. When off, both are hidden.", default: "true", subheader: "Strategy master toggles" },
+      { key: "BB_RSI_MODE_ENABLED",     label: "BB_RSI Mode",                type: "toggle", effect: EFFECT.INSTANT, desc: "Show the BB_RSI sidebar group AND the BB_RSI strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "EMA9VWAP_MODE_ENABLED",  label: "EMA9+VWAP Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9+VWAP sidebar group AND the EMA9+VWAP strategy section in Settings. When off, both are hidden.", default: "true" },
-      { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside Swing / Scalp / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
-      { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside Swing / Scalp / Price Action groups in the sidebar", default: "false" },
-      { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (Swing only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the Swing group in the sidebar", default: "false" },
+      { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
+      { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false" },
+      { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the EMA_RSI_ST group in the sidebar", default: "false" },
 
-      // ── Swing submenu ──
-      { key: "UI_SHOW_SWING_BACKTEST", label: "Swing → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Swing group", default: "true", subheader: "Swing sub-menus" },
-      { key: "UI_SHOW_SWING_PAPER",    label: "Swing → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Swing group",    default: "true" },
-      { key: "UI_SHOW_SWING_LIVE",     label: "Swing → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Swing group",     default: "true" },
-      { key: "UI_SHOW_SWING_LIVE_HARNESS", label: "Swing → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Swing group — runs LIVE by wrapping PAPER (Zerodha orders), guaranteeing LIVE = PAPER decisions", default: "false" },
+      // ── EMA_RSI_ST submenu ──
+      { key: "UI_SHOW_EMA_RSI_ST_BACKTEST", label: "EMA_RSI_ST → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the EMA_RSI_ST group", default: "true", subheader: "EMA_RSI_ST sub-menus" },
+      { key: "UI_SHOW_EMA_RSI_ST_PAPER",    label: "EMA_RSI_ST → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the EMA_RSI_ST group",    default: "true" },
+      { key: "UI_SHOW_EMA_RSI_ST_LIVE",     label: "EMA_RSI_ST → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the EMA_RSI_ST group",     default: "true" },
+      { key: "UI_SHOW_EMA_RSI_ST_LIVE_HARNESS", label: "EMA_RSI_ST → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the EMA_RSI_ST group — runs LIVE by wrapping PAPER (Zerodha orders), guaranteeing LIVE = PAPER decisions", default: "false" },
 
-      // ── Scalp submenu ──
-      { key: "UI_SHOW_SCALP_BACKTEST", label: "Scalp → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Scalp group", default: "true", subheader: "Scalp sub-menus" },
-      { key: "UI_SHOW_SCALP_PAPER",    label: "Scalp → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Scalp group",    default: "true" },
-      { key: "UI_SHOW_SCALP_LIVE",     label: "Scalp → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Scalp group",     default: "true" },
-      { key: "UI_SHOW_SCALP_LIVE_HARNESS", label: "Scalp → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Scalp group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
+      // ── BB_RSI submenu ──
+      { key: "UI_SHOW_BB_RSI_BACKTEST", label: "BB_RSI → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the BB_RSI group", default: "true", subheader: "BB_RSI sub-menus" },
+      { key: "UI_SHOW_BB_RSI_PAPER",    label: "BB_RSI → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the BB_RSI group",    default: "true" },
+      { key: "UI_SHOW_BB_RSI_LIVE",     label: "BB_RSI → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the BB_RSI group",     default: "true" },
+      { key: "UI_SHOW_BB_RSI_LIVE_HARNESS", label: "BB_RSI → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the BB_RSI group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions", default: "false" },
 
       // ── Price Action submenu ──
       { key: "UI_SHOW_PA_BACKTEST",         label: "PA → Backtest",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Price Action group",     default: "true", subheader: "Price Action sub-menus" },
@@ -455,8 +455,8 @@ const SETTINGS_SCHEMA = [
 // trade behaviour (strategy + instrument/backtest + charges) — credentials,
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
-  swing:    "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
-  scalp:    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers",
+  ema_rsi_st:    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
+  bb_rsi:    "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
@@ -467,7 +467,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { swing: new Set(), scalp: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -526,60 +526,60 @@ function parseEnvFile() {
 // ── Classify which settings take effect immediately vs need restart ──────────
 // These are read from process.env at runtime (not cached at module load)
 const IMMEDIATE_KEYS = new Set([
-  "SWING_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
+  "EMA_RSI_ST_LIVE_ENABLED", "TRADE_EXPIRY_DAY_ONLY",
   "VIX_FILTER_ENABLED", "VIX_MAX_ENTRY", "VIX_STRONG_ONLY", "VIX_FAIL_MODE",
-  "SCALP_VIX_MAX_ENTRY", "SCALP_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
-  "OI_FILTER_ENABLED", "SWING_OI_ENABLED", "SCALP_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
+  "BB_RSI_VIX_MAX_ENTRY", "BB_RSI_VIX_STRONG_ONLY", "PA_VIX_ENABLED", "PA_VIX_MAX_ENTRY",
+  "OI_FILTER_ENABLED", "EMA_RSI_ST_OI_ENABLED", "BB_RSI_OI_ENABLED", "PA_OI_ENABLED", "ORB_OI_ENABLED",
   "OI_LOOKBACK_CANDLES", "OI_MIN_DELTA_PCT", "OI_FAIL_MODE",
   "INSTRUMENT", "NIFTY_LOT_SIZE", "STRIKE_OFFSET_CE", "STRIKE_OFFSET_PE", "LOT_MULTIPLIER",
   "OPTION_EXPIRY_OVERRIDE", "OPTION_EXPIRY_TYPE",
-  "SWING_OPTION_EXPIRY_OVERRIDE", "SWING_OPTION_EXPIRY_TYPE",
+  "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE", "EMA_RSI_ST_OPTION_EXPIRY_TYPE",
   "BACKTEST_CAPITAL", "BACKTEST_OPTION_SIM",
   "BACKTEST_DELTA", "BACKTEST_THETA_DAY", "ZERODHA_INV_AMOUNT", "FYERS_INV_AMOUNT",
   "PA_ENABLED",
   "TELEGRAM_CHAT_ID", "TELEGRAM_BOT_TOKEN",
   "TG_ENABLED",
-  "TG_SWING_STARTED", "TG_SCALP_STARTED", "TG_PA_STARTED",
-  "TG_SWING_ENTRY",   "TG_SCALP_ENTRY",   "TG_PA_ENTRY",
-  "TG_SWING_EXIT",    "TG_SCALP_EXIT",    "TG_PA_EXIT",
-  "TG_SWING_SIGNALS", "TG_SCALP_SIGNALS", "TG_PA_SIGNALS",
-  "TG_SWING_DAYREPORT", "TG_SCALP_DAYREPORT", "TG_PA_DAYREPORT",
+  "TG_EMA_RSI_ST_STARTED", "TG_BB_RSI_STARTED", "TG_PA_STARTED",
+  "TG_EMA_RSI_ST_ENTRY",   "TG_BB_RSI_ENTRY",   "TG_PA_ENTRY",
+  "TG_EMA_RSI_ST_EXIT",    "TG_BB_RSI_EXIT",    "TG_PA_EXIT",
+  "TG_EMA_RSI_ST_SIGNALS", "TG_BB_RSI_SIGNALS", "TG_PA_SIGNALS",
+  "TG_EMA_RSI_ST_DAYREPORT", "TG_BB_RSI_DAYREPORT", "TG_PA_DAYREPORT",
   "TG_DAYREPORT_CONSOLIDATED",
   "NIFTY_SPOT_FALLBACK", "CACHE_MAX_DAYS",
-  "SCALP_ENABLED", "SCALP_MODE_ENABLED", "SCALP_VIX_ENABLED", "SCALP_EXPIRY_DAY_ONLY",
+  "BB_RSI_ENABLED", "BB_RSI_MODE_ENABLED", "BB_RSI_VIX_ENABLED", "BB_RSI_EXPIRY_DAY_ONLY",
   "API_SECRET", "LOGIN_SECRET", "UI_THEME",
   "UI_SHOW_SIMULATE", "UI_SHOW_COMPARE", "UI_SHOW_TRACKER",
-  // Swing thresholds — read from process.env inside getSignal() / per-tick on every candle
+  // EMA_RSI_ST thresholds — read from process.env inside getSignal() / per-tick on every candle
   "RSI_CE_MIN", "RSI_CE_MAX", "RSI_PE_MAX", "RSI_PE_MIN",
-  "SWING_EMA_FAST", "SWING_EMA_SLOW", "SWING_EMA_TRIPLE_STACK_ENABLED", "SWING_EMA_FASTEST",
-  "SWING_CLOSE_BEYOND_EMA_ENABLED",
-  "SWING_CANDLE_TRAIL_ENABLED", "SWING_CANDLE_TRAIL_BARS",
-  "SWING_SUPERTREND_PERIOD", "SWING_SUPERTREND_MULT",
-  "SWING_STOP_LOSS_PTS", "SWING_MAX_CONSEC_LOSSES", "SWING_NEG_CANDLE_LIMIT",
+  "EMA_RSI_ST_EMA_FAST", "EMA_RSI_ST_EMA_SLOW", "EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED", "EMA_RSI_ST_EMA_FASTEST",
+  "EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED",
+  "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", "EMA_RSI_ST_CANDLE_TRAIL_BARS",
+  "EMA_RSI_ST_SUPERTREND_PERIOD", "EMA_RSI_ST_SUPERTREND_MULT",
+  "EMA_RSI_ST_STOP_LOSS_PTS", "EMA_RSI_ST_MAX_CONSEC_LOSSES", "EMA_RSI_ST_NEG_CANDLE_LIMIT",
   // Confirmation-candle gates — read live from process.env on every candle/tick
-  "SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_OUTSIDE_BAND",
+  "EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_OUTSIDE_BAND",
 ]);
 
 // These are cached as const at module load — need session stop+start
 const SESSION_RESTART_KEYS = new Set([
   "MAX_DAILY_LOSS", "MAX_DAILY_TRADES", "OPT_STOP_PCT",
-  "SWING_SL_PAUSE_CANDLES", "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", "SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES",
-  "SWING_EOD_EXIT_TIME", "SWING_LIVE_DRY_RUN",
+  "EMA_RSI_ST_SL_PAUSE_CANDLES", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES",
+  "EMA_RSI_ST_EOD_EXIT_TIME", "EMA_RSI_ST_LIVE_DRY_RUN",
   "TRADE_RESOLUTION", "TRADE_START_TIME", "TRADE_STOP_TIME",
   "TRADE_ENTRY_START", "TRADE_ENTRY_END",
-  "SCALP_ENTRY_START", "SCALP_ENTRY_END",
-  // Scalp settings — need session restart
-  "SCALP_RESOLUTION",
-  "SCALP_BB_PERIOD", "SCALP_BB_STDDEV",
-  "SCALP_RSI_PERIOD", "SCALP_RSI_CE_THRESHOLD",
-  "SCALP_RSI_PE_THRESHOLD", "SCALP_RSI_TURNING",
-  "SCALP_PSAR_STEP", "SCALP_PSAR_MAX", "SCALP_MAX_ENTRY_SL_PTS",
-  "SCALP_USE_SUPERTREND", "SCALP_SUPERTREND_PERIOD", "SCALP_SUPERTREND_MULT",
-  "SCALP_ADX_ENABLED", "SCALP_ADX_MIN",
-  "SCALP_PROFIT_LOCK_TRIGGER_PTS", "SCALP_PROFIT_LOCK_PCT", "SCALP_STOP_LOSS_PTS", "SCALP_BB_REENTRY_EXIT", "SCALP_BB_REENTRY_ARM_PTS",
-  "SCALP_MAX_DAILY_TRADES", "SCALP_MAX_DAILY_LOSS",
-  "SCALP_SL_PAUSE_CANDLES", "SCALP_CONSEC_SL_EXTRA_PAUSE", "SCALP_PER_SIDE_PAUSE",
-  "SCALP_SLIPPAGE_PTS",
+  "BB_RSI_ENTRY_START", "BB_RSI_ENTRY_END",
+  // BB_RSI settings — need session restart
+  "BB_RSI_RESOLUTION",
+  "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",
+  "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
+  "BB_RSI_RSI_PE_THRESHOLD", "BB_RSI_RSI_TURNING",
+  "BB_RSI_PSAR_STEP", "BB_RSI_PSAR_MAX", "BB_RSI_MAX_ENTRY_SL_PTS",
+  "BB_RSI_USE_SUPERTREND", "BB_RSI_SUPERTREND_PERIOD", "BB_RSI_SUPERTREND_MULT",
+  "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MIN",
+  "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "BB_RSI_PROFIT_LOCK_PCT", "BB_RSI_STOP_LOSS_PTS", "BB_RSI_BB_REENTRY_EXIT", "BB_RSI_BB_REENTRY_ARM_PTS",
+  "BB_RSI_MAX_DAILY_TRADES", "BB_RSI_MAX_DAILY_LOSS",
+  "BB_RSI_SL_PAUSE_CANDLES", "BB_RSI_CONSEC_SL_EXTRA_PAUSE", "BB_RSI_PER_SIDE_PAUSE",
+  "BB_RSI_SLIPPAGE_PTS",
   // Live-engine guards — read inside live loops, but constants in tradeGuards are cached at require()
   "GAP_THRESHOLD_PTS", "LTP_STALE_FALLBACK_SEC", "MAX_BID_ASK_SPREAD_PTS",
   "TIME_STOP_CANDLES", "TIME_STOP_FLAT_PTS",
@@ -880,7 +880,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["swing", "scalp", "pa", "orb", "ema9vwap"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -957,7 +957,7 @@ router.get("/", (req, res) => {
   // App Secret gate — if API_SECRET is set, require it to access settings
   const appSecret = process.env.API_SECRET;
   if (appSecret && req.query.secret !== appSecret) {
-    const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+    const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
     return res.send(`<!DOCTYPE html><html><head><title>Settings - Auth</title>
       <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;display:flex;min-height:100vh;}
@@ -991,23 +991,23 @@ router.get("/", (req, res) => {
       </script></body></html>`);
   }
 
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const envData    = parseEnvFile();
 
   // ── Determine which fields should be frozen (disabled but values kept) ──
   const vixEnabled      = (envData["VIX_FILTER_ENABLED"] ?? process.env.VIX_FILTER_ENABLED ?? "true") === "true";
-  const scalpVixEnabled = (envData["SCALP_VIX_ENABLED"]  ?? process.env.SCALP_VIX_ENABLED  ?? "false") === "true";
+  const bbRsiVixEnabled = (envData["BB_RSI_VIX_ENABLED"]  ?? process.env.BB_RSI_VIX_ENABLED  ?? "false") === "true";
   const paVixEnabled    = (envData["PA_VIX_ENABLED"]     ?? process.env.PA_VIX_ENABLED     ?? "false") === "true";
-  const scalpModeOn     = (envData["SCALP_MODE_ENABLED"] ?? process.env.SCALP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const bbRsiModeOn     = (envData["BB_RSI_MODE_ENABLED"] ?? process.env.BB_RSI_MODE_ENABLED ?? "true").toLowerCase() === "true";
 
   function isFieldFrozen(key) {
     // Per-module VIX thresholds frozen when that module's VIX toggle is off
     if ((key === "VIX_MAX_ENTRY" || key === "VIX_STRONG_ONLY") && !vixEnabled) return true;
-    if ((key === "SCALP_VIX_MAX_ENTRY" || key === "SCALP_VIX_STRONG_ONLY") && !scalpVixEnabled) return true;
+    if ((key === "BB_RSI_VIX_MAX_ENTRY" || key === "BB_RSI_VIX_STRONG_ONLY") && !bbRsiVixEnabled) return true;
     if (key === "PA_VIX_MAX_ENTRY" && !paVixEnabled) return true;
-    // Scalp section frozen when scalp mode is off (but not the master toggle itself,
-    // and not SCALP_OI_ENABLED which lives in the independent OI Filter section).
-    if (key.startsWith("SCALP_") && key !== "SCALP_MODE_ENABLED" && key !== "SCALP_OI_ENABLED" && !scalpModeOn) return true;
+    // BB_RSI section frozen when bb_rsi mode is off (but not the master toggle itself,
+    // and not BB_RSI_OI_ENABLED which lives in the independent OI Filter section).
+    if (key.startsWith("BB_RSI_") && key !== "BB_RSI_MODE_ENABLED" && key !== "BB_RSI_OI_ENABLED" && !bbRsiModeOn) return true;
     return false;
   }
 
@@ -1021,10 +1021,10 @@ router.get("/", (req, res) => {
     const frozen = isFieldFrozen(f.key);
     const dis = frozen ? "disabled" : "";
     let frozenGroup = "";
-    if (f.key === "SCALP_VIX_MAX_ENTRY" || f.key === "SCALP_VIX_STRONG_ONLY") frozenGroup = "scalp-vix";
+    if (f.key === "BB_RSI_VIX_MAX_ENTRY" || f.key === "BB_RSI_VIX_STRONG_ONLY") frozenGroup = "bb_rsi-vix";
     else if (f.key === "PA_VIX_MAX_ENTRY") frozenGroup = "pa-vix";
-    else if (f.key === "SCALP_OI_ENABLED") frozenGroup = ""; // OI section is independent of Scalp mode
-    else if (f.key.startsWith("SCALP_"))   frozenGroup = "scalp";
+    else if (f.key === "BB_RSI_OI_ENABLED") frozenGroup = ""; // OI section is independent of BB_RSI mode
+    else if (f.key.startsWith("BB_RSI_"))   frozenGroup = "bb_rsi";
     else if (f.key.startsWith("VIX_"))     frozenGroup = "vix";
     const frozenAttr = frozenGroup ? `data-freeze-group="${frozenGroup}"` : "";
     const rowClass = frozen ? "setting-row frozen" : "setting-row";
@@ -1162,27 +1162,27 @@ router.get("/", (req, res) => {
   }));
 
   // ── Hide strategy sections when their master toggle is off ──
-  const swingModeOn    = (envData["SWING_MODE_ENABLED"]    ?? process.env.SWING_MODE_ENABLED    ?? "true").toLowerCase() === "true";
+  const emaRsiStModeOn    = (envData["EMA_RSI_ST_MODE_ENABLED"]    ?? process.env.EMA_RSI_ST_MODE_ENABLED    ?? "true").toLowerCase() === "true";
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
-  // (scalpModeOn already computed above for isFieldFrozen)
+  // (bbRsiModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
-    "SWING STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     swingModeOn,
-    "SCALP STRATEGY (BB+PSAR+RSI) — Fyers":                         scalpModeOn,
+    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     emaRsiStModeOn,
+    "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers":                         bbRsiModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
   };
 
-  // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — Scalp only ──
-  const scalpUseST = (envData["SCALP_USE_SUPERTREND"] ?? process.env.SCALP_USE_SUPERTREND ?? "false").toLowerCase() === "true";
+  // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — BB_RSI only ──
+  const bbRsiUseST = (envData["BB_RSI_USE_SUPERTREND"] ?? process.env.BB_RSI_USE_SUPERTREND ?? "false").toLowerCase() === "true";
   const trendSourceTitle = (section) => {
     if (section.includes("BB+PSAR+RSI")) {
       return section.replace("PSAR",
-        `<span class="trend-src" data-trend-key="SCALP_USE_SUPERTREND" data-on="SuperTrend" data-off="PSAR">${scalpUseST ? "SuperTrend" : "PSAR"}</span>`);
+        `<span class="trend-src" data-trend-key="BB_RSI_USE_SUPERTREND" data-on="SuperTrend" data-off="PSAR">${bbRsiUseST ? "SuperTrend" : "PSAR"}</span>`);
     }
     return section;
   };
@@ -1938,7 +1938,7 @@ document.addEventListener('keydown', function(e){
   updateVixSectionVisibility();
 
   // Trend-source gating: PSAR and SuperTrend are mutually exclusive, so grey out
-  // the inactive set based on the "Use SuperTrend" toggle (Scalp + Swing). Values
+  // the inactive set based on the "Use SuperTrend" toggle (BB_RSI + EMA_RSI_ST). Values
   // are kept (disabled inputs are still collected on save) — only editing is blocked.
   // A frozen field (running session) stays disabled regardless.
   function _setSourceRowDisabled(key, disabled) {
@@ -1955,17 +1955,17 @@ document.addEventListener('keydown', function(e){
     });
   }
   function updateTrendSourceGating() {
-    var scalp = document.querySelector('[data-key="SCALP_USE_SUPERTREND"]');
-    if (scalp) {
-      var sON = scalp.checked;
-      _setSourceRowDisabled('SCALP_PSAR_STEP', sON);
-      _setSourceRowDisabled('SCALP_PSAR_MAX', sON);
-      _setSourceRowDisabled('SCALP_SUPERTREND_PERIOD', !sON);
-      _setSourceRowDisabled('SCALP_SUPERTREND_MULT', !sON);
-      _setTrendLabel('SCALP_USE_SUPERTREND', sON);
+    var bb_rsi = document.querySelector('[data-key="BB_RSI_USE_SUPERTREND"]');
+    if (bb_rsi) {
+      var sON = bb_rsi.checked;
+      _setSourceRowDisabled('BB_RSI_PSAR_STEP', sON);
+      _setSourceRowDisabled('BB_RSI_PSAR_MAX', sON);
+      _setSourceRowDisabled('BB_RSI_SUPERTREND_PERIOD', !sON);
+      _setSourceRowDisabled('BB_RSI_SUPERTREND_MULT', !sON);
+      _setTrendLabel('BB_RSI_USE_SUPERTREND', sON);
     }
   }
-  ['SCALP_USE_SUPERTREND'].forEach(function(k) {
+  ['BB_RSI_USE_SUPERTREND'].forEach(function(k) {
     var t = document.querySelector('[data-key="' + k + '"]');
     if (t) t.addEventListener('change', updateTrendSourceGating);
   });
@@ -2006,8 +2006,8 @@ function markDirty(el) {
   }
   // Freeze/unfreeze dependent fields when parent toggle changes
   if (key === 'VIX_FILTER_ENABLED') toggleFreezeGroup('vix', !el.checked);
-  if (key === 'SCALP_MODE_ENABLED') toggleFreezeGroup('scalp', !el.checked);
-  if (key === 'SCALP_VIX_ENABLED')  toggleFreezeGroup('scalp-vix', !el.checked);
+  if (key === 'BB_RSI_MODE_ENABLED') toggleFreezeGroup('bb_rsi', !el.checked);
+  if (key === 'BB_RSI_VIX_ENABLED')  toggleFreezeGroup('bb_rsi-vix', !el.checked);
   if (key === 'PA_VIX_ENABLED')     toggleFreezeGroup('pa-vix', !el.checked);
   updateSaveBar();
 }
@@ -2038,12 +2038,12 @@ function discardChanges() {
   updateSaveBar();
   // Restore freeze state from original toggle values
   var vixOrig      = window._originals['VIX_FILTER_ENABLED'];
-  var scalpOrig    = window._originals['SCALP_MODE_ENABLED'];
-  var scalpVixOrig = window._originals['SCALP_VIX_ENABLED'];
+  var bbRsiOrig    = window._originals['BB_RSI_MODE_ENABLED'];
+  var bbRsiVixOrig = window._originals['BB_RSI_VIX_ENABLED'];
   var paVixOrig    = window._originals['PA_VIX_ENABLED'];
   toggleFreezeGroup('vix',       vixOrig      !== true && vixOrig      !== 'true');
-  toggleFreezeGroup('scalp',     scalpOrig    !== true && scalpOrig    !== 'true');
-  toggleFreezeGroup('scalp-vix', scalpVixOrig !== true && scalpVixOrig !== 'true');
+  toggleFreezeGroup('bb_rsi',     bbRsiOrig    !== true && bbRsiOrig    !== 'true');
+  toggleFreezeGroup('bb_rsi-vix', bbRsiVixOrig !== true && bbRsiVixOrig !== 'true');
   toggleFreezeGroup('pa-vix',    paVixOrig    !== true && paVixOrig    !== 'true');
   showToast('Changes discarded', 'info');
 }
@@ -2677,7 +2677,7 @@ async function showHealthModal() {
       { label: 'Fyers Auth',    value: d.fyers ? 'Connected' : 'Not logged in', ok: d.fyers },
       { label: 'Zerodha Auth',  value: d.zerodha ? 'Connected' : 'Not logged in', ok: d.zerodha },
       { label: 'Trading Mode',  value: d.activeMode || 'Idle', ok: true },
-      { label: 'Scalp Mode',    value: d.scalpMode || 'Idle', ok: true },
+      { label: 'BB_RSI Mode',    value: d.bbRsiMode || 'Idle', ok: true },
     ];
     // Telegram delivery — optional channel, so "not configured" is a healthy
     // (green) state, not an error. When configured, the row is seeded from the
@@ -2877,7 +2877,7 @@ function showExpHolTab(tab) {
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
 var _schemaDefaults   = ${schemaDefaultsJSON};
-var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'Scalping Strategy (BB+PSAR+RSI)' };
+var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'BB_RSI Strategy (BB+PSAR+RSI)' };
 
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,
@@ -3093,7 +3093,7 @@ pm2 startOrRestart ecosystem.config.js --update-env</pre>
         Supports <code>KEY=VALUE</code>, <code>KEY: VALUE</code>, quoted values, and <code>#</code> comment lines.
         Sensitive keys (SECRET/TOKEN/ACCESS) are ignored for both updates and deletes. Applies everything and restarts the server.
       </div>
-      <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;SCALP_RSI_CE_THRESHOLD=55&#10;VIX_MAX_ENTRY=25&#10;&#10;# Delete dead keys with a leading dash:&#10;-SCALP_ADX_ENABLED&#10;-SCALP_RSI_CE_MIN"></textarea>
+      <textarea id="bulkPasteBox" spellcheck="false" oninput="previewBulkPaste()" placeholder="# Paste your config here&#10;BB_RSI_RSI_CE_THRESHOLD=55&#10;VIX_MAX_ENTRY=25&#10;&#10;# Delete dead keys with a leading dash:&#10;-BB_RSI_ADX_ENABLED&#10;-BB_RSI_RSI_CE_MIN"></textarea>
       <div class="bulk-preview" id="bulkPreview"></div>
       <div class="bulk-actions">
         <button class="btn-bulk-clear" onclick="clearBulkPaste()">Clear</button>
@@ -3181,7 +3181,7 @@ router.get("/audit", (req, res) => {
   if (filterSource) entries = entries.filter(e => (e.source || "").includes(filterSource));
 
   // Group by timestamp+source for display
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const escapeHtml = s => String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");

@@ -11,7 +11,7 @@
  *   2. Per-strategy `{KEY}_LIVE_DRY_RUN` (default "false").
  *      When the global flag is OFF (real orders), a strategy whose override
  *      is "true" STAYS in dry-run. This lets you graduate one strategy to
- *      real money (e.g. Swing) while keeping another simulated (e.g. ORB)
+ *      real money (e.g. EMA_RSI_ST) while keeping another simulated (e.g. ORB)
  *      without a separate global switch.
  *
  * Truth table (global OFF means LIVE_HARNESS_DRY_RUN=false):
@@ -19,7 +19,7 @@
  *   global OFF, override unset/false → REAL orders
  *   global OFF, override true        → dry-run (strategy held back)
  *
- * @param {string} [strategyKey] e.g. "SWING", "ORB", "PA", "SCALP".
+ * @param {string} [strategyKey] e.g. "EMA_RSI_ST", "ORB", "PA", "BB_RSI".
  *        Omit to evaluate the global flag only.
  * @returns {boolean} true ⇒ no real broker order should be placed.
  */

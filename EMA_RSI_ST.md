@@ -1,8 +1,8 @@
-# SWING Strategy — EMA21 + RSI + SAR
+# EMA_RSI_ST Strategy — EMA21 + RSI + SAR
 
-*Redefined 2026-05-27.* Authoritative description of the **current** Swing logic, transcribed from the code:
+*Redefined 2026-05-27.* Authoritative description of the **current** EMA_RSI_ST logic, transcribed from the code:
 - Entry signal: [src/strategies/strategy1_sar_ema_rsi.js](src/strategies/strategy1_sar_ema_rsi.js) (`getSignal`) — shared by all 5 modes.
-- Order/exit/trail management: [src/routes/swingPaper.js](src/routes/swingPaper.js) (paper is canonical) / [src/routes/swingLive.js](src/routes/swingLive.js). Backtest: [src/services/backtestEngine.js](src/services/backtestEngine.js). Replay + Live Harness drive the paper/live engines and inherit automatically.
+- Order/exit/trail management: [src/routes/emaRsiStPaper.js](src/routes/emaRsiStPaper.js) (paper is canonical) / [src/routes/emaRsiStLive.js](src/routes/emaRsiStLive.js). Backtest: [src/services/backtestEngine.js](src/services/backtestEngine.js). Replay + Live Harness drive the paper/live engines and inherit automatically.
 
 All numeric values below are the **code defaults**; every one is overridable from the Settings UI (env var in parentheses).
 
@@ -55,27 +55,27 @@ There is no strength tier — all valid signals enter intra-candle at the tick p
 1. **Prev-candle SL hit** — `ltp ≤ SL` (CE) / `ltp ≥ SL` (PE), every tick.
 2. **Option-premium stop** — exit if option LTP `≤ entryLtp × (1 − OPT_STOP_PCT(0.25))`. (In backtest, approximated as an equivalent adverse spot move since there is no live premium.)
 3. **Opposite signal** — CE position + BUY_PE → exit (and vice-versa).
-4. **Exit before day close** — square off any open position at/after `SWING_EOD_EXIT_TIME(15:15)` IST, ahead of the auto-stop.
+4. **Exit before day close** — square off any open position at/after `EMA_RSI_ST_EOD_EXIT_TIME(15:15)` IST, ahead of the auto-stop.
 5. **EOD auto-stop** at `TRADE_STOP_TIME(15:30)` — squares off and stops the engine.
 6. **Time-stop** — flat trade bleeding theta is closed via `tradeGuards.checkTimeStop`.
 
 ## 6. Same-side cooldown
 
-After an **SL hit or option-stop** on a side, new entries on **that side** are blocked for `SWING_SL_PAUSE_CANDLES(3)` candles (per-side; the other side is free). `0` disables it.
+After an **SL hit or option-stop** on a side, new entries on **that side** are blocked for `EMA_RSI_ST_SL_PAUSE_CANDLES(3)` candles (per-side; the other side is free). `0` disables it.
 
 ## 7. Risk guards & filters
 
 - `MAX_DAILY_TRADES(6)` — entries per session (enforced in paper, live, and backtest).
 - `MAX_DAILY_LOSS(5000)` — daily kill-switch (also latched on 3 consecutive losses).
-- **VIX gate**: `VIX_FILTER_ENABLED` + `VIX_MAX_ENTRY(20)` block entries above that VIX (Swing-scoped).
+- **VIX gate**: `VIX_FILTER_ENABLED` + `VIX_MAX_ENTRY(20)` block entries above that VIX (EMA_RSI_ST-scoped).
 - Bid-ask spread / time-stop shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).
 
 ## 8. Expiry & live gating
 
 - **0DTE refusal**: live/paper `/start` is blocked when the configured expiry == today (gamma risk). **Replay bypasses this** (`force=1`) — a historical replay must not be aborted by a live-trading safety gate.
 - `TRADE_EXPIRY_DAY_ONLY` — when on, only trade on NIFTY expiry day.
-- `SWING_OPTION_EXPIRY_OVERRIDE` / `SWING_OPTION_EXPIRY_TYPE` let Swing run a different expiry from the other strategies; blank inherits the common expiry.
-- **Live order placement is double-gated**: `SWING_LIVE_ENABLED` **and** global `LIVE_HARNESS_DRY_RUN=false`, with a per-strategy `SWING_LIVE_DRY_RUN` override to keep Swing simulated while others go live.
+- `EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE` / `EMA_RSI_ST_OPTION_EXPIRY_TYPE` let EMA_RSI_ST run a different expiry from the other strategies; blank inherits the common expiry.
+- **Live order placement is double-gated**: `EMA_RSI_ST_LIVE_ENABLED` **and** global `LIVE_HARNESS_DRY_RUN=false`, with a per-strategy `EMA_RSI_ST_LIVE_DRY_RUN` override to keep EMA_RSI_ST simulated while others go live.
 
 ## 9. Charts (paper status, live status, replay)
 
@@ -86,7 +86,7 @@ Every swing chart overlays the indicators the strategy actually decides on:
   and `RSI_PE_MAX` (red "PE") so the entry bands are visible. (Overbought/oversold caps
   `RSI_CE_MAX`/`RSI_PE_MIN` are enforced in code; the visible band lines are the momentum thresholds.)
 
-Data: `GET /swing-paper/status/chart-data` and `/swing-live/status/chart-data` return
+Data: `GET /ema_rsi_st-paper/status/chart-data` and `/ema_rsi_st-live/status/chart-data` return
 `{ candles, markers, ema21, sar, rsi, rsiCeMin, rsiPeMax, stopLoss, entryPrice }`. Replay harvests
 the same contract. (Backtest uses Chart.js equity curves, not a candlestick chart — no overlays.)
 
@@ -97,7 +97,7 @@ All swing logs reflect this strategy (no EMA9/ADX/STRONG-MARGINAL anywhere):
 - Candle-close summary (paper/live): `EMA21=… | RSI=… | SAR=…(trend)`.
 - Skip log ([skipLogger](src/utils/skipLogger.js)): records `ema21 / rsi / sar / sarTrend` + the block reason.
 - Trade log ([tradeLogger](src/utils/tradeLogger.js)) JSONL: per-trade record carries `rsiAtEntry / ema21AtEntry / sarAtEntry / sarTrend`, MFE/MAE, charges, etc.
-- Startup banner: entry rule + stop/exit + risk-guard summary (see swingPaper/swingLive `/start`).
+- Startup banner: entry rule + stop/exit + risk-guard summary (see emaRsiStPaper/emaRsiStLive `/start`).
 
 ## 11. Removed vs the previous strategy
 

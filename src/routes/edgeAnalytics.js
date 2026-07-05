@@ -24,15 +24,15 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 // Mirror the source maps used by consolidation.js (paper) + liveConsolidation.js (live).
 // ORB live files are included defensively — safeRead() no-ops if absent.
 const PAPER_SOURCES = [
-  { mode: "SWING",    file: "paper_trades.json" },
-  { mode: "SCALP",    file: "scalp_paper_trades.json" },
+  { mode: "EMA_RSI_ST",    file: "ema_rsi_st_paper_trades.json" },
+  { mode: "BB_RSI",    file: "bb_rsi_paper_trades.json" },
   { mode: "PA",       file: "pa_paper_trades.json" },
   { mode: "ORB",      file: "orb_paper_trades.json" },
   { mode: "EMA9VWAP", file: "ema9vwap_paper_trades.json" },
 ];
 const LIVE_SOURCES = [
-  { mode: "SWING",    file: "live_trades.json" },
-  { mode: "SCALP",    file: "scalp_live_trades.json" },
+  { mode: "EMA_RSI_ST",    file: "ema_rsi_st_live_trades.json" },
+  { mode: "BB_RSI",    file: "bb_rsi_live_trades.json" },
   { mode: "PA",       file: "pa_live_trades.json" },
   { mode: "ORB",      file: "orb_live_trades.json" },
   { mode: "EMA9VWAP", file: "ema9vwap_live_trades.json" },
@@ -143,8 +143,8 @@ router.get("/", (req, res) => {
     .tbl td:first-child{text-align:left;}
     .tbl tr:hover td{background:rgba(56,189,248,0.05);}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
-    .badge-SWING{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
-    .badge-SCALP{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
+    .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
+    .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
     .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
@@ -179,8 +179,8 @@ router.get("/", (req, res) => {
       <label>Strategy</label>
       <select id="fMode">
         <option value="">All</option>
-        <option value="SWING">Swing</option>
-        <option value="SCALP">Scalp</option>
+        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
+        <option value="BB_RSI">BB_RSI</option>
         <option value="PA">Price Action</option>
         <option value="ORB">ORB</option>
       </select>

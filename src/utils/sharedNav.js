@@ -4,15 +4,15 @@
  * Renders the sidebar nav (same design as Live Trade page) for ALL pages.
  * Used by: Dashboard, Backtest, Paper Trade, Live Trade, Logs
  *
- * @param {string}  activePage  - 'dashboard' | 'swingBacktest' | 'swingPaper' | 'swingLive' | 'logs'
- * @param {boolean} liveActive  - true when SWING_LIVE socket is running
+ * @param {string}  activePage  - 'dashboard' | 'emaRsiStBacktest' | 'emaRsiStPaper' | 'emaRsiStLive' | 'logs'
+ * @param {boolean} liveActive  - true when EMA_RSI_ST_LIVE socket is running
  * @param {boolean} isRunning   - true when THIS page's trade/session is running
  * @param {object}  opts        - { showStopBtn, showStartBtn, showExitBtn, stopLabel, startLabel }
  */
 
 function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
-  // Import scalp/primary/PA/ORB state inline to avoid circular dependency issues
-  let _scalpMode = null;
+  // Import bb_rsi/primary/PA/ORB state inline to avoid circular dependency issues
+  let _bbRsiMode = null;
   let _primaryMode = null;
   let _paMode = null;
   let _orbMode = null;
@@ -20,7 +20,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
-    _scalpMode = sss.getScalpMode();
+    _bbRsiMode = sss.getBbRsiMode();
     _primaryMode = sss.getMode();
     _paMode = sss.getPAMode();
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
@@ -45,8 +45,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     statusLabel  = isRunning ? 'RUNNING' : 'STOPPED',
   } = opts;
 
-  const swingModeOn    = (process.env.SWING_MODE_ENABLED    || 'true').toLowerCase() === 'true';
-  const scalpModeOn    = (process.env.SCALP_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const emaRsiStModeOn    = (process.env.EMA_RSI_ST_MODE_ENABLED    || 'true').toLowerCase() === 'true';
+  const bbRsiModeOn    = (process.env.BB_RSI_MODE_ENABLED    || 'true').toLowerCase() === 'true';
   const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
@@ -65,14 +65,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showEdgeAnalytics = (process.env.UI_SHOW_EDGE_ANALYTICS || 'true').toLowerCase() === 'true';
 
   // ── Per-strategy submenu toggles ──
-  const showSwingBacktest = (process.env.UI_SHOW_SWING_BACKTEST || 'true').toLowerCase() === 'true';
-  const showSwingPaper    = (process.env.UI_SHOW_SWING_PAPER    || 'true').toLowerCase() === 'true';
-  const showSwingLive     = (process.env.UI_SHOW_SWING_LIVE     || 'true').toLowerCase() === 'true';
-  const showSwingLiveHarness = (process.env.UI_SHOW_SWING_LIVE_HARNESS || 'false').toLowerCase() === 'true';
-  const showScalpBacktest = (process.env.UI_SHOW_SCALP_BACKTEST || 'true').toLowerCase() === 'true';
-  const showScalpPaper    = (process.env.UI_SHOW_SCALP_PAPER    || 'true').toLowerCase() === 'true';
-  const showScalpLive     = (process.env.UI_SHOW_SCALP_LIVE     || 'true').toLowerCase() === 'true';
-  const showScalpLiveHarness = (process.env.UI_SHOW_SCALP_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showEmaRsiStBacktest = (process.env.UI_SHOW_EMA_RSI_ST_BACKTEST || 'true').toLowerCase() === 'true';
+  const showEmaRsiStPaper    = (process.env.UI_SHOW_EMA_RSI_ST_PAPER    || 'true').toLowerCase() === 'true';
+  const showEmaRsiStLive     = (process.env.UI_SHOW_EMA_RSI_ST_LIVE     || 'true').toLowerCase() === 'true';
+  const showEmaRsiStLiveHarness = (process.env.UI_SHOW_EMA_RSI_ST_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showBbRsiBacktest = (process.env.UI_SHOW_BB_RSI_BACKTEST || 'true').toLowerCase() === 'true';
+  const showBbRsiPaper    = (process.env.UI_SHOW_BB_RSI_PAPER    || 'true').toLowerCase() === 'true';
+  const showBbRsiLive     = (process.env.UI_SHOW_BB_RSI_LIVE     || 'true').toLowerCase() === 'true';
+  const showBbRsiLiveHarness = (process.env.UI_SHOW_BB_RSI_LIVE_HARNESS || 'false').toLowerCase() === 'true';
   const showPaBacktest        = (process.env.UI_SHOW_PA_BACKTEST         || 'true').toLowerCase() === 'true';
   const showPaPatternBacktest = (process.env.UI_SHOW_PA_PATTERN_BACKTEST || 'true').toLowerCase() === 'true';
   const showPaPaper           = (process.env.UI_SHOW_PA_PAPER            || 'true').toLowerCase() === 'true';
@@ -92,14 +92,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
 
   // Determine which collapsible group the active page belongs to
-  const tradingKeys = ['swingBacktest', 'swingPaper', 'swingSim', 'swingHistory', 'swingCompare', 'swingTracker', 'swingLive', 'swingLiveHarness'];
-  const scalpKeys   = ['scalpBacktest', 'scalpPaper', 'scalpSim', 'scalpHistory', 'scalpCompare', 'scalpLive', 'scalpLiveHarness'];
+  const tradingKeys = ['emaRsiStBacktest', 'emaRsiStPaper', 'emaRsiStSim', 'emaRsiStHistory', 'emaRsiStCompare', 'emaRsiStTracker', 'emaRsiStLive', 'emaRsiStLiveHarness'];
+  const bbRsiKeys   = ['bbRsiBacktest', 'bbRsiPaper', 'bbRsiSim', 'bbRsiHistory', 'bbRsiCompare', 'bbRsiLive', 'bbRsiLiveHarness'];
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
-  const isScalpOpen    = scalpKeys.includes(activePage);
+  const isBbRsiOpen    = bbRsiKeys.includes(activePage);
   const isPAOpen       = paKeys.includes(activePage);
   const isOrbOpen      = orbKeys.includes(activePage);
   const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
@@ -107,30 +107,30 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
   // menu items are dead links during a paper session.
-  const swingPaperRunning    = _primaryMode  === 'SWING_PAPER';
-  const scalpPaperRunning    = _scalpMode    === 'SCALP_PAPER';
+  const emaRsiStPaperRunning    = _primaryMode  === 'EMA_RSI_ST_PAPER';
+  const bbRsiPaperRunning    = _bbRsiMode    === 'BB_RSI_PAPER';
   const paPaperRunning       = _paMode       === 'PA_PAPER';
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
   const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
 
-  // Build a swing items list with per-feature toggle
-  const swingItems = [
-    ...(showSwingBacktest ? [{ key: 'swingBacktest', href: '/swing-backtest',       icon: '🔍', label: 'Backtest' }] : []),
-    ...(showSwingPaper    ? [{ key: 'swingPaper',    href: '/swing-paper/status',   icon: '📋', label: 'Paper'    }] : []),
-    ...(showSim      ? [{ key: 'swingSim',     href: '/swing-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showCompare  ? [{ key: 'swingCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
-    ...(showTracker  ? [{ key: 'swingTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
-    ...(showSwingLive && !swingPaperRunning ? [{ key: 'swingLive',     href: '/swing-live/status',    icon: '●',  label: 'Live'     }] : []),
-    ...(showSwingLiveHarness && !swingPaperRunning ? [{ key: 'swingLiveHarness', href: '/swing-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+  // Build a ema_rsi_st items list with per-feature toggle
+  const emaRsiStItems = [
+    ...(showEmaRsiStBacktest ? [{ key: 'emaRsiStBacktest', href: '/ema_rsi_st-backtest',       icon: '🔍', label: 'Backtest' }] : []),
+    ...(showEmaRsiStPaper    ? [{ key: 'emaRsiStPaper',    href: '/ema_rsi_st-paper/status',   icon: '📋', label: 'Paper'    }] : []),
+    ...(showSim      ? [{ key: 'emaRsiStSim',     href: '/ema_rsi_st-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
+    ...(showCompare  ? [{ key: 'emaRsiStCompare', href: '/compare/trading',      icon: '⚖',  label: 'Compare'  }] : []),
+    ...(showTracker  ? [{ key: 'emaRsiStTracker', href: '/tracker/status',       icon: '🎯', label: 'Tracker'  }] : []),
+    ...(showEmaRsiStLive && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLive',     href: '/ema_rsi_st-live/status',    icon: '●',  label: 'Live'     }] : []),
+    ...(showEmaRsiStLiveHarness && !emaRsiStPaperRunning ? [{ key: 'emaRsiStLiveHarness', href: '/ema_rsi_st-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
-  const scalpItems = [
-    ...(showScalpBacktest ? [{ key: 'scalpBacktest', href: '/scalp-backtest',     icon: '⚡', label: 'Backtest' }] : []),
-    ...(showScalpPaper    ? [{ key: 'scalpPaper',    href: '/scalp-paper/status', icon: '⚡', label: 'Paper'    }] : []),
-    ...(showSim     ? [{ key: 'scalpSim',     href: '/scalp-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
-    ...(showCompare ? [{ key: 'scalpCompare', href: '/compare/scalping',     icon: '⚖',  label: 'Compare'  }] : []),
-    ...(showScalpLive && !scalpPaperRunning ? [{ key: 'scalpLive',     href: '/scalp-live/status',  icon: '⚡', label: 'Live'     }] : []),
-    ...(showScalpLiveHarness && !scalpPaperRunning ? [{ key: 'scalpLiveHarness', href: '/scalp-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+  const bbRsiItems = [
+    ...(showBbRsiBacktest ? [{ key: 'bbRsiBacktest', href: '/bb_rsi-backtest',     icon: '⚡', label: 'Backtest' }] : []),
+    ...(showBbRsiPaper    ? [{ key: 'bbRsiPaper',    href: '/bb_rsi-paper/status', icon: '⚡', label: 'Paper'    }] : []),
+    ...(showSim     ? [{ key: 'bbRsiSim',     href: '/bb_rsi-paper/simulate', icon: '🎮', label: 'Simulate' }] : []),
+    ...(showCompare ? [{ key: 'bbRsiCompare', href: '/compare/bb_rsi',     icon: '⚖',  label: 'Compare'  }] : []),
+    ...(showBbRsiLive && !bbRsiPaperRunning ? [{ key: 'bbRsiLive',     href: '/bb_rsi-live/status',  icon: '⚡', label: 'Live'     }] : []),
+    ...(showBbRsiLiveHarness && !bbRsiPaperRunning ? [{ key: 'bbRsiLiveHarness', href: '/bb_rsi-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
   ];
 
   const paItems = [
@@ -174,15 +174,15 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: null, collapsible: false,
       items: topLevelItems,
     }] : []),
-    ...(swingModeOn ? [{
-      header: 'SWING', collapsible: true, collapsed: !isTradingOpen,
-      groupId: 'nav-swing',
-      items: swingItems,
+    ...(emaRsiStModeOn ? [{
+      header: 'EMA_RSI_ST', collapsible: true, collapsed: !isTradingOpen,
+      groupId: 'nav-ema_rsi_st',
+      items: emaRsiStItems,
     }] : []),
-    ...(scalpModeOn ? [{
-      header: 'SCALP', collapsible: true, collapsed: !isScalpOpen,
-      groupId: 'nav-scalp',
-      items: scalpItems,
+    ...(bbRsiModeOn ? [{
+      header: 'BB_RSI', collapsible: true, collapsed: !isBbRsiOpen,
+      groupId: 'nav-bb_rsi',
+      items: bbRsiItems,
     }] : []),
     ...(paModeOn ? [{
       header: 'PRICE ACTION', collapsible: true, collapsed: !isPAOpen,
@@ -209,9 +209,9 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     },
   ];
 
-  // Block all backtest & paper (trading + scalping + PA) when ANY live mode is active
-  const anyLiveActive = liveActive || _scalpMode === 'SCALP_LIVE' || _paMode === 'PA_LIVE';
-  const blocked = anyLiveActive ? ['allBacktest', 'swingBacktest', 'swingPaper', 'scalpBacktest', 'scalpPaper', 'paBacktest', 'paPatternBacktest', 'paPaper'] : [];
+  // Block all backtest & paper (trading + bb_rsi + PA) when ANY live mode is active
+  const anyLiveActive = liveActive || _bbRsiMode === 'BB_RSI_LIVE' || _paMode === 'PA_LIVE';
+  const blocked = anyLiveActive ? ['allBacktest', 'emaRsiStBacktest', 'emaRsiStPaper', 'bbRsiBacktest', 'bbRsiPaper', 'paBacktest', 'paPatternBacktest', 'paPaper'] : [];
 
   function renderItem(p) {
     const isActive   = p.key === activePage;
@@ -224,19 +224,19 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       </span>`;
     }
 
-    const liveBadge = p.key === 'swingLive' && liveActive
+    const liveBadge = p.key === 'emaRsiStLive' && liveActive
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
-    const runningBadge = p.key === 'swingPaper' && (_primaryMode === 'SWING_PAPER' || isRunning)
+    const runningBadge = p.key === 'emaRsiStPaper' && (_primaryMode === 'EMA_RSI_ST_PAPER' || isRunning)
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
-    const scalpLiveBadge = p.key === 'scalpLive' && _scalpMode === 'SCALP_LIVE'
+    const bbRsiLiveBadge = p.key === 'bbRsiLive' && _bbRsiMode === 'BB_RSI_LIVE'
       ? `<span class="sb-nav-badge live">LIVE</span>`
       : '';
 
-    const scalpPaperBadge = p.key === 'scalpPaper' && _scalpMode === 'SCALP_PAPER'
+    const bbRsiPaperBadge = p.key === 'bbRsiPaper' && _bbRsiMode === 'BB_RSI_PAPER'
       ? `<span class="sb-nav-badge" style="background:rgba(16,185,129,0.15);color:#10b981;border-color:rgba(16,185,129,0.3);">ON</span>`
       : '';
 
@@ -254,7 +254,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
 
     return `<a href="${p.href}" class="sb-nav-item${isActive ? ' active' : ''}">
       <span class="sb-nav-icon">${p.icon}</span> ${p.label}
-      ${liveBadge}${runningBadge}${scalpLiveBadge}${scalpPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}
+      ${liveBadge}${runningBadge}${bbRsiLiveBadge}${bbRsiPaperBadge}${paLiveBadge}${paPaperBadge}${orbPaperBadge}
     </a>`;
   }
 
@@ -689,7 +689,7 @@ function sidebarCSS() {
     :root[data-theme="light"] .err-box,
     :root[data-theme="light"] .confirm-box { border-color:#fca5a5 !important; }
 
-    /* Backtest/ScalpBacktest — run bar, stat cards, tables, toggles, copy btns */
+    /* Backtest/BbRsiBacktest — run bar, stat cards, tables, toggles, copy btns */
     :root[data-theme="light"] .run-bar { background:#f8fafc !important; border-color:#e0e4ea !important; color:#334155 !important; }
     :root[data-theme="light"] .dw-table tbody tr:hover { background:#f8fafc !important; }
     :root[data-theme="light"] tbody tr:hover { background:#f8fafc !important; }
@@ -707,7 +707,7 @@ function sidebarCSS() {
     :root[data-theme="light"] .copy-btn.copied { background:#dcfce7 !important; border-color:#10b981 !important; color:#059669 !important; }
     :root[data-theme="light"] #tooltip { background:#1e293b !important; }
 
-    /* Analytics cards (scalp/backtest) */
+    /* Analytics cards (bb_rsi/backtest) */
     :root[data-theme="light"] .ana-card { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
     :root[data-theme="light"] .ana-card h3 { color:#64748b !important; }
     :root[data-theme="light"] .ana-mini { background:#ffffff !important; border-color:#e0e4ea !important; box-shadow:0 1px 3px rgba(0,0,0,0.06) !important; }
@@ -717,16 +717,16 @@ function sidebarCSS() {
     :root[data-theme="light"] .ana-tbl tr:hover { background:#f8fafc !important; }
     :root[data-theme="light"] .ana-stat-label { color:#94a3b8 !important; }
 
-    /* Trade/Paper/Scalp — capital strip, stat cards, session cards, export btns */
+    /* Trade/Paper/BB_RSI — capital strip, stat cards, session cards, export btns */
     :root[data-theme="light"] .capital-strip { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-card { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-head { background:#f8fafc !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .export-btn { background:#f8fafc !important; border-color:#e0e4ea !important; color:#64748b !important; }
     :root[data-theme="light"] .export-btn:hover { background:#eff6ff !important; border-color:#2563eb !important; color:#2563eb !important; }
     :root[data-theme="light"] .badge-running { background:#dcfce7 !important; color:#059669 !important; border-color:#10b981 !important; }
-    :root[data-theme="light"] .scalp-toast { background:#ffffff !important; box-shadow:0 4px 24px rgba(0,0,0,0.12) !important; }
+    :root[data-theme="light"] .bb_rsi-toast { background:#ffffff !important; box-shadow:0 4px 24px rgba(0,0,0,0.12) !important; }
 
-    /* Scalp/Trade — broker badges, top bar overrides */
+    /* BB_RSI/Trade — broker badges, top bar overrides */
     :root[data-theme="light"] .broker-badge.ok { background:#eff6ff !important; border-color:#bfdbfe !important; color:#2563eb !important; }
     :root[data-theme="light"] .broker-badge.err { background:#fef2f2 !important; border-color:#fecaca !important; color:#dc2626 !important; }
 
@@ -766,7 +766,7 @@ function sidebarCSS() {
     :root[data-theme="light"] .log-row[data-level="WARN"]:hover { background:#fef9c3 !important; }
     :root[data-theme="light"] .log-row[data-level="ERROR"] { background:#fef2f2 !important; }
 
-    /* History pages (paperTrade, scalpPaper) */
+    /* History pages (paperTrade, bbRsiPaper) */
     :root[data-theme="light"] .session-card { background:#ffffff !important; border-color:#e0e4ea !important; }
     :root[data-theme="light"] .session-head { background:#f8fafc !important; border-bottom-color:#e0e4ea !important; }
     :root[data-theme="light"] .summary-table th { background:#f1f5f9 !important; color:#64748b !important; }
@@ -1018,7 +1018,7 @@ function showToast(msg, color) {
 function aiExportJS() {
   return `
 var AI_LEGEND = {
-  mode:'Strategy (swing / scalp / pa / orb).',
+  mode:'Strategy (ema_rsi_st / bb_rsi / pa / orb).',
   side:'CE = call (bullish) · PE = put (bearish).',
   symbol:'Option contract traded.',
   qty:'Quantity in units (lot size × lots).',
@@ -1543,7 +1543,7 @@ function showConfirm(opts) {
 // First step shows the caller's opts (same shape as showConfirm). If accepted,
 // shows a stricter "Are you absolutely sure?" step before resolving true.
 // A short subject string can be passed in opts.subject to interpolate into
-// the second-step message (e.g. "SWING · 2026-05-12").
+// the second-step message (e.g. "EMA_RSI_ST · 2026-05-12").
 // NOTE: async function declarations are block-scoped even in sloppy mode
 // (Annex B hoisting applies only to regular function declarations), so we
 // use a var + async function expression so this helper is reachable from
@@ -1882,7 +1882,7 @@ async function secretFetch(url, opts) {
  * @param {string} message — error description
  * @param {string} linkHref — back-link URL
  * @param {string} linkText — back-link label
- * @param {string} sidebarKey — active sidebar page key (e.g. 'scalpLive')
+ * @param {string} sidebarKey — active sidebar page key (e.g. 'bbRsiLive')
  */
 function errorPage(title, message, linkHref, linkText, sidebarKey) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>

@@ -2,7 +2,7 @@
  * backtestUI.js — Shared full-featured backtest results page renderer.
  * ─────────────────────────────────────────────────────────────────────────────
  * Used by orbBacktest to render a results page with the
- * same shape as scalpBacktest/swingBacktest: sticky breadcrumb, run-bar with
+ * same shape as bbRsiBacktest/emaRsiStBacktest: sticky breadcrumb, run-bar with
  * date pickers + split-by-year/month, preset rows (week/month/year + each
  * year + each month), 14-card stat grid, cumulative P&L chart, equity /
  * monthly / drawdown / hourly analytics, day-wise toggle, filterable +
@@ -107,7 +107,7 @@ function renderBacktestResults(opts) {
     notes = "",
   } = opts;
 
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embed trades safely
   const tradesJSON = JSON.stringify(trades).replace(/<\/script>/gi, "<\\/script>");
 

@@ -5,7 +5,7 @@
  *
  * Routes:
  *   GET /compare/trading   → Compare regular paper trades vs backtest
- *   GET /compare/scalping  → Compare scalp paper trades vs scalp backtest
+ *   GET /compare/bb_rsi  → Compare bb_rsi paper trades vs bb_rsi backtest
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -158,8 +158,8 @@ function pageCSS() {
 
 // ── Build comparison page ───────────────────────────────────────────────────
 function buildComparePage(mode, paperSummary, backtestResult, activePage) {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
-  const title = mode === "scalping" ? "Scalp: Paper vs Backtest" : "Trading: Paper vs Backtest";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
+  const title = mode === "bb_rsi" ? "BB_RSI: Paper vs Backtest" : "Trading: Paper vs Backtest";
   const bt = backtestResult ? backtestResult.summary : null;
 
   const p = paperSummary;
@@ -457,7 +457,7 @@ ${(paperEquity.length > 0 || btEquity.length > 0) ? `
 
 // GET /compare/trading
 router.get("/trading", (req, res) => {
-  const paperData = loadPaperData("paper_trades.json");
+  const paperData = loadPaperData("ema_rsi_st_paper_trades.json");
   const backtestResult = loadResult(ACTIVE);
 
   const paperSummary = aggregatePaperSessions(paperData.sessions || []);
@@ -467,16 +467,16 @@ router.get("/trading", (req, res) => {
   res.send(buildComparePage("trading", paperSummary, backtestResult, "compare"));
 });
 
-// GET /compare/scalping
-router.get("/scalping", (req, res) => {
-  const paperData = loadPaperData("scalp_paper_trades.json");
-  const backtestResult = loadResult("SCALP_BACKTEST");
+// GET /compare/bb_rsi
+router.get("/bb_rsi", (req, res) => {
+  const paperData = loadPaperData("bb_rsi_paper_trades.json");
+  const backtestResult = loadResult("BB_RSI_BACKTEST");
 
   const paperSummary = aggregatePaperSessions(paperData.sessions || []);
   paperSummary._sessions = paperData.sessions || [];
 
   res.setHeader("Content-Type", "text/html");
-  res.send(buildComparePage("scalping", paperSummary, backtestResult, "scalpCompare"));
+  res.send(buildComparePage("bb_rsi", paperSummary, backtestResult, "bbRsiCompare"));
 });
 
 module.exports = router;

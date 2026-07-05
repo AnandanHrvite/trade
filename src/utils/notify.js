@@ -12,11 +12,11 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{SWING|SCALP|PA|ORB}_STARTED             — session-start alerts (per mode)
- *   TG_{SWING|SCALP|PA|ORB}_ENTRY               — trade entry alerts (per mode)
- *   TG_{SWING|SCALP|PA|ORB}_EXIT                — trade exit alerts (per mode)
- *   TG_{SWING|SCALP|PA}_SIGNALS                 — candle-close skip/signal alerts (Swing/Scalp/PA only)
- *   TG_{SWING|SCALP|PA|ORB}_DAYREPORT           — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_STARTED             — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_ENTRY               — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_EXIT                — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA}_SIGNALS                 — candle-close skip/signal alerts (EMA_RSI_ST/BB_RSI/PA only)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_DAYREPORT           — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
  *   (ORB emits no SIGNAL alerts, so it has no _SIGNALS toggle.)
@@ -86,18 +86,18 @@ function isMasterEnabled() {
   return !isOff(process.env.TG_ENABLED);
 }
 
-/** Map a mode string ("PAPER", "LIVE", "SCALP-PAPER", "PA-LIVE", "ORB-LIVE (DRY-RUN)", ...) to group.
+/** Map a mode string ("PAPER", "LIVE", "BB_RSI-PAPER", "PA-LIVE", "ORB-LIVE (DRY-RUN)", ...) to group.
  *  The dash in "PA-" matters — plain "PAPER" would otherwise be misread as PA.
  *  Live modes can carry a " (DRY-RUN)" suffix, so prefix matching (startsWith) is used.
  */
 function modeGroup(mode) {
-  if (!mode) return "SWING";
+  if (!mode) return "EMA_RSI_ST";
   const m = String(mode).toUpperCase();
-  if (m === "SCALP"    || m.startsWith("SCALP-")    || m.startsWith("SCALP_"))    return "SCALP";
+  if (m === "BB_RSI"    || m.startsWith("BB_RSI-")    || m.startsWith("BB_RSI_"))    return "BB_RSI";
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
-  return "SWING";
+  return "EMA_RSI_ST";
 }
 
 /** Is a strategy group enabled? Gated by {GROUP}_MODE_ENABLED (default on).
@@ -351,10 +351,10 @@ function fmtHeld(ms) {
 function modeLabel(mode) {
   if (!mode) return "";
   const m = String(mode).toUpperCase();
-  if (m === "PAPER")        return "📄 SWING PAPER";
-  if (m === "LIVE")         return "⚡ SWING LIVE";
-  if (m === "SCALP-PAPER")  return "📄 SCALP PAPER";
-  if (m === "SCALP-LIVE")   return "⚡ SCALP LIVE";
+  if (m === "PAPER")        return "📄 EMA_RSI_ST PAPER";
+  if (m === "LIVE")         return "⚡ EMA_RSI_ST LIVE";
+  if (m === "BB_RSI-PAPER")  return "📄 BB_RSI PAPER";
+  if (m === "BB_RSI-LIVE")   return "⚡ BB_RSI LIVE";
   if (m === "PA-PAPER")     return "📄 PA PAPER";
   if (m === "PA-LIVE")      return "⚡ PA LIVE";
   // ORB live modes may carry a " (DRY-RUN)" suffix — match by prefix
@@ -393,7 +393,7 @@ function notifyStarted({ mode, text }) {
 // paper modules destructure `const { notifyEntry } = require('./notify')` at
 // load time — reassigning notify.notifyEntry would never reach those bindings,
 // but the body of this stable function is always what they call.
-// Keyed by harness id (e.g. "SWING-LIVE") so multiple harnesses can register
+// Keyed by harness id (e.g. "EMA_RSI_ST-LIVE") so multiple harnesses can register
 // concurrently. Each hook filters by its own mode, so they never collide —
 // this is what lets all harnesses run in parallel.
 const _orderHooks = new Map();   // id → { entry, exit }
@@ -577,7 +577,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { SWING, SCALP, PA, ORB } })
+ * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  * Returns true if a message was dispatched, false if gated off — the EOD
@@ -588,7 +588,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["SWING", "SCALP", "PA", "ORB", "EMA9VWAP"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

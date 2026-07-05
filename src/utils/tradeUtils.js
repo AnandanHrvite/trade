@@ -1,7 +1,7 @@
 /**
  * tradeUtils.js — Shared pure utility functions for all trade route files
  * ─────────────────────────────────────────────────────────────────────────────
- * Contains stateless helpers that are identical across scalpPaper, scalpLive,
+ * Contains stateless helpers that are identical across bbRsiPaper, bbRsiLive,
  * paPaper, and paLive. Single source of truth — avoids duplicated code.
  *
  * IMPORTANT: This module must remain STATELESS — no module-level mutable state.

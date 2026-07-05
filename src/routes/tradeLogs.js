@@ -2,7 +2,7 @@
  * tradeLogs.js — Per-trade JSONL viewer / downloader / deleter
  *
  * One page to manage the daily ~/trading-data/trades/*.jsonl files written
- * by utils/tradeLogger.js across all 3 modes (swing / scalp / pa), plus a
+ * by utils/tradeLogger.js across all 3 modes (EMA_RSI_ST / bb_rsi / pa), plus a
  * Checkpoints tab that lists settings-audit entries (from settingsAudit.js)
  * so settings changes can be correlated with the trade JSONLs.
  *
@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["swing", "scalp", "pa", "orb", "ema9vwap"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -78,7 +78,7 @@ function countTradesFile(mode, date) {
 }
 
 // ── GET /trade-logs/list — daily files. Supports ?mode= for per-mode paging. ─
-// Legacy shape (no params)        → { success, modes: { swing: [...], ... } }
+// Legacy shape (no params)        → { success, modes: { ema_rsi_st: [...], ... } }
 // Paged shape (?mode=&page=...)   → { success, mode, page, pageSize, total, count, rows }
 router.get("/list", (req, res) => {
   const requestedMode = String(req.query.mode || "").toLowerCase();
@@ -521,8 +521,8 @@ router.get("/audit", (req, res) => {
 function enabledModesFromEnv() {
   const on = (v) => String(v == null ? "true" : v).toLowerCase() === "true";
   return {
-    swing:    on(process.env.SWING_MODE_ENABLED),
-    scalp:    on(process.env.SCALP_MODE_ENABLED),
+    ema_rsi_st:    on(process.env.EMA_RSI_ST_MODE_ENABLED),
+    bb_rsi:    on(process.env.BB_RSI_MODE_ENABLED),
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
     ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
@@ -531,7 +531,7 @@ function enabledModesFromEnv() {
 
 // ── GET /trade-logs — UI page ───────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const enabled = enabledModesFromEnv();
   // Server Logs + Cache Files tabs are gated by the same toggles that used to gate
   // their (now-removed) Settings top-bar buttons. Login Logs is always available.
@@ -576,8 +576,8 @@ router.get("/", (req, res) => {
     .mode-section { margin-bottom:22px; background:#0a1018; border:1px solid #1a2236; border-radius:8px; overflow:hidden; }
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
-    .mode-swing    { color:#60a5fa; }
-    .mode-scalp    { color:#fbbf24; }
+    .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-ema9vwap { color:#06b6d4; }
@@ -745,7 +745,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     <div class="sub">Every settings save through <code>/settings</code> writes old→new for each changed key here (with the optional checkpoint note you typed). Use this to correlate trade outcomes with the settings active at the time.</div>
     <div class="filt-bar">
       <label>Filter key</label>
-      <input id="filtKey" type="text" placeholder="e.g. SCALP_ or ADX_MIN" oninput="onAuditFilterChange()"/>
+      <input id="filtKey" type="text" placeholder="e.g. BB_RSI_ or ADX_MIN" oninput="onAuditFilterChange()"/>
       <label>Action</label>
       <select id="filtAction" onchange="onAuditFilterChange()">
         <option value="">all</option>
@@ -859,8 +859,8 @@ ${buildSidebar('tradeLogs', liveActive)}
     // 1) Full paper wipe (no range) → per-strategy canonical reset (capital + sessions).
     if (cats.paper && !ranged) {
       var STRATS = [
-        { name: 'Swing',     url: '/swing-paper/reset' },
-        { name: 'Scalp',     url: '/scalp-paper/reset' },
+        { name: 'EMA_RSI_ST',     url: '/ema_rsi_st-paper/reset' },
+        { name: 'BB_RSI',     url: '/bb_rsi-paper/reset' },
         { name: 'PA',        url: '/pa-paper/reset' },
         { name: 'ORB',       url: '/orb-paper/reset' },
         { name: 'EMA9+VWAP', url: '/ema9vwap-paper/reset' },
@@ -935,8 +935,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   var ENABLED_MODES = ${JSON.stringify(enabled)};
 
   var MODE_LIST = [
-    { key: 'swing',    label: 'SWING',        cls: 'mode-swing' },
-    { key: 'scalp',    label: 'SCALP',        cls: 'mode-scalp' },
+    { key: 'ema_rsi_st',    label: 'EMA_RSI_ST',        cls: 'mode-ema_rsi_st' },
+    { key: 'bb_rsi',    label: 'BB_RSI',        cls: 'mode-bb_rsi' },
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
     { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
@@ -953,14 +953,14 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { swing:1, scalp:1, pa:1, orb:1, ema9vwap:1 };
-  var _skipsPage  = { swing:1, scalp:1, pa:1, orb:1, ema9vwap:1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
   // Section totals cached so the badge survives prev/next clicks without refetching all modes.
-  var _filesTotals = { swing:0, scalp:0, pa:0, orb:0, ema9vwap:0 };
-  var _skipsTotals = { swing:0, scalp:0, pa:0, orb:0, ema9vwap:0 };
+  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0 };
+  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0 };
 
   function fmtSize(n) {
     if (n < 1024) return n + ' B';

@@ -32,7 +32,7 @@
  *     Use for at least one full session to verify decisions match paper.
  *
  *   LIVE (LIVE_HARNESS_DRY_RUN=false)
- *     Places real orders via fyersBroker (PA, SCALP) or zerodhaBroker (SWING).
+ *     Places real orders via fyersBroker (PA, BB_RSI) or zerodhaBroker (EMA_RSI_ST).
  *     Hard SL on exchange via placeSLMOrder when enabled.
  *
  * Concurrency:
@@ -50,7 +50,7 @@ const fyersBroker  = require("./fyersBroker");
 let   zerodhaBroker = null;
 try { zerodhaBroker = require("./zerodhaBroker"); } catch (_) { /* optional */ }
 
-// Registry of concurrently-installed harnesses, keyed by mode ("SWING-LIVE", …).
+// Registry of concurrently-installed harnesses, keyed by mode ("EMA_RSI_ST-LIVE", …).
 // Each filters notify payloads by its own modeTag, so multiple can coexist —
 // this is what lets every harness run in parallel.
 const _harnesses = new Map();    // mode → config
@@ -98,7 +98,7 @@ async function _placeOrder({ broker, symbol, qty, sideAction, isFutures, tag }) 
     const sideCode = sideAction === "BUY" ? 1 : -1;
     // Signature is placeMarketOrder(symbol, side, qty, orderTag, { isFutures }).
     // Passing the options object in the orderTag slot makes orderTag.substring()
-    // throw, so every Fyers harness order (PA/SCALP/ORB live) silently failed.
+    // throw, so every Fyers harness order (PA/BB_RSI/ORB live) silently failed.
     return fyersBroker.placeMarketOrder(symbol, sideCode, qty, tag, { isFutures });
   }
   if (broker === "zerodha") {
@@ -225,7 +225,7 @@ function _makeExitHook(cfg) {
 /**
  * Install the live harness for a given mode.
  *
- *   mode       — "PA-LIVE" | "SCALP-LIVE" | "SWING-LIVE" (string used in logs)
+ *   mode       — "PA-LIVE" | "BB_RSI-LIVE" | "EMA_RSI_ST-LIVE" (string used in logs)
  *   modeTag    — the mode field paper sets in notify payloads, e.g. "PA-PAPER"
  *                (because paper code hardcodes the suffix; harness filters on this)
  *   broker     — "fyers" | "zerodha"

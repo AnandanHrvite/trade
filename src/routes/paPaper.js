@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
  * Runs on 5-min candles with the price action strategy.
- * Can run IN PARALLEL with /trade (live) or /swing-paper (paper).
+ * Can run IN PARALLEL with /trade (live) or /ema_rsi_st-paper (paper).
  *
  * Routes:
  *   GET /pa-paper/start   → Start price action paper trading
@@ -93,7 +93,7 @@ function ensureDir() {
 // In-memory cache — avoids re-reading + JSON.parse of the growing trades file
 // on every 2s status poll and 4s Real-Time-monitor fan-out. Write-through:
 // refreshed in savePAData() (the only writer; /reset also routes through it).
-// Mirrors the pattern already used by swingPaper/orbPaper.
+// Mirrors the pattern already used by emaRsiStPaper/orbPaper.
 let _paDataCache = null;
 
 function loadPAData() {
@@ -1348,7 +1348,7 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const pos         = state.position;
   const data        = loadPAData();
 
@@ -2511,7 +2511,7 @@ function getPACapitalFromEnv() {
 
 router.get("/history", (req, res) => {
   const data = loadPAData();
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   // Canonical pattern name (uses t.pattern if present, else extracts from entryReason)
   const patternOf = (t) => {

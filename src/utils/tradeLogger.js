@@ -19,29 +19,29 @@ const DATA_DIR   = path.join(_HOME, "trading-data");
 const TRADES_DIR = path.join(DATA_DIR, "trades");
 
 const FILE_BY_MODE = {
-  swing:    "paper_trades_log.jsonl",
-  scalp:    "scalp_paper_trades_log.jsonl",
+  ema_rsi_st:    "ema_rsi_st_paper_trades_log.jsonl",
+  bb_rsi:    "bb_rsi_paper_trades_log.jsonl",
   pa:       "pa_paper_trades_log.jsonl",
   orb:      "orb_paper_trades_log.jsonl",
   ema9vwap: "ema9vwap_paper_trades_log.jsonl",
   // Live-harness log keys. The harnesses install with liveLogKey "{mode}-live"
   // (liveHarness.js calls appendTradeLog(cfg.liveLogKey, …)); without these entries
   // filePathFor() threw "unknown mode" and every live trade was silently dropped.
-  "swing-live":    "swing_live_trades_log.jsonl",
-  "scalp-live":    "scalp_live_trades_log.jsonl",
+  "ema_rsi_st-live":    "ema_rsi_st_live_trades_log.jsonl",
+  "bb_rsi-live":    "bb_rsi_live_trades_log.jsonl",
   "pa-live":       "pa_live_trades_log.jsonl",
   "orb-live":      "orb_live_trades_log.jsonl",
   "ema9vwap-live": "ema9vwap_live_trades_log.jsonl",
 };
 
 const DAILY_PREFIX_BY_MODE = {
-  swing:    "swing_paper_trades_",
-  scalp:    "scalp_paper_trades_",
+  ema_rsi_st:    "ema_rsi_st_paper_trades_",
+  bb_rsi:    "bb_rsi_paper_trades_",
   pa:       "pa_paper_trades_",
   orb:      "orb_paper_trades_",
   ema9vwap: "ema9vwap_paper_trades_",
-  "swing-live":    "swing_live_trades_",
-  "scalp-live":    "scalp_live_trades_",
+  "ema_rsi_st-live":    "ema_rsi_st_live_trades_",
+  "bb_rsi-live":    "bb_rsi_live_trades_",
   "pa-live":       "pa_live_trades_",
   "orb-live":      "orb_live_trades_",
   "ema9vwap-live": "ema9vwap_live_trades_",

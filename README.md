@@ -1,6 +1,6 @@
 # Palani Andawar Trading Bot
 
-NIFTY options algorithmic trading bot with **4 independent strategies** (Swing, Scalp, Price Action, ORB), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
+NIFTY options algorithmic trading bot with **4 independent strategies** (EMA_RSI_ST, BB_RSI, Price Action, ORB), dual-broker architecture (Fyers + Zerodha), background backtesting, paper trading, deterministic **tick-replay** of recorded sessions, after-hours simulation, live NIFTY candlestick charts, consolidated cross-mode analytics (paper + live), per-module dashboard P&L cards, **unified real-time monitor** (one screen for all strategies with a PAPER/LIVE toggle), crash-safe JSONL trade audit, near-miss filter audit, Telegram alerts, and a full web dashboard.
 
 ## Architecture
 
@@ -11,7 +11,7 @@ Fyers WebSocket (NIFTY50 spot ticks — single connection)
         │
    ┌─────┼──────────────┬──────────────┬───────────┐
    │     │              │              │           │
- Swing (5/15-min)   Scalp (3/5-min)   Price Action   ORB
+ EMA_RSI_ST (5/15-min)   BB_RSI (3/5-min)   Price Action   ORB
    │                    │                │           │
  ┌─┴─┐               ┌──┴──┐         ┌───┴──┐    ┌──┴──┐
  │   │               │     │         │      │    │     │
@@ -25,12 +25,12 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 
 | Mode | Strategy | Timeframe | Broker | Route Prefix |
 |------|----------|-----------|--------|-------------|
-| **Swing Live** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
-| **Swing Paper** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
-| **Swing Backtest** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
-| **Scalp Live** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Fyers | `/scalp-live` |
-| **Scalp Paper** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Simulated | `/scalp-paper` |
-| **Scalp Backtest** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Historical | `/scalp-backtest` |
+| **EMA_RSI_ST Live** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/ema_rsi_st-live` |
+| **EMA_RSI_ST Paper** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/ema_rsi_st-paper` |
+| **EMA_RSI_ST Backtest** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/ema_rsi_st-backtest` |
+| **BB_RSI Live** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Fyers | `/bb_rsi-live` |
+| **BB_RSI Paper** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Simulated | `/bb_rsi-paper` |
+| **BB_RSI Backtest** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Historical | `/bb_rsi-backtest` |
 | **PA Live (legacy)** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
 | **PA Live (Harness)** | Price Action Patterns | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
 | **PA Paper** | Price Action Patterns | 5-min | Simulated | `/pa-paper` |
@@ -51,13 +51,13 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 
 ### Parallel Compatibility
 
-Within each strategy, Live ⊥ Paper (mutual exclusion). Across strategies, every combination is allowed — Swing, Scalp, PA, ORB can run together (paper or live) on the same Fyers socket via [sharedSocketState](src/utils/sharedSocketState.js). Backtests run in a background queue (one at a time) and never block live/paper modes.
+Within each strategy, Live ⊥ Paper (mutual exclusion). Across strategies, every combination is allowed — EMA_RSI_ST, BB_RSI, PA, ORB can run together (paper or live) on the same Fyers socket via [sharedSocketState](src/utils/sharedSocketState.js). Backtests run in a background queue (one at a time) and never block live/paper modes.
 
 The dashboard has **Start-All Paper** and **Start-All Live** buttons that start every enabled mode in sequence with a single click; the two are **mutually locked** (one disables the other and pulses while active) so you never accidentally double-run paper + live across modes. Start-all failures surface in a modal instead of silently reloading.
 
 ### Dashboard Layout
 
-- **Per-module cards** (Swing / Scalp / PA) — each card has its own Paper/Live toggle, trades, win-rate, total-P&L, and a cumulative P&L chart. Charts colour green/red by P&L sign.
+- **Per-module cards** (EMA_RSI_ST / BB_RSI / PA) — each card has its own Paper/Live toggle, trades, win-rate, total-P&L, and a cumulative P&L chart. Charts colour green/red by P&L sign.
 - **Cumulative P&L card** with a Paper/Live toggle that swaps the data source feeding the per-module charts.
 - **Side-by-side broker rows** (Fyers + Zerodha on one row).
 - **Hover-only date labels** on charts (x-axis decluttered).
@@ -65,32 +65,32 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 
 ## Strategies
 
-### Strategy 1: Swing — EMA 20/50 (+9 opt) + RSI + SuperTrend (entry redefined 2026-05-31; PSAR stripped 2026-06-12; 3 / 5 / 15-min via env)
+### Strategy 1: EMA_RSI_ST — EMA 20/50 (+9 opt) + RSI + SuperTrend (entry redefined 2026-05-31; PSAR stripped 2026-06-12; 3 / 5 / 15-min via env)
 - **Entry (all 4 true; signal candle, entered on the confirmation cross by default)**:
-  - **CE**: EMA alignment bullish — 2-EMA (default) EMA20 **above** EMA50, or triple-stack (`SWING_EMA_TRIPLE_STACK_ENABLED`) EMA9 > EMA20 > EMA50 (`SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · **SuperTrend bullish** · **close beyond base EMA** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, default on): signal candle close **above** the base EMA — base = EMA-fastest (9) when triple-stack is on, else EMA-fast (20).
+  - **CE**: EMA alignment bullish — 2-EMA (default) EMA20 **above** EMA50, or triple-stack (`EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED`) EMA9 > EMA20 > EMA50 (`EMA_RSI_ST_EMA_FASTEST`/`EMA_RSI_ST_EMA_FAST`/`EMA_RSI_ST_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · **SuperTrend bullish** · **close beyond base EMA** (`EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED`, default on): signal candle close **above** the base EMA — base = EMA-fastest (9) when triple-stack is on, else EMA-fast (20).
   - **PE**: mirror — EMA20 **below** EMA50 (or EMA9 < EMA20 < EMA50) · RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · **SuperTrend bearish** · signal candle close **below** the base EMA.
-- **Confirmation candle** (`SWING_CONFIRM_CANDLE_ENABLED`, default on): the bar that meets the 3 rules above is the *signal candle*; entry does **not** fire on it. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy intra-candle entry on the signal bar itself.
+- **Confirmation candle** (`EMA_RSI_ST_CONFIRM_CANDLE_ENABLED`, default on): the bar that meets the 3 rules above is the *signal candle*; entry does **not** fire on it. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy intra-candle entry on the signal bar itself.
 - **Initial SL** (unchanged): previous completed candle's **low (CE) / high (PE)** — used as-is (no hybrid cap). `EMA21(OHLC4)` is computed for the SL trail + trade-record snapshot, not an entry input.
 - **Trailing**: each candle close, tighten SL to **EMA21** — tighten-only; an EMA21 touch-back is an explicit exit.
-- **Exits**: EMA21 trail / EMA touch-back, optional N-bar candle trail (`SWING_CANDLE_TRAIL_ENABLED`, tighter-of) · **negative-candle stop** (`SWING_NEG_CANDLE_LIMIT`, default 2 — square off a trade still in the red after N candles) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`). Choppy-day guard: halt entries after `SWING_MAX_CONSEC_LOSSES` consecutive losers (off by default).
-- **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
-- **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
-- **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, OI buildup gate (live), bid-ask spread guard (live), 0DTE `/start` refusal (blocked when swing expiry == today), expiry-day-only, Swing expiry override/type.
-- **Removed**: **Parabolic SAR** — fully stripped 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL). The `SWING_USE_SUPERTREND` toggle and the `SWING_SL_MODE=psar` option are gone. Earlier removals: EMA21-price-touch entry gate + `SWING_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE`; EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
+- **Exits**: EMA21 trail / EMA touch-back, optional N-bar candle trail (`EMA_RSI_ST_CANDLE_TRAIL_ENABLED`, tighter-of) · **negative-candle stop** (`EMA_RSI_ST_NEG_CANDLE_LIMIT`, default 2 — square off a trade still in the red after N candles) · per-trade points stop (`EMA_RSI_ST_STOP_LOSS_PTS`, off by default) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`EMA_RSI_ST_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`). Choppy-day guard: halt entries after `EMA_RSI_ST_MAX_CONSEC_LOSSES` consecutive losers (off by default).
+- **Same-side cooldown**: after an SL / option-stop hit, block that side for `EMA_RSI_ST_SL_PAUSE_CANDLES` candles.
+- **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
+- **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, OI buildup gate (live), bid-ask spread guard (live), 0DTE `/start` refusal (blocked when EMA_RSI_ST expiry == today), expiry-day-only, EMA_RSI_ST expiry override/type.
+- **Removed**: **Parabolic SAR** — fully stripped 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL). The `EMA_RSI_ST_USE_SUPERTREND` toggle and the `EMA_RSI_ST_SL_MODE=psar` option are gone. Earlier removals: EMA21-price-touch entry gate + `EMA_RSI_ST_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE`; EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
 - **Chart**: EMA20 (gold) + EMA50 (blue) lines, SuperTrend line (green bullish / red bearish), RSI subplot. EMA values + trend source are recorded per trade in the JSON + daily JSONL (`ema9AtEntry`/`ema20AtEntry`/`ema50AtEntry` + `*AtExit`; `ema9*` populated only when the triple-stack is ON).
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
-### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
-See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Trend source** is PSAR by default; set `SCALP_USE_SUPERTREND=true` to swap it for SuperTrend(10,3), which then drives the directional confirm, the entry SL line **and** the flip exit. **Far-line filter**: skip if the trend line is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
-- **Confirmation candle** (`SCALP_CONFIRM_CANDLE_ENABLED`, default on): the bar meeting the entry rules is the *signal candle*; entry does **not** fire on its close. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy entry at the signal candle's close.
-- **Confirmation must close outside band** (`SCALP_CONFIRM_OUTSIDE_BAND`, default on; needs confirmation candle on): the confirmation candle must **close** beyond the signal candle's close **and** close **outside the Bollinger band** — entry then fires at that close. An intra-bar poke past the trigger can close back *inside* the band (a failed breakout), which leaves the entry candle sitting visibly inside the band; requiring a close beyond the band makes every entry candle genuinely outside it. Off = enter intra-bar on the first cross of the signal candle's close (legacy).
-- **Guards**: optional `SCALP_RSI_TURNING`, independent VIX filter.
-- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2` (or SuperTrend `10 / 3` when `SCALP_USE_SUPERTREND` is on).
+### Strategy 2: BB_RSI — BB + PSAR + RSI V6.1 (3 / 5-min)
+See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
+- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `BB_RSI_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `BB_RSI_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Trend source** is PSAR by default; set `BB_RSI_USE_SUPERTREND=true` to swap it for SuperTrend(10,3), which then drives the directional confirm, the entry SL line **and** the flip exit. **Far-line filter**: skip if the trend line is more than `BB_RSI_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `BB_RSI_ADX_ENABLED`): block all entries when ADX(14) < `BB_RSI_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
+- **Confirmation candle** (`BB_RSI_CONFIRM_CANDLE_ENABLED`, default on): the bar meeting the entry rules is the *signal candle*; entry does **not** fire on its close. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy entry at the signal candle's close.
+- **Confirmation must close outside band** (`BB_RSI_CONFIRM_OUTSIDE_BAND`, default on; needs confirmation candle on): the confirmation candle must **close** beyond the signal candle's close **and** close **outside the Bollinger band** — entry then fires at that close. An intra-bar poke past the trigger can close back *inside* the band (a failed breakout), which leaves the entry candle sitting visibly inside the band; requiring a close beyond the band makes every entry candle genuinely outside it. Off = enter intra-bar on the first cross of the signal candle's close (legacy).
+- **Guards**: optional `BB_RSI_RSI_TURNING`, independent VIX filter.
+- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2` (or SuperTrend `10 / 3` when `BB_RSI_USE_SUPERTREND` is on).
 - **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
-- **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `SCALP_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `SCALP_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown PSAR SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`SCALP_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `SCALP_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **trend flip** on candle close (PSAR flip, or SuperTrend flip when `SCALP_USE_SUPERTREND` is on) handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no PSAR/prev-candle SL trail, no % spot-trail, no time-stop.
-- **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
-- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
+- **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `BB_RSI_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `BB_RSI_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `BB_RSI_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown PSAR SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`BB_RSI_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `BB_RSI_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **trend flip** on candle close (PSAR flip, or SuperTrend flip when `BB_RSI_USE_SUPERTREND` is on) handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no PSAR/prev-candle SL trail, no % spot-trail, no time-stop.
+- **Per-side SL pause** (`BB_RSI_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `BB_RSI_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
+- **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (EMA_RSI_ST: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
 ### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
 - **Patterns (the only four entry logics, all default ON)**:
@@ -140,13 +140,13 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - After-hours testing with 8 scenarios: trending up/down, choppy, volatile, breakout up/down, V-recovery, inverted-V
 - Each generates ~75 candles simulating a full 9:15–15:30 session
 - Runs the production `onTick()` pipeline — same SL, trailing, exit logic as live
-- Historical date replay with 1-min candle tick replay (300-candle warmup for swing/PA)
+- Historical date replay with 1-min candle tick replay (300-candle warmup for EMA_RSI_ST/PA)
 - Zigzag intra-candle tick noise (not smooth O→H→L→C arc) for realistic fills
 - Available for all 3 strategy modes
 
 ### Live NIFTY Chart Overlay
 - Live candlestick chart on all paper + live status pages (toggleable via `CHART_ENABLED`)
-- **Entry logic overlays**: Bollinger Bands on scalp charts, swing points on PA charts
+- **Entry logic overlays**: Bollinger Bands on bb_rsi charts, swing points on PA charts
 - **Entry/exit markers** for every trade on the session chart
 - **Click any trade row** to focus chart on that trade only; click-to-reset restores full session view
 - **Chart zoom preserved** across auto-refresh (even while focused on a trade)
@@ -189,21 +189,21 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ~/trading-data/
   .fyers_token                    # Fyers OAuth token (daily)
   .zerodha_token                  # Zerodha OAuth token
-  paper_trades.json               # Swing paper trade sessions
-  live_trades.json                # Swing live trade sessions
-  scalp_paper_trades.json         # Scalp paper sessions
-  scalp_live_trades.json          # Scalp live sessions
+  paper_trades.json               # EMA_RSI_ST paper trade sessions
+  live_trades.json                # EMA_RSI_ST live trade sessions
+  bb_rsi_paper_trades.json         # BB_RSI paper sessions
+  bb_rsi_live_trades.json          # BB_RSI live sessions
   pa_paper_trades.json            # Price action paper sessions
   pa_live_trades.json             # Price action live sessions
   orb_paper_trades.json           # ORB paper sessions
   orb_live_trades.json            # ORB live sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
-  .active_trade_position.json     # Crash recovery — swing position
-  .active_scalp_position.json     # Crash recovery — scalp position
+  .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
+  .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
   .active_pa_position.json        # Crash recovery — PA position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
-  swing_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
-  scalp_paper_trades_log.jsonl
+  ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
+  bb_rsi_paper_trades_log.jsonl
   pa_paper_trades_log.jsonl
   orb_paper_trades_log.jsonl
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
@@ -218,88 +218,88 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   reports/                        # Daily trade reports
 ```
 
-> ORB does not yet have an `.active_orb_position.json` crash-recovery file — orphan-position reconciliation on boot covers Swing/Scalp/PA only. Add to `positionPersist.js` if/when ORB needs restart-survival of an open position.
+> ORB does not yet have an `.active_orb_position.json` crash-recovery file — orphan-position reconciliation on boot covers EMA_RSI_ST/BB_RSI/PA only. Add to `positionPersist.js` if/when ORB needs restart-survival of an open position.
 
 ## Key .env Settings
 
-### Swing Strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend, Zerodha)
-**Entry redefined 2026-05-31; PSAR stripped 2026-06-12; close-beyond-EMA gate added 2026-06-24.** Entry (intra-candle, all 4 true): **CE** = EMA alignment bullish (2-EMA default: EMA20 above EMA50; or triple-stack `SWING_EMA_TRIPLE_STACK_ENABLED`: EMA9 > EMA20 > EMA50 via `SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, **SuperTrend bullish**, **signal candle close above the base EMA** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, default on — base = EMA-fastest/9 when triple-stack on, else EMA-fast/20). **PE** = mirror (EMA20 below EMA50 / EMA9 < EMA20 < EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, **SuperTrend bearish**, signal candle close below the base EMA). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (EMA touch-back is an explicit exit), tighten-only. Optionally layer an **N-bar candle trail** (`SWING_CANDLE_TRAIL_ENABLED` / `SWING_CANDLE_TRAIL_BARS`, default 3 bars): each candle close the stop is set to whichever is tighter — the EMA21 line or the N-bar low/high. **Exits**: trail SL · **negative-candle stop** (`SWING_NEG_CANDLE_LIMIT`, default 2 — still red after N candles → square off; winners keep riding the trail) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · EMA21 touch-back · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). **Choppy-day guard** (`SWING_MAX_CONSEC_LOSSES`, off by default): after N consecutive losing trades in a session, halt new entries for the rest of the day — any winner resets the streak. _Parabolic SAR fully removed 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL); breakeven removed 2026-06-02._
+### EMA_RSI_ST Strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend, Zerodha)
+**Entry redefined 2026-05-31; PSAR stripped 2026-06-12; close-beyond-EMA gate added 2026-06-24.** Entry (intra-candle, all 4 true): **CE** = EMA alignment bullish (2-EMA default: EMA20 above EMA50; or triple-stack `EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED`: EMA9 > EMA20 > EMA50 via `EMA_RSI_ST_EMA_FASTEST`/`EMA_RSI_ST_EMA_FAST`/`EMA_RSI_ST_EMA_SLOW`), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, **SuperTrend bullish**, **signal candle close above the base EMA** (`EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED`, default on — base = EMA-fastest/9 when triple-stack on, else EMA-fast/20). **PE** = mirror (EMA20 below EMA50 / EMA9 < EMA20 < EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, **SuperTrend bearish**, signal candle close below the base EMA). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (EMA touch-back is an explicit exit), tighten-only. Optionally layer an **N-bar candle trail** (`EMA_RSI_ST_CANDLE_TRAIL_ENABLED` / `EMA_RSI_ST_CANDLE_TRAIL_BARS`, default 3 bars): each candle close the stop is set to whichever is tighter — the EMA21 line or the N-bar low/high. **Exits**: trail SL · **negative-candle stop** (`EMA_RSI_ST_NEG_CANDLE_LIMIT`, default 2 — still red after N candles → square off; winners keep riding the trail) · per-trade points stop (`EMA_RSI_ST_STOP_LOSS_PTS`, off by default) · EMA21 touch-back · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`EMA_RSI_ST_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`EMA_RSI_ST_SL_PAUSE_CANDLES`). **Choppy-day guard** (`EMA_RSI_ST_MAX_CONSEC_LOSSES`, off by default): after N consecutive losing trades in a session, halt new entries for the rest of the day — any winner resets the streak. _Parabolic SAR fully removed 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL); breakeven removed 2026-06-02._
 
-> **Defaults below are the code `||` fallbacks (what runs if the env key is unset). The Settings UI seeds more conservative values that a saved install actually runs** — notably `MAX_DAILY_TRADES=5`, `MAX_DAILY_LOSS=3000`, `RSI_CE_MAX=70` / `RSI_PE_MIN=30`, `SWING_STOP_LOSS_PTS=25` (ON), `SWING_CANDLE_TRAIL_ENABLED=true` (ON), `SWING_SL_PAUSE_CANDLES=2`, `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES=2`, `SWING_EOD_EXIT_TIME=14:30`, `TRADE_ENTRY_START=10:30`. Read the real config from the day's `settings_snapshot`, not this table.
+> **Defaults below are the code `||` fallbacks (what runs if the env key is unset). The Settings UI seeds more conservative values that a saved install actually runs** — notably `MAX_DAILY_TRADES=5`, `MAX_DAILY_LOSS=3000`, `RSI_CE_MAX=70` / `RSI_PE_MIN=30`, `EMA_RSI_ST_STOP_LOSS_PTS=25` (ON), `EMA_RSI_ST_CANDLE_TRAIL_ENABLED=true` (ON), `EMA_RSI_ST_SL_PAUSE_CANDLES=2`, `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES=2`, `EMA_RSI_ST_EOD_EXIT_TIME=14:30`, `TRADE_ENTRY_START=10:30`. Read the real config from the day's `settings_snapshot`, not this table.
 
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TRADE_RESOLUTION` | `5` | Candle size in minutes — `3`, `5`, or `15` (logic is resolution-agnostic). |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
-| `SWING_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), Swing Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
+| `EMA_RSI_ST_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), EMA_RSI_ST Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `RSI_CE_MIN` | `52` | CE entry: RSI(14) must be above this (bullish momentum floor) |
 | `RSI_CE_MAX` | `80` | CE blocked when RSI at/above this (overbought guard) |
 | `RSI_PE_MAX` | `48` | PE entry: RSI(14) must be below this (bearish momentum cap) |
 | `RSI_PE_MIN` | `20` | PE blocked when RSI at/below this (oversold guard) |
-| `SWING_EMA_FAST` | `20` | Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA. |
-| `SWING_EMA_SLOW` | `50` | Slow EMA period (close). The EMA-fast vs EMA-slow alignment is the directional entry gate. |
-| `SWING_EMA_TRIPLE_STACK_ENABLED` | `false` | Stricter EMA gate. `false` = 2-EMA cross. `true` = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries (skip logs show it blocks flat-EMA bars the 2-EMA gate would take). A/B via `/replay` before enabling live. |
-| `SWING_EMA_FASTEST` | `9` | Fastest EMA period (close) in the 9>20>50 stack. Only used when `SWING_EMA_TRIPLE_STACK_ENABLED=true`. |
-| `SWING_CLOSE_BEYOND_EMA_ENABLED` | `true` | **Close beyond base EMA.** `true` (default): the signal candle's **close** must sit on the trade side of the base EMA — **CE close above, PE close below**. Base EMA = EMA-fastest (`SWING_EMA_FASTEST`, 9) when `SWING_EMA_TRIPLE_STACK_ENABLED=true`, else EMA-fast (`SWING_EMA_FAST`, 20). The EMA-stack gate only checks EMA *ordering*; this blocks buying CE into dips that close below the fast EMA while the lines stay stacked from an earlier move (the false-breakout chop that bleeds prev-candle stops). `false` = ordering-only gate. A/B via `/replay`. |
-| `SWING_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below) — entry fires **intra-bar** on the cross. `false`: legacy intra-candle entry (enter as soon as the live bar meets the rules). Filters one-candle false breakouts. A/B via `/replay`. |
+| `EMA_RSI_ST_EMA_FAST` | `20` | Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA. |
+| `EMA_RSI_ST_EMA_SLOW` | `50` | Slow EMA period (close). The EMA-fast vs EMA-slow alignment is the directional entry gate. |
+| `EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED` | `false` | Stricter EMA gate. `false` = 2-EMA cross. `true` = require EMA-fastest > EMA-mid > EMA-slow (CE) / reverse (PE) — the fast EMA must confirm too. Cuts marginal cross-over chop entries (skip logs show it blocks flat-EMA bars the 2-EMA gate would take). A/B via `/replay` before enabling live. |
+| `EMA_RSI_ST_EMA_FASTEST` | `9` | Fastest EMA period (close) in the 9>20>50 stack. Only used when `EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED=true`. |
+| `EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED` | `true` | **Close beyond base EMA.** `true` (default): the signal candle's **close** must sit on the trade side of the base EMA — **CE close above, PE close below**. Base EMA = EMA-fastest (`EMA_RSI_ST_EMA_FASTEST`, 9) when `EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED=true`, else EMA-fast (`EMA_RSI_ST_EMA_FAST`, 20). The EMA-stack gate only checks EMA *ordering*; this blocks buying CE into dips that close below the fast EMA while the lines stay stacked from an earlier move (the false-breakout chop that bleeds prev-candle stops). `false` = ordering-only gate. A/B via `/replay`. |
+| `EMA_RSI_ST_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below) — entry fires **intra-bar** on the cross. `false`: legacy intra-candle entry (enter as soon as the live bar meets the rules). Filters one-candle false breakouts. A/B via `/replay`. |
 | `OPT_STOP_PCT` | `0.25` | Exit if option premium drops this fraction below entry premium (0.25 = 25%) |
-| `SWING_NEG_CANDLE_LIMIT` | `2` | Negative-candle stop — if a trade is still in the red (option premium below entry) at the close of this many candles, square it off. Asymmetric loss-cut: winners keep riding the EMA trail; losers don't bleed across the chop. `0` = disabled. |
-| `SWING_STOP_LOSS_PTS` | `0` | Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors `SCALP_STOP_LOSS_PTS`). `0` = disabled. |
-| `SWING_MAX_CONSEC_LOSSES` | `0` | Choppy-day guard — after this many **consecutive losing trades** in a session, halt new Swing entries for the rest of the day; any winning trade resets the streak. Sits out range days that bleed small stops instead of repeatedly re-entering. Independent of the legacy 3-loss escalating pause. `0` = disabled. |
-| `SWING_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA21 line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
-| `SWING_CANDLE_TRAIL_BARS` | `3` | Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. `1` = tightest; higher = looser (gives winners room, fewer chop stop-outs). Only used when `SWING_CANDLE_TRAIL_ENABLED=true`. |
-| `SWING_SUPERTREND_PERIOD` / `SWING_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier — SuperTrend is the entry directional gate. |
-| `SWING_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
-| `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
-| `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
-| `SWING_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
-| `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (Swing-scoped) |
+| `EMA_RSI_ST_NEG_CANDLE_LIMIT` | `2` | Negative-candle stop — if a trade is still in the red (option premium below entry) at the close of this many candles, square it off. Asymmetric loss-cut: winners keep riding the EMA trail; losers don't bleed across the chop. `0` = disabled. |
+| `EMA_RSI_ST_STOP_LOSS_PTS` | `0` | Per-trade catastrophic loss cap — exit if spot moves this many points against entry. Checked before the structural/trail SL, so it caps deep adverse excursions when the prevHigh/prevLow stop sits wider than the cap. Points-based (mirrors `BB_RSI_STOP_LOSS_PTS`). `0` = disabled. |
+| `EMA_RSI_ST_MAX_CONSEC_LOSSES` | `0` | Choppy-day guard — after this many **consecutive losing trades** in a session, halt new EMA_RSI_ST entries for the rest of the day; any winning trade resets the streak. Sits out range days that bleed small stops instead of repeatedly re-entering. Independent of the legacy 3-loss escalating pause. `0` = disabled. |
+| `EMA_RSI_ST_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA21 line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
+| `EMA_RSI_ST_CANDLE_TRAIL_BARS` | `3` | Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. `1` = tightest; higher = looser (gives winners room, fewer chop stop-outs). Only used when `EMA_RSI_ST_CANDLE_TRAIL_ENABLED=true`. |
+| `EMA_RSI_ST_SUPERTREND_PERIOD` / `EMA_RSI_ST_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier — SuperTrend is the entry directional gate. |
+| `EMA_RSI_ST_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
+| `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
+| `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES` | `3` | Opposite-side cooldown duration in candles (× `TRADE_RESOLUTION` → minutes; e.g. 3 candles × 5-min = 15 min). |
+| `EMA_RSI_ST_EOD_EXIT_TIME` | `15:15` | Square off any open position at/after this IST time, ahead of the market-close auto-stop |
+| `VIX_FILTER_ENABLED` / `VIX_MAX_ENTRY` | `false` / `20` | Block entries above this VIX (EMA_RSI_ST-scoped) |
 | `TRADE_ENTRY_START` | `09:30` | Earliest entry time (IST) |
 | `TRADE_ENTRY_END` | `14:00` | Latest entry time (IST) |
 | `TRADE_EXPIRY_DAY_ONLY` | `false` | Only trade on NIFTY expiry day |
-| `SWING_OPTION_EXPIRY_OVERRIDE` | (blank) | Swing-only expiry override — keep swing on next-week expiry while scalp/PA trade current. Blank inherits the common expiry. |
-| `SWING_OPTION_EXPIRY_TYPE` | (blank) | Swing-only expiry type (`weekly`/`monthly`) for the override above. Blank inherits the common `OPTION_EXPIRY_TYPE`. |
-| (auto) | — | Swing `/start` is **blocked** when configured expiry == today (0DTE refusal — gamma risk on holding swing through expiry). |
+| `EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE` | (blank) | EMA_RSI_ST-only expiry override — keep EMA_RSI_ST on next-week expiry while bb_rsi/PA trade current. Blank inherits the common expiry. |
+| `EMA_RSI_ST_OPTION_EXPIRY_TYPE` | (blank) | EMA_RSI_ST-only expiry type (`weekly`/`monthly`) for the override above. Blank inherits the common `OPTION_EXPIRY_TYPE`. |
+| (auto) | — | EMA_RSI_ST `/start` is **blocked** when configured expiry == today (0DTE refusal — gamma risk on holding EMA_RSI_ST through expiry). |
 
 > Common expiry knobs (`OPTION_EXPIRY_OVERRIDE`, `OPTION_EXPIRY_TYPE`) live under **Common — Instrument & Backtest** in Settings and are read by `src/config/instrument.js` for every engine that does not set its own per-mode override.
 
-### Scalp Mode (3 / 5-min, Fyers)
-Full spec: [SCALP.md](SCALP.md).
+### BB_RSI Mode (3 / 5-min, Fyers)
+Full spec: [BB_RSI.md](BB_RSI.md).
 | Key | Default | Notes |
 |-----|---------|-------|
-| `SCALP_MODE_ENABLED` | `true` | Show/hide scalp menus in sidebar (also hides Scalp section in Settings) |
-| `SCALP_ENABLED` | `false` | Must be `true` for Fyers scalp orders |
-| `SCALP_RESOLUTION` | `5` | Scalp candle size — `3` or `5` min |
-| `SCALP_BB_PERIOD` / `SCALP_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
-| `SCALP_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
-| `SCALP_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
-| `SCALP_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
-| `SCALP_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below) — entry fires **intra-bar** on the cross. `false`: legacy — enter at the signal candle's close. Filters one-candle false breakouts. A/B via `/replay`. |
-| `SCALP_CONFIRM_OUTSIDE_BAND` | `true` | **Confirmation must close outside band** (needs `SCALP_CONFIRM_CANDLE_ENABLED=true`). `true` (default): the confirmation candle must **close** beyond the signal candle's close **and** outside the band (CE above upper / PE below lower) — entry fires at that **close**, not intra-bar. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise leave the entry candle visibly inside the band). `false`: legacy — enter intra-bar on the first cross of the signal candle's close. A/B via `/replay`. |
-| `SCALP_PSAR_STEP` / `SCALP_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
-| `SCALP_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = PSAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** — it takes over the directional confirmation, the entry SL line **and** the candle-close trend-flip exit. Mutually exclusive; the chart shows whichever is active. |
-| `SCALP_SUPERTREND_PERIOD` / `SCALP_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `SCALP_USE_SUPERTREND=true`). |
-| `SCALP_MAX_ENTRY_SL_PTS` | `50` | Skip entries where the trend line (PSAR/SuperTrend) is more than this many pts from close (avoids uncapped risk). `0` = off |
-| `SCALP_ADX_ENABLED` | `false` | Trend filter — block all entries when ADX(14) is below the floor (sit out chop). |
-| `SCALP_ADX_MIN` | `20` | Minimum ADX(14) to allow entries when the trend filter is on (higher = stricter). |
-| `SCALP_PROFIT_LOCK_TRIGGER_PTS` | `25` | Arm the profit lock once the favourable spot move (points) hits this. Points-based. `0` disables. |
-| `SCALP_PROFIT_LOCK_PCT` | `50` | Once armed, exit when the favourable move falls below this % of peak (ratchets up) — the per-tick upside exit |
-| `SCALP_STOP_LOSS_PTS` | `30` | Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide (only clips deep failed-fade excursions). Points-based. `0` disables. |
-| `SCALP_BB_REENTRY_EXIT` | `true` | Exit the instant spot crosses back through the Bollinger Band (failed breakout) — per-tick, at the band line, not the bar close |
-| `SCALP_BB_REENTRY_ARM_PTS` | `10` | Only arm the BB re-entry exit once the breakout has extended this many points past the band (avoids stopping a fresh entry on an immediate noise wick). `0` = arm immediately |
-| `SCALP_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & SL exit (pts against you) |
-| `SCALP_MAX_DAILY_TRADES` | `30` | Daily scalp cap |
-| `SCALP_MAX_DAILY_LOSS` | `4000` | Scalp kill-switch in INR |
-| `SCALP_VIX_ENABLED` | `false` | Independent VIX filter for scalp |
-| `SCALP_VIX_MAX_ENTRY` | `20` (`VIX_MAX_ENTRY` fallback) | Per-mode VIX block-entry threshold |
-| `SCALP_VIX_STRONG_ONLY` | `16` (`VIX_STRONG_ONLY` fallback) | Per-mode strong-only threshold |
-| `SCALP_SL_PAUSE_CANDLES` | `3` | Pause after SL hit (candles) |
-| `SCALP_CONSEC_SL_EXTRA_PAUSE` | `2` | Extra candles pause per consecutive SL after the 2nd |
-| `SCALP_PER_SIDE_PAUSE` | `true` | An SL on CE only pauses CE entries; PE remains free |
-| `SCALP_ENTRY_START` / `SCALP_ENTRY_END` | `09:21` / `14:30` | Entry window (IST) |
-| `SCALP_EXPIRY_DAY_ONLY` | `false` | Only allow scalp entries on weekly-expiry day |
+| `BB_RSI_MODE_ENABLED` | `true` | Show/hide bb_rsi menus in sidebar (also hides BB_RSI section in Settings) |
+| `BB_RSI_ENABLED` | `false` | Must be `true` for Fyers bb_rsi orders |
+| `BB_RSI_RESOLUTION` | `5` | BB_RSI candle size — `3` or `5` min |
+| `BB_RSI_BB_PERIOD` / `BB_RSI_BB_STDDEV` | `20` / `1` | Bollinger inputs (std-dev **1** — tighter than the charting default of 2) |
+| `BB_RSI_RSI_CE_THRESHOLD` | `70` | Take CE entry only when RSI is above this |
+| `BB_RSI_RSI_PE_THRESHOLD` | `40` | Take PE entry only when RSI is below this |
+| `BB_RSI_RSI_TURNING` | `false` | Require RSI momentum to confirm direction (CE: RSI not falling; PE: not rising) |
+| `BB_RSI_CONFIRM_CANDLE_ENABLED` | `true` | **Confirmation candle (cross & close).** `true` (default): a fully-closed candle must meet all entry rules (the *signal candle*), then the **immediately-next** candle must cross that signal candle's close (CE above / PE below) — entry fires **intra-bar** on the cross. `false`: legacy — enter at the signal candle's close. Filters one-candle false breakouts. A/B via `/replay`. |
+| `BB_RSI_CONFIRM_OUTSIDE_BAND` | `true` | **Confirmation must close outside band** (needs `BB_RSI_CONFIRM_CANDLE_ENABLED=true`). `true` (default): the confirmation candle must **close** beyond the signal candle's close **and** outside the band (CE above upper / PE below lower) — entry fires at that **close**, not intra-bar. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise leave the entry candle visibly inside the band). `false`: legacy — enter intra-bar on the first cross of the signal candle's close. A/B via `/replay`. |
+| `BB_RSI_PSAR_STEP` / `BB_RSI_PSAR_MAX` | `0.02` / `0.2` | PSAR — entry side confirmation + initial SL value + candle-close flip exit |
+| `BB_RSI_USE_SUPERTREND` | `false` | Trend-confirmation source. `false` = PSAR (default). `true` = turn PSAR off and use **SuperTrend(10,3)** — it takes over the directional confirmation, the entry SL line **and** the candle-close trend-flip exit. Mutually exclusive; the chart shows whichever is active. |
+| `BB_RSI_SUPERTREND_PERIOD` / `BB_RSI_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier (only used when `BB_RSI_USE_SUPERTREND=true`). |
+| `BB_RSI_MAX_ENTRY_SL_PTS` | `50` | Skip entries where the trend line (PSAR/SuperTrend) is more than this many pts from close (avoids uncapped risk). `0` = off |
+| `BB_RSI_ADX_ENABLED` | `false` | Trend filter — block all entries when ADX(14) is below the floor (sit out chop). |
+| `BB_RSI_ADX_MIN` | `20` | Minimum ADX(14) to allow entries when the trend filter is on (higher = stricter). |
+| `BB_RSI_PROFIT_LOCK_TRIGGER_PTS` | `25` | Arm the profit lock once the favourable spot move (points) hits this. Points-based. `0` disables. |
+| `BB_RSI_PROFIT_LOCK_PCT` | `50` | Once armed, exit when the favourable move falls below this % of peak (ratchets up) — the per-tick upside exit |
+| `BB_RSI_STOP_LOSS_PTS` | `30` | Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide (only clips deep failed-fade excursions). Points-based. `0` disables. |
+| `BB_RSI_BB_REENTRY_EXIT` | `true` | Exit the instant spot crosses back through the Bollinger Band (failed breakout) — per-tick, at the band line, not the bar close |
+| `BB_RSI_BB_REENTRY_ARM_PTS` | `10` | Only arm the BB re-entry exit once the breakout has extended this many points past the band (avoids stopping a fresh entry on an immediate noise wick). `0` = arm immediately |
+| `BB_RSI_SLIPPAGE_PTS` | `0` | Simulated slippage on entry & SL exit (pts against you) |
+| `BB_RSI_MAX_DAILY_TRADES` | `30` | Daily bb_rsi cap |
+| `BB_RSI_MAX_DAILY_LOSS` | `4000` | BB_RSI kill-switch in INR |
+| `BB_RSI_VIX_ENABLED` | `false` | Independent VIX filter for bb_rsi |
+| `BB_RSI_VIX_MAX_ENTRY` | `20` (`VIX_MAX_ENTRY` fallback) | Per-mode VIX block-entry threshold |
+| `BB_RSI_VIX_STRONG_ONLY` | `16` (`VIX_STRONG_ONLY` fallback) | Per-mode strong-only threshold |
+| `BB_RSI_SL_PAUSE_CANDLES` | `3` | Pause after SL hit (candles) |
+| `BB_RSI_CONSEC_SL_EXTRA_PAUSE` | `2` | Extra candles pause per consecutive SL after the 2nd |
+| `BB_RSI_PER_SIDE_PAUSE` | `true` | An SL on CE only pauses CE entries; PE remains free |
+| `BB_RSI_ENTRY_START` / `BB_RSI_ENTRY_END` | `09:21` / `14:30` | Entry window (IST) |
+| `BB_RSI_EXPIRY_DAY_ONLY` | `false` | Only allow bb_rsi entries on weekly-expiry day |
 
 ### Price Action Mode (5-min, Fyers)
 | Key | Default | Notes |
@@ -387,19 +387,19 @@ Full spec: [SCALP.md](SCALP.md).
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
 | Key | Default | Notes |
 |-----|---------|-------|
-| `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (Swing) |
-| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (Scalp + PA + ORB) |
+| `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (EMA_RSI_ST) |
+| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB) |
 
 ### VIX Filter (per-module)
 | Key | Default | Notes |
 |-----|---------|-------|
-| `VIX_FILTER_ENABLED` | `true` | Block Swing entries in high-VIX |
-| `VIX_MAX_ENTRY` | `20` | Swing block-all-entries threshold |
-| `VIX_STRONG_ONLY` | `16` | Swing strong-only threshold |
+| `VIX_FILTER_ENABLED` | `true` | Block EMA_RSI_ST entries in high-VIX |
+| `VIX_MAX_ENTRY` | `20` | EMA_RSI_ST block-all-entries threshold |
+| `VIX_STRONG_ONLY` | `16` | EMA_RSI_ST strong-only threshold |
 | `VIX_FAIL_MODE` | `closed` | When VIX unavailable: closed = block (safe), open = allow |
-| `SCALP_VIX_ENABLED` | `false` | Independent toggle |
-| `SCALP_VIX_MAX_ENTRY` | inherits | Per-mode threshold (falls back to `VIX_MAX_ENTRY` if unset) |
-| `SCALP_VIX_STRONG_ONLY` | inherits | Per-mode threshold (falls back to `VIX_STRONG_ONLY`) |
+| `BB_RSI_VIX_ENABLED` | `false` | Independent toggle |
+| `BB_RSI_VIX_MAX_ENTRY` | inherits | Per-mode threshold (falls back to `VIX_MAX_ENTRY` if unset) |
+| `BB_RSI_VIX_STRONG_ONLY` | inherits | Per-mode threshold (falls back to `VIX_STRONG_ONLY`) |
 | `PA_VIX_ENABLED` | `false` | Independent toggle |
 | `PA_VIX_MAX_ENTRY` | inherits | Per-mode threshold |
 
@@ -409,8 +409,8 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | Key | Default | Notes |
 |-----|---------|-------|
 | `OI_FILTER_ENABLED` | `false` | **Master switch** — OFF disables the filter for every strategy regardless of the per-mode toggles |
-| `SWING_OI_ENABLED` | `false` | Apply to Swing (requires master ON) |
-| `SCALP_OI_ENABLED` | `false` | Apply to Scalp (requires master ON) |
+| `EMA_RSI_ST_OI_ENABLED` | `false` | Apply to EMA_RSI_ST (requires master ON) |
+| `BB_RSI_OI_ENABLED` | `false` | Apply to BB_RSI (requires master ON) |
 | `PA_OI_ENABLED` | `false` | Apply to PA (requires master ON) |
 | `ORB_OI_ENABLED` | `false` | Apply to ORB (requires master ON) |
 | `OI_LOOKBACK_CANDLES` | `3` | Candles back to measure ΔOI / Δspot (≈15 min at 5-min) |
@@ -439,11 +439,11 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `BACKUP_HOUR_IST` | `16` | Hour of day (IST) the daily snapshot is cut (after market close). Timer armed at boot — restart to re-arm a changed hour. |
 | `BACKUP_RETAIN_DAYS` | `14` | Daily snapshots keep only the latest (a new one deletes the old). This prunes the hidden pre-restore safety snapshots older than this many days. |
 | `BACKUP_TG_ENABLED` | `false` | Send a Telegram message when each day's snapshot is ready (or if it fails). |
-| `LIVE_HARNESS_DRY_RUN` | `true` | **Global** kill-switch. When ON, all live order paths (PA/ORB harness routes **and Swing Live**) log the broker call that *would* have been made but place no real order. When OFF, each strategy goes real **unless** its own `{STRATEGY}_LIVE_DRY_RUN` override is on. Switch OFF only after verifying decisions match paper. |
-| `SWING_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps Swing in dry-run even when `LIVE_HARNESS_DRY_RUN=false`. Lets you take other strategies live while Swing stays simulated (and vice-versa). |
+| `LIVE_HARNESS_DRY_RUN` | `true` | **Global** kill-switch. When ON, all live order paths (PA/ORB harness routes **and EMA_RSI_ST Live**) log the broker call that *would* have been made but place no real order. When OFF, each strategy goes real **unless** its own `{STRATEGY}_LIVE_DRY_RUN` override is on. Switch OFF only after verifying decisions match paper. |
+| `EMA_RSI_ST_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps EMA_RSI_ST in dry-run even when `LIVE_HARNESS_DRY_RUN=false`. Lets you take other strategies live while EMA_RSI_ST stays simulated (and vice-versa). |
 | `ORB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps ORB in dry-run even when the global flag is off. |
 | `PA_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the PA live harness in dry-run even when the global flag is off. |
-| `SCALP_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps Scalp in dry-run even when the global flag is off. Scalp Live has no master-enable gate, so this (with the global flag) is its primary safety switch. |
+| `BB_RSI_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps BB_RSI in dry-run even when the global flag is off. BB_RSI Live has no master-enable gate, so this (with the global flag) is its primary safety switch. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |
 
@@ -458,18 +458,18 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `UI_SHOW_REPLAY` | `true` | Top-level "Replay" menu (tick replay of recorded paper sessions) |
 | `UI_SHOW_PAPER_HISTORY` / `UI_SHOW_LIVE_HISTORY` | `true` | Cross-mode history menus |
 | `UI_SHOW_EDGE_ANALYTICS` | `true` | Top-level "Edge Analytics" menu (`/edge-analytics`) |
-| `{SWING,SCALP,PA,ORB}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
+| `{EMA_RSI_ST,BB_RSI,PA,ORB}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
 | `UI_SHOW_SIMULATE` | `false` | Show "Simulate" link under each mode in sidebar |
 | `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
-| `UI_SHOW_TRACKER` | `false` | Show "Tracker" under Swing |
-| `UI_SHOW_{SWING,SCALP,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}` | `true` | Per-submenu toggles for each strategy group |
+| `UI_SHOW_TRACKER` | `false` | Show "Tracker" under EMA_RSI_ST |
+| `UI_SHOW_{EMA_RSI_ST,BB_RSI,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}` | `true` | Per-submenu toggles for each strategy group |
 | `UI_SHOW_PA_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the PA group |
-| `UI_SHOW_{SWING,SCALP,ORB}_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the Swing/Scalp/ORB group — runs LIVE by wrapping PAPER (LIVE = PAPER) |
+| `UI_SHOW_{EMA_RSI_ST,BB_RSI,ORB}_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the EMA_RSI_ST/BB_RSI/ORB group — runs LIVE by wrapping PAPER (LIVE = PAPER) |
 | `UI_SHOW_PA_PATTERN_BACKTEST` | `true` | Show "Pattern Test" inside the PA group |
 | `UI_SHOW_TRADE_LOGS` | `true` | Show **Logs** in the System sidebar group |
 | `UI_SHOW_LOGS` / `UI_SHOW_CACHE_FILES` | `true` | Show the **Server Logs** / **Cache Files** tabs on the Logs (`/trade-logs`) page |
 
-> Per-menu / per-submenu visibility toggles are also configurable via the Settings UI — hide entire mode sections (Swing / Scalp / PA / ORB) from the sidebar without disabling the underlying engine, or hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode section. Driven by env vars + Settings UI; persists across restart.
+> Per-menu / per-submenu visibility toggles are also configurable via the Settings UI — hide entire mode sections (EMA_RSI_ST / BB_RSI / PA / ORB) from the sidebar without disabling the underlying engine, or hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode section. Driven by env vars + Settings UI; persists across restart.
 
 ### Security & Safety
 | Key | Default | Notes |
@@ -488,14 +488,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `TELEGRAM_BOT_TOKEN` | — | From @BotFather |
 | `TELEGRAM_CHAT_ID` | — | Your chat ID — leave blank to disable notifications |
 | `TG_ENABLED` | `true` | **Master gate** — when off, no alerts send regardless of below |
-| `TG_{SWING,SCALP,PA,ORB}_STARTED` | `true` | Session-start alerts per mode |
-| `TG_{SWING,SCALP,PA,ORB}_ENTRY` | `true` | Trade-entry alerts per mode |
-| `TG_{SWING,SCALP,PA,ORB}_EXIT` | `true` | Trade-exit alerts per mode |
-| `TG_{SWING,SCALP,PA}_SIGNALS` | `true/false/false` | Candle-close skip/signal reasoning (Swing/Scalp/PA only — ORB emits no signal alerts) |
-| `TG_{SWING,SCALP,PA,ORB}_DAYREPORT` | `true` | Per-mode day-report on session stop |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED` | `true` | Session-start alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY` | `true` | Trade-entry alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT` | `true` | Trade-exit alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS` | `true/false/false` | Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only — ORB emits no signal alerts) |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT` | `true` | Per-mode day-report on session stop |
 | `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all five modes |
 
-> All alerts and the consolidated report also respect the strategy master toggles (`{SWING,SCALP,PA,ORB}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
+> All alerts and the consolidated report also respect the strategy master toggles (`{EMA_RSI_ST,BB_RSI,PA,ORB}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
 
 ### Charges (April 2026 rates)
 | Key | Default | Notes |
@@ -511,25 +511,25 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 
 ## Routes
 
-### Swing
+### EMA_RSI_ST
 | URL | Description |
 |-----|-------------|
 | `/` | Dashboard (with Start-All Paper / Start-All Live buttons) |
-| `/swing-backtest` | Run backtest (3/5/15-min EMA 20/50+RSI+SuperTrend) |
-| `/swing-paper/status` | Paper trade live view + NIFTY chart |
-| `/swing-paper/history` | Past paper sessions (per-session delete + view modal) |
-| `/swing-paper/simulate` | Market scenario simulator |
-| `/swing-live/status` | Live trade status + NIFTY chart (Zerodha; gated by `SWING_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
+| `/ema_rsi_st-backtest` | Run backtest (3/5/15-min EMA 20/50+RSI+SuperTrend) |
+| `/ema_rsi_st-paper/status` | Paper trade live view + NIFTY chart |
+| `/ema_rsi_st-paper/history` | Past paper sessions (per-session delete + view modal) |
+| `/ema_rsi_st-paper/simulate` | Market scenario simulator |
+| `/ema_rsi_st-live/status` | Live trade status + NIFTY chart (Zerodha; gated by `EMA_RSI_ST_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
 | `/tracker/status` | Manual trade tracker |
 
-### Scalp
+### BB_RSI
 | URL | Description |
 |-----|-------------|
-| `/scalp-backtest` | Scalp backtest (3/5-min BB+PSAR+RSI V6.1) |
-| `/scalp-paper/status` | Scalp paper trade + NIFTY chart with BB overlay |
-| `/scalp-paper/history` | Past scalp sessions (per-session delete + view modal) |
-| `/scalp-paper/simulate` | Scalp simulator |
-| `/scalp-live/status` | Scalp live trade + NIFTY chart |
+| `/bb_rsi-backtest` | BB_RSI backtest (3/5-min BB+PSAR+RSI V6.1) |
+| `/bb_rsi-paper/status` | BB_RSI paper trade + NIFTY chart with BB overlay |
+| `/bb_rsi-paper/history` | Past bb_rsi sessions (per-session delete + view modal) |
+| `/bb_rsi-paper/simulate` | BB_RSI simulator |
+| `/bb_rsi-live/status` | BB_RSI live trade + NIFTY chart |
 
 ### Price Action
 | URL | Description |
@@ -541,8 +541,8 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/pa-paper/simulate` | PA simulator |
 | `/pa-live/status` | PA live trade (legacy code path) + NIFTY chart |
 | `/pa-live-harness/status` | PA live via the **paper-wrapping harness** — guarantees LIVE = PAPER decisions. Routes `/start` and `/stop` are gated by `LIVE_HARNESS_DRY_RUN`. |
-| `/swing-live-harness` | Swing live via the paper-wrapping harness (Zerodha orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `SWING_LIVE_DRY_RUN`). |
-| `/scalp-live-harness` | Scalp live via the paper-wrapping harness (Fyers orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `SCALP_LIVE_DRY_RUN`). |
+| `/ema_rsi_st-live-harness` | EMA_RSI_ST live via the paper-wrapping harness (Zerodha orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `EMA_RSI_ST_LIVE_DRY_RUN`). |
+| `/bb_rsi-live-harness` | BB_RSI live via the paper-wrapping harness (Fyers orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `BB_RSI_LIVE_DRY_RUN`). |
 | `/orb-live-harness` | ORB live via the paper-wrapping harness (Fyers orders). `/start` + `/stop` gated by `LIVE_HARNESS_DRY_RUN` (+ `ORB_LIVE_DRY_RUN`). |
 
 ### ORB (Opening Range Breakout)
@@ -564,20 +564,20 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### Analytics & Tools
 | URL | Description |
 |-----|-------------|
-| `/realtime` | **Unified real-time monitor** — one screen for all enabled strategies with a PAPER/LIVE toggle. Cards for Swing / Scalp / PA / ORB (each card is hidden when its `{STRATEGY}_MODE_ENABLED` is off) showing open position + today's stats, with a rollup table for **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. **Per-card Open Status + Copy Day Log buttons** (Copy Day Log copies raw entry + skip JSONL, not the human-readable summary). |
+| `/realtime` | **Unified real-time monitor** — one screen for all enabled strategies with a PAPER/LIVE toggle. Cards for EMA_RSI_ST / BB_RSI / PA / ORB (each card is hidden when its `{STRATEGY}_MODE_ENABLED` is off) showing open position + today's stats, with a rollup table for **Today Total (Open + Closed)**. Read-only; polls each strategy's `/status/data` every 4s. Theme-aware. **Per-card Open Status + Copy Day Log buttons** (Copy Day Log copies raw entry + skip JSONL, not the human-readable summary). |
 | `/replay` | **Tick Replay** — deterministic re-run of a recorded paper session through the paper `onTick()` handlers. Single-date and date-range modes. Snapshot mode (session-start settings) vs current-settings mode (live `process.env`). Per-row diagnostic Replay buttons + downloadable diagnostic dump. Outputs land in `~/trading-data/_replay_trades/` (snapshot) or `_replay_trades_sim/` (current). |
 | `/all-backtest` | **Unified backtest dashboard** — runs the same date range across all enabled strategies and renders the per-strategy stats side by side. |
-| `/consolidation` | Cross-mode **paper** trade history + analytics (Swing + Scalp + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
+| `/consolidation` | Cross-mode **paper** trade history + analytics (EMA_RSI_ST + BB_RSI + PA, daily/monthly/yearly roll-ups, Day View panel, per-mode breakdown) |
 | `/live-consolidation` | Cross-mode **live** trade history + analytics (parity with `/consolidation` for live data) |
 | `/edge-analytics` | **Edge Analytics** — read-only edge dashboard over your recorded trades. Paper/Live book toggle + per-strategy + date-range (7D / 30D / FY / custom) filters that recompute instantly client-side. Headline cards (trades, win rate, net P&L, expectancy, profit factor, avg win/loss + payoff, max drawdown, win/loss streaks), an equity curve, P&L-by-hour-of-day and P&L-by-weekday bar charts, and **By Strategy** + **By Exit Reason** breakdown tables (worst reason first, to surface the bleed). Reads the same session files as `/consolidation` + `/live-consolidation`; writes nothing. Gated by `UI_SHOW_EDGE_ANALYTICS`. |
 | `/pnl-history` | Broker-wise realised P&L (one-time past baselines per broker + auto-computed live-bot P&L by FY) |
-| `/compare/trading` | Paper vs Backtest comparison (swing) |
-| `/compare/scalping` | Paper vs Backtest comparison (scalping) |
+| `/compare/trading` | Paper vs Backtest comparison (EMA_RSI_ST) |
+| `/compare/bb_rsi` | Paper vs Backtest comparison (bb_rsi) |
 | `/settings` | All config settings UI + Bulk Edit modal (paste/delete keys) + **checkpoint note prompt on every save** + server restart. Saved notes are appended to that day's trade JSONL alongside a settings snapshot, so the daily log carries the exact config that produced its trades. Hosts the `POST /settings/reset-data` endpoint used by the **Reset Data** dialog on the Logs page. |
 | `/trade-logs` | **Renamed from JSONL viewer in v4.5.0.** Per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Top bar has a **🧹 Reset Data** button: a category picker (Paper trade history / Skip trade history / Cache / Logs / Ticks data) with a **select-all** and an optional **date range** — the range deletes matching per-day files (paper/skip daily JSONL + tick day-folders); Cache & Logs always clear fully. Checking **Paper** with **no** date range also fans out to the per-strategy `/reset` routes to restore starting capital + wipe sessions for all 5 strategies (a running strategy is skipped). Posts to `POST /settings/reset-data`. Per-mode **Download All** + **Delete All** buttons, plus a single **Download Everything (all strategies)** button on both the Trade Files and Skip Logs tabs (`/trade-logs/download-everything` and `/trade-logs/skips/download-everything`) that concatenates every mode's daily files into one self-describing JSONL (each line carries its own `mode`). JSONL is the canonical export format (CSV/PDF dropped — they were drifting on edge cases). The **Checkpoints & Settings Changes** tab now has a per-row **↩ Restore** button that reverts a key to its prior value (with a "restore all keys with the same note" checkbox when the entry has a note, and a one-click restart prompt when needed). Light-theme aware. |
 | `/cache-files` | Cache / generated-file browser. Groups every on-disk cache by purpose — **Backtest Cache**, **Candle Cache**, **Recorded Ticks**, **Replay Trades** (snapshot + sim), and **Root Data Files** — each with per-file **View** / **Download** / **Delete** plus group **Download All** (`.tar.gz`) + **Delete All**. Read endpoints are open; deletes require `API_SECRET`. Path-traversal-guarded. The canonical trade/skip JSONLs keep their own page (`/trade-logs`); deleting a cache here is safe (regenerated on demand). Gated by `UI_SHOW_CACHE_FILES`. Light-theme aware. |
 | `/monitor` | EC2 health metrics (CPU, RAM, disk, load average) + maintenance actions |
-| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / swingLive / swingPaper. Also shown as the **Server Logs** tab on the Logs (`/trade-logs`) page. |
+| `/logs` | Application logs (with SSE live feed; near-miss audit lines visible here). **Copy Log button** in the activity-log header on paLive / paPaper / emaRsiStLive / emaRsiStPaper. Also shown as the **Server Logs** tab on the Logs (`/trade-logs`) page. |
 | `/docs` | README, CHANGELOG, documents viewer |
 | `/login-logs` | Failed login attempts with geolocation. Shown as the **Login Logs** tab on the Logs (`/trade-logs`) page; still reachable directly. |
 | `/deploy/status` | GitHub Actions deploy status |
@@ -587,8 +587,8 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | URL | Description |
 |-----|-------------|
 | `POST /settings/reset-data` | Selective data reset used by the **🧹 Reset Data** dialog. Body `{ paper, skip, cache, logs, ticks, from?, to? }` (booleans + optional `YYYY-MM-DD` IST dates). Deletes only the checked categories; the date range filters dated files (paper/skip daily JSONL + tick day-folders) — cache & logs always clear fully. `API_SECRET`-gated. |
-| `POST /swing-live/reset` | Clear Swing live trade history (gated when session active) |
-| `POST /scalp-live/reset` | Clear Scalp live trade history |
+| `POST /ema_rsi_st-live/reset` | Clear EMA_RSI_ST live trade history (gated when session active) |
+| `POST /bb_rsi-live/reset` | Clear BB_RSI live trade history |
 | `POST /pa-live/reset` | Clear PA live trade history |
 | `POST /orb-live/reset` | Clear ORB live trade history |
 
@@ -607,7 +607,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/backup/download?date=YYYY-MM-DD` | Streams `backup-<date>.tar.gz` and marks it downloaded |
 | `POST /backup/create` | Cut a snapshot for today now |
 | `POST /backup/restore` | Upload a `backup-*.tar.gz` (raw body) and restore it over `~/trading-data` + `data/ticks`. Takes a pre-restore safety snapshot first; validates entries against path-traversal; refused while a session is active. Restart after. |
-| `POST /{swing|scalp|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
+| `POST /{ema_rsi_st|bb_rsi|pa}-paper/history/restore` | Rebuild a deleted session for an IST date by replaying the daily JSONL trade log (idempotent; refuses while paper running) |
 
 ## Project Structure
 
@@ -615,26 +615,26 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 src/
   app.js                              # Express server, dashboard, route registration, Start-All
   strategies/
-    strategy1_sar_ema_rsi.js          # Swing strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend) — 5-min default; 15-min via TRADE_RESOLUTION=15
-    scalp_bb_cpr.js                   # Scalp 3/5-min V5 (BB break + PSAR side + RSI)
+    strategy1_sar_ema_rsi.js          # EMA_RSI_ST strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend) — 5-min default; 15-min via TRADE_RESOLUTION=15
+    bb_rsi.js                   # BB_RSI 3/5-min V5 (BB break + PSAR side + RSI)
     price_action.js                   # Price action 5-min strategy (patterns + S/R + RSI caps + BE trigger)
     orb_breakout.js                   # ORB strategy (15-min opening range; CE/PE single-leg breakout buys)
-    index.js                          # Active-strategy registry (currently exposes Swing; ORB invoked by its own route)
+    index.js                          # Active-strategy registry (currently exposes EMA_RSI_ST; ORB invoked by its own route)
   services/
     backtestEngine.js                 # Historical candle fetch + backtest engine
     tickSimulator.js                  # Market scenario tick generator + historical replay (zigzag ticks)
     tickRecorder.js                   # Spot/option/VIX/OI tick recorder (writes ~/trading-data/ticks/...) for Replay
     vixFilter.js                      # VIX market regime filter
-    zerodhaBroker.js                  # Zerodha Kite order placement (swing live)
-    fyersBroker.js                    # Fyers order placement (scalp + PA + ORB live)
+    zerodhaBroker.js                  # Zerodha Kite order placement (EMA_RSI_ST live)
+    fyersBroker.js                    # Fyers order placement (bb_rsi + PA + ORB live)
     logger.js                         # Console interceptor + in-memory log store
   routes/
-    swingLive.js                      # Swing live (5-min default, Zerodha) + chart + /reset endpoint + STRONG_ONLY gate
-    swingPaper.js                     # Swing paper (5-min default, simulated) + chart + view modal + history JSONL download + STRONG_ONLY gate
-    swingBacktest.js                  # Swing backtest (5-min default, split-by-years/months)
-    scalpLive.js                      # Scalp live (5-min, Fyers) + chart + BB overlay + /reset endpoint
-    scalpPaper.js                     # Scalp paper (5-min, simulated) + chart + BB overlay
-    scalpBacktest.js                  # Scalp backtest
+    emaRsiStLive.js                      # EMA_RSI_ST live (5-min default, Zerodha) + chart + /reset endpoint + STRONG_ONLY gate
+    emaRsiStPaper.js                     # EMA_RSI_ST paper (5-min default, simulated) + chart + view modal + history JSONL download + STRONG_ONLY gate
+    emaRsiStBacktest.js                  # EMA_RSI_ST backtest (5-min default, split-by-years/months)
+    bbRsiLive.js                      # BB_RSI live (5-min, Fyers) + chart + BB overlay + /reset endpoint
+    bbRsiPaper.js                     # BB_RSI paper (5-min, simulated) + chart + BB overlay
+    bbRsiBacktest.js                  # BB_RSI backtest
     paLive.js                         # PA live (legacy code path, Fyers) + chart + swing overlay + /reset endpoint
     paLiveHarness.js                  # PA live via paper-wrapping harness — LIVE = PAPER by construction, gated by LIVE_HARNESS_DRY_RUN
     paPaper.js                        # PA paper (5-min, simulated) + chart + swing overlay + BE trigger
@@ -663,9 +663,9 @@ src/
     result.js                         # Saved backtest result viewer
   utils/
     socketManager.js                  # Fyers WebSocket singleton + fan-out
-    sharedSocketState.js              # Mode coexistence manager (Swing/Scalp/PA/ORB aware)
+    sharedSocketState.js              # Mode coexistence manager (EMA_RSI_ST/BB_RSI/PA/ORB aware)
     sharedNav.js                      # Sidebar (accordion) + per-feature menu toggles
-    positionPersist.js                # Crash recovery — position save/load (Swing/Scalp/PA only; ORB TBD)
+    positionPersist.js                # Crash recovery — position save/load (EMA_RSI_ST/BB_RSI/PA only; ORB TBD)
     backtestJobManager.js             # Background backtest job queue (1-at-a-time)
     backtestCache.js                  # Disk cache for historical candles
     candleCache.js                    # Live candle cache
@@ -704,7 +704,7 @@ src/
 - **Runtime**: Node.js + Express (HTTPS, self-signed cert)
 - **Data Feed**: Fyers WebSocket (single connection, multi-mode fan-out)
 - **Indicators**: `technicalindicators` (EMA, RSI, ADX, Parabolic SAR, Bollinger Bands)
-- **Brokers**: Zerodha Kite Connect (swing live) + Fyers API v3 (scalp + PA live + all data)
+- **Brokers**: Zerodha Kite Connect (EMA_RSI_ST live) + Fyers API v3 (bb_rsi + PA live + all data)
 - **Notifications**: Telegram Bot API with 17 per-mode toggles + master gate + consolidated EOD
 - **Charts**: Chart.js (theme-aware) + live candlestick overlays on status pages
 - **Deployment**: PM2 on AWS EC2 t3.micro + GitHub Actions CI/CD

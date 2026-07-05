@@ -64,7 +64,7 @@ router.get("/", (req, res) => {
       ).join("\n      ")
     : '<p style="color:#4a6080;font-size:0.85rem;">No documents found. Place files in the <code>documents/</code> folder.</p>';
 
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
 
   res.setHeader("Content-Type", "text/html");
   res.send(`<!DOCTYPE html>
@@ -328,20 +328,20 @@ const GUIDE_STATUS = {
     { type: "bool", label: "Premium-Range Gate", key: "ORB_PREMIUM_GATE_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "ORB_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
-  "Swing_Strategy_Guide.html": { title: "Swing — Live Configuration", groups: [{ rows: [
-    { type: "bool", label: "Swing Mode (sidebar + Settings section)", key: "SWING_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Zerodha)", enableKey: "SWING_LIVE_ENABLED", dryKey: "SWING_LIVE_DRY_RUN" },
+  "EMA_RSI_ST_Strategy_Guide.html": { title: "EMA_RSI_ST — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "EMA_RSI_ST Mode (sidebar + Settings section)", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA_RSI_ST_LIVE_ENABLED", dryKey: "EMA_RSI_ST_LIVE_DRY_RUN" },
     { type: "bool", label: "VIX Filter", key: "VIX_FILTER_ENABLED", def: "true" },
-    { type: "bool", label: "Candle Trail", key: "SWING_CANDLE_TRAIL_ENABLED", def: "false" },
-    { type: "bool", label: "Opposite-Side Cooldown", key: "SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
+    { type: "bool", label: "Candle Trail", key: "EMA_RSI_ST_CANDLE_TRAIL_ENABLED", def: "false" },
+    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
     { type: "bool", label: "Expiry-Day-Only", key: "TRADE_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
-  "Scalping_Strategy_Guide.html": { title: "Scalp — Live Configuration", groups: [{ rows: [
-    { type: "bool", label: "Scalp Mode (sidebar + Settings section)", key: "SCALP_MODE_ENABLED", def: "true" },
-    { type: "live", label: "Live Orders (Fyers)", enableKey: "SCALP_ENABLED", dryKey: "SCALP_LIVE_DRY_RUN" },
-    { type: "bool", label: "VIX Filter", key: "SCALP_VIX_ENABLED", def: "false" },
-    { type: "bool", label: "ADX Trend Filter", key: "SCALP_ADX_ENABLED", def: "false" },
-    { type: "bool", label: "Expiry-Day-Only", key: "SCALP_EXPIRY_DAY_ONLY", def: "false" },
+  "BB_RSI_Strategy_Guide.html": { title: "BB_RSI — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "BB_RSI Mode (sidebar + Settings section)", key: "BB_RSI_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers)", enableKey: "BB_RSI_ENABLED", dryKey: "BB_RSI_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter", key: "BB_RSI_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "ADX Trend Filter", key: "BB_RSI_ADX_ENABLED", def: "false" },
+    { type: "bool", label: "Expiry-Day-Only", key: "BB_RSI_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
   "Price_Action_Strategy_Guide.html": { title: "Price Action — Live Configuration", groups: [{ rows: [
     { type: "bool", label: "PA Mode (sidebar + Settings section)", key: "PA_MODE_ENABLED", def: "true" },
@@ -365,8 +365,8 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Live NIFTY Chart", key: "CHART_ENABLED", def: "true" },
     ] },
     { heading: "Strategy master toggles", rows: [
-      { type: "bool", label: "Swing Mode", key: "SWING_MODE_ENABLED", def: "true" },
-      { type: "bool", label: "Scalp Mode", key: "SCALP_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "EMA_RSI_ST Mode", key: "EMA_RSI_ST_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "BB_RSI Mode", key: "BB_RSI_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },

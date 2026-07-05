@@ -258,7 +258,7 @@
     </tbody>
   </table>
 
-  <p>Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; paper capital pools under the shared Zerodha-side amount <code>ZERODHA_INV_AMOUNT</code>. The internal mode key is <code>ema9vwap</code> / <code>EMA9VWAP</code>. This strategy runs in parallel with Swing / Scalp / PA / ORB on the one shared Fyers socket &mdash; it never opens a second connection.</p>
+  <p>Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; paper capital pools under the shared Zerodha-side amount <code>ZERODHA_INV_AMOUNT</code>. The internal mode key is <code>ema9vwap</code> / <code>EMA9VWAP</code>. This strategy runs in parallel with EMA_RSI_ST / BB_RSI / PA / ORB on the one shared Fyers socket &mdash; it never opens a second connection.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -342,7 +342,7 @@ Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
   <h3>Entry-Reason Fingerprint</h3>
   <p>The log line surfaces the EMA value, the band line it crossed, and the VWAP/&sigma; that defined it:</p>
   <pre><code>EMA9 24312.5 crossed ABOVE VWAP top 24298.1 (VWAP 24270.4 +1&sigma;)   [STRONG]</code></pre>
-  <p>This <em>EMA9-crosses-VWAP&plusmn;&sigma;</em> fingerprint is what disambiguates an EMA9+VWAP trade from Swing / Scalp / PA / ORB in a mixed session log &mdash; see the <strong>signal-signatures</strong> memory note.</p>
+  <p>This <em>EMA9-crosses-VWAP&plusmn;&sigma;</em> fingerprint is what disambiguates an EMA9+VWAP trade from EMA_RSI_ST / BB_RSI / PA / ORB in a mixed session log &mdash; see the <strong>signal-signatures</strong> memory note.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -450,7 +450,7 @@ Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
   <h2><span class="section-icon icon-orange">&#128737;</span> 6. Guards &amp; VIX Filter</h2>
 
   <h3>India VIX Regime Filter &mdash; GLOBAL keys, not per-mode</h3>
-  <p>Unlike ORB / Scalp / PA (each of which has its own <code>*_VIX_*</code> block), EMA9+VWAP has <strong>no per-mode VIX keys</strong>. Its VIX check calls the shared filter defaulting to the Swing/global &ldquo;swing&rdquo; mode, so it reads the <strong>global</strong> <code>VIX_*</code> settings.</p>
+  <p>Unlike ORB / BB_RSI / PA (each of which has its own <code>*_VIX_*</code> block), EMA9+VWAP has <strong>no per-mode VIX keys</strong>. Its VIX check calls the shared filter defaulting to the EMA_RSI_ST/global &ldquo;swing&rdquo; mode, so it reads the <strong>global</strong> <code>VIX_*</code> settings.</p>
   <table>
     <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
     <tbody>
@@ -460,7 +460,7 @@ Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
     </tbody>
   </table>
   <div class="note note-warn">
-    <strong>VIX is not independently tunable for this strategy.</strong> Because it shares the Swing/global thresholds, changing <code>VIX_MAX_ENTRY</code> moves the gate for Swing too. There are no <code>EMA9VWAP_VIX_*</code> keys to override it in isolation.
+    <strong>VIX is not independently tunable for this strategy.</strong> Because it shares the EMA_RSI_ST/global thresholds, changing <code>VIX_MAX_ENTRY</code> moves the gate for EMA_RSI_ST too. There are no <code>EMA9VWAP_VIX_*</code> keys to override it in isolation.
   </div>
 
   <h3>Liquidity Guards (Live-Only)</h3>
@@ -636,7 +636,7 @@ flip cooldown, so a whipsaw bearish poke can't instantly flip the trade.</code><
   <ul>
     <li><strong>New strategy, no tuning history.</strong> Added 2026-06-28 with no prior analysis cohort. Collect clean live/paper sessions before tuning any threshold &mdash; there is no validated baseline yet.</li>
     <li><strong>Reversal engulf can double up with the signal exit.</strong> Both are ON in spirit by default; on choppy days the 2-candle reversal may exit eagerly and, combined with the flip cooldown, sit the strategy out of a subsequent re-entry. Watch for over-eager exits before deciding whether to keep <code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code> on.</li>
-    <li><strong>VIX is not independently tunable.</strong> The gate shares Swing/global <code>VIX_*</code> thresholds &mdash; there is no <code>EMA9VWAP_VIX_*</code> block, so you cannot loosen/tighten VIX for this strategy in isolation.</li>
+    <li><strong>VIX is not independently tunable.</strong> The gate shares EMA_RSI_ST/global <code>VIX_*</code> thresholds &mdash; there is no <code>EMA9VWAP_VIX_*</code> block, so you cannot loosen/tighten VIX for this strategy in isolation.</li>
     <li><strong>VWAP is a TWAP on the spot index.</strong> No real volume &rarr; the VWAP degenerates to session TWAP&plusmn;&sigma; (same as ORB). Band math and the EMA cross are exact; absolute VWAP tracks TradingView's shape but is not tick-identical. Don't expect the on-screen VWAP number to match TV to the point.</li>
     <li><strong>In-code comment drift.</strong> The negative-candle-cut comment says &ldquo;default 2&rdquo;, but the resolved default of <code>EMA9VWAP_NEG_CANDLE_LIMIT</code> is <code>0</code> (off). Trust the code default, not the comment.</li>
   </ul>

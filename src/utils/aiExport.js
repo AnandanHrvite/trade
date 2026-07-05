@@ -25,7 +25,7 @@
 // Plain-English meaning for the fields we know about. Only emitted for keys that
 // actually appear in the data, so the legend never lists irrelevant fields.
 const FIELD_LEGEND = {
-  mode: "Strategy that produced the trade (swing / scalp / pa / orb).",
+  mode: "Strategy that produced the trade (ema_rsi_st / bb_rsi / pa / orb).",
   strategy: "Strategy label (same as mode, kept for compatibility).",
   date: "Trade date, IST (YYYY-MM-DD).",
   side: "CE = call (bullish bet) · PE = put (bearish bet).",
@@ -268,7 +268,7 @@ function jsonlToMarkdown(text, meta = {}) {
 // useful summary is "how many, broken down by which gate" — not win/loss.
 
 const SKIP_LEGEND = {
-  mode: "Strategy that produced the rejected signal (swing / scalp / pa / orb).",
+  mode: "Strategy that produced the rejected signal (ema_rsi_st / bb_rsi / pa / orb).",
   gate: "Which gate blocked entry (e.g. vix, spread, strategy, oi).",
   reason: "Plain-English reason the signal was rejected.",
   side: "Intended direction — CE (call) / PE (put).",

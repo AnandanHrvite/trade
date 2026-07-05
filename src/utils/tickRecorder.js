@@ -198,7 +198,7 @@ function recordSpotTick(tick) {
  * Record one option LTP REST poll result.
  *   symbol — full Fyers option symbol e.g. "NSE:NIFTY2451524500CE"
  *   ltp    — number from the REST quote
- *   src    — string mode tag for debugging ("pa-paper", "scalp-live", etc.)
+ *   src    — string mode tag for debugging ("pa-paper", "bb_rsi-live", etc.)
  */
 function recordOptionLtp(symbol, ltp, src) {
   if (!ENABLED || ltp == null || !symbol) return;
@@ -249,7 +249,7 @@ function recordOi(symbol, oi) {
 
 /**
  * Record a session-start event with everything needed to seed a replay:
- *   - mode: "pa-paper" | "pa-live" | "scalp-paper" | etc.
+ *   - mode: "pa-paper" | "pa-live" | "bb_rsi-paper" | etc.
  *   - sessionId: caller-provided unique id (used to pair start ↔ stop events)
  *   - settings: env snapshot of all strategy-relevant keys
  *   - warmup: array of historical candles loaded to seed indicators
@@ -297,15 +297,15 @@ function recordSessionStop({ mode, sessionId, reason }) {
 // the EXACT config the live session ran with, regardless of subsequent edits.
 // Tokens / secrets are excluded by construction.
 const _SETTINGS_KEY_MATCHERS = [
-  /^PA_/, /^SCALP_/, /^SWING_/, /^ORB_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
+  /^PA_/, /^BB_RSI_/, /^EMA_RSI_ST_/, /^ORB_/, /^VIX_/, /^BACKTEST_/, /^TRADE_/,
   /^MAX_/, /^MIN_/, /^EMA_/, /^SAR_/, /^RSI_/, /^ADX_/,
   /^INSTRUMENT/, /^OPTION_/, /^BREAKEVEN/, /^FAIL_MODE/,
   /^MODE_/, /^EXPIRY/, /^STRIKE/, /^QTY/, /^LOT/, /^SIGNAL/,
   // Added so snapshot-mode replay pins these too (they influence paper decisions
   // but weren't captured, so replays silently used TODAY's env for them):
   //   EMA9VWAP_* — the whole EMA9+VWAP strategy (NOT matched by /^EMA_/, key is "EMA9…")
-  //   OI_*       — the OI-filter master switch (per-mode {PA,SWING,…}_OI_ENABLED were caught)
-  //   OPT_*      — swing's OPT_STOP_PCT (/^OPTION_/ does not match "OPT_")
+  //   OI_*       — the OI-filter master switch (per-mode {PA,EMA_RSI_ST,…}_OI_ENABLED were caught)
+  //   OPT_*      — EMA_RSI_ST's OPT_STOP_PCT (/^OPTION_/ does not match "OPT_")
   //   TIME_STOP_*— shared tradeGuards time-stop
   //   NIFTY*     — NIFTY_LOT_SIZE (/^LOT/ does not match "NIFTY_LOT_SIZE")
   //   LTP_STALE* — stale-LTP fallback window

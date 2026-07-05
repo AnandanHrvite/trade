@@ -32,7 +32,7 @@ router.post("/clear", (req, res) => {
 
 // ── UI page ─────────────────────────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
   const embed = req.query.embed === "1" || req.query.embed === "true";
 

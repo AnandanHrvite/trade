@@ -2,7 +2,7 @@
  * Near-miss entry logger (additive-only — does NOT affect trade decisions).
  *
  * Reads `result.filterAudit` produced by the strategy layer (see
- * strategy1_sar_ema_rsi.js / scalp_bb_cpr.js). When a candle was skipped but
+ * strategy1_sar_ema_rsi.js / bb_rsi.js). When a candle was skipped but
  * exactly one filter failed on either side, emit a compact "missed by one"
  * line so the data-collection window surfaces the opportunity cost of each
  * individual filter.

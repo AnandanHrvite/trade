@@ -5,7 +5,7 @@
  *   1. User takes entry in Zerodha manually
  *   2. Clicks "Fetch & Start Tracking" — zero manual input needed
  *   3. Bot reads open NIFTY position from Zerodha (symbol, qty, avg price)
- *   4. Fetches candles + runs the swing strategy → initial SL = previous-candle low/high
+ *   4. Fetches candles + runs the EMA_RSI_ST strategy → initial SL = previous-candle low/high
  *      (fixed-points fallback when no live signal)
  *   5. Polls NIFTY spot every 1 second via Fyers REST
  *   6. Trails SL the same way as paper/live: tighten to each completed candle's
@@ -21,7 +21,7 @@ const { sendTelegram } = require("../utils/notify");
 const { buildSidebar, sidebarCSS, toastJS, faviconLink, modalCSS, modalJS } = require("../utils/sharedNav");
 const sharedSocketState = require("../utils/sharedSocketState");
 
-// Trailing config (mirrors the swing strategy): prev-candle trail + breakeven.
+// Trailing config (mirrors the EMA_RSI_ST strategy): prev-candle trail + breakeven.
 function _bePts()   { return parseFloat(process.env.BREAKEVEN_PTS || "25"); }
 function _resMin()  { return parseInt(process.env.TRADE_RESOLUTION || "5", 10); }
 
@@ -325,7 +325,7 @@ router.get("/status", (req, res) => {
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar("swingTracker", sharedSocketState.getMode()==="SWING_LIVE", !!pos, {
+${buildSidebar("emaRsiStTracker", sharedSocketState.getMode()==="EMA_RSI_ST_LIVE", !!pos, {
   showExitBtn: !!pos, exitBtnJs: "handleExit(this)", exitLabel: "🛑 Stop Tracking",
   statusLabel: pos ? "TRACKING" : tracker.status === "sl_hit" ? "SL HIT" : "IDLE",
 })}

@@ -41,24 +41,24 @@ const VIEW_MAX_BYTES = 1024 * 1024; // 1 MB cap on the View modal
 // Each group = one base directory. flat:true lists only files directly in the
 // base (used for the trading-data root so the grouped sub-folders aren't doubled).
 const GROUPS = [
-  { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-swing",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Cached historical OHLC pulls used by backtests (auto-pruned)." },
-  { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-scalp",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
+  { key: "backtest_cache", label: "Backtest Cache",      icon: "📊", cls: "mode-ema_rsi_st",    base: path.join(DATA_DIR, "backtest_cache"),     flat: false, desc: "Cached historical OHLC pulls used by backtests (auto-pruned)." },
+  { key: "candle_cache",   label: "Candle Cache",        icon: "🕯", cls: "mode-bb_rsi",    base: path.join(DATA_DIR, "candle_cache"),       flat: false, desc: "Cached intraday candle series." },
   { key: "ticks",          label: "Recorded Ticks",      icon: "📡", cls: "mode-orb",      base: TICKS_DIR,                                 flat: false, desc: "Recorded spot / option / VIX ticks per IST date — source of truth for Replay. (Replay outputs/cache under the same root are listed separately below.)" },
   { key: "replay",         label: "Replay Trades",       icon: "📼", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_trades"),     flat: false, tagged: true, desc: "Replay outputs in snapshot mode (recorded session-start settings)." },
   { key: "replay_sim",     label: "Replay Trades (Sim)", icon: "🧪", cls: "mode-sim",      base: path.join(TICKS_DIR, "_replay_trades_sim"), flat: false, tagged: true, desc: "Replay outputs in current-settings (sim) mode." },
   { key: "replay_cache",   label: "Replay Cache",        icon: "⚡", cls: "mode-pa",       base: path.join(TICKS_DIR, "_replay_cache"),      flat: false, tagged: true, desc: "Cached deterministic replay results — re-run hits these to skip the tick stream. Deleting forces a fresh recompute on the next run (safe)." },
-  { key: "root",           label: "Root Data Files",     icon: "🗂", cls: "mode-swing",    base: DATA_DIR,                                  flat: true,  desc: "Loose JSON / JSONL state files directly under ~/trading-data (the grouped sub-folders are listed above)." },
+  { key: "root",           label: "Root Data Files",     icon: "🗂", cls: "mode-ema_rsi_st",    base: DATA_DIR,                                  flat: true,  desc: "Loose JSON / JSONL state files directly under ~/trading-data (the grouped sub-folders are listed above)." },
 ];
 const GROUP_BY_KEY = Object.fromEntries(GROUPS.map(g => [g.key, g]));
 
 const IGNORE_NAMES = new Set([".DS_Store", ".gitkeep"]);
 
 // Strategy → display badge. The mode strings replay writes are "{strategy}-paper"
-// (e.g. "scalp-paper"); we tag on the leading strategy token so a hash-named
+// (e.g. "bb_rsi-paper"); we tag on the leading strategy token so a hash-named
 // replay-cache file can still be told apart by which engine produced it.
 const STRATEGY_BADGE = {
-  swing:    { label: "SWING",    cls: "mode-swing" },
-  scalp:    { label: "SCALP",    cls: "mode-scalp" },
+  ema_rsi_st:    { label: "EMA_RSI_ST",    cls: "mode-ema_rsi_st" },
+  bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
 };
@@ -78,11 +78,11 @@ function _istDateFromMs(ms) {
 //   _replay_trades / _replay_trades_sim → "{mode}_{suffix}.jsonl" — strat from name.
 //   _replay_cache                       → sha1-named .json; the result JSON carries
 //                                         a top-level "mode" (and now "date") field.
-// strat is a strategy key (swing|scalp|pa|orb) or null; date is "YYYY-MM-DD" or null.
+// strat is a strategy key (ema_rsi_st|bb_rsi|pa|orb) or null; date is "YYYY-MM-DD" or null.
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(swing|scalp|pa|orb)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -90,7 +90,7 @@ function detectMeta(group, rel, abs, mtimeMs) {
   let meta = { strat: null, date: null };
   try {
     const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
-    const m = String(obj && obj.mode || "").match(/^(swing|scalp|pa|orb)/i);
+    const m = String(obj && obj.mode || "").match(/^(ema_rsi_st|bb_rsi|pa|orb)/i);
     if (m) meta.strat = m[1].toLowerCase();
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
@@ -310,7 +310,7 @@ router.post("/delete-all", (req, res) => {
   const group = GROUP_BY_KEY[key];
   let files = listFiles(group);
   // Scope the wipe to one strategy when a valid tag filter is supplied — this is
-  // what lets "Delete All" clear only SCALP without touching SWING.
+  // what lets "Delete All" clear only BB_RSI without touching EMA_RSI_ST.
   const tagFilter = String(req.query.tag || req.body?.tag || "").toLowerCase();
   if (group.tagged && tagFilter && STRATEGY_BADGE[tagFilter]) {
     files = files.filter(f => detectMeta(group, f.rel, path.join(group.base, f.rel), f.mtimeMs).strat === tagFilter);
@@ -329,7 +329,7 @@ router.post("/delete-all", (req, res) => {
 
 // ── GET /cache-files — UI page ──────────────────────────────────────────────
 router.get("/", (req, res) => {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   // Embedded mode: rendered inside an <iframe> on the Logs (/trade-logs) page as a tab.
   const embed = req.query.embed === "1" || req.query.embed === "true";
   res.setHeader("Content-Type", "text/html");
@@ -364,8 +364,8 @@ router.get("/", (req, res) => {
     .mode-section { margin-bottom:22px; background:#0a1018; border:1px solid #1a2236; border-radius:8px; overflow:hidden; }
     .mode-head { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:#0d1320; border-bottom:1px solid #1a2236; gap:10px; flex-wrap:wrap; }
     .mode-name { font-weight:700; font-size:0.78rem; letter-spacing:0.5px; text-transform:uppercase; }
-    .mode-swing    { color:#60a5fa; }
-    .mode-scalp    { color:#fbbf24; }
+    .mode-ema_rsi_st    { color:#60a5fa; }
+    .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-sim      { color:#ec4899; }
@@ -496,8 +496,8 @@ ${embed ? '' : buildSidebar('cacheFiles', liveActive)}
   var _totals = {}; // key -> file count (for overview)
   var _tagFilter = {}; // group key -> active strategy filter ('' = all)
   var STRAT_BADGE = {
-    swing:    { label: 'SWING',    cls: 'mode-swing' },
-    scalp:    { label: 'SCALP',    cls: 'mode-scalp' },
+    ema_rsi_st:    { label: 'EMA_RSI_ST',    cls: 'mode-ema_rsi_st' },
+    bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
   };

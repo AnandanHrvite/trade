@@ -1,18 +1,18 @@
 /**
  * VIX FILTER — Market Regime Detection (per-module thresholds)
  * ─────────────────────────────────────────────────────────────────────────────
- * Each trading module (swing / scalp / pa) has its own VIX cutoff so you can
- * tune them independently (e.g. scalp may tolerate higher VIX than swing).
+ * Each trading module (EMA_RSI_ST / bb_rsi / pa) has its own VIX cutoff so you can
+ * tune them independently (e.g. bb_rsi may tolerate higher VIX than EMA_RSI_ST).
  *
  * Per-module env vars:
- *   Swing : VIX_FILTER_ENABLED, VIX_MAX_ENTRY,        VIX_STRONG_ONLY
- *   Scalp : SCALP_VIX_ENABLED,  SCALP_VIX_MAX_ENTRY   (STRONG_ONLY not used)
+ *   EMA_RSI_ST : VIX_FILTER_ENABLED, VIX_MAX_ENTRY,        VIX_STRONG_ONLY
+ *   BB_RSI : BB_RSI_VIX_ENABLED,  BB_RSI_VIX_MAX_ENTRY   (STRONG_ONLY not used)
  *   PA    : PA_VIX_ENABLED,     PA_VIX_MAX_ENTRY      (STRONG_ONLY not used)
  *
  * Shared:
  *   VIX_FAIL_MODE = closed|open — behaviour when VIX data is unavailable.
  *
- * New scalp/PA keys fall back to VIX_MAX_ENTRY when unset, so existing configs
+ * New bb_rsi/PA keys fall back to VIX_MAX_ENTRY when unset, so existing configs
  * keep working without changes.
  *
  * Live/Paper: Polls Fyers REST API for NSE:INDIAVIX-INDEX LTP (cached 60s).
@@ -29,37 +29,37 @@ const tickRecorder = require("../utils/tickRecorder");
 const VIX_SYMBOL = "NSE:INDIAVIX-INDEX";
 
 // ── Per-mode config readers (live — never cached, so toggles apply instantly) ─
-function getVixEnabled(mode = "swing") {
-  if (mode === "scalp")    return process.env.SCALP_VIX_ENABLED    === "true";
+function getVixEnabled(mode = "ema_rsi_st") {
+  if (mode === "bb_rsi")    return process.env.BB_RSI_VIX_ENABLED    === "true";
   if (mode === "pa")       return process.env.PA_VIX_ENABLED       === "true";
   if (mode === "orb")      return process.env.ORB_VIX_ENABLED      === "true";
-  // swing default: on unless explicitly disabled
+  // EMA_RSI_ST default: on unless explicitly disabled
   return process.env.VIX_FILTER_ENABLED !== "false";
 }
 
-function getVixMaxEntry(mode = "swing") {
-  if (mode === "scalp")    return parseFloat(process.env.SCALP_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
+function getVixMaxEntry(mode = "ema_rsi_st") {
+  if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22");
   return parseFloat(process.env.VIX_MAX_ENTRY || "20");
 }
 
-function getVixStrongOnly(mode = "swing") {
-  if (mode === "scalp")    return parseFloat(process.env.SCALP_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
+function getVixStrongOnly(mode = "ema_rsi_st") {
+  if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18");
   return parseFloat(process.env.VIX_STRONG_ONLY || "16");
 }
 
 function anyVixEnabled() {
-  return getVixEnabled("swing") || getVixEnabled("scalp") || getVixEnabled("pa") ||
+  return getVixEnabled("ema_rsi_st") || getVixEnabled("bb_rsi") || getVixEnabled("pa") ||
          getVixEnabled("orb");
 }
 
 // ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────
 let _cachedVix   = null;
 let _cachedVixTs = 0;
-let _lastRegime  = null; // "NORMAL" | "ELEVATED" | "HIGH" — uses swing thresholds for logging
+let _lastRegime  = null; // "NORMAL" | "ELEVATED" | "HIGH" — uses EMA_RSI_ST thresholds for logging
 const VIX_CACHE_TTL = 60_000;
 
 /**
@@ -84,8 +84,8 @@ async function fetchLiveVix({ force = false } = {}) {
         // Record only on cache fill (not cache hits) so replay sees the same
         // poll cadence the live system saw.
         try { tickRecorder.recordVix(ltp); } catch (_) {}
-        const maxEntry   = getVixMaxEntry("swing");
-        const strongOnly = getVixStrongOnly("swing");
+        const maxEntry   = getVixMaxEntry("ema_rsi_st");
+        const strongOnly = getVixStrongOnly("ema_rsi_st");
         const newRegime = ltp > maxEntry ? "HIGH" : ltp > strongOnly ? "ELEVATED" : "NORMAL";
         if (_lastRegime && newRegime !== _lastRegime) {
           console.log(`🌡️ [VIX] Regime change: ${_lastRegime} → ${newRegime} (VIX ${ltp.toFixed(1)})`);
@@ -104,12 +104,12 @@ async function fetchLiveVix({ force = false } = {}) {
 
 /**
  * Check if entry is allowed based on current live VIX (for the given module).
- * @param {string} signalStrength - "STRONG" or "MARGINAL" (swing only; scalp/PA pass "STRONG")
+ * @param {string} signalStrength - "STRONG" or "MARGINAL" (EMA_RSI_ST only; bb_rsi/PA pass "STRONG")
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
+ * @param {"ema_rsi_st"|"bb_rsi"|"pa"|"orb"} [opts.mode="ema_rsi_st"]
  * @returns {{ allowed: boolean, vix: number|null, reason: string }}
  */
-async function checkLiveVix(signalStrength, { mode = "swing" } = {}) {
+async function checkLiveVix(signalStrength, { mode = "ema_rsi_st" } = {}) {
   if (!getVixEnabled(mode)) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   const vix = await fetchLiveVix();
@@ -174,10 +174,10 @@ function buildVixLookup(vixCandles) {
  * @param {number|null} vix
  * @param {string} signalStrength
  * @param {object} [opts]
- * @param {"swing"|"scalp"|"pa"|"orb"} [opts.mode="swing"]
- * @param {boolean} [opts.force=false] — skip enabled check (used by scalp/PA backtests which gate outside)
+ * @param {"ema_rsi_st"|"bb_rsi"|"pa"|"orb"} [opts.mode="ema_rsi_st"]
+ * @param {boolean} [opts.force=false] — skip enabled check (used by bb_rsi/PA backtests which gate outside)
  */
-function checkBacktestVix(vix, signalStrength, { mode = "swing", force = false } = {}) {
+function checkBacktestVix(vix, signalStrength, { mode = "ema_rsi_st", force = false } = {}) {
   if (!force && !getVixEnabled(mode)) return { allowed: true, vix: null, reason: "VIX filter disabled" };
 
   if (vix === null || vix === undefined) {
@@ -223,10 +223,10 @@ function getCachedVix() {
 }
 
 module.exports = {
-  // Backwards-compatible getters (default to swing thresholds — used by existing status pages and backtest metadata)
-  get VIX_ENABLED()     { return getVixEnabled("swing"); },
-  get VIX_MAX_ENTRY()   { return getVixMaxEntry("swing"); },
-  get VIX_STRONG_ONLY() { return getVixStrongOnly("swing"); },
+  // Backwards-compatible getters (default to EMA_RSI_ST thresholds — used by existing status pages and backtest metadata)
+  get VIX_ENABLED()     { return getVixEnabled("ema_rsi_st"); },
+  get VIX_MAX_ENTRY()   { return getVixMaxEntry("ema_rsi_st"); },
+  get VIX_STRONG_ONLY() { return getVixStrongOnly("ema_rsi_st"); },
   // Per-mode helpers
   getVixEnabled,
   getVixMaxEntry,

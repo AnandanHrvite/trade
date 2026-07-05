@@ -1,5 +1,5 @@
 /**
- * STRATEGY: SAR_EMA_RSI  (SWING — entry redefined 2026-05-31, PSAR stripped 2026-06-12)
+ * STRATEGY: SAR_EMA_RSI  (EMA_RSI_ST — entry redefined 2026-05-31, PSAR stripped 2026-06-12)
  *
  * Trend-following rule set driven by an EMA crossover-state gate + SuperTrend confirmation.
  *
@@ -12,10 +12,10 @@
  * ENTRY — BUY_CE (bullish), ALL must be true (evaluated every tick while flat):
  *   1. EMA alignment bullish:
  *        2-EMA (default)      →  EMA20 ABOVE EMA50
- *        triple-stack (opt-in) →  EMA9 > EMA20 > EMA50   (SWING_EMA_TRIPLE_STACK_ENABLED)
+ *        triple-stack (opt-in) →  EMA9 > EMA20 > EMA50   (EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED)
  *   2. RSI(14) in the CE band  →  RSI_CE_MIN < RSI < RSI_CE_MAX
  *   3. SuperTrend bullish (trend===1)
- *   4. Close beyond base EMA (opt-in, default ON — SWING_CLOSE_BEYOND_EMA_ENABLED):
+ *   4. Close beyond base EMA (opt-in, default ON — EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED):
  *        signal candle CLOSE > base EMA, where base = EMA9 (fastest) when the triple
  *        stack is on, else EMA20 (fast). Blocks buying into dips that close below the
  *        fast EMA while the lines are still stacked from an earlier move.
@@ -39,7 +39,7 @@ const { EMA, RSI } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
 const NAME        = "SAR_EMA_RSI";
-const DESCRIPTION = "SWING | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | prev-candle/EMA21 trailing SL | thresholds via Settings";
+const DESCRIPTION = "EMA_RSI_ST | EMA20/EMA50(close) + RSI + SuperTrend(10,3) | EMA alignment (2-EMA or 9>20>50 stack) + RSI gate + SuperTrend side | prev-candle/EMA21 trailing SL | thresholds via Settings";
 
 // ── Trading window ────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -81,20 +81,20 @@ function getSignal(candles, opts) {
   var silent = (opts && opts.silent === true);
 
   // EMA periods (close-based) — the fast/slow pair that gates direction.
-  var EMA_FAST = parseInt(process.env.SWING_EMA_FAST || "20", 10) || 20;
-  var EMA_SLOW = parseInt(process.env.SWING_EMA_SLOW || "50", 10) || 50;
+  var EMA_FAST = parseInt(process.env.EMA_RSI_ST_EMA_FAST || "20", 10) || 20;
+  var EMA_SLOW = parseInt(process.env.EMA_RSI_ST_EMA_SLOW || "50", 10) || 50;
   // Triple-stack (opt-in): require EMA(fastest) > EMA_FAST > EMA_SLOW (CE) / reverse (PE).
   // When OFF (default) the gate is the classic EMA_FAST-vs-EMA_SLOW cross.
-  var TRIPLE_STACK  = (process.env.SWING_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true";
-  var EMA_FASTEST   = parseInt(process.env.SWING_EMA_FASTEST || "9", 10) || 9;
+  var TRIPLE_STACK  = (process.env.EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED || "false").toLowerCase() === "true";
+  var EMA_FASTEST   = parseInt(process.env.EMA_RSI_ST_EMA_FASTEST || "9", 10) || 9;
   // Close-beyond-EMA gate (opt-in, default ON): the signal candle must CLOSE on the
   // trade side of a BASE EMA — EMA(fastest) when the triple stack is ON, else EMA(fast).
   // The stack/2-EMA gate only checks EMA *ordering*; without this, the strategy buys CE
   // into dips that close BELOW the base EMA while the lines stay stacked from an earlier
   // move (the 23-Jun midday-chop false breakouts: entered ~3–9pt below EMA9). The base
-  // EMA's PERIOD is whatever its Settings value is (SWING_EMA_FASTEST / SWING_EMA_FAST) —
+  // EMA's PERIOD is whatever its Settings value is (EMA_RSI_ST_EMA_FASTEST / EMA_RSI_ST_EMA_FAST) —
   // nothing hardcoded.
-  var CLOSE_BEYOND_EMA = (process.env.SWING_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true";
+  var CLOSE_BEYOND_EMA = (process.env.EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED || "true").toLowerCase() === "true";
   // Warm-up: the slow EMA needs EMA_SLOW closes; +5 buffer for RSI/SuperTrend to settle.
   var WARMUP = Math.max(EMA_SLOW, 30) + 5;
 
@@ -156,8 +156,8 @@ function getSignal(candles, opts) {
   var rsi    = rsiArr[rsiArr.length - 1];
 
   // ── Trend-confirmation source: SuperTrend(10,3) — the only directional gate. ──
-  var ST_PERIOD = parseInt(process.env.SWING_SUPERTREND_PERIOD || "10", 10) || 10;
-  var ST_MULT   = parseFloat(process.env.SWING_SUPERTREND_MULT || "3") || 3;
+  var ST_PERIOD = parseInt(process.env.EMA_RSI_ST_SUPERTREND_PERIOD || "10", 10) || 10;
+  var ST_MULT   = parseFloat(process.env.EMA_RSI_ST_SUPERTREND_MULT || "3") || 3;
   var stArr  = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
   var currST = stArr[stArr.length - 1];
 

@@ -31,7 +31,7 @@
  *   const replay = require("./tickReplay");
  *   const result = await replay.replaySession({
  *     date:      "2026-05-15",
- *     mode:      "pa-paper",     // pa-paper | scalp-paper | swing-paper | orb-paper
+ *     mode:      "pa-paper",     // pa-paper | bb_rsi-paper | ema_rsi_st-paper | orb-paper
  *     sessionId: undefined,      // optional — defaults to first start of the day
  *     speed:     0,              // 0 = as-fast-as-possible, >0 = ms delay between ticks
  *   });
@@ -72,17 +72,17 @@ function requestCancel() {
 // BUMP this whenever replay/strategy semantics change in a way that would alter
 // a past session's result, so stale cached results are invalidated rather than
 // silently served.
-// v2: SWING SAR chart dots now computed via calcSAR (was technicalindicators
+// v2: EMA_RSI_ST SAR chart dots now computed via calcSAR (was technicalindicators
 //     PSAR) — old cached chartData would still show the library-PSAR dots.
 // v3: (reverted) pre-market candle filter — backed out; behavior restored.
 // v4: invalidate v3 (pre-market-filter) cached results after the revert.
-// v5: SWING Parabolic SAR fully stripped (2026-06-12) — SuperTrend is the only
+// v5: EMA_RSI_ST Parabolic SAR fully stripped (2026-06-12) — SuperTrend is the only
 //     trend source, EMA21 the only SL. Trade results for recorded sessions are
 //     unchanged (they already ran SuperTrend + ema SL + 2-EMA), but cached
 //     chartData still carries the old SAR-dot overlay — invalidate it.
-// v6: SWING chartData now carries an EMA9 overlay line (the triple-stack input);
+// v6: EMA_RSI_ST chartData now carries an EMA9 overlay line (the triple-stack input);
 //     results unchanged, but invalidate so re-runs regenerate the chart with EMA9.
-// v7: confirmation-candle entry (SWING/SCALP). Snapshot replays of pre-feature
+// v7: confirmation-candle entry (EMA_RSI_ST/BB_RSI). Snapshot replays of pre-feature
 //     recordings now force the toggle OFF (the key is absent from their snapshot)
 //     so they reproduce their original entries — invalidate any results cached
 //     between the feature deploy and this fix, which may have run confirmation ON.
@@ -115,8 +115,8 @@ function _fileFingerprint(p) {
 // never allowed to leak in.
 const _EXPIRY_PIN_KEYS = [
   "OPTION_EXPIRY_OVERRIDE",          "OPTION_EXPIRY_TYPE",
-  "SWING_OPTION_EXPIRY_OVERRIDE",    "SWING_OPTION_EXPIRY_TYPE",
-  "SCALP_OPTION_EXPIRY_OVERRIDE",    "SCALP_OPTION_EXPIRY_TYPE",
+  "EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE",    "EMA_RSI_ST_OPTION_EXPIRY_TYPE",
+  "BB_RSI_OPTION_EXPIRY_OVERRIDE",    "BB_RSI_OPTION_EXPIRY_TYPE",
   "PA_OPTION_EXPIRY_OVERRIDE",       "PA_OPTION_EXPIRY_TYPE",
   "ORB_OPTION_EXPIRY_OVERRIDE",      "ORB_OPTION_EXPIRY_TYPE",
   "EMA9VWAP_OPTION_EXPIRY_OVERRIDE", "EMA9VWAP_OPTION_EXPIRY_TYPE",
@@ -418,8 +418,8 @@ function _applySettingsOverride(settings) {
 // state.sessionStart (ISO toISOString()) and state._sessionId (Date.now()).
 const _MODE_TO_CANONICAL_FILE = {
   "pa-paper":       "pa_paper_trades.json",
-  "scalp-paper":    "scalp_paper_trades.json",
-  "swing-paper":    "paper_trades.json",
+  "bb_rsi-paper":    "bb_rsi_paper_trades.json",
+  "ema_rsi_st-paper":    "ema_rsi_st_paper_trades.json",
   "orb-paper":      "orb_paper_trades.json",
   "ema9vwap-paper": "ema9vwap_paper_trades.json",
 };
@@ -432,8 +432,8 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   try { data = JSON.parse(fs.readFileSync(filePath, "utf-8")); }
   catch (_) { return null; }
   if (!data || !Array.isArray(data.sessions)) return null;
-  // session.date is written two ways across modes: swing stores a date-only
-  // string ("YYYY-MM-DD" via toISOString().split); pa/scalp/orb store
+  // session.date is written two ways across modes: EMA_RSI_ST stores a date-only
+  // string ("YYYY-MM-DD" via toISOString().split); pa/bb_rsi/orb store
   // a full ISO timestamp (date: state.sessionStart = new Date().toISOString()).
   // Normalise both to a UTC calendar day and match on that — Date.parse handles
   // either form. (The old 60s-window compare matched the ISO form but never the
@@ -446,7 +446,7 @@ function _lookupCanonicalSession(mode, sessionStartTs) {
   const sameDay = data.sessions.filter(s => s && _dayOf(s.date) === wantDate);
   if (sameDay.length === 0) return null;
   // Among same-day sessions (rare — usually one/day), pick the closest start.
-  // A full-ISO `date` is itself the start instant; swing's date-only `date`
+  // A full-ISO `date` is itself the start instant; EMA_RSI_ST's date-only `date`
   // relies on its IST-formatted `startTime` ("DD/MM/YYYY, HH:MM:SS").
   const parseIst = (s) => {
     const m = typeof s === "string"
@@ -558,14 +558,14 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     sl_appendSkipLog:      skipLogger.appendSkipLog,
     // sharedSocketState originals — paper /start handlers call setActive()
     // (and only some /stop paths call clear()). If the replay's /stop bails
-    // out early — e.g. swing /stop returns 400 when ptState.running became
+    // out early — e.g. EMA_RSI_ST /stop returns 400 when ptState.running became
     // false mid-replay — the real sharedSocketState gets stuck "active" and
     // the preflight banner falsely blocks the next replay. Stub the mutators
     // so replays can't touch real state at all; reads still pass through.
     ss_setActive:         sharedSocketState.setActive,
     ss_clear:             sharedSocketState.clear,
-    ss_setScalpActive:    sharedSocketState.setScalpActive,
-    ss_clearScalp:        sharedSocketState.clearScalp,
+    ss_setBbRsiActive:    sharedSocketState.setBbRsiActive,
+    ss_clearBbRsi:        sharedSocketState.clearBbRsi,
     ss_setPAActive:       sharedSocketState.setPAActive,
     ss_clearPA:           sharedSocketState.clearPA,
     ss_setOrbActive:      sharedSocketState.setOrbActive,
@@ -706,8 +706,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // state actually holds.
     sharedSocketState.setActive         = () => {};
     sharedSocketState.clear             = () => {};
-    sharedSocketState.setScalpActive    = () => {};
-    sharedSocketState.clearScalp        = () => {};
+    sharedSocketState.setBbRsiActive    = () => {};
+    sharedSocketState.clearBbRsi        = () => {};
     sharedSocketState.setPAActive       = () => {};
     sharedSocketState.clearPA           = () => {};
     sharedSocketState.setOrbActive      = () => {};
@@ -718,12 +718,12 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     // — replay's own JSONL output and the harness internals are untouched.
     fs.writeFileSync = function (file, data, opts) {
       const p = typeof file === "string" ? file : String(file);
-      if (/paper_trades\.json(\.tmp)?$/.test(p)) return; // silently drop
+      if (/ema_rsi_st_paper_trades\.json(\.tmp)?$/.test(p)) return; // silently drop
       return orig.fs_writeFileSync(file, data, opts);
     };
     fs.renameSync = function (from, to) {
       const t = typeof to === "string" ? to : String(to);
-      if (/paper_trades\.json$/.test(t)) return; // silently drop
+      if (/ema_rsi_st_paper_trades\.json$/.test(t)) return; // silently drop
       return orig.fs_renameSync(from, to);
     };
 
@@ -837,8 +837,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
     skipLogger.appendSkipLog        = orig.sl_appendSkipLog;
     sharedSocketState.setActive         = orig.ss_setActive;
     sharedSocketState.clear             = orig.ss_clear;
-    sharedSocketState.setScalpActive    = orig.ss_setScalpActive;
-    sharedSocketState.clearScalp        = orig.ss_clearScalp;
+    sharedSocketState.setBbRsiActive    = orig.ss_setBbRsiActive;
+    sharedSocketState.clearBbRsi        = orig.ss_clearBbRsi;
     sharedSocketState.setPAActive       = orig.ss_setPAActive;
     sharedSocketState.clearPA           = orig.ss_clearPA;
     sharedSocketState.setOrbActive      = orig.ss_setOrbActive;
@@ -859,7 +859,7 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
   function pumpTick(tick) {
     setNow(tick.t);
     // CRITICAL: also advance the wall clock to the tick's timestamp.
-    // Strategy entry gates (`isMarketHours()` in swingPaper/paPaper/scalpPaper)
+    // Strategy entry gates (`isMarketHours()` in emaRsiStPaper/paPaper/bbRsiPaper)
     // call `Date.now()` directly and reject every entry as "outside market
     // hours" when replay runs after-hours. Overriding Date.now() per tick
     // makes those gates see the recorded market-hours timestamp, so entries
@@ -885,8 +885,8 @@ function _createHarness({ optionTimeline, vixTimeline, oiTimeline, warmupCandles
 // ── Mode → route module mapping ─────────────────────────────────────────────
 const MODE_TO_MODULE = {
   "pa-paper":       "../routes/paPaper",
-  "scalp-paper":    "../routes/scalpPaper",
-  "swing-paper":    "../routes/swingPaper",
+  "bb_rsi-paper":    "../routes/bbRsiPaper",
+  "ema_rsi_st-paper":    "../routes/emaRsiStPaper",
   "orb-paper":      "../routes/orbPaper",
   "ema9vwap-paper": "../routes/ema9vwapPaper",
   // Live modes are NOT supported for replay (they place real orders). If a
@@ -952,7 +952,7 @@ function _invokeRoute(routeModule, method, urlPath, query = {}) {
  * Replay one recorded session end-to-end.
  *
  *   date                — "YYYY-MM-DD"
- *   mode                — pa-paper | scalp-paper | swing-paper | orb-paper
+ *   mode                — pa-paper | bb_rsi-paper | ema_rsi_st-paper | orb-paper
  *   sessionId           — optional
  *   speed               — 0 = as fast as possible, >0 = ms delay between ticks
  *   useCurrentSettings  — false (default): apply the recorded session-start
@@ -1049,17 +1049,17 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       // they actually took. Force the toggle OFF for any confirmation key the
       // snapshot doesn't pin, so pre-feature recordings reproduce exactly.
       const _snapSettings = Object.assign({}, data.sessionStart.settings || {});
-      for (const _k of ["SWING_CONFIRM_CANDLE_ENABLED", "SCALP_CONFIRM_CANDLE_ENABLED"]) {
+      for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
       restoreEnv = _applySettingsOverride(_snapSettings);
-      console.log(`📼 [replay] confirmation candle (snapshot): SWING=${process.env.SWING_CONFIRM_CANDLE_ENABLED} SCALP=${process.env.SCALP_CONFIRM_CANDLE_ENABLED}`);
+      console.log(`📼 [replay] confirmation candle (snapshot): EMA_RSI_ST=${process.env.EMA_RSI_ST_CONFIRM_CANDLE_ENABLED} BB_RSI=${process.env.BB_RSI_CONFIRM_CANDLE_ENABLED}`);
     } else {
       // Simulator mode honors current settings for everything EXCEPT the option
       // expiry — that's pinned to the recorded session so an old day resolves
       // its own contract instead of today's (see _pinnedExpirySettings).
       restoreEnv = _applySettingsOverride(_pinnedExpirySettings(data.sessionStart.settings));
-      console.log(`📼 [replay] confirmation candle (current settings): SWING=${process.env.SWING_CONFIRM_CANDLE_ENABLED||'true'} SCALP=${process.env.SCALP_CONFIRM_CANDLE_ENABLED||'true'}`);
+      console.log(`📼 [replay] confirmation candle (current settings): EMA_RSI_ST=${process.env.EMA_RSI_ST_CONFIRM_CANDLE_ENABLED||'true'} BB_RSI=${process.env.BB_RSI_CONFIRM_CANDLE_ENABLED||'true'}`);
     }
 
     // 3. Install harness (monkey-patch deps) with recorded warmup so paper's
@@ -1092,8 +1092,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     harness.setWallClock(data.sessionStart.t);
     let startResp;
     try {
-      // force=1 bypasses the swing 0DTE expiry-day refusal — that's a LIVE-trading
-      // safety gate (don't open a same-day-expiry swing). A historical replay must not
+      // force=1 bypasses the EMA_RSI_ST 0DTE expiry-day refusal — that's a LIVE-trading
+      // safety gate (don't open a same-day-expiry EMA_RSI_ST). A historical replay must not
       // be aborted by it (e.g. replaying an expiry-day session, or with an expiry
       // override equal to the replay date). Other modes ignore the flag.
       startResp = await _invokeRoute(routeMod, "GET", "/start", { force: "1" });
@@ -1133,7 +1133,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //    can freeze for 20+ seconds mid-trade in a long position.
     const YIELD_EVERY = 1;
     const GC_EVERY    = 2000;
-    // Heartbeat: a swing day is tens of thousands of ticks and, while flat,
+    // Heartbeat: an EMA_RSI_ST day is tens of thousands of ticks and, while flat,
     // the paper engine logs nothing for minutes — making the Replay activity
     // pane look stopped. Emit a progress line every HEARTBEAT_EVERY ticks so
     // the run always shows it's alive (additive logging — no effect on result).
@@ -1203,13 +1203,13 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     let tradeCount    = 0;
     if (statusResp && statusResp.body) {
       // /status/data trade field differs by mode:
-      //   pa/scalp/swing → trades
+      //   pa/bb_rsi/ema_rsi_st → trades
       //   orb            → sessionTrades
       sessionTrades = statusResp.body.trades || statusResp.body.sessionTrades || [];
       sessionPnl    = statusResp.body.sessionPnl != null ? statusResp.body.sessionPnl : 0;
       tradeCount    = statusResp.body.tradeCount != null ? statusResp.body.tradeCount : sessionTrades.length;
     }
-    // Fallback for /stop response shape (swingPaper returns session in body)
+    // Fallback for /stop response shape (emaRsiStPaper returns session in body)
     if ((!sessionTrades || sessionTrades.length === 0) && stopResp && stopResp.body && stopResp.body.session) {
       const sess = stopResp.body.session;
       sessionTrades = sess.trades || sess.sessionTrades || sessionTrades;
@@ -1223,8 +1223,8 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // spot the spike that drove an unrealistic exit P&L).
     //
     // Trade-record timing fields differ across paper modes:
-    //   scalp/PA: entryTimeMs + exitTimeMs (real wall-clock ms — best)
-    //   swing:    entry/exit (formatted IST strings) + entryBarTime/exitBarTime
+    //   bb_rsi/PA: entryTimeMs + exitTimeMs (real wall-clock ms — best)
+    //   ema_rsi_st:    entry/exit (formatted IST strings) + entryBarTime/exitBarTime
     //             (bar-bucket start in sec) + durationMs (may be null on intra-bar exits)
     //
     // We need the ACTUAL exit ms, not the bar-bucket start — a trade that
@@ -1318,12 +1318,12 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
 /**
  * List recorded sessions for a given date (or all available dates if none given).
  */
-// PA/Scalp/Swing paper have always recorded option LTPs at the poll site.
+// PA/BB_RSI/EMA_RSI_ST paper have always recorded option LTPs at the poll site.
 // ORB paper only started doing so after the option-LTP recording
 // fix landed — their session-start meta now includes `recordsOptionLtps:true`.
 // Sessions for these modes that lack the flag in meta cannot reproduce
 // trades on replay, so the UI marks them as incomplete and disables Replay.
-const LEGACY_ALWAYS_RECORDED_MODES = new Set(["pa-paper", "scalp-paper", "swing-paper", "ema9vwap-paper"]);
+const LEGACY_ALWAYS_RECORDED_MODES = new Set(["pa-paper", "bb_rsi-paper", "ema_rsi_st-paper", "ema9vwap-paper"]);
 
 function _sessionIsReplayable(startEvt) {
   if (!startEvt || !startEvt.mode) return false;
@@ -1375,8 +1375,8 @@ function listRecordings(date) {
 function replayPreflight() {
   const sharedSocketState = require("../utils/sharedSocketState");
   const activeModes = [];
-  if (sharedSocketState.isActive())          activeModes.push(sharedSocketState.getMode() || "swing");
-  if (sharedSocketState.isScalpActive())     activeModes.push(sharedSocketState.getScalpMode() || "scalp");
+  if (sharedSocketState.isActive())          activeModes.push(sharedSocketState.getMode() || "ema_rsi_st");
+  if (sharedSocketState.isBbRsiActive())     activeModes.push(sharedSocketState.getBbRsiMode() || "bb_rsi");
   if (sharedSocketState.isPAActive())        activeModes.push(sharedSocketState.getPAMode() || "pa");
   if (sharedSocketState.isOrbActive())       activeModes.push(sharedSocketState.getOrbMode() || "orb");
   if (activeModes.length > 0) {
@@ -1413,14 +1413,14 @@ function replayPreflight() {
 function forceClearSharedState() {
   const sharedSocketState = require("../utils/sharedSocketState");
   const before = {
-    swing:    sharedSocketState.getMode(),
-    scalp:    sharedSocketState.getScalpMode(),
+    ema_rsi_st:    sharedSocketState.getMode(),
+    bb_rsi:    sharedSocketState.getBbRsiMode(),
     pa:       sharedSocketState.getPAMode(),
     orb:      sharedSocketState.getOrbMode(),
     replayInProgress: _replayInProgress,
   };
   sharedSocketState.clear();
-  sharedSocketState.clearScalp();
+  sharedSocketState.clearBbRsi();
   sharedSocketState.clearPA();
   sharedSocketState.clearOrb();
   _replayInProgress = false;

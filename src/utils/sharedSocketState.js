@@ -4,22 +4,22 @@
  * Tracks which modes are currently using the socket.
  *
  * RULES:
- * - SWING_PAPER and SWING_LIVE are mutually exclusive (same 15-min strategy)
- * - SCALP_LIVE and SCALP_PAPER are mutually exclusive (same 3-min strategy)
- * - SWING_LIVE + SCALP_LIVE can run in parallel (different brokers, different timeframes)
- * - SWING_PAPER + SCALP_PAPER can run in parallel
+ * - EMA_RSI_ST_PAPER and EMA_RSI_ST_LIVE are mutually exclusive (same 15-min strategy)
+ * - BB_RSI_LIVE and BB_RSI_PAPER are mutually exclusive (same 3-min strategy)
+ * - EMA_RSI_ST_LIVE + BB_RSI_LIVE can run in parallel (different brokers, different timeframes)
+ * - EMA_RSI_ST_PAPER + BB_RSI_PAPER can run in parallel
  *
- * The primary mode (SWING_PAPER | SWING_LIVE) owns the socket start/stop.
- * Scalp modes piggyback on the socket via addCallback/removeCallback.
- * If no primary mode is running, scalp can start the socket itself.
+ * The primary mode (EMA_RSI_ST_PAPER | EMA_RSI_ST_LIVE) owns the socket start/stop.
+ * BB_RSI modes piggyback on the socket via addCallback/removeCallback.
+ * If no primary mode is running, bb_rsi can start the socket itself.
  * ─────────────────────────────────────────────────────────────
  */
 
-// Primary mode: "SWING_PAPER" | "SWING_LIVE" | null
+// Primary mode: "EMA_RSI_ST_PAPER" | "EMA_RSI_ST_LIVE" | null
 let primaryMode = null;
 
-// Scalp mode: "SCALP_LIVE" | "SCALP_PAPER" | null
-let scalpMode = null;
+// BB_RSI mode: "BB_RSI_LIVE" | "BB_RSI_PAPER" | null
+let bbRsiMode = null;
 
 // Price Action mode: "PA_LIVE" | "PA_PAPER" | null
 let paMode = null;
@@ -48,22 +48,22 @@ function getMode() {
   return primaryMode;
 }
 
-// ── Scalp mode (3-min) ────────────────────────────────────────────────────
+// ── BB_RSI mode (3-min) ────────────────────────────────────────────────────
 
-function setScalpActive(mode) {
-  scalpMode = mode;
+function setBbRsiActive(mode) {
+  bbRsiMode = mode;
 }
 
-function clearScalp() {
-  scalpMode = null;
+function clearBbRsi() {
+  bbRsiMode = null;
 }
 
-function isScalpActive() {
-  return scalpMode !== null;
+function isBbRsiActive() {
+  return bbRsiMode !== null;
 }
 
-function getScalpMode() {
-  return scalpMode;
+function getBbRsiMode() {
+  return bbRsiMode;
 }
 
 // ── Price Action mode (5-min) ─────────────────────────────────────────────
@@ -124,28 +124,28 @@ function getEma9VwapMode() {
 
 /** Any mode using the socket? */
 function isAnyActive() {
-  return primaryMode !== null || scalpMode !== null || paMode !== null ||
+  return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
          orbMode !== null || ema9vwapMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
 function canStart(mode) {
   switch (mode) {
-    case "SWING_LIVE":
-      if (primaryMode === "SWING_PAPER") return { allowed: false, reason: "Paper Trade is running — stop it first" };
-      if (primaryMode === "SWING_LIVE")  return { allowed: false, reason: "Live Trade is already running" };
+    case "EMA_RSI_ST_LIVE":
+      if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is running — stop it first" };
+      if (primaryMode === "EMA_RSI_ST_LIVE")  return { allowed: false, reason: "Live Trade is already running" };
       return { allowed: true };
-    case "SWING_PAPER":
-      if (primaryMode === "SWING_LIVE")  return { allowed: false, reason: "Live Trade is running — stop it first" };
-      if (primaryMode === "SWING_PAPER") return { allowed: false, reason: "Paper Trade is already running" };
+    case "EMA_RSI_ST_PAPER":
+      if (primaryMode === "EMA_RSI_ST_LIVE")  return { allowed: false, reason: "Live Trade is running — stop it first" };
+      if (primaryMode === "EMA_RSI_ST_PAPER") return { allowed: false, reason: "Paper Trade is already running" };
       return { allowed: true };
-    case "SCALP_LIVE":
-      if (scalpMode === "SCALP_PAPER") return { allowed: false, reason: "Scalp Paper is running — stop it first" };
-      if (scalpMode === "SCALP_LIVE")  return { allowed: false, reason: "Scalp Live is already running" };
+    case "BB_RSI_LIVE":
+      if (bbRsiMode === "BB_RSI_PAPER") return { allowed: false, reason: "BB_RSI Paper is running — stop it first" };
+      if (bbRsiMode === "BB_RSI_LIVE")  return { allowed: false, reason: "BB_RSI Live is already running" };
       return { allowed: true };
-    case "SCALP_PAPER":
-      if (scalpMode === "SCALP_LIVE")  return { allowed: false, reason: "Scalp Live is running — stop it first" };
-      if (scalpMode === "SCALP_PAPER") return { allowed: false, reason: "Scalp Paper is already running" };
+    case "BB_RSI_PAPER":
+      if (bbRsiMode === "BB_RSI_LIVE")  return { allowed: false, reason: "BB_RSI Live is running — stop it first" };
+      if (bbRsiMode === "BB_RSI_PAPER") return { allowed: false, reason: "BB_RSI Paper is already running" };
       return { allowed: true };
     case "PA_LIVE":
       if (paMode === "PA_PAPER") return { allowed: false, reason: "Price Action Paper is running — stop it first" };
@@ -179,8 +179,8 @@ function canStart(mode) {
 module.exports = {
   // Primary (backward compatible)
   setActive, clear, isActive, getMode,
-  // Scalp
-  setScalpActive, clearScalp, isScalpActive, getScalpMode,
+  // BB_RSI
+  setBbRsiActive, clearBbRsi, isBbRsiActive, getBbRsiMode,
   // Price Action
   setPAActive, clearPA, isPAActive, getPAMode,
   // ORB

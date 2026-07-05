@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>NIFTY OPTIONS — Scalping Strategy</title>
+<title>NIFTY OPTIONS — BB_RSI Strategy</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
@@ -369,8 +369,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div class="cover">
   <div class="badge">NIFTY OPTIONS</div>
-  <h1>Scalping Strategy</h1>
-  <div class="sub">V6.1 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
+  <h1>BB_RSI Strategy</h1>
+  <div class="sub">V6.1 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI BB_RSI</div>
   <div class="version">V6.1 (rechecked 2026-07-05) &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; Confirmation Candle &bull; Profit Lock + Hard Stop + BB re-entry + PSAR-Flip Exit</div>
   <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI (70/40) &bull; VIX Filter &bull; Profit Lock &bull; Wide Hard Stop &bull; BB Re-Entry &bull; PSAR-Flip Exit</div>
 </div>
@@ -382,13 +382,13 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">now</span> Current State (V6.1) &mdash; the authoritative summary</h2>
 <div class="card card-green">
-  <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>scalp_bb_cpr.js</code> + <code>scalpPaper.js</code> on 2026-06-14. <em>(2026-06-15) verification recheck: corrected the BB re-entry exit &mdash; the <strong>primary</strong> stop runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>), with a candle-close BB re-entry only as a backstop; and re-ordered the exit stack to match runtime (per-tick BB band touch &rarr; hard stop &rarr; profit lock, then candle-close BB re-entry &rarr; PSAR flip). Earlier copy described BB re-entry as candle-close only.</em></p>
+  <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>bb_rsi.js</code> + <code>bbRsiPaper.js</code> on 2026-06-14. <em>(2026-06-15) verification recheck: corrected the BB re-entry exit &mdash; the <strong>primary</strong> stop runs <strong>per-tick</strong> (band touch, armed after <code>BB_RSI_BB_REENTRY_ARM_PTS</code>), with a candle-close BB re-entry only as a backstop; and re-ordered the exit stack to match runtime (per-tick BB band touch &rarr; hard stop &rarr; profit lock, then candle-close BB re-entry &rarr; PSAR flip). Earlier copy described BB re-entry as candle-close only.</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (40). A <strong>confirmation candle</strong> (<code>SCALP_CONFIRM_CANDLE_ENABLED</code> + <code>SCALP_CONFIRM_OUTSIDE_BAND</code>, both on by default) then gates the fill: the signal candle only <em>arms</em>, and the <strong>next</strong> candle must close beyond the signal close AND outside the band before entering (at that close). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
+    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; BB_RSI_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; BB_RSI_RSI_PE_THRESHOLD</code> (40). A <strong>confirmation candle</strong> (<code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> + <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code>, both on by default) then gates the fill: the signal candle only <em>arms</em>, and the <strong>next</strong> candle must close beyond the signal close AND outside the band before entering (at that close). Optional far-PSAR skip (<code>BB_RSI_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>BB_RSI_ADX_ENABLED</code>, off), optional <code>BB_RSI_RSI_TURNING</code>.</li>
     <li><strong>Initial SL = PSAR value at entry</strong> &mdash; no clamp, <strong>no trail</strong>, not an intra-tick stop. Display + risk-sizing only.</li>
-    <li><strong>Exit stack:</strong> per-tick checks (evaluated every tick, in order) &mdash; (1) <strong>BB re-entry / band touch</strong> (<code>SCALP_BB_REENTRY_EXIT</code>): exit the instant spot crosses back through the band, armed only after the breakout extends <code>SCALP_BB_REENTRY_ARM_PTS</code> (10) past it; (2) <strong>wide hard stop</strong> <code>SCALP_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) <strong>profit lock</strong> in spot points &mdash; arm at <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>SCALP_PROFIT_LOCK_PCT</code> (50%), ratchets up. Then on each candle close &mdash; (4) <strong>candle-close BB re-entry</strong> (close back inside the band, no arm guard) and (5) <strong>PSAR flip</strong>. Plus EOD / daily-loss / max-trades / per-side SL cooldown.</li>
-    <li><strong>Optional trend source:</strong> <code>SCALP_USE_SUPERTREND</code> (off) swaps PSAR for SuperTrend(10,3) for direction, the entry SL line, and the flip exit.</li>
-    <li><strong>No CPR / VWAP / EMA</strong> in the logic &mdash; the <code>scalp_bb_cpr.js</code> filename is vestigial. The hard stop coexists with the profit lock (the reverted &ldquo;V6.3&rdquo; was a <em>fixed-points trailing stop replacing the lock</em>, not this cap).</li>
+    <li><strong>Exit stack:</strong> per-tick checks (evaluated every tick, in order) &mdash; (1) <strong>BB re-entry / band touch</strong> (<code>BB_RSI_BB_REENTRY_EXIT</code>): exit the instant spot crosses back through the band, armed only after the breakout extends <code>BB_RSI_BB_REENTRY_ARM_PTS</code> (10) past it; (2) <strong>wide hard stop</strong> <code>BB_RSI_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) <strong>profit lock</strong> in spot points &mdash; arm at <code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>BB_RSI_PROFIT_LOCK_PCT</code> (50%), ratchets up. Then on each candle close &mdash; (4) <strong>candle-close BB re-entry</strong> (close back inside the band, no arm guard) and (5) <strong>PSAR flip</strong>. Plus EOD / daily-loss / max-trades / per-side SL cooldown.</li>
+    <li><strong>Optional trend source:</strong> <code>BB_RSI_USE_SUPERTREND</code> (off) swaps PSAR for SuperTrend(10,3) for direction, the entry SL line, and the flip exit.</li>
+    <li><strong>No CPR / VWAP / EMA</strong> in the logic &mdash; the <code>bb_rsi.js</code> filename is vestigial. The hard stop coexists with the profit lock (the reverted &ldquo;V6.3&rdquo; was a <em>fixed-points trailing stop replacing the lock</em>, not this cap).</li>
   </ul>
 </div>
 
@@ -397,12 +397,12 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">00</span> What's New in V6.1 (2026-05-29) &mdash; Far-PSAR Filter + Profit Lock</h2>
 <div class="card card-green">
-  <p><strong>The R-multiple break-even is replaced by a P&amp;L-space profit lock, and a far-PSAR entry filter caps risk.</strong> Where the body sections below (incl. the V6 card) mention a "break-even snap" or <code>SCALP_BREAKEVEN_TRIGGER_R</code> / <code>SCALP_BREAKEVEN_OFFSET_PTS</code>, the V6.1 rules here take precedence.</p>
+  <p><strong>The R-multiple break-even is replaced by a P&amp;L-space profit lock, and a far-PSAR entry filter caps risk.</strong> Where the body sections below (incl. the V6 card) mention a "break-even snap" or <code>BB_RSI_BREAKEVEN_TRIGGER_R</code> / <code>BB_RSI_BREAKEVEN_OFFSET_PTS</code>, the V6.1 rules here take precedence.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Why:</strong> the no-clamp PSAR SL made "risk" huge (often 100&ndash;400 pts), so the break-even trigger (0.7 &times; risk) almost never armed &mdash; winners round-tripped to the candle-close PSAR flip (replay: a +&#8377;650 peak gave back to &minus;&#8377;1,187).</li>
-    <li><strong>Profit lock (the only intra-tick exit, spot POINTS).</strong> Once the peak favourable spot move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak. The floor <strong>ratchets up</strong>: peak 100pts &rarr; lock 50pts, peak 200pts &rarr; lock 100pts. Points-based, so it works even on spot-proxy sessions. Removed <code>SCALP_BREAKEVEN_TRIGGER_R</code> / <code>SCALP_BREAKEVEN_OFFSET_PTS</code>.</li>
-    <li><strong>Far-PSAR entry filter.</strong> New <code>SCALP_MAX_ENTRY_SL_PTS</code> (default 50): skip entries where PSAR sits farther than N pts from close. A freshly-flipped SAR can be 100s of pts away &rarr; uncapped risk; this bounds it without a hard SL clamp.</li>
-    <li><strong>BB re-entry exit (failed breakout).</strong> New <code>SCALP_BB_REENTRY_EXIT</code> (default on): when price crosses back inside the band the breakout has failed &rarr; exit immediately (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>). The primary version runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>=10 of breakout) so a one-candle V-reversal exits at the band line; a candle-close check (no arm guard) backstops it. Cuts loss bleed before the slower PSAR flip.</li>
+    <li><strong>Profit lock (the only intra-tick exit, spot POINTS).</strong> Once the peak favourable spot move &ge; <code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>BB_RSI_PROFIT_LOCK_PCT</code> (default 50)% of the peak. The floor <strong>ratchets up</strong>: peak 100pts &rarr; lock 50pts, peak 200pts &rarr; lock 100pts. Points-based, so it works even on spot-proxy sessions. Removed <code>BB_RSI_BREAKEVEN_TRIGGER_R</code> / <code>BB_RSI_BREAKEVEN_OFFSET_PTS</code>.</li>
+    <li><strong>Far-PSAR entry filter.</strong> New <code>BB_RSI_MAX_ENTRY_SL_PTS</code> (default 50): skip entries where PSAR sits farther than N pts from close. A freshly-flipped SAR can be 100s of pts away &rarr; uncapped risk; this bounds it without a hard SL clamp.</li>
+    <li><strong>BB re-entry exit (failed breakout).</strong> New <code>BB_RSI_BB_REENTRY_EXIT</code> (default on): when price crosses back inside the band the breakout has failed &rarr; exit immediately (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>). The primary version runs <strong>per-tick</strong> (band touch, armed after <code>BB_RSI_BB_REENTRY_ARM_PTS</code>=10 of breakout) so a one-candle V-reversal exits at the band line; a candle-close check (no arm guard) backstops it. Cuts loss bleed before the slower PSAR flip.</li>
     <li>Exit reasons are now <code>Profit lock</code> / <code>BB re-entry</code> / <code>PSAR flip</code> / <code>EOD square-off</code>. Applied across paper (canonical), live, backtest, replay.</li>
   </ul>
 </div>
@@ -412,10 +412,10 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">00&middot;v6</span> What's New in V6 (2026-05-29) &mdash; Simplified RSI + PSAR-Flip Exit</h2>
 <div class="card card-green">
-  <p><strong>Entry RSI simplified to two keys and the exit is now purely PSAR-flip driven.</strong> This supersedes the V5 entry-cap / SL-source / trail description below. Where the body sections (01&ndash;15) still mention RSI caps, <code>SCALP_SL_USE_SAR</code>, a PSAR trail, or a prev-candle trail, the V6 rules here take precedence.</p>
+  <p><strong>Entry RSI simplified to two keys and the exit is now purely PSAR-flip driven.</strong> This supersedes the V5 entry-cap / SL-source / trail description below. Where the body sections (01&ndash;15) still mention RSI caps, <code>BB_RSI_SL_USE_SAR</code>, a PSAR trail, or a prev-candle trail, the V6 rules here take precedence.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Entry &mdash; two RSI keys only.</strong> CE: <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (default raised <code>62 &rarr; 70</code>). PE: <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (default lowered <code>42 &rarr; 40</code>). The overbought/oversold caps <code>SCALP_RSI_CE_MAX</code> / <code>SCALP_RSI_PE_MIN</code> were <strong>removed</strong>. BB-break + PSAR-side conditions unchanged.</li>
-    <li><strong>Initial SL = PSAR value at entry, no clamp.</strong> The keys <code>SCALP_SL_USE_SAR</code>, <code>SCALP_MAX_SL_PTS</code>, and <code>SCALP_MIN_SL_PTS</code> were <strong>removed</strong>. (V6.1: a far-PSAR entry filter now bounds how far this can be.)</li>
+    <li><strong>Entry &mdash; two RSI keys only.</strong> CE: <code>RSI &gt; BB_RSI_RSI_CE_THRESHOLD</code> (default raised <code>62 &rarr; 70</code>). PE: <code>RSI &lt; BB_RSI_RSI_PE_THRESHOLD</code> (default lowered <code>42 &rarr; 40</code>). The overbought/oversold caps <code>BB_RSI_RSI_CE_MAX</code> / <code>BB_RSI_RSI_PE_MIN</code> were <strong>removed</strong>. BB-break + PSAR-side conditions unchanged.</li>
+    <li><strong>Initial SL = PSAR value at entry, no clamp.</strong> The keys <code>BB_RSI_SL_USE_SAR</code>, <code>BB_RSI_MAX_SL_PTS</code>, and <code>BB_RSI_MIN_SL_PTS</code> were <strong>removed</strong>. (V6.1: a far-PSAR entry filter now bounds how far this can be.)</li>
     <li><strong>Exit &mdash; candle-close PSAR flip + (V6.1) profit lock.</strong> There is no PSAR trail and no prev-candle trail. <em>The V6 break-even snap was replaced by the V6.1 profit lock &mdash; see the card above.</em></li>
     <li>Applied consistently across <strong>paper (canonical), live, backtest, and replay</strong>.</li>
   </ul>
@@ -426,19 +426,19 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">00&middot;v5</span> [Legacy &mdash; superseded by V6] What's New in v5.0.0 (2026-05-28)</h2>
 <div class="card card-purple">
-  <p><strong>The scalp strategy was redefined to a clean Bollinger-Band break + PSAR-side + RSI design.</strong> This supersedes the V4 pipeline described in the older "What's New" notes below (kept as version history). <em>Note: the entry caps, <code>SCALP_SL_USE_SAR</code>, and trail described in this V5 card were themselves superseded by V6 (see the card above).</em></p>
+  <p><strong>The bb_rsi strategy was redefined to a clean Bollinger-Band break + PSAR-side + RSI design.</strong> This supersedes the V4 pipeline described in the older "What's New" notes below (kept as version history). <em>Note: the entry caps, <code>BB_RSI_SL_USE_SAR</code>, and trail described in this V5 card were themselves superseded by V6 (see the card above).</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Entry (evaluated at candle close &mdash; all three required):</strong>
       <ul style="padding-left:20px;">
-        <li><strong>CE</strong>: close &ge; <strong>BB upper</strong> &middot; <strong>PSAR below close</strong> &middot; <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (default raised <code>55 &rarr; 62</code>), blocked above <code>SCALP_RSI_CE_MAX</code> (78).</li>
-        <li><strong>PE</strong>: close &le; <strong>BB lower</strong> &middot; <strong>PSAR above close</strong> &middot; <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (default lowered <code>45 &rarr; 42</code>), blocked below <code>SCALP_RSI_PE_MIN</code> (22).</li>
+        <li><strong>CE</strong>: close &ge; <strong>BB upper</strong> &middot; <strong>PSAR below close</strong> &middot; <code>RSI &gt; BB_RSI_RSI_CE_THRESHOLD</code> (default raised <code>55 &rarr; 62</code>), blocked above <code>BB_RSI_RSI_CE_MAX</code> (78).</li>
+        <li><strong>PE</strong>: close &le; <strong>BB lower</strong> &middot; <strong>PSAR above close</strong> &middot; <code>RSI &lt; BB_RSI_RSI_PE_THRESHOLD</code> (default lowered <code>45 &rarr; 42</code>), blocked below <code>BB_RSI_RSI_PE_MIN</code> (22).</li>
       </ul>
     </li>
-    <li><strong>PSAR is now an entry confirmation</strong> (was exit-only). Optional <code>SCALP_RSI_TURNING</code> still requires RSI momentum to confirm direction.</li>
-    <li><strong>Exit simplified:</strong> initial SL &rarr; <strong>break-even snap</strong> (<code>SCALP_BREAKEVEN_TRIGGER_R</code>) &rarr; <strong>trailing stop</strong> (prev-candle or PSAR per <code>SCALP_SL_USE_SAR</code>, tighten-only) &rarr; <strong>PSAR flip</strong> (SAR mode only) &rarr; bid-ask spread guard &rarr; EOD.</li>
-    <li><strong>Resolution:</strong> <code>SCALP_RESOLUTION</code> now offers <strong>3 or 5-min</strong> (was 5-only).</li>
-    <li><strong>Removed</strong> (code + Settings UI fields): tiered <strong>% profit-trail</strong> (<code>SCALP_TRAIL_START/PCT/TIERS/GRACE</code>), <strong>time-stop</strong> (<code>SCALP_TIME_STOP_*</code>), <strong>pause-override</strong> (<code>SCALP_PAUSE_OVERRIDE_*</code>), <strong>BB squeeze</strong> (<code>SCALP_BB_SQUEEZE_FILTER</code> / <code>SCALP_BB_MIN_WIDTH_PCT</code>), <strong>CPR-narrow</strong> (<code>SCALP_CPR_NARROW_PCT</code>), <strong>approach</strong> (<code>SCALP_REQUIRE_APPROACH</code>), <strong>body-ratio</strong> (<code>SCALP_MIN_BODY_RATIO</code>), <strong>trend filter</strong> (<code>SCALP_TREND_*</code>), and <strong>activity filter</strong> (<code>SCALP_ACTIVITY_*</code>).</li>
-    <li><strong>Guards kept:</strong> VIX gate, per-side SL cooldown (<code>SCALP_SL_PAUSE_CANDLES</code> / <code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> / <code>SCALP_PER_SIDE_PAUSE</code>), daily trade/loss caps, prev-candle SL caps, trading window, expiry-day-only.</li>
+    <li><strong>PSAR is now an entry confirmation</strong> (was exit-only). Optional <code>BB_RSI_RSI_TURNING</code> still requires RSI momentum to confirm direction.</li>
+    <li><strong>Exit simplified:</strong> initial SL &rarr; <strong>break-even snap</strong> (<code>BB_RSI_BREAKEVEN_TRIGGER_R</code>) &rarr; <strong>trailing stop</strong> (prev-candle or PSAR per <code>BB_RSI_SL_USE_SAR</code>, tighten-only) &rarr; <strong>PSAR flip</strong> (SAR mode only) &rarr; bid-ask spread guard &rarr; EOD.</li>
+    <li><strong>Resolution:</strong> <code>BB_RSI_RESOLUTION</code> now offers <strong>3 or 5-min</strong> (was 5-only).</li>
+    <li><strong>Removed</strong> (code + Settings UI fields): tiered <strong>% profit-trail</strong> (<code>BB_RSI_TRAIL_START/PCT/TIERS/GRACE</code>), <strong>time-stop</strong> (<code>BB_RSI_TIME_STOP_*</code>), <strong>pause-override</strong> (<code>BB_RSI_PAUSE_OVERRIDE_*</code>), <strong>BB squeeze</strong> (<code>BB_RSI_BB_SQUEEZE_FILTER</code> / <code>BB_RSI_BB_MIN_WIDTH_PCT</code>), <strong>CPR-narrow</strong> (<code>BB_RSI_CPR_NARROW_PCT</code>), <strong>approach</strong> (<code>BB_RSI_REQUIRE_APPROACH</code>), <strong>body-ratio</strong> (<code>BB_RSI_MIN_BODY_RATIO</code>), <strong>trend filter</strong> (<code>BB_RSI_TREND_*</code>), and <strong>activity filter</strong> (<code>BB_RSI_ACTIVITY_*</code>).</li>
+    <li><strong>Guards kept:</strong> VIX gate, per-side SL cooldown (<code>BB_RSI_SL_PAUSE_CANDLES</code> / <code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code> / <code>BB_RSI_PER_SIDE_PAUSE</code>), daily trade/loss caps, prev-candle SL caps, trading window, expiry-day-only.</li>
   </ul>
 </div>
 
@@ -449,15 +449,15 @@
 <div class="card card-purple">
   <p><strong>Defaults tightening sweep + breakeven SL on a multiple-of-risk trigger.</strong> The entry pipeline (BB + RSI + V4 quality filters + trend filter) and PSAR trail are unchanged. The corrections target stale defaults that had drifted from production usage during the data-collection window, plus a new R-multiple breakeven gate.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong><code>SCALP_MAX_SL_PTS</code> tightened from <code>25</code> &rarr; <code>12</code></strong> &mdash; the 25-pt cap was wider than the prev-candle structural SL ever actually generated; the practical max-loss-per-trade is governed by 12 pts &times; lot size, not 25. Tightening the cap to the empirical ceiling stops bad-data days from masking SL distance bugs.</li>
-    <li><strong><code>SCALP_TRAIL_START</code> raised from <code>200</code> &rarr; <code>600</code> (&#8377;)</strong> &mdash; activating the profit trail at &#8377;200 was clipping winners on their first pullback. With <code>SCALP_BREAKEVEN_TRIGGER_R</code> picking up "lock-in BE" duty (see below), the trail can wait for &#8377;600 of peak profit before engaging.</li>
-    <li><strong><code>SCALP_TRAIL_TIERS</code> updated</strong> to <code>600:70,1200:78,2500:85,5000:90,10000:93</code> &mdash; tighter %-lock at lower peaks (was 500:55, 1000:60 in v4.5.0). At &#8377;600 peak, locks 70% (was 55%); at &#8377;1200 peak, locks 78% (was 60%). Net: faster lock at modest wins, same behaviour on big winners.</li>
-    <li><strong>NEW: <code>SCALP_BREAKEVEN_TRIGGER_R</code> + <code>SCALP_BREAKEVEN_OFFSET_PTS</code></strong> (defaults <code>0.7</code> and <code>1</code> pt). Once peak P&amp;L &ge; 0.7 &times; initial risk, move SL to entry + 1 pt offset. Stops winners reversing into losers. <code>R=0</code> disables. Independent of the percentage-trail tiers above &mdash; runs first.</li>
-    <li><strong><code>SCALP_MAX_DAILY_LOSS</code> raised from <code>2000</code> &rarr; <code>4000</code> (&#8377;)</strong> &mdash; the 2000-cap was tripping on normal-loss days and stopping the strategy mid-session. 4000 matches the empirical 2&sigma; daily loss observed during the data-collection window.</li>
-    <li><strong><code>SCALP_SL_PAUSE_CANDLES</code> raised from <code>1</code> &rarr; <code>3</code></strong> &mdash; 1 candle (5 min) was too short to let the post-SL chop clear; 3 candles (15 min) gives the side enough time to reset.</li>
-    <li><strong><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> exposed</strong> (default <code>2</code>) &mdash; extra candles added per consecutive SL after the 2nd (2nd SL = +2, 3rd SL = +4 candles). Was previously hardcoded.</li>
-    <li><strong>Operational additions</strong>: Tick Recorder + Replay (record/replay scalp sessions deterministically via <code>/replay</code>), Live Harness DRY-RUN gate (<code>LIVE_HARNESS_DRY_RUN=true</code> default &mdash; both this AND <code>SCALP_ENABLED</code> must be set correctly for real orders), Real-Time monitor expansion (Scalp card now sits alongside Swing / PA / ORB).</li>
-    <li><strong>Sibling strategies launched</strong> &mdash; ORB now runs on the same Fyers socket fan-out, gated by its own <code>*_MODE_ENABLED</code> toggle. Scalp can run in parallel with it.</li>
+    <li><strong><code>BB_RSI_MAX_SL_PTS</code> tightened from <code>25</code> &rarr; <code>12</code></strong> &mdash; the 25-pt cap was wider than the prev-candle structural SL ever actually generated; the practical max-loss-per-trade is governed by 12 pts &times; lot size, not 25. Tightening the cap to the empirical ceiling stops bad-data days from masking SL distance bugs.</li>
+    <li><strong><code>BB_RSI_TRAIL_START</code> raised from <code>200</code> &rarr; <code>600</code> (&#8377;)</strong> &mdash; activating the profit trail at &#8377;200 was clipping winners on their first pullback. With <code>BB_RSI_BREAKEVEN_TRIGGER_R</code> picking up "lock-in BE" duty (see below), the trail can wait for &#8377;600 of peak profit before engaging.</li>
+    <li><strong><code>BB_RSI_TRAIL_TIERS</code> updated</strong> to <code>600:70,1200:78,2500:85,5000:90,10000:93</code> &mdash; tighter %-lock at lower peaks (was 500:55, 1000:60 in v4.5.0). At &#8377;600 peak, locks 70% (was 55%); at &#8377;1200 peak, locks 78% (was 60%). Net: faster lock at modest wins, same behaviour on big winners.</li>
+    <li><strong>NEW: <code>BB_RSI_BREAKEVEN_TRIGGER_R</code> + <code>BB_RSI_BREAKEVEN_OFFSET_PTS</code></strong> (defaults <code>0.7</code> and <code>1</code> pt). Once peak P&amp;L &ge; 0.7 &times; initial risk, move SL to entry + 1 pt offset. Stops winners reversing into losers. <code>R=0</code> disables. Independent of the percentage-trail tiers above &mdash; runs first.</li>
+    <li><strong><code>BB_RSI_MAX_DAILY_LOSS</code> raised from <code>2000</code> &rarr; <code>4000</code> (&#8377;)</strong> &mdash; the 2000-cap was tripping on normal-loss days and stopping the strategy mid-session. 4000 matches the empirical 2&sigma; daily loss observed during the data-collection window.</li>
+    <li><strong><code>BB_RSI_SL_PAUSE_CANDLES</code> raised from <code>1</code> &rarr; <code>3</code></strong> &mdash; 1 candle (5 min) was too short to let the post-SL chop clear; 3 candles (15 min) gives the side enough time to reset.</li>
+    <li><strong><code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code> exposed</strong> (default <code>2</code>) &mdash; extra candles added per consecutive SL after the 2nd (2nd SL = +2, 3rd SL = +4 candles). Was previously hardcoded.</li>
+    <li><strong>Operational additions</strong>: Tick Recorder + Replay (record/replay bb_rsi sessions deterministically via <code>/replay</code>), Live Harness DRY-RUN gate (<code>LIVE_HARNESS_DRY_RUN=true</code> default &mdash; both this AND <code>BB_RSI_ENABLED</code> must be set correctly for real orders), Real-Time monitor expansion (BB_RSI card now sits alongside EMA_RSI_ST / PA / ORB).</li>
+    <li><strong>Sibling strategies launched</strong> &mdash; ORB now runs on the same Fyers socket fan-out, gated by its own <code>*_MODE_ENABLED</code> toggle. BB_RSI can run in parallel with it.</li>
   </ul>
 </div>
 
@@ -468,13 +468,13 @@
 <div class="card card-purple">
   <p><strong>Pause override on retest-and-resume</strong>, trail / breakeven fixes, additive per-trade context logging (BB / RSI / trend + MFE), and the CPR-narrow filter exposed in Settings <em>(all since removed &mdash; the current strategy has no CPR gate)</em>. The BB + RSI entry, V4 quality filters, trend filter, PSAR trailing, and trail-tier ladder remain unchanged at the signal layer.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Pause override on retest-and-resume</strong> &mdash; <code>SCALP_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>) + <code>SCALP_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>). After a per-side SL hit, scalp normally cools down on that side for N candles. This blocked re-entry on the common pattern where price retests through the entry (hitting SL), then resumes in the original direction &mdash; the bot sat idle while the actual move played out. New gate: when a candle closes &ge; <code>SCALP_PAUSE_OVERRIDE_PTS</code> past the failed-entry spot in the original direction, the per-side pause is released early and the consecutive-SL counter for that side is reset. Only confirmed resumption clears the pause; genuine fails still cool down normally. New state field <code>_lastSLSpotBySide: { CE, PE }</code> records the spot at which each side last failed.</li>
+    <li><strong>Pause override on retest-and-resume</strong> &mdash; <code>BB_RSI_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>) + <code>BB_RSI_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>). After a per-side SL hit, bb_rsi normally cools down on that side for N candles. This blocked re-entry on the common pattern where price retests through the entry (hitting SL), then resumes in the original direction &mdash; the bot sat idle while the actual move played out. New gate: when a candle closes &ge; <code>BB_RSI_PAUSE_OVERRIDE_PTS</code> past the failed-entry spot in the original direction, the per-side pause is released early and the consecutive-SL counter for that side is reset. Only confirmed resumption clears the pause; genuine fails still cool down normally. New state field <code>_lastSLSpotBySide: { CE, PE }</code> records the spot at which each side last failed.</li>
     <li><strong>Trail uses PnL floor instead of spot-delta model</strong> &mdash; fixes mismatches between the trail % the user configured and the rupee floor actually enforced.</li>
     <li><strong>Breakeven snap fires per-tick, not per-bar</strong> &mdash; moves the BE jump out of the once-per-candle path so it can fire intra-bar once profit clears the threshold. Matches the rest of the tick-driven exit stack.</li>
-    <li><strong>Per-trade context logging (additive)</strong> &mdash; each scalp trade record now captures BB / RSI / trend context at entry and <strong>MFE</strong> (max-favorable excursion in points) over the life of the trade. Pure logging &mdash; no entry, exit, SL, or trail logic changed. Feeds the active paper-trade data-collection schema.</li>
-    <li><strong><code>SCALP_CPR_NARROW_PCT</code> editable in Settings</strong> &mdash; the CPR-narrow filter threshold was code-only; now a Settings UI knob. <em>(Legacy: the CPR-narrow filter was removed in V5 &mdash; the current strategy has no CPR gate and does not read this key.)</em></li>
+    <li><strong>Per-trade context logging (additive)</strong> &mdash; each bb_rsi trade record now captures BB / RSI / trend context at entry and <strong>MFE</strong> (max-favorable excursion in points) over the life of the trade. Pure logging &mdash; no entry, exit, SL, or trail logic changed. Feeds the active paper-trade data-collection schema.</li>
+    <li><strong><code>BB_RSI_CPR_NARROW_PCT</code> editable in Settings</strong> &mdash; the CPR-narrow filter threshold was code-only; now a Settings UI knob. <em>(Legacy: the CPR-narrow filter was removed in V5 &mdash; the current strategy has no CPR gate and does not read this key.)</em></li>
     <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL is the canonical export format (CSV/PDF dropped).</li>
-    <li><strong>Settings checkpoint notes</strong> &mdash; daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's scalp trades.</li>
+    <li><strong>Settings checkpoint notes</strong> &mdash; daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's bb_rsi trades.</li>
     <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on the activity-log header.</li>
     <li><strong>Per-card Open Status + Copy Day Log buttons</strong> on <code>/realtime</code>; Copy Day Log copies raw entry + skip JSONL, not the human-readable summary.</li>
     <li><strong>gzip on all responses</strong> &mdash; ~80% size reduction on Settings.</li>
@@ -483,43 +483,43 @@
 
 <h2><span class="sec-num">00b</span> v4.4.1 Highlights (2026-05-02)</h2>
 <div class="card card-purple">
-  <p>Unified Real-Time Monitor &mdash; one screen to see Scalp alongside Swing and PA. UI / observability only; <strong>no scalp signal-layer, V4 filters, trend filter, SL, or trail-tier changes</strong>.</p>
+  <p>Unified Real-Time Monitor &mdash; one screen to see BB_RSI alongside EMA_RSI_ST and PA. UI / observability only; <strong>no bb_rsi signal-layer, V4 filters, trend filter, SL, or trail-tier changes</strong>.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>New route <code>/realtime</code></strong> with sidebar entry <strong>&#128225; Real-Time</strong>. PAPER &harr; LIVE toggle at the top right; polls every 4 seconds.</li>
-    <li><strong>Scalp card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
-    <li><strong>Rollup table</strong> includes Scalp's row alongside Swing + PA + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
-    <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/scalp-paper/status</code> and <code>/scalp-live/status</code>. The Real-Time Monitor stays reachable while Scalp Live is active.</li>
+    <li><strong>BB_RSI card</strong> shows running state, open option position (side / symbol / qty / entry spot / option entry &amp; current LTP / live spot / points moved / SL / entry time / unrealised P&amp;L with %) or "FLAT &mdash; no open position", plus today's tiles (Trades, W/L, Session P&amp;L) and live LTP / last tick / tick count footer.</li>
+    <li><strong>Rollup table</strong> includes BB_RSI's row alongside EMA_RSI_ST + PA + a TOTAL row, columns: Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Today-only &mdash; no cumulative-across-all-sessions number on this page.</li>
+    <li><strong>Read-only</strong> &mdash; no Start / Stop / Exit on this screen; drill-down for actions still happens at <code>/bb_rsi-paper/status</code> and <code>/bb_rsi-live/status</code>. The Real-Time Monitor stays reachable while BB_RSI Live is active.</li>
     <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes.</li>
-    <li><strong>No new backend aggregation</strong> &mdash; the browser polls Scalp's existing <code>/scalp-paper/status/data</code> or <code>/scalp-live/status/data</code> in parallel with Swing + PA, so the unified screen always reads the same source the dedicated Scalp pages already trust.</li>
+    <li><strong>No new backend aggregation</strong> &mdash; the browser polls BB_RSI's existing <code>/bb_rsi-paper/status/data</code> or <code>/bb_rsi-live/status/data</code> in parallel with EMA_RSI_ST + PA, so the unified screen always reads the same source the dedicated BB_RSI pages already trust.</li>
   </ul>
 </div>
 
 <h2><span class="sec-num">00c</span> v4.4.0 Highlights (2026-04-27)</h2>
 <div class="card card-purple">
-  <p>Paper-parity sweep into Scalp Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No scalp signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
+  <p>Paper-parity sweep into BB_RSI Live, Sync-to-Local for trade data, and history Restore from append-only JSONL. <strong>No bb_rsi signal-layer changes</strong> &mdash; BB + RSI + PSAR entry, V4 quality filters, trend filter, and trail tiers all unchanged.</p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Scalp Live ports trail-grace</strong> &mdash; <code>SCALP_TRAIL_GRACE_SECS</code> now applies to live as well as paper, so a first-tick noise spike + tiny pullback can no longer kill a live trade in the first few seconds (initial SL still active throughout). Live also gains <code>entryTimeMs</code> on the trade record.</li>
-    <li><strong>Live audit + skip-log wiring</strong> &mdash; <code>scalpLive</code> now wires <code>skipLogger</code> + <code>logNearMiss</code> across the signal=NONE / VIX / spread blocks (matching <code>scalpPaper</code>). Trade record captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on exit &mdash; same schema as Scalp Paper, feeding the active paper-trade data-collection JSONL.</li>
-    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /scalp-paper/history/restore</code> rebuilds a deleted Scalp session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>. New helper <code>readDailyTrades("scalp", date)</code> in <code>src/utils/tradeLogger.js</code>.</li>
-    <li><strong>Sync to Local</strong> &mdash; Dashboard button now streams <code>~/trading-data/</code> as a <code>tar.gz</code> (<code>/sync/info</code> + <code>/sync/download-all</code>), so Scalp paper + live trade logs and the active-position file can be mirrored locally without SSH.</li>
-    <li><strong>Settings cleanup</strong> &mdash; two unimported legacy scalp strategies (<code>scalp_ema9_rsi.js</code>, <code>scalp_ema9_rsi_v2.js</code>) deleted; the active scalp strategy stays <code>scalp_bb_cpr.js</code>. Settings UI now also exposes the shared trade-guards keys (<code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code>) plus <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>.</li>
-    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from Swing into <strong>Common &mdash; Instrument</strong>. They've always been read by all 3 engines (including Scalp); just a clearer placement.</li>
-    <li><strong>Consolidation date normalized</strong> to <code>YYYY-MM-DD</code> &mdash; older Scalp sessions now line up correctly on <code>/consolidation</code> daily/monthly/yearly roll-ups.</li>
+    <li><strong>BB_RSI Live ports trail-grace</strong> &mdash; <code>BB_RSI_TRAIL_GRACE_SECS</code> now applies to live as well as paper, so a first-tick noise spike + tiny pullback can no longer kill a live trade in the first few seconds (initial SL still active throughout). Live also gains <code>entryTimeMs</code> on the trade record.</li>
+    <li><strong>Live audit + skip-log wiring</strong> &mdash; <code>bbRsiLive</code> now wires <code>skipLogger</code> + <code>logNearMiss</code> across the signal=NONE / VIX / spread blocks (matching <code>bbRsiPaper</code>). Trade record captures <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surfaces them on exit &mdash; same schema as BB_RSI Paper, feeding the active paper-trade data-collection JSONL.</li>
+    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /bb_rsi-paper/history/restore</code> rebuilds a deleted BB_RSI session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>. New helper <code>readDailyTrades("bb_rsi", date)</code> in <code>src/utils/tradeLogger.js</code>.</li>
+    <li><strong>Sync to Local</strong> &mdash; Dashboard button now streams <code>~/trading-data/</code> as a <code>tar.gz</code> (<code>/sync/info</code> + <code>/sync/download-all</code>), so BB_RSI paper + live trade logs and the active-position file can be mirrored locally without SSH.</li>
+    <li><strong>Settings cleanup</strong> &mdash; two unimported legacy bb_rsi strategies (<code>bb_rsi_ema9_rsi.js</code>, <code>bb_rsi_ema9_rsi_v2.js</code>) deleted; the active bb_rsi strategy stays <code>bb_rsi.js</code>. Settings UI now also exposes the shared trade-guards keys (<code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code>) plus <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>.</li>
+    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from EMA_RSI_ST into <strong>Common &mdash; Instrument</strong>. They've always been read by all 3 engines (including BB_RSI); just a clearer placement.</li>
+    <li><strong>Consolidation date normalized</strong> to <code>YYYY-MM-DD</code> &mdash; older BB_RSI sessions now line up correctly on <code>/consolidation</code> daily/monthly/yearly roll-ups.</li>
   </ul>
 </div>
 
 <h2><span class="sec-num">00d</span> v4.3.0 Highlights (2026-04-24)</h2>
 <div class="card card-purple">
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Trend filter (NEW)</strong> &mdash; <code>SCALP_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>SCALP_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>SCALP_TREND_MOMENTUM_LOOKBACK=5</code>, <code>SCALP_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
-    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>SCALP_VIX_MAX_ENTRY</code> and <code>SCALP_VIX_STRONG_ONLY</code> let scalp tolerate higher volatility than swing. Both fall back to <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code> when unset.</li>
+    <li><strong>Trend filter (NEW)</strong> &mdash; <code>BB_RSI_TREND_FILTER</code> (default <code>true</code>) blocks BB breakouts against the prevailing direction. Uses BB-mid slope (<code>BB_RSI_TREND_MID_SLOPE_LOOKBACK=3</code>) plus N-candle momentum (<code>BB_RSI_TREND_MOMENTUM_LOOKBACK=5</code>, <code>BB_RSI_TREND_MOMENTUM_PCT=0.15</code>) to classify direction. Reduces whipsaws in choppy zones.</li>
+    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>BB_RSI_VIX_MAX_ENTRY</code> and <code>BB_RSI_VIX_STRONG_ONLY</code> let bb_rsi tolerate higher volatility than swing. Both fall back to <code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code> when unset.</li>
     <li><strong>Trade guards (shared)</strong> &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>) blocks entry on wide option spreads; <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>) auto-exits trades stuck flat (theta-bleed guard).</li>
-    <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /scalp-live/reset</code> (Reset button on the Scalp Live status page) to clear scalp live history without restarting.</li>
-    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade aggregation including Scalp Live; Day View panel + per-mode breakdown.</li>
+    <li><strong>Per-mode reset endpoint</strong> &mdash; <code>POST /bb_rsi-live/reset</code> (Reset button on the BB_RSI Live status page) to clear bb_rsi live history without restarting.</li>
+    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade aggregation including BB_RSI Live; Day View panel + per-mode breakdown.</li>
     <li><strong>Per-filter near-miss audit</strong> &mdash; logs every candle that missed entry by exactly one filter (visible in <code>/logs</code>).</li>
-    <li><strong>Crash-safe JSONL trade log</strong> &mdash; every scalp exit appended to <code>~/trading-data/scalp_paper_trades_log.jsonl</code> + per-day files in <code>~/trading-data/trades/</code>.</li>
-    <li><strong>Per-module dashboard card</strong> for Scalp with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
-    <li><strong>Telegram crash + startup-recovery alerts</strong> apply to scalp sessions too.</li>
+    <li><strong>Crash-safe JSONL trade log</strong> &mdash; every bb_rsi exit appended to <code>~/trading-data/bb_rsi_paper_trades_log.jsonl</code> + per-day files in <code>~/trading-data/trades/</code>.</li>
+    <li><strong>Per-module dashboard card</strong> for BB_RSI with Paper/Live toggle and cumulative P&amp;L chart (red/green by sign).</li>
+    <li><strong>Telegram crash + startup-recovery alerts</strong> apply to bb_rsi sessions too.</li>
   </ul>
 </div>
 
@@ -528,16 +528,16 @@
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>V4 Quality Filters (env-toggleable, exposed in Settings UI)</strong>
       <ul style="padding-left:20px; margin-top:6px;">
-        <li><code>SCALP_REQUIRE_APPROACH</code> &mdash; reject first-touch breakouts where prev candle was on opposite half of BB.</li>
-        <li><code>SCALP_MIN_BODY_RATIO</code> &mdash; require entry candle body to be at least N% of range; rejects doji / long-wick breakouts.</li>
+        <li><code>BB_RSI_REQUIRE_APPROACH</code> &mdash; reject first-touch breakouts where prev candle was on opposite half of BB.</li>
+        <li><code>BB_RSI_MIN_BODY_RATIO</code> &mdash; require entry candle body to be at least N% of range; rejects doji / long-wick breakouts.</li>
       </ul>
     </li>
-    <li><strong>Trail grace period</strong> (<code>SCALP_TRAIL_GRACE_SECS</code>) &mdash; suppress trail-exit for first N secs after entry; initial SL remains active.</li>
-    <li><strong>Live NIFTY candlestick chart with BB overlay</strong> on scalp paper / live pages.</li>
+    <li><strong>Trail grace period</strong> (<code>BB_RSI_TRAIL_GRACE_SECS</code>) &mdash; suppress trail-exit for first N secs after entry; initial SL remains active.</li>
+    <li><strong>Live NIFTY candlestick chart with BB overlay</strong> on bb_rsi paper / live pages.</li>
     <li><strong>History page</strong> &mdash; per-session delete + view modal.</li>
-    <li><strong>Telegram</strong> &mdash; dedicated scalp toggles, master <code>TG_ENABLED</code>, consolidated 15:30 IST report.</li>
+    <li><strong>Telegram</strong> &mdash; dedicated bb_rsi toggles, master <code>TG_ENABLED</code>, consolidated 15:30 IST report.</li>
     <li><strong>Rate-limit backoff</strong> on option LTP + spot-proxy trail fallback when broker throttles.</li>
-    <li><strong>Default scalp resolution locked to 5-min</strong>.</li>
+    <li><strong>Default bb_rsi resolution locked to 5-min</strong>.</li>
   </ul>
 </div>
 
@@ -547,7 +547,7 @@
 <h2><span class="sec-num">01</span> Strategy Overview</h2>
 
 <div class="highlight">
-  <strong>SCALP_BB_PSAR_RSI_V5</strong> is a 3/5-minute timeframe scalping strategy for NIFTY index options (CE/PE).
+  <strong>BB_RSI_BB_PSAR_RSI_V5</strong> is a 3/5-minute timeframe bb_rsi strategy for NIFTY index options (CE/PE).
   It enters short-term momentum breakouts using a Bollinger-Band break, confirmed by the Parabolic SAR side and RSI momentum (and a far-PSAR entry filter that caps risk). Exits: a per-tick <strong>profit lock</strong> that banks small gains (and ratchets up), plus a candle-close PSAR flip for trend runners. The initial SL is the PSAR value at entry (no clamp) and does not trail.
 </div>
 
@@ -680,7 +680,7 @@
 <h3 class="blue">RSI (14) &mdash; Momentum Confirmation</h3>
 <div class="card card-blue">
   <h4 class="blue">CE Entry: RSI &gt; 70 | PE Entry: RSI &lt; 40</h4>
-  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>SCALP_RSI_CE_THRESHOLD</code>, default 70), while PE signals need bearish momentum (RSI below <code>SCALP_RSI_PE_THRESHOLD</code>, default 40). These are the only two RSI keys &mdash; the V5 overbought/oversold caps (<code>SCALP_RSI_CE_MAX</code> / <code>SCALP_RSI_PE_MIN</code>) were removed in V6. Optional <code>SCALP_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
+  <p>RSI filters out false BB breakouts. A CE signal requires bullish momentum (RSI above <code>BB_RSI_RSI_CE_THRESHOLD</code>, default 70), while PE signals need bearish momentum (RSI below <code>BB_RSI_RSI_PE_THRESHOLD</code>, default 40). These are the only two RSI keys &mdash; the V5 overbought/oversold caps (<code>BB_RSI_RSI_CE_MAX</code> / <code>BB_RSI_RSI_PE_MIN</code>) were removed in V6. Optional <code>BB_RSI_RSI_TURNING</code> also requires RSI to be moving in the trade's direction.</p>
 </div>
 
 <div class="rsi-gauge">
@@ -701,7 +701,7 @@
 <h3 class="blue">Parabolic SAR &mdash; Entry Confirmation + Flip Exit</h3>
 <div class="card card-blue">
   <h4 class="blue">Parameters: Step 0.02, Max 0.2</h4>
-  <p>PSAR plays two roles. <strong>At entry</strong> it confirms direction — a CE needs the SAR <em>below</em> the close (bullish), a PE needs it <em>above</em> the close (bearish) — and seeds the initial SL value (no clamp). <strong>After entry</strong> the SL does <em>not</em> trail; the position is managed by the points-based profit lock and hard stop. When SAR flips to the opposite side of price <strong>on a candle close</strong>, it signals trend reversal and triggers an exit. (Set <code>SCALP_USE_SUPERTREND=true</code> to use SuperTrend(10,3) in place of PSAR for all three.)</p>
+  <p>PSAR plays two roles. <strong>At entry</strong> it confirms direction — a CE needs the SAR <em>below</em> the close (bullish), a PE needs it <em>above</em> the close (bearish) — and seeds the initial SL value (no clamp). <strong>After entry</strong> the SL does <em>not</em> trail; the position is managed by the points-based profit lock and hard stop. When SAR flips to the opposite side of price <strong>on a candle close</strong>, it signals trend reversal and triggers an exit. (Set <code>BB_RSI_USE_SUPERTREND=true</code> to use SuperTrend(10,3) in place of PSAR for all three.)</p>
 </div>
 
 <!-- CSS PSAR diagram -->
@@ -750,7 +750,7 @@
 <h3 class="blue">VIX Filter &mdash; Market Regime</h3>
 <div class="card card-blue">
   <h4 class="blue">Max 20 (All Blocked Above) | Strong Only Above 16</h4>
-  <p>India VIX measures market fear. High VIX means wide swings, false breakouts, and elevated option premiums — poor conditions for scalping. The filter blocks entries in volatile regimes.</p>
+  <p>India VIX measures market fear. High VIX means wide swings, false breakouts, and elevated option premiums — poor conditions for bb_rsi. The filter blocks entries in volatile regimes.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -769,7 +769,7 @@
 
 <div class="card card-purple">
   <h4 class="purple">Confirmation Candle (default on)</h4>
-  <p>The candle that meets all three conditions does <strong>not</strong> enter on its own &mdash; it only <strong>arms</strong> the signal. With <code>SCALP_CONFIRM_CANDLE_ENABLED</code> and <code>SCALP_CONFIRM_OUTSIDE_BAND</code> both on (the defaults), the <strong>next</strong> candle must <strong>close beyond the signal candle's close</strong> and still be <strong>outside the band</strong> before the trade fires &mdash; the position is taken at that confirming close. This filters out one-bar intra-candle pokes through the band that snap straight back. (With <code>SCALP_CONFIRM_OUTSIDE_BAND</code> off, entry instead fires intra-bar on the first cross of the trigger level; with <code>SCALP_CONFIRM_CANDLE_ENABLED</code> off, the signal candle enters directly.)</p>
+  <p>The candle that meets all three conditions does <strong>not</strong> enter on its own &mdash; it only <strong>arms</strong> the signal. With <code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> and <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code> both on (the defaults), the <strong>next</strong> candle must <strong>close beyond the signal candle's close</strong> and still be <strong>outside the band</strong> before the trade fires &mdash; the position is taken at that confirming close. This filters out one-bar intra-candle pokes through the band that snap straight back. (With <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code> off, entry instead fires intra-bar on the first cross of the trigger level; with <code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> off, the signal candle enters directly.)</p>
 </div>
 
 <!-- Detailed BB chart with annotations -->
@@ -869,7 +869,7 @@
     <div class="step"><div class="step-num green">1</div><div>Candle Close &ge; Bollinger Upper Band</div></div>
     <div class="step"><div class="step-num green">2</div><div>PSAR below the close (bullish)</div></div>
     <div class="step"><div class="step-num green">3</div><div>RSI &gt; 70 (no overbought cap in V6)</div></div>
-    <div class="step"><div class="step-num green">4</div><div>Initial SL = PSAR value at entry (no clamp, display/sizing only). Far-PSAR entries skipped (<code>SCALP_MAX_ENTRY_SL_PTS</code>)</div></div>
+    <div class="step"><div class="step-num green">4</div><div>Initial SL = PSAR value at entry (no clamp, display/sizing only). Far-PSAR entries skipped (<code>BB_RSI_MAX_ENTRY_SL_PTS</code>)</div></div>
     <div class="step"><div class="step-num green">5</div><div>Select ATM Call option</div></div>
   </div>
 
@@ -878,13 +878,13 @@
     <div class="step"><div class="step-num red">1</div><div>Candle Close &le; Bollinger Lower Band</div></div>
     <div class="step"><div class="step-num red">2</div><div>PSAR above the close (bearish)</div></div>
     <div class="step"><div class="step-num red">3</div><div>RSI &lt; 40 (no oversold floor in V6)</div></div>
-    <div class="step"><div class="step-num red">4</div><div>Initial SL = PSAR value at entry (no clamp, display/sizing only). Far-PSAR entries skipped (<code>SCALP_MAX_ENTRY_SL_PTS</code>)</div></div>
+    <div class="step"><div class="step-num red">4</div><div>Initial SL = PSAR value at entry (no clamp, display/sizing only). Far-PSAR entries skipped (<code>BB_RSI_MAX_ENTRY_SL_PTS</code>)</div></div>
     <div class="step"><div class="step-num red">5</div><div>Select ATM Put option</div></div>
   </div>
 </div>
 
 <div class="card card-purple" style="margin-top:12px;">
-  <p style="font-size:0.85rem;"><strong>Confirmation candle (default on):</strong> the candle that meets the conditions above only <em>arms</em> the signal. Before the CE/PE actually enters, the <strong>next</strong> candle must close beyond the signal candle's close <em>and</em> outside the band (<code>SCALP_CONFIRM_CANDLE_ENABLED</code> + <code>SCALP_CONFIRM_OUTSIDE_BAND</code>) &mdash; the fill happens at that confirming close, not on the signal candle.</p>
+  <p style="font-size:0.85rem;"><strong>Confirmation candle (default on):</strong> the candle that meets the conditions above only <em>arms</em> the signal. Before the CE/PE actually enters, the <strong>next</strong> candle must close beyond the signal candle's close <em>and</em> outside the band (<code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> + <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code>) &mdash; the fill happens at that confirming close, not on the signal candle.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -899,13 +899,13 @@
   <tbody>
     <tr><td><strong>Market Hours</strong></td><td>9:21 AM &ndash; 2:30 PM IST</td><td>No entries before warm-up or near EOD</td></tr>
     <tr><td><strong>Candle Warmup</strong></td><td>&ge; 30 candles loaded</td><td>BB(20), RSI(14), PSAR all need warm-up data</td></tr>
-    <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -<code>SCALP_MAX_DAILY_LOSS</code></td><td>Kill switch halts all entries for the day</td></tr>
-    <tr><td><strong>Max Daily Trades</strong></td><td>&lt; <code>SCALP_MAX_DAILY_TRADES</code></td><td>Prevents overtrading on choppy days</td></tr>
-    <tr><td><strong>SL Pause Cooldown</strong></td><td>N candles after SL hit</td><td>Configurable via <code>SCALP_SL_PAUSE_CANDLES</code>; <code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> adds candles per consecutive SL (per-side when <code>SCALP_PER_SIDE_PAUSE</code>)</td></tr>
-    <tr><td><strong>VIX Filter</strong></td><td>VIX &le; <code>SCALP_VIX_MAX_ENTRY</code> (or inherits <code>VIX_MAX_ENTRY</code>)</td><td>Strong-only band between <code>SCALP_VIX_STRONG_ONLY</code> and the max</td></tr>
+    <tr><td><strong>Daily Loss Limit</strong></td><td>Day P&amp;L &gt; -<code>BB_RSI_MAX_DAILY_LOSS</code></td><td>Kill switch halts all entries for the day</td></tr>
+    <tr><td><strong>Max Daily Trades</strong></td><td>&lt; <code>BB_RSI_MAX_DAILY_TRADES</code></td><td>Prevents overtrading on choppy days</td></tr>
+    <tr><td><strong>SL Pause Cooldown</strong></td><td>N candles after SL hit</td><td>Configurable via <code>BB_RSI_SL_PAUSE_CANDLES</code>; <code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code> adds candles per consecutive SL (per-side when <code>BB_RSI_PER_SIDE_PAUSE</code>)</td></tr>
+    <tr><td><strong>VIX Filter</strong></td><td>VIX &le; <code>BB_RSI_VIX_MAX_ENTRY</code> (or inherits <code>VIX_MAX_ENTRY</code>)</td><td>Strong-only band between <code>BB_RSI_VIX_STRONG_ONLY</code> and the max</td></tr>
     <tr><td><strong>PSAR Side</strong></td><td>SAR below close (CE) / above close (PE)</td><td>Directional confirmation; part of the entry rule</td></tr>
     <tr><td><strong>Bid-Ask Spread</strong></td><td>Spread &le; <code>MAX_BID_ASK_SPREAD_PTS</code> (default 2)</td><td>Reject wide spreads; fails open if quotes missing</td></tr>
-    <tr><td><strong>No Open Position</strong></td><td>No active scalp trade</td><td>Only one scalp position at a time</td></tr>
+    <tr><td><strong>No Open Position</strong></td><td>No active bb_rsi trade</td><td>Only one bb_rsi position at a time</td></tr>
   </tbody>
 </table>
 
@@ -926,7 +926,7 @@
 </div>
 
 <div class="highlight">
-  <p><strong>V6.1:</strong> the initial SL is simply the <strong>PSAR value at entry</strong> &mdash; no clamp, no prev-candle source, bounded only by the far-PSAR entry filter (<code>SCALP_MAX_ENTRY_SL_PTS</code>). PSAR is always on the correct side at entry (CE requires SAR below close, PE above). The SL itself does <strong>not</strong> trail and is <strong>not</strong> an intra-tick stop; it is used for risk sizing + display. The position is managed by the <strong>profit lock</strong> (per-tick, P&amp;L space) and the <strong>candle-close PSAR flip</strong>.</p>
+  <p><strong>V6.1:</strong> the initial SL is simply the <strong>PSAR value at entry</strong> &mdash; no clamp, no prev-candle source, bounded only by the far-PSAR entry filter (<code>BB_RSI_MAX_ENTRY_SL_PTS</code>). PSAR is always on the correct side at entry (CE requires SAR below close, PE above). The SL itself does <strong>not</strong> trail and is <strong>not</strong> an intra-tick stop; it is used for risk sizing + display. The position is managed by the <strong>profit lock</strong> (per-tick, P&amp;L space) and the <strong>candle-close PSAR flip</strong>.</p>
 </div>
 
 <div class="card card-green">
@@ -953,28 +953,28 @@
     <div class="exit-badge p1">P1</div>
     <div>
       <strong style="color:var(--red);">BB Re-Entry / Band Touch (per tick &mdash; primary structural stop)</strong>
-      <p style="font-size:0.85rem;">The breakout has failed the instant spot crosses back through the band (CE: spot below BB upper; PE: spot above BB lower). Runs <strong>per-tick</strong> (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. <strong>Arming guard:</strong> only arms once the breakout has extended &ge; <code>SCALP_BB_REENTRY_ARM_PTS</code> (default 10) past the band, so a fresh entry sitting right at the band is not knocked out by an immediate noise wick. Gated by <code>SCALP_BB_REENTRY_EXIT</code> (default on); band from completed candles.</p>
+      <p style="font-size:0.85rem;">The breakout has failed the instant spot crosses back through the band (CE: spot below BB upper; PE: spot above BB lower). Runs <strong>per-tick</strong> (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. <strong>Arming guard:</strong> only arms once the breakout has extended &ge; <code>BB_RSI_BB_REENTRY_ARM_PTS</code> (default 10) past the band, so a fresh entry sitting right at the band is not knocked out by an immediate noise wick. Gated by <code>BB_RSI_BB_REENTRY_EXIT</code> (default on); band from completed candles.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p2">P2</div>
     <div>
       <strong style="color:var(--orange);">Hard Stop + Profit Lock (per tick)</strong>
-      <p style="font-size:0.85rem;">Per tick, both spot-points based. <strong>Hard stop</strong> (downside, checked first): exit if the trade moves <code>SCALP_STOP_LOSS_PTS</code> (default 30) against entry &mdash; a wide catastrophic cap that only clips deep failed-fade excursions. <strong>Profit lock</strong> (upside): once the peak favourable move &ge; <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>SCALP_PROFIT_LOCK_PCT</code> (default 50)% of the peak (floor ratchets up). <code>0</code> disables each.</p>
+      <p style="font-size:0.85rem;">Per tick, both spot-points based. <strong>Hard stop</strong> (downside, checked first): exit if the trade moves <code>BB_RSI_STOP_LOSS_PTS</code> (default 30) against entry &mdash; a wide catastrophic cap that only clips deep failed-fade excursions. <strong>Profit lock</strong> (upside): once the peak favourable move &ge; <code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code> (default 25), exit when it gives back below <code>BB_RSI_PROFIT_LOCK_PCT</code> (default 50)% of the peak (floor ratchets up). <code>0</code> disables each.</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p3">P3</div>
     <div>
       <strong style="color:var(--yellow);">Candle-Close BB Re-Entry + PSAR Flip</strong>
-      <p style="font-size:0.85rem;">On candle close, first the <strong>BB re-entry</strong> backstop: if price closed back inside the band the breakout failed &rarr; exit (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>; no arm guard on this candle-close path). Then the <strong>PSAR flip</strong>: if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. The flip handles trend runners beyond the profit lock. (Both follow SuperTrend instead when <code>SCALP_USE_SUPERTREND</code> is on.)</p>
+      <p style="font-size:0.85rem;">On candle close, first the <strong>BB re-entry</strong> backstop: if price closed back inside the band the breakout failed &rarr; exit (CE: <code>close &lt; BB.upper</code>; PE: <code>close &gt; BB.lower</code>; no arm guard on this candle-close path). Then the <strong>PSAR flip</strong>: if PSAR has crossed to the opposite side of price (CE: below&rarr;above; PE: above&rarr;below) the trend has flipped &rarr; exit. The flip handles trend runners beyond the profit lock. (Both follow SuperTrend instead when <code>BB_RSI_USE_SUPERTREND</code> is on.)</p>
     </div>
   </div>
   <div class="exit-item">
     <div class="exit-badge p4">P4</div>
     <div>
       <strong style="color:var(--text2);">EOD Square-off</strong>
-      <p style="font-size:0.85rem;">All open positions squared off near 3:20&ndash;3:30 PM IST. No overnight holding for scalp trades.</p>
+      <p style="font-size:0.85rem;">All open positions squared off near 3:20&ndash;3:30 PM IST. No overnight holding for bb_rsi trades.</p>
     </div>
   </div>
 </div>
@@ -1045,16 +1045,16 @@
 <h2><span class="sec-num">09</span> Profit Lock Mechanism</h2>
 
 <div class="card card-yellow">
-  <h4 style="color:var(--yellow);">Bank small scalp profits; let runners ride</h4>
-  <p>No percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. The profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>SCALP_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor. On the downside a <strong>wide hard stop</strong> (<code>SCALP_STOP_LOSS_PTS</code>, default 30) caps the catastrophic failed-fade losses without touching the small scalps. Both are points-based, so they are independent of option pricing. The per-tick BB re-entry (band touch) and the candle-close PSAR flip handle the rest.</p>
+  <h4 style="color:var(--yellow);">Bank small bb_rsi profits; let runners ride</h4>
+  <p>No percentage spot-trail (tiered), no trailing SL, and no break-even-to-entry snap. The profit lock works in <strong>spot points</strong>: once the peak favourable move reaches <code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code>, it exits as soon as the move gives back below <code>BB_RSI_PROFIT_LOCK_PCT</code>% of the peak. The floor <strong>ratchets up</strong> with the peak, so a winner that keeps running keeps a higher locked floor. On the downside a <strong>wide hard stop</strong> (<code>BB_RSI_STOP_LOSS_PTS</code>, default 30) caps the catastrophic failed-fade losses without touching the small scalps. Both are points-based, so they are independent of option pricing. The per-tick BB re-entry (band touch) and the candle-close PSAR flip handle the rest.</p>
 </div>
 
 <table>
   <thead><tr><th>Parameter</th><th>Default</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td>25</td><td>Arm the lock once the favourable spot move (points) reaches this. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td>50</td><td>Once armed, exit when open P&amp;L falls below this % of the peak. Ratchets with the peak.</td></tr>
-    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td>30</td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
+    <tr><td><code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code></td><td>25</td><td>Arm the lock once the favourable spot move (points) reaches this. <code>0</code> disables.</td></tr>
+    <tr><td><code>BB_RSI_PROFIT_LOCK_PCT</code></td><td>50</td><td>Once armed, exit when open P&amp;L falls below this % of the peak. Ratchets with the peak.</td></tr>
+    <tr><td><code>BB_RSI_STOP_LOSS_PTS</code></td><td>30</td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
   </tbody>
 </table>
 
@@ -1063,7 +1063,7 @@
 </div>
 
 <div class="card card-purple">
-  <p style="font-size:0.85rem;">The lock is evaluated <strong>per-tick</strong> (not once per candle), because most scalp trades resolve inside the entry bar. It is the only intra-tick exit.</p>
+  <p style="font-size:0.85rem;">The lock is evaluated <strong>per-tick</strong> (not once per candle), because most bb_rsi trades resolve inside the entry bar. It is the only intra-tick exit.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1081,7 +1081,7 @@
 <div class="cols">
   <div class="card card-green">
     <h4 class="green">VIX &le; 16 &mdash; Calm Market</h4>
-    <p>Low volatility, trending conditions. All BB breakout signals are allowed. Ideal for scalping &mdash; tight spreads, predictable moves.</p>
+    <p>Low volatility, trending conditions. All BB breakout signals are allowed. Ideal for bb_rsi &mdash; tight spreads, predictable moves.</p>
   </div>
   <div class="card card-yellow">
     <h4 style="color:var(--yellow);">VIX 16&ndash;20 &mdash; Elevated</h4>
@@ -1089,17 +1089,17 @@
   </div>
   <div class="card card-red">
     <h4 class="red">VIX &gt; 20 &mdash; High Vol</h4>
-    <p>Panic/fear zone. All scalp entries blocked. Wide swings cause whipsaws, inflated option premiums erode edge. Wait for VIX to cool.</p>
+    <p>Panic/fear zone. All bb_rsi entries blocked. Wide swings cause whipsaws, inflated option premiums erode edge. Wait for VIX to cool.</p>
   </div>
 </div>
 
 <div class="card card-purple">
   <h4 class="purple">Per-Module Override <span style="font-size:0.65em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;vertical-align:middle;margin-left:6px;">v4.3.0</span></h4>
-  <p>Scalp now carries its own VIX thresholds independent of swing. If <code>SCALP_VIX_MAX_ENTRY</code> or <code>SCALP_VIX_STRONG_ONLY</code> is unset, scalp falls back to the swing values (<code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code>). Toggle the entire scalp filter on/off via <code>SCALP_VIX_ENABLED</code>.</p>
+  <p>BB_RSI now carries its own VIX thresholds independent of swing. If <code>BB_RSI_VIX_MAX_ENTRY</code> or <code>BB_RSI_VIX_STRONG_ONLY</code> is unset, bb_rsi falls back to the swing values (<code>VIX_MAX_ENTRY</code> / <code>VIX_STRONG_ONLY</code>). Toggle the entire bb_rsi filter on/off via <code>BB_RSI_VIX_ENABLED</code>.</p>
 </div>
 
 <div class="highlight">
-  <strong>Note:</strong> The VIX filter is independent for scalp mode (<code>SCALP_VIX_ENABLED</code>). It uses the shared <code>VIX_MAX_ENTRY</code> (default 20) and <code>VIX_STRONG_ONLY</code> (default 16) thresholds from the global VIX service.
+  <strong>Note:</strong> The VIX filter is independent for bb_rsi mode (<code>BB_RSI_VIX_ENABLED</code>). It uses the shared <code>VIX_MAX_ENTRY</code> (default 20) and <code>VIX_STRONG_ONLY</code> (default 16) thresholds from the global VIX service.
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1201,12 +1201,12 @@
 <h2><span class="sec-num">13</span> Operating Modes</h2>
 
 <div class="highlight">
-  <p>The Scalp strategy runs in three modes. All share the <strong>same BB+PSAR+RSI signal logic and exit behaviour</strong> (profit lock + hard stop + BB re-entry + PSAR flip) but differ in data source, order execution, and persistence.</p>
+  <p>The BB_RSI strategy runs in three modes. All share the <strong>same BB+PSAR+RSI signal logic and exit behaviour</strong> (profit lock + hard stop + BB re-entry + PSAR flip) but differ in data source, order execution, and persistence.</p>
 </div>
 
 <!-- ── Mode Architecture SVG ── -->
 <div style="background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px 16px; margin:14px 0;">
-  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">Scalp Mode Architecture &mdash; Data Flow</div>
+  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">BB_RSI Mode Architecture &mdash; Data Flow</div>
   <svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
     <defs>
       <marker id="sArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#10b981"/></marker>
@@ -1284,9 +1284,9 @@
   </svg>
 </div>
 
-<!-- ── Scalp Trade Lifecycle Flowchart ── -->
+<!-- ── BB_RSI Trade Lifecycle Flowchart ── -->
 <div style="background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:20px 16px; margin:14px 0;">
-  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">Scalp Trade Lifecycle &mdash; Applies to All Modes</div>
+  <div style="font-size:0.75rem; color:#8a85b0; text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; font-weight:600;">BB_RSI Trade Lifecycle &mdash; Applies to All Modes</div>
   <svg viewBox="0 0 700 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:inherit;">
     <!-- Start -->
     <rect x="250" y="10" width="200" height="36" rx="18" fill="#7c3aed" stroke="none"/>
@@ -1350,7 +1350,7 @@
 <div class="cols" style="flex-wrap:wrap;">
   <div class="card card-green">
     <h4 class="green">Live Trading</h4>
-    <p><code>scalpLive.js</code> &mdash; Route: <code>/scalp</code></p>
+    <p><code>bbRsiLive.js</code> &mdash; Route: <code>/bb_rsi</code></p>
     <ul>
       <li>Real orders via <strong>Fyers API</strong> (not Zerodha)</li>
       <li>WebSocket price ticks &rarr; 5-min candle builder</li>
@@ -1360,15 +1360,15 @@
     </ul>
     <table style="margin-top:10px;">
       <tr><th>Setting</th><th>Value</th></tr>
-      <tr><td><code>SCALP_ENABLED</code></td><td><code>true</code> (to activate)</td></tr>
-      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
+      <tr><td><code>BB_RSI_ENABLED</code></td><td><code>true</code> (to activate)</td></tr>
+      <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
+      <tr><td><code>BB_RSI_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
+      <tr><td><code>BB_RSI_MAX_DAILY_TRADES</code></td><td><code>30</code></td></tr>
     </table>
   </div>
   <div class="card card-blue">
     <h4 class="blue">Paper Trading</h4>
-    <p><code>scalpPaper.js</code> &mdash; Route: <code>/scalp-paper</code></p>
+    <p><code>bbRsiPaper.js</code> &mdash; Route: <code>/bb_rsi-paper</code></p>
     <ul>
       <li>Simulated order fills at market price</li>
       <li><strong>Same strategy logic</strong> as live (identical code path)</li>
@@ -1379,15 +1379,15 @@
     <table style="margin-top:10px;">
       <tr><th>Setting</th><th>Value</th></tr>
       <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code> (&#8377;) &mdash; shared Fyers paper pool</td></tr>
-      <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
-      <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
+      <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code> (minutes)</td></tr>
+      <tr><td><code>BB_RSI_MAX_DAILY_LOSS</code></td><td><code>4000</code> (&#8377;)</td></tr>
     </table>
   </div>
 </div>
 <div class="cols" style="flex-wrap:wrap;">
   <div class="card card-yellow">
     <h4 style="color:var(--yellow);">Backtesting</h4>
-    <p><code>scalpBacktest.js</code> &mdash; Route: <code>/scalp-backtest</code></p>
+    <p><code>bbRsiBacktest.js</code> &mdash; Route: <code>/bb_rsi-backtest</code></p>
     <ul>
       <li>Historical candle data replay from Fyers API (cached to disk)</li>
       <li>Option simulation: Delta (0.55) / Theta (10pts/day) / Gamma</li>
@@ -1410,7 +1410,7 @@
     <ul>
       <li>All parameters adjustable live via web UI</li>
       <li>Changes apply immediately (Instant) or on session restart</li>
-      <li>Grouped by strategy: Swing, Scalp, PA, Backtest</li>
+      <li>Grouped by strategy: EMA_RSI_ST, BB_RSI, PA, Backtest</li>
       <li>Effect type indicators on each setting</li>
       <li>Min/max validation enforced</li>
     </ul>
@@ -1470,13 +1470,13 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide scalp menus in the UI</td></tr>
-    <tr><td><code>SCALP_ENABLED</code></td><td><code>false</code></td><td>Enable live scalp orders via Fyers API</td></tr>
-    <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle timeframe in minutes (<code>3</code> or <code>5</code>)</td></tr>
-    <tr><td><code>SCALP_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest entry time (HH:MM IST)</td></tr>
-    <tr><td><code>SCALP_ENTRY_END</code></td><td><code>14:30</code></td><td>No new entries after this time (HH:MM IST)</td></tr>
-    <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on NIFTY weekly expiry day</td></tr>
-    <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (&#8377;) &mdash; shared Fyers pool (Scalp/PA/ORB)</td></tr>
+    <tr><td><code>BB_RSI_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide bb_rsi menus in the UI</td></tr>
+    <tr><td><code>BB_RSI_ENABLED</code></td><td><code>false</code></td><td>Enable live bb_rsi orders via Fyers API</td></tr>
+    <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code></td><td>Candle timeframe in minutes (<code>3</code> or <code>5</code>)</td></tr>
+    <tr><td><code>BB_RSI_ENTRY_START</code></td><td><code>09:21</code></td><td>Earliest entry time (HH:MM IST)</td></tr>
+    <tr><td><code>BB_RSI_ENTRY_END</code></td><td><code>14:30</code></td><td>No new entries after this time (HH:MM IST)</td></tr>
+    <tr><td><code>BB_RSI_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on NIFTY weekly expiry day</td></tr>
+    <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting paper capital (&#8377;) &mdash; shared Fyers pool (BB_RSI/PA/ORB)</td></tr>
   </tbody>
 </table>
 
@@ -1484,23 +1484,23 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
-    <tr><td><code>SCALP_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
-    <tr><td><code>SCALP_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
-    <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
-    <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
-    <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
-    <tr><td><code>SCALP_CONFIRM_CANDLE_ENABLED</code></td><td><code>true</code></td><td>Confirmation candle: the signal candle only arms; the next candle must confirm before entry</td></tr>
-    <tr><td><code>SCALP_CONFIRM_OUTSIDE_BAND</code></td><td><code>true</code></td><td>Confirming candle must CLOSE beyond the signal close AND outside the BB band &rarr; enter at that close (off = enter intra-bar on first cross)</td></tr>
-    <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
-    <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
-    <tr><td><code>SCALP_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional chop gate &mdash; block ALL entries when ADX(14) is below the floor (sits out ranging sessions)</td></tr>
-    <tr><td><code>SCALP_ADX_MIN</code></td><td><code>20</code></td><td>ADX(14) floor for the chop gate (only used when <code>SCALP_ADX_ENABLED</code>)</td></tr>
-    <tr><td><code>SCALP_USE_SUPERTREND</code></td><td><code>false</code></td><td>Use SuperTrend instead of PSAR for direction, the entry-SL line, <em>and</em> the trend-flip exit (mutually exclusive with PSAR)</td></tr>
-    <tr><td><code>SCALP_SUPERTREND_PERIOD</code> / <code>SCALP_SUPERTREND_MULT</code></td><td><code>10</code> / <code>3</code></td><td>SuperTrend params (only used when <code>SCALP_USE_SUPERTREND</code>)</td></tr>
+    <tr><td><code>BB_RSI_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band SMA period</td></tr>
+    <tr><td><code>BB_RSI_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band standard deviation multiplier</td></tr>
+    <tr><td><code>BB_RSI_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI calculation period</td></tr>
+    <tr><td><code>BB_RSI_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
+    <tr><td><code>BB_RSI_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
+    <tr><td><code>BB_RSI_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
+    <tr><td><code>BB_RSI_CONFIRM_CANDLE_ENABLED</code></td><td><code>true</code></td><td>Confirmation candle: the signal candle only arms; the next candle must confirm before entry</td></tr>
+    <tr><td><code>BB_RSI_CONFIRM_OUTSIDE_BAND</code></td><td><code>true</code></td><td>Confirming candle must CLOSE beyond the signal close AND outside the BB band &rarr; enter at that close (off = enter intra-bar on first cross)</td></tr>
+    <tr><td><code>BB_RSI_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
+    <tr><td><code>BB_RSI_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
+    <tr><td><code>BB_RSI_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional chop gate &mdash; block ALL entries when ADX(14) is below the floor (sits out ranging sessions)</td></tr>
+    <tr><td><code>BB_RSI_ADX_MIN</code></td><td><code>20</code></td><td>ADX(14) floor for the chop gate (only used when <code>BB_RSI_ADX_ENABLED</code>)</td></tr>
+    <tr><td><code>BB_RSI_USE_SUPERTREND</code></td><td><code>false</code></td><td>Use SuperTrend instead of PSAR for direction, the entry-SL line, <em>and</em> the trend-flip exit (mutually exclusive with PSAR)</td></tr>
+    <tr><td><code>BB_RSI_SUPERTREND_PERIOD</code> / <code>BB_RSI_SUPERTREND_MULT</code></td><td><code>10</code> / <code>3</code></td><td>SuperTrend params (only used when <code>BB_RSI_USE_SUPERTREND</code>)</td></tr>
   </tbody>
 </table>
-<p style="font-size:0.85rem; color:var(--text2);">ADX is computed every candle (for charting/logging) but only gates entries when <code>SCALP_ADX_ENABLED</code> is on. Despite the file name <code>scalp_bb_cpr.js</code>, there is <strong>no CPR, VWAP, or EMA</strong> in the entry/exit logic &mdash; the &ldquo;cpr&rdquo; suffix is vestigial.</p>
+<p style="font-size:0.85rem; color:var(--text2);">ADX is computed every candle (for charting/logging) but only gates entries when <code>BB_RSI_ADX_ENABLED</code> is on. Despite the file name <code>bb_rsi.js</code>, there is <strong>no CPR, VWAP, or EMA</strong> in the entry/exit logic &mdash; the &ldquo;cpr&rdquo; suffix is vestigial.</p>
 
 <h3>Trade Guards (shared)</h3>
 <table>
@@ -1514,18 +1514,18 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
-    <tr><td><code>SCALP_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max scalp entries per day</td></tr>
-    <tr><td><code>SCALP_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
-    <tr><td><code>SCALP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause the SL'd side after an SL hit</td></tr>
-    <tr><td><code>SCALP_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
-    <tr><td><code>SCALP_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) hits this. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
-    <tr><td><code>SCALP_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
-    <tr><td><code>SCALP_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit if price closes back inside the band (failed breakout)</td></tr>
-    <tr><td><code>SCALP_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm the BB re-entry exit once the breakout has extended this many pts past the band (avoids exiting on the entry candle's own noise)</td></tr>
-    <tr><td><code>SCALP_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
+    <tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage for paper/backtest</td></tr>
+    <tr><td><code>BB_RSI_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max bb_rsi entries per day</td></tr>
+    <tr><td><code>BB_RSI_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Kill switch: halt entries at this loss (&#8377;)</td></tr>
+    <tr><td><code>BB_RSI_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause the SL'd side after an SL hit</td></tr>
+    <tr><td><code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code> <span style="background:rgba(63,185,80,0.18);color:#3fb950;padding:1px 6px;border-radius:4px;font-size:0.7rem;">v4.6.0</span></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd (e.g. 2nd SL = +2, 3rd SL = +4 candles)</td></tr>
+    <tr><td><code>BB_RSI_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
+    <tr><td><code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) hits this. <code>0</code> disables.</td></tr>
+    <tr><td><code>BB_RSI_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
+    <tr><td><code>BB_RSI_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap — exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
+    <tr><td><code>BB_RSI_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit if price closes back inside the band (failed breakout)</td></tr>
+    <tr><td><code>BB_RSI_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm the BB re-entry exit once the breakout has extended this many pts past the band (avoids exiting on the entry candle's own noise)</td></tr>
+    <tr><td><code>BB_RSI_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
   </tbody>
 </table>
 
@@ -1533,11 +1533,11 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry filtering for scalp (independent toggle)</td></tr>
-    <tr><td><code>SCALP_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold (falls back to swing if unset)</td></tr>
-    <tr><td><code>SCALP_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold (falls back to swing if unset)</td></tr>
-    <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Swing default &mdash; used as fallback by scalp</td></tr>
-    <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Swing default &mdash; used as fallback by scalp</td></tr>
+    <tr><td><code>BB_RSI_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX-based entry filtering for bb_rsi (independent toggle)</td></tr>
+    <tr><td><code>BB_RSI_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold (falls back to swing if unset)</td></tr>
+    <tr><td><code>BB_RSI_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold (falls back to swing if unset)</td></tr>
+    <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>EMA_RSI_ST default &mdash; used as fallback by bb_rsi</td></tr>
+    <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>EMA_RSI_ST default &mdash; used as fallback by bb_rsi</td></tr>
     <tr><td><code>VIX_FAIL_MODE</code></td><td><code>closed</code></td><td>When VIX feed unavailable: <code>closed</code> = block, <code>open</code> = allow</td></tr>
   </tbody>
 </table>
@@ -1546,9 +1546,9 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>SCALP_RESOLUTION</code></td><td><code>5</code></td><td>Candle size &mdash; <code>3</code> or <code>5</code> minutes</td></tr>
-    <tr><td><code>SCALP_ENTRY_START</code> / <code>SCALP_ENTRY_END</code></td><td><code>09:21</code> / <code>14:30</code></td><td>Entry window (IST)</td></tr>
-    <tr><td><code>SCALP_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow scalp entries on weekly-expiry day</td></tr>
+    <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code></td><td>Candle size &mdash; <code>3</code> or <code>5</code> minutes</td></tr>
+    <tr><td><code>BB_RSI_ENTRY_START</code> / <code>BB_RSI_ENTRY_END</code></td><td><code>09:21</code> / <code>14:30</code></td><td>Entry window (IST)</td></tr>
+    <tr><td><code>BB_RSI_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow bb_rsi entries on weekly-expiry day</td></tr>
   </tbody>
 </table>
 
@@ -1556,8 +1556,8 @@
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>TG_SCALP_ENTRY</code></td><td><code>true</code></td><td>Send Telegram alert on scalp entry</td></tr>
-    <tr><td><code>TG_SCALP_EXIT</code></td><td><code>true</code></td><td>Send Telegram alert on scalp exit</td></tr>
+    <tr><td><code>TG_BB_RSI_ENTRY</code></td><td><code>true</code></td><td>Send Telegram alert on bb_rsi entry</td></tr>
+    <tr><td><code>TG_BB_RSI_EXIT</code></td><td><code>true</code></td><td>Send Telegram alert on bb_rsi exit</td></tr>
   </tbody>
 </table>
 
@@ -1566,8 +1566,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    Scalp V6.1 &bull; rechecked 2026-07-05 against scalp_bb_cpr.js / scalpPaper.js<br/>
-    NIFTY Options Scalping Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; Confirmation Candle &bull; Profit Lock + Hard Stop + BB Re-Entry + PSAR-Flip exit
+    BB_RSI V6.1 &bull; rechecked 2026-07-05 against bb_rsi.js / bbRsiPaper.js<br/>
+    NIFTY Options BB_RSI Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; Confirmation Candle &bull; Profit Lock + Hard Stop + BB Re-Entry + PSAR-Flip exit
   </p>
 </div>
 

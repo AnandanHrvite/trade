@@ -6,7 +6,7 @@
  *   past pnl         = one-time user entry per broker (baseline, not FY-split)
  *                      stored in ~/trading-data/historical_pnl.json
  *   live bot pnl     = auto-computed from the bot's own live-trade JSON files
- *                      (swing live → Kite; scalp live + PA live → Fyers),
+ *                      (EMA_RSI_ST live → Kite; bb_rsi live + PA live → Fyers),
  *                      grouped by Indian financial year (Apr–Mar)
  *   grand total      = past baseline + live bot pnl, per broker and overall
  *
@@ -26,8 +26,8 @@ const DATA_DIR = path.join(_HOME, "trading-data");
 const DATA_FILE = path.join(DATA_DIR, "historical_pnl.json");
 
 const LIVE_SOURCES = [
-  { file: path.join(DATA_DIR, "live_trades.json"),       broker: "kite",  mode: "Swing" },
-  { file: path.join(DATA_DIR, "scalp_live_trades.json"), broker: "fyers", mode: "Scalp" },
+  { file: path.join(DATA_DIR, "ema_rsi_st_live_trades.json"),       broker: "kite",  mode: "EMA_RSI_ST" },
+  { file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), broker: "fyers", mode: "BB_RSI" },
   { file: path.join(DATA_DIR, "pa_live_trades.json"),    broker: "fyers", mode: "PA"    },
 ];
 
@@ -148,8 +148,8 @@ router.get("/", (req, res) => {
       byFy.set(t.fy, { fy: t.fy, kite_swing: 0, fyers_scalp: 0, fyers_pa: 0, kite_total: 0, fyers_total: 0, total: 0 });
     }
     const row = byFy.get(t.fy);
-    if (t.broker === "kite"  && t.mode === "Swing") row.kite_swing  += t.pnl;
-    if (t.broker === "fyers" && t.mode === "Scalp") row.fyers_scalp += t.pnl;
+    if (t.broker === "kite"  && t.mode === "EMA_RSI_ST") row.kite_swing  += t.pnl;
+    if (t.broker === "fyers" && t.mode === "BB_RSI") row.fyers_scalp += t.pnl;
     if (t.broker === "fyers" && t.mode === "PA")    row.fyers_pa    += t.pnl;
     row[`${t.broker}_total`] += t.pnl;
     row.total += t.pnl;
@@ -335,8 +335,8 @@ router.get("/", (req, res) => {
           <thead>
             <tr>
               <th>Financial Year</th>
-              <th class="num">Swing (Kite)</th>
-              <th class="num">Scalp (Fyers)</th>
+              <th class="num">EMA_RSI_ST (Kite)</th>
+              <th class="num">BB_RSI (Fyers)</th>
               <th class="num">PA (Fyers)</th>
               <th class="num">Kite Sub</th>
               <th class="num">Fyers Sub</th>
@@ -368,7 +368,7 @@ router.get("/", (req, res) => {
           </tfoot>
         </table>
       </div>`}
-      <div class="note">Source files: <code>live_trades.json</code> (Swing/Kite), <code>scalp_live_trades.json</code> (Scalp/Fyers), <code>pa_live_trades.json</code> (PA/Fyers). India FY = April–March.</div>
+      <div class="note">Source files: <code>live_trades.json</code> (EMA_RSI_ST/Kite), <code>bb_rsi_live_trades.json</code> (BB_RSI/Fyers), <code>pa_live_trades.json</code> (PA/Fyers). India FY = April–March.</div>
     </div>
 
   </div>
@@ -473,7 +473,7 @@ function baselineCard(broker, label, bs) {
   return `
     <div class="bs-card">
       <div class="bs-head">
-        <div class="bs-name">${label} <span class="sub">${broker === 'kite' ? 'Swing live trades here' : 'Scalp + PA live trades here'}</span></div>
+        <div class="bs-name">${label} <span class="sub">${broker === 'kite' ? 'EMA_RSI_ST live trades here' : 'BB_RSI + PA live trades here'}</span></div>
       </div>
       <div class="bs-val" style="color:${colorOf(pnl)};">${fmtINR(pnl)}</div>
       <div class="bs-notes">${hasValue ? escapeHtml(bs.notes || '(no notes)') : '<em style="color:#3a5070;">Not set — click Edit to enter your past P&amp;L total</em>'}</div>

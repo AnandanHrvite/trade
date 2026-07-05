@@ -190,8 +190,8 @@ router.post("/run", express.json(), async (req, res) => {
 // the sidebar so the dropdown feels familiar.
 const STRATEGY_OPTIONS = [
   { mode: "pa-paper",       label: "PA Paper",       envKey: "UI_SHOW_PA_PAPER",       modeKey: "PA_MODE_ENABLED" },
-  { mode: "scalp-paper",    label: "Scalp Paper",    envKey: "UI_SHOW_SCALP_PAPER",    modeKey: "SCALP_MODE_ENABLED" },
-  { mode: "swing-paper",    label: "Swing Paper",    envKey: "UI_SHOW_SWING_PAPER",    modeKey: "SWING_MODE_ENABLED" },
+  { mode: "bb_rsi-paper",    label: "BB_RSI Paper",    envKey: "UI_SHOW_BB_RSI_PAPER",    modeKey: "BB_RSI_MODE_ENABLED" },
+  { mode: "ema_rsi_st-paper",    label: "EMA_RSI_ST Paper",    envKey: "UI_SHOW_EMA_RSI_ST_PAPER",    modeKey: "EMA_RSI_ST_MODE_ENABLED" },
   { mode: "orb-paper",      label: "ORB Paper",      envKey: "UI_SHOW_ORB_PAPER",      modeKey: "ORB_MODE_ENABLED" },
   { mode: "ema9vwap-paper", label: "EMA9+VWAP Paper", envKey: "UI_SHOW_EMA9VWAP_PAPER", modeKey: "EMA9VWAP_MODE_ENABLED" },
 ];
@@ -234,8 +234,8 @@ button { background:#3b82f6; color:#fff; border:0; padding:6px 14px; border-radi
 button:hover { background:#2563eb; }
 button:disabled { background:#374151; cursor:not-allowed; }
 .tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.7rem; font-weight:600; }
-.tag.swing    { background:rgba(59,130,246,0.15);  color:#60a5fa; }
-.tag.scalp    { background:rgba(245,158,11,0.15);  color:#fbbf24; }
+.tag.ema_rsi_st    { background:rgba(59,130,246,0.15);  color:#60a5fa; }
+.tag.bb_rsi    { background:rgba(245,158,11,0.15);  color:#fbbf24; }
 .tag.pa       { background:rgba(168,85,247,0.15);  color:#c084fc; }
 .tag.orb      { background:rgba(16,185,129,0.15);  color:#34d399; }
 .tag.ema9vwap { background:rgba(6,182,212,0.15);   color:#22d3ee; }
@@ -565,8 +565,8 @@ let _cancelRequested = false; // set by Cancel; batch loop stops after the curre
 // Mode → CSS tag-class (drives the coloured pill in lists/tables).
 function modeTag(mode) {
   if (!mode) return 'pa';
-  if (mode.startsWith('swing'))    return 'swing';
-  if (mode.startsWith('scalp'))    return 'scalp';
+  if (mode.startsWith('ema_rsi_st'))    return 'ema_rsi_st';
+  if (mode.startsWith('bb_rsi'))    return 'bb_rsi';
   if (mode.startsWith('orb'))      return 'orb';
   if (mode.startsWith('ema9vwap')) return 'ema9vwap';
   return 'pa';
@@ -645,7 +645,7 @@ function drawReplayChart(el, cd) {
   cs.setData(cd.candles);
   legendItems.push({ kind: 'ohlc', color: '#cbd5e1', series: cs, last: cd.candles[cd.candles.length - 1] });
   // EMA9+VWAP is the only mode carrying BOTH an ema9 line and a vwap line (ORB has
-  // vwap but no ema9; Swing has ema9 but no vwap). Detect it so we can paint it in
+  // vwap but no ema9; EMA_RSI_ST has ema9 but no vwap). Detect it so we can paint it in
   // the same TradingView palette as its Paper/Live charts (EMA9 white, VWAP blue,
   // solid σ bands) without recolouring the other strategies' replay charts.
   const isEma9Vwap = Array.isArray(cd.ema9) && cd.ema9.length && Array.isArray(cd.vwap) && cd.vwap.length;
@@ -711,7 +711,7 @@ function drawReplayChart(el, cd) {
       rsiLs.createPriceLine({ price: cd.rsiPeMax != null ? cd.rsiPeMax : 48, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'PE' });
     } catch (_) {}
   }
-  // ADX trend-strength subplot (scalp) — own bottom scale, stacked just above RSI.
+  // ADX trend-strength subplot (bb_rsi) — own bottom scale, stacked just above RSI.
   if (Array.isArray(cd.adx) && cd.adx.length) {
     const adxLs = chart.addLineSeries({ color: '#e879f9', lineWidth: 1, priceScaleId: 'adx', priceLineVisible: false, lastValueVisible: true });
     try { chart.priceScale('adx').applyOptions({ scaleMargins: { top: 0.66, bottom: 0.20 } }); } catch (_) {}
@@ -825,7 +825,7 @@ function _filteredRangeRows() {
   return _CN_RANGE_ROWS.filter(r => _rowMatchesFilter(r, _rangeFilter));
 }
 // Context tweaked so the filename/header reflect the active strategy filter
-// (e.g. 'scalp-paper' instead of 'all') when one is set.
+// (e.g. 'bb_rsi-paper' instead of 'all') when one is set.
 function _filteredRangeContext() {
   const ctx = Object.assign({}, _CN_RANGE_CTX || {});
   if (_rangeFilter.strategy && _rangeFilter.strategy !== 'all') ctx.mode = _rangeFilter.strategy;
@@ -971,7 +971,7 @@ async function refreshPreflight() {
     if (data.ok) {
       banner.innerHTML = '<div class="banner ok">✅ Safe to replay — no live or paper session is active.</div>';
     } else {
-      // Two block causes: (1) a strategy (Swing/Scalp/PA…) is actually running,
+      // Two block causes: (1) a strategy (EMA_RSI_ST/BB_RSI/PA…) is actually running,
       // or (2) a replay flag is set. Case 2 can be a genuine other-tab run OR a
       // stuck flag left by a run that died mid-flight (e.g. a deploy). Either
       // way the user needs a way out, so always offer Force clear — with wording
@@ -1000,7 +1000,7 @@ async function refreshPreflight() {
 
 async function forceClearStuckState(btn) {
   if (!confirm('Force-clear the in-memory session state?\\n\\n' +
-               'Only do this if you have confirmed on the strategy pages (Swing/Scalp/PA Paper) that NO session is actually running, and no other tab is mid-replay.\\n\\n' +
+               'Only do this if you have confirmed on the strategy pages (EMA_RSI_ST/BB_RSI/PA Paper) that NO session is actually running, and no other tab is mid-replay.\\n\\n' +
                'This clears the in-memory strategy mutexes AND the replay-in-progress flag — it does NOT touch trade logs, positions, or recordings.')) return;
   btn.disabled = true;
   btn.textContent = 'Clearing…';
@@ -1124,7 +1124,7 @@ function renderSessions() {
     const sidJs  = _jsAttr(s.sessionId);
     const dateJs = _jsAttr(s.date);
     const modeJs = _jsAttr(s.mode);
-    // Replayable: PA/Scalp/Swing always; ORB only after the option-LTP
+    // Replayable: PA/BB_RSI/EMA_RSI_ST always; ORB only after the option-LTP
     // recording fix (session-start meta has recordsOptionLtps:true). Pre-fix
     // sessions get a yellow "incomplete" chip + disabled Replay button.
     const isReplayable = s.replayable !== false;
@@ -1230,7 +1230,7 @@ async function loadSessions() {
 }
 
 // Deep-link entry from the per-session "View chart" links on the history pages:
-//   /replay?from=YYYY-MM-DD&to=YYYY-MM-DD&mode=swing-paper&run=1
+//   /replay?from=YYYY-MM-DD&to=YYYY-MM-DD&mode=ema_rsi_st-paper&run=1
 // Prefills the date-range + mode and (optionally) auto-runs the replay so the
 // candlestick chart + trade markers render without manual setup. Runs once.
 let _deepLinkApplied = false;
@@ -1533,8 +1533,8 @@ function renderComparison(content, baseline, sim, header) {
 }
 
 function _modeLabel(mode) {
-  return mode === 'swing-paper'    ? 'Swing Paper'
-       : mode === 'scalp-paper'    ? 'Scalp Paper'
+  return mode === 'ema_rsi_st-paper'    ? 'EMA_RSI_ST Paper'
+       : mode === 'bb_rsi-paper'    ? 'BB_RSI Paper'
        : mode === 'pa-paper'       ? 'PA Paper'
        : mode === 'orb-paper'      ? 'ORB Paper'
        : mode === 'ema9vwap-paper' ? 'EMA9+VWAP Paper'
@@ -1867,7 +1867,7 @@ function pickSessionsInRange(from, to, mode) {
   // We DON'T require durationMs != null. A session that crash-recovered or
   // was killed mid-flight has no stop record but still has a full spot/option
   // tick stream — replay synthesises an end-of-window stop and processes
-  // every recorded tick. Excluding these meant 18-may swing was unreachable
+  // every recorded tick. Excluding these meant 18-may EMA_RSI_ST was unreachable
   // even though all its ticks were on disk.
   // mode==='all' → every enabled paper mode; the batch runner replays each
   // session against its own mode, so a mixed list works as-is.
@@ -1923,7 +1923,7 @@ function renderRangeResult(rows, context) {
   }
 
   // Track baseline and sim independently so a row counts even if one side is
-  // missing (e.g. swing-paper has no canonical record for these dates → only
+  // missing (e.g. ema_rsi_st-paper has no canonical record for these dates → only
   // sim totals are valid). Delta counters only iterate over rows where both
   // sides are ok, since cmpDelta needs both.
   let totBPnl = 0, totSPnl = 0, totBTrd = 0, totSTrd = 0;
@@ -2418,7 +2418,7 @@ ${contractNoteClientJS()}
 var _CN_RANGE_ROWS = [], _CN_RANGE_CTX = null;
 var _CN_SINGLE_TRADES = null, _CN_SINGLE_LABEL = '';
 function _cnModeLabel(m){
-  return m==='all'?'All Strategies':m==='swing-paper'?'Swing Paper':m==='scalp-paper'?'Scalp Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':(m||'Replay');
+  return m==='all'?'All Strategies':m==='ema_rsi_st-paper'?'EMA_RSI_ST Paper':m==='bb_rsi-paper'?'BB_RSI Paper':m==='pa-paper'?'PA Paper':m==='orb-paper'?'ORB Paper':m==='ema9vwap-paper'?'EMA9+VWAP Paper':(m||'Replay');
 }
 function openReplayReportAll(){
   var trades=[]; for(var i=0;i<_CN_RANGE_ROWS.length;i++){ var r=_CN_RANGE_ROWS[i]; if(r&&r.sim&&r.sim.ok&&r.sim.sessionTrades) trades=trades.concat(r.sim.sessionTrades); }

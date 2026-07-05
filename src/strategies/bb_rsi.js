@@ -1,24 +1,24 @@
 /**
- * SCALP V6: Bollinger Bands + PSAR + RSI (PSAR-flip exit design)
+ * BB_RSI V6: Bollinger Bands + PSAR + RSI (PSAR-flip exit design)
  *
  * ENTRY:
- *   CE: candle closes above BB upper + PSAR below close + RSI > SCALP_RSI_CE_THRESHOLD (default 70)
- *   PE: candle closes below BB lower + PSAR above close + RSI < SCALP_RSI_PE_THRESHOLD (default 40)
+ *   CE: candle closes above BB upper + PSAR below close + RSI > BB_RSI_RSI_CE_THRESHOLD (default 70)
+ *   PE: candle closes below BB lower + PSAR above close + RSI < BB_RSI_RSI_PE_THRESHOLD (default 40)
  *   Two RSI keys only — no overbought/oversold caps.
- *   Skip far-PSAR entries: SCALP_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
- *   ADX trend filter (optional, SCALP_ADX_ENABLED): block ALL entries when ADX(14) < SCALP_ADX_MIN
+ *   Skip far-PSAR entries: BB_RSI_MAX_ENTRY_SL_PTS (default 50) — don't open when PSAR is >N pts from close.
+ *   ADX trend filter (optional, BB_RSI_ADX_ENABLED): block ALL entries when ADX(14) < BB_RSI_ADX_MIN
  *     — the strategy wins in trends and bleeds in chop, so this sits out ranging sessions.
  *   Initial SL = PSAR value at entry (no clamp). Used for risk sizing + display; not an intra-tick stop.
  *
  * EXIT (profit lock + hard stop + BB re-entry + PSAR flip):
- *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ SCALP_PROFIT_LOCK_TRIGGER_PTS,
- *      exit when it gives back below SCALP_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
+ *   1. Profit lock (spot POINTS) — once peak favourable spot move ≥ BB_RSI_PROFIT_LOCK_TRIGGER_PTS,
+ *      exit when it gives back below BB_RSI_PROFIT_LOCK_PCT% of peak. Ratchets with peak; points-based
  *      so it is independent of option pricing. The per-tick upside exit.
  *   2. Hard stop (spot POINTS) — catastrophic loss cap; exit once the trade moves
- *      SCALP_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
+ *      BB_RSI_STOP_LOSS_PTS against entry. Set WIDE (default 30) so it only clips the deep
  *      adverse excursions on failed fades, not the normal small scalps. The per-tick downside cap.
  *   3. BB re-entry (candle close) — if price closes back inside the band the breakout failed → exit
- *      (SCALP_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
+ *      (BB_RSI_BB_REENTRY_EXIT, default on). Cuts loss bleed before the slower PSAR flip.
  *   4. PSAR flip → exit on candle close (trend exit; handles runners beyond the lock).
  *   5. EOD / daily loss / max trades / SL-pause cooldown (handled by routes)
  */
@@ -26,7 +26,7 @@
 const { BollingerBands, RSI, PSAR, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
-const NAME        = "SCALP_BB_PSAR_RSI_V6.1";
+const NAME        = "BB_RSI_BB_PSAR_RSI_V6.1";
 const DESCRIPTION = "BB break + PSAR + RSI";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
@@ -47,8 +47,8 @@ function _fmtTime(mins) {
 function isInTradingWindow(unixSec) {
   var d = new Date(new Date(unixSec * 1000).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
   var totalMin = d.getHours() * 60 + d.getMinutes();
-  var startMin = _parseMins("SCALP_ENTRY_START", "09:21");
-  var endMin   = _parseMins("SCALP_ENTRY_END",   "14:30");
+  var startMin = _parseMins("BB_RSI_ENTRY_START", "09:21");
+  var endMin   = _parseMins("BB_RSI_ENTRY_END",   "14:30");
   if (totalMin < startMin) return { ok: false, reason: "Before " + _fmtTime(startMin) };
   if (totalMin >= endMin)  return { ok: false, reason: "After " + _fmtTime(endMin) };
   return { ok: true, reason: null };
@@ -72,23 +72,23 @@ function getSignal(candles, opts) {
   opts = opts || {};
   var silent = opts.silent === true;
 
-  var BB_PERIOD   = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
-  var BB_STDDEV   = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
-  var RSI_PERIOD  = parseInt(cfg("SCALP_RSI_PERIOD", "14"), 10);
-  var RSI_CE      = parseFloat(cfg("SCALP_RSI_CE_THRESHOLD", "70"));
-  var RSI_PE      = parseFloat(cfg("SCALP_RSI_PE_THRESHOLD", "40"));
-  var RSI_TURNING = cfg("SCALP_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
-  var PSAR_STEP   = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
-  var PSAR_MAX    = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
-  var MAX_ENTRY_SL_PTS = parseFloat(cfg("SCALP_MAX_ENTRY_SL_PTS", "50")); // skip entries where the trend line sits farther than this from close (0 = off)
-  var ADX_ENABLED = cfg("SCALP_ADX_ENABLED", "false") === "true"; // trend filter toggle
-  var ADX_MIN     = parseFloat(cfg("SCALP_ADX_MIN", "20"));        // block entries when ADX(14) < this (ranging/chop)
+  var BB_PERIOD   = parseInt(cfg("BB_RSI_BB_PERIOD", "20"), 10);
+  var BB_STDDEV   = parseFloat(cfg("BB_RSI_BB_STDDEV", "1"));
+  var RSI_PERIOD  = parseInt(cfg("BB_RSI_RSI_PERIOD", "14"), 10);
+  var RSI_CE      = parseFloat(cfg("BB_RSI_RSI_CE_THRESHOLD", "70"));
+  var RSI_PE      = parseFloat(cfg("BB_RSI_RSI_PE_THRESHOLD", "40"));
+  var RSI_TURNING = cfg("BB_RSI_RSI_TURNING", "false") === "true"; // require RSI momentum confirms direction
+  var PSAR_STEP   = parseFloat(cfg("BB_RSI_PSAR_STEP", "0.02"));
+  var PSAR_MAX    = parseFloat(cfg("BB_RSI_PSAR_MAX", "0.2"));
+  var MAX_ENTRY_SL_PTS = parseFloat(cfg("BB_RSI_MAX_ENTRY_SL_PTS", "50")); // skip entries where the trend line sits farther than this from close (0 = off)
+  var ADX_ENABLED = cfg("BB_RSI_ADX_ENABLED", "false") === "true"; // trend filter toggle
+  var ADX_MIN     = parseFloat(cfg("BB_RSI_ADX_MIN", "20"));        // block entries when ADX(14) < this (ranging/chop)
   // Trend-confirmation source: PSAR (default) or SuperTrend(10,3). Mutually
   // exclusive — when on, SuperTrend takes over the directional confirmation,
   // the entry SL line AND the trend-flip exit (see isTrendFlip).
-  var USE_SUPERTREND = cfg("SCALP_USE_SUPERTREND", "false") === "true";
-  var ST_PERIOD = parseInt(cfg("SCALP_SUPERTREND_PERIOD", "10"), 10) || 10;
-  var ST_MULT   = parseFloat(cfg("SCALP_SUPERTREND_MULT", "3")) || 3;
+  var USE_SUPERTREND = cfg("BB_RSI_USE_SUPERTREND", "false") === "true";
+  var ST_PERIOD = parseInt(cfg("BB_RSI_SUPERTREND_PERIOD", "10"), 10) || 10;
+  var ST_MULT   = parseFloat(cfg("BB_RSI_SUPERTREND_MULT", "3")) || 3;
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -183,10 +183,10 @@ function getSignal(candles, opts) {
   var _ist = new Date(sc.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
 
   // ── ADX trend filter (chop gate) ──────────────────────────────────────────
-  // Block ALL entries when the market is ranging — ADX(14) below SCALP_ADX_MIN.
+  // Block ALL entries when the market is ranging — ADX(14) below BB_RSI_ADX_MIN.
   // The strategy wins in trends and bleeds in chop; this sits out the choppy
-  // sessions. Off by default (SCALP_ADX_ENABLED=false); when on, the floor is
-  // SCALP_ADX_MIN. If ADX has no value yet (warm-up), pass through.
+  // sessions. Off by default (BB_RSI_ADX_ENABLED=false); when on, the floor is
+  // BB_RSI_ADX_MIN. If ADX has no value yet (warm-up), pass through.
   if (ADX_ENABLED && Number.isFinite(adx) && adx < ADX_MIN) {
     base.reason = "No setup (market ranging — ADX=" + adx.toFixed(1) + " < " + ADX_MIN + ")";
     return base;
@@ -241,9 +241,9 @@ function getSignal(candles, opts) {
     // Initial SL = active trend line at entry (no clamp). Line is below close here.
     var sl = parseFloat(trendVal.toFixed(2));
     var slPts = parseFloat((sc.close - trendVal).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + " + _srcLabel + "(" + trendVal.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(" + _srcLabel + ")=" + sl + " [" + slPts.toFixed(1) + "pts]");
+    if (!silent) console.log("[BB_RSI " + _ist + "] CE: close(" + sc.close + ") >= BB upper(" + bb.upper.toFixed(2) + ") + " + _srcLabel + "(" + trendVal.toFixed(1) + ")<close + RSI=" + rsi.toFixed(1) + " | SL(" + _srcLabel + ")=" + sl + " [" + slPts.toFixed(1) + "pts]");
     return Object.assign({}, base, {
-      signal: "BUY_CE", signalStrength: "SCALP",
+      signal: "BUY_CE", signalStrength: "BB_RSI",
       stopLoss: sl,
       slSource: _srcLabel,
       target: null,
@@ -266,9 +266,9 @@ function getSignal(candles, opts) {
     // Initial SL = active trend line at entry (no clamp). Line is above close here.
     var sl = parseFloat(trendVal.toFixed(2));
     var slPts = parseFloat((trendVal - sc.close).toFixed(2));
-    if (!silent) console.log("[SCALP " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + " + _srcLabel + "(" + trendVal.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(" + _srcLabel + ")=" + sl + " [" + slPts.toFixed(1) + "pts]");
+    if (!silent) console.log("[BB_RSI " + _ist + "] PE: close(" + sc.close + ") <= BB lower(" + bb.lower.toFixed(2) + ") + " + _srcLabel + "(" + trendVal.toFixed(1) + ")>close + RSI=" + rsi.toFixed(1) + " | SL(" + _srcLabel + ")=" + sl + " [" + slPts.toFixed(1) + "pts]");
     return Object.assign({}, base, {
-      signal: "BUY_PE", signalStrength: "SCALP",
+      signal: "BUY_PE", signalStrength: "BB_RSI",
       stopLoss: sl,
       slSource: _srcLabel,
       target: null,
@@ -303,16 +303,16 @@ function getSignal(candles, opts) {
 // Spot-POINTS ratcheting profit lock — banks favourable spot travel and lets
 // winners run. Tracks the favourable spot move since entry (PE = entry−price,
 // CE = price−entry). Once the PEAK favourable move reaches
-// SCALP_PROFIT_LOCK_TRIGGER_PTS, exit as soon as it gives back below
-// SCALP_PROFIT_LOCK_PCT% of that peak. Floor ratchets up with the peak
+// BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit as soon as it gives back below
+// BB_RSI_PROFIT_LOCK_PCT% of that peak. Floor ratchets up with the peak
 // (peak 100pts → lock 50pts at 50%). Points-based, so it is independent of
 // option pricing (works even on spot-proxy replay sessions). TRIGGER = 0 disables.
 //   favPts     — current favourable spot points
 //   peakFavPts — best favourable spot points seen this trade
 // Returns { hit, floor }.
 function profitLock(favPts, peakFavPts) {
-  var trigger = parseFloat(cfg("SCALP_PROFIT_LOCK_TRIGGER_PTS", "25"));
-  var pct     = parseFloat(cfg("SCALP_PROFIT_LOCK_PCT", "50"));
+  var trigger = parseFloat(cfg("BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "25"));
+  var pct     = parseFloat(cfg("BB_RSI_PROFIT_LOCK_PCT", "50"));
   if (trigger <= 0 || peakFavPts == null || peakFavPts < trigger) return { hit: false, floor: null };
   var floor = parseFloat(((pct / 100) * peakFavPts).toFixed(2));
   return { hit: favPts <= floor, floor: floor };
@@ -320,14 +320,14 @@ function profitLock(favPts, peakFavPts) {
 
 // ── Hard stop (catastrophic loss cap, per-tick, spot POINTS) ─────────────────
 // Companion to the profit lock — caps the downside only. Exit once the trade has
-// moved SCALP_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
+// moved BB_RSI_STOP_LOSS_PTS against entry (favPts ≤ −stop). Set WIDE (default 30)
 // so it never touches the normal small scalps — it only clips the deep adverse
 // excursions on failed BB-break fades that would otherwise bleed to −100+ pts
 // before the candle-close BB re-entry / PSAR flip fires. 0 disables.
 //   favPts — current favourable spot points (CE = price−entry, PE = entry−price)
 // Returns { hit, stop }.
 function hardStop(favPts) {
-  var stop = parseFloat(cfg("SCALP_STOP_LOSS_PTS", "30"));
+  var stop = parseFloat(cfg("BB_RSI_STOP_LOSS_PTS", "30"));
   if (stop <= 0 || favPts == null) return { hit: false, stop: null };
   return { hit: favPts <= -stop, stop: stop };
 }
@@ -336,8 +336,8 @@ function hardStop(favPts) {
 // The primary exit: on candle close, if SAR has crossed to the wrong side of price
 // the trend has flipped — exit the position.
 function isPSARFlip(candles, side) {
-  var PSAR_STEP = parseFloat(cfg("SCALP_PSAR_STEP", "0.02"));
-  var PSAR_MAX  = parseFloat(cfg("SCALP_PSAR_MAX", "0.2"));
+  var PSAR_STEP = parseFloat(cfg("BB_RSI_PSAR_STEP", "0.02"));
+  var PSAR_MAX  = parseFloat(cfg("BB_RSI_PSAR_MAX", "0.2"));
 
   var highs = candles.map(function(c) { return c.high; });
   var lows  = candles.map(function(c) { return c.low; });
@@ -360,8 +360,8 @@ function isPSARFlip(candles, side) {
 // The SuperTrend analogue of the PSAR flip: on candle close, exit when the
 // trend state has reversed against the position (CE wants bullish, PE bearish).
 function isSuperTrendFlip(candles, side) {
-  var ST_PERIOD = parseInt(cfg("SCALP_SUPERTREND_PERIOD", "10"), 10) || 10;
-  var ST_MULT   = parseFloat(cfg("SCALP_SUPERTREND_MULT", "3")) || 3;
+  var ST_PERIOD = parseInt(cfg("BB_RSI_SUPERTREND_PERIOD", "10"), 10) || 10;
+  var ST_MULT   = parseFloat(cfg("BB_RSI_SUPERTREND_MULT", "3")) || 3;
   var arr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
   if (arr.length < 2) return false;
   var curr = arr[arr.length - 1];
@@ -373,9 +373,9 @@ function isSuperTrendFlip(candles, side) {
 
 // ── Unified trend-flip exit (dispatches to the active trend source) ──────────
 // Routes call this instead of isPSARFlip so the exit follows whichever source
-// (PSAR or SuperTrend) drove the entry. SCALP_USE_SUPERTREND selects it.
+// (PSAR or SuperTrend) drove the entry. BB_RSI_USE_SUPERTREND selects it.
 function isTrendFlip(candles, side) {
-  if (cfg("SCALP_USE_SUPERTREND", "false") === "true") return isSuperTrendFlip(candles, side);
+  if (cfg("BB_RSI_USE_SUPERTREND", "false") === "true") return isSuperTrendFlip(candles, side);
   return isPSARFlip(candles, side);
 }
 
@@ -384,9 +384,9 @@ function isTrendFlip(candles, side) {
 // triggered the entry has failed → exit (faster than waiting for the PSAR flip).
 //   CE entered on close ≥ BB.upper → exit when close < BB.upper.
 //   PE entered on close ≤ BB.lower → exit when close > BB.lower.
-// Gated by SCALP_BB_REENTRY_EXIT (default on). Uses the same BB inputs as entry.
+// Gated by BB_RSI_BB_REENTRY_EXIT (default on). Uses the same BB inputs as entry.
 function bbReentryExit(candles, side) {
-  if (cfg("SCALP_BB_REENTRY_EXIT", "true") !== "true") return false;
+  if (cfg("BB_RSI_BB_REENTRY_EXIT", "true") !== "true") return false;
   var bb = bbLevels(candles);
   if (!bb) return false;
   var close = candles[candles.length - 1].close;
@@ -398,8 +398,8 @@ function bbReentryExit(candles, side) {
 // entry/exit use. Exposed so the routes can run the BB re-entry stop intra-candle
 // (per-tick spot vs band) instead of only on candle close. null if insufficient data.
 function bbLevels(candles) {
-  var BB_PERIOD = parseInt(cfg("SCALP_BB_PERIOD", "20"), 10);
-  var BB_STDDEV = parseFloat(cfg("SCALP_BB_STDDEV", "1"));
+  var BB_PERIOD = parseInt(cfg("BB_RSI_BB_PERIOD", "20"), 10);
+  var BB_STDDEV = parseFloat(cfg("BB_RSI_BB_STDDEV", "1"));
   var closes = candles.map(function(c) { return c.close; });
   var bbArr = BollingerBands.calculate({ period: BB_PERIOD, stdDev: BB_STDDEV, values: closes });
   if (bbArr.length < 1) return null;

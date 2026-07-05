@@ -97,7 +97,7 @@ process.on("exit", _flushSync);
 
 // ── Trade (15-min Zerodha) ────────────────────────────────────────────────────
 
-const TRADE_POS_FILE = path.join(DATA_DIR, ".active_trade_position.json");
+const TRADE_POS_FILE = path.join(DATA_DIR, ".active_ema_rsi_st_position.json");
 
 function saveTradePosition(position, sessionMeta) {
   try {
@@ -161,14 +161,14 @@ function clearTradePosition() {
   console.log("[PERSIST] Trade position file cleared.");
 }
 
-// ── Scalp (3-min Fyers) ─────────────────────────────────────────────────────
+// ── BB_RSI (3-min Fyers) ─────────────────────────────────────────────────────
 
-const SCALP_POS_FILE = path.join(DATA_DIR, ".active_scalp_position.json");
+const BB_RSI_POS_FILE = path.join(DATA_DIR, ".active_bb_rsi_position.json");
 
-function saveScalpPosition(position, sessionMeta) {
+function saveBbRsiPosition(position, sessionMeta) {
   try {
     if (!position) {
-      _persistAtomic(SCALP_POS_FILE, null);
+      _persistAtomic(BB_RSI_POS_FILE, null);
       return;
     }
     const data = {
@@ -192,36 +192,36 @@ function saveScalpPosition(position, sessionMeta) {
       savedAt: Date.now(),
       savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
     };
-    _persistAtomic(SCALP_POS_FILE, JSON.stringify(data, null, 2));
-    console.log(`💾 [PERSIST] Scalp position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+    _persistAtomic(BB_RSI_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] BB_RSI position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
   } catch (err) {
-    console.warn(`⚠️ [PERSIST] Could not save scalp position: ${err.message}`);
+    console.warn(`⚠️ [PERSIST] Could not save bb_rsi position: ${err.message}`);
   }
 }
 
-function loadScalpPosition() {
+function loadBbRsiPosition() {
   try {
-    if (!fs.existsSync(SCALP_POS_FILE)) return null;
-    const data = JSON.parse(fs.readFileSync(SCALP_POS_FILE, "utf-8"));
+    if (!fs.existsSync(BB_RSI_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(BB_RSI_POS_FILE, "utf-8"));
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     if (data.savedDate && data.savedDate !== today) {
-      console.log(`[PERSIST] Stale scalp position from ${data.savedDate} — discarding.`);
-      fs.unlinkSync(SCALP_POS_FILE);
+      console.log(`[PERSIST] Stale bb_rsi position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(BB_RSI_POS_FILE);
       return null;
     }
     if (data.position) {
-      console.log(`[PERSIST] Scalp position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+      console.log(`[PERSIST] BB_RSI position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
     }
     return data;
   } catch (err) {
-    console.warn(`[PERSIST] Could not load scalp position: ${err.message}`);
+    console.warn(`[PERSIST] Could not load bb_rsi position: ${err.message}`);
     return null;
   }
 }
 
-function clearScalpPosition() {
-  _persistAtomic(SCALP_POS_FILE, null);
-  console.log("[PERSIST] Scalp position file cleared.");
+function clearBbRsiPosition() {
+  _persistAtomic(BB_RSI_POS_FILE, null);
+  console.log("[PERSIST] BB_RSI position file cleared.");
 }
 
 // ── Price Action (5-min Fyers) ──────────────────────────────────────────────
@@ -352,7 +352,7 @@ function clearEma9VwapPosition() {
 
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
-  saveScalpPosition, loadScalpPosition, clearScalpPosition,
+  saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
   savePAPosition, loadPAPosition, clearPAPosition,
   saveEma9VwapPosition, loadEma9VwapPosition, clearEma9VwapPosition,
 };

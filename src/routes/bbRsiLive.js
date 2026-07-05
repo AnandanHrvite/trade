@@ -1,18 +1,18 @@
 /**
- * SCALP LIVE TRADE — /scalp
+ * BB_RSI LIVE TRADE — /bb_rsi
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) and places REAL orders via Fyers.
- * Runs on 3/5-min candles with the scalp BB+PSAR+RSI strategy.
- * Can run IN PARALLEL with /trade (live Zerodha) or /swing-paper.
+ * Runs on 3/5-min candles with the bb_rsi BB+PSAR+RSI strategy.
+ * Can run IN PARALLEL with /trade (live Zerodha) or /ema_rsi_st-paper.
  *
  * DATA LAYER  → Fyers (WebSocket ticks — shared with main)
  * ORDER LAYER → Fyers (place_order / exit_position)
  *
  * Routes:
- *   GET /scalp-live/start   → Start scalp live trading
- *   GET /scalp-live/stop    → Stop & square off
- *   GET /scalp-live/status  → Live status page
- *   GET /scalp-live/exit    → Manual exit current position
+ *   GET /bb_rsi-live/start   → Start bb_rsi live trading
+ *   GET /bb_rsi-live/stop    → Stop & square off
+ *   GET /bb_rsi-live/status  → Live status page
+ *   GET /bb_rsi-live/exit    → Manual exit current position
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -20,7 +20,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const scalpStrategy    = require("../strategies/scalp_bb_cpr");
+const bbRsiStrategy    = require("../strategies/bb_rsi");
 const { BollingerBands, PSAR, RSI, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 const fyersBroker      = require("../services/fyersBroker");
@@ -40,29 +40,29 @@ const fyers = require("../config/fyers");
 const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifySignal, notifyDayReport, sendTelegram, canSend, isConfigured } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
-const { saveScalpPosition, clearScalpPosition } = require("../utils/positionPersist");
+const { saveBbRsiPosition, clearBbRsiPosition } = require("../utils/positionPersist");
 const { logNearMiss } = require("../utils/nearMissLog");
 const skipLogger = require("../utils/skipLogger");
 const confirmCandle = require("../utils/confirmCandle");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID = "SCALP_LIVE";
+const CALLBACK_ID = "BB_RSI_LIVE";
 
 // ── Module-level config ─────────────────────────────────────────────────────
-const SCALP_RES            = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
-const _SCALP_MAX_TRADES    = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-const _SCALP_MAX_LOSS      = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-const _SCALP_PAUSE_CANDLES = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
+const BB_RSI_RES            = parseInt(process.env.BB_RSI_RESOLUTION || "5", 10);
+const _BB_RSI_MAX_TRADES    = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
+const _BB_RSI_MAX_LOSS      = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
+const _BB_RSI_PAUSE_CANDLES = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
 const _OPT_STOP_PCT        = parseFloat(process.env.OPT_STOP_PCT || "0.15");
 // Per-side SL pause — when true, an SL on CE only pauses CE entries (PE still allowed)
-const _SCALP_PER_SIDE_PAUSE = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+const _BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
 
 // ── Previous day OHLC (reference, fetched on session start) ─────────────────
 let _prevDayOHLC     = null;
 let _prevPrevDayOHLC = null;
 
 const _STOP_MINS       = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
+const _ENTRY_STOP_MINS = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END, "14:30");
 
 const getISTMinutes = _getISTMinutesReal;
 const fastISTTime   = _fastISTTime;
@@ -72,13 +72,13 @@ const mapTradesReversed = _mapTradesReversed;
 // ── Persistence ──────────────────────────────────────────────────────────────
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const SL_FILE  = path.join(DATA_DIR, "scalp_live_trades.json");
+const SL_FILE  = path.join(DATA_DIR, "bb_rsi_live_trades.json");
 
 function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function loadScalpData() {
+function loadBbRsiData() {
   ensureDir();
   if (!fs.existsSync(SL_FILE)) {
     const initial = { sessions: [] };
@@ -89,21 +89,21 @@ function loadScalpData() {
   catch (_) { return { sessions: [] }; }
 }
 
-function saveScalpSession() {
+function saveBbRsiSession() {
   if (!state.sessionTrades || state.sessionTrades.length === 0) return;
   try {
-    const data = loadScalpData();
+    const data = loadBbRsiData();
     data.sessions.push({
       date:     state.sessionStart,
-      strategy: scalpStrategy.NAME,
+      strategy: bbRsiStrategy.NAME,
       pnl:      state.sessionPnl,
       trades:   state.sessionTrades,
     });
     ensureDir();
     fs.writeFileSync(SL_FILE, JSON.stringify(data, null, 2));
-    log(`💾 [SCALP-LIVE] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
+    log(`💾 [BB_RSI-LIVE] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] Save failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-LIVE] Save failed: ${err.message}`);
   }
 }
 
@@ -145,13 +145,13 @@ function log(msg) {
   if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
-function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, SCALP_RES); }
+function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, BB_RSI_RES); }
 
-const _SCALP_START_MINS = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
+const _BB_RSI_START_MINS = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START, "09:21");
 
 function isMarketHours() {
   const total = getISTMinutes();
-  return total >= _SCALP_START_MINS && total < _ENTRY_STOP_MINS;
+  return total >= _BB_RSI_START_MINS && total < _ENTRY_STOP_MINS;
 }
 
 function isStartAllowed() {
@@ -170,11 +170,11 @@ async function fetchOptionLtp(symbol) {
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
       if (ltp && ltp > 0) {
         if (_rateLimitBackoff > 0) {
-          log(`✅ [SCALP-LIVE] Rate limit cleared — polling resumed`);
+          log(`✅ [BB_RSI-LIVE] Rate limit cleared — polling resumed`);
           _rateLimitBackoff = 0;
         }
         const _ltp = parseFloat(ltp);
-        try { tickRecorder.recordOptionLtp(symbol, _ltp, "scalp-live"); } catch (_) {}
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "bb_rsi-live"); } catch (_) {}
         return _ltp;
       }
     }
@@ -182,11 +182,11 @@ async function fetchOptionLtp(symbol) {
     const msg = err.message || "";
     if (/limit|throttle|429/i.test(msg)) {
       if (_rateLimitBackoff === 0) {
-        log(`⚠️ [SCALP-LIVE] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
+        log(`⚠️ [BB_RSI-LIVE] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
       }
       _rateLimitBackoff = Math.min(_rateLimitBackoff + 1, 10);
     } else {
-      log(`⚠️ [SCALP-LIVE] fetchOptionLtp error for ${symbol}: ${msg}`);
+      log(`⚠️ [BB_RSI-LIVE] fetchOptionLtp error for ${symbol}: ${msg}`);
     }
   }
   return null;
@@ -204,22 +204,22 @@ function startOptionPolling(symbol) {
         state.optionLtp = ltp;
         state.optionLtpUpdatedAt = Date.now();
         if (state._ltpStaleLogged) {
-          log(`✅ [SCALP-LIVE] Option LTP recovered — ₹${ltp}`);
+          log(`✅ [BB_RSI-LIVE] Option LTP recovered — ₹${ltp}`);
           state._ltpStaleLogged = false;
         }
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
           state.position.optionEntryLtpTime = istNow();
-          log(`📌 [SCALP-LIVE] Option entry LTP: ₹${ltp}`);
-          placeScalpHardSL();
+          log(`📌 [BB_RSI-LIVE] Option entry LTP: ₹${ltp}`);
+          placeBbRsiHardSL();
         }
       } else if (!ltp) {
         // ── LTP staleness alert ──
         const _staleThreshold = parseInt(process.env.LTP_STALE_THRESHOLD_SEC || "15", 10) * 1000;
         if (state.optionLtpUpdatedAt && (Date.now() - state.optionLtpUpdatedAt) > _staleThreshold) {
           if (!state._ltpStaleLogged) {
-            log(`⚠️ [SCALP-LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
+            log(`⚠️ [BB_RSI-LIVE] Option LTP STALE — no update for ${Math.round((Date.now() - state.optionLtpUpdatedAt) / 1000)}s. P&L display may be inaccurate.`);
             state._ltpStaleLogged = true;
           }
         }
@@ -252,14 +252,14 @@ function stopOptionPolling() {
 // Controlled by HARD_SL_ENABLED env var.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let _scalpHardSLOrderId = null;
+let _bbRsiHardSLOrderId = null;
 
-function isScalpHardSLEnabled() {
+function isBbRsiHardSLEnabled() {
   return process.env.HARD_SL_ENABLED === "true" && instrumentConfig.INSTRUMENT !== "NIFTY_FUTURES";
 }
 
-async function placeScalpHardSL() {
-  if (!isScalpHardSLEnabled() || !state.position) return;
+async function placeBbRsiHardSL() {
+  if (!isBbRsiHardSLEnabled() || !state.position) return;
   const pos = state.position;
   const optionLtp = state.optionLtp || pos.optionEntryLtp;
   if (!optionLtp || !pos.stopLoss) return;
@@ -270,22 +270,22 @@ async function placeScalpHardSL() {
   const triggerPrice = Math.max(0.5, parseFloat((optionLtp - premDrop).toFixed(1)));
   const qty = pos.qty || getLotQty();
 
-  log(`🛡️ [SCALP HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice}`);
+  log(`🛡️ [BB_RSI HARD SL] Placing SL-M SELL ${qty} × ${pos.symbol} @ trigger ₹${triggerPrice}`);
   try {
     const result = await fyersBroker.placeSLMOrder(pos.symbol, -1, qty, triggerPrice);
     if (result.success) {
-      _scalpHardSLOrderId = result.orderId;
-      log(`✅ [SCALP HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
+      _bbRsiHardSLOrderId = result.orderId;
+      log(`✅ [BB_RSI HARD SL] SL-M placed — OrderID: ${result.orderId} | trigger=₹${triggerPrice}`);
     } else {
-      log(`⚠️ [SCALP HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
+      log(`⚠️ [BB_RSI HARD SL] SL-M placement failed: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
-    log(`❌ [SCALP HARD SL] Exception: ${err.message}`);
+    log(`❌ [BB_RSI HARD SL] Exception: ${err.message}`);
   }
 }
 
-async function updateScalpHardSL(newSpotSL) {
-  if (!isScalpHardSLEnabled() || !_scalpHardSLOrderId || !state.position) return;
+async function updateBbRsiHardSL(newSpotSL) {
+  if (!isBbRsiHardSLEnabled() || !_bbRsiHardSLOrderId || !state.position) return;
   const optionLtp = state.optionLtp;
   if (!optionLtp) return;
 
@@ -294,30 +294,30 @@ async function updateScalpHardSL(newSpotSL) {
   const newTrigger = Math.max(0.5, parseFloat((optionLtp - spotGap * delta).toFixed(1)));
 
   try {
-    const result = await fyersBroker.modifySLMOrder(_scalpHardSLOrderId, newTrigger);
+    const result = await fyersBroker.modifySLMOrder(_bbRsiHardSLOrderId, newTrigger);
     if (result.success) {
-      log(`🔄 [SCALP HARD SL] Modified trigger → ₹${newTrigger}`);
+      log(`🔄 [BB_RSI HARD SL] Modified trigger → ₹${newTrigger}`);
     } else {
-      log(`⚠️ [SCALP HARD SL] Modify failed: ${JSON.stringify(result.raw)}`);
+      log(`⚠️ [BB_RSI HARD SL] Modify failed: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
-    log(`❌ [SCALP HARD SL] Modify exception: ${err.message}`);
+    log(`❌ [BB_RSI HARD SL] Modify exception: ${err.message}`);
   }
 }
 
-async function cancelScalpHardSL() {
-  if (!_scalpHardSLOrderId) return;
-  const orderId = _scalpHardSLOrderId;
-  _scalpHardSLOrderId = null;
+async function cancelBbRsiHardSL() {
+  if (!_bbRsiHardSLOrderId) return;
+  const orderId = _bbRsiHardSLOrderId;
+  _bbRsiHardSLOrderId = null;
   try {
     const result = await fyersBroker.cancelOrder(orderId);
     if (result.success) {
-      log(`🗑️ [SCALP HARD SL] Cancelled SL-M order ${orderId}`);
+      log(`🗑️ [BB_RSI HARD SL] Cancelled SL-M order ${orderId}`);
     } else {
-      log(`⚠️ [SCALP HARD SL] Cancel failed: ${JSON.stringify(result.raw)}`);
+      log(`⚠️ [BB_RSI HARD SL] Cancel failed: ${JSON.stringify(result.raw)}`);
     }
   } catch (err) {
-    log(`❌ [SCALP HARD SL] Cancel exception: ${err.message}`);
+    log(`❌ [BB_RSI HARD SL] Cancel exception: ${err.message}`);
   }
 }
 
@@ -333,21 +333,21 @@ function verifyOrderFill(orderId, label) {
       if (!Array.isArray(orders) || orders.length === 0) return;
       const order = orders.find(o => o.id === orderId || o.orderNumber === orderId);
       if (!order) {
-        log(`⚠️ [SCALP] Order ${orderId} not found in order book (${label})`);
+        log(`⚠️ [BB_RSI] Order ${orderId} not found in order book (${label})`);
         return;
       }
       const status = (order.status || 0);
       // Fyers status: 2=TRADED/FILLED, 5=REJECTED, 1=PENDING, 6=CANCELLED
       if (status === 2) {
-        log(`✅ [SCALP] Order VERIFIED filled — ${orderId} (${label})`);
+        log(`✅ [BB_RSI] Order VERIFIED filled — ${orderId} (${label})`);
       } else if (status === 5) {
-        log(`🚨 [SCALP] Order REJECTED — ${orderId} (${label}) | ${order.message || "unknown"}`);
-        sendTelegram(`🚨 Scalp Order REJECTED: ${label} | ${order.message || "unknown"}`).catch(() => {});
+        log(`🚨 [BB_RSI] Order REJECTED — ${orderId} (${label}) | ${order.message || "unknown"}`);
+        sendTelegram(`🚨 BB_RSI Order REJECTED: ${label} | ${order.message || "unknown"}`).catch(() => {});
       } else {
-        log(`⚠️ [SCALP] Order status=${status} — ${orderId} (${label})`);
+        log(`⚠️ [BB_RSI] Order status=${status} — ${orderId} (${label})`);
       }
     } catch (err) {
-      log(`⚠️ [SCALP] Order verification failed: ${err.message}`);
+      log(`⚠️ [BB_RSI] Order verification failed: ${err.message}`);
     }
   }, 3000);
 }
@@ -356,39 +356,39 @@ function verifyOrderFill(orderId, label) {
 let _orderInFlight     = false;
 let _squareOffInFlight = false;
 
-// DRY-RUN: when the global LIVE_HARNESS_DRY_RUN is on (or SCALP_LIVE_DRY_RUN
+// DRY-RUN: when the global LIVE_HARNESS_DRY_RUN is on (or BB_RSI_LIVE_DRY_RUN
 // override is on), log the Fyers call that WOULD be made and place no real order.
-function isDryRun() { return liveDryRun.isDryRun("SCALP"); }
-let _scalpDryRunSeq = 0;
+function isDryRun() { return liveDryRun.isDryRun("BB_RSI"); }
+let _bbRsiDryRunSeq = 0;
 
 async function placeOrder(fyersSymbol, side, qty) {
   if (_orderInFlight) {
-    log(`⚠️ [SCALP-LIVE] Order in flight — skipping duplicate`);
+    log(`⚠️ [BB_RSI-LIVE] Order in flight — skipping duplicate`);
     return { success: false, reason: "duplicate_guard" };
   }
   _orderInFlight = true;
   const sideLabel = side === 1 ? "BUY" : "SELL";
   if (isDryRun()) {
-    const orderId = `DRYRUN-SCALP-${Date.now()}-${++_scalpDryRunSeq}`;
-    log(`🧪 [SCALP-LIVE DRY-RUN] No real order placed — would ${sideLabel} ${qty} × ${fyersSymbol} via Fyers | virtual OrderID: ${orderId}`);
+    const orderId = `DRYRUN-BB_RSI-${Date.now()}-${++_bbRsiDryRunSeq}`;
+    log(`🧪 [BB_RSI-LIVE DRY-RUN] No real order placed — would ${sideLabel} ${qty} × ${fyersSymbol} via Fyers | virtual OrderID: ${orderId}`);
     setTimeout(() => { _orderInFlight = false; }, 5000);
     return { success: true, orderId, dryRun: true };
   }
-  log(`📤 [SCALP-LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Fyers...`);
+  log(`📤 [BB_RSI-LIVE] Placing ${sideLabel} ${qty} × ${fyersSymbol} via Fyers...`);
   try {
     const result = await fyersBroker.placeMarketOrder(
-      fyersSymbol, side, qty, "SCALP",
+      fyersSymbol, side, qty, "BB_RSI",
       { isFutures: instrumentConfig.INSTRUMENT === "NIFTY_FUTURES" }
     );
     if (result.success) {
-      log(`✅ [SCALP-LIVE] Fyers order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
+      log(`✅ [BB_RSI-LIVE] Fyers order filled — ${sideLabel} ${qty} × ${fyersSymbol} | OrderID: ${result.orderId}`);
       verifyOrderFill(result.orderId, `${sideLabel} ${qty} × ${fyersSymbol}`);
     } else {
-      log(`❌ [SCALP-LIVE] Fyers order FAILED — ${JSON.stringify(result.raw)}`);
+      log(`❌ [BB_RSI-LIVE] Fyers order FAILED — ${JSON.stringify(result.raw)}`);
     }
     return result;
   } catch (err) {
-    log(`❌ [SCALP-LIVE] Order exception: ${err.message}`);
+    log(`❌ [BB_RSI-LIVE] Order exception: ${err.message}`);
     return { success: false, orderId: null, raw: { error: err.message } };
   } finally {
     setTimeout(() => { _orderInFlight = false; }, 5000);
@@ -399,7 +399,7 @@ async function placeOrder(fyersSymbol, side, qty) {
 
 async function squareOff(exitPrice, reason) {
   if (_squareOffInFlight) {
-    log(`⚠️ [SCALP-LIVE] squareOff already in progress — ignoring`);
+    log(`⚠️ [BB_RSI-LIVE] squareOff already in progress — ignoring`);
     return;
   }
   if (!state.position) return;
@@ -411,10 +411,10 @@ async function squareOff(exitPrice, reason) {
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
   const exitOrderSide = (isFutures && side === "PE") ? 1 : -1;
 
-  log(`🔄 [SCALP-LIVE] Square off: ${reason}`);
+  log(`🔄 [BB_RSI-LIVE] Square off: ${reason}`);
 
   // Cancel Hard SL-M order before placing market exit (prevents double-exit)
-  await cancelScalpHardSL();
+  await cancelBbRsiHardSL();
 
   // Retry exit order up to 3 times — a stuck open position can lose real money
   const MAX_EXIT_RETRIES = 3;
@@ -424,15 +424,15 @@ async function squareOff(exitPrice, reason) {
     if (result.success) break;
     if (result.reason === "duplicate_guard") break;  // another exit already in flight
     if (attempt < MAX_EXIT_RETRIES) {
-      log(`⚠️ [SCALP-LIVE] Exit attempt ${attempt}/${MAX_EXIT_RETRIES} failed — retrying in 2s...`);
+      log(`⚠️ [BB_RSI-LIVE] Exit attempt ${attempt}/${MAX_EXIT_RETRIES} failed — retrying in 2s...`);
       await sleep(2000);
     }
   }
 
   if (!result || !result.success) {
     if (result && result.reason !== "duplicate_guard") {
-      log(`🚨 [SCALP-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
-      sendTelegram(`🚨 SCALP EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
+      log(`🚨 [BB_RSI-LIVE] EXIT ORDER FAILED after ${MAX_EXIT_RETRIES} attempts — MANUAL INTERVENTION REQUIRED!`);
+      sendTelegram(`🚨 BB_RSI EXIT FAILED: ${symbol} ${side} × ${qty} — ${reason}. Check Fyers dashboard IMMEDIATELY!`).catch(() => {});
     }
     _squareOffInFlight = false;
     return;
@@ -455,11 +455,11 @@ async function squareOff(exitPrice, reason) {
   const charges = getCharges({ broker: "fyers", isFutures, exitPremium: exitOptionLtp, entryPremium: optionEntryLtp, qty });
   const netPnl    = parseFloat((pnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
-  log(`${emoji} [SCALP-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
+  log(`${emoji} [BB_RSI-LIVE] Exit: ${reason} | PnL: ₹${netPnl}`);
 
   // Indicator snapshot AT EXIT — recompute silently so the log carries the full picture.
   let _exitInd = {};
-  try { _exitInd = scalpStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+  try { _exitInd = bbRsiStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
 
   const _exitTrade = {
     side, symbol, qty, entryPrice, exitPrice,
@@ -523,27 +523,27 @@ async function squareOff(exitPrice, reason) {
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
   state._ltpStaleLogged = false;
-  _scalpHardSLOrderId = null;  // clear Hard SL tracking
-  clearScalpPosition();  // remove persisted state — position is closed
+  _bbRsiHardSLOrderId = null;  // clear Hard SL tracking
+  clearBbRsiPosition();  // remove persisted state — position is closed
 
-  // SL pause — escalate after consecutive SLs (per-side when SCALP_PER_SIDE_PAUSE=true)
+  // SL pause — escalate after consecutive SLs (per-side when BB_RSI_PER_SIDE_PAUSE=true)
   state._consecSLsBySide = state._consecSLsBySide || { CE: 0, PE: 0 };
   state._slPauseUntilBySide = state._slPauseUntilBySide || { CE: 0, PE: 0 };
   state._lastSLSpotBySide   = state._lastSLSpotBySide   || { CE: 0, PE: 0 };
   if (reason.includes("SL")) {
-    if (_SCALP_PER_SIDE_PAUSE) {
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._consecSLsBySide[side] += 1;
     } else {
       state._consecSLsBySide.CE += 1;
       state._consecSLsBySide.PE += 1;
     }
-    const _streak = _SCALP_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const extraPause = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
+    const _streak = _BB_RSI_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
+    const extraPause = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
     const pauseCandles = _streak >= 2
-      ? _SCALP_PAUSE_CANDLES + extraPause * (_streak - 1)
-      : _SCALP_PAUSE_CANDLES;
-    const _until = Date.now() + (pauseCandles * SCALP_RES * 60 * 1000);
-    if (_SCALP_PER_SIDE_PAUSE) {
+      ? _BB_RSI_PAUSE_CANDLES + extraPause * (_streak - 1)
+      : _BB_RSI_PAUSE_CANDLES;
+    const _until = Date.now() + (pauseCandles * BB_RSI_RES * 60 * 1000);
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._slPauseUntilBySide[side] = _until;
     } else {
       state._slPauseUntilBySide.CE = _until;
@@ -554,11 +554,11 @@ async function squareOff(exitPrice, reason) {
     state._lastSLSpotBySide[side] = spotAtEntry || entryPrice;
     state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
     state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const sideLabel = _SCALP_PER_SIDE_PAUSE ? `${side} ` : "";
+    const sideLabel = _BB_RSI_PER_SIDE_PAUSE ? `${side} ` : "";
     const escalateNote = _streak >= 2 ? ` (${_streak} consecutive SLs → ${pauseCandles} candles)` : "";
-    log(`⏸️ [SCALP-LIVE] ${sideLabel}SL pause — ${pauseCandles} candles${escalateNote}`);
+    log(`⏸️ [BB_RSI-LIVE] ${sideLabel}SL pause — ${pauseCandles} candles${escalateNote}`);
   } else if (netPnl > 0) {
-    if (_SCALP_PER_SIDE_PAUSE) {
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._consecSLsBySide[side] = 0;
     } else {
       state._consecSLsBySide.CE = 0;
@@ -567,16 +567,16 @@ async function squareOff(exitPrice, reason) {
     state._consecSLs = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
   }
 
-  if (state.sessionPnl <= -_SCALP_MAX_LOSS) {
+  if (state.sessionPnl <= -_BB_RSI_MAX_LOSS) {
     state._dailyLossHit = true;
-    log(`🚨 [SCALP-LIVE] Daily loss limit hit — no more entries`);
+    log(`🚨 [BB_RSI-LIVE] Daily loss limit hit — no more entries`);
   }
 
   state.position = null;
   _squareOffInFlight = false;
 
   notifyExit({
-    mode: "SCALP-LIVE",
+    mode: "BB_RSI-LIVE",
     side, symbol,
     spotAtEntry: spotAtEntry || entryPrice,
     spotAtExit: exitPrice,
@@ -627,7 +627,7 @@ function onTick(tick) {
         state.candles.push({ ...state.currentBar });
       }
       if (state.candles.length > 200) state.candles.shift();
-      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [SCALP-LIVE] onCandleClose error: ${e.message}`));
+      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [BB_RSI-LIVE] onCandleClose error: ${e.message}`));
     }
     // Start new bar — if last preloaded candle covers same bucket, merge with it
     const bucketTimeSec = Math.floor(bucketMs / 1000);
@@ -688,21 +688,21 @@ function onTick(tick) {
     // Peak option premium (long CE/PE both profit on premium rise) — observer-only, for the UI/log.
     if (state.optionLtp && state.optionLtp > (pos.bestOptionLtp || 0)) pos.bestOptionLtp = parseFloat(state.optionLtp.toFixed(2));
 
-    // 0. BB BAND TOUCH — primary structural stop. Mirrors scalpPaper (the canonical
+    // 0. BB BAND TOUCH — primary structural stop. Mirrors bbRsiPaper (the canonical
     //    route): exit the instant spot crosses back through the band (PE: above the
     //    lower band, CE: below the upper band), per-tick rather than at candle close,
     //    so a one-candle V-reversal exits at the band line instead of the bar close.
     //    ARMING GUARD (mirrors paper): only arm once the breakout has extended
-    //    ≥ SCALP_BB_REENTRY_ARM_PTS past the band, so a fresh entry sitting right at
+    //    ≥ BB_RSI_BB_REENTRY_ARM_PTS past the band, so a fresh entry sitting right at
     //    the band isn't stopped by an immediate noise wick before it can work.
-    if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
+    if ((process.env.BB_RSI_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
       // Invalidate on the last CLOSED candle's time, NOT candles.length: once the
       // array hits its 200 cap (push+shift), length is pinned at 200 forever, so a
       // length-keyed cache would freeze the band from ~14:20 IST to session end. Mirrors
-      // the scalpPaper fix — key on the last closed candle's time (changes each close).
+      // the bbRsiPaper fix — key on the last closed candle's time (changes each close).
       const _bbKey = state.candles.length ? state.candles[state.candles.length - 1].time : 0;
       if (!state._bbTickCache || state._bbTickCache.key !== _bbKey) {
-        const _lv = scalpStrategy.bbLevels(state.candles);
+        const _lv = bbRsiStrategy.bbLevels(state.candles);
         state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
       }
       const _bb = state._bbTickCache;
@@ -710,44 +710,44 @@ function onTick(tick) {
       if (_band != null) {
         const _pen = pos.side === "CE" ? (price - _band) : (_band - price);
         if (_pen > (pos._bbMaxPen || 0)) pos._bbMaxPen = _pen;
-        const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+        const _armPts = parseFloat(process.env.BB_RSI_BB_REENTRY_ARM_PTS || "10");
         const _armed = (pos._bbMaxPen || 0) >= _armPts;
         const _reentered = pos.side === "CE" ? (price < _band) : (price > _band);
         if (_armed && _reentered) {
           pos.slSource = "BB re-entry";
-          squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+          squareOff(price, "BB re-entry").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
           return;
         }
       }
     }
 
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
-    //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
+    //    BB_RSI_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
     //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.
     {
-      const _hs = scalpStrategy.hardStop(_favPts);
+      const _hs = bbRsiStrategy.hardStop(_favPts);
       if (_hs.hit) {
         pos.slSource = "Stop Loss";
-        squareOff(price, `SL (${_hs.stop}pts)`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+        squareOff(price, `SL (${_hs.stop}pts)`).catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
         return;
       }
     }
 
     // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
-    //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
+    //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
     //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
     {
-      const _lock = scalpStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
+      const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
         pos.slSource = "Profit Lock";
-        squareOff(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+        squareOff(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`).catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
         return;
       }
     }
 
     // EOD
     if (getISTMinutes() >= _STOP_MINS - 10) {
-      squareOff(price, "EOD square-off").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+      squareOff(price, "EOD square-off").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
       return;
     }
   }
@@ -756,28 +756,28 @@ function onTick(tick) {
   // While flat, if a prior candle armed a signal, enter the instant THIS (the
   // immediately-next) candle crosses that signal candle's close. All entry gates
   // were already cleared at arm time (onCandleClose), so no re-check here.
-  // When SCALP_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
+  // When BB_RSI_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
   // candle's CLOSE (in onCandleClose), not intra-bar — so this per-tick path is
   // skipped (an intra-bar poke that closes back inside the band must not enter).
-  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")
-      && !confirmCandle.outsideBandEnabled("SCALP")) {
+  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("BB_RSI")
+      && !confirmCandle.outsideBandEnabled("BB_RSI")) {
     const _a = state._armedSignal;
-    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, SCALP_RES)
+    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
         && isMarketHours()) {
       state._armedSignal   = null; // consume
       state._entryInFlight = true;
       const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}` });
-      log(`⚡ [SCALP-LIVE] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+      log(`⚡ [BB_RSI-LIVE] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
       Promise.resolve(resolveAndEnter(_a.side, price, _r))
-        .catch(e => log(`⚠️ [SCALP-LIVE] confirm entry failed: ${e.message}`))
+        .catch(e => log(`⚠️ [BB_RSI-LIVE] confirm entry failed: ${e.message}`))
         .finally(() => { state._entryInFlight = false; });
     }
   }
 
   } catch (err) {
     // Catch-all: prevent a single bad tick/NaN from crashing the entire Node process
-    console.error(`🚨 [SCALP-LIVE] onTick crash caught: ${err.message}`, err.stack);
+    console.error(`🚨 [BB_RSI-LIVE] onTick crash caught: ${err.message}`, err.stack);
   }
 }
 
@@ -786,21 +786,21 @@ function onTick(tick) {
 async function onCandleClose(bar) {
   if (!state.running) return;
 
-  // ── Confirmation candle with band guard (SCALP_CONFIRM_OUTSIDE_BAND) ─────────
+  // ── Confirmation candle with band guard (BB_RSI_CONFIRM_OUTSIDE_BAND) ─────────
   // When ON, confirmation fires at THIS candle's CLOSE (not intra-bar): the just-
   // closed bar must have CLOSED beyond the signal candle's close AND closed outside
   // the band, so the entry candle is genuinely outside the band. Entry at this close.
   // Runs before the expiry line below (which clears the cross-window-old arm).
-  if (!state.position && state._armedSignal && confirmCandle.enabled("SCALP")
-      && confirmCandle.outsideBandEnabled("SCALP") && isMarketHours()) {
+  if (!state.position && state._armedSignal && confirmCandle.enabled("BB_RSI")
+      && confirmCandle.outsideBandEnabled("BB_RSI") && isMarketHours()) {
     const _a = state._armedSignal;
-    if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, SCALP_RES)
+    if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, bar.close, _a.triggerLevel)) {
-      const _bb = scalpStrategy.bbLevels(state.candles);
+      const _bb = bbRsiStrategy.bbLevels(state.candles);
       if (_bb && confirmCandle.beyondBand(_a.side, bar.close, _bb.upper, _bb.lower)) {
         state._armedSignal = null; // consume
         const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close} beyond band` });
-        log(`⚡ [SCALP-LIVE] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+        log(`⚡ [BB_RSI-LIVE] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
         await resolveAndEnter(_a.side, bar.close, _r);
         return;
       }
@@ -819,16 +819,16 @@ async function onCandleClose(bar) {
     const window = [...state.candles];
 
     // BB re-entry → failed breakout: price closed back inside the band, exit now
-    if (window.length >= 15 && scalpStrategy.bbReentryExit(window, state.position.side)) {
-      squareOff(bar.close, "BB re-entry").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+    if (window.length >= 15 && bbRsiStrategy.bbReentryExit(window, state.position.side)) {
+      squareOff(bar.close, "BB re-entry").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
       return;
     }
 
-    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND;
+    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per BB_RSI_USE_SUPERTREND;
     // trend exit, profit lock handles giveback per-tick)
-    if (window.length >= 15 && scalpStrategy.isTrendFlip(window, state.position.side)) {
-      const _flipLbl = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
-      squareOff(bar.close, _flipLbl).catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+    if (window.length >= 15 && bbRsiStrategy.isTrendFlip(window, state.position.side)) {
+      const _flipLbl = (process.env.BB_RSI_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+      squareOff(bar.close, _flipLbl).catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
       return;
     }
 
@@ -837,37 +837,37 @@ async function onCandleClose(bar) {
 
   // Entry
   if (!isMarketHours()) {
-    if (!state._omhLogged) { log(`⏭️ [SCALP-LIVE] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
+    if (!state._omhLogged) { log(`⏭️ [BB_RSI-LIVE] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
     return;
   }
   state._omhLogged = false;
-  if (state._dailyLossHit) { log(`⏭️ [SCALP-LIVE] SKIP: daily loss limit hit`); return; }
-  if (state._entryPending) { log(`⏭️ [SCALP-LIVE] SKIP: entry pending`); return; }
-  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-LIVE] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
+  if (state._dailyLossHit) { log(`⏭️ [BB_RSI-LIVE] SKIP: daily loss limit hit`); return; }
+  if (state._entryPending) { log(`⏭️ [BB_RSI-LIVE] SKIP: entry pending`); return; }
+  if (state.sessionTrades.length >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-LIVE] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached`); return; }
   // Per-side SL cooldown is checked AFTER the strategy returns a side. Fast-path
   // when both sides are paused.
   const _pauseCE = state._slPauseUntilBySide && state._slPauseUntilBySide.CE > Date.now();
   const _pausePE = state._slPauseUntilBySide && state._slPauseUntilBySide.PE > Date.now();
   if (_pauseCE && _pausePE) {
     const secsLeft = Math.ceil((Math.min(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE) - Date.now()) / 1000);
-    log(`⏭️ [SCALP-LIVE] SKIP: SL cooldown both sides (${secsLeft}s left)`);
+    log(`⏭️ [BB_RSI-LIVE] SKIP: SL cooldown both sides (${secsLeft}s left)`);
     return;
   }
-  if (state._expiryDayBlocked) { log(`⏭️ [SCALP-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
+  if (state._expiryDayBlocked) { log(`⏭️ [BB_RSI-LIVE] SKIP: expiry-only mode, not expiry day`); return; }
 
   const window = [...state.candles];
-  if (window.length < 30) { log(`⏭️ [SCALP-LIVE] SKIP: warming up (${window.length}/30 candles)`); return; }
+  if (window.length < 30) { log(`⏭️ [BB_RSI-LIVE] SKIP: warming up (${window.length}/30 candles)`); return; }
 
-  const result = scalpStrategy.getSignal(window, {
+  const result = bbRsiStrategy.getSignal(window, {
     silent: false,
     prevDayOHLC: _prevDayOHLC,
     prevPrevDayOHLC: _prevPrevDayOHLC,
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [SCALP-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
-    logNearMiss(result.filterAudit, "SCALP-LIVE", log);
-    skipLogger.appendSkipLog("scalp", {
+    log(`⏭️ [BB_RSI-LIVE] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    logNearMiss(result.filterAudit, "BB_RSI-LIVE", log);
+    skipLogger.appendSkipLog("bb_rsi", {
       gate: "strategy",
       reason: result.reason || null,
       spot: lastBar.close,
@@ -879,7 +879,7 @@ async function onCandleClose(bar) {
     });
     const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
     notifySignal({
-      mode: "SCALP-LIVE",
+      mode: "BB_RSI-LIVE",
       signal: "SKIP",
       reason: result.reason ? String(result.reason).slice(0, 200) : "—",
       spot: lastBar.close,
@@ -892,17 +892,17 @@ async function onCandleClose(bar) {
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
   if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > Date.now()) {
     const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - Date.now()) / 1000);
-    log(`⏭️ [SCALP-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
+    log(`⏭️ [BB_RSI-LIVE] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
     return;
   }
 
-  // VIX — post-strategy check with derived strength (SCALP_VIX_MAX_ENTRY + SCALP_VIX_STRONG_ONLY)
-  if (process.env.SCALP_VIX_ENABLED === "true") {
-    const _strength = deriveScalpStrength(result);
-    const _vixCheck = await checkLiveVix(_strength, { mode: "scalp" });
+  // VIX — post-strategy check with derived strength (BB_RSI_VIX_MAX_ENTRY + BB_RSI_VIX_STRONG_ONLY)
+  if (process.env.BB_RSI_VIX_ENABLED === "true") {
+    const _strength = deriveBbRsiStrength(result);
+    const _vixCheck = await checkLiveVix(_strength, { mode: "bb_rsi" });
     if (!_vixCheck.allowed) {
-      log(`⏭️ [SCALP-LIVE] SKIP: ${_vixCheck.reason}`);
-      skipLogger.appendSkipLog("scalp", {
+      log(`⏭️ [BB_RSI-LIVE] SKIP: ${_vixCheck.reason}`);
+      skipLogger.appendSkipLog("bb_rsi", {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: bar.close,
@@ -921,26 +921,26 @@ async function onCandleClose(bar) {
   //    beyond this close AND outside the band (handled at candle close, top of this
   //    fn); with OUTSIDE_BAND off, it enters intra-bar on the first cross (see onTick).
   //    Confirm-candle OFF entirely = enter at this candle's close now. ──
-  if (confirmCandle.enabled("SCALP")) {
+  if (confirmCandle.enabled("BB_RSI")) {
     state._armedSignal = { side, triggerLevel: bar.close, armedBarTime: bar.time, result };
-    log(`🎯 [SCALP-LIVE] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
+    log(`🎯 [BB_RSI-LIVE] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
     return;
   }
 
   resolveAndEnter(side, spot, result);
 }
 
-// Derive signal strength for scalp: STRONG if RSI is clearly beyond its threshold (by +5),
-// else MARGINAL. Used to gate on SCALP_VIX_STRONG_ONLY in elevated-VIX regimes.
-function deriveScalpStrength(result) {
+// Derive signal strength for bb_rsi: STRONG if RSI is clearly beyond its threshold (by +5),
+// else MARGINAL. Used to gate on BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes.
+function deriveBbRsiStrength(result) {
   const rsi = typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    const thr = parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "55");
     return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    const thr = parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "45");
     return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
@@ -951,15 +951,15 @@ async function resolveAndEnter(side, spot, result) {
   state._entryPending = true;
 
   try {
-    // Check SCALP_ENABLED
-    if (process.env.SCALP_ENABLED !== "true") {
-      log(`⚠️ [SCALP-LIVE] SCALP_ENABLED is not true — skipping entry`);
+    // Check BB_RSI_ENABLED
+    if (process.env.BB_RSI_ENABLED !== "true") {
+      log(`⚠️ [BB_RSI-LIVE] BB_RSI_ENABLED is not true — skipping entry`);
       return;
     }
 
     const optionInfo = await validateAndGetOptionSymbol(spot, side);
     if (optionInfo.invalid) {
-      log(`⚠️ [SCALP-LIVE] Option symbol invalid — skipping`);
+      log(`⚠️ [BB_RSI-LIVE] Option symbol invalid — skipping`);
       return;
     }
 
@@ -971,8 +971,8 @@ async function resolveAndEnter(side, spot, result) {
       const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
       const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
       if (!_sp.ok) {
-        log(`⏭️ [SCALP-LIVE] SKIP entry — spread too wide (${_sp.reason})`);
-        skipLogger.appendSkipLog("scalp", {
+        log(`⏭️ [BB_RSI-LIVE] SKIP entry — spread too wide (${_sp.reason})`);
+        skipLogger.appendSkipLog("bb_rsi", {
           gate: "spread",
           reason: _sp.reason || null,
           spot,
@@ -988,7 +988,7 @@ async function resolveAndEnter(side, spot, result) {
     // Place BUY order via Fyers
     const orderResult = await placeOrder(symbol, 1, qty);
     if (!orderResult.success) {
-      log(`❌ [SCALP-LIVE] Entry order failed — skipping trade`);
+      log(`❌ [BB_RSI-LIVE] Entry order failed — skipping trade`);
       return;
     }
 
@@ -1000,7 +1000,7 @@ async function resolveAndEnter(side, spot, result) {
     const _entryHourIST   = Math.floor(_entryIstMin / 60);
     const _entryMinuteIST = _entryIstMin % 60;
     const _vixAtEntry     = getCachedVix();
-    const _signalStrength = deriveScalpStrength(result);
+    const _signalStrength = deriveBbRsiStrength(result);
 
     // Initial rupee risk (used by break-even snap + trail price-stop math).
     // Approximate: |entry-SL| × DELTA × qty (charges ignored — small bias is OK).
@@ -1073,18 +1073,18 @@ async function resolveAndEnter(side, spot, result) {
       startOptionPolling(symbol);
     }
 
-    log(`📝 [SCALP-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
+    log(`📝 [BB_RSI-LIVE] BUY ${qty} × ${symbol} @ ₹${spot} | SL: ₹${clampedSL} | ${result.reason}`);
 
     notifyEntry({
-      mode: "SCALP-LIVE",
+      mode: "BB_RSI-LIVE",
       side, symbol, spotAtEntry: spot,
       optionEntryLtp: null,
       stopLoss: result.stopLoss, qty, reason: result.reason,
     });
     // Persist position to disk for crash recovery
-    saveScalpPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
+    saveBbRsiPosition(state.position, { sessionPnl: state.sessionPnl || 0 });
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] Entry failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-LIVE] Entry failed: ${err.message}`);
   } finally {
     setTimeout(() => { state._entryPending = false; }, 5000);
   }
@@ -1100,12 +1100,12 @@ async function preloadHistory() {
     // Fetch from 7 days ago to cover weekends + holidays (e.g., Thu trading → Mon start)
     const lookbackDate = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const candles = await fetchCandlesCached(
-      NIFTY_INDEX_SYMBOL, String(SCALP_RES), lookbackDate, today,
+      NIFTY_INDEX_SYMBOL, String(BB_RSI_RES), lookbackDate, today,
       fetchCandles
     );
     if (candles && candles.length > 0) {
       state.candles = candles.slice(-99);
-      log(`📦 [SCALP-LIVE] Pre-loaded ${state.candles.length} × ${SCALP_RES}-min candles (strategy ready!)`);
+      log(`📦 [BB_RSI-LIVE] Pre-loaded ${state.candles.length} × ${BB_RSI_RES}-min candles (strategy ready!)`);
 
       // ── Gap detection — compare today's open vs yesterday's close ──────────
       const todayIST = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -1116,15 +1116,15 @@ async function preloadHistory() {
         const GAP_THRESHOLD = parseFloat(process.env.GAP_THRESHOLD_PTS || "50");
         if (Math.abs(gapPts) >= GAP_THRESHOLD) {
           const dir = gapPts > 0 ? "UP" : "DOWN";
-          log(`🔔 [SCALP] GAP ${dir} detected: ${Math.abs(gapPts).toFixed(0)} pts`);
-          sendTelegram(`🔔 [SCALP] GAP ${dir}: ${Math.abs(gapPts).toFixed(0)} pts`).catch(() => {});
+          log(`🔔 [BB_RSI] GAP ${dir} detected: ${Math.abs(gapPts).toFixed(0)} pts`);
+          sendTelegram(`🔔 [BB_RSI] GAP ${dir}: ${Math.abs(gapPts).toFixed(0)} pts`).catch(() => {});
         }
       }
     } else {
-      log(`⚠️ [SCALP-LIVE] No historical candles found — will build from live ticks`);
+      log(`⚠️ [BB_RSI-LIVE] No historical candles found — will build from live ticks`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] Pre-load failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-LIVE] Pre-load failed: ${err.message}`);
   }
 
   // Fetch previous day(s) OHLC (reference)
@@ -1142,7 +1142,7 @@ async function preloadHistory() {
       if (pastDays.length >= 1) {
         const prev = pastDays[pastDays.length - 1];
         _prevDayOHLC = { high: prev.high, low: prev.low, close: prev.close };
-        log(`📊 [SCALP-LIVE] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
+        log(`📊 [BB_RSI-LIVE] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
       }
       if (pastDays.length >= 2) {
         const pp = pastDays[pastDays.length - 2];
@@ -1150,33 +1150,33 @@ async function preloadHistory() {
       }
 
     } else {
-      log(`⚠️ [SCALP-LIVE] Not enough daily candles for prev day data`);
+      log(`⚠️ [BB_RSI-LIVE] Not enough daily candles for prev day data`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-LIVE] Prev-day OHLC fetch failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-LIVE] Prev-day OHLC fetch failed: ${err.message}`);
   }
 }
 
 // ── EOD Backup Timer — force exit at 3:25 PM IST if tick-based exit missed ──
-let _scalpEodBackupTimer = null;
+let _bbRsiEodBackupTimer = null;
 
-function scheduleScalpEODBackup() {
-  clearScalpEODBackup();
+function scheduleBbRsiEODBackup() {
+  clearBbRsiEODBackup();
   const _EOD_EXIT_MINS = _STOP_MINS - 5; // 3:25 PM
   const nowMins = getISTMinutes();
   if (nowMins >= _EOD_EXIT_MINS) return;
   const msUntil = (_EOD_EXIT_MINS - nowMins) * 60 * 1000;
-  _scalpEodBackupTimer = setTimeout(() => {
+  _bbRsiEodBackupTimer = setTimeout(() => {
     if (!state.running || !state.position) return;
     const exitPrice = state.lastTickPrice || (state.currentBar ? state.currentBar.close : 0);
-    log(`🚨 [SCALP] EOD BACKUP TIMER — force exit at 3:25 PM IST`);
-    squareOff(exitPrice, "EOD backup timer (3:25 PM)").catch(e => log(`❌ [SCALP] EOD backup exit error: ${e.message}`));
+    log(`🚨 [BB_RSI] EOD BACKUP TIMER — force exit at 3:25 PM IST`);
+    squareOff(exitPrice, "EOD backup timer (3:25 PM)").catch(e => log(`❌ [BB_RSI] EOD backup exit error: ${e.message}`));
   }, msUntil);
-  log(`⏰ [SCALP] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min`);
+  log(`⏰ [BB_RSI] EOD backup timer set — force exit in ${Math.round(msUntil / 60000)} min`);
 }
 
-function clearScalpEODBackup() {
-  if (_scalpEodBackupTimer) { clearTimeout(_scalpEodBackupTimer); _scalpEodBackupTimer = null; }
+function clearBbRsiEODBackup() {
+  if (_bbRsiEodBackupTimer) { clearTimeout(_bbRsiEodBackupTimer); _bbRsiEodBackupTimer = null; }
 }
 
 // ── Auto-stop ───────────────────────────────────────────────────────────────
@@ -1189,14 +1189,14 @@ function scheduleAutoStop(stopFn) {
   if (ms <= 0) return;
   _autoStopTimer = setTimeout(() => {
     if (!state.running) return;
-    stopFn("⏰ [SCALP-LIVE] Auto-stop reached");
+    stopFn("⏰ [BB_RSI-LIVE] Auto-stop reached");
   }, ms);
-  log(`⏰ [SCALP-LIVE] Auto-stop in ${Math.round(ms / 60000)} min`);
+  log(`⏰ [BB_RSI-LIVE] Auto-stop in ${Math.round(ms / 60000)} min`);
 }
 
 // errorPage imported from sharedNav (shared across all route files)
 function _errorPage(title, message, linkHref, linkText) {
-  return errorPage(title, message, linkHref, linkText, 'scalpLive');
+  return errorPage(title, message, linkHref, linkText, 'bbRsiLive');
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -1204,9 +1204,9 @@ function _errorPage(title, message, linkHref, linkText) {
 router.get("/start", async (req, res) => {
   if (state.running) return res.json({ success: true, message: "Already running" });
 
-  const check = sharedSocketState.canStart("SCALP_LIVE");
+  const check = sharedSocketState.canStart("BB_RSI_LIVE");
   if (!check.allowed) {
-    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/scalp-live/status", "\u2190 Back"));
+    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/bb_rsi-live/status", "\u2190 Back"));
   }
 
   const auth = await verifyFyersToken();
@@ -1218,26 +1218,26 @@ router.get("/start", async (req, res) => {
     return res.status(401).send(_errorPage("Not Authenticated", "Fyers not authenticated for orders. Login first.", "/auth/login", "Login with Fyers"));
   }
 
-  if (process.env.SCALP_ENABLED !== "true") {
-    return res.status(400).send(_errorPage("Scalp Disabled", "SCALP_ENABLED is not true. Enable it in Settings first.", "/settings", "Open Settings"));
+  if (process.env.BB_RSI_ENABLED !== "true") {
+    return res.status(400).send(_errorPage("BB_RSI Disabled", "BB_RSI_ENABLED is not true. Enable it in Settings first.", "/settings", "Open Settings"));
   }
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) {
-    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/scalp-live/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/bb_rsi-live/status", "\u2190 Back"));
   }
 
   if (!isStartAllowed()) {
-    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-live/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/bb_rsi-live/status", "\u2190 Back"));
   }
 
   // Expiry day check
   let _expiryBlocked = false;
-  if ((process.env.SCALP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+  if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
     const { isExpiryDay } = require("../utils/nseHolidays");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) _expiryBlocked = true;
-    log(`📅 [SCALP-LIVE] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    log(`📅 [BB_RSI-LIVE] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
   // Reset state
@@ -1254,27 +1254,27 @@ router.get("/start", async (req, res) => {
     _expiryDayBlocked: _expiryBlocked,
   };
 
-  sharedSocketState.setScalpActive("SCALP_LIVE");
+  sharedSocketState.setBbRsiActive("BB_RSI_LIVE");
 
   await preloadHistory();
 
-  if (process.env.SCALP_VIX_ENABLED === "true") {
+  if (process.env.BB_RSI_VIX_ENABLED === "true") {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
 
   // Tick-recorder session-start snapshot
-  state._sessionId = `scalp-live:${Date.now()}`;
+  state._sessionId = `bb_rsi-live:${Date.now()}`;
   try {
     tickRecorder.recordSessionStart({
-      mode: "scalp-live",
+      mode: "bb_rsi-live",
       sessionId: state._sessionId,
       settings: tickRecorder.snapshotSettings(),
       warmup:   state.candles.map(c => ({ ...c })),
       vix:      getCachedVix(),
       meta: {
         instrument:       instrumentConfig.INSTRUMENT,
-        resolutionMin:    SCALP_RES,
+        resolutionMin:    BB_RSI_RES,
         expiryDayBlocked: _expiryBlocked,
         spotSymbol:       NIFTY_INDEX_SYMBOL,
         sessionStartISO:  state.sessionStart,
@@ -1288,66 +1288,66 @@ router.get("/start", async (req, res) => {
     const openPos = (brokerPositions.netPositions || []).filter(p => p.netQty !== 0);
     if (openPos.length > 0) {
       const symbols = openPos.map(p => `${p.symbol}(qty=${p.netQty})`).join(", ");
-      log(`⚠️ [SCALP] Broker has open positions: ${symbols}`);
+      log(`⚠️ [BB_RSI] Broker has open positions: ${symbols}`);
       log(`   If these are from a previous crash, consider manual square-off on Fyers dashboard.`);
       sendTelegram(`⚠️ Orphaned positions on Fyers: ${symbols}`).catch(() => {});
     } else {
-      log(`✅ [SCALP] No orphaned positions on Fyers — clean start`);
+      log(`✅ [BB_RSI] No orphaned positions on Fyers — clean start`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP] Position reconciliation failed: ${err.message}`);
+    log(`⚠️ [BB_RSI] Position reconciliation failed: ${err.message}`);
   }
 
   // Socket: piggyback or start own
   if (socketManager.isRunning()) {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [SCALP-LIVE] Piggybacking on existing WebSocket");
+    log("📡 [BB_RSI-LIVE] Piggybacking on existing WebSocket");
   } else {
     socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log);
     socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [SCALP-LIVE] Started WebSocket");
+    log("📡 [BB_RSI-LIVE] Started WebSocket");
   }
 
-  scheduleScalpEODBackup();
+  scheduleBbRsiEODBackup();
   scheduleAutoStop((msg) => {
     log(msg);
     stopSession();
   });
 
-  log(`🟢 [SCALP-LIVE] Session started — ${SCALP_RES}-min candles | Fyers orders`);
+  log(`🟢 [BB_RSI-LIVE] Session started — ${BB_RSI_RES}-min candles | Fyers orders`);
 
   notifyStarted({
-    mode: "SCALP-LIVE",
+    mode: "BB_RSI-LIVE",
     text: [
-      `⚡ SCALP LIVE — STARTED`,
+      `⚡ BB_RSI LIVE — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
-      `Resolution: ${SCALP_RES}-min candles | Fyers orders`,
-      `Window    : ${process.env.SCALP_ENTRY_START || "09:20"} → ${process.env.SCALP_ENTRY_END || "15:10"} IST`,
-      `Max Loss  : ₹${process.env.SCALP_MAX_DAILY_LOSS || "—"} | Max Trades: ${process.env.SCALP_MAX_DAILY_TRADES || "—"}`,
+      `Resolution: ${BB_RSI_RES}-min candles | Fyers orders`,
+      `Window    : ${process.env.BB_RSI_ENTRY_START || "09:20"} → ${process.env.BB_RSI_ENTRY_END || "15:10"} IST`,
+      `Max Loss  : ₹${process.env.BB_RSI_MAX_DAILY_LOSS || "—"} | Max Trades: ${process.env.BB_RSI_MAX_DAILY_TRADES || "—"}`,
       _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
     ].filter(l => l !== null).join("\n"),
   });
 
-  res.json({ success: true, message: "Scalp live trading started" });
+  res.json({ success: true, message: "BB_RSI live trading started" });
 });
 
 function stopSession() {
   if (!state.running) return;
 
   if (state.position) {
-    squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped").catch(e => console.error(`🚨 [SCALP] squareOff error: ${e.message}`));
+    squareOff(state.lastTickPrice || state.position.entryPrice, "Session stopped").catch(e => console.error(`🚨 [BB_RSI] squareOff error: ${e.message}`));
   }
 
   state.running = false;
   stopOptionPolling();
-  clearScalpEODBackup();
+  clearBbRsiEODBackup();
 
   try {
     tickRecorder.recordSessionStop({
-      mode: "scalp-live",
+      mode: "bb_rsi-live",
       sessionId: state._sessionId || null,
       reason: "user_stop",
     });
@@ -1358,20 +1358,20 @@ function stopSession() {
   if (!sharedSocketState.isActive()) {
     // No primary mode — check if we should stop socket
     // Only stop if we're the last user
-    const otherScalp = sharedSocketState.getScalpMode();
-    if (!otherScalp || otherScalp === "SCALP_LIVE") {
+    const otherBbRsi = sharedSocketState.getBbRsiMode();
+    if (!otherBbRsi || otherBbRsi === "BB_RSI_LIVE") {
       socketManager.stop();
     }
   }
 
-  sharedSocketState.clearScalp();
+  sharedSocketState.clearBbRsi();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 
-  saveScalpSession();
-  log("🔴 [SCALP-LIVE] Session stopped");
+  saveBbRsiSession();
+  log("🔴 [BB_RSI-LIVE] Session stopped");
 
   notifyDayReport({
-    mode: "SCALP-LIVE",
+    mode: "BB_RSI-LIVE",
     sessionTrades: state.sessionTrades,
     sessionPnl:    state.sessionPnl,
     sessionStart:  state.sessionStart,
@@ -1380,7 +1380,7 @@ function stopSession() {
 
 router.get("/stop", (req, res) => {
   stopSession();
-  res.json({ success: true, message: "Scalp live trading stopped" });
+  res.json({ success: true, message: "BB_RSI live trading stopped" });
 });
 
 router.get("/exit", (req, res) => {
@@ -1392,7 +1392,7 @@ router.get("/exit", (req, res) => {
 
 // ── Manual entry ────────────────────────────────────────────────────────────
 router.post("/manualEntry", async (req, res) => {
-  if (!state.running) return res.status(400).json({ success: false, error: "Scalp live is not running." });
+  if (!state.running) return res.status(400).json({ success: false, error: "BB_RSI live is not running." });
   if (state.position) return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
   const { side } = req.body || {};
   if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
@@ -1405,7 +1405,7 @@ router.post("/manualEntry", async (req, res) => {
   let sl = null;
   if (candles.length >= 3) {
     try {
-      const _sa = PSAR.calculate({ step: parseFloat(process.env.SCALP_PSAR_STEP || "0.02"), max: parseFloat(process.env.SCALP_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
+      const _sa = PSAR.calculate({ step: parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02"), max: parseFloat(process.env.BB_RSI_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
       const _sar = _sa.length ? _sa[_sa.length - 1] : null;
       if (_sar != null) sl = parseFloat(_sar.toFixed(2));
     } catch (_) { /* fall back below */ }
@@ -1417,7 +1417,7 @@ router.post("/manualEntry", async (req, res) => {
     slSrcLbl = "Prev Candle";
   }
 
-  log(`🖐️ [SCALP-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
+  log(`🖐️ [BB_RSI-LIVE] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
   await resolveAndEnter(side, spot, { stopLoss: sl, target: null, reason: `Manual ${side} entry` });
   if (!state.position) return res.status(400).json({ success: false, error: "Entry failed — check logs for details." });
   return res.json({ success: true, spot, side, sl });
@@ -1430,8 +1430,8 @@ router.get("/status/chart-data", (req, res) => {
     if (state.currentBar) candles.push({ time: state.currentBar.time, open: state.currentBar.open, high: state.currentBar.high, low: state.currentBar.low, close: state.currentBar.close });
 
     // BB overlay (same params as the strategy) — aligned with candles
-    const BB_PERIOD = parseInt(process.env.SCALP_BB_PERIOD || "20", 10);
-    const BB_STDDEV = parseFloat(process.env.SCALP_BB_STDDEV || "1");
+    const BB_PERIOD = parseInt(process.env.BB_RSI_BB_PERIOD || "20", 10);
+    const BB_STDDEV = parseFloat(process.env.BB_RSI_BB_STDDEV || "1");
     let bbUpper = [], bbMiddle = [], bbLower = [];
     if (candles.length >= BB_PERIOD) {
       const closes = candles.map(c => c.close);
@@ -1446,7 +1446,7 @@ router.get("/status/chart-data", (req, res) => {
     }
 
     // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
-    const RSI_PERIOD = parseInt(process.env.SCALP_RSI_PERIOD || "14", 10);
+    const RSI_PERIOD = parseInt(process.env.BB_RSI_RSI_PERIOD || "14", 10);
     let rsiSeries = [];
     if (candles.length >= RSI_PERIOD + 1) {
       try {
@@ -1457,12 +1457,12 @@ router.get("/status/chart-data", (req, res) => {
     }
 
     // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
-    const useSupertrend = (process.env.SCALP_USE_SUPERTREND === "true");
+    const useSupertrend = (process.env.BB_RSI_USE_SUPERTREND === "true");
     let sarPoints = [];
     let supertrend = [];
     if (useSupertrend) {
-      const ST_PERIOD = parseInt(process.env.SCALP_SUPERTREND_PERIOD || "10", 10);
-      const ST_MULT   = parseFloat(process.env.SCALP_SUPERTREND_MULT || "3");
+      const ST_PERIOD = parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10);
+      const ST_MULT   = parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3");
       try {
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
@@ -1470,8 +1470,8 @@ router.get("/status/chart-data", (req, res) => {
         }
       } catch (_) { /* ignore */ }
     } else {
-      const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
-      const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+      const PSAR_STEP = parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02");
+      const PSAR_MAX  = parseFloat(process.env.BB_RSI_PSAR_MAX  || "0.2");
       if (candles.length >= 3) {
         try {
           const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
@@ -1502,10 +1502,10 @@ router.get("/status/chart-data", (req, res) => {
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
     return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower, sar: sarPoints,
       supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
-      adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
+      adxMin: parseFloat(process.env.BB_RSI_ADX_MIN || "20"),
       rsi: rsiSeries,
-      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
-      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
+      rsiCeMin: parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "62"),
+      rsiPeMax: parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "42") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1594,7 +1594,7 @@ router.get("/status/data", (req, res) => {
     logs:    reverseSlice(state.log, 200),
   });
   } catch (err) {
-    console.error("[scalp/status/data] Error:", err.message);
+    console.error("[bb_rsi/status/data] Error:", err.message);
     return res.status(500).json({ error: err.message });
   }
 });
@@ -1604,12 +1604,12 @@ router.get("/status/data", (req, res) => {
 
 router.get("/status", (req, res) => {
   try {
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const fyersOk    = !!process.env.ACCESS_TOKEN;
 
   const _vix         = getCachedVix();
-  const _vixEnabled  = process.env.SCALP_VIX_ENABLED === "true";
-  const _vixMaxEntry = vixFilter.getVixMaxEntry("scalp");
+  const _vixEnabled  = process.env.BB_RSI_VIX_ENABLED === "true";
+  const _vixMaxEntry = vixFilter.getVixMaxEntry("bb_rsi");
 
   const pos = state.position;
   const isFutures = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
@@ -1861,7 +1861,7 @@ router.get("/status", (req, res) => {
 
   const html = `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Scalp Live \u2014 ${scalpStrategy.NAME}</title>
+<title>BB_RSI Live \u2014 ${bbRsiStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -1929,7 +1929,7 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 @media(max-width:700px){.stat-grid{grid-template-columns:1fr 1fr;}.page{padding:14px;}}
 
 /* Toast */
-.scalp-toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);background:#0d1320;padding:12px 24px;border-radius:10px;font-size:0.85rem;font-weight:700;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);letter-spacing:0.5px;animation:fadeIn 0.2s ease;}
+.bb_rsi-toast{position:fixed;bottom:32px;left:50%;transform:translateX(-50%);background:#0d1320;padding:12px 24px;border-radius:10px;font-size:0.85rem;font-weight:700;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,0.6);letter-spacing:0.5px;animation:fadeIn 0.2s ease;}
 
 /* Confirm modal */
 .confirm-overlay{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.85);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px;}
@@ -1940,7 +1940,7 @@ body{font-family:'IBM Plex Mono',monospace;background:#040c18;color:#c8d8f0;over
 .confirm-btns button{padding:9px 22px;border-radius:8px;font-weight:700;font-size:0.82rem;cursor:pointer;border:none;font-family:inherit;}
 </style></head><body>
 <div class="app-shell">
-${buildSidebar('scalpLive', liveActive, state.running, {
+${buildSidebar('bbRsiLive', liveActive, state.running, {
   showExitBtn: !!pos,
   exitBtnJs: 'scHandleExit(this)',
   showStopBtn: state.running,
@@ -1953,12 +1953,12 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 <!-- TOP BAR -->
 <div class="top-bar">
   <div>
-    <div class="top-bar-title">Scalp Live Trade</div>
-    <div class="top-bar-meta">${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
+    <div class="top-bar-title">BB_RSI Live Trade</div>
+    <div class="top-bar-meta">${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? "Auto-refreshes 2s" : "Not refreshing"}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
-      ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> SCALP LIVE</span>'
+      ? '<span class="top-bar-badge live-active"><span style="width:5px;height:5px;border-radius:50%;background:#ef4444;display:inline-block;"></span> BB_RSI LIVE</span>'
       : '<span class="top-bar-badge">\u25cf STOPPED</span>'}
     ${_vixEnabled
       ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix.value > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix.value > _vixMaxEntry ? '#ef4444' : '#10b981'};">\uD83C\uDF21\uFE0F VIX ${_vix != null ? _vix.value.toFixed(1) : 'n/a'}${_vix != null ? (_vix.value > _vixMaxEntry ? ' \u00b7 BLOCKED' : ' \u00b7 OK') : ''}</span>`
@@ -1977,7 +1977,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
   <div class="page-header">
     <div class="page-status-row">
       <span class="page-status-dot ${state.running ? 'running' : ''}"></span>
-      <span class="page-status-text ${state.running ? 'running' : ''}">${state.running ? 'SCALP LIVE ACTIVE' : 'STOPPED'}</span>
+      <span class="page-status-text ${state.running ? 'running' : ''}">${state.running ? 'BB_RSI LIVE ACTIVE' : 'STOPPED'}</span>
     </div>
   </div>
 
@@ -2007,12 +2007,12 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
     </div>
     <div class="sc" style="border-top:1.5px solid #8b5cf6;">
       <div class="sc-label">Trades (W/L)</div>
-      <div class="sc-val"><span id="ax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_SCALP_MAX_TRADES}</span></div>
+      <div class="sc-val"><span id="ax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_BB_RSI_MAX_TRADES}</span></div>
       <div id="ax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
     </div>
     <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};" id="ax-sc-dloss">
       <div class="sc-label">Daily Loss Limit</div>
-      <div class="sc-val" style="color:${state._dailyLossHit ? '#ef4444' : '#fff'};">${inr(-_SCALP_MAX_LOSS)}</div>
+      <div class="sc-val" style="color:${state._dailyLossHit ? '#ef4444' : '#fff'};">${inr(-_BB_RSI_MAX_LOSS)}</div>
       <div id="ax-daily-loss" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? '\uD83D\uDED1 KILLED' : '\u2705 Active'}</div>
     </div>
     <div class="sc" style="border-top:1.5px solid #2a4060;">
@@ -2037,13 +2037,13 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
   <!-- CURRENT BAR -->
   ${state.currentBar ? `
   <div style="margin-bottom:24px;">
-    <div class="section-title">Current ${SCALP_RES}-Min Bar (forming)</div>
+    <div class="section-title">Current ${BB_RSI_RES}-Min Bar (forming)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ax-bar-${k}" style="font-size:1rem;">${inr(state.currentBar[k])}</div></div>`).join("")}
     </div>
   </div>` : `
   <div style="margin-bottom:24px;">
-    <div class="section-title">Current ${SCALP_RES}-Min Bar (forming)</div>
+    <div class="section-title">Current ${BB_RSI_RES}-Min Bar (forming)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
       ${["open","high","low","close"].map(k => `<div class="sc"><div class="sc-label">${k.toUpperCase()}</div><div class="sc-val" id="ax-bar-${k}" style="font-size:1rem;">\u2014</div></div>`).join("")}
     </div>
@@ -2051,7 +2051,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
 
   ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
   <div style="margin-bottom:18px;">
-    <div class="section-title">NIFTY ${SCALP_RES}-Min Chart</div>
+    <div class="section-title">NIFTY ${BB_RSI_RES}-Min Chart</div>
     <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
       <div id="nifty-chart" style="width:100%;height:100%;"></div>
       <div style="position:absolute;top:10px;left:12px;font-size:0.68rem;color:#4a6080;pointer-events:none;z-index:2;">
@@ -2102,7 +2102,7 @@ ${buildSidebar('scalpLive', liveActive, state.running, {
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
               <div>
                 <span id="scm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-                <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\uD83D\uDD34 Scalp Live \u2014 Full Details</span>
+                <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">\uD83D\uDD34 BB_RSI Live \u2014 Full Details</span>
               </div>
               <button onclick="document.getElementById('scModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">\u2715 Close</button>
             </div>
@@ -2156,7 +2156,7 @@ ${modalJS()}
 /* ── Toast ── */
 function scToast(msg, color) {
   var t = document.createElement('div');
-  t.className = 'scalp-toast';
+  t.className = 'bb_rsi-toast';
   t.textContent = msg;
   t.style.border = '1px solid ' + color;
   t.style.color = color;
@@ -2168,7 +2168,7 @@ function scToast(msg, color) {
 async function scHandleExit(btn) {
   if (btn) { btn.textContent = '\u23f3 Exiting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp-live/exit');
+    var res = await secretFetch('/bb_rsi-live/exit');
     if (!res) { if (btn) { btn.textContent = '\uD83D\uDEAA Exit Position'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -2186,7 +2186,7 @@ async function scHandleExit(btn) {
 async function scHandleStart(btn) {
   if (btn) { btn.textContent = '\u23f3 Starting...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp-live/start');
+    var res = await secretFetch('/bb_rsi-live/start');
     if (!res) { if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; } return; }
     var data = await res.json();
     if (!data.success) {
@@ -2194,7 +2194,7 @@ async function scHandleStart(btn) {
       if (btn) { btn.textContent = '\u25b6 Start'; btn.disabled = false; }
       return;
     }
-    scToast('\uD83D\uDD34 Scalp live trading started!', '#10b981');
+    scToast('\uD83D\uDD34 BB_RSI live trading started!', '#10b981');
     setTimeout(function(){ location.reload(); }, 1200);
   } catch(e) {
     scToast('\u274c ' + e.message, '#ef4444');
@@ -2204,10 +2204,10 @@ async function scHandleStart(btn) {
 async function scHandleStop(btn) {
   if (btn) { btn.textContent = '\u23f3 Stopping...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp-live/stop');
+    var res = await secretFetch('/bb_rsi-live/stop');
     if (!res) { if (btn) { btn.textContent = '\u25a0 Stop'; btn.disabled = false; } return; }
     var data = await res.json();
-    scToast('\u23f9 Scalp live trading stopped.', '#ef4444');
+    scToast('\u23f9 BB_RSI live trading stopped.', '#ef4444');
     setTimeout(function(){ location.reload(); }, 1200);
   } catch(e) {
     scToast('\u274c ' + e.message, '#ef4444');
@@ -2216,16 +2216,16 @@ async function scHandleStop(btn) {
 }
 async function scHandleReset(btn) {
   var ok = await showDoubleConfirm({
-    icon: '⚠️', title: 'Reset Scalp Live History',
-    message: 'Wipe ALL scalp LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
+    icon: '⚠️', title: 'Reset BB_RSI Live History',
+    message: 'Wipe ALL bb_rsi LIVE trade history?\\nClears recorded sessions on this server. Does NOT touch real broker orders.\\nCannot be undone.',
     confirmText: 'Reset History', confirmClass: 'modal-btn-danger',
-    subject: 'ALL scalp LIVE trade history',
+    subject: 'ALL bb_rsi LIVE trade history',
     secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    var res = await secretFetch('/scalp-live/reset', { method: 'POST' });
+    var res = await secretFetch('/bb_rsi-live/reset', { method: 'POST' });
     if (!res) { if (btn) { btn.textContent = '↺ Reset'; btn.disabled = false; } return; }
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
@@ -2245,13 +2245,13 @@ async function scManualEntry(side) {
   var ok = await showConfirm({
     icon: '\u26a0\ufe0f',
     title: 'Manual LIVE entry',
-    message: 'SCALP LIVE: Manual ' + side + ' entry with REAL money. Confirm?',
+    message: 'BB_RSI LIVE: Manual ' + side + ' entry with REAL money. Confirm?',
     confirmText: 'Enter ' + side + ' (LIVE)',
     confirmClass: 'modal-btn-danger'
   });
   if (!ok) return;
   try {
-    var res = await secretFetch('/scalp-live/manualEntry', {
+    var res = await secretFetch('/bb_rsi-live/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -2513,7 +2513,7 @@ logFilter();
   }
   var slLine = null, entryLine = null, _lcc = 0, armedLine = null;
   function fetchChart() {
-    fetch('/scalp-live/status/chart-data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/bb_rsi-live/status/chart-data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
       if (!d.candles || !d.candles.length) return;
       // Trim every series to the latest IST trading day so zooming out still
       // shows only today — warmup history stays server-side for indicator calc.
@@ -2558,7 +2558,7 @@ logFilter();
   var _lastHasPosition = ${pos ? "true" : "false"};
 
   function fetchAndUpdate() {
-    fetch('/scalp-live/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
+    fetch('/bb_rsi-live/status/data', { cache: 'no-store' }).then(function(r) { return r.json(); }).then(function(d) {
 
       // Position state change => reload
       var nowHasPos = !!d.position;
@@ -2783,28 +2783,28 @@ logFilter();
   res.setHeader("Content-Type", "text/html");
   return res.send(html);
   } catch (err) {
-    console.error("[scalp/status] Error:", err.message, err.stack);
-    return res.status(500).send(`<pre style="color:red;padding:32px;font-family:monospace;">Scalp Live Status Error: ${err.message}\n\n${err.stack}</pre>`);
+    console.error("[bb_rsi/status] Error:", err.message, err.stack);
+    return res.status(500).send(`<pre style="color:red;padding:32px;font-family:monospace;">BB_RSI Live Status Error: ${err.message}\n\n${err.stack}</pre>`);
   }
 });
 
 /**
- * POST /scalp-live/reset
- * Wipe all scalp LIVE trade history (clears scalp_live_trades.json sessions).
+ * POST /bb_rsi-live/reset
+ * Wipe all bb_rsi LIVE trade history (clears bb_rsi_live_trades.json sessions).
  * Refuses when a live session is running. Does NOT touch real broker orders.
  */
 router.post("/reset", (req, res) => {
   if (state.running) {
     return res.status(400).json({
       success: false,
-      error: "Stop scalp live trading first before resetting history.",
+      error: "Stop bb_rsi live trading first before resetting history.",
     });
   }
   try {
     ensureDir();
     fs.writeFileSync(SL_FILE, JSON.stringify({ sessions: [] }, null, 2));
-    log("🔄 [SCALP-LIVE] Scalp live trade history cleared.");
-    return res.json({ success: true, message: "Scalp live trade history cleared." });
+    log("🔄 [BB_RSI-LIVE] BB_RSI live trade history cleared.");
+    return res.json({ success: true, message: "BB_RSI live trade history cleared." });
   } catch (err) {
     return res.status(500).json({ success: false, error: err.message });
   }

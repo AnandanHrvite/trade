@@ -44,9 +44,9 @@ class SocketManager {
     this._authFailed     = false;  // sticky — set when AUTH_FAIL_LIMIT reached
     this._lastErrorCode  = null;
     this._lastErrorMsg   = null;
-    // ── Multi-callback fan-out for parallel modes (main + scalp) ──────────
+    // ── Multi-callback fan-out for parallel modes (main + bb_rsi) ──────────
     // Map of callbackId → { onTick, onLog }
-    // When secondary modes (scalp) register, ticks are dispatched to ALL callbacks.
+    // When secondary modes (bb_rsi) register, ticks are dispatched to ALL callbacks.
     this._callbacks  = new Map();
   }
 
@@ -76,7 +76,7 @@ class SocketManager {
   }
 
   /**
-   * Register an additional tick callback (for parallel modes like scalp).
+   * Register an additional tick callback (for parallel modes like bb_rsi).
    * Returns a callbackId to use for unregistering.
    * Socket must already be started by the primary mode.
    */
@@ -231,7 +231,7 @@ class SocketManager {
         if (this._onSpotTick) {
           try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }
         }
-        // Fan-out to all secondary callbacks (scalp, etc.)
+        // Fan-out to all secondary callbacks (bb_rsi, etc.)
         for (const [id, cb] of this._callbacks) {
           try { if (cb.onTick) cb.onTick(t); } catch (e) { this._log(`🚨 [SOCKET] Fan-out error (${id}): ${e.message}`); }
         }

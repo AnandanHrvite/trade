@@ -1,10 +1,10 @@
 /**
- * fyersBroker.js — Fyers Order Placement (Scalp Mode)
+ * fyersBroker.js — Fyers Order Placement (BB_RSI Mode)
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses the same Fyers SDK instance (fyersModel) that's already authenticated
  * for data feeds. Exposes order placement, position queries, and order management.
  *
- * Mirrors the zerodhaBroker.js interface so the scalp route can swap brokers easily.
+ * Mirrors the zerodhaBroker.js interface so the bb_rsi route can swap brokers easily.
  *
  * LIVE-trade safety layer
  * ───────────────────────
@@ -68,7 +68,7 @@ async function _getPositions() {
  * @param {object} opts - { isFutures: bool }
  * @returns {{ success, orderId, raw }}
  */
-async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { isFutures = false } = {}) {
+async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "BB_RSI", { isFutures = false } = {}) {
   if (!isAuthenticated()) {
     throw new Error("Fyers not authenticated. Complete Fyers login first.");
   }
@@ -79,7 +79,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
   }
 
   // Fyers order params
-  // productType: INTRADAY (auto square-off at EOD) for options scalp
+  // productType: INTRADAY (auto square-off at EOD) for options bb_rsi
   //              MARGIN for futures
   const orderParams = {
     symbol:        fyersSymbol,
@@ -92,7 +92,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "SCALP", { is
     validity:      "DAY",
     disclosedQty:  0,
     offlineOrder:  false,
-    orderTag:      (orderTag || "SCALP").substring(0, 20),
+    orderTag:      (orderTag || "BB_RSI").substring(0, 20),
   };
 
   const sideLabel = side === 1 ? "BUY" : "SELL";

@@ -42,11 +42,11 @@ router.get("/idle", (req, res) => {
 });
 
 router.get("/", async (req, res) => {
-  // Block during ANY live session (not just SWING_LIVE) — a heavy backtest sharing
+  // Block during ANY live session (not just EMA_RSI_ST_LIVE) — a heavy backtest sharing
   // the box with a live engine competes for Fyers API + loads a second candle heap,
   // risking an OOM kill on t3.micro. Check per-mode *_LIVE (paper sessions are fine).
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE"
-    || sharedSocketState.getScalpMode() === "SCALP_LIVE"
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE"
+    || sharedSocketState.getBbRsiMode() === "BB_RSI_LIVE"
     || sharedSocketState.getPAMode()    === "PA_LIVE"
     || (sharedSocketState.getOrbMode && sharedSocketState.getOrbMode() === "ORB_LIVE");
   const now = new Date();

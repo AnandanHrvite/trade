@@ -1,7 +1,7 @@
 /**
  * LIVE CONSOLIDATION — /live-consolidation
  * ─────────────────────────────────────────────────────────────────────────────
- * Aggregated, cross-mode LIVE trade history + analytics (Swing / Scalp / PA).
+ * Aggregated, cross-mode LIVE trade history + analytics (EMA_RSI_ST / BB_RSI / PA).
  * Reads the three live-trade JSON files, flattens every trade with its mode
  * + date, and renders a single unified view with:
  *   • Daily / Monthly / Yearly P&L roll-ups
@@ -21,8 +21,8 @@ const _HOME = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
 
 const SOURCES = [
-  { mode: "SWING", file: path.join(DATA_DIR, "live_trades.json"),       color: "#3b82f6" },
-  { mode: "SCALP", file: path.join(DATA_DIR, "scalp_live_trades.json"), color: "#f59e0b" },
+  { mode: "EMA_RSI_ST", file: path.join(DATA_DIR, "ema_rsi_st_live_trades.json"),       color: "#3b82f6" },
+  { mode: "BB_RSI", file: path.join(DATA_DIR, "bb_rsi_live_trades.json"), color: "#f59e0b" },
   { mode: "PA",    file: path.join(DATA_DIR, "pa_live_trades.json"),    color: "#a855f7" },
 ];
 
@@ -99,11 +99,11 @@ router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
   // Per-mode live-running state (used to disable reset buttons while a mode is live)
-  const swingLive = sharedSocketState.getMode()    === "SWING_LIVE";
-  const scalpLive = sharedSocketState.getScalpMode() === "SCALP_LIVE";
+  const emaRsiStLive = sharedSocketState.getMode()    === "EMA_RSI_ST_LIVE";
+  const bbRsiLive = sharedSocketState.getBbRsiMode() === "BB_RSI_LIVE";
   const paLive    = (sharedSocketState.getPAMode ? sharedSocketState.getPAMode() : null) === "PA_LIVE";
 
-  const modeCounts = { SWING: 0, SCALP: 0, PA: 0 };
+  const modeCounts = { EMA_RSI_ST: 0, BB_RSI: 0, PA: 0 };
   let totalPnl = 0, wins = 0, losses = 0;
   for (const t of trades) {
     modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
@@ -185,8 +185,8 @@ router.get("/", (req, res) => {
     .badge-ce{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.25);}
     .badge-pe{background:rgba(239,68,68,0.12);color:#ef4444;border:0.5px solid rgba(239,68,68,0.25);}
     .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
-    .badge-SWING{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
-    .badge-SCALP{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
+    .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
+    .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
     .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
 
     .roll-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
@@ -228,7 +228,7 @@ router.get("/", (req, res) => {
   ${buildSidebar('liveConsolidation', false)}
   <div class="main-content">
     <h1 class="page-title">🔴 Live Traded History</h1>
-    <div class="page-sub">Unified LIVE trade history across Swing, Scalp &amp; Price Action — with daily / monthly / yearly analytics.</div>
+    <div class="page-sub">Unified LIVE trade history across EMA_RSI_ST, BB_RSI &amp; Price Action — with daily / monthly / yearly analytics.</div>
 
     <div class="stat-grid">
       <div class="sc" style="--accent:${totalPnl >= 0 ? '#10b981' : '#ef4444'};">
@@ -237,13 +237,13 @@ router.get("/", (req, res) => {
         <div class="sc-sub">${total} trade${total !== 1 ? 's' : ''} · ${wins}W / ${losses}L · WR ${winRate}%</div>
       </div>
       <div class="sc" style="--accent:#3b82f6;">
-        <div class="sc-label">Swing</div>
-        <div class="sc-val">${modeCounts.SWING}</div>
+        <div class="sc-label">EMA_RSI_ST</div>
+        <div class="sc-val">${modeCounts.EMA_RSI_ST}</div>
         <div class="sc-sub">trades</div>
       </div>
       <div class="sc" style="--accent:#f59e0b;">
-        <div class="sc-label">Scalp</div>
-        <div class="sc-val">${modeCounts.SCALP}</div>
+        <div class="sc-label">BB_RSI</div>
+        <div class="sc-val">${modeCounts.BB_RSI}</div>
         <div class="sc-sub">trades</div>
       </div>
       <div class="sc" style="--accent:#a855f7;">
@@ -268,8 +268,8 @@ router.get("/", (req, res) => {
       <label>Mode</label>
       <select id="fMode">
         <option value="">All</option>
-        <option value="SWING">Swing</option>
-        <option value="SCALP">Scalp</option>
+        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
+        <option value="BB_RSI">BB_RSI</option>
         <option value="PA">Price Action</option>
       </select>
       <label>Side</label>
@@ -304,10 +304,10 @@ router.get("/", (req, res) => {
     <!-- Danger zone — wipe live trade history per mode -->
     <div class="tbar" style="border-color:rgba(239,68,68,0.25);background:rgba(239,68,68,0.03);">
       <label style="color:#f87171;">⚠ Reset Live History</label>
-      <button class="btn danger" onclick="resetLive('swing')" ${swingLive ? 'disabled title="Swing live is running — stop it first"' : ''}>🗑 Swing Live</button>
-      <button class="btn danger" onclick="resetLive('scalp')" ${scalpLive ? 'disabled title="Scalp live is running — stop it first"' : ''}>🗑 Scalp Live</button>
+      <button class="btn danger" onclick="resetLive('ema_rsi_st')" ${emaRsiStLive ? 'disabled title="EMA_RSI_ST live is running — stop it first"' : ''}>🗑 EMA_RSI_ST Live</button>
+      <button class="btn danger" onclick="resetLive('bb_rsi')" ${bbRsiLive ? 'disabled title="BB_RSI live is running — stop it first"' : ''}>🗑 BB_RSI Live</button>
       <button class="btn danger" onclick="resetLive('pa')"    ${paLive    ? 'disabled title="PA live is running — stop it first"'    : ''}>🗑 PA Live</button>
-      <button class="btn danger" onclick="resetLive('all')"   ${(swingLive || scalpLive || paLive) ? 'disabled title="Stop all live sessions first"' : ''} style="font-weight:700;">🗑 Reset ALL Live</button>
+      <button class="btn danger" onclick="resetLive('all')"   ${(emaRsiStLive || bbRsiLive || paLive) ? 'disabled title="Stop all live sessions first"' : ''} style="font-weight:700;">🗑 Reset ALL Live</button>
       <span style="margin-left:auto;font-size:0.64rem;color:#4a6080;line-height:1.4;">Clears the stored trade log only · real broker orders are unaffected</span>
     </div>
 
@@ -931,15 +931,15 @@ function wireTableControls(){
 
 // ── Danger zone: wipe live trade history ────────────────────────────────────
 const _RESET_TARGETS = {
-  swing: { label: 'Swing Live',          url: '/swing-live/reset' },
-  scalp: { label: 'Scalp Live',          url: '/scalp-live/reset' },
+  ema_rsi_st: { label: 'EMA_RSI_ST Live',          url: '/ema_rsi_st-live/reset' },
+  bb_rsi: { label: 'BB_RSI Live',          url: '/bb_rsi-live/reset' },
   pa:    { label: 'Price Action Live',   url: '/pa-live/reset'    },
 };
 
 async function resetLive(mode){
   const all = (mode === 'all');
-  const targets = all ? ['swing','scalp','pa'] : [mode];
-  const label = all ? 'ALL Live modes (Swing + Scalp + PA)' : _RESET_TARGETS[mode].label;
+  const targets = all ? ['ema_rsi_st','bb_rsi','pa'] : [mode];
+  const label = all ? 'ALL Live modes (EMA_RSI_ST + BB_RSI + PA)' : _RESET_TARGETS[mode].label;
   const ok = await showDoubleConfirm({
     icon: '⚠️',
     title: 'Reset ' + label + ' History?',

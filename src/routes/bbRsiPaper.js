@@ -1,15 +1,15 @@
 /**
- * SCALP PAPER TRADE — /scalp-paper
+ * BB_RSI PAPER TRADE — /bb_rsi-paper
  * ─────────────────────────────────────────────────────────────────────────────
  * Uses LIVE market data (Fyers WebSocket) but SIMULATES orders locally.
- * Runs on 3/5-min candles with the scalp BB+PSAR+RSI strategy.
- * Can run IN PARALLEL with /trade (live) or /swing-paper (paper).
+ * Runs on 3/5-min candles with the bb_rsi BB+PSAR+RSI strategy.
+ * Can run IN PARALLEL with /trade (live) or /ema_rsi_st-paper (paper).
  *
  * Routes:
- *   GET /scalp-paper/start   → Start scalp paper trading
- *   GET /scalp-paper/stop    → Stop session
- *   GET /scalp-paper/status  → Live status page
- *   GET /scalp-paper/exit    → Manual exit current position
+ *   GET /bb_rsi-paper/start   → Start bb_rsi paper trading
+ *   GET /bb_rsi-paper/stop    → Stop session
+ *   GET /bb_rsi-paper/status  → Live status page
+ *   GET /bb_rsi-paper/exit    → Manual exit current position
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -17,7 +17,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
-const scalpStrategy = require("../strategies/scalp_bb_cpr");
+const bbRsiStrategy = require("../strategies/bb_rsi");
 const { BollingerBands, PSAR, RSI, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 const instrumentConfig = require("../config/instrument");
@@ -46,29 +46,29 @@ const confirmCandle = require("../utils/confirmCandle");
 const tickSimulator = require("../services/tickSimulator");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
-const CALLBACK_ID = "SCALP_PAPER";
+const CALLBACK_ID = "BB_RSI_PAPER";
 
 // ── Module-level config (re-read at /start so Settings UI / replay env overrides take effect) ──
 // Declared with `let` so _refreshConfig() can update them. Without this, the
 // replay engine's _applySettingsOverride() and the Settings UI's mid-session
 // process.env mutations would never reach the running strategy code.
-let SCALP_RES;
-let _SCALP_MAX_TRADES;
-let _SCALP_MAX_LOSS;
-let _SCALP_PAUSE_CANDLES;
-let _SCALP_PER_SIDE_PAUSE;
+let BB_RSI_RES;
+let _BB_RSI_MAX_TRADES;
+let _BB_RSI_MAX_LOSS;
+let _BB_RSI_PAUSE_CANDLES;
+let _BB_RSI_PER_SIDE_PAUSE;
 let _STOP_MINS;
 let _ENTRY_STOP_MINS;
-let _SCALP_START_MINS;
+let _BB_RSI_START_MINS;
 function _refreshConfig() {
-  SCALP_RES                    = parseInt(process.env.SCALP_RESOLUTION || "5", 10);
-  _SCALP_MAX_TRADES            = parseInt(process.env.SCALP_MAX_DAILY_TRADES || "30", 10);
-  _SCALP_MAX_LOSS              = parseFloat(process.env.SCALP_MAX_DAILY_LOSS || "2000");
-  _SCALP_PAUSE_CANDLES         = parseInt(process.env.SCALP_SL_PAUSE_CANDLES || "2", 10);
-  _SCALP_PER_SIDE_PAUSE        = (process.env.SCALP_PER_SIDE_PAUSE || "true") === "true";
+  BB_RSI_RES                    = parseInt(process.env.BB_RSI_RESOLUTION || "5", 10);
+  _BB_RSI_MAX_TRADES            = parseInt(process.env.BB_RSI_MAX_DAILY_TRADES || "30", 10);
+  _BB_RSI_MAX_LOSS              = parseFloat(process.env.BB_RSI_MAX_DAILY_LOSS || "2000");
+  _BB_RSI_PAUSE_CANDLES         = parseInt(process.env.BB_RSI_SL_PAUSE_CANDLES || "2", 10);
+  _BB_RSI_PER_SIDE_PAUSE        = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";
   _STOP_MINS                   = parseTimeToMinutes(process.env.TRADE_STOP_TIME, "15:30");
-  _ENTRY_STOP_MINS             = parseTimeToMinutes(process.env.SCALP_ENTRY_END, "14:30");
-  _SCALP_START_MINS            = parseTimeToMinutes(process.env.SCALP_ENTRY_START, "09:21");
+  _ENTRY_STOP_MINS             = parseTimeToMinutes(process.env.BB_RSI_ENTRY_END, "14:30");
+  _BB_RSI_START_MINS            = parseTimeToMinutes(process.env.BB_RSI_ENTRY_START, "09:21");
 }
 _refreshConfig();
 
@@ -77,14 +77,14 @@ let _prevDayOHLC     = null;  // { high, low, close }
 let _prevPrevDayOHLC = null;  // prev-prev day reference
 
 function getISTMinutes() {
-  if (state._simMode) return _SCALP_START_MINS + 5; // always "in market hours" during simulation
+  if (state._simMode) return _BB_RSI_START_MINS + 5; // always "in market hours" during simulation
   return _getISTMinutesReal();
 }
 
 // ── Persistence ──────────────────────────────────────────────────────────────
 const _HOME    = require("os").homedir();
 const DATA_DIR = path.join(_HOME, "trading-data");
-const SP_FILE  = path.join(DATA_DIR, "scalp_paper_trades.json");
+const SP_FILE  = path.join(DATA_DIR, "bb_rsi_paper_trades.json");
 
 function ensureDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -92,30 +92,30 @@ function ensureDir() {
 
 // In-memory cache — avoids re-reading + JSON.parse of the growing trades file
 // on every 2s status poll and 4s Real-Time-monitor fan-out. Write-through:
-// refreshed in saveScalpData() (the only writer; /reset also routes through it).
-// Mirrors the pattern already used by swingPaper/orbPaper.
-let _scalpDataCache = null;
+// refreshed in saveBbRsiData() (the only writer; /reset also routes through it).
+// Mirrors the pattern already used by emaRsiStPaper/orbPaper.
+let _bbRsiDataCache = null;
 
-function loadScalpData() {
-  if (_scalpDataCache) return _scalpDataCache;
+function loadBbRsiData() {
+  if (_bbRsiDataCache) return _bbRsiDataCache;
   ensureDir();
   if (!fs.existsSync(SP_FILE)) {
     const initial = { capital: 100000, totalPnl: 0, sessions: [] };
     fs.writeFileSync(SP_FILE, JSON.stringify(initial, null, 2));
-    _scalpDataCache = initial;
+    _bbRsiDataCache = initial;
     return initial;
   }
-  try { _scalpDataCache = JSON.parse(fs.readFileSync(SP_FILE, "utf-8")); }
-  catch (_) { _scalpDataCache = { capital: 100000, totalPnl: 0, sessions: [] }; }
-  return _scalpDataCache;
+  try { _bbRsiDataCache = JSON.parse(fs.readFileSync(SP_FILE, "utf-8")); }
+  catch (_) { _bbRsiDataCache = { capital: 100000, totalPnl: 0, sessions: [] }; }
+  return _bbRsiDataCache;
 }
 
-function saveScalpData(data) {
+function saveBbRsiData(data) {
   ensureDir();
   const tmp = SP_FILE + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
   fs.renameSync(tmp, SP_FILE);
-  _scalpDataCache = data;
+  _bbRsiDataCache = data;
 }
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -156,14 +156,14 @@ let state = {
 // restart. In-memory only — it does NOT re-save into sessions[] (Stop still does that).
 function rehydrateSessionFromJsonl() {
   try {
-    const data = loadScalpData();
+    const data = loadBbRsiData();
     const keyOf = (t) => String(t.entryBarTime || t.entryTime || `${t.symbol}@${t.entryPrice}@${t.entryTime}`);
 
     // 1. Today's running-session trades not yet saved to sessions[] (the in-memory
     //    session a restart would wipe). Day files interleave settings_snapshot/meta
     //    lines with trades — keep only real trade records.
     const today = tradeLogger.istDateString(Date.now());
-    const all = tradeLogger.readDailyTrades("scalp", today)
+    const all = tradeLogger.readDailyTrades("bb_rsi", today)
       .filter(t => t && !t.type && (t.side || t.entryTime || t.entryBarTime || t.symbol));
     const seen = new Set();
     for (const s of (data.sessions || [])) {
@@ -189,9 +189,9 @@ function rehydrateSessionFromJsonl() {
     state._wins   = trades.filter(t => Number(t.pnl) > 0).length;
     state._losses = trades.filter(t => Number(t.pnl) < 0).length;
     if (!state.sessionStart) state.sessionStart = trades[0].entryTime || trades[0].loggedAt || null;
-    console.log(`♻️ [SCALP-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
+    console.log(`♻️ [BB_RSI-PAPER] Restart recovery — loaded ${trades.length} trade(s) from ${source} (PnL ₹${state.sessionPnl})`);
   } catch (err) {
-    console.warn(`[SCALP-PAPER] session rehydrate failed: ${err.message}`);
+    console.warn(`[BB_RSI-PAPER] session rehydrate failed: ${err.message}`);
   }
 }
 rehydrateSessionFromJsonl();
@@ -213,13 +213,13 @@ function log(msg) {
   if (state.log.length > 2500) state.log.splice(0, state.log.length - 2000);
 }
 
-function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, SCALP_RES); }
+function getBucketStart(unixMs) { return _getBucketStartRaw(unixMs, BB_RSI_RES); }
 
-// _SCALP_START_MINS declared and populated by _refreshConfig() above
+// _BB_RSI_START_MINS declared and populated by _refreshConfig() above
 
 function isMarketHours() {
   const total = getISTMinutes();
-  return total >= _SCALP_START_MINS && total < _ENTRY_STOP_MINS;
+  return total >= _BB_RSI_START_MINS && total < _ENTRY_STOP_MINS;
 }
 
 function isStartAllowed() {
@@ -238,26 +238,26 @@ async function fetchOptionLtp(symbol) {
       const ltp = v.lp || v.ltp || v.last_price || v.last_traded_price || v.close_price;
       if (ltp && ltp > 0) {
         if (_rateLimitBackoff > 0) {
-          log(`✅ [SCALP-PAPER] Rate limit cleared — polling resumed`);
+          log(`✅ [BB_RSI-PAPER] Rate limit cleared — polling resumed`);
           _rateLimitBackoff = 0;
         }
         const _ltp = parseFloat(ltp);
-        try { tickRecorder.recordOptionLtp(symbol, _ltp, "scalp-paper"); } catch (_) {}
+        try { tickRecorder.recordOptionLtp(symbol, _ltp, "bb_rsi-paper"); } catch (_) {}
         return _ltp;
       }
-      log(`⚠️ [SCALP-PAPER] fetchOptionLtp no LTP in response for ${symbol}: ${JSON.stringify(v).slice(0, 200)}`);
+      log(`⚠️ [BB_RSI-PAPER] fetchOptionLtp no LTP in response for ${symbol}: ${JSON.stringify(v).slice(0, 200)}`);
     } else {
-      log(`⚠️ [SCALP-PAPER] fetchOptionLtp bad response for ${symbol}: s=${response?.s}, d.length=${response?.d?.length}`);
+      log(`⚠️ [BB_RSI-PAPER] fetchOptionLtp bad response for ${symbol}: s=${response?.s}, d.length=${response?.d?.length}`);
     }
   } catch (err) {
     const msg = err.message || "";
     if (/limit|throttle|429/i.test(msg)) {
       if (_rateLimitBackoff === 0) {
-        log(`⚠️ [SCALP-PAPER] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
+        log(`⚠️ [BB_RSI-PAPER] Rate limit hit — backing off to 2s polls; trail falls back to spot-proxy if stale`);
       }
       _rateLimitBackoff = Math.min(_rateLimitBackoff + 1, 10);
     } else {
-      log(`⚠️ [SCALP-PAPER] fetchOptionLtp error for ${symbol}: ${msg}`);
+      log(`⚠️ [BB_RSI-PAPER] fetchOptionLtp error for ${symbol}: ${msg}`);
     }
   }
   return null;
@@ -277,7 +277,7 @@ function startOptionPolling(symbol) {
         state.position.optionCurrentLtp = ltp;
         if (!state.position.optionEntryLtp) {
           state.position.optionEntryLtp = ltp;
-          log(`📌 [SCALP-PAPER] Option entry LTP: ₹${ltp}`);
+          log(`📌 [BB_RSI-PAPER] Option entry LTP: ₹${ltp}`);
         }
       }
       scheduleNext();
@@ -385,12 +385,12 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, target, spotAtE
     startOptionPolling(symbol);
   }
 
-  log(`📝 [SCALP-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | ${reason}`);
+  log(`📝 [BB_RSI-PAPER] BUY ${qty} × ${symbol} @ ₹${price} | SL: ₹${stopLoss} | ${reason}`);
 
   if (state._simMode) return; // skip Telegram in sim mode
 
   notifyEntry({
-    mode: "SCALP-PAPER",
+    mode: "BB_RSI-PAPER",
     side, symbol, spotAtEntry: price,
     optionEntryLtp: null,
     stopLoss, qty, reason,
@@ -428,19 +428,19 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   const netPnl    = parseFloat((rawPnl - charges).toFixed(2));
   const emoji     = netPnl >= 0 ? "✅" : "❌";
 
-  log(`${emoji} [SCALP-PAPER] Exit: ${reason} | PnL: ₹${netPnl}`);
+  log(`${emoji} [BB_RSI-PAPER] Exit: ${reason} | PnL: ₹${netPnl}`);
 
   // Derived metadata for the trade record — computed here so the JSONL log captures the full picture.
-  const _entryMsScalp    = state.position.entryTimeMs || (state.position.entryBarTime ? state.position.entryBarTime * 1000 : null);
-  const _exitMsScalp     = simNow();
-  const _durationMsScalp = _entryMsScalp ? (_exitMsScalp - _entryMsScalp) : null;
-  const _pnlPointsScalp  = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
-  const _isManualScalp   = typeof state.position.reason === "string" && /Manual/i.test(state.position.reason);
+  const _entryMsBbRsi    = state.position.entryTimeMs || (state.position.entryBarTime ? state.position.entryBarTime * 1000 : null);
+  const _exitMsBbRsi     = simNow();
+  const _durationMsBbRsi = _entryMsBbRsi ? (_exitMsBbRsi - _entryMsBbRsi) : null;
+  const _pnlPointsBbRsi  = parseFloat(((exitPrice - entryPrice) * (side === "CE" ? 1 : -1)).toFixed(2));
+  const _isManualBbRsi   = typeof state.position.reason === "string" && /Manual/i.test(state.position.reason);
 
   // Indicator snapshot AT EXIT — recompute silently so the JSONL log carries the
   // full indicator picture at exit, not just at entry.
   let _exitInd = {};
-  try { _exitInd = scalpStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
+  try { _exitInd = bbRsiStrategy.getSignal(state.candles, { silent: true, skipTimeCheck: true }) || {}; } catch (_) {}
 
   const trade = {
     side, symbol, qty, entryPrice, exitPrice,
@@ -499,16 +499,16 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     secsToMAE:       state.position.secsToMAE       || 0,
     vixAtExit:       getCachedVix(),
     entryTimeMs:     state.position.entryTimeMs     || null,
-    exitTimeMs:      _exitMsScalp,
-    durationMs:      _durationMsScalp,
-    pnlPoints:       _pnlPointsScalp,
+    exitTimeMs:      _exitMsBbRsi,
+    durationMs:      _durationMsBbRsi,
+    pnlPoints:       _pnlPointsBbRsi,
     charges:         charges,
     isFutures:       isFutures,
-    isManual:        _isManualScalp,
+    isManual:        _isManualBbRsi,
     instrument:      instrumentConfig.INSTRUMENT,
   };
   state.sessionTrades.push(trade);
-  tradeLogger.appendTradeLog("scalp", trade); // crash-safe per-trade JSONL
+  tradeLogger.appendTradeLog("bb_rsi", trade); // crash-safe per-trade JSONL
 
   state.sessionPnl = parseFloat((state.sessionPnl + netPnl).toFixed(2));
   if (netPnl > 0) state._wins = (state._wins || 0) + 1;
@@ -519,24 +519,24 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   state.optionLtp    = null;
   state.optionLtpUpdatedAt = null;
 
-  // SL pause — escalate after consecutive SLs (per-side when SCALP_PER_SIDE_PAUSE=true)
+  // SL pause — escalate after consecutive SLs (per-side when BB_RSI_PER_SIDE_PAUSE=true)
   state._consecSLsBySide = state._consecSLsBySide || { CE: 0, PE: 0 };
   state._slPauseUntilBySide = state._slPauseUntilBySide || { CE: 0, PE: 0 };
   state._lastSLSpotBySide   = state._lastSLSpotBySide   || { CE: 0, PE: 0 };
   if (reason.includes("SL")) {
-    if (_SCALP_PER_SIDE_PAUSE) {
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._consecSLsBySide[side] += 1;
     } else {
       state._consecSLsBySide.CE += 1;
       state._consecSLsBySide.PE += 1;
     }
-    const _streak = _SCALP_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const extraPause = parseInt(process.env.SCALP_CONSEC_SL_EXTRA_PAUSE || "2", 10);
+    const _streak = _BB_RSI_PER_SIDE_PAUSE ? state._consecSLsBySide[side] : Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
+    const extraPause = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
     const pauseCandles = _streak >= 2
-      ? _SCALP_PAUSE_CANDLES + extraPause * (_streak - 1)
-      : _SCALP_PAUSE_CANDLES;
-    const _until = simNow() + (pauseCandles * SCALP_RES * 60 * 1000);
-    if (_SCALP_PER_SIDE_PAUSE) {
+      ? _BB_RSI_PAUSE_CANDLES + extraPause * (_streak - 1)
+      : _BB_RSI_PAUSE_CANDLES;
+    const _until = simNow() + (pauseCandles * BB_RSI_RES * 60 * 1000);
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._slPauseUntilBySide[side] = _until;
     } else {
       state._slPauseUntilBySide.CE = _until;
@@ -548,12 +548,12 @@ function simulateSell(exitPrice, reason, spotAtExit) {
     // Mirror combined value for legacy UI fields
     state._slPauseUntil = Math.max(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE);
     state._consecSLs    = Math.max(state._consecSLsBySide.CE, state._consecSLsBySide.PE);
-    const sideLabel = _SCALP_PER_SIDE_PAUSE ? `${side} ` : "";
+    const sideLabel = _BB_RSI_PER_SIDE_PAUSE ? `${side} ` : "";
     const escalateNote = _streak >= 2 ? ` (${_streak} consecutive SLs → ${pauseCandles} candles)` : "";
-    log(`⏸️ [SCALP-PAPER] ${sideLabel}SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
+    log(`⏸️ [BB_RSI-PAPER] ${sideLabel}SL pause — no entries for ${pauseCandles} candles${escalateNote}`);
   } else if (netPnl > 0) {
     // Reset only the winning side's streak (or both if not per-side)
-    if (_SCALP_PER_SIDE_PAUSE) {
+    if (_BB_RSI_PER_SIDE_PAUSE) {
       state._consecSLsBySide[side] = 0;
     } else {
       state._consecSLsBySide.CE = 0;
@@ -563,16 +563,16 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   // Daily loss kill
-  if (state.sessionPnl <= -_SCALP_MAX_LOSS) {
+  if (state.sessionPnl <= -_BB_RSI_MAX_LOSS) {
     state._dailyLossHit = true;
-    log(`🚨 [SCALP-PAPER] Daily loss limit hit (₹${state.sessionPnl} <= -₹${_SCALP_MAX_LOSS}) — no more entries today`);
+    log(`🚨 [BB_RSI-PAPER] Daily loss limit hit (₹${state.sessionPnl} <= -₹${_BB_RSI_MAX_LOSS}) — no more entries today`);
   }
 
   state.position = null;
 
   if (!state._simMode) {
     notifyExit({
-      mode: "SCALP-PAPER",
+      mode: "BB_RSI-PAPER",
       side, symbol,
       spotAtEntry: spotAtEntry || entryPrice,
       spotAtExit: spotAtExit || exitPrice,
@@ -606,7 +606,7 @@ function onTick(tick) {
   state.lastTickPrice = price;
 
   // In sim mode, advance simulated clock per tick (resolution-aware: 20 ticks per candle)
-  if (state._simMode) _simClockMs += (SCALP_RES * 60 * 1000) / 20;
+  if (state._simMode) _simClockMs += (BB_RSI_RES * 60 * 1000) / 20;
 
   // ── Build 3-min candle ─────────────────────────────────────────────────────
   const tickMs    = simNow();
@@ -627,7 +627,7 @@ function onTick(tick) {
         state.candles.push({ ...state.currentBar });
       }
       if (state.candles.length > 200) state.candles.shift();
-      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [SCALP-PAPER] onCandleClose error: ${e.message}`));
+      onCandleClose(state.currentBar).catch(e => console.error(`🚨 [BB_RSI-PAPER] onCandleClose error: ${e.message}`));
     }
     // Start new bar — if last preloaded candle covers same bucket, merge with it
     const bucketTimeSec = Math.floor(bucketMs / 1000);
@@ -698,12 +698,12 @@ function onTick(tick) {
     //    so a one-candle V-reversal exits at the band line instead of giving back to
     //    the bar close. Band is from completed candles (fixed during the forming bar),
     //    recomputed only when a new candle closes. Same gate/inputs as bbReentryExit.
-    //    ARMING GUARD: only arm once the breakout has extended ≥ SCALP_BB_REENTRY_ARM_PTS
+    //    ARMING GUARD: only arm once the breakout has extended ≥ BB_RSI_BB_REENTRY_ARM_PTS
     //    past the band (track max favourable penetration). A fresh entry sitting only a
     //    few pts beyond the band would otherwise be stopped by an immediate noise wick
     //    back to the band before it can work (e.g. 2026-06-03 10:15 PE, entered 8pts
     //    below the band, tagged it 27s later for a needless loss).
-    if ((process.env.SCALP_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
+    if ((process.env.BB_RSI_BB_REENTRY_EXIT || "true") === "true" && state.candles.length >= 15) {
       // Invalidate on the last CLOSED candle's time, NOT candles.length: once the
       // array hits its 200 cap (push+shift), length is pinned at 200 forever, so a
       // length-keyed cache would freeze the band from ~14:20 IST to session end. The
@@ -711,7 +711,7 @@ function onTick(tick) {
       // (stable within a forming bar, changes on each close — the intended behaviour).
       const _bbKey = state.candles.length ? state.candles[state.candles.length - 1].time : 0;
       if (!state._bbTickCache || state._bbTickCache.key !== _bbKey) {
-        const _lv = scalpStrategy.bbLevels(state.candles);
+        const _lv = bbRsiStrategy.bbLevels(state.candles);
         state._bbTickCache = { key: _bbKey, upper: _lv ? _lv.upper : null, lower: _lv ? _lv.lower : null };
       }
       const _bb = state._bbTickCache;
@@ -720,7 +720,7 @@ function onTick(tick) {
         // favourable penetration past the band (PE: below the lower band, CE: above the upper)
         const _pen = pos.side === "CE" ? (price - _band) : (_band - price);
         if (_pen > (pos._bbMaxPen || 0)) pos._bbMaxPen = _pen;
-        const _armPts = parseFloat(process.env.SCALP_BB_REENTRY_ARM_PTS || "10");
+        const _armPts = parseFloat(process.env.BB_RSI_BB_REENTRY_ARM_PTS || "10");
         const _armed = (pos._bbMaxPen || 0) >= _armPts;
         const _reentered = pos.side === "CE" ? (price < _band) : (price > _band);
         if (_armed && _reentered) {
@@ -732,10 +732,10 @@ function onTick(tick) {
     }
 
     // 1. HARD STOP — catastrophic loss cap (wide). Exit once the trade moves
-    //    SCALP_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
+    //    BB_RSI_STOP_LOSS_PTS against entry. Only clips the deep adverse excursions
     //    on failed fades; the normal small scalps never reach it. Arms SL cooldown.
     {
-      const _hs = scalpStrategy.hardStop(_favPts);
+      const _hs = bbRsiStrategy.hardStop(_favPts);
       if (_hs.hit) {
         pos.slSource = "Stop Loss";
         simulateSell(price, `SL (${_hs.stop}pts)`, price);
@@ -744,10 +744,10 @@ function onTick(tick) {
     }
 
     // 2. PROFIT LOCK — the per-tick upside exit. Once peak favourable spot move ≥
-    //    SCALP_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below SCALP_PROFIT_LOCK_PCT%
+    //    BB_RSI_PROFIT_LOCK_TRIGGER_PTS, exit when it gives back below BB_RSI_PROFIT_LOCK_PCT%
     //    of peak (ratchets). Points-based; PSAR flip (candle close) handles bigger runners.
     {
-      const _lock = scalpStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
+      const _lock = bbRsiStrategy.profitLock(_favPts, pos.mfeSpotPts || 0);
       if (_lock.hit) {
         pos.slSource = "Profit Lock";
         simulateSell(price, `Profit lock (${_lock.floor.toFixed(0)}pts)`, price);
@@ -769,22 +769,22 @@ function onTick(tick) {
   // While flat, if a prior candle armed a signal, enter the instant THIS (the
   // immediately-next) candle crosses that signal candle's close. All entry gates
   // were already cleared at arm time (onCandleClose), so no re-check here.
-  // When SCALP_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
+  // When BB_RSI_CONFIRM_OUTSIDE_BAND is ON, confirmation is evaluated at the NEXT
   // candle's CLOSE (in onCandleClose), not intra-bar — so this per-tick path is
   // skipped. A candle that merely pokes past the trigger then closes back inside
   // the band would otherwise fire an entry whose candle sits inside the band.
-  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("SCALP")
-      && !confirmCandle.outsideBandEnabled("SCALP")) {
+  if (!state.position && !state._entryInFlight && state._armedSignal && confirmCandle.enabled("BB_RSI")
+      && !confirmCandle.outsideBandEnabled("BB_RSI")) {
     const _a = state._armedSignal;
-    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, SCALP_RES)
+    if (state.currentBar && confirmCandle.isNextBar(state.currentBar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, price, _a.triggerLevel)
         && (state._simMode || isMarketHours())) {
       state._armedSignal   = null; // consume
       state._entryInFlight = true;
       const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} x-over @${_a.triggerLevel}` });
-      log(`⚡ [SCALP-PAPER] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+      log(`⚡ [BB_RSI-PAPER] Confirmation cross @ ₹${price} (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
       Promise.resolve(resolveAndEnter(_a.side, price, _r))
-        .catch(e => log(`⚠️ [SCALP-PAPER] confirm entry failed: ${e.message}`))
+        .catch(e => log(`⚠️ [BB_RSI-PAPER] confirm entry failed: ${e.message}`))
         .finally(() => { state._entryInFlight = false; });
     }
   }
@@ -795,22 +795,22 @@ function onTick(tick) {
 async function onCandleClose(bar) {
   if (!state.running) return;
 
-  // ── Confirmation candle with band guard (SCALP_CONFIRM_OUTSIDE_BAND) ─────────
+  // ── Confirmation candle with band guard (BB_RSI_CONFIRM_OUTSIDE_BAND) ─────────
   // When ON, confirmation fires at THIS candle's CLOSE (not intra-bar): the just-
   // closed bar must have CLOSED beyond the signal candle's close (the cross) AND
   // closed outside the band — so the entry candle is genuinely outside the band,
   // never an intra-bar poke that closes back inside. Entry is at this candle's close.
   // Must run before the expiry line below (which clears the cross-day-old arm).
-  if (!state.position && state._armedSignal && confirmCandle.enabled("SCALP")
-      && confirmCandle.outsideBandEnabled("SCALP") && (state._simMode || isMarketHours())) {
+  if (!state.position && state._armedSignal && confirmCandle.enabled("BB_RSI")
+      && confirmCandle.outsideBandEnabled("BB_RSI") && (state._simMode || isMarketHours())) {
     const _a = state._armedSignal;
-    if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, SCALP_RES)
+    if (confirmCandle.isNextBar(bar.time, _a.armedBarTime, BB_RSI_RES)
         && confirmCandle.crossed(_a.side, bar.close, _a.triggerLevel)) {
-      const _bb = scalpStrategy.bbLevels(state.candles);
+      const _bb = bbRsiStrategy.bbLevels(state.candles);
       if (_bb && confirmCandle.beyondBand(_a.side, bar.close, _bb.upper, _bb.lower)) {
         state._armedSignal = null; // consume
         const _r = Object.assign({}, _a.result, { reason: `${_a.result.reason} | CONFIRM ${_a.side} close ${bar.close} beyond band` });
-        log(`⚡ [SCALP-PAPER] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
+        log(`⚡ [BB_RSI-PAPER] Confirmation close ₹${bar.close} beyond band (signal close ${_a.triggerLevel}) — entering ${_a.side}`);
         await resolveAndEnter(_a.side, bar.close, _r);
         return;
       }
@@ -834,15 +834,15 @@ async function onCandleClose(bar) {
     const window = [...state.candles];
 
     // BB re-entry → failed breakout: price closed back inside the band, exit now
-    if (window.length >= 15 && scalpStrategy.bbReentryExit(window, state.position.side)) {
+    if (window.length >= 15 && bbRsiStrategy.bbReentryExit(window, state.position.side)) {
       simulateSell(bar.close, "BB re-entry", bar.close);
       return;
     }
 
-    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per SCALP_USE_SUPERTREND;
+    // Trend flip → exit on reversal signal (PSAR or SuperTrend, per BB_RSI_USE_SUPERTREND;
     // trend exit, profit lock handles giveback per-tick)
-    if (window.length >= 15 && scalpStrategy.isTrendFlip(window, state.position.side)) {
-      var _flipLbl = (process.env.SCALP_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
+    if (window.length >= 15 && bbRsiStrategy.isTrendFlip(window, state.position.side)) {
+      var _flipLbl = (process.env.BB_RSI_USE_SUPERTREND === "true") ? "SuperTrend flip" : "PSAR flip";
       simulateSell(bar.close, _flipLbl, bar.close);
       return;
     }
@@ -852,28 +852,28 @@ async function onCandleClose(bar) {
 
   // ── Entry evaluation ──────────────────────────────────────────────────────
   if (!state._simMode && !isMarketHours()) {
-    if (!state._omhLogged) { log(`⏭️ [SCALP-PAPER] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
+    if (!state._omhLogged) { log(`⏭️ [BB_RSI-PAPER] Waiting for market open — entries start at the market-hours window`); state._omhLogged = true; }
     return;
   }
   state._omhLogged = false;
-  if (state._dailyLossHit) { log(`⏭️ [SCALP-PAPER] SKIP: daily loss limit hit`); return; }
-  if (state.sessionTrades.length >= _SCALP_MAX_TRADES) { log(`⏭️ [SCALP-PAPER] SKIP: max trades (${_SCALP_MAX_TRADES}) reached`); return; }
+  if (state._dailyLossHit) { log(`⏭️ [BB_RSI-PAPER] SKIP: daily loss limit hit`); return; }
+  if (state.sessionTrades.length >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-PAPER] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached`); return; }
   // Per-side SL cooldown is checked AFTER the strategy returns a side (further below).
   // Keep the legacy global check as a fast-path when both sides are paused (only true
-  // when SCALP_PER_SIDE_PAUSE=false or both sides happen to be paused simultaneously).
+  // when BB_RSI_PER_SIDE_PAUSE=false or both sides happen to be paused simultaneously).
   const _pauseCE = state._slPauseUntilBySide && state._slPauseUntilBySide.CE > simNow();
   const _pausePE = state._slPauseUntilBySide && state._slPauseUntilBySide.PE > simNow();
   if (_pauseCE && _pausePE) {
     const secsLeft = Math.ceil((Math.min(state._slPauseUntilBySide.CE, state._slPauseUntilBySide.PE) - simNow()) / 1000);
-    log(`⏭️ [SCALP-PAPER] SKIP: SL cooldown both sides (${secsLeft}s left)`);
+    log(`⏭️ [BB_RSI-PAPER] SKIP: SL cooldown both sides (${secsLeft}s left)`);
     return;
   }
-  if (state._expiryDayBlocked) { log(`⏭️ [SCALP-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
+  if (state._expiryDayBlocked) { log(`⏭️ [BB_RSI-PAPER] SKIP: expiry-only mode, not expiry day`); return; }
 
   const window = [...state.candles];
-  if (window.length < 30) { log(`⏭️ [SCALP-PAPER] SKIP: warming up (${window.length}/30 candles)`); return; }
+  if (window.length < 30) { log(`⏭️ [BB_RSI-PAPER] SKIP: warming up (${window.length}/30 candles)`); return; }
 
-  const result = scalpStrategy.getSignal(window, {
+  const result = bbRsiStrategy.getSignal(window, {
     silent: true,
     skipTimeCheck: state._simMode,
     prevDayOHLC: _prevDayOHLC,
@@ -881,9 +881,9 @@ async function onCandleClose(bar) {
   });
   if (result.signal === "NONE") {
     const lastBar = window[window.length - 1];
-    log(`⏭️ [SCALP-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
-    logNearMiss(result.filterAudit, "SCALP-PAPER", log);
-    skipLogger.appendSkipLog("scalp", {
+    log(`⏭️ [BB_RSI-PAPER] SKIP: ${result.reason} | Close=${lastBar.close} BB=[${result.bbLower||'?'},${result.bbUpper||'?'}] RSI=${result.rsi||'?'} SAR=${result.sar||'?'}`);
+    logNearMiss(result.filterAudit, "BB_RSI-PAPER", log);
+    skipLogger.appendSkipLog("bb_rsi", {
       gate: "strategy",
       reason: result.reason || null,
       spot: lastBar.close,
@@ -896,7 +896,7 @@ async function onCandleClose(bar) {
     if (!state._simMode) {
       const _barIST = new Date(lastBar.time * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" });
       notifySignal({
-        mode: "SCALP-PAPER",
+        mode: "BB_RSI-PAPER",
         signal: "SKIP",
         reason: result.reason ? String(result.reason).slice(0, 200) : "—",
         spot: lastBar.close,
@@ -910,17 +910,17 @@ async function onCandleClose(bar) {
   const _signalSide = result.signal === "BUY_CE" ? "CE" : "PE";
   if (state._slPauseUntilBySide && state._slPauseUntilBySide[_signalSide] > simNow()) {
     const secsLeft = Math.ceil((state._slPauseUntilBySide[_signalSide] - simNow()) / 1000);
-    log(`⏭️ [SCALP-PAPER] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
+    log(`⏭️ [BB_RSI-PAPER] SKIP: ${_signalSide} SL cooldown (${secsLeft}s left)`);
     return;
   }
 
   // VIX — post-strategy check with derived strength (skip in sim mode)
-  if (!state._simMode && process.env.SCALP_VIX_ENABLED === "true") {
-    const _strength = deriveScalpStrength(result);
-    const _vixCheck = await checkLiveVix(_strength, { mode: "scalp" });
+  if (!state._simMode && process.env.BB_RSI_VIX_ENABLED === "true") {
+    const _strength = deriveBbRsiStrength(result);
+    const _vixCheck = await checkLiveVix(_strength, { mode: "bb_rsi" });
     if (!_vixCheck.allowed) {
-      log(`⏭️ [SCALP-PAPER] SKIP: ${_vixCheck.reason}`);
-      skipLogger.appendSkipLog("scalp", {
+      log(`⏭️ [BB_RSI-PAPER] SKIP: ${_vixCheck.reason}`);
+      skipLogger.appendSkipLog("bb_rsi", {
         gate: "vix",
         reason: _vixCheck.reason || null,
         spot: bar.close,
@@ -933,11 +933,11 @@ async function onCandleClose(bar) {
 
   // OI + price buildup gate — block entries fighting a confirmed buildup; tag the
   // entry reason with the regime so every trade records its OI context (skip in sim).
-  if (!state._simMode && oiFilter.getOiEnabled("scalp")) {
-    const _oi = await oiFilter.checkLiveOi(_signalSide, bar.close, { mode: "scalp" });
+  if (!state._simMode && oiFilter.getOiEnabled("bb_rsi")) {
+    const _oi = await oiFilter.checkLiveOi(_signalSide, bar.close, { mode: "bb_rsi" });
     if (!_oi.allowed) {
-      log(`⏭️ [SCALP-PAPER] SKIP: ${_oi.reason}`);
-      skipLogger.appendSkipLog("scalp", {
+      log(`⏭️ [BB_RSI-PAPER] SKIP: ${_oi.reason}`);
+      skipLogger.appendSkipLog("bb_rsi", {
         gate: "oi", reason: _oi.reason || null, spot: bar.close, side: _signalSide,
         oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null,
       });
@@ -954,9 +954,9 @@ async function onCandleClose(bar) {
   //    beyond this close AND outside the band (handled at candle close, top of this
   //    fn); with OUTSIDE_BAND off, it enters intra-bar on the first cross (see onTick).
   //    Confirm-candle OFF entirely = enter at this candle's close now. ──
-  if (confirmCandle.enabled("SCALP")) {
+  if (confirmCandle.enabled("BB_RSI")) {
     state._armedSignal = { side, triggerLevel: bar.close, armedBarTime: bar.time, result };
-    log(`🎯 [SCALP-PAPER] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
+    log(`🎯 [BB_RSI-PAPER] Signal candle closed — ARMED ${side}; next candle must cross ${bar.close} to enter`);
     return;
   }
 
@@ -964,17 +964,17 @@ async function onCandleClose(bar) {
   resolveAndEnter(side, spot, result);
 }
 
-// Derive signal strength for scalp: STRONG if RSI is clearly beyond its threshold (by +5),
-// else MARGINAL. Used to gate on SCALP_VIX_STRONG_ONLY in elevated-VIX regimes.
-function deriveScalpStrength(result) {
+// Derive signal strength for bb_rsi: STRONG if RSI is clearly beyond its threshold (by +5),
+// else MARGINAL. Used to gate on BB_RSI_VIX_STRONG_ONLY in elevated-VIX regimes.
+function deriveBbRsiStrength(result) {
   const rsi = typeof result.rsi === "number" ? result.rsi : null;
   if (rsi === null) return "MARGINAL";
   if (result.signal === "BUY_CE") {
-    const thr = parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "55");
+    const thr = parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "55");
     return rsi >= thr + 5 ? "STRONG" : "MARGINAL";
   }
   if (result.signal === "BUY_PE") {
-    const thr = parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "45");
+    const thr = parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "45");
     return rsi <= thr - 5 ? "STRONG" : "MARGINAL";
   }
   return "MARGINAL";
@@ -990,7 +990,7 @@ async function resolveAndEnter(side, spot, result) {
     } else {
       const optionInfo = await validateAndGetOptionSymbol(spot, side);
       if (optionInfo.invalid) {
-        log(`⚠️ [SCALP-PAPER] Option symbol invalid for ${side} — skipping entry`);
+        log(`⚠️ [BB_RSI-PAPER] Option symbol invalid for ${side} — skipping entry`);
         return;
       }
       symbol = optionInfo.symbol;
@@ -1004,8 +1004,8 @@ async function resolveAndEnter(side, spot, result) {
       const _q = await tradeGuards.fetchOptionQuote(fyers, symbol);
       const _sp = tradeGuards.checkSpread(_q && _q.bid, _q && _q.ask);
       if (!_sp.ok) {
-        log(`⏭️ [SCALP-PAPER] SKIP entry — spread too wide (${_sp.reason})`);
-        skipLogger.appendSkipLog("scalp", {
+        log(`⏭️ [BB_RSI-PAPER] SKIP entry — spread too wide (${_sp.reason})`);
+        skipLogger.appendSkipLog("bb_rsi", {
           gate: "spread",
           reason: _sp.reason || null,
           spot,
@@ -1029,7 +1029,7 @@ async function resolveAndEnter(side, spot, result) {
     }
 
     simulateBuy(symbol, side, qty, spot, result.reason, clampedSL, result.target, spot, result.slSource, {
-      signalStrength: deriveScalpStrength(result),
+      signalStrength: deriveBbRsiStrength(result),
       bbUpperAtEntry: result.bbUpper != null ? result.bbUpper : null,
       bbLowerAtEntry: result.bbLower != null ? result.bbLower : null,
       bbMiddleAtEntry: result.bbMiddle != null ? result.bbMiddle : null,
@@ -1041,7 +1041,7 @@ async function resolveAndEnter(side, spot, result) {
       trendSource:       result.trendSource|| null,
     });
   } catch (err) {
-    log(`⚠️ [SCALP-PAPER] Symbol resolution failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-PAPER] Symbol resolution failed: ${err.message}`);
   }
 }
 
@@ -1055,17 +1055,17 @@ async function preloadHistory() {
     // Fetch from 7 days ago to cover weekends + holidays (e.g., Thu trading → Mon start)
     const lookbackDate = new Date(Date.now() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const candles = await fetchCandlesCached(
-      NIFTY_INDEX_SYMBOL, String(SCALP_RES), lookbackDate, today,
+      NIFTY_INDEX_SYMBOL, String(BB_RSI_RES), lookbackDate, today,
       fetchCandles
     );
     if (candles && candles.length > 0) {
       state.candles = candles.slice(-99);
-      log(`📦 [SCALP-PAPER] Pre-loaded ${state.candles.length} × ${SCALP_RES}-min candles (strategy ready!)`);
+      log(`📦 [BB_RSI-PAPER] Pre-loaded ${state.candles.length} × ${BB_RSI_RES}-min candles (strategy ready!)`);
     } else {
-      log(`⚠️ [SCALP-PAPER] No historical candles found — will build from live ticks`);
+      log(`⚠️ [BB_RSI-PAPER] No historical candles found — will build from live ticks`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-PAPER] Pre-load failed: ${err.message} — will build from ticks`);
+    log(`⚠️ [BB_RSI-PAPER] Pre-load failed: ${err.message} — will build from ticks`);
   }
 
   // Fetch previous day(s) OHLC (reference)
@@ -1086,7 +1086,7 @@ async function preloadHistory() {
       if (pastDays.length >= 1) {
         const prev = pastDays[pastDays.length - 1];
         _prevDayOHLC = { high: prev.high, low: prev.low, close: prev.close };
-        log(`📊 [SCALP-PAPER] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
+        log(`📊 [BB_RSI-PAPER] Prev day OHLC: H=${prev.high} L=${prev.low} C=${prev.close}`);
       }
       if (pastDays.length >= 2) {
         const pp = pastDays[pastDays.length - 2];
@@ -1094,10 +1094,10 @@ async function preloadHistory() {
       }
 
     } else {
-      log(`⚠️ [SCALP-PAPER] Not enough daily candles for prev day data`);
+      log(`⚠️ [BB_RSI-PAPER] Not enough daily candles for prev day data`);
     }
   } catch (err) {
-    log(`⚠️ [SCALP-PAPER] Prev-day OHLC fetch failed: ${err.message}`);
+    log(`⚠️ [BB_RSI-PAPER] Prev-day OHLC fetch failed: ${err.message}`);
   }
 }
 
@@ -1111,28 +1111,28 @@ function scheduleAutoStop(stopFn) {
   if (ms <= 0) return;
   _autoStopTimer = setTimeout(() => {
     if (!state.running) return;
-    stopFn("⏰ [SCALP-PAPER] Auto-stop reached");
+    stopFn("⏰ [BB_RSI-PAPER] Auto-stop reached");
   }, ms);
-  log(`⏰ [SCALP-PAPER] Auto-stop in ${Math.round(ms / 60000)} min`);
+  log(`⏰ [BB_RSI-PAPER] Auto-stop in ${Math.round(ms / 60000)} min`);
 }
 
 // errorPage imported from sharedNav (shared across all route files)
 function _errorPage(title, message, linkHref, linkText) {
-  return errorPage(title, message, linkHref, linkText, 'scalpPaper');
+  return errorPage(title, message, linkHref, linkText, 'bbRsiPaper');
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/start", async (req, res) => {
-  if (state.running) return res.redirect("/scalp-paper/status");
+  if (state.running) return res.redirect("/bb_rsi-paper/status");
 
   // Re-read env into module-level config so Settings UI changes and replay
   // env overrides (snapshot or simulator mode) take effect for this session.
   _refreshConfig();
 
-  const check = sharedSocketState.canStart("SCALP_PAPER");
+  const check = sharedSocketState.canStart("BB_RSI_PAPER");
   if (!check.allowed) {
-    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/scalp-paper/status", "\u2190 Back"));
+    return res.status(409).send(_errorPage("Cannot Start", check.reason, "/bb_rsi-paper/status", "\u2190 Back"));
   }
 
   const auth = await verifyFyersToken();
@@ -1142,20 +1142,20 @@ router.get("/start", async (req, res) => {
 
   const holiday = await isTradingAllowed();
   if (!holiday.allowed) {
-    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/scalp-paper/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Trading Not Allowed", holiday.reason, "/bb_rsi-paper/status", "\u2190 Back"));
   }
 
   if (!isStartAllowed()) {
-    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/scalp-paper/status", "\u2190 Back"));
+    return res.status(400).send(_errorPage("Session Closed", "Past stop time \u2014 cannot start today.", "/bb_rsi-paper/status", "\u2190 Back"));
   }
 
   // Expiry day check
   let _expiryBlocked = false;
-  if ((process.env.SCALP_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+  if ((process.env.BB_RSI_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
     const { isExpiryDay } = require("../utils/nseHolidays");
     const isExpiry = await isExpiryDay();
     if (!isExpiry) _expiryBlocked = true;
-    log(`📅 [SCALP-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
+    log(`📅 [BB_RSI-PAPER] Expiry-only mode: ${isExpiry ? "✅ Today is expiry — trading allowed" : "❌ Not expiry day — entries blocked"}`);
   }
 
   // Reset state
@@ -1170,13 +1170,13 @@ router.get("/start", async (req, res) => {
     _armedSignal: null, _entryInFlight: false,
   };
 
-  sharedSocketState.setScalpActive("SCALP_PAPER");
+  sharedSocketState.setBbRsiActive("BB_RSI_PAPER");
 
   // Pre-load history
   await preloadHistory();
 
   // Start VIX polling
-  if (process.env.SCALP_VIX_ENABLED === "true") {
+  if (process.env.BB_RSI_VIX_ENABLED === "true") {
     resetVixCache();
     fetchLiveVix({ force: true }).catch(() => {});
   }
@@ -1186,17 +1186,17 @@ router.get("/start", async (req, res) => {
   // STALE_GAP_MS in oiFilter.recordOiSample.
 
   // Tick-recorder session-start snapshot
-  state._sessionId = `scalp-paper:${Date.now()}`;
+  state._sessionId = `bb_rsi-paper:${Date.now()}`;
   try {
     tickRecorder.recordSessionStart({
-      mode: "scalp-paper",
+      mode: "bb_rsi-paper",
       sessionId: state._sessionId,
       settings: tickRecorder.snapshotSettings(),
       warmup:   state.candles.map(c => ({ ...c })),
       vix:      getCachedVix(),
       meta: {
         instrument:       instrumentConfig.INSTRUMENT,
-        resolutionMin:    SCALP_RES,
+        resolutionMin:    BB_RSI_RES,
         expiryDayBlocked: _expiryBlocked,
         spotSymbol:       NIFTY_INDEX_SYMBOL,
         sessionStartISO:  state.sessionStart,
@@ -1207,11 +1207,11 @@ router.get("/start", async (req, res) => {
   // Socket: piggyback if already running, else start our own
   if (socketManager.isRunning()) {
     socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [SCALP-PAPER] Piggybacking on existing WebSocket");
+    log("📡 [BB_RSI-PAPER] Piggybacking on existing WebSocket");
   } else {
     socketManager.start(NIFTY_INDEX_SYMBOL, () => {}, log); // dummy primary callback
     socketManager.addCallback(CALLBACK_ID, onTick, log);
-    log("📡 [SCALP-PAPER] Started WebSocket (own instance)");
+    log("📡 [BB_RSI-PAPER] Started WebSocket (own instance)");
   }
 
   // Auto-stop
@@ -1220,24 +1220,24 @@ router.get("/start", async (req, res) => {
     stopSession();
   });
 
-  log(`🟢 [SCALP-PAPER] Session started — ${SCALP_RES}-min candles`);
+  log(`🟢 [BB_RSI-PAPER] Session started — ${BB_RSI_RES}-min candles`);
 
   notifyStarted({
-    mode: "SCALP-PAPER",
+    mode: "BB_RSI-PAPER",
     text: [
-      `📄 SCALP PAPER — STARTED`,
+      `📄 BB_RSI PAPER — STARTED`,
       ``,
       `📅 ${new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" })}`,
       `🕐 ${new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })} IST`,
       ``,
-      `Strategy  : ${scalpStrategy.NAME || "Scalp"}`,
-      `Resolution: ${SCALP_RES}-min candles`,
-      `Window    : ${process.env.SCALP_ENTRY_START || "09:20"} → ${process.env.SCALP_ENTRY_END || "15:10"} IST`,
+      `Strategy  : ${bbRsiStrategy.NAME || "BB_RSI"}`,
+      `Resolution: ${BB_RSI_RES}-min candles`,
+      `Window    : ${process.env.BB_RSI_ENTRY_START || "09:20"} → ${process.env.BB_RSI_ENTRY_END || "15:10"} IST`,
       _expiryBlocked ? `\n⚠️ Expiry-only mode: entries blocked (not expiry day)` : null,
     ].filter(l => l !== null).join("\n"),
   });
 
-  res.redirect("/scalp-paper/status");
+  res.redirect("/bb_rsi-paper/status");
 });
 
 function stopSession() {
@@ -1253,7 +1253,7 @@ function stopSession() {
 
   try {
     tickRecorder.recordSessionStop({
-      mode: "scalp-paper",
+      mode: "bb_rsi-paper",
       sessionId: state._sessionId || null,
       reason: state._simMode ? "sim_stop" : "user_stop",
     });
@@ -1271,8 +1271,8 @@ function stopSession() {
   // If we were the only socket user and no primary mode is active, stop socket
   if (!sharedSocketState.isActive() && !sharedSocketState.isEma9VwapActive() && socketManager.isRunning()) {
     // Don't stop — primary mode might still need it
-    // Only stop if no primary mode AND no other scalp mode
-    if (!sharedSocketState.isScalpActive() || sharedSocketState.getScalpMode() === "SCALP_PAPER") {
+    // Only stop if no primary mode AND no other bb_rsi mode
+    if (!sharedSocketState.isBbRsiActive() || sharedSocketState.getBbRsiMode() === "BB_RSI_PAPER") {
       // Check if primary mode needs it
       if (!sharedSocketState.isActive()) {
         socketManager.stop();
@@ -1280,32 +1280,32 @@ function stopSession() {
     }
   }
 
-  sharedSocketState.clearScalp();
+  sharedSocketState.clearBbRsi();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 
   // Save session
   if (state.sessionTrades.length > 0) {
     try {
-      const data = loadScalpData();
+      const data = loadBbRsiData();
       data.sessions.push({
         date:     state.sessionStart,
-        strategy: scalpStrategy.NAME,
+        strategy: bbRsiStrategy.NAME,
         pnl:      state.sessionPnl,
         trades:   state.sessionTrades,
       });
       data.totalPnl = parseFloat((data.totalPnl + state.sessionPnl).toFixed(2));
-      saveScalpData(data);
-      log(`💾 [SCALP-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
+      saveBbRsiData(data);
+      log(`💾 [BB_RSI-PAPER] Session saved — ${state.sessionTrades.length} trades, PnL: ₹${state.sessionPnl}`);
     } catch (err) {
-      log(`⚠️ [SCALP-PAPER] Save failed: ${err.message}`);
+      log(`⚠️ [BB_RSI-PAPER] Save failed: ${err.message}`);
     }
   }
 
-  log("🔴 [SCALP-PAPER] Session stopped");
+  log("🔴 [BB_RSI-PAPER] Session stopped");
 
   notifyDayReport({
-    mode: "SCALP-PAPER",
+    mode: "BB_RSI-PAPER",
     sessionTrades: state.sessionTrades,
     sessionPnl:    state.sessionPnl,
     sessionStart:  state.sessionStart,
@@ -1314,19 +1314,19 @@ function stopSession() {
 
 router.get("/stop", (req, res) => {
   stopSession();
-  res.redirect("/scalp-paper/status");
+  res.redirect("/bb_rsi-paper/status");
 });
 
 router.get("/exit", (req, res) => {
   if (state.position) {
     simulateSell(state.lastTickPrice || state.position.entryPrice, "Manual exit", state.lastTickPrice);
   }
-  res.redirect("/scalp-paper/status");
+  res.redirect("/bb_rsi-paper/status");
 });
 
 // ── Manual entry ────────────────────────────────────────────────────────────
 router.post("/manualEntry", async (req, res) => {
-  if (!state.running) return res.status(400).json({ success: false, error: "Scalp paper is not running." });
+  if (!state.running) return res.status(400).json({ success: false, error: "BB_RSI paper is not running." });
   if (state.position) return res.status(400).json({ success: false, error: "Already in a position. Exit first." });
   const { side } = req.body || {};
   if (side !== "CE" && side !== "PE") return res.status(400).json({ success: false, error: "Side must be CE or PE." });
@@ -1339,7 +1339,7 @@ router.post("/manualEntry", async (req, res) => {
   let sl = null;
   if (candles.length >= 3) {
     try {
-      const _sa = PSAR.calculate({ step: parseFloat(process.env.SCALP_PSAR_STEP || "0.02"), max: parseFloat(process.env.SCALP_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
+      const _sa = PSAR.calculate({ step: parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02"), max: parseFloat(process.env.BB_RSI_PSAR_MAX || "0.2"), high: candles.map(c => c.high), low: candles.map(c => c.low) });
       const _sar = _sa.length ? _sa[_sa.length - 1] : null;
       if (_sar != null) sl = parseFloat(_sar.toFixed(2));
     } catch (_) { /* fall back below */ }
@@ -1355,11 +1355,11 @@ router.post("/manualEntry", async (req, res) => {
     const optResult = await validateAndGetOptionSymbol(spot, side);
     const symbol = optResult.symbol;
     const qty = getLotQty();
-    log(`🖐️ [SCALP-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
+    log(`🖐️ [BB_RSI-PAPER] MANUAL ENTRY ${side} @ spot ₹${spot} | SL: ₹${sl} (${slSrcLbl})`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry`, sl, null, spot, slSrcLbl);
     return res.json({ success: true, spot, side, sl, symbol });
   } catch (e) {
-    log(`❌ [SCALP-PAPER] Manual entry failed: ${e.message}`);
+    log(`❌ [BB_RSI-PAPER] Manual entry failed: ${e.message}`);
     return res.status(500).json({ success: false, error: e.message });
   }
 });
@@ -1372,7 +1372,7 @@ router.get("/status/chart-data", async (req, res) => {
     // candles for the trades' day so the chart draws them with their markers.
     let srcCandles = state.candles;
     if (!state.running && srcCandles.length === 0 && (state.sessionTrades || []).length > 0) {
-      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, SCALP_RES, state.sessionTrades);
+      srcCandles = await chartBackfill.candlesForRestoredTrades(NIFTY_INDEX_SYMBOL, BB_RSI_RES, state.sessionTrades);
     }
     const candles = srcCandles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
     // Only include the partial currentBar during market hours — pre-market ticks
@@ -1382,8 +1382,8 @@ router.get("/status/chart-data", async (req, res) => {
     }
 
     // BB overlay (same params as the strategy) — aligned with candles
-    const BB_PERIOD = parseInt(process.env.SCALP_BB_PERIOD || "20", 10);
-    const BB_STDDEV = parseFloat(process.env.SCALP_BB_STDDEV || "1");
+    const BB_PERIOD = parseInt(process.env.BB_RSI_BB_PERIOD || "20", 10);
+    const BB_STDDEV = parseFloat(process.env.BB_RSI_BB_STDDEV || "1");
     let bbUpper = [], bbMiddle = [], bbLower = [];
     if (candles.length >= BB_PERIOD) {
       const closes = candles.map(c => c.close);
@@ -1398,7 +1398,7 @@ router.get("/status/chart-data", async (req, res) => {
     }
 
     // RSI(14) overlay (closes) — drawn on its own bottom scale by the chart
-    const RSI_PERIOD = parseInt(process.env.SCALP_RSI_PERIOD || "14", 10);
+    const RSI_PERIOD = parseInt(process.env.BB_RSI_RSI_PERIOD || "14", 10);
     let rsiSeries = [];
     if (candles.length >= RSI_PERIOD + 1) {
       try {
@@ -1411,12 +1411,12 @@ router.get("/status/chart-data", async (req, res) => {
     }
 
     // Trend overlay — show only the active source (PSAR dots OR SuperTrend line).
-    const useSupertrend = (process.env.SCALP_USE_SUPERTREND === "true");
+    const useSupertrend = (process.env.BB_RSI_USE_SUPERTREND === "true");
     let sarPoints = [];        // PSAR dots (active when useSupertrend=false)
     let supertrend = [];       // SuperTrend line (active when useSupertrend=true)
     if (useSupertrend) {
-      const ST_PERIOD = parseInt(process.env.SCALP_SUPERTREND_PERIOD || "10", 10);
-      const ST_MULT   = parseFloat(process.env.SCALP_SUPERTREND_MULT || "3");
+      const ST_PERIOD = parseInt(process.env.BB_RSI_SUPERTREND_PERIOD || "10", 10);
+      const ST_MULT   = parseFloat(process.env.BB_RSI_SUPERTREND_MULT || "3");
       try {
         const stArr = computeSuperTrend(candles, ST_PERIOD, ST_MULT);
         for (let i = 0; i < stArr.length; i++) {
@@ -1424,8 +1424,8 @@ router.get("/status/chart-data", async (req, res) => {
         }
       } catch (_) { /* ignore */ }
     } else {
-      const PSAR_STEP = parseFloat(process.env.SCALP_PSAR_STEP || "0.02");
-      const PSAR_MAX  = parseFloat(process.env.SCALP_PSAR_MAX  || "0.2");
+      const PSAR_STEP = parseFloat(process.env.BB_RSI_PSAR_STEP || "0.02");
+      const PSAR_MAX  = parseFloat(process.env.BB_RSI_PSAR_MAX  || "0.2");
       if (candles.length >= 3) {
         try {
           const sarArr = PSAR.calculate({ step: PSAR_STEP, max: PSAR_MAX, high: candles.map(c => c.high), low: candles.map(c => c.low) });
@@ -1473,10 +1473,10 @@ router.get("/status/chart-data", async (req, res) => {
     const armedSide    = state._armedSignal ? state._armedSignal.side : null;
     return res.json({ candles, markers, stopLoss, entryPrice, armedTrigger, armedSide, bbUpper, bbMiddle, bbLower, sar: sarPoints,
       supertrend, adx: adxSeries, trendSource: useSupertrend ? "SUPERTREND" : "PSAR",
-      adxMin: parseFloat(process.env.SCALP_ADX_MIN || "20"),
+      adxMin: parseFloat(process.env.BB_RSI_ADX_MIN || "20"),
       rsi: rsiSeries,
-      rsiCeMin: parseFloat(process.env.SCALP_RSI_CE_THRESHOLD || "62"),
-      rsiPeMax: parseFloat(process.env.SCALP_RSI_PE_THRESHOLD || "42") });
+      rsiCeMin: parseFloat(process.env.BB_RSI_RSI_CE_THRESHOLD || "62"),
+      rsiPeMax: parseFloat(process.env.BB_RSI_RSI_PE_THRESHOLD || "42") });
   } catch (err) { return res.status(500).json({ error: err.message }); }
 });
 
@@ -1484,7 +1484,7 @@ router.get("/status/chart-data", async (req, res) => {
 
 router.get("/status/data", (req, res) => {
   const pos = state.position;
-  const data = loadScalpData();
+  const data = loadBbRsiData();
 
   // Unrealised PnL — option premium if available, else spot proxy (minus charges)
   const isFut = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
@@ -1596,15 +1596,15 @@ router.get("/status/data", (req, res) => {
 // ── Status page ─────────────────────────────────────────────────────────────
 
 router.get("/status", (req, res) => {
-  const liveActive  = sharedSocketState.getMode() === "SWING_LIVE";
+  const liveActive  = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   const pos         = state.position;
-  const data        = loadScalpData();
+  const data        = loadBbRsiData();
 
-  // VIX details for top-bar display (scalp-specific threshold)
+  // VIX details for top-bar display (bb_rsi-specific threshold)
   const _vix          = getCachedVix();
-  const _vixEnabled   = process.env.SCALP_VIX_ENABLED === "true";
-  const _vixMaxEntry  = vixFilter.getVixMaxEntry("scalp");
-  const _vixStrongOnly = Infinity; // scalp does not use STRONG_ONLY — disable that branch in the badge
+  const _vixEnabled   = process.env.BB_RSI_VIX_ENABLED === "true";
+  const _vixMaxEntry  = vixFilter.getVixMaxEntry("bb_rsi");
+  const _vixStrongOnly = Infinity; // bb_rsi does not use STRONG_ONLY — disable that branch in the badge
 
   // Unrealised PnL (minus charges to match exit P&L)
   const isFut2 = instrumentConfig.INSTRUMENT === "NIFTY_FUTURES";
@@ -1826,7 +1826,7 @@ router.get("/status", (req, res) => {
 <html lang="en">
 <head>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Scalp Paper \u2014 ${scalpStrategy.NAME}</title>
+<title>BB_RSI Paper \u2014 ${bbRsiStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
@@ -1884,14 +1884,14 @@ body{font-family:'Inter',sans-serif;background:#060810;color:#c0d0e8;min-height:
 </head>
 <body>
 <div class="app-shell">
-${buildSidebar('scalpPaper', liveActive, state.running)}
+${buildSidebar('bbRsiPaper', liveActive, state.running)}
 <div class="main-content">
 
 <!-- Top bar -->
 <div class="top-bar">
   <div>
-    <div class="top-bar-title">Scalp Paper Trade</div>
-    <div class="top-bar-meta">Strategy: ${scalpStrategy.NAME} \u00b7 ${SCALP_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
+    <div class="top-bar-title">BB_RSI Paper Trade</div>
+    <div class="top-bar-meta">Strategy: ${bbRsiStrategy.NAME} \u00b7 ${BB_RSI_RES}-min candles \u00b7 SL: PSAR flip exit + Profit lock \u00b7 ${state.running ? 'Auto-refreshes every 2s' : 'Stopped'}</div>
   </div>
   <div class="top-bar-right">
     ${state.running
@@ -1899,9 +1899,9 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
       : `<span class="top-bar-badge badge-stopped">IDLE</span>`}
     ${_vixEnabled ? `<span class="top-bar-badge" style="border-color:${_vix == null ? 'rgba(100,116,139,0.3)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.3)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.3)' : 'rgba(16,185,129,0.3)'};background:${_vix == null ? 'rgba(100,116,139,0.08)' : _vix > _vixMaxEntry ? 'rgba(239,68,68,0.1)' : _vix > _vixStrongOnly ? 'rgba(234,179,8,0.1)' : 'rgba(16,185,129,0.1)'};color:${_vix == null ? '#94a3b8' : _vix > _vixMaxEntry ? '#ef4444' : _vix > _vixStrongOnly ? '#eab308' : '#10b981'};">VIX ${_vix != null ? _vix.toFixed(1) : 'n/a'}${_vix != null ? (_vix > _vixMaxEntry ? ' \u00b7 BLOCKED' : _vix > _vixStrongOnly ? ' \u00b7 STRONG ONLY' : ' \u00b7 NORMAL') : ''}</span>` : ''}
     ${state.running
-      ? `<button onclick="location='/scalp-paper/stop'" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
-      : `<button onclick="location='/scalp-paper/start'" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start Scalp Paper</button>`}
-    <a href="/scalp-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
+      ? `<button onclick="location='/bb_rsi-paper/stop'" style="background:#7f1d1d;border:1px solid #ef4444;color:#fca5a5;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Stop Session</button>`
+      : `<button onclick="location='/bb_rsi-paper/start'" style="background:#1e40af;border:1px solid #3b82f6;color:#fff;padding:5px 14px;border-radius:6px;font-size:0.72rem;font-weight:700;cursor:pointer;font-family:inherit;">Start BB_RSI Paper</button>`}
+    <a href="/bb_rsi-paper/history" style="background:rgba(59,130,246,0.08);border:0.5px solid rgba(59,130,246,0.3);color:#60a5fa;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;text-decoration:none;font-family:inherit;">📊 History</a>
     <button onclick="spHandleReset(this)" style="background:#07111f;border:0.5px solid #0e1e36;color:#4a6080;padding:5px 11px;border-radius:6px;font-size:0.68rem;font-weight:600;cursor:pointer;font-family:inherit;">↺ Reset</button>
   </div>
 </div>
@@ -1910,11 +1910,11 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 <div class="capital-strip">
   <div class="cap-cell">
     <div class="cap-label">Starting Capital</div>
-    <div class="cap-val">\u20b9${getScalpCapitalFromEnv().toLocaleString("en-IN")}</div>
+    <div class="cap-val">\u20b9${getBbRsiCapitalFromEnv().toLocaleString("en-IN")}</div>
   </div>
   <div class="cap-cell">
     <div class="cap-label">Current Capital</div>
-    <div class="cap-val" id="ajax-current-capital" style="color:${data.capital >= getScalpCapitalFromEnv() ? '#10b981' : '#ef4444'};">\u20b9${data.capital.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+    <div class="cap-val" id="ajax-current-capital" style="color:${data.capital >= getBbRsiCapitalFromEnv() ? '#10b981' : '#ef4444'};">\u20b9${data.capital.toLocaleString("en-IN", {minimumFractionDigits:2,maximumFractionDigits:2})}</div>
   </div>
   <div class="cap-cell">
     <div class="cap-label">All-Time PnL</div>
@@ -1931,17 +1931,17 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
   </div>
   <div class="sc" style="border-top:1.5px solid #6a5090;">
     <div class="sc-label">Trades Today</div>
-    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_SCALP_MAX_TRADES}</span></div>
+    <div class="sc-val"><span id="ajax-trade-count">${state.sessionTrades.length}</span> <span style="font-size:0.75rem;color:#4a6080;">/ ${_BB_RSI_MAX_TRADES}</span></div>
     <div id="ajax-wl" style="font-size:0.7rem;color:#4a6080;margin-top:4px;">${wins}W \u00b7 ${losses}L</div>
   </div>
   <div class="sc" style="border-top:2px solid ${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#4a6080'};">
     <div class="sc-label">SL Pause</div>
     <div class="sc-val" id="ajax-sl-pause" style="color:${state._slPauseUntil && Date.now() < state._slPauseUntil ? '#ef4444' : '#10b981'}">${state._slPauseUntil && Date.now() < state._slPauseUntil ? 'PAUSED' : 'OK'}</div>
-    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:#4a6080;">${_SCALP_PAUSE_CANDLES} candle cooldown after SL</div>
+    <div id="ajax-sl-pause-sub" style="font-size:0.7rem;margin-top:4px;color:#4a6080;">${_BB_RSI_PAUSE_CANDLES} candle cooldown after SL</div>
   </div>
   <div class="sc" style="border-top:2px solid ${state._dailyLossHit ? '#ef4444' : '#10b981'};">
     <div class="sc-label">Daily Loss Limit</div>
-    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:#4a6080;">/ -\u20b9${_SCALP_MAX_LOSS.toLocaleString("en-IN")}</span></div>
+    <div class="sc-val" id="ajax-daily-loss-val" style="color:${state._dailyLossHit ? '#ef4444' : '#10b981'};">${state._dailyLossHit ? 'HIT' : 'OK'} <span style="font-size:0.65rem;color:#4a6080;">/ -\u20b9${_BB_RSI_MAX_LOSS.toLocaleString("en-IN")}</span></div>
     <div id="ajax-daily-loss-status" style="font-size:0.7rem;margin-top:4px;color:${state._dailyLossHit ? '#ef4444' : '#10b981'}">${state._dailyLossHit ? 'KILLED \u2014 no entries' : 'Active'}</div>
   </div>
   <div class="sc" style="border-top:1.5px solid #a07010;">
@@ -1962,7 +1962,7 @@ ${buildSidebar('scalpPaper', liveActive, state.running)}
 
 <!-- Current bar -->
 <div style="margin-bottom:18px;">
-  <div class="section-title">Current ${SCALP_RES}-Min Bar (forming)</div>
+  <div class="section-title">Current ${BB_RSI_RES}-Min Bar (forming)</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">
     ${["open","high","low","close"].map(k => `
     <div class="sc">
@@ -1979,7 +1979,7 @@ ${posHtml}
 
 ${process.env.CHART_ENABLED !== "false" ? `<!-- NIFTY Chart -->
 <div style="margin-bottom:18px;">
-  <div class="section-title">NIFTY ${SCALP_RES}-Min Chart</div>
+  <div class="section-title">NIFTY ${BB_RSI_RES}-Min Chart</div>
   <div id="sp-sel-banner" style="display:none;align-items:center;gap:10px;background:#0a1e3d;border:1px solid #1d3b6e;border-radius:8px;padding:6px 12px;margin-bottom:8px;font-size:0.72rem;"></div>
   <div id="nifty-chart-container" style="background:#0a0f1c;border:1px solid #1a2236;border-radius:12px;overflow:hidden;position:relative;height:400px;">
     <div id="nifty-chart" style="width:100%;height:100%;"></div>
@@ -2005,7 +2005,7 @@ ${state.sessionTrades.length > 0 ? `
     </select>
     <span id="spCount" style="font-size:0.72rem;color:#4a6080;"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
-    <a class="copy-btn" href="/scalp-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
+    <a class="copy-btn" href="/bb_rsi-paper/download/trades.jsonl?format=ai" title="Download the full paper-trade log as an AI-friendly Markdown report (summary + field legend + table)" style="margin-left:8px;text-decoration:none;">🤖 AI export</a>
   </div>
   <div style="border:1px solid #1a2236;border-radius:12px;overflow:hidden;overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;">
@@ -2032,7 +2032,7 @@ ${state.sessionTrades.length > 0 ? `
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
         <div>
           <span id="spm-badge" style="font-size:0.62rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;padding:4px 10px;border-radius:6px;"></span>
-          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">Scalp Paper \u2014 Full Details</span>
+          <span style="font-size:0.65rem;color:#4a6080;margin-left:10px;">BB_RSI Paper \u2014 Full Details</span>
         </div>
         <button onclick="document.getElementById('spModal').style.display='none';" style="background:none;border:1px solid #1a2236;color:#4a6080;font-size:1rem;cursor:pointer;padding:4px 10px;border-radius:6px;font-family:inherit;" onmouseover="this.style.color='#ef4444';this.style.borderColor='#ef4444'" onmouseout="this.style.color='#4a6080';this.style.borderColor='#1a2236'">Close</button>
       </div>
@@ -2133,23 +2133,23 @@ async function spHandleExit(btn) {
   if (!ok) return;
   btn.disabled = true;
   btn.textContent = 'Exiting...';
-  fetch('/scalp-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
+  fetch('/bb_rsi-paper/exit').then(function(){ location.reload(); }).catch(function(){ location.reload(); });
 }
 
 async function spHandleReset(btn) {
   var ok = await showDoubleConfirm({
     icon: '⚠️',
-    title: 'Reset Scalp Paper Trade',
-    message: 'Reset ALL scalp paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
+    title: 'Reset BB_RSI Paper Trade',
+    message: 'Reset ALL bb_rsi paper trade history?\\nThis will wipe all sessions and restore starting capital.\\nCannot be undone.',
     confirmText: 'Reset All',
     confirmClass: 'modal-btn-danger',
-    subject: 'ALL scalp paper sessions & capital',
+    subject: 'ALL bb_rsi paper sessions & capital',
     secondConfirmText: 'Yes, reset all'
   });
   if (!ok) return;
   if (btn) { btn.textContent = '⏳...'; btn.disabled = true; }
   try {
-    var res = await fetch('/scalp-paper/reset');
+    var res = await fetch('/bb_rsi-paper/reset');
     var data;
     try { data = await res.json(); } catch(_) { data = { success: false, error: 'Server error (status ' + res.status + ')' }; }
     if (!data.success) {
@@ -2174,7 +2174,7 @@ async function spManualEntry(side) {
   });
   if (!ok) return;
   try {
-    var res = await fetch('/scalp-paper/manualEntry', {
+    var res = await fetch('/bb_rsi-paper/manualEntry', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ side: side })
@@ -2463,7 +2463,7 @@ function doCopy(text,btn,label){
   });
   async function fetchChart() {
     try {
-      var res = await fetch('/scalp-paper/status/chart-data', { cache: 'no-store' });
+      var res = await fetch('/bb_rsi-paper/status/chart-data', { cache: 'no-store' });
       if (!res.ok) return; var d = await res.json();
       if (!d.candles || !d.candles.length) return;
       // Trim every series to the latest IST trading day so zooming out still
@@ -2590,7 +2590,7 @@ function spUpdateBanner() {
 
   async function fetchAndUpdate() {
     try {
-      var res = await fetch('/scalp-paper/status/data', { cache: 'no-store' });
+      var res = await fetch('/bb_rsi-paper/status/data', { cache: 'no-store' });
       if (!res.ok) return;
       var d = await res.json();
 
@@ -2635,7 +2635,7 @@ function spUpdateBanner() {
 
       // Capital
       var capEl = document.getElementById('ajax-current-capital');
-      if (capEl) { capEl.textContent = '\\u20b9' + d.capital.toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2}); capEl.style.color = d.capital >= ${getScalpCapitalFromEnv()} ? '#10b981' : '#ef4444'; }
+      if (capEl) { capEl.textContent = '\\u20b9' + d.capital.toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2}); capEl.style.color = d.capital >= ${getBbRsiCapitalFromEnv()} ? '#10b981' : '#ef4444'; }
       var atpEl = document.getElementById('ajax-alltime-pnl');
       if (atpEl) { atpEl.textContent = (d.totalPnl >= 0 ? '+' : '') + '\\u20b9' + d.totalPnl.toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2}); atpEl.style.color = PNL_COLOR(d.totalPnl); }
 
@@ -2803,46 +2803,46 @@ function spUpdateBanner() {
 </html>`);
 });
 
-// ── Scalp Paper History ─────────────────────────────────────────────────────
+// ── BB_RSI Paper History ─────────────────────────────────────────────────────
 
-function getScalpCapitalFromEnv() {
-  // Scalp trades through Fyers — its paper capital is the shared Fyers investment pool.
+function getBbRsiCapitalFromEnv() {
+  // BB_RSI trades through Fyers — its paper capital is the shared Fyers investment pool.
   const v = parseFloat(process.env.FYERS_INV_AMOUNT);
   return isNaN(v) ? 100000 : v;
 }
 
 router.get("/history", (req, res) => {
-  const data = loadScalpData();
-  const liveActive = sharedSocketState.getMode() === "SWING_LIVE";
+  const data = loadBbRsiData();
+  const liveActive = sharedSocketState.getMode() === "EMA_RSI_ST_LIVE";
   res.setHeader("Content-Type", "text/html");
   res.send(renderHistoryPage({
-    routePrefix: "/scalp-paper",
-    sidebarKey: "scalpHistory",
-    pageTitle: "⚡ Scalp Paper Trade History",
-    pageDocTitle: "Scalp Paper — History",
-    modalLabel: "Scalp Paper",
+    routePrefix: "/bb_rsi-paper",
+    sidebarKey: "bbRsiHistory",
+    pageTitle: "⚡ BB_RSI Paper Trade History",
+    pageDocTitle: "BB_RSI Paper — History",
+    modalLabel: "BB_RSI Paper",
     liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
     totalPnl: data.totalPnl,
-    startCap: getScalpCapitalFromEnv(),
-    emptyLabel: "Start scalp paper trading to record your first session.",
+    startCap: getBbRsiCapitalFromEnv(),
+    emptyLabel: "Start bb_rsi paper trading to record your first session.",
   }));
 });
 
 /**
- * DELETE /scalp-paper/session/:index
+ * DELETE /bb_rsi-paper/session/:index
  * Delete a single session by its 0-based index in the sessions array
  */
 router.delete("/session/:index", (req, res) => {
   if (state.running) {
     return res.status(400).json({
       success: false,
-      error: "Stop scalp paper trading first before deleting a session.",
+      error: "Stop bb_rsi paper trading first before deleting a session.",
     });
   }
 
-  const data = loadScalpData();
+  const data = loadBbRsiData();
   const idx = parseInt(req.params.index, 10);
 
   if (isNaN(idx) || idx < 0 || idx >= data.sessions.length) {
@@ -2852,10 +2852,10 @@ router.delete("/session/:index", (req, res) => {
   const removed = data.sessions.splice(idx, 1)[0];
   // Recalculate totalPnl and capital from remaining sessions
   data.totalPnl = data.sessions.reduce((sum, s) => sum + (s.pnl || 0), 0);
-  data.capital = getScalpCapitalFromEnv() + data.totalPnl;
-  saveScalpData(data);
+  data.capital = getBbRsiCapitalFromEnv() + data.totalPnl;
+  saveBbRsiData(data);
 
-  log(`🗑️ Deleted scalp paper session ${idx + 1} (${removed.date || "unknown date"}, PnL: ${removed.pnl})`);
+  log(`🗑️ Deleted bb_rsi paper session ${idx + 1} (${removed.date || "unknown date"}, PnL: ${removed.pnl})`);
 
   return res.json({
     success: true,
@@ -2866,17 +2866,17 @@ router.delete("/session/:index", (req, res) => {
 // ── Restore deleted/missing sessions from daily JSONL ────────────────────────
 router.post("/restore-session/:date", (req, res) => {
   if (state.running) {
-    return res.status(400).json({ success: false, error: "Stop scalp paper trading before restoring." });
+    return res.status(400).json({ success: false, error: "Stop bb_rsi paper trading before restoring." });
   }
   const date = String(req.params.date || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return res.status(400).json({ success: false, error: "Invalid date — expected YYYY-MM-DD." });
   }
-  const allTrades = tradeLogger.readDailyTrades("scalp", date);
+  const allTrades = tradeLogger.readDailyTrades("bb_rsi", date);
   if (!allTrades.length) {
     return res.status(404).json({ success: false, error: "No trades found in daily JSONL for that date." });
   }
-  const data = loadScalpData();
+  const data = loadBbRsiData();
   const seen = new Set();
   for (const s of (data.sessions || [])) {
     for (const t of (s.trades || [])) {
@@ -2894,7 +2894,7 @@ router.post("/restore-session/:date", (req, res) => {
   const sessionPnl = parseFloat(missing.reduce((sum, t) => sum + (Number(t.pnl) || 0), 0).toFixed(2));
   const session = {
     date,
-    strategy: missing[0]?.strategy || "SCALP_BB_RSI",
+    strategy: missing[0]?.strategy || "BB_RSI_BB_RSI",
     pnl:      sessionPnl,
     trades:   missing,
     restoredFromJsonl: true,
@@ -2902,26 +2902,26 @@ router.post("/restore-session/:date", (req, res) => {
   data.sessions.push(session);
   data.sessions.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   data.totalPnl = parseFloat(data.sessions.reduce((sum, s) => sum + (s.pnl || 0), 0).toFixed(2));
-  data.capital = parseFloat((getScalpCapitalFromEnv() + data.totalPnl).toFixed(2));
-  saveScalpData(data);
-  log(`♻️ Restored scalp paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
+  data.capital = parseFloat((getBbRsiCapitalFromEnv() + data.totalPnl).toFixed(2));
+  saveBbRsiData(data);
+  log(`♻️ Restored bb_rsi paper session for ${date}: ${missing.length} trade(s), PnL ₹${sessionPnl}`);
   return res.json({ success: true, restored: missing.length, sessionPnl, message: `Restored ${missing.length} trade(s).` });
 });
 
 /**
- * GET /scalp-paper/download/trades.jsonl
+ * GET /bb_rsi-paper/download/trades.jsonl
  * Stream the crash-safe per-trade JSONL log as a file download.
  */
 router.get("/download/trades.jsonl", (req, res) => {
-  const logPath = tradeLogger.filePathFor("scalp");
+  const logPath = tradeLogger.filePathFor("bb_rsi");
   const today   = new Date().toISOString().slice(0, 10);
-  const dlName  = `scalp_paper_trades_log_${today}.txt`;
+  const dlName  = `bb_rsi_paper_trades_log_${today}.txt`;
   const ai = String(req.query.format || "").toLowerCase() === "ai" || req.query.ai === "1";
   if (ai) {
     let text = ""; try { text = fs.readFileSync(logPath, "utf8"); } catch (_) {}
-    const md = aiExport.jsonlToMarkdown(text, { title: "SCALP paper trades (full log)", source: "scalp-paper" });
+    const md = aiExport.jsonlToMarkdown(text, { title: "BB_RSI paper trades (full log)", source: "bb_rsi-paper" });
     res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="scalp_paper_trades_AI_${today}.md"`);
+    res.setHeader("Content-Disposition", `attachment; filename="bb_rsi_paper_trades_AI_${today}.md"`);
     return res.send(md);
   }
   if (!fs.existsSync(logPath)) {
@@ -2936,8 +2936,8 @@ router.get("/download/trades.jsonl", (req, res) => {
 const _DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.get("/download/daily-files", (req, res) => {
-  const skips  = skipLogger.listDates("scalp");
-  const trades = tradeLogger.listDailyDates("scalp");
+  const skips  = skipLogger.listDates("bb_rsi");
+  const trades = tradeLogger.listDailyDates("bb_rsi");
   const byDate = new Map();
   for (const s of skips)  byDate.set(s.date, { date: s.date, skipsSize: s.size, tradesSize: 0 });
   for (const t of trades) {
@@ -2951,14 +2951,14 @@ router.get("/download/daily-files", (req, res) => {
 
 router.get("/download/skips-all", (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
-  const dlName = `scalp_paper_skips_all_${today}.txt`;
+  const dlName = `bb_rsi_paper_skips_all_${today}.txt`;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${dlName}"`);
-  const dates = skipLogger.listDates("scalp").map(d => d.date).sort();
+  const dates = skipLogger.listDates("bb_rsi").map(d => d.date).sort();
   let body = "";
   for (const d of dates) {
     try {
-      const p = skipLogger.filePathFor("scalp", d);
+      const p = skipLogger.filePathFor("bb_rsi", d);
       if (fs.existsSync(p)) body += fs.readFileSync(p, "utf8");
     } catch (_) {}
   }
@@ -2968,23 +2968,23 @@ router.get("/download/skips-all", (req, res) => {
 router.get("/download/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("scalp", date);
+  const p = skipLogger.filePathFor("bb_rsi", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `scalp_paper_skips_${date}.txt`);
+  res.download(p, `bb_rsi_paper_skips_${date}.txt`);
 });
 
 router.get("/download/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("scalp", date);
+  const p = tradeLogger.dailyFilePathFor("bb_rsi", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
-  res.download(p, `scalp_paper_trades_${date}.txt`);
+  res.download(p, `bb_rsi_paper_trades_${date}.txt`);
 });
 
 router.get("/view/skips/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = skipLogger.filePathFor("scalp", date);
+  const p = skipLogger.filePathFor("bb_rsi", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -2994,7 +2994,7 @@ router.get("/view/skips/:date", (req, res) => {
 router.get("/view/trades/:date", (req, res) => {
   const date = req.params.date;
   if (!_DATE_RE.test(date)) return res.status(400).send("bad date");
-  const p = tradeLogger.dailyFilePathFor("scalp", date);
+  const p = tradeLogger.dailyFilePathFor("bb_rsi", date);
   if (!fs.existsSync(p)) return res.status(404).send("not found");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", "inline");
@@ -3002,32 +3002,32 @@ router.get("/view/trades/:date", (req, res) => {
 });
 
 /**
- * GET /scalp-paper/reset
- * Wipe all scalp paper trade history and reset capital
+ * GET /bb_rsi-paper/reset
+ * Wipe all bb_rsi paper trade history and reset capital
  */
 router.get("/reset", (req, res) => {
   if (state.running) {
     return res.status(400).json({
       success: false,
-      error: "Stop scalp paper trading first before resetting.",
+      error: "Stop bb_rsi paper trading first before resetting.",
     });
   }
 
-  const freshCapital = getScalpCapitalFromEnv();
-  saveScalpData({ capital: freshCapital, totalPnl: 0, sessions: [] });
+  const freshCapital = getBbRsiCapitalFromEnv();
+  saveBbRsiData({ capital: freshCapital, totalPnl: 0, sessions: [] });
 
-  log(`🔄 Scalp paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
+  log(`🔄 BB_RSI paper trade data reset. Capital restored to ₹${freshCapital.toLocaleString("en-IN")}`);
 
   return res.json({
     success: true,
-    message: `Scalp paper trade history cleared. Capital reset to ₹${freshCapital.toLocaleString("en-IN")}`,
+    message: `BB_RSI paper trade history cleared. Capital reset to ₹${freshCapital.toLocaleString("en-IN")}`,
   });
 });
 
 // ── Simulation mode routes ─────────────────────────────────────────────────
 
 router.get("/simulate", (req, res) => {
-  if (state.running) return res.redirect("/scalp-paper/status");
+  if (state.running) return res.redirect("/bb_rsi-paper/status");
 
   const scenarios = tickSimulator.getScenarios();
   const cards = Object.entries(scenarios).map(([key, s]) => `
@@ -3042,7 +3042,7 @@ router.get("/simulate", (req, res) => {
 
   res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Simulate — Scalp Paper</title>
+<title>Simulate — BB_RSI Paper</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
 <style>
 ${sidebarCSS()}
@@ -3061,11 +3061,11 @@ body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min
 </style>
 </head><body>
 <div class="app-shell">
-${buildSidebar('scalpPaper', false)}
+${buildSidebar('bbRsiPaper', false)}
 <div class="main-content">
-  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — Scalp Paper</h1>
-  <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:8px;">Run your scalp strategy against fake ticks — no broker login needed. Works after market hours.</p>
-  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${SCALP_RES}-min</strong> candles</p>
+  <h1 style="font-size:1.4rem;font-weight:800;color:#e2e8f0;margin-bottom:4px;">Simulate — BB_RSI Paper</h1>
+  <p style="font-size:0.82rem;color:#6b7fa0;margin-bottom:8px;">Run your bb_rsi strategy against fake ticks — no broker login needed. Works after market hours.</p>
+  <p style="font-size:0.75rem;color:#4a6080;">Resolution: <strong>${BB_RSI_RES}-min</strong> candles</p>
 
   <!-- ── Tab switcher ─────────────────────────────────────────────── -->
   <div style="display:flex;gap:0;margin-top:24px;border-bottom:2px solid #1a2236;">
@@ -3097,7 +3097,7 @@ ${buildSidebar('scalpPaper', false)}
   <!-- ── History tab ──────────────────────────────────────────────── -->
   <div id="panelHistory" style="display:none;">
     <div style="font-size:0.75rem;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:1.5px;margin-top:20px;">Replay a Past Trading Day</div>
-    <p style="font-size:0.78rem;color:#6b7fa0;margin-top:8px;">Pick a date to replay that day's real ${SCALP_RES}-min candles as ticks through your strategy.</p>
+    <p style="font-size:0.78rem;color:#6b7fa0;margin-top:8px;">Pick a date to replay that day's real ${BB_RSI_RES}-min candles as ticks through your strategy.</p>
     <div class="config-row">
       <div>
         <div class="config-label">Trading Date</div>
@@ -3142,7 +3142,7 @@ function startSim(key) {
 function submitSim() {
   const btn = document.getElementById('startBtn');
   btn.disabled = true; btn.textContent = 'Starting...';
-  _post('/scalp-paper/simulate/start', {
+  _post('/bb_rsi-paper/simulate/start', {
     mode: 'scenario', scenario: selectedScenario,
     basePrice: parseFloat(document.getElementById('basePrice').value) || 24500,
     speed: parseInt(document.getElementById('speed').value) || 10,
@@ -3154,7 +3154,7 @@ function submitReplay() {
   const date = document.getElementById('replayDate').value;
   if (!date) { document.getElementById('status').textContent = 'Pick a date first'; return; }
   btn.disabled = true; btn.textContent = 'Fetching candles...';
-  _post('/scalp-paper/simulate/start', {
+  _post('/bb_rsi-paper/simulate/start', {
     mode: 'historical', date: date,
     speed: parseInt(document.getElementById('replaySpeed').value) || 10,
   }, btn, 'Replay Selected Date');
@@ -3162,7 +3162,7 @@ function submitReplay() {
 function _post(url, body, btn, resetLabel) {
   fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) })
     .then(r=>r.json()).then(d=>{
-      if(d.success){ window.location.href='/scalp-paper/status'; }
+      if(d.success){ window.location.href='/bb_rsi-paper/status'; }
       else { document.getElementById('status').textContent='Error: '+(d.error||'Unknown'); btn.disabled=false; btn.textContent=resetLabel; }
     }).catch(e=>{ document.getElementById('status').textContent='Error: '+e.message; btn.disabled=false; btn.textContent=resetLabel; });
 }
@@ -3214,7 +3214,7 @@ router.post("/simulate/start", async (req, res) => {
     if (!date) return res.json({ success: false, error: "Date is required for historical replay" });
 
     resetSimState(`replay:${date}`, date);
-    log(`🎮 [SIM] Fetching ${SCALP_RES}-min candles for ${date}...`);
+    log(`🎮 [SIM] Fetching ${BB_RSI_RES}-min candles for ${date}...`);
 
     try {
       const { fetchCandlesCached, clearCache } = require("../utils/candleCache");
@@ -3227,10 +3227,10 @@ router.post("/simulate/start", async (req, res) => {
       const fromStr = fromDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
       // Clear cache to avoid stale partial data from a previous live session
-      clearCache(NIFTY_INDEX_SYMBOL, String(SCALP_RES));
+      clearCache(NIFTY_INDEX_SYMBOL, String(BB_RSI_RES));
 
       const allCandles = await fetchCandlesCached(
-        NIFTY_INDEX_SYMBOL, String(SCALP_RES), fromStr, date, fetchCandles
+        NIFTY_INDEX_SYMBOL, String(BB_RSI_RES), fromStr, date, fetchCandles
       );
 
       if (!allCandles || allCandles.length < 35) {
@@ -3253,7 +3253,7 @@ router.post("/simulate/start", async (req, res) => {
           log(`📊 [SIM] Fetched ${tickCandles1m.length} × 1-min candles for high-fidelity tick replay`);
         }
       } catch (e) {
-        log(`⚠️ [SIM] 1-min candle fetch failed (${e.message}) — using ${SCALP_RES}-min interpolation`);
+        log(`⚠️ [SIM] 1-min candle fetch failed (${e.message}) — using ${BB_RSI_RES}-min interpolation`);
       }
 
       // Split by date: before target = warmup, on target = session
@@ -3289,12 +3289,12 @@ router.post("/simulate/start", async (req, res) => {
         }
       } catch (_) {}
 
-      log(`📦 [SIM] Date: ${date} | ${warmup.length} warmup + ${sessionCandles.length} session candles (${SCALP_RES}-min) | Speed: ${speed}x`);
+      log(`📦 [SIM] Date: ${date} | ${warmup.length} warmup + ${sessionCandles.length} session candles (${BB_RSI_RES}-min) | Speed: ${speed}x`);
 
       const result = tickSimulator.startFromCandles({
         candles: [...warmup, ...sessionCandles],
         warmupCount: warmup.length,
-        resolution: SCALP_RES,
+        resolution: BB_RSI_RES,
         speed,
         onTick,
         onCandleDone: makeCandleDone(sessionCandles.length),
@@ -3329,7 +3329,7 @@ router.post("/simulate/start", async (req, res) => {
   try {
     const result = tickSimulator.start({
       scenario, basePrice, speed, candleCount,
-      warmupCandles: 30, resolution: SCALP_RES,
+      warmupCandles: 30, resolution: BB_RSI_RES,
       onTick,
       onCandleDone: makeCandleDone(candleCount),
       onDone: onSimDone,
