@@ -425,16 +425,16 @@
   <div class="sub">EMA20/EMA50 + RSI + SuperTrend · EMA21 Trailing Stop</div>
   <div class="sub2">NIFTY index options · Zerodha (live) · Fyers (data) · 5 / 15-min</div>
   <div class="version-box">
-    <strong>PSAR stripped 2026-06-12</strong> — direction is now SuperTrend(10,3); the entry gate is an EMA20/EMA50 cross-state (optional EMA9&gt;20&gt;50 stack). Replaces the EMA21-touch / Parabolic-SAR system.<br/>
+    <strong>PSAR stripped 2026-06-12</strong> — direction is now SuperTrend(10,3). Entry is a <strong>4-gate</strong> check (EMA alignment + RSI band + SuperTrend side + close beyond the base EMA), and a confirmation candle times the fill. Replaces the EMA21-touch / Parabolic-SAR system.<br/>
     Code: <code>src/strategies/strategy1_sar_ema_rsi.js</code> (<code>getSignal</code>) — shared by all modes.<br/>
-    <span style="color:var(--text3);">(2026-06-15) verification recheck — defaults aligned to the <code>settings.js</code> schema (which mirrors the current tuned live config): <code>OPT_STOP_PCT</code> 0.25 (was 0.15), <code>MAX_DAILY_TRADES</code> 5 (was 20), <code>MAX_DAILY_LOSS</code> ₹3,000 (was 5,000), <code>SWING_EOD_EXIT_TIME</code> 14:30 (was 15:15). All other rules confirmed.</span>
+    <span style="color:var(--text3);">(2026-07-05) verification recheck vs code + README — added the 4th entry gate (<code>SWING_CLOSE_BEYOND_EMA_ENABLED</code>, on), the confirmation candle (<code>SWING_CONFIRM_CANDLE_ENABLED</code>, on), the negative-candle stop (<code>SWING_NEG_CANDLE_LIMIT</code>) and the optional N-bar candle trail. The Settings tables below list the code <code>||</code> fallback defaults (what runs with the key unset); the Settings-UI seed differs for several keys — see the callout in §10.</span>
   </div>
   <div class="toc">
     <div class="toc-title">Contents</div>
     <a href="#s1"><span class="num">01</span> Strategy Overview</a>
     <a href="#s2"><span class="num">02</span> Indicators</a>
     <a href="#s3"><span class="num">03</span> Trading Modes</a>
-    <a href="#s4"><span class="num">04</span> Entry Logic — 3 Conditions</a>
+    <a href="#s4"><span class="num">04</span> Entry Logic — 4 Conditions</a>
     <a href="#s5"><span class="num">05</span> Stop Loss &amp; Trailing</a>
     <a href="#s6"><span class="num">06</span> Exit Logic</a>
     <a href="#s7"><span class="num">07</span> Same-Side Cooldown</a>
@@ -450,18 +450,20 @@
 
 <div class="section">
   <h2 id="s1">01 — Strategy Overview</h2>
-  <p>A deliberately simple, chart-driven swing strategy. Three things decide entries — an EMA alignment, an RSI band,
-  and the SuperTrend side — and the stop is seeded at the previous candle's extreme, then trailed to EMA21 candle-by-candle.
+  <p>A deliberately simple, chart-driven swing strategy. <strong>Four gates</strong> decide entries — an EMA alignment,
+  an RSI band, the SuperTrend side, and a close beyond the base EMA — then a confirmation candle times the fill, and the
+  stop is seeded at the previous candle's extreme and trailed to EMA21 candle-by-candle.
   The same <code>getSignal()</code> drives Backtest, Paper, Live, Replay and the Live Harness, so all modes agree by construction.</p>
   <div class="card blue-border">
     <h3 class="blue">In one line</h3>
-    <p><strong>CE</strong> = EMA20 above EMA50 &amp; RSI in the CE band &amp; SuperTrend bullish. <strong>PE</strong> = mirror.
-    Initial stop = previous candle low (CE) / high (PE); thereafter the SL trails to EMA21 (tighten-only).
-    Exits: trailed-SL · EMA21 touch-back · option-stop · opposite signal · exit-before-close · EOD.</p>
+    <p><strong>CE</strong> = EMA20 above EMA50 &amp; RSI in the CE band &amp; SuperTrend bullish &amp; the signal candle closes above the base EMA. <strong>PE</strong> = mirror.
+    By default a <em>confirmation candle</em> arms on the signal bar's close and the fill fires intra-bar when the next candle crosses that close.
+    Initial stop = previous candle low (CE) / high (PE); thereafter the SL trails to EMA21 (tighten-only), optionally tightened by an N-bar candle trail.
+    Exits: points-stop · option-stop · trailed-SL · negative-candle stop · EMA21 touch-back · opposite signal · exit-before-close · EOD.</p>
   </div>
   <div class="note warn">There is <strong>no Parabolic SAR</strong> (removed 2026-06-12), no strength tier, no ADX, no EMA30,
-  no candle-body or distance gate, and no 3-tier trail. Breakeven is wired but currently inert. EMA9 is only an entry
-  input when the optional triple-stack toggle is on; otherwise it is a chart overlay (see section 12).</div>
+  no candle-body or distance gate, and no 3-tier trail. <strong>Breakeven-to-entry was removed</strong> — only a dead code comment remains.
+  EMA9 is only an entry input when the optional triple-stack toggle is on; otherwise it is a chart overlay (see section 12).</div>
 </div>
 
 <div class="section">
@@ -475,7 +477,7 @@
     <tr><td><strong>EMA 21</strong></td><td>period 21, on <code>OHLC4</code></td><td>Trailing-stop line + record snapshot only — <em>not</em> an entry input</td></tr>
   </table>
   <p>Warm-up: <code>max(EMA_SLOW, 30) + 5</code> candles (<strong>55</strong> at defaults) before any signal. Trading window:
-  <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST (default 10:30–14:00).</p>
+  <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST (code default 09:30–14:00; Settings UI seeds a 10:30 start).</p>
   <div class="note warn">Parabolic SAR was removed on 2026-06-12; SuperTrend is the sole trend confirmation. The file name
   <code>strategy1_sar_ema_rsi.js</code> is historical — there is no SAR in the entry logic anymore.</div>
 </div>
@@ -491,15 +493,20 @@
     <tr><td>Replay</td><td><code>/replay</code></td><td>Recorded ticks → drives the Paper engine</td></tr>
     <tr><td>Sim / Harness</td><td><code>/swing-paper/simulate</code></td><td>Wrap the Paper/Live engine; inherit automatically</td></tr>
   </table>
-  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>3, 5 or 15-min</strong> (default 5). Entry is evaluated
-  intra-candle on every tick; on 15-min it also re-checks at candle close. Smaller candles → tighter prev-candle stops.</p>
+  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>3, 5 or 15-min</strong> (default 5). By default
+  (<code>SWING_CONFIRM_CANDLE_ENABLED</code>, on) the engine arms on the <em>signal candle's</em> close and the fill fires
+  intra-bar the moment the next candle crosses that close; with the toggle off, entry evaluates intra-candle on every tick.
+  Smaller candles → tighter prev-candle stops.</p>
 </div>
 
 <div class="section">
-  <h2 id="s4">04 — Entry Logic — 3 Conditions</h2>
-  <p>Re-evaluated on <strong>every live tick while flat</strong> (intra-candle); on 15-min it is also checked at candle close.
-  All three conditions must be true. The EMA gate is a <em>cross-state</em> check — it fires while the alignment holds, not
-  only on the bar that crosses.</p>
+  <h2 id="s4">04 — Entry Logic — 4 Conditions</h2>
+  <p><strong>All four gates</strong> must agree on a fully-closed bar — the <em>signal candle</em>. The EMA gate is a
+  <em>cross-state</em> check (it holds while the alignment does, not only on the crossing bar). By default the
+  <strong>confirmation candle</strong> (<code>SWING_CONFIRM_CANDLE_ENABLED</code>, on) means entry does <em>not</em> fire on
+  the signal candle: the engine arms on its close, then the fill fires intra-bar the moment the <strong>next</strong> candle
+  strictly crosses the signal candle's close (CE above / PE below). With the toggle off it reverts to legacy intra-candle
+  entry on the signal bar itself.</p>
   <div class="logic-cards">
     <div class="logic-card" style="border-left:3px solid var(--green);">
       <div class="lc-num" style="color:var(--green2);">BUY_CE — long call</div>
@@ -507,7 +514,8 @@
       <div class="lc-desc">
         1. EMA alignment bullish → <code>EMA20 &gt; EMA50</code> <span style="opacity:.75;">(triple-stack: <code>EMA9 &gt; EMA20 &gt; EMA50</code>)</span><br/>
         2. <code>RSI_CE_MIN &lt; RSI &lt; RSI_CE_MAX</code> (above momentum floor, below overbought cap)<br/>
-        3. SuperTrend bullish → <code>trend = 1</code> (line below price)
+        3. SuperTrend bullish → <code>trend = 1</code> (line below price)<br/>
+        4. Signal candle <strong>close above the base EMA</strong> <span style="opacity:.75;">(<code>SWING_CLOSE_BEYOND_EMA_ENABLED</code>; base = EMA9 when triple-stack on, else EMA20)</span>
       </div>
       <div class="lc-condition">→ Initial SL = previous candle LOW</div>
     </div>
@@ -517,14 +525,17 @@
       <div class="lc-desc">
         1. EMA alignment bearish → <code>EMA20 &lt; EMA50</code> <span style="opacity:.75;">(triple-stack: <code>EMA9 &lt; EMA20 &lt; EMA50</code>)</span><br/>
         2. <code>RSI_PE_MIN &lt; RSI &lt; RSI_PE_MAX</code> (above oversold floor, below momentum cap)<br/>
-        3. SuperTrend bearish → <code>trend = -1</code> (line above price)
+        3. SuperTrend bearish → <code>trend = -1</code> (line above price)<br/>
+        4. Signal candle <strong>close below the base EMA</strong> <span style="opacity:.75;">(<code>SWING_CLOSE_BEYOND_EMA_ENABLED</code>; base = EMA9 when triple-stack on, else EMA20)</span>
       </div>
       <div class="lc-condition">→ Initial SL = previous candle HIGH</div>
     </div>
   </div>
-  <div class="note">Defaults: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=70</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=30</code>.
-  The overbought/oversold caps stop you chasing exhausted moves. The EMA gate defaults to the 2-EMA cross
-  (<code>SWING_EMA_TRIPLE_STACK_ENABLED=false</code>); set it true to require the EMA9&gt;20&gt;50 stack. Entry price = current tick LTP.</div>
+  <div class="note">Code-default RSI band: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=80</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=20</code>
+  (the Settings UI seeds a tighter <code>RSI_CE_MAX=70</code> / <code>RSI_PE_MIN=30</code>). The overbought/oversold caps stop you chasing exhausted moves.
+  Gate 4 (<code>SWING_CLOSE_BEYOND_EMA_ENABLED</code>, on) requires the signal candle to <em>close</em> on the trade side of the base EMA —
+  it blocks buying dips that close back under the fast EMA while the lines stay stacked from an earlier move. The EMA gate defaults to the 2-EMA cross
+  (<code>SWING_EMA_TRIPLE_STACK_ENABLED=false</code>); set it true to require the EMA9&gt;20&gt;50 stack. With the confirmation candle on, entry price = the tick LTP at the confirming cross.</div>
 </div>
 
 <div class="section">
@@ -536,11 +547,13 @@
     tighten-only (higher for CE / lower for PE; it never loosens). The new level is enforced intra-candle (tick-by-tick)
     during the next bar; in Live it is also pushed to the broker hard-SL when <code>HARD_SL_ENABLED</code>.</p>
     <p><strong>Optional candle trail</strong>: with <code>SWING_CANDLE_TRAIL_ENABLED=true</code>, an N-bar low (CE) / high (PE)
-    over <code>SWING_CANDLE_TRAIL_BARS</code> bars is also computed, and whichever of (EMA21, candle level) is <em>tighter</em> wins.</p>
-    <p><strong>Breakeven</strong>: the scaffolding remains but is currently <strong>inert</strong> in the swing engine — there is no
-    active <code>BREAKEVEN_PTS</code> snap (that key only drives the separate Manual Tracker). A hard spot-points cap
-    <code>SWING_STOP_LOSS_PTS</code> (default 25) is checked first, so a deep adverse excursion is clipped before the
-    structural/trail SL when the prev-candle stop sits wider; set it to 0 to disable.</p>
+    over <code>SWING_CANDLE_TRAIL_BARS</code> bars (default 3) is also computed, and whichever of (EMA21, candle level) is <em>tighter</em> wins.</p>
+    <p><strong>Negative-candle stop</strong> (<code>SWING_NEG_CANDLE_LIMIT</code>, default 2, <code>0</code>=off): if a trade is still
+    in the red (option premium below entry) at the close of N candles, it is squared off — an asymmetric loss-cut that cuts losers
+    early while <em>winners keep riding the trail</em>. A hard spot-points cap <code>SWING_STOP_LOSS_PTS</code> is checked first on
+    every tick, so a deep adverse excursion is clipped before the structural/trail SL when the prev-candle stop sits wider; <code>0</code> disables it.</p>
+    <p><strong>Breakeven-to-entry was removed</strong> — there is no active breakeven snap in the swing engine (only a dead code comment remains;
+    <code>BREAKEVEN_PTS</code> drives the separate Manual Tracker only).</p>
   </div>
   <div class="note warn">Because the SL hugs EMA21, a candle whose range touches back through EMA21 is treated as an explicit
   exit (see §6). Expect frequent small stop-outs in chop; tighter timeframes amplify this.</div>
@@ -548,15 +561,17 @@
 
 <div class="section">
   <h2 id="s6">06 — Exit Logic</h2>
-  <p>Checked per tick (price/option stops) and per candle close (trail / touch-back / signal / EOD):</p>
+  <p>Two precedence groups: <strong>per-tick</strong> (first hit wins) and <strong>candle-close</strong> (evaluated in order at each bar close):</p>
   <table>
     <tr><th>#</th><th>Exit</th><th>Rule</th></tr>
-    <tr><td>1</td><td>Trailed-SL hit</td><td>Intra-candle: CE <code>ltp ≤ SL</code> · PE <code>ltp ≥ SL</code> (SL = EMA21 trail, seeded at prev-candle extreme)</td></tr>
-    <tr><td>2</td><td>Option-premium stop</td><td>Exit if option LTP <code>≤ entryLtp × (1 − OPT_STOP_PCT)</code> (default 25%)</td></tr>
-    <tr><td>3</td><td>EMA21 touch-back</td><td>At candle close, if the candle range straddles EMA21 (<code>low ≤ EMA21 ≤ high</code>) → exit. Skipped on the entry bar</td></tr>
-    <tr><td>4</td><td>Opposite signal</td><td>Holding CE and a BUY_PE fires → exit (and vice-versa)</td></tr>
-    <tr><td>5</td><td>Exit before close</td><td>Square off any open position at <code>SWING_EOD_EXIT_TIME</code> (default 14:30)</td></tr>
-    <tr><td>6</td><td>EOD auto-stop</td><td>At <code>TRADE_STOP_TIME</code> (15:30) — square off + stop the engine</td></tr>
+    <tr><td>1</td><td><span class="tag tag-red">per-tick</span> Points stop</td><td>Checked first: exit once spot has moved <code>SWING_STOP_LOSS_PTS</code> against entry (catastrophic cap; <code>0</code> = off)</td></tr>
+    <tr><td>2</td><td><span class="tag tag-red">per-tick</span> Option-premium stop</td><td>Exit if option LTP <code>≤ entryLtp × (1 − OPT_STOP_PCT)</code> (default 25%)</td></tr>
+    <tr><td>3</td><td><span class="tag tag-red">per-tick</span> Trailed-SL hit</td><td>CE <code>ltp ≤ SL</code> · PE <code>ltp ≥ SL</code> (SL = EMA21 trail, seeded at prev-candle extreme; optional N-bar candle trail, tighter wins)</td></tr>
+    <tr><td>4</td><td><span class="tag tag-yellow">candle-close</span> Negative-candle stop</td><td>If still red (option premium below entry) after <code>SWING_NEG_CANDLE_LIMIT</code> candles (default 2) → square off. Winners ride the trail. <code>0</code> = off</td></tr>
+    <tr><td>5</td><td><span class="tag tag-yellow">candle-close</span> EMA21 touch-back</td><td>If the candle range straddles EMA21 (<code>low ≤ EMA21 ≤ high</code>) → exit. Skipped on the entry bar</td></tr>
+    <tr><td>6</td><td><span class="tag tag-yellow">candle-close</span> Opposite signal</td><td>Holding CE and a BUY_PE fires → exit (and vice-versa)</td></tr>
+    <tr><td>7</td><td><span class="tag tag-yellow">candle-close</span> Exit before close</td><td>Square off any open position at <code>SWING_EOD_EXIT_TIME</code></td></tr>
+    <tr><td>8</td><td><span class="tag tag-yellow">candle-close</span> EOD auto-stop</td><td>At <code>TRADE_STOP_TIME</code> (15:30) — square off + stop the engine</td></tr>
   </table>
   <div class="note">The legacy time-stop is inert (only fires under the disabled <code>SWING_SL_MODE=candle</code> path; the default
   <code>ema</code> trail owns the SL). In Backtest there is no live option LTP, so the option-stop is approximated as an
@@ -566,10 +581,12 @@
 <div class="section">
   <h2 id="s7">07 — Same-Side Cooldown</h2>
   <p>After an <strong>SL hit or option-stop</strong> on a side, new entries on <em>that</em> side are blocked for
-  <code>SWING_SL_PAUSE_CANDLES</code> candles (default 2). The other side is free. Set to <code>0</code> to disable.
+  <code>SWING_SL_PAUSE_CANDLES</code> candles (code default 3; Settings-UI seed 2). The other side is free. Set to <code>0</code> to disable.
   This prevents immediately re-entering the same losing setup tick-after-tick.</p>
-  <p>Separately, an <strong>opposite-side cooldown</strong> (<code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code>, default on;
-  <code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES</code>, default 2) throttles immediate CE↔PE flips. An optional chop guard
+  <p>Separately, an <strong>opposite-side (flip) cooldown</strong> (<code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code>, default on;
+  <code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES</code>, code default 3 / UI seed 2) blocks a flip to the OPPOSITE side for N candles after any
+  non-flip exit (SL / trail SL / option-stop / EMA touch-back) — it kills whipsaw CE↔PE flip-clusters on chop (historically the single
+  biggest drag-reducer for Swing). Opposite-signal / EOD / manual exits do not trigger it. An optional chop guard
   (<code>SWING_MAX_CONSEC_LOSSES</code>, default 0 = off) halts the session after N consecutive losses.</p>
 </div>
 
@@ -577,11 +594,14 @@
   <h2 id="s8">08 — Risk Guards</h2>
   <table>
     <tr><th>Guard</th><th>Env</th><th>Effect</th></tr>
-    <tr><td>Daily loss kill</td><td><code>MAX_DAILY_LOSS</code></td><td>Stop entries once session loss ≥ this (default ₹3,000)</td></tr>
-    <tr><td>Max trades</td><td><code>MAX_DAILY_TRADES</code></td><td>Hard cap on entries per session (default 5; paper, live &amp; backtest)</td></tr>
+    <tr><td>Daily loss kill</td><td><code>MAX_DAILY_LOSS</code></td><td>Stop entries once session loss ≥ this (code default ₹5,000; UI seed ₹3,000)</td></tr>
+    <tr><td>Max trades</td><td><code>MAX_DAILY_TRADES</code></td><td>Hard cap on entries per session (code default 20; UI seed 5; paper, live &amp; backtest)</td></tr>
     <tr><td>VIX gate</td><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>Block entries above this VIX (Swing-scoped)</td></tr>
     <tr><td>Trading window</td><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>No new entries outside the window</td></tr>
-    <tr><td>Spread / time-stop</td><td><code>tradeGuards.js</code></td><td>Skip wide bid-ask; close stale flat trades</td></tr>
+    <tr><td>Flip / same-side cooldowns</td><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_*</code> / <code>SWING_SL_PAUSE_CANDLES</code></td><td>Block the opposite side after a non-flip exit; block the same side after an SL/option-stop (see §7)</td></tr>
+    <tr><td>Chop guard</td><td><code>SWING_MAX_CONSEC_LOSSES</code></td><td>Halt the session after N consecutive losers (0 = off)</td></tr>
+    <tr><td>OI buildup gate <span class="tag tag-blue">live</span></td><td><code>SWING_OI_ENABLED</code></td><td>Require supportive option OI buildup before a live entry (live only, default off)</td></tr>
+    <tr><td>Bid-ask spread <span class="tag tag-blue">live</span></td><td><code>tradeGuards.js</code></td><td>Skip entries when the option bid-ask spread is too wide (live only)</td></tr>
   </table>
   <div class="note warn"><strong>Tuning tip:</strong> the default 25% option-stop on a ~₹200 premium ≈ ₹3,750 on one lot — a
   couple of these can approach a small <code>MAX_DAILY_LOSS</code>. Keep <code>OPT_STOP_PCT</code> and <code>MAX_DAILY_LOSS</code> consistent.</div>
@@ -605,6 +625,13 @@
 
 <div class="section">
   <h2 id="s10">10 — Settings Reference</h2>
+  <div class="note warn"><strong>Defaults below are the code <code>||</code> fallbacks</strong> (what runs if the env key is unset).
+  The Settings UI seeds more conservative values that a saved install actually runs — notably
+  <code>MAX_DAILY_TRADES=5</code>, <code>MAX_DAILY_LOSS=3000</code>, <code>RSI_CE_MAX=70</code> / <code>RSI_PE_MIN=30</code>,
+  <code>SWING_STOP_LOSS_PTS=25</code> (ON), <code>SWING_CANDLE_TRAIL_ENABLED=true</code> (ON),
+  <code>SWING_SL_PAUSE_CANDLES=2</code>, <code>SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES=2</code>,
+  <code>SWING_EOD_EXIT_TIME=14:30</code>, <code>TRADE_ENTRY_START=10:30</code>. Read the real config from the day's
+  <code>settings_snapshot</code>, not this table.</div>
   <div class="env-group">
     <div class="env-group-title">Entry — EMAs &amp; trend</div>
     <table>
@@ -615,6 +642,8 @@
       <tr><td><code>SWING_EMA_TRIPLE_STACK_ENABLED</code></td><td>false</td><td>Require EMA9&gt;20&gt;50 (CE) / EMA9&lt;20&lt;50 (PE) instead of the 2-EMA cross</td></tr>
       <tr><td><code>SWING_EMA_FASTEST</code></td><td>9</td><td>Fastest EMA (close) — only an input when triple-stack is on</td></tr>
       <tr><td><code>SWING_SUPERTREND_PERIOD</code> / <code>SWING_SUPERTREND_MULT</code></td><td>10 / 3</td><td>SuperTrend params — the directional confirmation</td></tr>
+      <tr><td><code>SWING_CLOSE_BEYOND_EMA_ENABLED</code></td><td>true</td><td>Gate 4: signal candle must <em>close</em> above (CE) / below (PE) the base EMA (= EMA9 when triple-stack on, else EMA20). Blocks false-breakout entries that close back under the fast EMA</td></tr>
+      <tr><td><code>SWING_CONFIRM_CANDLE_ENABLED</code></td><td>true</td><td>Confirmation candle: entry doesn't fire on the signal bar — the next candle must cross the signal candle's close; fill fires intra-bar on the cross. Off = legacy intra-candle entry</td></tr>
     </table>
   </div>
   <div class="env-group">
@@ -622,9 +651,9 @@
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>CE momentum floor (RSI must be above)</td></tr>
-      <tr><td><code>RSI_CE_MAX</code></td><td>70</td><td>CE overbought cap (blocked at/above)</td></tr>
+      <tr><td><code>RSI_CE_MAX</code></td><td>80</td><td>CE overbought cap (blocked at/above). <em>UI seeds 70.</em></td></tr>
       <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>PE momentum cap (RSI must be below)</td></tr>
-      <tr><td><code>RSI_PE_MIN</code></td><td>30</td><td>PE oversold floor (blocked at/below)</td></tr>
+      <tr><td><code>RSI_PE_MIN</code></td><td>20</td><td>PE oversold floor (blocked at/below). <em>UI seeds 30.</em></td></tr>
     </table>
   </div>
   <div class="env-group">
@@ -632,22 +661,24 @@
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
       <tr><td><code>OPT_STOP_PCT</code></td><td>0.25</td><td>Exit if option premium drops this fraction below entry</td></tr>
-      <tr><td><code>SWING_STOP_LOSS_PTS</code></td><td>25</td><td>Hard spot-points cap from entry, checked before the structural/trail SL (0 = off)</td></tr>
-      <tr><td><code>SWING_CANDLE_TRAIL_ENABLED</code> / <code>SWING_CANDLE_TRAIL_BARS</code></td><td>true / 2</td><td>Add an N-bar low/high trail; tighter of (EMA21, candle level) wins</td></tr>
-      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td>2</td><td>Same-side cooldown after an SL/option-stop hit</td></tr>
-      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 2</td><td>Throttle immediate CE↔PE flips</td></tr>
+      <tr><td><code>SWING_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Negative-candle stop — square off a trade still red (option premium below entry) after N candles; winners ride the trail (0 = off)</td></tr>
+      <tr><td><code>SWING_STOP_LOSS_PTS</code></td><td>0</td><td>Hard spot-points cap from entry, checked before the structural/trail SL (0 = off). <em>UI seeds 25 (ON).</em></td></tr>
+      <tr><td><code>SWING_CANDLE_TRAIL_ENABLED</code> / <code>SWING_CANDLE_TRAIL_BARS</code></td><td>false / 3</td><td>Add an N-bar low/high trail; tighter of (EMA21, candle level) wins. <em>UI seeds ENABLED=true.</em></td></tr>
+      <tr><td><code>SWING_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side cooldown after an SL/option-stop hit. <em>UI seeds 2.</em></td></tr>
+      <tr><td><code>SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Block the opposite side for N candles after a non-flip exit (whipsaw-flip guard). <em>UI seeds 2 candles.</em></td></tr>
       <tr><td><code>SWING_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Halt session after N consecutive losses (0 = off)</td></tr>
-      <tr><td><code>SWING_EOD_EXIT_TIME</code></td><td>14:30</td><td>Square off open position ahead of the close</td></tr>
+      <tr><td><code>SWING_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square off open position ahead of the close. <em>UI seeds 14:30.</em></td></tr>
     </table>
   </div>
   <div class="env-group">
     <div class="env-group-title">Risk &amp; session</div>
     <table>
       <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>MAX_DAILY_LOSS</code></td><td>3000</td><td>Daily kill-switch (₹)</td></tr>
-      <tr><td><code>MAX_DAILY_TRADES</code></td><td>5</td><td>Entries per session</td></tr>
+      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily kill-switch (₹). <em>UI seeds 3000.</em></td></tr>
+      <tr><td><code>MAX_DAILY_TRADES</code></td><td>20</td><td>Entries per session. <em>UI seeds 5.</em></td></tr>
+      <tr><td><code>SWING_OI_ENABLED</code></td><td>false</td><td>Require supportive option OI buildup before a live entry (live only)</td></tr>
       <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block entries above this VIX</td></tr>
-      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>10:30 / 14:00</td><td>Entry window (IST)</td></tr>
+      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>09:30 / 14:00</td><td>Entry window (IST). <em>UI seeds 10:30 start.</em></td></tr>
       <tr><td><code>TRADE_STOP_TIME</code></td><td>15:30</td><td>EOD square-off + engine auto-stop (IST)</td></tr>
     </table>
   </div>
@@ -681,23 +712,28 @@
     <span class="tag tag-red">hybrid initial-SL cap</span>
     <span class="tag tag-red">50% candle rule</span>
     <span class="tag tag-red">near-miss N/8 audit</span>
+    <span class="tag tag-red">breakeven-to-entry snap</span>
   </p>
   <p><strong>Now in place:</strong>
     <span class="tag tag-green">EMA20/EMA50 cross gate</span>
     <span class="tag tag-green">optional EMA9&gt;20&gt;50 stack</span>
     <span class="tag tag-green">SuperTrend(10,3) direction</span>
+    <span class="tag tag-green">close-beyond-base-EMA gate</span>
+    <span class="tag tag-green">confirmation candle</span>
     <span class="tag tag-green">EMA21 trailing SL</span>
+    <span class="tag tag-green">optional N-bar candle trail</span>
+    <span class="tag tag-green">negative-candle stop</span>
     <span class="tag tag-green">EMA21 touch-back exit</span>
   </p>
-  <div class="note success">Entry is always intra-candle (no STRONG/MARGINAL timing split). The stop is seeded at the previous
-  candle's extreme, then trails to EMA21; the breakeven snap is wired but inert. See <code>SWING.md</code> in the repo for the
-  code-level reference.</div>
+  <div class="note success">Entry defaults to the confirmation-candle flow (arm on the signal bar's close, fill on the next
+  candle's cross) — no STRONG/MARGINAL timing split. The stop is seeded at the previous candle's extreme, then trails to EMA21;
+  breakeven-to-entry is gone (only a dead code comment remains). See <code>SWING.md</code> in the repo for the code-level reference.</div>
 </div>
 
 <hr/>
 <p style="text-align:center;color:var(--text3);font-size:0.78rem;">
   Reference only — the code is authoritative (<code>strategy1_sar_ema_rsi.js</code>, <code>swingPaper.js</code>, <code>swingLive.js</code>, <code>backtestEngine.js</code>).
-  Regenerated 2026-06-14 for the EMA20/50 + RSI + SuperTrend rules (Parabolic SAR removed 2026-06-12).
+  Regenerated 2026-07-05 for the 4-gate entry (EMA + RSI + SuperTrend + close-beyond-EMA) with confirmation candle, EMA21 / N-bar candle trail, and the negative-candle stop (Parabolic SAR removed 2026-06-12; breakeven removed 2026-06-02).
 </p>
 </body>
 </html>

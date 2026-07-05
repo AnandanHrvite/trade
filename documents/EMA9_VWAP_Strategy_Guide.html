@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY OPTIONS — EMA 9 + VWAP Strategy</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #1c2333;
+    --bg-card: #1a1f2e;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-orange: #d29922;
+    --accent-red: #f85149;
+    --accent-purple: #bc8cff;
+    --accent-cyan: #39d2c0;
+    --accent-pink: #f778ba;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+  html { font-size: 15px; scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary); color: var(--text-primary);
+    line-height: 1.7; padding: 0;
+  }
+  @media print {
+    body { background: #fff; color: #111; font-size: 11pt; }
+    .section { break-inside: avoid; box-shadow: none; border: 1px solid #ccc; background: #fff !important; }
+    .hero { background: #1a1f2e !important; color: #fff !important; }
+    code, pre { background: #f4f4f4 !important; color: #111 !important; }
+    nav.toc { display: none; }
+  }
+  .hero {
+    background: linear-gradient(135deg, #0f172a 0%, #2d1a08 40%, #0f172a 100%);
+    border-bottom: 3px solid var(--accent-orange);
+    text-align: center; padding: 60px 30px 50px; position: relative; overflow: hidden;
+  }
+  .hero h1 {
+    font-size: 2.6rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 10px;
+    background: linear-gradient(135deg, #d29922 0%, #f778ba 50%, #58a6ff 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero .subtitle { font-size: 1.15rem; color: var(--text-secondary); margin-bottom: 18px; }
+  .hero .meta {
+    display: inline-flex; gap: 20px; font-size: 0.85rem; color: var(--text-muted);
+  }
+  .hero .meta span { display: flex; align-items: center; gap: 5px; }
+  .badge {
+    display: inline-block; padding: 3px 10px; border-radius: 12px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px;
+  }
+  .badge-orange { background: rgba(210,153,34,0.15); color: var(--accent-orange); }
+  .badge-green { background: rgba(63,185,80,0.18); color: var(--accent-green); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--accent-red); }
+  nav.toc {
+    max-width: 900px; margin: 30px auto; padding: 28px 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  nav.toc h2 {
+    font-size: 1.15rem; margin-bottom: 14px; color: var(--accent-orange);
+    display: flex; align-items: center; gap: 8px;
+  }
+  nav.toc ol {
+    list-style: none; counter-reset: toc;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px 30px;
+  }
+  nav.toc li { counter-increment: toc; }
+  nav.toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--accent-orange); font-weight: 700;
+    font-size: 0.8rem; margin-right: 8px;
+  }
+  nav.toc a { color: var(--text-primary); text-decoration: none; font-size: 0.92rem; }
+  nav.toc a:hover { color: var(--accent-orange); }
+  .container { max-width: 900px; margin: 0 auto; padding: 0 20px 60px; }
+  .section {
+    margin: 30px 0; padding: 32px;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow); position: relative;
+  }
+  .section::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 3px; border-radius: var(--radius) var(--radius) 0 0;
+  }
+  .section.orange::before { background: linear-gradient(90deg, var(--accent-orange), transparent); }
+  .section.green::before  { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .section.blue::before   { background: linear-gradient(90deg, var(--accent-blue), transparent); }
+  .section.purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+  .section.red::before    { background: linear-gradient(90deg, var(--accent-red), transparent); }
+  .section.cyan::before   { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
+  .section-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 8px;
+    font-size: 1.1rem; margin-right: 12px; flex-shrink: 0;
+  }
+  .icon-orange { background: rgba(210,153,34,0.12); color: var(--accent-orange); }
+  .icon-green  { background: rgba(63,185,80,0.12); color: var(--accent-green); }
+  .icon-blue   { background: rgba(88,166,255,0.12); color: var(--accent-blue); }
+  .icon-purple { background: rgba(188,140,255,0.12); color: var(--accent-purple); }
+  .icon-red    { background: rgba(248,81,73,0.12); color: var(--accent-red); }
+  .icon-cyan   { background: rgba(57,210,192,0.12); color: var(--accent-cyan); }
+  h2 { font-size: 1.45rem; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; }
+  h3 { font-size: 1.1rem; font-weight: 600; margin: 22px 0 10px; color: var(--accent-orange); }
+  h4 { font-size: 0.95rem; font-weight: 600; margin: 16px 0 8px;
+    color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  p, li { color: var(--text-primary); }
+  p { margin-bottom: 12px; }
+  ul, ol { margin-left: 20px; margin-bottom: 14px; }
+  li { margin-bottom: 6px; }
+  pre {
+    background: #0d1117; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px 20px; overflow-x: auto; margin: 12px 0 16px;
+    font-size: 0.85rem; line-height: 1.6;
+  }
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+    font-size: 0.85rem;
+  }
+  :not(pre) > code {
+    background: rgba(210,153,34,0.1); color: var(--accent-orange);
+    padding: 2px 7px; border-radius: 4px; font-size: 0.83rem;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 18px; font-size: 0.88rem; }
+  thead th {
+    background: var(--bg-tertiary); color: var(--accent-orange);
+    font-weight: 600; font-size: 0.8rem;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 10px 14px; text-align: left; border-bottom: 2px solid var(--border);
+  }
+  tbody td {
+    padding: 10px 14px; border-bottom: 1px solid rgba(48,54,61,0.5); vertical-align: top;
+  }
+  tbody tr:nth-child(even) td { background: rgba(22,27,34,0.5); }
+  tbody tr:hover td { background: rgba(210,153,34,0.04); }
+  .note { padding: 14px 18px; border-radius: var(--radius-sm); margin: 14px 0; font-size: 0.9rem; border-left: 4px solid; }
+  .note-info    { background: rgba(88,166,255,0.06); border-color: var(--accent-blue); }
+  .note-warn    { background: rgba(210,153,34,0.06); border-color: var(--accent-orange); }
+  .note-danger  { background: rgba(248,81,73,0.06); border-color: var(--accent-red); }
+  .note-success { background: rgba(63,185,80,0.06); border-color: var(--accent-green); }
+  .note strong  { display: block; margin-bottom: 4px; }
+  .env-group {
+    margin-top: 24px; padding: 10px 16px;
+    background: var(--bg-tertiary); border-radius: var(--radius-sm);
+    border-left: 3px solid var(--accent-orange);
+    font-weight: 700; font-size: 0.92rem; margin-bottom: 2px;
+  }
+  .gate {
+    display: flex; align-items: stretch; border-radius: 8px; overflow: hidden;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    margin: 8px 0; transition: transform 0.15s;
+  }
+  .gate:hover { transform: translateX(4px); }
+  .gate-num {
+    width: 42px; min-width: 42px; display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 1rem; color: #fff;
+    background: linear-gradient(135deg, var(--accent-orange), #b07b1c);
+  }
+  .gate-content { padding: 10px 16px; flex: 1; }
+  .gate-name { font-weight: 700; color: var(--text-primary); font-size: 0.95rem; margin-bottom: 2px; }
+  .gate-desc { font-size: 0.82rem; color: var(--text-secondary); }
+  .gate-rule { font-size: 0.78rem; color: var(--accent-orange); margin-top: 3px; font-family: 'SF Mono', monospace; }
+  .pillars { display: flex; flex-wrap: wrap; gap: 6px; margin: 20px 0; }
+  .pillar {
+    background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.25);
+    color: var(--accent-orange); padding: 4px 12px;
+    border-radius: 16px; font-size: 0.78rem; font-weight: 600;
+  }
+  hr { border: none; height: 1px; background: var(--border); margin: 24px 0; }
+  .page-footer {
+    text-align: center; padding: 30px 20px;
+    border-top: 1px solid var(--border); color: var(--text-muted);
+    font-size: 0.82rem; margin-top: 40px;
+  }
+  @media (max-width: 700px) {
+    .hero h1 { font-size: 1.8rem; }
+    nav.toc ol { grid-template-columns: 1fr; }
+    .section { padding: 22px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <h1>EMA 9 + VWAP</h1>
+  <p class="subtitle">EMA 9 Crossing a Session-Anchored VWAP &plusmn;&sigma; Band &mdash; Single-Leg CE / PE, Zerodha Orders</p>
+  <div class="meta">
+    <span><span class="badge badge-green">New 2026-06-28</span></span>
+    <span>Verified: 2026-07-05</span>
+    <span>NIFTY Options &mdash; 5-Min &mdash; Pure Signal Exit (No Default SL / Target)</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>&#9776; Table of Contents</h2>
+  <ol>
+    <li><a href="#overview">Strategy Overview</a></li>
+    <li><a href="#indicators">Indicators &mdash; EMA 9 + VWAP &plusmn;&sigma;</a></li>
+    <li><a href="#entry">Entry Logic &mdash; The Cross</a></li>
+    <li><a href="#exit">Exit Logic &mdash; Precedence Order</a></li>
+    <li><a href="#optstops">Optional Stops (Off by Default)</a></li>
+    <li><a href="#guards">Guards &amp; VIX Filter</a></li>
+    <li><a href="#risk">Risk, Cooldowns &amp; Circuit Breakers</a></li>
+    <li><a href="#example">Worked Example</a></li>
+    <li><a href="#modes">Operating Modes &amp; Live Gating</a></li>
+    <li><a href="#config">Complete Configuration Reference</a></li>
+    <li><a href="#notes">Notes &amp; Known Gaps</a></li>
+  </ol>
+</nav>
+
+<div class="container">
+
+<!--LIVE_STATUS_PANEL-->
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 1. OVERVIEW                                                            -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="overview">
+  <h2><span class="section-icon icon-orange">&#9881;</span> 1. Strategy Overview</h2>
+
+  <p><strong>EMA 9 + VWAP</strong> mirrors a TradingView setup traded by eye: the <strong>9-period EMA</strong> (on the 5-minute close) crossing a <strong>session-anchored VWAP with &plusmn;&sigma; Standard-Deviation bands</strong> (price source HLC3). It is a 5-minute, intraday, single-position strategy &mdash; one open CE or PE at a time, single leg, no paired hedge. Data comes off the shared <strong>Fyers</strong> spot feed (the same NIFTY50 tick stream every strategy in this suite subscribes to via <code>socketManager</code>); when live, orders route to <strong>Zerodha</strong> through the paper-wrapping harness (Live = Paper).</p>
+
+  <p>The thesis is <strong>momentum-with-value</strong>: the VWAP&plusmn;1&sigma; band is a statistical envelope around the session's average price. When the fast EMA punches <em>through</em> the top band, price is committing to a directional move that has already stretched a full standard deviation above the mean &mdash; a CE cue. A push below the bottom band is the mirror PE cue. The position is then held to a <strong>pure signal exit</strong> (the EMA re-crossing back inside the band) rather than a fixed stop or target, so a clean trend runs to its natural end.</p>
+
+  <div class="note note-warn">
+    <strong>VWAP caveat (same as ORB):</strong> the NIFTY spot index carries no real per-bar volume in the Fyers feed, so this VWAP degenerates to a session-anchored <strong>TWAP&plusmn;&sigma;</strong> (equal / tick-count-weighted HLC3, with the &sigma; band computed from the TWAP variance). The band math and the EMA9 cross are <em>exact</em>; the absolute VWAP value tracks TradingView's shape closely but is not tick-identical.
+  </div>
+
+  <div class="pillars">
+    <div class="pillar">EMA 9 (5-Min Close)</div>
+    <div class="pillar">Session VWAP &plusmn;1&sigma;</div>
+    <div class="pillar">HLC3 Source</div>
+    <div class="pillar">Single-Leg CE / PE</div>
+    <div class="pillar">Candle-Close Entry</div>
+    <div class="pillar">Pure Signal Exit</div>
+    <div class="pillar">2-Candle Reversal Exit</div>
+    <div class="pillar">No Default SL / Target</div>
+    <div class="pillar">Zerodha (Live)</div>
+  </div>
+
+  <h3>Routes &amp; Brokers</h3>
+  <table>
+    <thead><tr><th>Mode</th><th>Route</th><th>Broker</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Paper</strong></td><td><code>/ema9vwap-paper</code></td><td>Simulated</td><td>Canonical decision/fill/exit logic &mdash; the source of truth for EMA9+VWAP behaviour. Live &amp; backtest are aligned to it, never the reverse.</td></tr>
+      <tr><td><strong>Live</strong></td><td><code>/ema9vwap-live</code></td><td>Zerodha</td><td>Runs the paper engine, places real Zerodha orders via the harness. Double-gated: <code>EMA9VWAP_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
+      <tr><td><strong>Backtest</strong></td><td><code>/ema9vwap-backtest</code></td><td>Historical</td><td>Dedicated candle-loop engine that mirrors the paper reversal / signal / EOD / cooldown / VIX / daily-loss decisions.</td></tr>
+      <tr><td><strong>History</strong></td><td><code>/ema9vwap-paper/history</code></td><td>&mdash;</td><td>Per-session delete + view modal. Restore from the JSONL daily log.</td></tr>
+    </tbody>
+  </table>
+
+  <p>Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; paper capital pools under the shared Zerodha-side amount <code>ZERODHA_INV_AMOUNT</code>. The internal mode key is <code>ema9vwap</code> / <code>EMA9VWAP</code>. This strategy runs in parallel with Swing / Scalp / PA / ORB on the one shared Fyers socket &mdash; it never opens a second connection.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 2. INDICATORS                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="indicators">
+  <h2><span class="section-icon icon-blue">&#128200;</span> 2. Indicators &mdash; EMA 9 + VWAP &plusmn;&sigma; Bands</h2>
+
+  <p>Two indicators, both computed on the closed 5-minute candle series. The EMA is a standard exponential moving average from the <code>technicalindicators</code> package; the VWAP and its &sigma; bands are computed in-strategy, session-anchored and reset every trading day.</p>
+
+  <h3>Exponential Moving Average</h3>
+  <p>A <code>EMA9VWAP_EMA_PERIOD</code>-length EMA (default <strong>9</strong>) on the candle <em>close</em>. This is the line that does the crossing. The strategy compares the EMA at the last two closed candles (<code>ema9Now</code> vs <code>ema9Prev</code>) against the band lines at those same candles to detect a series crossover &mdash; not a single-point &ldquo;is it above / below&rdquo; test.</p>
+
+  <h3>Session-Anchored VWAP with &plusmn;&sigma; Bands</h3>
+  <p>Anchored at <code>EMA9VWAP_VWAP_SESSION_START</code> (default <strong>09:15</strong> IST) and reset each trading day, the VWAP accumulates the typical price <strong>HLC3 = (high + low + close) / 3</strong> across every in-session candle. The bands are placed at &plusmn; the multiplier times the standard deviation of that HLC3 series:</p>
+  <pre><code>VWAP        = &Sigma;(HLC3) / N            (equal-weight TWAP on the volumeless index)
+&sigma;           = sqrt( &Sigma;(HLC3&sup2;)/N &minus; VWAP&sup2; )
+Top line    = VWAP + (EMA9VWAP_BAND_MULT &times; &sigma;)
+Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
+
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>EMA length crossed against the band</td></tr>
+      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>&sigma; multiplier. <code>1</code> = &plusmn;1&sigma; (the TradingView default). <code>0</code> collapses the band to the plain VWAP line (EMA9-vs-VWAP crossover).</td></tr>
+      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>Session anchor. VWAP + &sigma; accumulate from here and reset daily.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Candles build from 09:15, trading starts later.</strong> The VWAP anchors at the open so the band is fully warmed by the time the entry window opens (10:30 by default). If real per-bar volume were ever present, the code auto-switches to a true volume-weighted VWAP and volume-weighted variance &mdash; but on the spot index it always takes the equal-weight TWAP path.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. ENTRY LOGIC                                                          -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section green" id="entry">
+  <h2><span class="section-icon icon-green">&#9654;</span> 3. Entry Logic &mdash; The Cross</h2>
+
+  <p>Entries are evaluated on <strong>candle close</strong> (&ldquo;wait for the timeframe close&rdquo;). A single crossover fires the trade &mdash; there is no multi-gate pipeline like ORB. Every signal is classified <code>STRONG</code> (the strategy has no MARGINAL tier).</p>
+
+  <div class="gate">
+    <div class="gate-num">CE</div>
+    <div class="gate-content">
+      <div class="gate-name">EMA9 crosses ABOVE the top line</div>
+      <div class="gate-desc">The fast EMA was at or below the VWAP+&sigma; band on the prior candle and closes above it on this one &mdash; momentum breaking out above the upper envelope.</div>
+      <div class="gate-rule">ema9Prev &le; upperPrev &nbsp;AND&nbsp; ema9Now &gt; upperNow</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">PE</div>
+    <div class="gate-content">
+      <div class="gate-name">EMA9 crosses BELOW the bottom line</div>
+      <div class="gate-desc">Mirror image &mdash; the EMA was at or above the VWAP&minus;&sigma; band and closes below it, breaking down through the lower envelope.</div>
+      <div class="gate-rule">ema9Prev &ge; lowerPrev &nbsp;AND&nbsp; ema9Now &lt; lowerNow</div>
+    </div>
+  </div>
+
+  <h3>Entry Window</h3>
+  <p>New entries are only taken inside the intraday window. Candles are built from the 09:15 open (so the VWAP band and EMA are warm), but the strategy waits until the window opens before it will act on a cross.</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest new entry (IST). Skips the noisy first hour.</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest new entry (IST). A position opened before this can still trail past it &mdash; only <em>new</em> entries stop here.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>When Does It Fire?</h3>
+  <p>By default both <code>EMA9VWAP_INTRACANDLE_ENTRY</code> and <code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code> are <strong>OFF</strong>, so the entry fills on the <em>cross candle's close</em> &mdash; no waiting for a confirmation candle, and no acting on an intra-candle touch before the bar has closed.</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Behaviour when ON</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Act on the cross the instant it happens intra-candle, without waiting for the bar to close.</td></tr>
+      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Require an extra confirmation candle in the signal direction before entering.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Entry-Reason Fingerprint</h3>
+  <p>The log line surfaces the EMA value, the band line it crossed, and the VWAP/&sigma; that defined it:</p>
+  <pre><code>EMA9 24312.5 crossed ABOVE VWAP top 24298.1 (VWAP 24270.4 +1&sigma;)   [STRONG]</code></pre>
+  <p>This <em>EMA9-crosses-VWAP&plusmn;&sigma;</em> fingerprint is what disambiguates an EMA9+VWAP trade from Swing / Scalp / PA / ORB in a mixed session log &mdash; see the <strong>signal-signatures</strong> memory note.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 4. EXIT LOGIC                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section purple" id="exit">
+  <h2><span class="section-icon icon-purple">&#128205;</span> 4. Exit Logic &mdash; Precedence Order</h2>
+
+  <p>The position opens with <code>stopLoss = null</code> &mdash; there is <strong>no default stop-loss, target, or trailing stop</strong>. It is held in full until one of the exits below fires. On each closed candle they are evaluated <em>in this order</em>; the first match squares off the whole position.</p>
+
+  <div class="gate">
+    <div class="gate-num">1</div>
+    <div class="gate-content">
+      <div class="gate-name">2-candle reversal engulf &nbsp;<span class="badge badge-green">default ON</span></div>
+      <div class="gate-desc">Bail if the just-closed candle reverses HARD against the position. For a <strong>CE</strong>: a <em>bearish</em> candle (<code>close &lt; open</code>) that closes <strong>below both</strong> of the previous 2 candles' lows. For a <strong>PE</strong>: a <em>bullish</em> candle that closes <strong>above both</strong> of the previous 2 candles' highs. Rolling reference (each closed candle measured against its own prior 2). Candle-close only.</div>
+      <div class="gate-rule">EMA9VWAP_REVERSAL_EXIT_ENABLED = true</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">2</div>
+    <div class="gate-content">
+      <div class="gate-name">Pure signal exit &mdash; EMA9 re-crosses back inside the band</div>
+      <div class="gate-desc">The core exit. A <strong>CE</strong> exits when the EMA re-crosses back <em>below</em> the top line (VWAP+&sigma;); a <strong>PE</strong> exits when it re-crosses back <em>above</em> the bottom line (VWAP&minus;&sigma;). Momentum has returned inside the statistical envelope &mdash; the reason to be in the trade is gone.</div>
+      <div class="gate-rule">CE: exitCE (EMA9 &lt; upper) &nbsp;|&nbsp; PE: exitPE (EMA9 &gt; lower)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">3</div>
+    <div class="gate-content">
+      <div class="gate-name">Exit before day close</div>
+      <div class="gate-desc">Any position still open at <code>EMA9VWAP_EOD_EXIT_TIME</code> (default 15:15 IST) is squared off ahead of the engine's auto-stop. A trailing trade that survived the entry window closes here.</div>
+      <div class="gate-rule">time &ge; EMA9VWAP_EOD_EXIT_TIME (15:15)</div>
+    </div>
+  </div>
+
+  <div class="gate">
+    <div class="gate-num">4</div>
+    <div class="gate-content">
+      <div class="gate-name">EOD square-off + engine stop</div>
+      <div class="gate-desc">Final backstop &mdash; at <code>EMA9VWAP_STOP_TIME</code> (default 15:30, resolved via <code>TRADE_STOP_TIME</code>) any open position is squared off and the engine auto-stops for the day, releasing its socket callback.</div>
+      <div class="gate-rule">time &ge; EMA9VWAP_STOP_TIME (15:30)</div>
+    </div>
+  </div>
+
+  <div class="note note-warn">
+    <strong>&ldquo;Pure signal exit&rdquo; is not the only fast exit.</strong> With the reversal engulf ON by default, a hard reversal candle can square the trade off <em>before</em> the EMA re-crosses the band &mdash; it sits ahead of the signal exit in precedence. Turn <code>EMA9VWAP_REVERSAL_EXIT_ENABLED=false</code> to hold purely to the signal / EOD exit.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 5. OPTIONAL STOPS                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="optstops">
+  <h2><span class="section-icon icon-red">&#128683;</span> 5. Optional Stops (Off by Default)</h2>
+
+  <p>None of the following are active out of the box &mdash; the strategy ships as a pure signal-exit engine. They are catastrophe / experimentation levers you can switch on via Settings. All are additive on top of the four exits in &sect;4.</p>
+
+  <table>
+    <thead><tr><th>Stop</th><th>Variable</th><th>Default</th><th>Effect when enabled</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Option-premium stop</td>
+        <td><code>EMA9VWAP_OPT_STOP_PCT</code></td>
+        <td><code>0</code></td>
+        <td>Cut the trade when the option LTP falls this fraction below entry premium. <code>0</code> = off.</td>
+      </tr>
+      <tr>
+        <td>Spot-points stop</td>
+        <td><code>EMA9VWAP_STOP_LOSS_PTS</code></td>
+        <td><code>0</code></td>
+        <td>Hard spot-move stop in points against the position. <code>0</code> = off.</td>
+      </tr>
+      <tr>
+        <td>Candle-trail stop</td>
+        <td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td>
+        <td><code>false</code> / <code>3</code></td>
+        <td>N-bar structural trailing stop &mdash; CE trails to the N-bar low, PE to the N-bar high, tighten-only. Enforced intra-candle once set.</td>
+      </tr>
+      <tr>
+        <td>Negative-candle cut</td>
+        <td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td>
+        <td><code>0</code></td>
+        <td>Square off a trade that is still in the red after N candles held (winners keep riding). <code>0</code> = off. <em>An in-code comment wrongly says &ldquo;default 2&rdquo; &mdash; the resolved default is 0.</em></td>
+      </tr>
+      <tr>
+        <td>Legacy time-stop</td>
+        <td><code>EMA9VWAP_SL_MODE</code></td>
+        <td><code>ema</code></td>
+        <td>Set to <code>candle</code> to re-enable the shared candles-held time-stop guard. <code>ema</code> (default) = pure signal exit, the time-stop stays inert.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Why default-off?</strong> The strategy's edge is holding a clean trend to the signal exit. A tight premium / points stop would chop the winners short; these levers exist for regime experimentation and live-risk insurance, not as part of the core thesis.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. GUARDS & VIX                                                         -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="guards">
+  <h2><span class="section-icon icon-orange">&#128737;</span> 6. Guards &amp; VIX Filter</h2>
+
+  <h3>India VIX Regime Filter &mdash; GLOBAL keys, not per-mode</h3>
+  <p>Unlike ORB / Scalp / PA (each of which has its own <code>*_VIX_*</code> block), EMA9+VWAP has <strong>no per-mode VIX keys</strong>. Its VIX check calls the shared filter defaulting to the Swing/global &ldquo;swing&rdquo; mode, so it reads the <strong>global</strong> <code>VIX_*</code> settings.</p>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>On unless explicitly <code>false</code>. When on, blocks entries when VIX is out of band.</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Above this VIX, entries are blocked entirely &mdash; premiums pumped, R:R deteriorates.</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between this and <code>VIX_MAX_ENTRY</code>, only STRONG signals fire. Every EMA9+VWAP signal is STRONG, so in practice this tier does not filter it out.</td></tr>
+    </tbody>
+  </table>
+  <div class="note note-warn">
+    <strong>VIX is not independently tunable for this strategy.</strong> Because it shares the Swing/global thresholds, changing <code>VIX_MAX_ENTRY</code> moves the gate for Swing too. There are no <code>EMA9VWAP_VIX_*</code> keys to override it in isolation.
+  </div>
+
+  <h3>Liquidity Guards (Live-Only)</h3>
+  <p>The shared <strong>OI-buildup</strong> and <strong>bid-ask spread</strong> guards run under the <code>ema9vwap</code> mode key, but only on the live path and only when explicitly enabled. Paper and backtest do not apply them.</p>
+
+  <div class="note note-info">
+    <strong>Daily-count gate (pre-filter).</strong> Before any signal is acted on, the strategy checks the daily trade cap and the daily-loss kill-switch (&sect;7). Once either trips, further candles are skipped for the session.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. RISK & COOLDOWNS                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="risk">
+  <h2><span class="section-icon icon-red">&#128721;</span> 7. Risk, Cooldowns &amp; Circuit Breakers</h2>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Daily trade cap</td><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>After N entries, no more for the session. Falls back to global <code>MAX_DAILY_TRADES</code> if unset.</td></tr>
+      <tr><td>Daily loss kill-switch</td><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>5000</code> &#8377;</td><td>Realised loss &ge; threshold halts entries for the day. Falls back to global <code>MAX_DAILY_LOSS</code>.</td></tr>
+      <tr><td>Consecutive-loss breaker</td><td>&mdash;</td><td>auto</td><td>3 straight losses &rarr; 5-minute pause (4 candles). A 15-minute variant kills the strategy for the day. A profitable trade clears any remaining pause.</td></tr>
+      <tr><td>Chop guard</td><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Sit out the rest of the session after N straight losses. <code>0</code> = off. Any winner resets the streak.</td></tr>
+      <tr><td>Same-side SL cooldown</td><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After an SL hit, block a same-side re-entry for N candles. Inert unless an optional stop (&sect;5) is enabled &mdash; the pure signal exit is not an SL.</td></tr>
+      <tr><td>Opposite-side flip cooldown</td><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After a signal-cross OR reversal-engulf exit, block the <em>flip</em> side for N candles &mdash; prevents whipsaw flips on chop. Skipped for EOD / day-close / manual / opposite-signal exits.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Why the opposite-side cooldown matters here.</strong> With the reversal engulf ON, a CE can be closed on a hard bearish candle &mdash; which is exactly the kind of bar that would also print a PE cross. The 3-candle flip cooldown stops the engine from instantly reversing into that fresh loss, letting the chop pass before it re-engages.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 8. WORKED EXAMPLE                                                       -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section green" id="example">
+  <h2><span class="section-icon icon-green">&#129518;</span> 8. Worked Example</h2>
+
+  <p>A textbook CE trade on a trending morning, all defaults (band mult 1, entry window 10:30&ndash;14:30, reversal exit ON):</p>
+
+  <pre><code>10:20  VWAP = 24270,  &sigma; = 28   &rarr;  top line = 24298, bottom = 24242
+       EMA9 = 24291  (below the top line &mdash; no cross)
+
+10:35  Candle CLOSES. EMA9 ticks up to 24313; top line now 24301.
+       ema9Prev (24296) &le; upperPrev (24299)  AND  ema9Now (24313) &gt; upperNow (24301)
+       &rarr;  CE ENTRY at the candle close. Buy 1 ATM CE. stopLoss = null (no SL/target).
+       Log: "EMA9 24313 crossed ABOVE VWAP top 24301 (VWAP 24274 +1&sigma;) [STRONG]"
+
+11:00&ndash;12:40  Price trends up. EMA9 stays above the top line every close.
+       Position simply HELD &mdash; no trail, no target to hit.
+
+Three ways this trade can end (whichever comes first):
+  (a) A bearish 5-min candle closes below BOTH of the prior 2 candles' lows
+      &rarr; 2-candle reversal exit, squared off at that candle's close.
+  (b) EMA9 re-crosses back BELOW the top line on a candle close
+      &rarr; pure signal exit ("EMA9 re-entered VWAP top band").
+  (c) Neither happens &mdash; position squared off at 15:15 (exit-before-close),
+      or the 15:30 EOD backstop.
+
+After the exit, the opposite (PE) side is blocked for 3 candles by the
+flip cooldown, so a whipsaw bearish poke can't instantly flip the trade.</code></pre>
+
+  <div class="note note-success">
+    <strong>The whole edge in one line:</strong> enter on the EMA punching a full standard deviation through the band, then get out of the way and let the trend run &mdash; capped only by a hard reversal candle, the EMA folding back inside the band, or the clock.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 9. MODES & LIVE GATING                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="modes">
+  <h2><span class="section-icon icon-cyan">&#9881;</span> 9. Operating Modes &amp; Live Gating</h2>
+
+  <h3 style="color:var(--accent-blue);">Paper Mode &mdash; <code>/ema9vwap-paper</code></h3>
+  <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated fills (no broker round-trip). This is the <strong>canonical</strong> decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; a per-day JSONL audit lands at <code>~/trading-data/trades/ema9vwap_paper_trades_YYYY-MM-DD.jsonl</code>, seeded with a settings snapshot at session start and re-snapshotted on every Settings save during the session. When <code>TICK_RECORDER_ENABLED=true</code> (default) every spot/option/VIX tick is recorded for Replay.</p>
+
+  <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/ema9vwap-live</code> (Live = Paper)</h3>
+  <p>The live route runs the <em>same paper engine</em> and wraps it in the harness, placing real <strong>Zerodha</strong> orders on entry/exit. It is <strong>double-gated</strong>: both <code>EMA9VWAP_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required for a real order. A per-mode <code>EMA9VWAP_LIVE_DRY_RUN=true</code> holds this strategy in dry-run (log the broker call, place nothing) even when the global harness is armed &mdash; letting you take other strategies live while EMA9+VWAP stays simulated. Flip DRY-RUN off only after Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+
+  <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/ema9vwap-backtest</code></h3>
+  <p>A dedicated candle-loop engine (<code>ema9vwapBacktestEngine.js</code>) that replays historical 5-minute candles and mirrors the paper decisions exactly &mdash; reversal engulf, pure signal exit, EOD, opposite-side cooldown, VIX and daily-loss guards were all ported so the backtest reproduces paper behaviour rather than approximating it.</p>
+
+  <h3 style="color:var(--accent-orange);">Replay Mode &mdash; <code>/replay</code></h3>
+  <p>Re-runs a recorded paper session through the paper <code>onTick()</code> handler. <strong>Snapshot</strong> applies the recorded session-start settings (deterministic A/A reproduction); <strong>Current Settings</strong> applies the live <code>process.env</code> (A/B for after-hours tuning against real ticks). Outputs land in <code>~/trading-data/_replay_trades/</code> (snapshot) or <code>_replay_trades_sim/</code> (current settings), kept separate from the canonical paper logs.</p>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 10. CONFIG REFERENCE                                                    -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section orange" id="config">
+  <h2><span class="section-icon icon-orange">&#128221;</span> 10. Complete Configuration Reference</h2>
+
+  <div class="env-group">Master toggles &amp; live gating</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide EMA9+VWAP menus in the sidebar (and its Settings section). When off, both are hidden.</td></tr>
+      <tr><td><code>EMA9VWAP_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Zerodha orders.</td></tr>
+      <tr><td><code>EMA9VWAP_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; hold EMA9+VWAP in dry-run (log only, no order) even when the global harness dry-run is off.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Indicator &amp; band</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>EMA length crossed against the band</td></tr>
+      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>VWAP band &sigma; multiplier (1 = &plusmn;1&sigma;, TradingView default; 0 = plain VWAP line)</td></tr>
+      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>VWAP session anchor (resets daily from here)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Entry window &amp; timing</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest new entry (IST)</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest new entry (IST) &mdash; open trades may still trail past it</td></tr>
+      <tr><td><code>EMA9VWAP_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td>Exit-before-close: hard square-off for any open position</td></tr>
+      <tr><td><code>EMA9VWAP_STOP_TIME</code></td><td><code>15:30</code></td><td>Engine auto-stop time (resolved via <code>TRADE_STOP_TIME</code>)</td></tr>
+      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Require a confirmation candle after the cross before entering</td></tr>
+      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Enter on the intra-candle cross without waiting for the bar close. Both this and confirm off &rarr; entry on the cross candle's close.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Exits &amp; optional stops</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code></td><td><code>true</code></td><td>2-candle reversal exit &mdash; square off when a candle closes hard against the position (CE: bearish close below both prior-2 lows; PE: bullish close above both prior-2 highs), evaluated on candle close</td></tr>
+      <tr><td><code>EMA9VWAP_OPT_STOP_PCT</code></td><td><code>0</code></td><td>Optional option-premium catastrophe stop (0 = off; pure signal exit)</td></tr>
+      <tr><td><code>EMA9VWAP_STOP_LOSS_PTS</code></td><td><code>0</code></td><td>Optional spot-points stop (0 = off)</td></tr>
+      <tr><td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td><code>false</code> / <code>3</code></td><td>Optional N-bar structural trailing stop (tighten-only)</td></tr>
+      <tr><td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td><td><code>0</code></td><td>Square off a still-red trade after N candles (0 = off)</td></tr>
+      <tr><td><code>EMA9VWAP_SL_MODE</code></td><td><code>ema</code></td><td><code>candle</code> re-enables the legacy candles-held time-stop; <code>ema</code> = pure signal exit</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Risk caps, cooldowns &amp; breakers</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>Daily trade cap (falls back to global <code>MAX_DAILY_TRADES</code>)</td></tr>
+      <tr><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Daily loss kill-switch, &#8377; (falls back to global <code>MAX_DAILY_LOSS</code>)</td></tr>
+      <tr><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Chop guard &mdash; sit out the session after N straight losses (0 = off)</td></tr>
+      <tr><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Same-side SL cooldown (candles) &mdash; inert unless an optional stop is enabled</td></tr>
+      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>Block the flip side for N candles after a signal-cross / reversal exit</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">VIX filter (GLOBAL keys &mdash; no per-mode override)</div>
+  <table>
+    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Global VIX gate (on unless <code>false</code>). EMA9+VWAP has no <code>EMA9VWAP_VIX_*</code> key.</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block all entries above this VIX</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between this and <code>VIX_MAX_ENTRY</code>, allow only STRONG signals (all EMA9+VWAP signals are STRONG)</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>Env-only keys (not in the Settings UI as of 2026-07):</strong> <code>EMA9VWAP_SL_PAUSE_CANDLES</code>, <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code>, <code>EMA9VWAP_MAX_CONSEC_LOSSES</code>, <code>EMA9VWAP_NEG_CANDLE_LIMIT</code>, <code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code>, and <code>EMA9VWAP_SL_MODE</code>. Their defaults match between the settings schema and the paper engine &mdash; the gap is UI coverage, not divergent values. Set them in <code>.env</code> if you want to change them.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. NOTES & KNOWN GAPS                                                  -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="notes">
+  <h2><span class="section-icon icon-red">&#9888;</span> 11. Notes &amp; Known Gaps</h2>
+
+  <ul>
+    <li><strong>New strategy, no tuning history.</strong> Added 2026-06-28 with no prior analysis cohort. Collect clean live/paper sessions before tuning any threshold &mdash; there is no validated baseline yet.</li>
+    <li><strong>Reversal engulf can double up with the signal exit.</strong> Both are ON in spirit by default; on choppy days the 2-candle reversal may exit eagerly and, combined with the flip cooldown, sit the strategy out of a subsequent re-entry. Watch for over-eager exits before deciding whether to keep <code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code> on.</li>
+    <li><strong>VIX is not independently tunable.</strong> The gate shares Swing/global <code>VIX_*</code> thresholds &mdash; there is no <code>EMA9VWAP_VIX_*</code> block, so you cannot loosen/tighten VIX for this strategy in isolation.</li>
+    <li><strong>VWAP is a TWAP on the spot index.</strong> No real volume &rarr; the VWAP degenerates to session TWAP&plusmn;&sigma; (same as ORB). Band math and the EMA cross are exact; absolute VWAP tracks TradingView's shape but is not tick-identical. Don't expect the on-screen VWAP number to match TV to the point.</li>
+    <li><strong>In-code comment drift.</strong> The negative-candle-cut comment says &ldquo;default 2&rdquo;, but the resolved default of <code>EMA9VWAP_NEG_CANDLE_LIMIT</code> is <code>0</code> (off). Trust the code default, not the comment.</li>
+  </ul>
+
+  <div class="note note-info">
+    <strong>Tuning posture:</strong> the paper-data-collection no-tuning window was <strong>lifted on 2026-05-27</strong>, so tuning is in scope &mdash; but this strategy has no clean post-launch cohort yet. Gather sessions first, then use <code>/replay</code> Current-Settings mode to A/B named hypotheses against real recorded ticks before changing defaults.
+  </div>
+
+  <div class="note note-success">
+    <strong>Verification:</strong> this guide was checked against <code>src/strategies/ema9_vwap.js</code>, <code>src/routes/ema9vwapPaper.js</code>, the README &ldquo;Strategy 5&rdquo; prose + EMA9+VWAP .env table, and the EMA9+VWAP reference memory on 2026-07-05. Entry/exit precedence, defaults, guard behaviour, cooldowns and the global-VIX coupling all match the code.
+  </div>
+</section>
+
+</div><!-- /.container -->
+
+<footer class="page-footer">
+  EMA 9 + VWAP &mdash; Strategy Guide &nbsp;|&nbsp; New 2026-06-28 &nbsp;|&nbsp; verified 2026-07-05 against ema9_vwap.js / ema9vwapPaper.js
+</footer>
+
+</body>
+</html>

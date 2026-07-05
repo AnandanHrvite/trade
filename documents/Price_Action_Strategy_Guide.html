@@ -1222,7 +1222,7 @@ td.pe { color: var(--red); }
       <div class="flow-node action">Retest confirmed &rarr; Calculate structural SL (clamp 8–25 pts)</div>
       <div class="flow-arrow"></div>
 
-      <div class="flow-node decision">VIX OK? (if PA_VIX_ENABLED) &nbsp;+&nbsp; Spread guard OK?</div>
+      <div class="flow-node decision">VIX OK? (if PA_VIX_ENABLED) &nbsp;+&nbsp; OI OK? (if PA_OI_ENABLED) &nbsp;+&nbsp; Spread guard OK?</div>
       <div class="flow-arrow"></div>
 
       <div class="flow-node end">ENTER ATM CE / PE with structural SL</div>
@@ -1427,7 +1427,9 @@ td.pe { color: var(--red); }
         <div class="config-card"><span class="key">PA_VIX_MAX_ENTRY</span><span class="val">20 (← VIX_MAX_ENTRY)</span></div>
         <div class="config-card"><span class="key">VIX_FAIL_MODE</span><span class="val">closed</span></div>
         <div class="config-card"><span class="key">MAX_BID_ASK_SPREAD_PTS</span><span class="val">2</span></div>
+        <div class="config-card"><span class="key">PA_OI_ENABLED</span><span class="val">false</span></div>
       </div>
+      <p class="fs-sm text-muted mt-2">The OI-buildup gate (<code>PA_OI_ENABLED</code>, also needs the master OI switch on) and the bid-ask spread guard apply to <strong>paper / live</strong> entries only — both are skipped in replay-sim and backtest, as is the VIX gate.</p>
     </div>
 
     <div class="card">

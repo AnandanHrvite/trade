@@ -28,9 +28,9 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **Swing Live** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Zerodha | `/swing-live` |
 | **Swing Paper** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Simulated | `/swing-paper` |
 | **Swing Backtest** | EMA 20/50 (+9 opt) + RSI + SuperTrend | 3 / 5 / 15-min via `TRADE_RESOLUTION` | Historical | `/swing-backtest` |
-| **Scalp Live** | BB + PSAR + RSI (V5) | 3 / 5-min | Fyers | `/scalp-live` |
-| **Scalp Paper** | BB + PSAR + RSI (V5) | 3 / 5-min | Simulated | `/scalp-paper` |
-| **Scalp Backtest** | BB + PSAR + RSI (V5) | 3 / 5-min | Historical | `/scalp-backtest` |
+| **Scalp Live** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Fyers | `/scalp-live` |
+| **Scalp Paper** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Simulated | `/scalp-paper` |
+| **Scalp Backtest** | BB + PSAR + RSI (V6.1) | 3 / 5-min | Historical | `/scalp-backtest` |
 | **PA Live (legacy)** | Price Action Patterns | 5-min | Fyers | `/pa-live` |
 | **PA Live (Harness)** | Price Action Patterns | 5-min | Fyers (PAPER-wrapped) | `/pa-live-harness` |
 | **PA Paper** | Price Action Patterns | 5-min | Simulated | `/pa-paper` |
@@ -66,7 +66,7 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 ## Strategies
 
 ### Strategy 1: Swing — EMA 20/50 (+9 opt) + RSI + SuperTrend (entry redefined 2026-05-31; PSAR stripped 2026-06-12; 3 / 5 / 15-min via env)
-- **Entry (intra-candle, all 4 true)**:
+- **Entry (all 4 true; signal candle, entered on the confirmation cross by default)**:
   - **CE**: EMA alignment bullish — 2-EMA (default) EMA20 **above** EMA50, or triple-stack (`SWING_EMA_TRIPLE_STACK_ENABLED`) EMA9 > EMA20 > EMA50 (`SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`) · RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX` (overbought guard) · **SuperTrend bullish** · **close beyond base EMA** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, default on): signal candle close **above** the base EMA — base = EMA-fastest (9) when triple-stack is on, else EMA-fast (20).
   - **PE**: mirror — EMA20 **below** EMA50 (or EMA9 < EMA20 < EMA50) · RSI `< RSI_PE_MAX` and `> RSI_PE_MIN` (oversold guard) · **SuperTrend bearish** · signal candle close **below** the base EMA.
 - **Confirmation candle** (`SWING_CONFIRM_CANDLE_ENABLED`, default on): the bar that meets the 3 rules above is the *signal candle*; entry does **not** fire on it. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy intra-candle entry on the signal bar itself.
@@ -75,34 +75,35 @@ The dashboard has **Start-All Paper** and **Start-All Live** buttons that start 
 - **Exits**: EMA21 trail / EMA touch-back, optional N-bar candle trail (`SWING_CANDLE_TRAIL_ENABLED`, tighter-of) · **negative-candle stop** (`SWING_NEG_CANDLE_LIMIT`, default 2 — square off a trade still in the red after N candles) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · option-premium stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop (`TRADE_STOP_TIME`). Choppy-day guard: halt entries after `SWING_MAX_CONSEC_LOSSES` consecutive losers (off by default).
 - **Same-side cooldown**: after an SL / option-stop hit, block that side for `SWING_SL_PAUSE_CANDLES` candles.
 - **Opposite-side (flip) cooldown**: after any non-flip exit, block the OPPOSITE side for `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES` candles (toggle: `SWING_OPPOSITE_SIDE_COOLDOWN_ENABLED`). Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger it.
-- **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, expiry-day-only, Swing expiry override/type.
+- **Guards kept**: VIX gate, `MAX_DAILY_LOSS`, `MAX_DAILY_TRADES`, trading window, OI buildup gate (live), bid-ask spread guard (live), 0DTE `/start` refusal (blocked when swing expiry == today), expiry-day-only, Swing expiry override/type.
 - **Removed**: **Parabolic SAR** — fully stripped 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL). The `SWING_USE_SUPERTREND` toggle and the `SWING_SL_MODE=psar` option are gone. Earlier removals: EMA21-price-touch entry gate + `SWING_ENTRY_REQUIRE_CROSS` / `_CROSS_TOLERANCE`; EMA30 trend gate, ADX, candle-body, SAR-distance, Logic-3 overrides, STRONG/MARGINAL strength tiers, tiered (T1/T2/T3) trail, hybrid initial-SL cap, 50% candle rule.
 - **Chart**: EMA20 (gold) + EMA50 (blue) lines, SuperTrend line (green bullish / red bearish), RSI subplot. EMA values + trend source are recorded per trade in the JSON + daily JSONL (`ema9AtEntry`/`ema20AtEntry`/`ema50AtEntry` + `*AtExit`; `ema9*` populated only when the triple-stack is ON).
 - **Resolution-agnostic**: same rules on 3 / 5 / 15-min — set `TRADE_RESOLUTION` in `.env` (or via Settings).
 
 ### Strategy 2: Scalp — BB + PSAR + RSI V6.1 (3 / 5-min)
 See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
-- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Far-PSAR filter**: skip if PSAR is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
+- **Entry (at candle close, all required)** — **CE**: close ≥ BB upper **and** PSAR below close **and** RSI > `SCALP_RSI_CE_THRESHOLD(70)`. **PE**: close ≤ BB lower **and** PSAR above close **and** RSI < `SCALP_RSI_PE_THRESHOLD(40)`. Just the two RSI keys — no overbought/oversold caps. **Trend source** is PSAR by default; set `SCALP_USE_SUPERTREND=true` to swap it for SuperTrend(10,3), which then drives the directional confirm, the entry SL line **and** the flip exit. **Far-line filter**: skip if the trend line is more than `SCALP_MAX_ENTRY_SL_PTS(50)` pts from close (avoids uncapped-risk entries). **ADX trend filter** (optional, `SCALP_ADX_ENABLED`): block all entries when ADX(14) < `SCALP_ADX_MIN(20)` — sits out choppy/ranging sessions where the strategy bleeds.
 - **Confirmation candle** (`SCALP_CONFIRM_CANDLE_ENABLED`, default on): the bar meeting the entry rules is the *signal candle*; entry does **not** fire on its close. The **immediately-next** candle must cross the signal candle's close (CE above / PE below) — entry then fires intra-bar on the cross. Off = legacy entry at the signal candle's close.
 - **Confirmation must close outside band** (`SCALP_CONFIRM_OUTSIDE_BAND`, default on; needs confirmation candle on): the confirmation candle must **close** beyond the signal candle's close **and** close **outside the Bollinger band** — entry then fires at that close. An intra-bar poke past the trigger can close back *inside* the band (a failed breakout), which leaves the entry candle sitting visibly inside the band; requiring a close beyond the band makes every entry candle genuinely outside it. Off = enter intra-bar on the first cross of the signal candle's close (legacy).
 - **Guards**: optional `SCALP_RSI_TURNING`, independent VIX filter.
-- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2`.
+- **Indicators**: Bollinger Bands `20 / 1` (std-dev **1**), RSI(14), PSAR `0.02 / 0.2` (or SuperTrend `10 / 3` when `SCALP_USE_SUPERTREND` is on).
 - **Initial SL** = PSAR value at entry (no clamp). Used for risk sizing + display; it is **not** an intra-tick stop and does not trail.
-- **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `SCALP_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `SCALP_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown PSAR SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`SCALP_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `SCALP_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **PSAR flip** on candle close handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no PSAR/prev-candle SL trail, no % spot-trail, no time-stop.
+- **Exit** (per-tick, **spot points**): **Profit lock** — once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS(25)`, exit when it gives back below `SCALP_PROFIT_LOCK_PCT(50)`% of peak (ratchets up: peak 100pts → lock 50pts); the upside exit. → **Hard stop** — exit if the trade moves ≥ `SCALP_STOP_LOSS_PTS(30)` against entry; a **wide** catastrophic loss cap that only clips deep adverse excursions on failed fades (the shown PSAR SL is display/sizing only). Both points-based so they work even on spot-proxy sessions. → **BB re-entry** (per-tick): exit the instant spot crosses back through the band (failed breakout), at the band line — not the bar close (`SCALP_BB_REENTRY_EXIT`, default on); armed only once the breakout has extended ≥ `SCALP_BB_REENTRY_ARM_PTS(10)` past the band, so a fresh entry sitting right at the band isn't knocked out by an immediate noise wick → **trend flip** on candle close (PSAR flip, or SuperTrend flip when `SCALP_USE_SUPERTREND` is on) handles trend runners → bid-ask spread guard → EOD. No break-even-to-entry snap, no PSAR/prev-candle SL trail, no % spot-trail, no time-stop.
 - **Per-side SL pause** (`SCALP_PER_SIDE_PAUSE`): an SL on CE only pauses CE entries; PE remains free, plus `SCALP_CONSEC_SL_EXTRA_PAUSE` extra candles per consecutive SL.
 - **Per-trade context logging** (additive): each trade record captures BB / RSI / trend context at entry and **MFE / MAE** (max-favorable + max-adverse excursion in pts and ₹) over the life of the trade, **`secsToMFE` / `secsToMAE`** (seconds from entry to that peak / trough — distinguishes early-peak-then-giveback from slow-grind, for trail tuning), plus **`vixAtExit`** — feeds the active paper-trade data-collection schema. This enrichment is now uniform across all 4 strategies (paper + live): each logs the signal diagnostics it computes at entry (Swing: EMA9/slope/RSI/SAR/ADX; PA: RSI/ADX/trend/pattern/SR; ORB: VWAP-aligned/vol/wick pass flags) so post-window analysis can correlate behaviour with market conditions. Timing fields use each engine's replay-safe tick clock so replayed sessions reproduce identical values
 
 ### Strategy 3: Price Action — Chart-Pattern Breakouts (5-min)
-- **Patterns (the only four entry logics)**:
+- **Patterns (the only four entry logics, all default ON)**:
   - **Double Bottom (W) → CE** — twin equal swing lows + close above the neckline (peak between them)
   - **Double Top (M) → PE** — twin equal swing highs + close below the neckline (valley between them)
   - **Ascending Triangle → CE** — flat resistance (equal swing highs) + rising swing lows, close above resistance
   - **Descending Triangle → PE** — flat support (equal swing lows) + falling swing highs, close below support
-  - "Equal" levels are within `PA_CHART_PATTERN_TOL=12` pts; the breakout candle body must be ≥ `PA_MIN_BODY=5` pts. The old Engulfing / Pin Bar / Inside Bar / BOS patterns were removed.
+  - "Equal" levels are within `PA_CHART_PATTERN_TOL=12` pts; the breakout candle body must be ≥ `PA_MIN_BODY=5` pts. Double Top/Bottom also require the two swings ≥5 candles apart. The old Engulfing / Pin Bar / Inside Bar / BOS patterns were removed.
 - **Swings**: last `PA_SR_LOOKBACK=30` candles drive both detection and the structure trail.
-- **No RSI / ADX confluence** — pure chart-pattern entries (the breakout candle is the signal). The only entry gate beyond the pattern is the `PA_MIN_BODY` breakout-candle-body check.
+- **No RSI / ADX confluence** — pure chart patterns; the only entry filter beyond the pattern is the `PA_MIN_BODY` breakout-candle-body check.
+- **Retest gate (`PA_RETEST_ENABLED=true`, default ON)**: the breakout candle itself does **not** enter. The breakout is parked and only fires when price pulls back to the broken level (within `PA_RETEST_TOL_PTS=10` pts) and closes back on the breakout side, within `PA_RETEST_MAX_WAIT=4` candles — otherwise it's dropped. This filters breakout-then-instant-reversal fakes (raw-breakout entries once replayed at ~23% WR / −₹11K).
 - **SL (pattern structure)**: placed `PA_SL_BUFFER_PTS=3` beyond the pattern extreme — below the twin bottoms / rising-low support (CE), above the twin tops / falling-high resistance (PE) — then clamped to `[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=25]`.
-- **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE). Bid-ask spread guard + EOD square-off still apply. The old candle-trail / tiered profit-lock / time-stop were removed.
+- **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE) on candle close. VIX + OI + bid-ask spread guards apply to entries; EOD square-off 10 min before `TRADE_STOP_TIME`. No profit target, no time-stop. The old candle-trail / tiered profit-lock / time-stop were removed.
 
 ### Strategy 4: ORB — Opening Range Breakout (15-min OR, single-leg CE/PE)
 - **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken on a breakout above ORH or a long PE on a breakdown below ORL.
@@ -125,6 +126,7 @@ See [SCALP.md](SCALP.md) for the authoritative spec. Summary:
 - **Exit — PURE signal exit**: hold the FULL position (no stop-loss / target / trail) until EMA 9 crosses back **inside** the band (CE → back below the top line, PE → back above the bottom line). A trailing position runs past 14:30; hard EOD square-off at `EMA9VWAP_EOD_EXIT_TIME=15:15`. Optional catastrophe stops (`EMA9VWAP_OPT_STOP_PCT`, `EMA9VWAP_STOP_LOSS_PTS`) default **off**.
 - **Exit — 2-candle reversal engulf** (`EMA9VWAP_REVERSAL_EXIT_ENABLED`, default **on**): on candle close, square off immediately if the just-closed candle reverses hard against the position — a CE bails on a **bearish** candle (`close < open`) that closes **below both** of the previous 2 candles' lows; a PE on a **bullish** candle that closes **above both** of the previous 2 candles' highs. Rolling reference (each closed candle vs its own prior 2). Turn off to hold purely to the signal / EOD exit.
 - **Note**: NIFTY spot has no real volume, so this VWAP is effectively a session **TWAP±σ** (HLC3) — same caveat as ORB's VWAP filter. The σ-band math and the EMA9 cross are exact; absolute VWAP values track TradingView's shape but are not tick-identical.
+- **Guards**: the VIX gate uses the **GLOBAL** `VIX_*` keys (no per-mode key — `VIX_FILTER_ENABLED` on by default, block > `VIX_MAX_ENTRY=20`); OI-buildup + bid-ask-spread guards are live-only. Risk caps `EMA9VWAP_MAX_DAILY_TRADES=20` / `EMA9VWAP_MAX_DAILY_LOSS=5000` (fall back to the global `MAX_DAILY_*`). Circuit breakers: 3 consecutive losses → 5-min pause (4 candles) / 15-min daily kill; optional chop guard `EMA9VWAP_MAX_CONSEC_LOSSES` (0=off). Cooldowns: same-side SL cooldown `EMA9VWAP_SL_PAUSE_CANDLES=3` (inert unless an optional stop fires) + opposite-side flip cooldown `EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED=true`/`_CANDLES=3` after a signal-cross or reversal exit.
 - **LIVE = PAPER**: `/ema9vwap-live` runs the paper engine and places **Zerodha** orders via the harness, double-gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`. Backtest is a dedicated candle-loop engine ([src/services/ema9vwapBacktestEngine.js](src/services/ema9vwapBacktestEngine.js)) that mirrors the paper decisions exactly. Runs in parallel with the other strategies on the shared Fyers socket.
 
 ### Tick Replay — deterministic re-run of recorded sessions
@@ -223,11 +225,13 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 ### Swing Strategy (EMA 20/50 (+9 opt) + RSI + SuperTrend, Zerodha)
 **Entry redefined 2026-05-31; PSAR stripped 2026-06-12; close-beyond-EMA gate added 2026-06-24.** Entry (intra-candle, all 4 true): **CE** = EMA alignment bullish (2-EMA default: EMA20 above EMA50; or triple-stack `SWING_EMA_TRIPLE_STACK_ENABLED`: EMA9 > EMA20 > EMA50 via `SWING_EMA_FASTEST`/`SWING_EMA_FAST`/`SWING_EMA_SLOW`), RSI(14) `> RSI_CE_MIN` and `< RSI_CE_MAX`, **SuperTrend bullish**, **signal candle close above the base EMA** (`SWING_CLOSE_BEYOND_EMA_ENABLED`, default on — base = EMA-fastest/9 when triple-stack on, else EMA-fast/20). **PE** = mirror (EMA20 below EMA50 / EMA9 < EMA20 < EMA50, RSI `< RSI_PE_MAX` and `> RSI_PE_MIN`, **SuperTrend bearish**, signal candle close below the base EMA). **Stop** = initial SL is the previous candle low (CE) / high (PE) from `getSignal`, then trailed by **EMA21** (EMA touch-back is an explicit exit), tighten-only. Optionally layer an **N-bar candle trail** (`SWING_CANDLE_TRAIL_ENABLED` / `SWING_CANDLE_TRAIL_BARS`, default 3 bars): each candle close the stop is set to whichever is tighter — the EMA21 line or the N-bar low/high. **Exits**: trail SL · **negative-candle stop** (`SWING_NEG_CANDLE_LIMIT`, default 2 — still red after N candles → square off; winners keep riding the trail) · per-trade points stop (`SWING_STOP_LOSS_PTS`, off by default) · EMA21 touch-back · option stop (`OPT_STOP_PCT`) · opposite signal · exit-before-close (`SWING_EOD_EXIT_TIME`) · EOD auto-stop. Same-side cooldown after an SL hit (`SWING_SL_PAUSE_CANDLES`). **Choppy-day guard** (`SWING_MAX_CONSEC_LOSSES`, off by default): after N consecutive losing trades in a session, halt new entries for the rest of the day — any winner resets the streak. _Parabolic SAR fully removed 2026-06-12 (SuperTrend is the only trend source; EMA21 the only SL); breakeven removed 2026-06-02._
 
+> **Defaults below are the code `||` fallbacks (what runs if the env key is unset). The Settings UI seeds more conservative values that a saved install actually runs** — notably `MAX_DAILY_TRADES=5`, `MAX_DAILY_LOSS=3000`, `RSI_CE_MAX=70` / `RSI_PE_MIN=30`, `SWING_STOP_LOSS_PTS=25` (ON), `SWING_CANDLE_TRAIL_ENABLED=true` (ON), `SWING_SL_PAUSE_CANDLES=2`, `SWING_OPPOSITE_SIDE_COOLDOWN_CANDLES=2`, `SWING_EOD_EXIT_TIME=14:30`, `TRADE_ENTRY_START=10:30`. Read the real config from the day's `settings_snapshot`, not this table.
+
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TRADE_RESOLUTION` | `5` | Candle size in minutes — `3`, `5`, or `15` (logic is resolution-agnostic). |
 | `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
-| `MAX_DAILY_TRADES` | `6` | Daily entry cap — anti-overtrade on chop days |
+| `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
 | `SWING_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), Swing Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |
 | `RSI_CE_MIN` | `52` | CE entry: RSI(14) must be above this (bullish momentum floor) |
@@ -301,25 +305,32 @@ Full spec: [SCALP.md](SCALP.md).
 | Key | Default | Notes |
 |-----|---------|-------|
 | `PA_MODE_ENABLED` | `true` | Show/hide PA menus in sidebar (also hides PA section in Settings) |
-| `PA_ENABLED` | `false` | Must be `true` for Fyers PA live orders |
+| `PA_ENABLED` | `false` | Must be `true` (+ `LIVE_HARNESS_DRY_RUN=false`) for Fyers PA live orders |
 | `PA_RESOLUTION` | `5` | Candle size in minutes (`5` or `3`) |
 | `PA_ENTRY_START` / `PA_ENTRY_END` | `09:20` / `14:30` | Entry window (IST) |
-| `PA_SL_BUFFER_PTS` | `3` | Points beyond the pattern level where the structural SL sits |
-| `PA_MAX_SL_PTS` | `25` | Hard cap on structural SL distance |
-| `PA_MIN_SL_PTS` | `8` | Floor for SL distance |
-| `PA_BREAKEVEN_TRIGGER` | `300` | Once peak PnL ≥ ₹N, lift SL to entry+buffer. `0` disables. |
-| `PA_BREAKEVEN_BUFFER` | `1` | Spot pts above (CE) / below (PE) entry for the breakeven SL |
-| `PA_CHART_PATTERN_TOL` | `12` | Tolerance (pts) for "equal" twin tops/bottoms and flat S/R lines |
-| `PA_MIN_BODY` | `5` | Minimum breakout-candle body (pts) |
-| `PA_SR_LOOKBACK` | `30` | Candles scanned for swing highs/lows (detection + structure trail) |
 | `PA_PATTERN_DOUBLE_BOTTOM` | `true` | Toggle Double Bottom (W) → CE |
 | `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
 | `PA_PATTERN_ASC_TRIANGLE` | `true` | Toggle Ascending Triangle → CE |
 | `PA_PATTERN_DESC_TRIANGLE` | `true` | Toggle Descending Triangle → PE |
+| `PA_CHART_PATTERN_TOL` | `12` | Tolerance (pts) for "equal" twin tops/bottoms and flat S/R lines (env-only) |
+| `PA_MIN_BODY` | `5` | Minimum breakout-candle body (pts) (env-only) |
+| `PA_SR_LOOKBACK` | `30` | Candles scanned for swing highs/lows — detection + structure trail (env-only) |
+| `PA_RETEST_ENABLED` | `true` | Wait for a pullback+retest of the broken level before entering — the breakout candle itself never enters (env-only) |
+| `PA_RETEST_TOL_PTS` | `10` | How close price must return to the broken level to count as a retest (env-only) |
+| `PA_RETEST_MAX_WAIT` | `4` | Candles to wait for the retest before dropping the setup (env-only) |
+| `PA_SL_BUFFER_PTS` | `3` | Points beyond the pattern level where the structural SL sits (env-only) |
+| `PA_MIN_SL_PTS` | `8` | Floor for SL distance (env-only) |
+| `PA_MAX_SL_PTS` | `25` | Hard cap on structural SL distance (env-only) |
+| `PA_BREAKEVEN_TRIGGER` | `300` | Once peak PnL ≥ ₹N, lift SL to entry+buffer. `0` disables. |
+| `PA_BREAKEVEN_BUFFER` | `1` | Spot pts above (CE) / below (PE) entry for the breakeven SL |
+| `PA_SLIPPAGE_PTS` | `0` | Simulated slippage (backtest only) |
 | `PA_MAX_DAILY_TRADES` | `30` | Daily PA cap |
 | `PA_MAX_DAILY_LOSS` | `2000` | PA kill-switch in INR |
+| `PA_SL_PAUSE_CANDLES` | `2` | Candles to pause a side after an SL hit |
+| `PA_CONSEC_SL_EXTRA_PAUSE` | `2` | Extra candles pause per consecutive SL after the 2nd |
 | `PA_VIX_ENABLED` | `false` | Independent VIX filter for PA |
 | `PA_VIX_MAX_ENTRY` | `20` (`VIX_MAX_ENTRY` fallback) | Per-mode VIX block-entry threshold |
+| `PA_OI_ENABLED` | `false` | Apply the OI-buildup filter to PA entries (requires the master OI switch ON) |
 | `PA_EXPIRY_DAY_ONLY` | `false` | Only allow PA entries on weekly-expiry day |
 
 ### ORB Mode (Opening Range Breakout, Fyers)
@@ -327,6 +338,8 @@ Full spec: [SCALP.md](SCALP.md).
 |-----|---------|-------|
 | `ORB_MODE_ENABLED` | `true` | Show/hide ORB menus in sidebar (and Settings section) |
 | `ORB_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Fyers orders |
+| `ORB_LIVE_DRY_RUN` | `false` | Keep ORB in dry-run (log only) even when the global harness dry-run is off — lets other strategies go live while ORB stays simulated |
+| `ORB_OI_ENABLED` | `false` | Apply the OI-buildup filter to ORB entries (needs the master OI switch on) |
 | `ORB_EXPIRY_DAY_ONLY` | `false` | Only trade ORB on weekly-expiry day (Tuesday) |
 | `ORB_RANGE_START` / `ORB_RANGE_END` | `09:15` / `09:30` | Opening-range window (IST) |
 | `ORB_ENTRY_END` | `12:00` | Stale-breakout cutoff (no new entries past this) |
@@ -363,6 +376,12 @@ Full spec: [SCALP.md](SCALP.md).
 | `EMA9VWAP_OPT_STOP_PCT` / `EMA9VWAP_STOP_LOSS_PTS` | `0` / `0` | Optional catastrophe stops (0 = off; pure signal exit) |
 | `EMA9VWAP_REVERSAL_EXIT_ENABLED` | `true` | 2-candle reversal exit — square off when a candle closes hard against the position (CE: bearish close below both prior-2 lows; PE: bullish close above both prior-2 highs), evaluated on candle close |
 | `EMA9VWAP_CONFIRM_CANDLE_ENABLED` / `EMA9VWAP_INTRACANDLE_ENTRY` | `false` / `false` | Both off → entry on the cross candle's close |
+| `EMA9VWAP_SL_PAUSE_CANDLES` | `3` | Same-side SL cooldown (candles) — inert unless an optional stop is enabled |
+| `EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED` / `_CANDLES` | `true` / `3` | Block the flip side for N candles after a signal-cross / reversal exit |
+| `EMA9VWAP_MAX_CONSEC_LOSSES` | `0` | Chop guard — sit out the session after N straight losses (0 = off) |
+| `EMA9VWAP_NEG_CANDLE_LIMIT` | `0` | Square off a still-red trade after N candles (0 = off) |
+| `EMA9VWAP_CANDLE_TRAIL_ENABLED` / `_BARS` | `false` / `3` | Optional N-bar structural trailing stop (tighten-only) |
+| `EMA9VWAP_SL_MODE` | `ema` | `candle` re-enables the legacy time-stop; `ema` = pure signal exit |
 
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
@@ -506,7 +525,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 ### Scalp
 | URL | Description |
 |-----|-------------|
-| `/scalp-backtest` | Scalp backtest (3/5-min BB+PSAR+RSI V5) |
+| `/scalp-backtest` | Scalp backtest (3/5-min BB+PSAR+RSI V6.1) |
 | `/scalp-paper/status` | Scalp paper trade + NIFTY chart with BB overlay |
 | `/scalp-paper/history` | Past scalp sessions (per-session delete + view modal) |
 | `/scalp-paper/simulate` | Scalp simulator |

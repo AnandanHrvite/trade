@@ -23,6 +23,7 @@ Timeframe: **3 or 5-min** candles via `SCALP_RESOLUTION` (default 5). BB and RSI
 - **Bollinger Bands** — period `SCALP_BB_PERIOD(20)`, std-dev `SCALP_BB_STDDEV(1)`, on close. (Std-dev **1** — tighter than the charting default of 2.)
 - **RSI(14)** (close) — `SCALP_RSI_PERIOD`.
 - **Parabolic SAR** — `SCALP_PSAR_STEP(0.02)` / `SCALP_PSAR_MAX(0.2)`. "Below close" = bullish, "above close" = bearish.
+- **Optional SuperTrend** — `SCALP_USE_SUPERTREND` (default **off**). When on, SuperTrend(`SCALP_SUPERTREND_PERIOD(10)` / `SCALP_SUPERTREND_MULT(3)`) **replaces** PSAR as the directional confirm, the initial SL line, and the candle-close flip exit (mutually exclusive with PSAR; the chart shows whichever is active).
 
 ## 3. Entry — all three conditions must be true (evaluated at candle close)
 
@@ -55,7 +56,7 @@ The strategy is **PSAR-flip driven** for the trend exit, with a **profit lock** 
 1. **Profit lock (spot points)** — per tick, once peak favourable spot move ≥ `SCALP_PROFIT_LOCK_TRIGGER_PTS`, exit when the favourable move ≤ `SCALP_PROFIT_LOCK_PCT% × peak`. Ratchets for runners. The per-tick upside exit. Points-based — independent of option pricing.
 2. **Hard stop (spot points)** — per tick, exit if the trade moves ≥ `SCALP_STOP_LOSS_PTS` against entry. Wide catastrophic loss cap; arms the SL cooldown. Points-based.
 3. **BB re-entry (failed breakout)** — on candle close, if price has closed **back inside the band** the breakout that triggered the entry has failed → exit. CE: `close < BB.upper`; PE: `close > BB.lower`. Gated by `SCALP_BB_REENTRY_EXIT` (default on). Cuts loss bleed before the slower PSAR flip.
-4. **PSAR flip** — on candle close, when PSAR crosses to the wrong side of price, exit. Trend exit; handles runners beyond the lock.
+4. **Trend flip** — on candle close, when the trend line crosses to the wrong side of price, exit (PSAR flip by default, or SuperTrend flip when `SCALP_USE_SUPERTREND` is on). Trend exit; handles runners beyond the lock.
 5. **EOD square-off** at `TRADE_STOP_TIME(15:30)` IST (with an earlier backup just before).
 6. **Daily kill-switch / max trades** — see risk guards.
 7. Bid-ask spread guard shared via [src/utils/tradeGuards.js](src/utils/tradeGuards.js).

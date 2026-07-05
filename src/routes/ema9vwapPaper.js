@@ -1133,7 +1133,7 @@ async function onCandleClose(candle) {
       // ── Negative-candle stop (EMA9VWAP_NEG_CANDLE_LIMIT) ─────────────────────────
       // Asymmetric loss-cut: if the trade is still in the RED after N candles, square
       // off — let winners ride the signal exit, but don't let a loser bleed across the
-      // chop. Points-based on option premium (falls back to spot move). 0 = off; default 2.
+      // chop. Points-based on option premium (falls back to spot move). 0 = off (the default).
       const _negLimit = parseInt(process.env.EMA9VWAP_NEG_CANDLE_LIMIT || "0", 10);
       if (_negLimit > 0 && _pnlPts != null && _pnlPts < 0 && _pos.candlesHeld >= _negLimit) {
         log(`🔻 [PAPER] Negative ${_negLimit}-candle stop — ${_pos.candlesHeld} candles held, still red (${_pnlPts.toFixed(1)}pt) — squaring off ${_pos.side}`);

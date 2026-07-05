@@ -349,6 +349,13 @@ const GUIDE_STATUS = {
     { type: "bool", label: "VIX Filter", key: "PA_VIX_ENABLED", def: "false" },
     { type: "bool", label: "Expiry-Day-Only", key: "PA_EXPIRY_DAY_ONLY", def: "false" },
   ] }] },
+  "EMA9_VWAP_Strategy_Guide.html": { title: "EMA9 + VWAP — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "EMA9+VWAP Mode (sidebar + Settings section)", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Zerodha)", enableKey: "EMA9VWAP_LIVE_ENABLED", dryKey: "EMA9VWAP_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Filter (global keys)", key: "VIX_FILTER_ENABLED", def: "true" },
+    { type: "bool", label: "2-Candle Reversal Exit", key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", def: "true" },
+    { type: "bool", label: "Opposite-Side Cooldown", key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },
@@ -362,6 +369,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Scalp Mode", key: "SCALP_MODE_ENABLED", def: "true" },
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

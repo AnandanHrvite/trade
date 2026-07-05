@@ -26,7 +26,7 @@
 const { BollingerBands, RSI, PSAR, ADX } = require("technicalindicators");
 const { computeSuperTrend } = require("../utils/supertrend");
 
-const NAME        = "SCALP_BB_PSAR_RSI_V5";
+const NAME        = "SCALP_BB_PSAR_RSI_V6.1";
 const DESCRIPTION = "BB break + PSAR + RSI";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }

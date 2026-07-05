@@ -370,21 +370,21 @@
 <div class="cover">
   <div class="badge">NIFTY OPTIONS</div>
   <h1>Scalping Strategy</h1>
-  <div class="sub">V6.2 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
-  <div class="version">V6.2 (rechecked 2026-06-15) &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; Profit Lock + Hard Stop + BB re-entry + PSAR-Flip Exit</div>
+  <div class="sub">V6.1 &mdash; 3/5-Minute Bollinger Band + PSAR + RSI Scalping</div>
+  <div class="version">V6.1 (rechecked 2026-07-05) &bull; 3/5-Min Timeframe &bull; BB break + PSAR side + RSI Entry &bull; Confirmation Candle &bull; Profit Lock + Hard Stop + BB re-entry + PSAR-Flip Exit</div>
   <div class="tags">Bollinger Bands (20/1) &bull; Parabolic SAR &bull; RSI (70/40) &bull; VIX Filter &bull; Profit Lock &bull; Wide Hard Stop &bull; BB Re-Entry &bull; PSAR-Flip Exit</div>
 </div>
 
 <!--LIVE_STATUS_PANEL-->
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 0·now. CURRENT STATE (V6.2) — authoritative summary                       -->
+<!-- 0·now. CURRENT STATE (V6.1) — authoritative summary                       -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<h2><span class="sec-num">now</span> Current State (V6.2) &mdash; the authoritative summary</h2>
+<h2><span class="sec-num">now</span> Current State (V6.1) &mdash; the authoritative summary</h2>
 <div class="card card-green">
   <p><strong>This card is the source of truth. The version cards and body sections (01&ndash;15) below are kept as history; where they disagree, this wins.</strong> Verified against <code>scalp_bb_cpr.js</code> + <code>scalpPaper.js</code> on 2026-06-14. <em>(2026-06-15) verification recheck: corrected the BB re-entry exit &mdash; the <strong>primary</strong> stop runs <strong>per-tick</strong> (band touch, armed after <code>SCALP_BB_REENTRY_ARM_PTS</code>), with a candle-close BB re-entry only as a backstop; and re-ordered the exit stack to match runtime (per-tick BB band touch &rarr; hard stop &rarr; profit lock, then candle-close BB re-entry &rarr; PSAR flip). Earlier copy described BB re-entry as candle-close only.</em></p>
   <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (40). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
+    <li><strong>Entry (candle close, all three):</strong> CE = close &ge; BB upper + PSAR below close + <code>RSI &gt; SCALP_RSI_CE_THRESHOLD</code> (70). PE = close &le; BB lower + PSAR above close + <code>RSI &lt; SCALP_RSI_PE_THRESHOLD</code> (40). A <strong>confirmation candle</strong> (<code>SCALP_CONFIRM_CANDLE_ENABLED</code> + <code>SCALP_CONFIRM_OUTSIDE_BAND</code>, both on by default) then gates the fill: the signal candle only <em>arms</em>, and the <strong>next</strong> candle must close beyond the signal close AND outside the band before entering (at that close). Optional far-PSAR skip (<code>SCALP_MAX_ENTRY_SL_PTS</code>=50), optional ADX chop gate (<code>SCALP_ADX_ENABLED</code>, off), optional <code>SCALP_RSI_TURNING</code>.</li>
     <li><strong>Initial SL = PSAR value at entry</strong> &mdash; no clamp, <strong>no trail</strong>, not an intra-tick stop. Display + risk-sizing only.</li>
     <li><strong>Exit stack:</strong> per-tick checks (evaluated every tick, in order) &mdash; (1) <strong>BB re-entry / band touch</strong> (<code>SCALP_BB_REENTRY_EXIT</code>): exit the instant spot crosses back through the band, armed only after the breakout extends <code>SCALP_BB_REENTRY_ARM_PTS</code> (10) past it; (2) <strong>wide hard stop</strong> <code>SCALP_STOP_LOSS_PTS</code> (30 pts, catastrophic cap); (3) <strong>profit lock</strong> in spot points &mdash; arm at <code>SCALP_PROFIT_LOCK_TRIGGER_PTS</code> (25), give-back floor <code>SCALP_PROFIT_LOCK_PCT</code> (50%), ratchets up. Then on each candle close &mdash; (4) <strong>candle-close BB re-entry</strong> (close back inside the band, no arm guard) and (5) <strong>PSAR flip</strong>. Plus EOD / daily-loss / max-trades / per-side SL cooldown.</li>
     <li><strong>Optional trend source:</strong> <code>SCALP_USE_SUPERTREND</code> (off) swaps PSAR for SuperTrend(10,3) for direction, the entry SL line, and the flip exit.</li>
@@ -466,13 +466,13 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <h2><span class="sec-num">00a</span> v4.5.0 Highlights (2026-05-14)</h2>
 <div class="card card-purple">
-  <p><strong>Pause override on retest-and-resume</strong>, trail / breakeven fixes, additive per-trade context logging (BB / RSI / trend + MFE), and CPR-narrow filter exposed in Settings. The BB + RSI entry, V4 quality filters, trend filter, PSAR trailing, and trail-tier ladder remain unchanged at the signal layer.</p>
+  <p><strong>Pause override on retest-and-resume</strong>, trail / breakeven fixes, additive per-trade context logging (BB / RSI / trend + MFE), and the CPR-narrow filter exposed in Settings <em>(all since removed &mdash; the current strategy has no CPR gate)</em>. The BB + RSI entry, V4 quality filters, trend filter, PSAR trailing, and trail-tier ladder remain unchanged at the signal layer.</p>
   <ul style="padding-left:22px; line-height:1.85;">
     <li><strong>Pause override on retest-and-resume</strong> &mdash; <code>SCALP_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>) + <code>SCALP_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>). After a per-side SL hit, scalp normally cools down on that side for N candles. This blocked re-entry on the common pattern where price retests through the entry (hitting SL), then resumes in the original direction &mdash; the bot sat idle while the actual move played out. New gate: when a candle closes &ge; <code>SCALP_PAUSE_OVERRIDE_PTS</code> past the failed-entry spot in the original direction, the per-side pause is released early and the consecutive-SL counter for that side is reset. Only confirmed resumption clears the pause; genuine fails still cool down normally. New state field <code>_lastSLSpotBySide: { CE, PE }</code> records the spot at which each side last failed.</li>
     <li><strong>Trail uses PnL floor instead of spot-delta model</strong> &mdash; fixes mismatches between the trail % the user configured and the rupee floor actually enforced.</li>
     <li><strong>Breakeven snap fires per-tick, not per-bar</strong> &mdash; moves the BE jump out of the once-per-candle path so it can fire intra-bar once profit clears the threshold. Matches the rest of the tick-driven exit stack.</li>
     <li><strong>Per-trade context logging (additive)</strong> &mdash; each scalp trade record now captures BB / RSI / trend context at entry and <strong>MFE</strong> (max-favorable excursion in points) over the life of the trade. Pure logging &mdash; no entry, exit, SL, or trail logic changed. Feeds the active paper-trade data-collection schema.</li>
-    <li><strong><code>SCALP_CPR_NARROW_PCT</code> editable in Settings</strong> &mdash; the CPR-narrow filter threshold was code-only; now a Settings UI knob.</li>
+    <li><strong><code>SCALP_CPR_NARROW_PCT</code> editable in Settings</strong> &mdash; the CPR-narrow filter threshold was code-only; now a Settings UI knob. <em>(Legacy: the CPR-narrow filter was removed in V5 &mdash; the current strategy has no CPR gate and does not read this key.)</em></li>
     <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode trade-log file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL is the canonical export format (CSV/PDF dropped).</li>
     <li><strong>Settings checkpoint notes</strong> &mdash; daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's scalp trades.</li>
     <li><strong>Activity log Copy button</strong> &mdash; "Copy Log" button on the activity-log header.</li>
@@ -760,11 +760,16 @@
 <h2><span class="sec-num">03</span> How BB + PSAR + RSI Signal Works</h2>
 
 <div class="highlight">
-  <p>All three conditions must be met on the same candle close (3 or 5-min):</p>
+  <p>All three conditions must be met on the same candle close (3 or 5-min) to <strong>arm</strong> a signal:</p>
   <ul>
     <li><strong>BUY CE:</strong> Candle Close &ge; Upper BB <em>AND</em> PSAR below close <em>AND</em> RSI &gt; 70</li>
     <li><strong>BUY PE:</strong> Candle Close &le; Lower BB <em>AND</em> PSAR above close <em>AND</em> RSI &lt; 40</li>
   </ul>
+</div>
+
+<div class="card card-purple">
+  <h4 class="purple">Confirmation Candle (default on)</h4>
+  <p>The candle that meets all three conditions does <strong>not</strong> enter on its own &mdash; it only <strong>arms</strong> the signal. With <code>SCALP_CONFIRM_CANDLE_ENABLED</code> and <code>SCALP_CONFIRM_OUTSIDE_BAND</code> both on (the defaults), the <strong>next</strong> candle must <strong>close beyond the signal candle's close</strong> and still be <strong>outside the band</strong> before the trade fires &mdash; the position is taken at that confirming close. This filters out one-bar intra-candle pokes through the band that snap straight back. (With <code>SCALP_CONFIRM_OUTSIDE_BAND</code> off, entry instead fires intra-bar on the first cross of the trigger level; with <code>SCALP_CONFIRM_CANDLE_ENABLED</code> off, the signal candle enters directly.)</p>
 </div>
 
 <!-- Detailed BB chart with annotations -->
@@ -849,7 +854,7 @@
       <tr><td><strong>PE</strong></td><td>PSAR <em>above</em> the candle close (bearish)</td></tr>
     </tbody>
   </table>
-  <p style="margin-top:8px;font-size:0.85rem;">The V4 BB-squeeze, CPR-narrow, approach, body-ratio, trend and activity filters were removed in V5 &mdash; the PSAR side plus the RSI overbought/oversold guards now do the regime filtering.</p>
+  <p style="margin-top:8px;font-size:0.85rem;">The V4 BB-squeeze, CPR-narrow, approach, body-ratio, trend and activity filters were removed in V5 &mdash; the PSAR side plus the single-threshold RSI (&gt; 70 for CE, &lt; 40 for PE) now do the regime filtering. (The V5 overbought/oversold RSI caps were themselves removed in V6, leaving just the two thresholds.)</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -876,6 +881,10 @@
     <div class="step"><div class="step-num red">4</div><div>Initial SL = PSAR value at entry (no clamp, display/sizing only). Far-PSAR entries skipped (<code>SCALP_MAX_ENTRY_SL_PTS</code>)</div></div>
     <div class="step"><div class="step-num red">5</div><div>Select ATM Put option</div></div>
   </div>
+</div>
+
+<div class="card card-purple" style="margin-top:12px;">
+  <p style="font-size:0.85rem;"><strong>Confirmation candle (default on):</strong> the candle that meets the conditions above only <em>arms</em> the signal. Before the CE/PE actually enters, the <strong>next</strong> candle must close beyond the signal candle's close <em>and</em> outside the band (<code>SCALP_CONFIRM_CANDLE_ENABLED</code> + <code>SCALP_CONFIRM_OUTSIDE_BAND</code>) &mdash; the fill happens at that confirming close, not on the signal candle.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -1481,6 +1490,8 @@
     <tr><td><code>SCALP_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
     <tr><td><code>SCALP_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
     <tr><td><code>SCALP_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
+    <tr><td><code>SCALP_CONFIRM_CANDLE_ENABLED</code></td><td><code>true</code></td><td>Confirmation candle: the signal candle only arms; the next candle must confirm before entry</td></tr>
+    <tr><td><code>SCALP_CONFIRM_OUTSIDE_BAND</code></td><td><code>true</code></td><td>Confirming candle must CLOSE beyond the signal close AND outside the BB band &rarr; enter at that close (off = enter intra-bar on first cross)</td></tr>
     <tr><td><code>SCALP_PSAR_STEP</code></td><td><code>0.02</code></td><td>PSAR acceleration step</td></tr>
     <tr><td><code>SCALP_PSAR_MAX</code></td><td><code>0.2</code></td><td>PSAR max acceleration</td></tr>
     <tr><td><code>SCALP_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional chop gate &mdash; block ALL entries when ADX(14) is below the floor (sits out ranging sessions)</td></tr>
@@ -1555,8 +1566,8 @@
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <div style="margin-top:50px; padding:20px 0; border-top:1px solid var(--border); text-align:center;">
   <p style="font-size:0.75rem; color:var(--text2);">
-    Scalp V6.2 &bull; rechecked 2026-06-15 against scalp_bb_cpr.js / scalpPaper.js<br/>
-    NIFTY Options Scalping Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; Profit Lock + Hard Stop + BB Re-Entry + PSAR-Flip exit
+    Scalp V6.1 &bull; rechecked 2026-07-05 against scalp_bb_cpr.js / scalpPaper.js<br/>
+    NIFTY Options Scalping Strategy Guide &bull; 3/5-Minute BB break + PSAR side + RSI &bull; Confirmation Candle &bull; Profit Lock + Hard Stop + BB Re-Entry + PSAR-Flip exit
   </p>
 </div>
 
