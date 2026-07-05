@@ -93,7 +93,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers",
+    section: "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers",
     icon: "⚡",
     fields: [
       { key: "BB_RSI_ENABLED", label: "BB_RSI Live Orders", type: "toggle", effect: EFFECT.INSTANT, desc: "Enable live bb_rsi orders via Fyers", default: "false" },
@@ -114,14 +114,10 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_RSI_TURNING", label: "RSI Turning Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Require RSI momentum to confirm direction (CE: RSI not falling; PE: RSI not rising). Skips fading-momentum entries.", default: "false" },
       { key: "BB_RSI_CONFIRM_CANDLE_ENABLED", label: "Confirmation Candle (cross & close)", type: "toggle", effect: EFFECT.INSTANT, desc: "Wait for a 2nd candle to confirm before entering. ON (default): a fully-closed candle must meet all entry rules (the signal candle), THEN the very next candle must cross that signal candle's close (CE above / PE below) — entry fires intra-bar on the cross. OFF: enter at the signal candle's close (legacy). Filters one-candle false breakouts.", default: "true" },
       { key: "BB_RSI_CONFIRM_OUTSIDE_BAND", label: "Confirmation must close outside band", type: "toggle", effect: EFFECT.INSTANT, desc: "Stricter confirmation (needs Confirmation Candle ON). ON (default): the confirmation candle must CLOSE beyond the signal candle's close AND close outside the Bollinger band — entry fires at that close — so the entry candle is genuinely outside the band. Blocks intra-bar pokes that close back inside the band (failed breakouts that otherwise sit visibly inside the band). OFF: enter intra-bar on the first cross of the signal candle's close (legacy).", default: "true" },
-      // ── Parabolic SAR (entry confirmation + initial SL value + flip exit) ──
-      { key: "BB_RSI_PSAR_STEP", label: "PSAR Step", type: "number", min: 0.01, max: 0.05, step: 0.005, effect: EFFECT.SESSION, desc: "PSAR acceleration step", default: "0.02" },
-      { key: "BB_RSI_PSAR_MAX", label: "PSAR Max", type: "number", min: 0.1, max: 0.3, step: 0.01, effect: EFFECT.SESSION, desc: "PSAR max acceleration", default: "0.2" },
-      { key: "BB_RSI_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where the trend line (PSAR/SuperTrend) sits farther than this from close (a freshly-flipped line can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
-      // ── Trend confirmation: PSAR (default) or SuperTrend ──
-      { key: "BB_RSI_USE_SUPERTREND", label: "Use SuperTrend (vs PSAR)", type: "toggle", effect: EFFECT.SESSION, desc: "Trend-confirmation source. OFF = Parabolic SAR (default). ON = SuperTrend — turns PSAR off and SuperTrend(10,3) takes over the directional confirmation, the entry SL line AND the trend-flip exit. Mutually exclusive. Shown on the chart based on this toggle.", default: "false" },
-      { key: "BB_RSI_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "ATR lookback for SuperTrend (classic = 10). Only used when Use SuperTrend is ON.", default: "10" },
-      { key: "BB_RSI_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "ATR multiplier for SuperTrend band width (classic = 3). Only used when Use SuperTrend is ON.", default: "3" },
+      // ── SuperTrend (directional confirmation + initial SL value + flip exit) ──
+      { key: "BB_RSI_MAX_ENTRY_SL_PTS", label: "Max Entry SL (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Skip entries where the SuperTrend line sits farther than this from close (a freshly-flipped line can be 100s of pts away → huge risk). 0 = no filter.", default: "50" },
+      { key: "BB_RSI_SUPERTREND_PERIOD", label: "SuperTrend ATR Period", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.SESSION, desc: "ATR lookback for SuperTrend — the directional entry gate, entry SL line and flip exit (classic = 10).", default: "10" },
+      { key: "BB_RSI_SUPERTREND_MULT", label: "SuperTrend Multiplier", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.SESSION, desc: "ATR multiplier for SuperTrend band width (classic = 3).", default: "3" },
       // ── ADX trend filter (sit out choppy/ranging sessions) ──
       { key: "BB_RSI_ADX_ENABLED", label: "ADX Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Only trade when the market is trending — block ALL entries when ADX(14) is below the threshold. The strategy wins in trends and bleeds in chop; this sits out ranging days.", default: "false" },
       { key: "BB_RSI_ADX_MIN", label: "ADX Min (trend floor)", type: "number", min: 0, max: 50, step: 1, effect: EFFECT.SESSION, desc: "Minimum ADX(14) to allow entries when the trend filter is on. Higher = stricter (only strong trends). Typical 20–25. Ignored when the filter is off.", default: "20" },
@@ -129,11 +125,11 @@ const SETTINGS_SCHEMA = [
       { key: "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", label: "Profit Lock Trigger (pts)", type: "number", min: 0, max: 300, step: 5, effect: EFFECT.SESSION, desc: "Arm the profit lock once the favourable spot move (points) reaches this. Points-based — works even when option P&L is unavailable. 0 = disabled.", default: "25" },
       { key: "BB_RSI_PROFIT_LOCK_PCT", label: "Profit Lock % of Peak", type: "number", min: 10, max: 95, step: 5, effect: EFFECT.SESSION, desc: "Once armed, exit when the favourable move falls below this % of its peak (ratchets up). e.g. 50 → peak 100pts locks 50pts, peak 200pts locks 100pts.", default: "50" },
       { key: "BB_RSI_STOP_LOSS_PTS", label: "Stop Loss (pts)", type: "number", min: 0, max: 200, step: 5, effect: EFFECT.SESSION, desc: "Catastrophic loss cap — exit if the trade moves this many spot points against entry. Set WIDE (default 30) so it only clips deep adverse excursions on failed fades, not the normal small scalps. Points-based. 0 = disabled.", default: "30" },
-      { key: "BB_RSI_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit the instant spot crosses back through the Bollinger Band (failed breakout) — runs per-tick (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. Cuts loss bleed before the slower PSAR flip.", default: "true" },
+      { key: "BB_RSI_BB_REENTRY_EXIT", label: "BB Re-Entry Exit", type: "toggle", effect: EFFECT.SESSION, desc: "Exit the instant spot crosses back through the Bollinger Band (failed breakout) — runs per-tick (not candle close) so a one-candle V-reversal exits at the band line instead of giving back to the bar close. Cuts loss bleed before the slower SuperTrend flip.", default: "true" },
       { key: "BB_RSI_BB_REENTRY_ARM_PTS", label: "BB Re-Entry Arm (pts)", type: "number", min: 0, max: 100, step: 1, effect: EFFECT.SESSION, desc: "Only arm the BB Re-Entry Exit once the breakout has extended this many points PAST the band. Stops a fresh entry that's sitting right at the band from being knocked out by an immediate noise wick back to it. 0 = arm immediately (no guard).", default: "10" },
       // ── Risk management ──
-      // SL & exits are PSAR-driven: initial SL = PSAR value at entry (no clamp); exit on
-      // candle-close PSAR flip; the profit lock (above) is the only hard intra-tick exit.
+      // SL & exits are SuperTrend-driven: initial SL = SuperTrend value at entry (no clamp); exit on
+      // candle-close SuperTrend flip; the profit lock (above) is the only hard intra-tick exit.
       { key: "BB_RSI_SLIPPAGE_PTS", label: "Slippage (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.SESSION, desc: "Simulated slippage on entry & SL exit (pts added against you)", default: "0" },
       { key: "BB_RSI_MAX_DAILY_TRADES", label: "Max Daily Trades", type: "number", min: 5, max: 100, step: 5, effect: EFFECT.SESSION, desc: "Max bb_rsi entries per day", default: "30" },
       { key: "BB_RSI_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 20000, step: 500, effect: EFFECT.SESSION, desc: "BB_RSI kill-switch", default: "4000" },
@@ -456,7 +452,7 @@ const SETTINGS_SCHEMA = [
 // telegram, UI prefs are skipped.
 const MODE_SECTION_TITLES = {
   ema_rsi_st:    "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha",
-  bb_rsi:    "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers",
+  bb_rsi:    "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers",
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
@@ -573,8 +569,8 @@ const SESSION_RESTART_KEYS = new Set([
   "BB_RSI_BB_PERIOD", "BB_RSI_BB_STDDEV",
   "BB_RSI_RSI_PERIOD", "BB_RSI_RSI_CE_THRESHOLD",
   "BB_RSI_RSI_PE_THRESHOLD", "BB_RSI_RSI_TURNING",
-  "BB_RSI_PSAR_STEP", "BB_RSI_PSAR_MAX", "BB_RSI_MAX_ENTRY_SL_PTS",
-  "BB_RSI_USE_SUPERTREND", "BB_RSI_SUPERTREND_PERIOD", "BB_RSI_SUPERTREND_MULT",
+  "BB_RSI_MAX_ENTRY_SL_PTS",
+  "BB_RSI_SUPERTREND_PERIOD", "BB_RSI_SUPERTREND_MULT",
   "BB_RSI_ADX_ENABLED", "BB_RSI_ADX_MIN",
   "BB_RSI_PROFIT_LOCK_TRIGGER_PTS", "BB_RSI_PROFIT_LOCK_PCT", "BB_RSI_STOP_LOSS_PTS", "BB_RSI_BB_REENTRY_EXIT", "BB_RSI_BB_REENTRY_ARM_PTS",
   "BB_RSI_MAX_DAILY_TRADES", "BB_RSI_MAX_DAILY_LOSS",
@@ -1171,20 +1167,10 @@ router.get("/", (req, res) => {
   // (bbRsiModeOn already computed above for isFieldFrozen)
   const SECTION_TO_MASTER = {
     "EMA_RSI_ST STRATEGY (EMA 20/50 + RSI + SuperTrend) — Zerodha":     emaRsiStModeOn,
-    "BB_RSI STRATEGY (BB+PSAR+RSI) — Fyers":                         bbRsiModeOn,
+    "BB_RSI STRATEGY (BB+SuperTrend+RSI) — Fyers":                   bbRsiModeOn,
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
-  };
-
-  // ── Section titles reflect their trend-source toggle (PSAR vs SuperTrend) — BB_RSI only ──
-  const bbRsiUseST = (envData["BB_RSI_USE_SUPERTREND"] ?? process.env.BB_RSI_USE_SUPERTREND ?? "false").toLowerCase() === "true";
-  const trendSourceTitle = (section) => {
-    if (section.includes("BB+PSAR+RSI")) {
-      return section.replace("PSAR",
-        `<span class="trend-src" data-trend-key="BB_RSI_USE_SUPERTREND" data-on="SuperTrend" data-off="PSAR">${bbRsiUseST ? "SuperTrend" : "PSAR"}</span>`);
-    }
-    return section;
   };
 
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {
@@ -1198,7 +1184,7 @@ router.get("/", (req, res) => {
     <div class="settings-section${openClass}" data-section="${sectionId}">
       <div class="section-title" onclick="toggleSection(this)">
         <span class="section-chevron">▶</span>
-        ${s.icon} ${trendSourceTitle(s.section)}
+        ${s.icon} ${s.section}
         <span style="font-size:0.6rem;color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none;">${fieldCount} settings</span>
         ${defaultsBtn}
         ${eyeBtn}
@@ -1937,39 +1923,6 @@ document.addEventListener('keydown', function(e){
   }
   updateVixSectionVisibility();
 
-  // Trend-source gating: PSAR and SuperTrend are mutually exclusive, so grey out
-  // the inactive set based on the "Use SuperTrend" toggle (BB_RSI + EMA_RSI_ST). Values
-  // are kept (disabled inputs are still collected on save) — only editing is blocked.
-  // A frozen field (running session) stays disabled regardless.
-  function _setSourceRowDisabled(key, disabled) {
-    var el = document.querySelector('[data-key="' + key + '"]');
-    if (!el) return;
-    var row = el.closest('.setting-row');
-    var frozen = row && row.classList.contains('frozen');
-    el.disabled = disabled || frozen;
-    if (row && !frozen) row.style.opacity = disabled ? '0.4' : '';
-  }
-  function _setTrendLabel(key, on) {
-    document.querySelectorAll('.trend-src[data-trend-key="' + key + '"]').forEach(function(sp) {
-      sp.textContent = on ? sp.getAttribute('data-on') : sp.getAttribute('data-off');
-    });
-  }
-  function updateTrendSourceGating() {
-    var bb_rsi = document.querySelector('[data-key="BB_RSI_USE_SUPERTREND"]');
-    if (bb_rsi) {
-      var sON = bb_rsi.checked;
-      _setSourceRowDisabled('BB_RSI_PSAR_STEP', sON);
-      _setSourceRowDisabled('BB_RSI_PSAR_MAX', sON);
-      _setSourceRowDisabled('BB_RSI_SUPERTREND_PERIOD', !sON);
-      _setSourceRowDisabled('BB_RSI_SUPERTREND_MULT', !sON);
-      _setTrendLabel('BB_RSI_USE_SUPERTREND', sON);
-    }
-  }
-  ['BB_RSI_USE_SUPERTREND'].forEach(function(k) {
-    var t = document.querySelector('[data-key="' + k + '"]');
-    if (t) t.addEventListener('change', updateTrendSourceGating);
-  });
-  updateTrendSourceGating();
 })();
 
 function togglePwdVis(btn) {
@@ -2877,7 +2830,7 @@ function showExpHolTab(tab) {
 // ── Section Summary (Eye icon) ─────────────────────────────────────────────
 var _sectionSummaries = ${sectionSummaryJSON};
 var _schemaDefaults   = ${schemaDefaultsJSON};
-var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'BB_RSI Strategy (BB+PSAR+RSI)' };
+var _sectionNames = { 0: 'Trading Strategy (5-min)', 1: 'BB_RSI Strategy (BB+SuperTrend+RSI)' };
 
 // ── Load Defaults (per section) ────────────────────────────────────────────
 // Populates every input in the section with its schema default, marks dirty,
