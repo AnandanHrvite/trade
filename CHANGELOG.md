@@ -6,6 +6,12 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### BB_RSI — PSAR removed; SuperTrend is now the sole trend source (V7)
+
+- **Parabolic SAR is fully removed from BB_RSI.** The strategy previously used PSAR by default with SuperTrend as an opt-in alternative (`BB_RSI_USE_SUPERTREND`). SuperTrend(10,3) is now the **only** trend source — it drives the directional entry confirmation (CE = SuperTrend bullish / PE = bearish), the initial SL line, and the candle-close trend-flip exit. Entry is **BB break + SuperTrend side + RSI**; exit is profit-lock / hard-stop / BB re-entry / **SuperTrend flip** (unchanged except the flip source). Strategy renamed `BB_RSI_BB_PSAR_RSI_V6.1` → `BB_RSI_BB_SUPERTREND_RSI_V7`.
+- **Removed env keys / Settings fields**: `BB_RSI_PSAR_STEP`, `BB_RSI_PSAR_MAX`, `BB_RSI_USE_SUPERTREND`. `BB_RSI_SUPERTREND_PERIOD(10)` / `BB_RSI_SUPERTREND_MULT(3)` are kept as the plain SuperTrend inputs (no longer gated behind a toggle); `BB_RSI_MAX_ENTRY_SL_PTS(50)` now measures distance to the SuperTrend line.
+- **UI**: the Settings section is relabelled *BB_RSI Strategy (BB+SuperTrend+RSI) — Fyers*; the PSAR-vs-SuperTrend toggle and its row-greying JS are gone. Paper/live charts drop the purple PSAR dot series and show only the coloured SuperTrend line. Docs synced (`README.md`, `BB_RSI.md`).
+
 ### **Reset Data** dialog on the Logs page (categories + date range)
 
 - Replaces the Settings **🧹 RESET ALL PAPER** button (removed from Settings). A **🧹 Reset Data** button now lives in the **Logs (`/trade-logs`) page top bar** and opens a category picker instead of one-shot wiping every strategy's paper summary. Categories: **Paper trade history**, **Skip trade history**, **Cache**, **Logs**, **Ticks data** — with a **select-all** and an optional **date range**.
