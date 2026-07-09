@@ -1204,7 +1204,7 @@ router.get("/status", (req, res) => {
 ${faviconLink()}
 <title>ORB Paper — ${orbStrategy.NAME}</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
 ${sidebarCSS()}
 ${modalCSS()}

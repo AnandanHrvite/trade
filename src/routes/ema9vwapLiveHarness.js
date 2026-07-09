@@ -195,7 +195,7 @@ pre { background:#0a0f1c; padding:12px; border-radius:6px; overflow:auto; font-s
 .val   { font-size:0.95rem; color:#e2e8f0; }
 .section-title { font-size:0.7rem; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px; font-weight:600; }
 </style>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 </head>
 <body>
 ${buildSidebar('ema9vwapLive', false)}

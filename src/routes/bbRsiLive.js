@@ -1850,7 +1850,7 @@ router.get("/status", (req, res) => {
 <title>BB_RSI Live \u2014 ${bbRsiStrategy.NAME}</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>\u26a1</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600;700&family=IBM+Plex+Mono:wght@500;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
 ${sidebarCSS()}
 ${modalCSS()}

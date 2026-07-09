@@ -452,7 +452,7 @@ body[data-source="current"] #range-card { border-color:rgba(245,158,11,0.30); bo
 :root[data-theme="light"] .trades-table th, :root[data-theme="light"] .trades-table td { border-bottom-color:#e2e8f0 !important; }
 :root[data-theme="light"] .trades-table td.reason { color:#475569 !important; }
 </style>
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/vendor/lightweight-charts.standalone.production.js"></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/themes/dark.css">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13"></script>

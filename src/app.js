@@ -22,6 +22,17 @@ const app = express();
 app.use(compression());
 app.use(express.json());
 
+// ── Vendored front-end libraries ────────────────────────────────────────────
+// Self-host the Lightweight Charts library (used by every strategy's chart)
+// instead of pulling it from unpkg.com at page load. A CDN outage / blocked
+// network hop used to blank ALL charts app-wide (the render code early-returns
+// when `LightweightCharts` is undefined). Mounted BEFORE the login gate so the
+// asset always loads, and cached hard since the versioned file is immutable.
+app.use("/vendor", express.static(require("path").join(__dirname, "public/vendor"), {
+  maxAge: "30d",
+  immutable: true,
+}));
+
 // ── Login gate — page-level password protection ─────────────────────────────
 // Set LOGIN_SECRET in .env. If set, every page requires a login cookie first.
 // If empty/unset, all pages are open normally.

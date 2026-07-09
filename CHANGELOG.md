@@ -6,6 +6,11 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fix — charts self-hosted (no more blank graphs when the CDN is unreachable)
+
+- **All strategy charts (ORB / EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP paper + live, plus Replay) blanked out whenever the browser couldn't reach `unpkg.com`.** Every chart page loaded the Lightweight Charts library from that CDN at page-load; when the request failed the render code hit `if (typeof LightweightCharts === 'undefined') return;` and drew nothing — an empty box with only the legend, while the trades table still rendered. A single CDN/network hiccup took out every chart app-wide at once.
+- The library (`lightweight-charts@4.1.3`, 160 KB) is now **vendored into the repo** at `src/public/vendor/` and served locally via a new `express.static` mount at **`/vendor`** (added in `app.js` before the login gate, cached immutable). All 11 chart pages now load `/vendor/lightweight-charts.standalone.production.js` — zero external CDN dependency.
+
 ### BB_RSI — PSAR removed; SuperTrend is now the sole trend source (V7)
 
 - **Parabolic SAR is fully removed from BB_RSI.** The strategy previously used PSAR by default with SuperTrend as an opt-in alternative (`BB_RSI_USE_SUPERTREND`). SuperTrend(10,3) is now the **only** trend source — it drives the directional entry confirmation (CE = SuperTrend bullish / PE = bearish), the initial SL line, and the candle-close trend-flip exit. Entry is **BB break + SuperTrend side + RSI**; exit is profit-lock / hard-stop / BB re-entry / **SuperTrend flip** (unchanged except the flip source). Strategy renamed `BB_RSI_BB_PSAR_RSI_V6.1` → `BB_RSI_BB_SUPERTREND_RSI_V7`.
