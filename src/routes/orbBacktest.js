@@ -320,7 +320,7 @@ router.get("/", async (req, res) => {
           // (fetchChunk logs the Fyers getHistory response).
           const n = Array.isArray(candles) ? candles.length : 0;
           const msg = n === 0
-            ? `Fyers returned no historical candles for ${from} → ${to}. That range may be in the future or beyond available history, or the Fyers token can't serve NIFTY index history. Try an earlier range known to have data, and check the server logs for the getHistory response.`
+            ? `Fyers returned no historical candles for ${from} → ${to}. Most often the Fyers session needs re-login — an expired token returns no data (not an auth error), so this looks like "no history". Log in to Fyers again, then retry. Otherwise the range may be in the future / beyond available history. The getHistory response is in the server logs.`
             : `Only ${n} candle(s) for ${from} → ${to} — the range is too narrow. Widen it to at least a week of trading days.`;
           backtestJobs.failJob(id, msg);
           return;
