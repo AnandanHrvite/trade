@@ -312,7 +312,17 @@ router.get("/", async (req, res) => {
         const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, _onFetchProgress);
 
         if (!Array.isArray(candles) || candles.length < 5) {
-          backtestJobs.failJob(id, "Too few candles for the selected date range. Try a wider range (at least 1 week of trading days).");
+          // Distinguish "Fyers had no data for this range" (0 candles — future dates,
+          // beyond available history, or a token/entitlement gap) from a genuinely
+          // narrow range (a handful of candles). The old message told the user to
+          // "widen the range" even when they'd asked for a whole month and Fyers
+          // simply returned nothing — misleading. Real reason is in the server logs
+          // (fetchChunk logs the Fyers getHistory response).
+          const n = Array.isArray(candles) ? candles.length : 0;
+          const msg = n === 0
+            ? `Fyers returned no historical candles for ${from} → ${to}. That range may be in the future or beyond available history, or the Fyers token can't serve NIFTY index history. Try an earlier range known to have data, and check the server logs for the getHistory response.`
+            : `Only ${n} candle(s) for ${from} → ${to} — the range is too narrow. Widen it to at least a week of trading days.`;
+          backtestJobs.failJob(id, msg);
           return;
         }
 
