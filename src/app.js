@@ -991,6 +991,7 @@ app.get("/", (req, res) => {
     .mm-card.bb_rsi    .mm-dot { background:#fbbf24; }
     .mm-card.pa       .mm-dot { background:#a78bfa; }
     .mm-card.orb      .mm-dot { background:#10b981; }
+    .mm-card.ema9vwap .mm-dot { background:#06b6d4; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
     .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
@@ -1298,6 +1299,17 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-ORB">—</div>
       <div class="mm-wrap"><canvas id="mmChart-ORB"></canvas></div>
       <div class="mm-empty" id="mm-empty-ORB" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${ema9vwapModeOn ? `
+    <div class="mm-card ema9vwap" data-mode="EMA9VWAP">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">EMA9+VWAP</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-EMA9VWAP">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-EMA9VWAP"></canvas></div>
+      <div class="mm-empty" id="mm-empty-EMA9VWAP" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${cumInlineInGrid ? cumCardInline : ''}
@@ -1918,10 +1930,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(function(m){ _mmToggle[m] = src; });
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -1930,7 +1942,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper' };
+var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper' };
 
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
@@ -1954,7 +1966,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(_renderModuleChart);
 }
 
 loadModuleCharts();
