@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB backtest — experimental retest-entry gate (`ORB_RETEST_ENABLED`, default off)
+
+- **New optional entry mode for the ORB backtest that enters on a *retest* of the opening-range edge instead of the breakout candle.** With `ORB_RETEST_ENABLED=true`, the engine arms on the breakout but doesn't buy; it enters only once a later candle pulls back to within `max(ORB_RETEST_TOL_MIN=5pt, ORB_RETEST_TOL_PCT=0.1×range)` of the broken OR edge **and** closes back on the breakout side (level held), within `ORB_RETEST_MAX_WAIT=6` candles — otherwise no trade that day. Motivation: across 2021–2026 the immediate-entry ORB wins only ~17% (profit factor 0.60); the dominant losers are poke-and-reverse false breakouts, which a retest filters out. The known cost is skipping runaway-trend days that never pull back (some of the biggest winners). **Default off; backtest-only for now** — not wired into paper/live (would need porting into `orb_breakout.getSignal`). Exposed as four Settings knobs and documented in the backtest notes panel; the results page self-labels when the gate is on. `runOrbBacktest` is now exported for offline unit-testing of the entry/exit engine.
+
 ### Backtest — "🤖 Download for AI" on every backtest page
 
 - **Every backtest results page (EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP / ORB) now has a "🤖 Download for AI" button** next to "📋 Copy Trade Log". It downloads a self-describing Markdown report — summary stats, a plain-English field legend, then the full trade table — that you can paste straight into an AI for analysis. Same shape as the Trade Logs "🤖 AI" export, so both read the same. Backtest results are ephemeral (no JSONL on disk), so the report is built in the browser from the trades already embedded in the page via a shared helper ([backtestAiExport.js](src/utils/backtestAiExport.js)) — no new route or server round-trip. P&L is labelled ₹ or pts to match the page (δ+θ option sim vs raw index points), and the header notes when the embedded set is capped for browser performance.

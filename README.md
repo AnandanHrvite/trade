@@ -109,6 +109,7 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken when a candle **closes above ORH by a buffer**, a long PE when it **closes below ORL by a buffer**.
 - **Entry filters** (all toggleable):
   - **Breakout buffer** (`ORB_BREAKOUT_BUFFER_MIN=8` / `ORB_BREAKOUT_BUFFER_PCT=0.15`): the close must clear the OR edge by `max(8pt, 0.15×range)` — not merely touch it. This filters the bare-touch false breakouts (a poke of a point or two beyond the edge that reverses straight back into the box) that were the dominant losing entry.
+  - **Retest-entry gate** (`ORB_RETEST_ENABLED=false`, **experimental / backtest only**): when on, the engine does not buy the breakout candle — it arms on the breakout, then enters only once a later candle pulls back to within `max(ORB_RETEST_TOL_MIN=5pt, ORB_RETEST_TOL_PCT=0.1×range)` of the broken OR edge **and** closes back on the breakout side (the level held), within `ORB_RETEST_MAX_WAIT=6` candles. Rejects poke-and-reverse false breakouts and gives a tighter entry; the cost is that any day which never pulls back takes **no trade** (you miss the runaway-trend days). Not yet wired into paper/live — validate in the backtest first.
   - Range width `[ORB_MIN_RANGE_PTS=25, ORB_MAX_RANGE_PTS=100]` — skips tight noise and exhausted gaps (an already-run open).
   - Breakout body ≥ `ORB_MIN_BODY=8` pts.
   - **Wick rejection** (`ORB_WICK_FILTER_ENABLED`): opposing wick ≤ `ORB_MAX_WICK_RATIO=0.6` × body.
@@ -351,6 +352,9 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_MIN_RANGE_PTS` / `ORB_MAX_RANGE_PTS` | `25` / `100` | Range-width band |
 | `ORB_MIN_BODY` | `8` | Min breakout candle body (pts) |
 | `ORB_BREAKOUT_BUFFER_MIN` / `ORB_BREAKOUT_BUFFER_PCT` | `8` / `0.15` | Entry needs close to clear the OR edge by `max(min, pct×range)` — not just touch it |
+| `ORB_RETEST_ENABLED` | `false` | Experimental (backtest only): enter on a pullback-and-hold retest of the OR edge instead of the breakout candle. See ORB entry filters above |
+| `ORB_RETEST_TOL_MIN` / `ORB_RETEST_TOL_PCT` | `5` / `0.1` | Retest zone depth: price must return within `max(min, pct×range)` of the broken edge |
+| `ORB_RETEST_MAX_WAIT` | `6` | Give up (no trade) if no retest within this many 5-min candles after the breakout |
 | `ORB_TRAIL_EMA` | `20` | Exit trend-trail: exit only when a candle closes back across this EMA of 5-min closes |
 | `ORB_BREAKEVEN_PTS` | `20` | Lift the hard SL to entry once +this many NIFTY pts in profit (`0` = off) |
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR width, closing back inside the box) |
