@@ -272,6 +272,7 @@ async function simulateBuy(side, sigSnapshot) {
     initialSlSpot:  _initSl,
     slSpot:         _initSl,
     breakevenArmed: false,
+    emaArmed:       false,
     lastEma:        null,
     peakPremium:    optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength,
@@ -467,13 +468,23 @@ function _managePositionOnClose(bar) {
     log(`🔒 [ORB-PAPER] Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
   }
 
-  // 3. EMA trend-trail — exit only on a candle CLOSE back across the EMA
+  // 3. EMA trend-trail — exit only on a candle CLOSE back across the EMA, AND
+  //    only once price has first closed on the correct side of it (emaArmed).
+  //    Without the arm, a fresh entry taken below a stale/gap-day EMA (e.g. a CE
+  //    breakout on a gap-down morning, EMA still high from prior days) would be
+  //    stopped out on its very first candle. Until armed, the trade is protected
+  //    by breakeven + opposite-candle + the per-trade loss cap instead.
   const emaPeriod = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
   const ema = _computeEma(state.candles, emaPeriod);
   if (ema != null) {
     pos.lastEma = Math.round(ema * 100) / 100;
-    if (pos.side === "CE" && close < ema) return simulateSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
-    if (pos.side === "PE" && close > ema) return simulateSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
+    if (pos.side === "CE") {
+      if (close >= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return simulateSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
+    } else {
+      if (close <= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return simulateSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
+    }
   }
 }
 

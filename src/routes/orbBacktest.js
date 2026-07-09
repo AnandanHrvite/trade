@@ -132,13 +132,18 @@ function runOrbBacktest(allCandles, expirySet) {
           if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
           position.breakevenArmed = true;
         }
-        // 3. EMA close-trail — exit only when THIS candle closes back across the EMA
+        // 3. EMA close-trail — exit only when THIS candle closes back across the
+        //    EMA, and only after price first closed on the correct side (emaArmed)
+        //    so a gap-day entry below a stale EMA isn't stopped out on candle 1.
         const _ema = _emaOfCloses(dayCandles, i, TRAIL_EMA);
-        if (_ema != null &&
-            ((position.side === "CE" && c.close < _ema) ||
-             (position.side === "PE" && c.close > _ema))) {
-          closePos(position, c.close, c.time, `Closed ${position.side === "CE" ? "below" : "above"} EMA${TRAIL_EMA}`);
-          trades.push(buildTradeRecord(position)); position = null; continue;
+        if (_ema != null) {
+          if (position.side === "CE") {
+            if (c.close >= _ema) position.emaArmed = true;
+            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed below EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
+          } else {
+            if (c.close <= _ema) position.emaArmed = true;
+            else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
+          }
         }
         // 4. per-trade loss cap (worst-case sim premium within this candle)
         if (MAX_TRADE_LOSS > 0) {
@@ -183,7 +188,7 @@ function runOrbBacktest(allCandles, expirySet) {
             optionEntryLtp: SEED_PREMIUM,
             orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
             slSpot: initSl, targetSpot: sig.targetSpot,
-            breakevenArmed: false,
+            breakevenArmed: false, emaArmed: false,
             signalStrength: sig.signalStrength,
             vwap: sig.vwap, volRatio: sig.volRatio, wickRatio: sig.wickRatio,
             entryReason: sig.reason,

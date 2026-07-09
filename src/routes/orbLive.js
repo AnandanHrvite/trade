@@ -202,7 +202,7 @@ async function placeLiveBuy(side, sigSnapshot) {
     entryBarTime: Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts,
     targetSpot: sigSnapshot.targetSpot, initialSlSpot: _initSl, slSpot: _initSl,
-    breakevenArmed: false, lastEma: null,
+    breakevenArmed: false, emaArmed: false, lastEma: null,
     peakPremium: optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
     vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
@@ -362,12 +362,19 @@ async function _managePositionOnClose(bar) {
     log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
   }
 
+  // EMA exit only once price has first closed on the correct side of the EMA
+  // (emaArmed) — else a CE taken below a stale/gap-day EMA exits on candle 1.
   const emaPeriod = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
   const ema = _computeEma(state.candles, emaPeriod);
   if (ema != null) {
     pos.lastEma = Math.round(ema * 100) / 100;
-    if (pos.side === "CE" && close < ema) return placeLiveSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
-    if (pos.side === "PE" && close > ema) return placeLiveSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
+    if (pos.side === "CE") {
+      if (close >= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return placeLiveSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
+    } else {
+      if (close <= ema) pos.emaArmed = true;
+      else if (pos.emaArmed) return placeLiveSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
+    }
   }
 }
 
