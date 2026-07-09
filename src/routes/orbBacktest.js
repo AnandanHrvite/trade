@@ -22,6 +22,7 @@ const { getCharges } = require("../utils/charges");
 const { renderBacktestResults, computeBacktestStats } = require("../utils/backtestUI");
 const { saveResult } = require("../utils/resultStore");
 const { isExpiryDate } = require("../utils/nseHolidays");
+const backtestJobs = require("../utils/backtestJobManager");
 const instrumentConfig = require("../config/instrument");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
@@ -29,9 +30,6 @@ const ACCENT = "#10b981";
 const ENDPOINT = "/orb-backtest";
 const RESULT_KEY = "ORB_BACKTEST";
 
-// Simple in-flight flag so /all-backtest can poll /idle while the synchronous
-// backtest is running. Set true on entry, false in finally.
-let _inflight = false;
 
 function _utcSecToIstMins(unixSec) { return Math.floor((unixSec + 19800) / 60) % 1440; }
 function _parseMin(envKey, fallback) {
@@ -243,12 +241,44 @@ function runOrbBacktest(allCandles, expirySet) {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 // /idle is polled by /all-backtest to detect when the synchronous backtest finishes.
+// Poll endpoint for the progress page (mirrors EMA_RSI_ST backtest).
+router.get("/status", (req, res) => {
+  const job = backtestJobs.getJob(req.query.jobId);
+  if (!job) return res.json({ status: "not_found" });
+  res.json({ status: job.status, progress: job.progress, elapsed: Date.now() - job.startedAt, error: job.error });
+});
+
 router.get("/idle", (req, res) => {
   if (req.accepts(["json", "html"]) === "json" || req.query.json === "1") {
-    return res.json({ idle: !_inflight });
+    return res.json({ idle: backtestJobs.isIdle() });
   }
   return res.redirect("/orb-backtest");
 });
+
+// Rendered trade-log / stats helper — shared by the completed-job branch.
+function _renderOrbResults(res, from, to, trades, stats) {
+  const html = renderBacktestResults({
+    mode: "ORB",
+    accent: ACCENT,
+    strategyName: orbStrategy.NAME,
+    endpoint: ENDPOINT,
+    from, to,
+    summary: stats,
+    trades,
+    activePage: "orbBacktest",
+    extraTradeColumns: [
+      { key: "rangePts", label: "Range (pt)" },
+      { key: "strength", label: "Sig" },
+    ],
+    extraStats: [
+      { label: "Avg OR Range", value: trades.length ? `${Math.round(trades.reduce((a, t) => a + (t.rangePts || 0), 0) / trades.length)}pt` : "—" },
+      { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
+      { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
+    ],
+    notes: "Premium is approximated using δ + θ from historical NIFTY 5-min candles (no live option chain in backtest). Treat absolute ₹ figures as directional only.",
+  });
+  res.send(html);
+}
 
 router.get("/", async (req, res) => {
   let { from, to } = req.query;
@@ -260,65 +290,80 @@ router.get("/", async (req, res) => {
     const fmt = d => d.toISOString().slice(0, 10);
     return res.redirect(`/orb-backtest?from=${fmt(def30)}&to=${fmt(today)}`);
   }
-  _inflight = true;
-  try {
-    console.log(`🔍 ORB Backtest: ${from} → ${to}`);
-    const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false);
 
-    // Pre-compute expiry-day set if ORB_EXPIRY_DAY_ONLY is on
-    let expirySet = null;
-    if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true" && Array.isArray(candles) && candles.length) {
-      const uniqueDates = new Set();
-      for (const c of candles) {
-        const d = new Date((c.time + 19800) * 1000);
-        uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
+  // ── Background job system ──────────────────────────────────────────────────
+  // The fetch chunks the range into months (350ms rate-limit sleep + retries per
+  // month), so a multi-year range takes minutes — far past an HTTP timeout if run
+  // synchronously (which returned an empty candle set → 0 trades). Run it as a
+  // background job with progress polling, exactly like the EMA_RSI_ST backtest.
+  const jobId = req.query.jobId;
+
+  if (!jobId) {
+    const activeJob = backtestJobs.getActiveJob();
+    if (activeJob) return res.send(backtestJobs.buildQueuePage(ENDPOINT, "ORB Backtest"));
+
+    const { id } = backtestJobs.createJob("orb");
+
+    (async () => {
+      try {
+        console.log(`🔍 ORB Backtest job ${id}: ${from} → ${to}`);
+        backtestJobs.updateProgress(id, { phase: "Fetching candle data…", pct: 0 });
+        const _onFetchProgress = (p) => backtestJobs.updateProgress(id, p);
+        const candles = await fetchCandlesCachedBT(NIFTY_INDEX_SYMBOL, "5", from, to, false, _onFetchProgress);
+
+        if (!Array.isArray(candles) || candles.length < 5) {
+          backtestJobs.failJob(id, "Too few candles for the selected date range. Try a wider range (at least 1 week of trading days).");
+          return;
+        }
+
+        // Pre-compute expiry-day set if ORB_EXPIRY_DAY_ONLY is on
+        let expirySet = null;
+        if ((process.env.ORB_EXPIRY_DAY_ONLY || "false").toLowerCase() === "true") {
+          const uniqueDates = new Set();
+          for (const c of candles) {
+            const d = new Date((c.time + 19800) * 1000);
+            uniqueDates.add(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
+          }
+          expirySet = new Set();
+          for (const dt of uniqueDates) {
+            try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
+          }
+          console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
+        }
+
+        backtestJobs.updateProgress(id, { phase: `Running ORB backtest (${candles.length.toLocaleString()} candles)…`, pct: 5 });
+        const trades = runOrbBacktest(candles, expirySet);
+        const stats = computeBacktestStats(trades);
+        // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
+        // so /all-backtest renders it as ₹ instead of "pts".
+        stats.optionSim   = true;
+        stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
+        stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+
+        // Save for /all-backtest dashboard
+        try {
+          saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
+        } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
+
+        backtestJobs.completeJob(id, { trades, stats, from, to });
+        console.log(`✅ ORB Backtest job ${id} complete — ${trades.length} trades`);
+      } catch (err) {
+        console.error("[orb-backtest] job error:", err);
+        backtestJobs.failJob(id, err.message);
       }
-      expirySet = new Set();
-      for (const dt of uniqueDates) {
-        try { if (await isExpiryDate(dt)) expirySet.add(dt); } catch (_) {}
-      }
-      console.log(`📅 ORB expiry-only: ${expirySet.size}/${uniqueDates.size} trading days qualified`);
-    }
-    const trades = runOrbBacktest(candles || [], expirySet);
-    const stats = computeBacktestStats(trades);
-    // P&L is computed in ₹ (premium × LOT_SIZE − charges). Mark the result
-    // so /all-backtest renders it as ₹ instead of "pts".
-    stats.optionSim   = true;
-    stats.delta       = parseFloat(process.env.BACKTEST_DELTA     || "0.55");
-    stats.thetaPerDay = parseFloat(process.env.BACKTEST_THETA_DAY || "8");
+    })();
 
-    // Save for /all-backtest dashboard
-    try {
-      saveResult(RESULT_KEY, { summary: stats, params: { from, to, resolution: "5" } });
-    } catch (e) { console.warn("[orb-backtest] saveResult failed:", e.message); }
-
-    const html = renderBacktestResults({
-      mode: "ORB",
-      accent: ACCENT,
-      strategyName: orbStrategy.NAME,
-      endpoint: ENDPOINT,
-      from, to,
-      summary: stats,
-      trades,
-      activePage: "orbBacktest",
-      extraTradeColumns: [
-        { key: "rangePts", label: "Range (pt)" },
-        { key: "strength", label: "Sig" },
-      ],
-      extraStats: [
-        { label: "Avg OR Range", value: trades.length ? `${Math.round(trades.reduce((a, t) => a + (t.rangePts || 0), 0) / trades.length)}pt` : "—" },
-        { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
-        { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
-      ],
-      notes: "Premium is approximated using δ + θ from historical NIFTY 5-min candles (no live option chain in backtest). Treat absolute ₹ figures as directional only.",
-    });
-    res.send(html);
-  } catch (err) {
-    console.error("[orb-backtest] error:", err);
-    res.status(500).send(renderErrorPage(err.message, from, to));
-  } finally {
-    _inflight = false;
+    return res.send(backtestJobs.buildProgressPage(id, ENDPOINT, "ORB Backtest"));
   }
+
+  // ── Render completed job ───────────────────────────────────────────────────
+  const job = backtestJobs.getJob(jobId);
+  if (!job) return res.redirect(ENDPOINT);
+  if (job.status === "running") return res.send(backtestJobs.buildProgressPage(jobId, ENDPOINT, "ORB Backtest"));
+  if (job.status === "error")   return res.status(500).send(renderErrorPage(job.error, from, to));
+
+  const { trades, stats } = job.result;
+  return _renderOrbResults(res, from, to, trades, stats);
 });
 
 function renderIdleForm() {

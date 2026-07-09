@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB backtest — background job + batched fetch (fixes 0-trades on long ranges)
+
+- **The ORB backtest ran its whole candle fetch synchronously inside the HTTP request.** The fetch chunks the range into months (350ms rate-limit sleep + retries each), so a multi-month/multi-year range runs for minutes — past the HTTP/proxy timeout. The request then returned an empty candle set and the page rendered **0 trades** even over 5 years (the `runOrbBacktest` engine itself is fine — it produces trades on the same candles). Converted the route to the **same background-job pattern the EMA_RSI_ST backtest uses**: `GET /orb-backtest` now creates a job, runs the fetch + backtest in the background with a live progress page, and polls `GET /orb-backtest/status` until done — the server stays responsive and long ranges complete. Too-few-candles now **fails the job with a clear message** instead of silently showing 0 trades. `/orb-backtest/idle` now reports the shared job-manager idle state.
+
 ### ORB — replay now prices exits correctly (option-poll timer fix)
 
 - **ORB's in-trade option-LTP poll used `setInterval(3s)`; every other strategy uses a recursive `setTimeout`.** The replay harness ([tickReplay.js](src/services/tickReplay.js)) accelerates polling by collapsing short `setTimeout` delays to 0ms so `state.optionLtp` tracks replay-time — but it never patches `setInterval`. So in replay ORB's option price stayed frozen at the entry premium: exits were mispriced (a Jul-8 replay showed `optionEntryLtp == optionExitLtp == bestOptionLtp == 178.95`, i.e. the option never updated even though the recorded ticks clearly moved). Switched both `orbPaper.js` and `orbLive.js` to the same recursive-`setTimeout` poll the other routes use — identical 3s cadence in live, but replay now advances the option LTP tick-by-tick and prices the exit at the real premium. (Still cannot price a hold that runs *past* the original trade's exit — no option ticks were recorded there; that needs a fresh live-paper session.)
