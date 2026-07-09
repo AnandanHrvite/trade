@@ -114,24 +114,36 @@ function isDryRun() {
   return liveDryRun.isDryRun("ORB");
 }
 
+// Recursive setTimeout (not setInterval) so the replay harness accelerates it —
+// mirrors orbPaper. 3s cadence in live; keeps state.optionLtp fresh in replay.
+const OPTION_POLL_MS = 3000;
 let _optionPollTimer = null;
+let _optionPollStopped = true;
 function startOptionPolling() {
   stopOptionPolling();
-  _optionPollTimer = setInterval(async () => {
-    if (!state.position) return;
-    try {
-      const r = await fyers.getQuotes([state.position.symbol]);
-      if (r && r.s === "ok" && r.d && r.d.length) {
-        const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-        if (typeof ltp === "number" && ltp > 0) {
-          state.optionLtp = ltp;
-          state.optionLtpUpdatedAt = Date.now();
+  _optionPollStopped = false;
+  const poll = async () => {
+    if (_optionPollStopped) return;
+    if (state.position) {
+      try {
+        const r = await fyers.getQuotes([state.position.symbol]);
+        if (r && r.s === "ok" && r.d && r.d.length) {
+          const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
+          if (typeof ltp === "number" && ltp > 0) {
+            state.optionLtp = ltp;
+            state.optionLtpUpdatedAt = Date.now();
+          }
         }
-      }
-    } catch (_) {}
-  }, 3000);
+      } catch (_) {}
+    }
+    if (!_optionPollStopped) _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
+  };
+  _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
 }
-function stopOptionPolling() { if (_optionPollTimer) { clearInterval(_optionPollTimer); _optionPollTimer = null; } }
+function stopOptionPolling() {
+  _optionPollStopped = true;
+  if (_optionPollTimer) { clearTimeout(_optionPollTimer); _optionPollTimer = null; }
+}
 
 // ── Live BUY ────────────────────────────────────────────────────────────────
 async function placeLiveBuy(side, sigSnapshot) {

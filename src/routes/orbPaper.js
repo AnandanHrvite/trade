@@ -171,26 +171,38 @@ rehydrateSessionFromJsonl();
 
 // ── Option LTP polling ──────────────────────────────────────────────────────
 
+// Recursive setTimeout (NOT setInterval) so the replay harness — which collapses
+// short setTimeout delays to 0ms to accelerate polling — actually advances
+// state.optionLtp with replay-time. setInterval is not patched by the harness, so
+// it stayed frozen in replay (exit priced at the entry premium). 3s cadence in live.
+const OPTION_POLL_MS = 3000;
 let _optionPollTimer = null;
+let _optionPollStopped = true;
 function startOptionPolling() {
   stopOptionPolling();
-  _optionPollTimer = setInterval(async () => {
-    if (!state.position) return;
-    try {
-      const r = await fyers.getQuotes([state.position.symbol]);
-      if (r && r.s === "ok" && r.d && r.d.length) {
-        const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-        if (typeof ltp === "number" && ltp > 0) {
-          state.optionLtp = ltp;
-          state.optionLtpUpdatedAt = Date.now();
-          try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-paper"); } catch (_) {}
+  _optionPollStopped = false;
+  const poll = async () => {
+    if (_optionPollStopped) return;
+    if (state.position) {
+      try {
+        const r = await fyers.getQuotes([state.position.symbol]);
+        if (r && r.s === "ok" && r.d && r.d.length) {
+          const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
+          if (typeof ltp === "number" && ltp > 0) {
+            state.optionLtp = ltp;
+            state.optionLtpUpdatedAt = Date.now();
+            try { tickRecorder.recordOptionLtp(state.position.symbol, ltp, "orb-paper"); } catch (_) {}
+          }
         }
-      }
-    } catch (_) {}
-  }, 3000);
+      } catch (_) {}
+    }
+    if (!_optionPollStopped) _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
+  };
+  _optionPollTimer = setTimeout(poll, OPTION_POLL_MS);
 }
 function stopOptionPolling() {
-  if (_optionPollTimer) { clearInterval(_optionPollTimer); _optionPollTimer = null; }
+  _optionPollStopped = true;
+  if (_optionPollTimer) { clearTimeout(_optionPollTimer); _optionPollTimer = null; }
 }
 
 // ── Trade simulation ────────────────────────────────────────────────────────

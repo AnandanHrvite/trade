@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB — replay now prices exits correctly (option-poll timer fix)
+
+- **ORB's in-trade option-LTP poll used `setInterval(3s)`; every other strategy uses a recursive `setTimeout`.** The replay harness ([tickReplay.js](src/services/tickReplay.js)) accelerates polling by collapsing short `setTimeout` delays to 0ms so `state.optionLtp` tracks replay-time — but it never patches `setInterval`. So in replay ORB's option price stayed frozen at the entry premium: exits were mispriced (a Jul-8 replay showed `optionEntryLtp == optionExitLtp == bestOptionLtp == 178.95`, i.e. the option never updated even though the recorded ticks clearly moved). Switched both `orbPaper.js` and `orbLive.js` to the same recursive-`setTimeout` poll the other routes use — identical 3s cadence in live, but replay now advances the option LTP tick-by-tick and prices the exit at the real premium. (Still cannot price a hold that runs *past* the original trade's exit — no option ticks were recorded there; that needs a fresh live-paper session.)
+
 ### ORB — breakout buffer + trend-following exit (rewrite 2026-07-09)
 
 - **Entry now requires the close to CLEAR the OR edge by a buffer**, not merely touch it: `close > ORH + buffer` (CE) / `close < ORL − buffer` (PE), where `buffer = max(ORB_BREAKOUT_BUFFER_MIN=8, ORB_BREAKOUT_BUFFER_PCT=0.15 × range)`. The old test was a bare touch (`close > ORH`), so a poke of a fraction of a point beyond the edge qualified — every such near-touch in the Jul 6–9 live-paper cohort reversed straight back. Replaying that cohort through the new `getSignal`: the two pure false breakouts (Jul 7 −₹1,812 at 2.25pt beyond; Jul 9 −₹554 at 0.25pt beyond) are now **blocked**, while the genuine breakout (Jul 6 +₹397) and the directionally-correct trade (Jul 8) still fire.
