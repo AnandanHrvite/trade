@@ -3,14 +3,17 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Setup:
  *   • Build a 15-min "opening range" from the first 9:15–9:30 candles.
- *   • Once range is locked, watch for a 5-min CLOSE outside the range:
- *       — Close above ORH → BUY CE (bullish breakout, ATM strike)
- *       — Close below ORL → BUY PE (bearish breakdown, ATM strike)
+ *   • Once range is locked, watch for a 5-min CLOSE that CLEARS the range by a
+ *     buffer (max(ORB_BREAKOUT_BUFFER_MIN=8, ORB_BREAKOUT_BUFFER_PCT=0.15×range)):
+ *       — Close > ORH + buffer → BUY CE (bullish breakout, ATM strike)
+ *       — Close < ORL − buffer → BUY PE (bearish breakdown, ATM strike)
+ *     The buffer stops bare-touch false breakouts (a poke of a point or two
+ *     beyond the edge that immediately reverses back into the box).
  *   • Take ONE trade per session, intraday MIS, square-off at 15:15 IST.
  *
  * Confirmation filters (all env-toggled):
  *   • Range size sanity: ORH-ORL between ORB_MIN_RANGE_PTS (25) and
- *     ORB_MAX_RANGE_PTS (120). Too tight = noise. Too wide = exhausted.
+ *     ORB_MAX_RANGE_PTS (100). Too tight = noise. Too wide = exhausted.
  *   • Body size: breakout candle body >= ORB_MIN_BODY (8pt)
  *   • Wick rejection: upper/lower wick ratio <= ORB_MAX_WICK_RATIO (0.6).
  *     ORB_WICK_FILTER_ENABLED toggles.
@@ -25,21 +28,26 @@
  *   • Entry window: 9:30 – ORB_ENTRY_END (12:00). Stale breakouts after
  *     noon tend to fade.
  *
- * Exit (handled by route, not signal file):
- *   • Single candle-structure trailing stop (ORB_SL_CANDLES, default 2):
- *     SL = swing of the last N closed candles — CE → lowest low, PE → highest
- *     high — ratcheted in the favourable direction on each candle close. The
- *     same level is both the initial stop and the trail, so a winner rides
- *     until structure breaks. This is the ONLY stop.
- *   • Time stop: hard square-off at 15:15 IST (the only non-stop exit).
- *   • Removed: premium −%/+% SL & target, opposite-edge spot SL, spot target,
- *     move-to-BE, premium lock-in and the continuous-premium trail.
+ * Exit (handled by route, not signal file) — trend-following model (2026-07-09):
+ *   • Initial hard SL = the breakout candle's own low (CE) / high (PE).
+ *   • Breakeven: once favourable by ORB_BREAKEVEN_PTS (20), lift SL to entry.
+ *   • EMA trend-trail (ORB_TRAIL_EMA=20): exit only when a candle CLOSES back
+ *     across the EMA — lets a winner ride the whole trend instead of being
+ *     shaken out by a single pullback.
+ *   • Strong opposite reversal candle (body ≥ ORB_OPP_CANDLE_BODY_MULT×range,
+ *     closing back inside the box) → exit now.
+ *   • Per-trade loss cap ORB_MAX_TRADE_LOSS (₹) — disaster backstop (the daily
+ *     loss gate only fires when flat, so it never caps a single open trade).
+ *   • Time stop: hard square-off at 15:15 IST.
+ *   • REPLACED the old ORB_SL_CANDLES 2-candle swing trail (exited winners on
+ *     the first pullback and gave back most of the peak profit).
  *
  * Returns:
  *   { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
  *     signalStrength, vwap, vwapAligned, volRatio, volPass, wickRatio, wickPass }
  *   (slSpot = opposite-OR-edge fallback, targetSpot = 1.5× range — both kept as
- *    reference values; the route sets the real stop from ORB_SL_CANDLES.)
+ *    reference values; the route sets the real initial stop from the breakout
+ *    candle low/high and then manages it via the exit model above.)
  *   signal:  "BUY_CE" | "BUY_PE" | "NONE"
  *   strength: STRONG when range size is in the sweet spot AND breakout body
  *             strong AND all enabled filters pass. MARGINAL otherwise.
@@ -56,6 +64,13 @@ function _parseMins(envKey, fallback) {
 
 function _utcSecToIstMins(unixSec) {
   return Math.floor((unixSec + 19800) / 60) % 1440;
+}
+
+// IST calendar-day index (days since epoch, IST). Used to day-scope the opening
+// range + VWAP so callers can preload MULTI-DAY history (to seed the EMA trail)
+// without the prior days' 09:15–09:30 bars leaking into today's OR.
+function _istDayOf(unixSec) {
+  return Math.floor((unixSec + 19800) / 86400);
 }
 
 function _hasVolume(c) {
@@ -78,8 +93,10 @@ function _warnNoVolumeOnce(silent) {
 function computeVwap(candles) {
   const rangeStartMin = _parseMins("ORB_RANGE_START", "09:15");
   if (!candles || candles.length === 0) return null;
+  const day = _istDayOf(candles[candles.length - 1].time);
   let sumPV = 0, sumV = 0, sumP = 0, count = 0, anyVol = false;
   for (const c of candles) {
+    if (_istDayOf(c.time) !== day) continue;
     if (_utcSecToIstMins(c.time) < rangeStartMin) continue;
     const tp = (c.high + c.low + c.close) / 3;
     sumP += tp; count++;
@@ -116,14 +133,18 @@ function computeOpeningRange(candles) {
   const rangeStartMin = _parseMins("ORB_RANGE_START", "09:15");
   const rangeEndMin   = _parseMins("ORB_RANGE_END",   "09:30");
   if (!candles || candles.length === 0) return null;
+  // Day-scope to the latest candle's IST day (see _istDayOf). NOTE: we can no
+  // longer `break` on rangeEnd — with multi-day input the array is not a single
+  // ascending intraday run, so we filter every candle instead.
+  const day = _istDayOf(candles[candles.length - 1].time);
 
   let high = -Infinity;
   let low  =  Infinity;
   let count = 0;
   for (const c of candles) {
+    if (_istDayOf(c.time) !== day) continue;
     const m = _utcSecToIstMins(c.time);
-    if (m < rangeStartMin) continue;
-    if (m >= rangeEndMin)  break;
+    if (m < rangeStartMin || m >= rangeEndMin) continue;
     if (c.high > high) high = c.high;
     if (c.low  < low)  low  = c.low;
     count++;
@@ -189,7 +210,7 @@ function getSignal(candles, opts) {
   }
   const rangePts = Math.round((or.high - or.low) * 100) / 100;
   const minR = parseFloat(process.env.ORB_MIN_RANGE_PTS || "25");
-  const maxR = parseFloat(process.env.ORB_MAX_RANGE_PTS || "120");
+  const maxR = parseFloat(process.env.ORB_MAX_RANGE_PTS || "100");
 
   // Compute diagnostics that are used in skip reasons too
   const vwap = computeVwap(candles);
@@ -219,15 +240,23 @@ function getSignal(candles, opts) {
   }
 
   // ── Breakout check on the most recent CLOSED candle ─────────────────────
-  const bullishBreak = last.close > or.high && last.close > last.open && body >= minBody;
-  const bearishBreak = last.close < or.low  && last.close < last.open && body >= minBody;
+  //    Require the close to CLEAR the OR edge by a buffer, not merely touch it.
+  //    Buffer = max(ORB_BREAKOUT_BUFFER_MIN, ORB_BREAKOUT_BUFFER_PCT × range).
+  //    A bare touch (close a fraction beyond ORH/ORL) was the dominant false-
+  //    breakout entry — every near-touch reversed straight back into the box.
+  const bufMin = parseFloat(process.env.ORB_BREAKOUT_BUFFER_MIN || "8");
+  const bufPct = parseFloat(process.env.ORB_BREAKOUT_BUFFER_PCT || "0.15");
+  const buffer = Math.round(Math.max(bufMin, bufPct * rangePts) * 100) / 100;
+  const bullishBreak = last.close > or.high + buffer && last.close > last.open && body >= minBody;
+  const bearishBreak = last.close < or.low  - buffer && last.close < last.open && body >= minBody;
 
   if (!bullishBreak && !bearishBreak) {
     const aboveH = last.close > or.high;
     const belowL = last.close < or.low;
     let why;
     if (aboveH || belowL) {
-      why = `Break ${aboveH ? "above" : "below"} but body too small or against (body=${body.toFixed(1)}pt, min=${minBody}pt)`;
+      const beyond = aboveH ? (last.close - or.high) : (or.low - last.close);
+      why = `Break ${aboveH ? "above ORH" : "below ORL"} by only ${beyond.toFixed(1)}pt < buffer ${buffer}pt (or body ${body.toFixed(1)}pt < ${minBody}pt / against)`;
     } else {
       why = `Close ${last.close} inside range [${or.low}, ${or.high}]`;
     }
@@ -313,7 +342,7 @@ function getSignal(candles, opts) {
     wickRatio:     Math.round(wickRatio * 100) / 100,
     wickPass:      true,
     volPass:       volPass,
-    reason: `ORB ${side} break (close ${last.close} ${side === "CE" ? ">" : "<"} ${side === "CE" ? "ORH" : "ORL"} ${side === "CE" ? or.high : or.low}, range=${rangePts}pt, body=${body.toFixed(1)}pt, wick=${wickRatio.toFixed(2)}${vwap != null ? `, vwap=${vwap}` : ""}${volRatio != null ? `, vol=${volRatio.toFixed(2)}×` : ""}) [${strength}]`,
+    reason: `ORB ${side} break (close ${last.close} ${side === "CE" ? ">" : "<"} ${side === "CE" ? "ORH" : "ORL"} ${side === "CE" ? or.high : or.low} + buffer ${buffer}pt, range=${rangePts}pt, body=${body.toFixed(1)}pt, wick=${wickRatio.toFixed(2)}${vwap != null ? `, vwap=${vwap}` : ""}${volRatio != null ? `, vol=${volRatio.toFixed(2)}×` : ""}) [${strength}]`,
   });
 }
 

@@ -13,6 +13,7 @@
 
 const express = require("express");
 const router  = express.Router();
+const { EMA } = require("technicalindicators");
 const orbStrategy = require("../strategies/orb_breakout");
 const { fetchCandlesCachedBT } = require("../services/backtestEngine");
 const { buildSidebar, sidebarCSS, faviconLink } = require("../utils/sharedNav");
@@ -48,6 +49,16 @@ function istHHMMSS(unixSec) {
 }
 function entryTsStr(unixSec) { return `${istDateOf(unixSec)}, ${istHHMMSS(unixSec)}`; }
 
+// EMA of candle closes up to (and including) index `uptoIdx`. Returns null until
+// `period` closes exist. Mirrors the paper/live EMA trend-trail (technicalindicators).
+function _emaOfCloses(candles, uptoIdx, period) {
+  if (uptoIdx + 1 < period) return null;
+  const closes = [];
+  for (let k = 0; k <= uptoIdx; k++) closes.push(candles[k].close);
+  const arr = EMA.calculate({ period, values: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+
 function runOrbBacktest(allCandles, expirySet) {
   if (!allCandles || !allCandles.length) return [];
 
@@ -57,10 +68,15 @@ function runOrbBacktest(allCandles, expirySet) {
   // Use the same lot-qty helper as paper/live so LOT_MULTIPLIER and
   // NIFTY_LOT_SIZE flow through end-to-end (lot qty = NIFTY_LOT_SIZE × LOT_MULTIPLIER).
   const LOT_SIZE   = instrumentConfig.getLotQty();
-  // Candle-structure stop: SL = swing of last N closed candles, trails each
-  // candle. Mirrors paper/live — the only stop (premium/spot-edge stops, BE,
-  // lock-in, premium trail and the profit target were all removed by design).
-  const SL_CANDLES = Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
+  // Trend-following exit (mirrors paper/live): initial hard SL = breakout candle
+  // low/high, breakeven after +N pts, EMA close-trail, strong-opposite-candle
+  // exit, per-trade rupee loss cap, 15:15 EOD. (Replaced the old 2-candle swing
+  // trail that exited winners on the first pullback.)
+  const TRAIL_EMA      = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
+  const BE_PTS         = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const OPP_ON         = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
+  const OPP_MULT       = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
+  const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
   const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
@@ -96,31 +112,51 @@ function runOrbBacktest(allCandles, expirySet) {
         position = null; continue;
       }
 
-      // In-position exit: candle-structure trailing stop (spot-based).
+      // In-position management (mirrors paper _managePositionOnClose + _checkExits):
+      //   strong-opposite-candle → breakeven → EMA close-trail → per-trade loss
+      //   cap → hard-SL breach. All evaluated on the current candle.
       if (position) {
-        // Ratchet the stop to the swing of the N candles closed before this one
-        // (CE → lowest low, only up; PE → highest high, only down). Mirrors
-        // _updateCandleTrail in paper/live.
-        const win = dayCandles.slice(Math.max(0, i - SL_CANDLES), i);
-        if (win.length) {
-          if (position.side === "CE") {
-            const swingLow = Math.round(Math.min(...win.map(x => x.low)) * 100) / 100;
-            if (swingLow > position.slSpot) position.slSpot = swingLow;
-          } else {
-            const swingHigh = Math.round(Math.max(...win.map(x => x.high)) * 100) / 100;
-            if (swingHigh < position.slSpot) position.slSpot = swingHigh;
+        const _bodyPts = Math.abs(c.close - c.open);
+        // 1. strong opposite reversal candle
+        const _oppThresh = OPP_MULT * (position.rangePts || 0);
+        if (OPP_ON && _oppThresh > 0 && _bodyPts >= _oppThresh &&
+            ((position.side === "CE" && c.close < c.open && c.close < position.orh) ||
+             (position.side === "PE" && c.close > c.open && c.close > position.orl))) {
+          closePos(position, c.close, c.time, `Strong opposite candle (body ${_bodyPts.toFixed(1)}pt)`);
+          trades.push(buildTradeRecord(position)); position = null; continue;
+        }
+        // 2. breakeven — lift hard SL to entry once far enough in profit
+        const _favPts = (c.close - position.entrySpot) * (position.side === "CE" ? 1 : -1);
+        if (!position.breakevenArmed && BE_PTS > 0 && _favPts >= BE_PTS) {
+          if (position.side === "CE" && position.entrySpot > position.slSpot) position.slSpot = position.entrySpot;
+          if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
+          position.breakevenArmed = true;
+        }
+        // 3. EMA close-trail — exit only when THIS candle closes back across the EMA
+        const _ema = _emaOfCloses(dayCandles, i, TRAIL_EMA);
+        if (_ema != null &&
+            ((position.side === "CE" && c.close < _ema) ||
+             (position.side === "PE" && c.close > _ema))) {
+          closePos(position, c.close, c.time, `Closed ${position.side === "CE" ? "below" : "above"} EMA${TRAIL_EMA}`);
+          trades.push(buildTradeRecord(position)); position = null; continue;
+        }
+        // 4. per-trade loss cap (worst-case sim premium within this candle)
+        if (MAX_TRADE_LOSS > 0) {
+          const _spotMove = position.side === "CE" ? (c.low - position.entrySpot) : (position.entrySpot - c.high);
+          const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
+          if ((_curPrem - position.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS) {
+            closePos(position, position.side === "CE" ? c.low : c.high, c.time, `Max trade loss (₹${MAX_TRADE_LOSS})`);
+            trades.push(buildTradeRecord(position)); position = null; continue;
           }
         }
-        // Breach check against this candle's extreme.
+        // 5. hard SL breach against this candle's extreme
         if (position.side === "CE" && c.low <= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Candle SL hit (${position.slSpot}, low of last ${SL_CANDLES})`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
+          closePos(position, position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
+          trades.push(buildTradeRecord(position)); position = null; continue;
         }
         if (position.side === "PE" && c.high >= position.slSpot) {
-          closePos(position, position.slSpot, c.time, `Candle SL hit (${position.slSpot}, high of last ${SL_CANDLES})`);
-          trades.push(buildTradeRecord(position));
-          position = null; continue;
+          closePos(position, position.slSpot, c.time, `Hard SL hit (${position.slSpot})`);
+          trades.push(buildTradeRecord(position)); position = null; continue;
         }
       }
 
@@ -135,11 +171,10 @@ function runOrbBacktest(allCandles, expirySet) {
           if (PREM_GATE_ON && (SEED_PREMIUM < PREM_MIN || SEED_PREMIUM > PREM_MAX)) {
             continue;
           }
-          // Initial candle stop = swing of last N candles incl. breakout candle.
-          const win0 = dayCandles.slice(Math.max(0, i - SL_CANDLES + 1), i + 1);
+          // Initial hard SL = the breakout candle's own low (CE) / high (PE).
           const initSl = sig.side === "CE"
-            ? Math.round(Math.min(...win0.map(x => x.low)) * 100) / 100
-            : Math.round(Math.max(...win0.map(x => x.high)) * 100) / 100;
+            ? Math.round(c.low  * 100) / 100
+            : Math.round(c.high * 100) / 100;
           position = {
             date: istDateOf(c.time),
             side: sig.side,
@@ -148,6 +183,7 @@ function runOrbBacktest(allCandles, expirySet) {
             optionEntryLtp: SEED_PREMIUM,
             orh: sig.orh, orl: sig.orl, rangePts: sig.rangePts,
             slSpot: initSl, targetSpot: sig.targetSpot,
+            breakevenArmed: false,
             signalStrength: sig.signalStrength,
             vwap: sig.vwap, volRatio: sig.volRatio, wickRatio: sig.wickRatio,
             entryReason: sig.reason,
@@ -325,7 +361,7 @@ ${buildSidebar('orbBacktest', liveActive)}
     <button class="preset-btn" onclick="goto('last3y')">Last 3 yr</button>
   </div>
   <div class="notes">
-    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route exactly: a single candle-structure trailing stop — SL = swing of the last ${process.env.ORB_SL_CANDLES || "2"} closed candles (CE → lowest low, PE → highest high), ratcheted on each candle close, with a 15:15 EOD square-off. No premium SL/target, no profit target. Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
+    <b>Backtest sim model:</b> Option premium estimated via δ (BACKTEST_DELTA, default 0.55) + θ (BACKTEST_THETA_DAY, default ₹8/day) seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "180"} per side. Qty per trade = ${instrumentConfig.getLotQty()} (= NIFTY_LOT_SIZE ${process.env.NIFTY_LOT_SIZE || "65"} × LOT_MULTIPLIER ${process.env.LOT_MULTIPLIER || "1"}). Exits mirror the paper-trade route: initial hard SL = breakout candle low/high, breakeven after +${process.env.ORB_BREAKEVEN_PTS || "20"}pt, EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail (exit only when a candle closes back across the EMA), strong-opposite-candle exit, a ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} per-trade loss cap, and a 15:15 EOD square-off. Entry requires the close to clear the OR edge by a buffer (max(${process.env.ORB_BREAKOUT_BUFFER_MIN || "8"}pt, ${process.env.ORB_BREAKOUT_BUFFER_PCT || "0.15"}×range)). Filters (VWAP / volume / wick-ratio / premium-range) are read from env. Use Replay (recorded ticks) for tick-accurate backtests.
   </div>
 </main>
 <script>

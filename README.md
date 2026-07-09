@@ -106,9 +106,10 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE) on candle close. VIX + OI + bid-ask spread guards apply to entries; EOD square-off 10 min before `TRADE_STOP_TIME`. No profit target, no time-stop. The old candle-trail / tiered profit-lock / time-stop were removed.
 
 ### Strategy 4: ORB — Opening Range Breakout (15-min OR, single-leg CE/PE)
-- **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken on a breakout above ORH or a long PE on a breakdown below ORL.
+- **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken when a candle **closes above ORH by a buffer**, a long PE when it **closes below ORL by a buffer**.
 - **Entry filters** (all toggleable):
-  - Range width `[ORB_MIN_RANGE_PTS=25, ORB_MAX_RANGE_PTS=120]` — skips tight noise and exhausted gaps.
+  - **Breakout buffer** (`ORB_BREAKOUT_BUFFER_MIN=8` / `ORB_BREAKOUT_BUFFER_PCT=0.15`): the close must clear the OR edge by `max(8pt, 0.15×range)` — not merely touch it. This filters the bare-touch false breakouts (a poke of a point or two beyond the edge that reverses straight back into the box) that were the dominant losing entry.
+  - Range width `[ORB_MIN_RANGE_PTS=25, ORB_MAX_RANGE_PTS=100]` — skips tight noise and exhausted gaps (an already-run open).
   - Breakout body ≥ `ORB_MIN_BODY=8` pts.
   - **Wick rejection** (`ORB_WICK_FILTER_ENABLED`): opposing wick ≤ `ORB_MAX_WICK_RATIO=0.6` × body.
   - **VWAP alignment** (`ORB_VWAP_FILTER_ENABLED`): CE only above session VWAP, PE only below. On NIFTY spot (no volume) this is always a TWAP (equal-weighted) check, not a true volume-weighted VWAP.
@@ -117,8 +118,13 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
   - **Sweet-spot tiering** (`ORB_SWEET_MIN=30` / `ORB_SWEET_MAX=80` / `ORB_STRONG_BODY=15`): outside sweet spot = MARGINAL (still allowed); inside + breakout body ≥ strong-body = STRONG.
   - **VIX gate**: `ORB_VIX_ENABLED` + `ORB_VIX_MAX_ENTRY=22` / `ORB_VIX_STRONG_ONLY=18`.
   - **Expiry-day-only** (`ORB_EXPIRY_DAY_ONLY`): block ORB on non-expiry sessions when set.
-- **Stop / exit — single candle-structure trailing stop** (`ORB_SL_CANDLES=2`): the SL is the swing of the last N closed candles — CE → lowest low, PE → highest high — recomputed on every candle close and ratcheted in the favourable direction only (never loosens). The same level is both the initial stop and the trail, so a winner rides until structure breaks. This is the **only** stop: the old premium −%/spot-edge stops, move-to-breakeven, premium lock-in, continuous-premium trail and the fixed profit target were all removed. (`ORB_TARGET_RANGE_MULT` is retained only as an informational target line on the chart.)
-- **Risk caps**: 1 trade/day default (`ORB_MAX_DAILY_TRADES=1`), `ORB_MAX_DAILY_LOSS=3000`, forced square-off at `ORB_FORCED_EXIT=15:15` (the only non-stop exit), last entry `ORB_ENTRY_END=12:00` (stale-breakout cutoff).
+- **Exit — trend-following model** (rewritten 2026-07-09; replaced the old `ORB_SL_CANDLES` 2-candle swing trail that exited winners on the first pullback and gave back most of the peak):
+  - **Initial hard SL** = the breakout candle's own low (CE) / high (PE).
+  - **Breakeven** (`ORB_BREAKEVEN_PTS=20`): once the trade is +20 NIFTY pts, the hard SL lifts to the entry price.
+  - **EMA trend-trail** (`ORB_TRAIL_EMA=20`): exit only when a candle **closes back across** the EMA (of 5-min closes) — a winner rides the whole trend instead of being shaken out by one pullback. The EMA is seeded from prior-day candles (via a multi-day preload) so it is live even for a 09:35 entry.
+  - **Strong opposite candle** (`ORB_OPP_CANDLE_EXIT=true`, `ORB_OPP_CANDLE_BODY_MULT=0.3`): exit now when a candle closes against the trade with body ≥ 0.3×OR width, back inside the box.
+  - **Per-trade loss cap** (`ORB_MAX_TRADE_LOSS=1500`): unrealised-₹ backstop — the daily-loss kill only fires when flat, so this is what actually caps a single open trade. (`ORB_TARGET_RANGE_MULT` remains an informational chart line only.)
+- **Risk caps**: 1 trade/day default (`ORB_MAX_DAILY_TRADES=1`), `ORB_MAX_DAILY_LOSS=3000` (daily kill, checked only when flat), forced square-off at `ORB_FORCED_EXIT=15:15`, last entry `ORB_ENTRY_END=12:00` (stale-breakout cutoff).
 
 ### Strategy 5: EMA9 + VWAP — EMA 9 crosses the VWAP ±σ band (5-min, Zerodha)
 - **Signal source** ([src/strategies/ema9_vwap.js](src/strategies/ema9_vwap.js)): EMA 9 (on 5-min close) vs a **session-anchored VWAP with Standard-Deviation bands** — source HLC3, multiplier `EMA9VWAP_BAND_MULT=1` (= ±1σ, the TradingView default). Set the multiplier to `0` to collapse the band to the plain VWAP line.
@@ -342,9 +348,13 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_RANGE_START` / `ORB_RANGE_END` | `09:15` / `09:30` | Opening-range window (IST) |
 | `ORB_ENTRY_END` | `12:00` | Stale-breakout cutoff (no new entries past this) |
 | `ORB_FORCED_EXIT` | `15:15` | Hard EOD square-off |
-| `ORB_MIN_RANGE_PTS` / `ORB_MAX_RANGE_PTS` | `25` / `120` | Range-width band |
+| `ORB_MIN_RANGE_PTS` / `ORB_MAX_RANGE_PTS` | `25` / `100` | Range-width band |
 | `ORB_MIN_BODY` | `8` | Min breakout candle body (pts) |
-| `ORB_SL_CANDLES` | `2` | The only stop: SL = swing of last N closed candles (CE → lowest low, PE → highest high), ratcheted on each candle close. Same level is initial SL + trail. No premium SL / profit target. |
+| `ORB_BREAKOUT_BUFFER_MIN` / `ORB_BREAKOUT_BUFFER_PCT` | `8` / `0.15` | Entry needs close to clear the OR edge by `max(min, pct×range)` — not just touch it |
+| `ORB_TRAIL_EMA` | `20` | Exit trend-trail: exit only when a candle closes back across this EMA of 5-min closes |
+| `ORB_BREAKEVEN_PTS` | `20` | Lift the hard SL to entry once +this many NIFTY pts in profit (`0` = off) |
+| `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR width, closing back inside the box) |
+| `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (the daily kill only fires when flat, so this caps one open trade; `0` = off) |
 | `ORB_TARGET_RANGE_MULT` | `1.5` | Informational target line only (no longer an exit) |
 | `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | Reject candles whose opposing wick exceeds ratio × body |
 | `ORB_VWAP_FILTER_ENABLED` | `true` | CE only above VWAP, PE only below (falls back to TWAP for volumeless candles) |

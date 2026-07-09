@@ -32,6 +32,7 @@ const express = require("express");
 const router  = express.Router();
 const fs      = require("fs");
 const path    = require("path");
+const { EMA } = require("technicalindicators");
 
 const orbStrategy        = require("../strategies/orb_breakout");
 const instrumentConfig   = require("../config/instrument");
@@ -185,15 +186,14 @@ async function placeLiveBuy(side, sigSnapshot) {
     }
   }
 
-  // Candle-structure stop: SL = swing of last N closed candles (CE → lowest low,
-  // PE → highest high). Trails on each candle close. Mirrors orbPaper — the only
-  // stop; premium/spot-edge stops, move-to-BE, lock-in, premium trail and the
-  // profit target were all removed by design.
-  const slCandles = Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
-  const _slLook = (state.candles || []).slice(-slCandles).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
+  // Initial hard SL = the breakout candle's own low (CE) / high (PE). Falls back
+  // to the OR boundary, then sig.slSpot. Mirrors orbPaper: the trade is then
+  // managed on each candle close by _managePositionOnClose (breakeven → EMA
+  // trend-trail → strong-opposite-candle) plus the per-trade loss cap.
+  const _brk = (state.candles || []).filter(c => c && typeof c.low === "number" && typeof c.high === "number").slice(-1)[0];
   let _initSl = side === "CE"
-    ? (_slLook.length ? Math.min(..._slLook.map(c => c.low))  : sigSnapshot.slSpot)
-    : (_slLook.length ? Math.max(..._slLook.map(c => c.high)) : sigSnapshot.slSpot);
+    ? (_brk ? _brk.low  : (sigSnapshot.orl != null ? sigSnapshot.orl : sigSnapshot.slSpot))
+    : (_brk ? _brk.high : (sigSnapshot.orh != null ? sigSnapshot.orh : sigSnapshot.slSpot));
   _initSl = Math.round(_initSl * 100) / 100;
   const pos = {
     side, symbol: optInfo.symbol, optionStrike: optInfo.strike, optionExpiry: optInfo.expiry,
@@ -201,7 +201,8 @@ async function placeLiveBuy(side, sigSnapshot) {
     entryTime: istNow(), entryTimeMs: Date.now(),
     entryBarTime: Math.floor(getBucketStart(Date.now(), RES_MIN) / 1000),
     orh: sigSnapshot.orh, orl: sigSnapshot.orl, rangePts: sigSnapshot.rangePts,
-    targetSpot: sigSnapshot.targetSpot, slCandles, initialSlSpot: _initSl, slSpot: _initSl,
+    targetSpot: sigSnapshot.targetSpot, initialSlSpot: _initSl, slSpot: _initSl,
+    breakevenArmed: false, lastEma: null,
     peakPremium: optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
     vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
@@ -326,23 +327,51 @@ async function _placeLiveSellImpl(reason) {
   stopOptionPolling();
 }
 
-// Ratchet the candle-structure stop on each candle close (mirrors orbPaper).
-function _updateCandleTrail() {
+// EMA of candle closes — null until `period` closes exist (seeded by the
+// multi-day preload). Uses the technicalindicators package (repo convention).
+function _computeEma(candles, period) {
+  if (!candles || candles.length < period) return null;
+  const closes = candles.map(c => c && c.close).filter(v => typeof v === "number");
+  if (closes.length < period) return null;
+  const arr = EMA.calculate({ period, values: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+
+// Per-candle-close management (mirrors orbPaper): strong-opposite-candle →
+// breakeven → EMA trend-trail (exit only on a candle CLOSE back across the EMA).
+async function _managePositionOnClose(bar) {
   const pos = state.position;
-  if (!pos) return;
-  const n = pos.slCandles || Math.max(1, parseInt(process.env.ORB_SL_CANDLES || "2", 10));
-  const closed = (state.candles || []).slice(-n).filter(c => c && typeof c.low === "number" && typeof c.high === "number");
-  if (!closed.length) return;
-  if (pos.side === "CE") {
-    const swingLow = Math.round(Math.min(...closed.map(c => c.low)) * 100) / 100;
-    if (swingLow > pos.slSpot) { log(`📈 Candle trail: SL ${pos.slSpot} → ${swingLow} (low of last ${n})`); pos.slSpot = swingLow; }
-  } else {
-    const swingHigh = Math.round(Math.max(...closed.map(c => c.high)) * 100) / 100;
-    if (swingHigh < pos.slSpot) { log(`📈 Candle trail: SL ${pos.slSpot} → ${swingHigh} (high of last ${n})`); pos.slSpot = swingHigh; }
+  if (!pos || !bar || typeof bar.close !== "number") return;
+  const close = bar.close;
+
+  const oppOn    = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
+  const oppMult  = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
+  const oppThresh = oppMult * (pos.rangePts || 0);
+  const bodyPts  = Math.abs(bar.close - bar.open);
+  if (oppOn && oppThresh > 0 && bodyPts >= oppThresh) {
+    if (pos.side === "CE" && bar.close < bar.open && bar.close < pos.orh) return placeLiveSell(`Strong opposite candle (red body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed below ORH)`);
+    if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) return placeLiveSell(`Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`);
+  }
+
+  const bePts  = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
+  if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
+    if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+    if (pos.side === "PE" && pos.entrySpot < pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
+    pos.breakevenArmed = true;
+    log(`🔒 Breakeven armed — SL → entry ${pos.slSpot} (favourable ${favPts.toFixed(1)}pt ≥ ${bePts}pt)`);
+  }
+
+  const emaPeriod = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
+  const ema = _computeEma(state.candles, emaPeriod);
+  if (ema != null) {
+    pos.lastEma = Math.round(ema * 100) / 100;
+    if (pos.side === "CE" && close < ema) return placeLiveSell(`Closed below EMA${emaPeriod} (${close} < ${pos.lastEma})`);
+    if (pos.side === "PE" && close > ema) return placeLiveSell(`Closed above EMA${emaPeriod} (${close} > ${pos.lastEma})`);
   }
 }
 
-// ── In-position tick management (mirrors paper logic) ──────────────────────
+// ── In-position tick management (mirrors paper): hard SL + per-trade loss cap ──
 function _checkExits(spotPrice) {
   if (!state.position) return;
   const pos = state.position;
@@ -357,15 +386,18 @@ function _checkExits(spotPrice) {
   if (_favPts < (pos.maeSpotPts || 0)) { pos.maeSpotPts = parseFloat(_favPts.toFixed(2)); pos.secsToMAE = parseFloat(((Date.now() - pos.entryTimeMs) / 1000).toFixed(1)); }
   if (_curPnl < (pos.maePnl     || 0)) pos.maePnl     = parseFloat(_curPnl.toFixed(2));
 
-  // Candle-structure trailing stop (spot-based) — the only stop. No premium
-  // SL/target, no opposite-edge spot SL, no move-to-BE/lock-in/premium trail,
-  // no profit target. EOD square-off still runs in onTick.
-  if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Candle SL hit (${spotPrice} <= ${pos.slSpot}, low of last ${pos.slCandles})`);
-  if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Candle SL hit (${spotPrice} >= ${pos.slSpot}, high of last ${pos.slCandles})`);
+  // Per-trade loss cap (unrealised rupees) — the daily-loss gate only fires when
+  // flat, so this is what actually caps a single open trade.
+  const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
+  if (maxTradeLoss > 0 && _curPnl <= -maxTradeLoss) return placeLiveSell(`Max trade loss (₹${Math.round(_curPnl)} ≤ -₹${maxTradeLoss})`);
+
+  // Hard SL (breakout candle low/high, lifted to breakeven) — spot-based, per tick.
+  if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≤ ${pos.slSpot})`);
+  if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≥ ${pos.slSpot})`);
 }
 
 async function onCandleClose(bar) {
-  if (state.position) { _updateCandleTrail(); return; }
+  if (state.position) { await _managePositionOnClose(bar); return; }
   const _spot = bar && bar.close;
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot, _live: true }); return; }
@@ -429,11 +461,15 @@ async function preloadHistory() {
   try {
     const { fetchCandlesCached } = require("../utils/candleCache");
     const { fetchCandles } = require("../services/backtestEngine");
-    const istToday = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), istToday, istToday, fetchCandles);
+    const _now = new Date();
+    const istToday = _now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    // ~7 calendar days so the EMA trend-trail is seeded before the open (OR/VWAP
+    // are day-scoped in the strategy, so prior days don't pollute today's range).
+    const istStart = new Date(_now.getTime() - 7 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const candles = await fetchCandlesCached(NIFTY_INDEX_SYMBOL, String(RES_MIN), istStart, istToday, fetchCandles);
     if (Array.isArray(candles) && candles.length) {
       state.candles = candles.slice(-200);
-      log(`📊 Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles`);
+      log(`📊 Preloaded ${state.candles.length} × ${RES_MIN}-min spot candles (${istStart}→${istToday}, EMA-seeded)`);
     }
   } catch (e) { log(`⚠️ Preload failed: ${e.message}`); }
 }
@@ -766,7 +802,7 @@ router.get("/status", (req, res) => {
           <div id="ajax-nifty-move" style="font-size:0.63rem;color:${spotMove != null && spotMove >= 0 ? "#10b981" : "#ef4444"};margin-top:2px;">${spotMove != null ? (spotMove >= 0 ? "▲" : "▼") + " " + Math.abs(spotMove).toFixed(1) + " pts" : "—"}</div>
         </div>
         <div style="background:#1c1400;border:1px solid #78350f;border-radius:8px;padding:12px 14px;">
-          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Trailing SL${pos.slCandles ? ` (${pos.slCandles}c)` : ""}</div>
+          <div style="font-size:0.6rem;color:#4a6080;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Hard SL${pos.breakevenArmed ? " (BE)" : ""}${pos.lastEma ? ` · EMA ${pos.lastEma}` : ""}</div>
           <div style="font-size:1.05rem;font-weight:700;color:#f59e0b;">${pos.slSpot ? "₹" + pos.slSpot.toFixed(2) : "—"}</div>
         </div>
         <div style="background:#0a1f12;border:1px solid #0d4030;border-radius:8px;padding:12px 14px;">
