@@ -50,6 +50,7 @@ const tradeLogger = require("../utils/tradeLogger");
 const skipLogger  = require("../utils/skipLogger");
 const fyers       = require("../config/fyers");
 const fyersBroker = require("../services/fyersBroker");
+const tradeGuards = require("../utils/tradeGuards");
 const { notifyEntry, notifyExit, notifyStarted, notifyDayReport, sendTelegram } = require("../utils/notify");
 const { getCharges } = require("../utils/charges");
 const { getISTMinutes, getBucketStart, fmtISTDateTime } = require("../utils/tradeUtils");
@@ -155,24 +156,37 @@ async function placeLiveBuy(side, sigSnapshot) {
   catch (e) { log(`❌ Symbol resolve failed: ${e.message}`); return; }
   if (!optInfo || optInfo.invalid) { log(`❌ No valid expiry — skip ${side} entry`); return; }
 
-  // Fetch current option LTP for entry premium reference
-  let optionEntryLtp = null;
+  // Fetch current option quote (LTP + bid/ask for the STEP 8 spread gate)
+  let optionEntryLtp = null, optBid = null, optAsk = null;
   try {
     const r = await fyers.getQuotes([optInfo.symbol]);
     if (r && r.s === "ok" && r.d && r.d.length) {
-      const ltp = r.d[0].v && (r.d[0].v.lp || r.d[0].v.ltp);
-      if (typeof ltp === "number" && ltp > 0) optionEntryLtp = ltp;
+      const v = r.d[0].v || {};
+      const ltp = v.lp || v.ltp;
+      if (typeof ltp === "number" && ltp > 0) {
+        optionEntryLtp = ltp;
+        optBid = Number(v.bid || v.bid_price || 0) || null;
+        optAsk = Number(v.ask || v.ask_price || 0) || null;
+      }
     }
   } catch (_) {}
   if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
 
-  // ── Premium-range gate (skip illiquid / deep-OTM / ITM strikes) ─────────
-  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "80");
-  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "250");
+  // ── STEP 8 — Option filter: ATM (resolved above), premium band, spread ──
+  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "100");
+  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "220");
   const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
     log(`⏸️ [ORB-LIVE] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
     skipLogger.appendSkipLog("orb", { gate: "premium_range", reason: `LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}]`, symbol: optInfo.symbol, side, spot, optLtp: optionEntryLtp, _live: true });
+    return;
+  }
+  // Bid-ask spread gate — fails OPEN when the broker snapshot lacks depth.
+  const maxSpread = parseFloat(process.env.ORB_MAX_SPREAD_PTS || process.env.MAX_BID_ASK_SPREAD_PTS || "2");
+  const _sp = tradeGuards.checkSpread(optBid, optAsk, maxSpread);
+  if (!_sp.ok) {
+    log(`⏸️ [ORB-LIVE] Spread gate: ${optInfo.symbol} ${_sp.reason} > ${maxSpread}pt — entry skipped`);
+    skipLogger.appendSkipLog("orb", { gate: "spread", reason: `${_sp.reason} > ${maxSpread}pt`, symbol: optInfo.symbol, side, spot, spread: _sp.spread, _live: true });
     return;
   }
 

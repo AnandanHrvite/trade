@@ -106,21 +106,20 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Exit — breakeven then swing trail**: once peak PnL ≥ `PA_BREAKEVEN_TRIGGER=300` (₹), the SL lifts to entry ± `PA_BREAKEVEN_BUFFER=1` pts (a winner can't round-trip to a loss); from there the structure trail tightens the SL to each new swing low (CE) / swing high (PE) on candle close. VIX + OI + bid-ask spread guards apply to entries; EOD square-off 10 min before `TRADE_STOP_TIME`. No profit target, no time-stop. The old candle-trail / tiered profit-lock / time-stop were removed.
 
 ### Strategy 4: ORB — Opening Range Breakout (15-min OR, single-leg CE/PE)
-- **Opening range**: high/low of the configured window (`ORB_RANGE_START=09:15` → `ORB_RANGE_END=09:30` by default). After `ORB_RANGE_END`, a long CE is taken when a candle **closes above ORH by a buffer**, a long PE when it **closes below ORL by a buffer**.
-- **Entry filters** (all toggleable):
-  - **Breakout buffer** (`ORB_BREAKOUT_BUFFER_MIN=8` / `ORB_BREAKOUT_BUFFER_PCT=0.15`): the close must clear the OR edge by `max(8pt, 0.15×range)` — not merely touch it. This filters the bare-touch false breakouts (a poke of a point or two beyond the edge that reverses straight back into the box) that were the dominant losing entry.
-  - **Retest-entry gate** (`ORB_RETEST_ENABLED=false`, **experimental / backtest only**): when on, the engine does not buy the breakout candle — it arms on the breakout, then enters only once a later candle pulls back to within `max(ORB_RETEST_TOL_MIN=5pt, ORB_RETEST_TOL_PCT=0.1×range)` of the broken OR edge **and** closes back on the breakout side (the level held), within `ORB_RETEST_MAX_WAIT=6` candles. Rejects poke-and-reverse false breakouts and gives a tighter entry; the cost is that any day which never pulls back takes **no trade** (you miss the runaway-trend days). Not yet wired into paper/live — validate in the backtest first.
-  - Range width `[ORB_MIN_RANGE_PTS=25, ORB_MAX_RANGE_PTS=100]` — skips tight noise and exhausted gaps (an already-run open).
-  - Breakout body ≥ `ORB_MIN_BODY=8` pts.
-  - **Wick rejection** (`ORB_WICK_FILTER_ENABLED`): opposing wick ≤ `ORB_MAX_WICK_RATIO=0.6` × body.
-  - **VWAP alignment** (`ORB_VWAP_FILTER_ENABLED`): CE only above session VWAP, PE only below. On NIFTY spot (no volume) this is always a TWAP (equal-weighted) check, not a true volume-weighted VWAP.
-  - **Volume confirmation** (`ORB_VOL_FILTER_ENABLED`, **default off**): breakout volume ≥ `ORB_VOL_MULT=1.2` × prior `ORB_VOL_LOOKBACK=5` candle avg. Disabled by default — NIFTY spot has no real volume, so it can't agree across paper/live (a tick count) and backtest (zero).
-  - **Premium-range gate** (`ORB_PREMIUM_GATE_ENABLED`): ATM LTP must sit inside `[ORB_PREMIUM_MIN=80, ORB_PREMIUM_MAX=250]` to filter out deep-OTM lottery tickets and ITM-acting-like-futures.
-  - **Sweet-spot tiering** (`ORB_SWEET_MIN=30` / `ORB_SWEET_MAX=80` / `ORB_STRONG_BODY=15`): outside sweet spot = MARGINAL (still allowed); inside + breakout body ≥ strong-body = STRONG.
-  - **VIX gate**: `ORB_VIX_ENABLED` + `ORB_VIX_MAX_ENTRY=22` / `ORB_VIX_STRONG_ONLY=18`.
-  - **Expiry-day-only** (`ORB_EXPIRY_DAY_ONLY`): block ORB on non-expiry sessions when set.
+- **Entry Engine V2 — Confirmed Breakout** (`ORB_ENTRY_V2_ENABLED=true`, **default**; 2026-07-09 redesign in [src/strategies/orb_breakout.js](src/strategies/orb_breakout.js)). Built to kill false breakouts and raise expectancy, **not** to raise trade count. The 09:15–09:30 opening range is **frozen** after 09:30 and never recomputed. A trade requires **all** of the following, in order:
+  1. **Range band** (`ORB_MIN_RANGE_PTS=30` … `ORB_MAX_RANGE_PTS=80`) — outside this the day is skipped (too tight = noise, too wide = the open already ran).
+  2. **Gap gate** (`ORB_MAX_GAP_PTS=80`) — skip the day when `|today open − prior close| > 80` (news/overnight shock). Fails open on the first day of a backtest range (no prior close in the window).
+  3. **Breakout beyond a buffer** — the **first** 5-min close to clear the OR edge by `max(ORB_BREAKOUT_BUFFER_MIN=10, ORB_BREAKOUT_BUFFER_PCT=0.20×range)` is the *one committed breakout* of the day (no chasing a second break — STEP 9).
+  4. **Breakout-candle quality** (evaluated on that breakout candle): green/red in the trade direction, body ≥ `ORB_MIN_BODY=15` pts, body ≥ `ORB_BODY_PCT_MIN=0.60` of the candle range, breakout-side wick ≤ `ORB_WICK_PCT_MAX=0.25` of the range, close within the top/bottom `ORB_CLOSE_POS_PCT=0.20` of the candle, close on the correct side of session VWAP (`ORB_VWAP_FILTER_ENABLED`), EMA`ORB_TREND_EMA_FAST=20` slope in the trade direction, and RSI (`ORB_RSI_PERIOD=14`) `> ORB_RSI_CE_MIN=55` (CE) / `< ORB_RSI_PE_MAX=45` (PE). Any miss ⇒ no trade that day.
+  5. **Next-candle confirmation** (`ORB_CONFIRM_ENABLED=true`) — **do not buy the breakout candle.** Enter only if the *next* completed candle extends the move: stays beyond the OR edge (close), a **higher-high + higher-close** (CE) / **lower-low + lower-close** (PE) vs the breakout candle. If it fails, the day is done — no re-entry.
+  6. **Trend regime** (evaluated at the entry candle): EMA20 `>` EMA`ORB_TREND_EMA_SLOW=50` and ADX(`ORB_ADX_PERIOD=14`) `> ORB_ADX_MIN=20` for CE (mirrored for PE) — only trade when a directional regime exists, not chop.
+  7. Skip conditions (range / gap above; holiday sessions form no OR so take no trade).
+  8. **Option filter (STEP 8)**: ATM strike only, ATM LTP inside `[ORB_PREMIUM_MIN=100, ORB_PREMIUM_MAX=220]` (`ORB_PREMIUM_GATE_ENABLED`), and bid-ask spread ≤ `ORB_MAX_SPREAD_PTS=2` (falls back to the global `MAX_BID_ASK_SPREAD_PTS`; fails open when the snapshot has no depth). Live/paper only — the backtest has no option chain.
+  9. **One trade/day** (`ORB_MAX_DAILY_TRADES=1`): a failed confirmation does **not** trigger a second breakout attempt.
+  - Entry is on the **confirmation candle's close**; the route sets the initial hard SL from that candle's own low (CE) / high (PE). EMA/EMA/ADX/RSI are seeded from a multi-day preload (paper/live keep ~300 bars; the backtest feeds `getSignal` a trailing `ORB_SIG_WINDOW=260`-bar window), while the OR + VWAP stay day-scoped so prior days never leak in.
+- **Legacy Engine V1** (`ORB_ENTRY_V2_ENABLED=false`): the previous immediate-entry engine — buys the breakout candle's close once it clears the buffer, with wick/body (`ORB_WICK_FILTER_ENABLED`, `ORB_MAX_WICK_RATIO=0.6`), VWAP, and volume (`ORB_VOL_FILTER_ENABLED`, default off) filters only, plus sweet-spot STRONG/MARGINAL tiering (`ORB_SWEET_MIN=30`/`ORB_SWEET_MAX=80`/`ORB_STRONG_BODY=15`). Kept for A/B against the pre-redesign 717-trade baseline. The `ORB_RETEST_ENABLED` retest gate remains a backtest-only experiment on top of V1/V2. **VIX gate** (`ORB_VIX_ENABLED`) and **expiry-day-only** (`ORB_EXPIRY_DAY_ONLY`) apply to both engines.
 - **Exit — trend-following model** (rewritten 2026-07-09; replaced the old `ORB_SL_CANDLES` 2-candle swing trail that exited winners on the first pullback and gave back most of the peak):
-  - **Initial hard SL** = the breakout candle's own low (CE) / high (PE).
+  - **Initial hard SL** = the entry (confirmation) candle's own low (CE) / high (PE). (Under V1 this is the breakout candle itself, since V1 enters on the breakout candle.)
   - **Breakeven** (`ORB_BREAKEVEN_PTS=20`): once the trade is +20 NIFTY pts, the hard SL lifts to the entry price.
   - **EMA trend-trail** (`ORB_TRAIL_EMA=20`): exit only when a candle **closes back across** the EMA (of 5-min closes) — a winner rides the whole trend instead of being shaken out by one pullback. The EMA is seeded from prior-day candles (via a multi-day preload) so it is live even for a 09:35 entry.
   - **Strong opposite candle** (`ORB_OPP_CANDLE_EXIT=true`, `ORB_OPP_CANDLE_BODY_MULT=0.3`): exit now when a candle closes against the trade with body ≥ 0.3×OR width, back inside the box.
@@ -349,10 +348,19 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_RANGE_START` / `ORB_RANGE_END` | `09:15` / `09:30` | Opening-range window (IST) |
 | `ORB_ENTRY_END` | `12:00` | Stale-breakout cutoff (no new entries past this) |
 | `ORB_FORCED_EXIT` | `15:15` | Hard EOD square-off |
-| `ORB_MIN_RANGE_PTS` / `ORB_MAX_RANGE_PTS` | `25` / `100` | Range-width band |
-| `ORB_MIN_BODY` | `8` | Min breakout candle body (pts) |
-| `ORB_BREAKOUT_BUFFER_MIN` / `ORB_BREAKOUT_BUFFER_PCT` | `8` / `0.15` | Entry needs close to clear the OR edge by `max(min, pct×range)` — not just touch it |
-| `ORB_RETEST_ENABLED` | `false` | Experimental (backtest only): enter on a pullback-and-hold retest of the OR edge instead of the breakout candle. See ORB entry filters above |
+| `ORB_ENTRY_V2_ENABLED` | `true` | **Confirmed-breakout engine (default).** OFF = legacy immediate-entry engine (V1) for A/B. See ORB entry section above |
+| `ORB_MIN_RANGE_PTS` / `ORB_MAX_RANGE_PTS` | `30` / `80` | Range-width band (STEP 2) |
+| `ORB_MIN_BODY` | `15` | Min breakout candle body (pts, STEP 4) |
+| `ORB_BREAKOUT_BUFFER_MIN` / `ORB_BREAKOUT_BUFFER_PCT` | `10` / `0.20` | Entry needs close to clear the OR edge by `max(min, pct×range)` — not just touch it (STEP 3) |
+| `ORB_CONFIRM_ENABLED` | `true` | V2 STEP 5: require the next candle to extend the move (HH/HC ∙ LL/LC) before entering |
+| `ORB_BODY_PCT_MIN` / `ORB_WICK_PCT_MAX` / `ORB_CLOSE_POS_PCT` | `0.60` / `0.25` / `0.20` | V2 STEP 4 breakout-candle shape: body ≥ % of candle, breakout-side wick ≤ % of candle, close within top/bottom % of candle |
+| `ORB_RSI_PERIOD` / `ORB_RSI_CE_MIN` / `ORB_RSI_PE_MAX` | `14` / `55` / `45` | V2 STEP 4 RSI gate on the breakout candle |
+| `ORB_TREND_EMA_FAST` / `ORB_TREND_EMA_SLOW` | `20` / `50` | V2 STEP 6 trend regime (also STEP-4 EMA-slope). CE: fast>slow, PE: fast<slow |
+| `ORB_ADX_PERIOD` / `ORB_ADX_MIN` | `14` / `20` | V2 STEP 6: require ADX above min (directional strength, not chop) |
+| `ORB_MAX_GAP_PTS` | `80` | V2 STEP 7: skip day when `|today open − prior close|` exceeds this (`0` = off) |
+| `ORB_MAX_SPREAD_PTS` | `2` | STEP 8: skip when ATM option ask−bid exceeds this (falls back to `MAX_BID_ASK_SPREAD_PTS`; fails open with no depth) |
+| `ORB_SIG_WINDOW` | `260` | Backtest only: trailing multi-day bar window fed to `getSignal` so V2 can seed EMA/EMA/ADX/RSI |
+| `ORB_RETEST_ENABLED` | `false` | Experimental (backtest only): enter on a pullback-and-hold retest of the OR edge instead of the breakout candle. See ORB entry section above |
 | `ORB_RETEST_TOL_MIN` / `ORB_RETEST_TOL_PCT` | `5` / `0.1` | Retest zone depth: price must return within `max(min, pct×range)` of the broken edge |
 | `ORB_RETEST_MAX_WAIT` | `6` | Give up (no trade) if no retest within this many 5-min candles after the breakout |
 | `ORB_TRAIL_EMA` | `20` | Exit trend-trail: exit only when a candle closes back across this EMA of 5-min closes |
@@ -360,13 +368,13 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR width, closing back inside the box) |
 | `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (the daily kill only fires when flat, so this caps one open trade; `0` = off) |
 | `ORB_TARGET_RANGE_MULT` | `1.5` | Informational target line only (no longer an exit) |
-| `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | Reject candles whose opposing wick exceeds ratio × body |
+| `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | **V1 only.** Reject candles whose opposing wick exceeds ratio × body (V2 uses `ORB_WICK_PCT_MAX` instead) |
 | `ORB_VWAP_FILTER_ENABLED` | `true` | CE only above VWAP, PE only below (falls back to TWAP for volumeless candles) |
 | `ORB_VOL_FILTER_ENABLED` | `false` | Breakout volume ≥ multiplier × avg of prior N. **Off by default** — NIFTY spot has no real volume (paper/live see a tick count, backtest sees zero), so the gate can't agree across modes |
 | `ORB_VOL_MULT` / `ORB_VOL_LOOKBACK` | `1.2` / `5` | Volume filter inputs |
 | `ORB_PREMIUM_GATE_ENABLED` | `true` | Skip when ATM LTP is outside `[ORB_PREMIUM_MIN, ORB_PREMIUM_MAX]` |
-| `ORB_PREMIUM_MIN` / `ORB_PREMIUM_MAX` | `80` / `250` | Acceptable ATM-premium band (₹) |
-| `ORB_SWEET_MIN` / `ORB_SWEET_MAX` / `ORB_STRONG_BODY` | `30` / `80` / `15` | Sweet-spot tiering (STRONG vs MARGINAL) |
+| `ORB_PREMIUM_MIN` / `ORB_PREMIUM_MAX` | `100` / `220` | Acceptable ATM-premium band (₹, STEP 8) |
+| `ORB_SWEET_MIN` / `ORB_SWEET_MAX` / `ORB_STRONG_BODY` | `30` / `80` / `15` | **V1 only.** Sweet-spot tiering (STRONG vs MARGINAL) |
 | `ORB_VIX_ENABLED` | `false` | Independent VIX filter |
 | `ORB_VIX_MAX_ENTRY` / `ORB_VIX_STRONG_ONLY` | `22` / `18` | Per-mode VIX thresholds |
 | `ORB_MAX_DAILY_TRADES` | `1` | Textbook 1/day — raise only if you accept the chop |

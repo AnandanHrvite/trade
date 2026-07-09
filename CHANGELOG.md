@@ -6,6 +6,21 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### ORB — entry logic redesign: confirmed-breakout engine V2 (`ORB_ENTRY_V2_ENABLED`, default ON)
+
+- **Complete rewrite of the ORB *entry* logic to attack the root cause of the 717-trade / 17%-win backtest: poor entry quality, not poor exits.** The new engine ([src/strategies/orb_breakout.js](src/strategies/orb_breakout.js) `getSignal`) is shared by backtest **and** paper **and** live, so all three stay identical. Exits (breakeven → EMA trend-trail → strong-opposite → per-trade cap → 15:15) are unchanged. Ordered gates:
+  1. **Frozen OR** 09:15–09:30, never recomputed (STEP 1).
+  2. **Range band** `ORB_MIN_RANGE_PTS=30`…`ORB_MAX_RANGE_PTS=80` (was 25/100) — skip too-tight (noise) and too-wide (open already ran) days (STEP 2).
+  3. **Buffer** = `max(ORB_BREAKOUT_BUFFER_MIN=10, ORB_BREAKOUT_BUFFER_PCT=0.20×range)` (was 8/0.15); the **first** close to clear it is the *one committed breakout* of the day (STEP 3).
+  4. **Breakout-candle quality**: green/red, body ≥ `ORB_MIN_BODY=15`pt **and** ≥ `ORB_BODY_PCT_MIN=0.60` of the candle, breakout-side wick ≤ `ORB_WICK_PCT_MAX=0.25`, close in the top/bottom `ORB_CLOSE_POS_PCT=0.20`, close beyond VWAP, EMA20 slope in-trend, RSI `>55`(CE)/`<45`(PE) (STEP 4).
+  5. **Next-candle confirmation** (`ORB_CONFIRM_ENABLED=true`) — **does not buy the breakout candle**; enters only if the *next* candle holds beyond the edge with a higher-high+higher-close (CE) / lower-low+lower-close (PE). The core false-breakout filter (STEP 5).
+  6. **Trend regime**: EMA`ORB_TREND_EMA_FAST=20` vs EMA`ORB_TREND_EMA_SLOW=50` + ADX(`ORB_ADX_PERIOD=14`) `> ORB_ADX_MIN=20` (STEP 6).
+  7. **Gap gate** `ORB_MAX_GAP_PTS=80` — skip news/overnight-shock days (STEP 7).
+  8. **Option filter**: ATM, premium `[ORB_PREMIUM_MIN=100, ORB_PREMIUM_MAX=220]` (was 80/250), and a new bid-ask **spread gate** `ORB_MAX_SPREAD_PTS=2` now wired into paper + live (fails open with no depth) (STEP 8).
+  9. **One committed breakout/day** — a failed confirmation does not trigger a second attempt (STEP 9).
+- **Enters on the confirmation candle's close**; the route's initial hard SL is that candle's low (CE) / high (PE). Indicators are seeded from a multi-day preload — the **backtest now feeds `getSignal` a trailing `ORB_SIG_WINDOW=260`-bar multi-day window** (previously a single day, which couldn't seed a 50-EMA/ADX), with OR + VWAP still day-scoped so prior days never leak into today's range.
+- **`ORB_ENTRY_V2_ENABLED=false`** falls back to the legacy immediate-entry engine (V1, unchanged) to A/B against the pre-redesign baseline in the backtest. 16 new Settings knobs + README updated. Verified with an offline behavioural harness (confirmation gating, first-breakout-only, one-trade/day, multi-day EMA/ADX seeding).
+
 ### ORB backtest — experimental retest-entry gate (`ORB_RETEST_ENABLED`, default off)
 
 - **New optional entry mode for the ORB backtest that enters on a *retest* of the opening-range edge instead of the breakout candle.** With `ORB_RETEST_ENABLED=true`, the engine arms on the breakout but doesn't buy; it enters only once a later candle pulls back to within `max(ORB_RETEST_TOL_MIN=5pt, ORB_RETEST_TOL_PCT=0.1×range)` of the broken OR edge **and** closes back on the breakout side (level held), within `ORB_RETEST_MAX_WAIT=6` candles — otherwise no trade that day. Motivation: across 2021–2026 the immediate-entry ORB wins only ~17% (profit factor 0.60); the dominant losers are poke-and-reverse false breakouts, which a retest filters out. The known cost is skipping runaway-trend days that never pull back (some of the biggest winners). **Default off; backtest-only for now** — not wired into paper/live (would need porting into `orb_breakout.getSignal`). Exposed as four Settings knobs and documented in the backtest notes panel; the results page self-labels when the gate is on. `runOrbBacktest` is now exported for offline unit-testing of the entry/exit engine.

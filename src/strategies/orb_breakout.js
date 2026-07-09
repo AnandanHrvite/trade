@@ -1,60 +1,40 @@
 /**
  * ORB — Opening Range Breakout (15-minute opening range, single-leg option buy)
  * ─────────────────────────────────────────────────────────────────────────────
- * Setup:
- *   • Build a 15-min "opening range" from the first 9:15–9:30 candles.
- *   • Once range is locked, watch for a 5-min CLOSE that CLEARS the range by a
- *     buffer (max(ORB_BREAKOUT_BUFFER_MIN=8, ORB_BREAKOUT_BUFFER_PCT=0.15×range)):
- *       — Close > ORH + buffer → BUY CE (bullish breakout, ATM strike)
- *       — Close < ORL − buffer → BUY PE (bearish breakdown, ATM strike)
- *     The buffer stops bare-touch false breakouts (a poke of a point or two
- *     beyond the edge that immediately reverses back into the box).
- *   • Take ONE trade per session, intraday MIS, square-off at 15:15 IST.
+ * Two entry engines live here, switched by ORB_ENTRY_V2_ENABLED (default TRUE):
  *
- * Confirmation filters (all env-toggled):
- *   • Range size sanity: ORH-ORL between ORB_MIN_RANGE_PTS (25) and
- *     ORB_MAX_RANGE_PTS (100). Too tight = noise. Too wide = exhausted.
- *   • Body size: breakout candle body >= ORB_MIN_BODY (8pt)
- *   • Wick rejection: upper/lower wick ratio <= ORB_MAX_WICK_RATIO (0.6).
- *     ORB_WICK_FILTER_ENABLED toggles.
- *   • VWAP alignment: CE only if close > VWAP, PE only if close < VWAP.
- *     ORB_VWAP_FILTER_ENABLED toggles. Falls back to TWAP if candles carry
- *     no volume.
- *   • Volume confirmation: breakout candle volume >= ORB_VOL_MULT × prev-5
- *     candle average. ORB_VOL_FILTER_ENABLED toggles — DEFAULT OFF: NIFTY spot
- *     has no real volume, so paper/live see only a per-tick COUNT while backtest
- *     candles carry zero; the gate can't agree across modes, so it's disabled.
- *     (Still silently skipped if somehow on and candles carry no volume.)
- *   • Entry window: 9:30 – ORB_ENTRY_END (12:00). Stale breakouts after
- *     noon tend to fade.
+ *   V2 — CONFIRMED-BREAKOUT engine (2026-07-09 redesign) ← DEFAULT
+ *     Purpose: kill false breakouts and raise expectancy, NOT raise trade count.
+ *     A 5-min close must CLEAR the frozen 09:15–09:30 range by a buffer AND the
+ *     breakout candle must be a strong, one-directional bar AND the *next* candle
+ *     must extend the move (higher-high / higher-close). Only then do we buy —
+ *     one committed breakout attempt per day, no chasing a second break.
+ *     Full step-by-step in _getSignalV2 below.
  *
- * Exit (handled by route, not signal file) — trend-following model (2026-07-09):
- *   • Initial hard SL = the breakout candle's own low (CE) / high (PE).
+ *   V1 — legacy immediate-entry engine (kept for A/B against the 717-trade
+ *     baseline). Buys the breakout candle's own close once it clears the buffer;
+ *     wick / VWAP / volume filters only. See _getSignalV1.
+ *
+ * Exit (handled by route, not signal file) — trend-following model:
+ *   • Initial hard SL = the entry candle's own low (CE) / high (PE).
  *   • Breakeven: once favourable by ORB_BREAKEVEN_PTS (20), lift SL to entry.
  *   • EMA trend-trail (ORB_TRAIL_EMA=20): exit only when a candle CLOSES back
- *     across the EMA — lets a winner ride the whole trend instead of being
- *     shaken out by a single pullback.
- *   • Strong opposite reversal candle (body ≥ ORB_OPP_CANDLE_BODY_MULT×range,
- *     closing back inside the box) → exit now.
- *   • Per-trade loss cap ORB_MAX_TRADE_LOSS (₹) — disaster backstop (the daily
- *     loss gate only fires when flat, so it never caps a single open trade).
- *   • Time stop: hard square-off at 15:15 IST.
- *   • REPLACED the old ORB_SL_CANDLES 2-candle swing trail (exited winners on
- *     the first pullback and gave back most of the peak profit).
+ *     across the EMA — lets a winner ride the whole trend.
+ *   • Strong opposite reversal candle → exit now.
+ *   • Per-trade loss cap ORB_MAX_TRADE_LOSS (₹). Time stop: square-off 15:15 IST.
+ *   Exits were NOT changed by the 2026-07-09 entry redesign.
  *
- * Returns:
+ * Returns (both engines):
  *   { signal, side, reason, orh, orl, rangePts, entrySpot, slSpot, targetSpot,
- *     signalStrength, vwap, vwapAligned, volRatio, volPass, wickRatio, wickPass }
- *   (slSpot = opposite-OR-edge fallback, targetSpot = 1.5× range — both kept as
- *    reference values; the route sets the real initial stop from the breakout
- *    candle low/high and then manages it via the exit model above.)
+ *     signalStrength, vwap, vwapAligned, volRatio, volPass, wickRatio, wickPass,
+ *     // V2 diagnostics: rsi, adx, emaFast, emaSlow, gapPts, bodyPct, confirmed }
  *   signal:  "BUY_CE" | "BUY_PE" | "NONE"
- *   strength: STRONG when range size is in the sweet spot AND breakout body
- *             strong AND all enabled filters pass. MARGINAL otherwise.
  */
 
+const { EMA, RSI, ADX } = require("technicalindicators");
+
 const NAME        = "ORB_15MIN";
-const DESCRIPTION = "Opening Range Breakout — 15-min OR, 5-min confirm, ATM CE/PE buying";
+const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, ATM CE/PE buying";
 
 function _parseMins(envKey, fallback) {
   const v = (process.env[envKey] || fallback).trim();
@@ -67,11 +47,13 @@ function _utcSecToIstMins(unixSec) {
 }
 
 // IST calendar-day index (days since epoch, IST). Used to day-scope the opening
-// range + VWAP so callers can preload MULTI-DAY history (to seed the EMA trail)
+// range + VWAP so callers can preload MULTI-DAY history (to seed EMA/RSI/ADX)
 // without the prior days' 09:15–09:30 bars leaking into today's OR.
 function _istDayOf(unixSec) {
   return Math.floor((unixSec + 19800) / 86400);
 }
+
+function _r2(x) { return Math.round(x * 100) / 100; }
 
 function _hasVolume(c) {
   return c && typeof c.volume === "number" && c.volume > 0;
@@ -127,15 +109,15 @@ function computeVolumeRatio(candles, lookback) {
 
 /**
  * Compute the opening range from the first 9:15–9:30 candles in `candles`.
+ * Day-scoped to the latest candle's IST day, so multi-day input never leaks a
+ * prior day's OR into today. Deterministic from the frozen window — calling it
+ * again after 09:30 always returns the same ORH/ORL (STEP 1: never recalculate).
  * Returns null if the range cannot yet be determined (still in OR window).
  */
 function computeOpeningRange(candles) {
   const rangeStartMin = _parseMins("ORB_RANGE_START", "09:15");
   const rangeEndMin   = _parseMins("ORB_RANGE_END",   "09:30");
   if (!candles || candles.length === 0) return null;
-  // Day-scope to the latest candle's IST day (see _istDayOf). NOTE: we can no
-  // longer `break` on rangeEnd — with multi-day input the array is not a single
-  // ascending intraday run, so we filter every candle instead.
   const day = _istDayOf(candles[candles.length - 1].time);
 
   let high = -Infinity;
@@ -153,41 +135,278 @@ function computeOpeningRange(candles) {
   return { high: Math.round(high * 100) / 100, low: Math.round(low * 100) / 100, candleCount: count };
 }
 
+// ── Indicator helpers (technicalindicators — repo convention) ────────────────
+// Each takes a CONTINUOUS (multi-day) close series and returns the value AT the
+// last element, or null when there is not enough history to seed it.
+function _emaAtLast(closes, period) {
+  if (!closes || closes.length < period) return null;
+  const arr = EMA.calculate({ period, values: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+function _emaSlopeAtLast(closes, period) {
+  // slope over the last completed candle: EMA[n] − EMA[n-1]
+  if (!closes || closes.length < period + 1) return null;
+  const arr = EMA.calculate({ period, values: closes });
+  if (!arr || arr.length < 2) return null;
+  return arr[arr.length - 1] - arr[arr.length - 2];
+}
+function _rsiAtLast(closes, period) {
+  if (!closes || closes.length < period + 1) return null;
+  const arr = RSI.calculate({ period, values: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+function _adxAtLast(highs, lows, closes, period) {
+  if (!closes || closes.length < period * 2) return null;
+  const arr = ADX.calculate({ period, high: highs, low: lows, close: closes });
+  if (!arr || !arr.length) return null;
+  const last = arr[arr.length - 1];
+  return (last && typeof last.adx === "number") ? last.adx : null;
+}
+
 /**
- * getSignal(candles, opts) — returns ORB breakout signal on the latest candle.
- *
- * @param {Array<{time, open, high, low, close, volume?}>} candles — IST-aware 5-min candles
- * @param {object} [opts]
- *   silent — suppress console.log
- *   alreadyTraded — true if a trade has already been taken this session
+ * Gap = today's first candle open − previous trading day's last close, using the
+ * multi-day preload window. Returns null when the prior day isn't in the window
+ * (first day of a backtest range) — caller fail-opens the gap check in that case.
  */
-function getSignal(candles, opts) {
+function _computeGap(candles, day) {
+  let todayOpen = null, todayOpenTime = Infinity;
+  let prevClose = null, prevCloseTime = -Infinity;
+  for (const c of candles) {
+    const d = _istDayOf(c.time);
+    if (d === day) { if (c.time < todayOpenTime) { todayOpenTime = c.time; todayOpen = c.open; } }
+    else if (d < day) { if (c.time > prevCloseTime) { prevCloseTime = c.time; prevClose = c.close; } }
+  }
+  if (todayOpen == null || prevClose == null) return null;
+  return _r2(todayOpen - prevClose);
+}
+
+function _baseSignal() {
+  return {
+    signal: "NONE", side: null, orh: null, orl: null, rangePts: null,
+    entrySpot: null, slSpot: null, targetSpot: null, signalStrength: null,
+    vwap: null, vwapAligned: null, volRatio: null, volPass: null,
+    wickRatio: null, wickPass: null,
+    rsi: null, adx: null, emaFast: null, emaSlow: null, gapPts: null,
+    bodyPct: null, confirmed: null, reason: "",
+  };
+}
+
+/**
+ * STEP 4 — is `c` a strong, one-directional breakout candle for `side`?
+ * All ratios are relative to the FULL candle range (high−low), not the body.
+ * `vwapAt` / `emaSlope` / `rsi` are the values AS OF this candle (backward-only).
+ */
+function _breakoutCandleQuality(c, side, vwapAt, emaSlope, rsi, cfg) {
+  const range = c.high - c.low;
+  if (range <= 0) return { ok: false, why: "flat candle (high=low)" };
+  const body      = Math.abs(c.close - c.open);
+  const upperWick = c.high - Math.max(c.open, c.close);
+  const lowerWick = Math.min(c.open, c.close) - c.low;
+  const bodyPct   = body / range;
+  const relWick   = side === "CE" ? upperWick : lowerWick;
+  const wickPct   = relWick / range;
+  // distance of close from the favourable extreme, as a fraction of range
+  const closePos  = side === "CE" ? (c.high - c.close) / range : (c.close - c.low) / range;
+
+  if (side === "CE" && !(c.close > c.open)) return { ok: false, why: "not a green candle" };
+  if (side === "PE" && !(c.close < c.open)) return { ok: false, why: "not a red candle" };
+  if (body < cfg.minBody)         return { ok: false, why: `body ${body.toFixed(1)}pt < ${cfg.minBody}pt` };
+  if (bodyPct < cfg.bodyPctMin)   return { ok: false, why: `body ${(bodyPct * 100).toFixed(0)}% < ${(cfg.bodyPctMin * 100).toFixed(0)}% of candle` };
+  if (wickPct > cfg.wickPctMax)   return { ok: false, why: `${side === "CE" ? "upper" : "lower"} wick ${(wickPct * 100).toFixed(0)}% > ${(cfg.wickPctMax * 100).toFixed(0)}% of candle` };
+  if (closePos > cfg.closePosPct) return { ok: false, why: `close not in ${side === "CE" ? "top" : "bottom"} ${(cfg.closePosPct * 100).toFixed(0)}% of candle` };
+  if (cfg.vwapOn && vwapAt != null) {
+    if (side === "CE" && !(c.close > vwapAt)) return { ok: false, why: `close ${c.close} ≤ VWAP ${vwapAt}` };
+    if (side === "PE" && !(c.close < vwapAt)) return { ok: false, why: `close ${c.close} ≥ VWAP ${vwapAt}` };
+  }
+  if (emaSlope == null) return { ok: false, why: `EMA${cfg.emaFast} slope not seeded (need history)` };
+  if (side === "CE" && !(emaSlope > 0)) return { ok: false, why: `EMA${cfg.emaFast} slope ${emaSlope.toFixed(2)} not positive` };
+  if (side === "PE" && !(emaSlope < 0)) return { ok: false, why: `EMA${cfg.emaFast} slope ${emaSlope.toFixed(2)} not negative` };
+  if (rsi == null) return { ok: false, why: "RSI not seeded (need history)" };
+  if (side === "CE" && !(rsi > cfg.rsiCeMin)) return { ok: false, why: `RSI ${rsi.toFixed(1)} ≤ ${cfg.rsiCeMin}` };
+  if (side === "PE" && !(rsi < cfg.rsiPeMax)) return { ok: false, why: `RSI ${rsi.toFixed(1)} ≥ ${cfg.rsiPeMax}` };
+  return { ok: true, body: _r2(body), bodyPct: _r2(bodyPct), wickPct: _r2(wickPct), closePos: _r2(closePos) };
+}
+
+/**
+ * STEP 5 — does the candle AFTER the breakout candle extend the move?
+ * Bull: stays above ORH (closed back above), makes a higher high AND a higher
+ * close than the breakout candle. Bear: mirror below ORL.
+ */
+function _confirms(conf, brk, side, orh, orl) {
+  if (side === "CE") return conf.close > orh && conf.high > brk.high && conf.close > brk.close;
+  return conf.close < orl && conf.low < brk.low && conf.close < brk.close;
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V2 — CONFIRMED-BREAKOUT ENGINE (default)
+// ═════════════════════════════════════════════════════════════════════════════
+function _getSignalV2(candles, opts) {
   const silent = !!(opts && opts.silent);
   const alreadyTraded = !!(opts && opts.alreadyTraded);
-  const base = {
-    signal:        "NONE",
-    side:          null,
-    orh:           null,
-    orl:           null,
-    rangePts:      null,
-    entrySpot:     null,
-    slSpot:        null,
-    targetSpot:    null,
-    signalStrength: null,
-    vwap:          null,
-    vwapAligned:   null,
-    volRatio:      null,
-    volPass:       null,
-    wickRatio:     null,
-    wickPass:      null,
-    reason:        "",
+  const base = _baseSignal();
+
+  if (!candles || candles.length < 2) {
+    return Object.assign(base, { reason: `Warming up (${candles ? candles.length : 0} candles)` });
+  }
+
+  const cfg = {
+    minR:        parseFloat(process.env.ORB_MIN_RANGE_PTS      || "30"),
+    maxR:        parseFloat(process.env.ORB_MAX_RANGE_PTS      || "80"),
+    bufMin:      parseFloat(process.env.ORB_BREAKOUT_BUFFER_MIN || "10"),
+    bufPct:      parseFloat(process.env.ORB_BREAKOUT_BUFFER_PCT || "0.20"),
+    minBody:     parseFloat(process.env.ORB_MIN_BODY           || "15"),
+    bodyPctMin:  parseFloat(process.env.ORB_BODY_PCT_MIN       || "0.60"),
+    wickPctMax:  parseFloat(process.env.ORB_WICK_PCT_MAX       || "0.25"),
+    closePosPct: parseFloat(process.env.ORB_CLOSE_POS_PCT      || "0.20"),
+    emaFast:     parseInt  (process.env.ORB_TREND_EMA_FAST     || "20", 10),
+    emaSlow:     parseInt  (process.env.ORB_TREND_EMA_SLOW     || "50", 10),
+    adxPeriod:   parseInt  (process.env.ORB_ADX_PERIOD         || "14", 10),
+    adxMin:      parseFloat(process.env.ORB_ADX_MIN            || "20"),
+    rsiPeriod:   parseInt  (process.env.ORB_RSI_PERIOD         || "14", 10),
+    rsiCeMin:    parseFloat(process.env.ORB_RSI_CE_MIN         || "55"),
+    rsiPeMax:    parseFloat(process.env.ORB_RSI_PE_MAX         || "45"),
+    maxGap:      parseFloat(process.env.ORB_MAX_GAP_PTS        || "80"),
+    vwapOn:      (process.env.ORB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true",
+    confirmOn:   (process.env.ORB_CONFIRM_ENABLED     || "true").toLowerCase() === "true",
   };
+
+  // ── Trading window ──────────────────────────────────────────────────────
+  const entryStartMin = _parseMins("ORB_RANGE_END", "09:30");   // OR ends → hunting starts
+  const entryEndMin   = _parseMins("ORB_ENTRY_END", "12:00");
+  const last    = candles[candles.length - 1];
+  const lastIst = _utcSecToIstMins(last.time);
+  const day     = _istDayOf(last.time);
+
+  if (lastIst < entryStartMin) return Object.assign(base, { reason: `Building opening range (waiting for ${process.env.ORB_RANGE_END || "09:30"} IST)` });
+  if (lastIst >= entryEndMin)  return Object.assign(base, { reason: `Past ${process.env.ORB_ENTRY_END || "12:00"} IST — no new ORB entries (stale-breakout window)` });
+  if (alreadyTraded)           return Object.assign(base, { reason: "Already traded this session — ORB takes only 1 trade/day" });
+
+  // ── STEP 1: frozen opening range ────────────────────────────────────────
+  const or = computeOpeningRange(candles);
+  if (!or) return Object.assign(base, { reason: "Opening range not yet formed" });
+  const rangePts = _r2(or.high - or.low);
+  const orBase = Object.assign(base, { orh: or.high, orl: or.low, rangePts });
+
+  // ── STEP 2 / STEP 7: range must be in the tradable band ─────────────────
+  if (rangePts < cfg.minR) return Object.assign(orBase, { reason: `Range too tight (${rangePts}pt < ${cfg.minR}pt) — skip day` });
+  if (rangePts > cfg.maxR) return Object.assign(orBase, { reason: `Range too wide (${rangePts}pt > ${cfg.maxR}pt) — open already ran / exhausted, skip day` });
+
+  // ── STEP 7: gap filter (fail-open when prior close unavailable) ──────────
+  const gapPts = _computeGap(candles, day);
+  orBase.gapPts = gapPts;
+  if (cfg.maxGap > 0 && gapPts != null && Math.abs(gapPts) > cfg.maxGap) {
+    return Object.assign(orBase, { reason: `Gap ${gapPts}pt > ±${cfg.maxGap}pt — skip day (news/overnight shock)` });
+  }
+
+  // ── STEP 3: find the FIRST candle whose CLOSE clears the OR edge by the
+  //    buffer. That candle is the ONE committed breakout of the day. We do not
+  //    hunt for a second breakout later (STEP 9). ─────────────────────────────
+  const buffer = _r2(Math.max(cfg.bufMin, cfg.bufPct * rangePts));
+  let b = -1, side = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    if (_istDayOf(c.time) !== day) continue;
+    const m = _utcSecToIstMins(c.time);
+    if (m < entryStartMin || m >= entryEndMin) continue;
+    if (c.close > or.high + buffer) { b = i; side = "CE"; break; }
+    if (c.close < or.low  - buffer) { b = i; side = "PE"; break; }
+  }
+  if (b < 0) {
+    return Object.assign(orBase, { reason: `No breakout yet — close ${last.close} within ORH+${buffer} / ORL−${buffer} band [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}]` });
+  }
+
+  const lastIdx = candles.length - 1;
+  if (lastIdx === b) {
+    return Object.assign(orBase, { side, reason: `Breakout ${side} candle formed (close ${candles[b].close}) — DO NOT buy the breakout candle; waiting for next candle to confirm` });
+  }
+  if (lastIdx > b + 1) {
+    return Object.assign(orBase, { side, reason: `Breakout resolved earlier (candle #${b}) — 1-trade rule: no second breakout attempt today` });
+  }
+  // lastIdx === b + 1 → THIS is the confirmation candle. Decide once, now.
+
+  const brk  = candles[b];
+  const conf = candles[lastIdx];
+  orBase.side = side;
+
+  // ── STEP 4: breakout-candle quality (evaluated on `brk`) ────────────────
+  const closesToB = candles.slice(0, b + 1).map(c => c.close);
+  const vwapAtBrk = computeVwap(candles.slice(0, b + 1));
+  if (vwapAtBrk == null) _warnNoVolumeOnce(silent);
+  const slopeAtBrk = _emaSlopeAtLast(closesToB, cfg.emaFast);
+  const rsiAtBrk   = _rsiAtLast(closesToB, cfg.rsiPeriod);
+  orBase.vwap = vwapAtBrk;
+  orBase.rsi  = rsiAtBrk != null ? _r2(rsiAtBrk) : null;
+
+  const q = _breakoutCandleQuality(brk, side, vwapAtBrk, slopeAtBrk, rsiAtBrk, cfg);
+  if (!q.ok) {
+    return Object.assign(orBase, { reason: `Breakout candle failed quality (${side}): ${q.why} — no trade today` });
+  }
+  orBase.wickRatio = q.wickPct;   // NOTE: V2 wick metric = relevant wick / candle range
+  orBase.wickPass  = true;
+  orBase.bodyPct   = q.bodyPct;
+  orBase.vwapAligned = cfg.vwapOn ? true : null;
+
+  // ── STEP 5: next-candle confirmation ────────────────────────────────────
+  if (cfg.confirmOn && !_confirms(conf, brk, side, or.high, or.low)) {
+    const detail = side === "CE"
+      ? `need close>${or.high} & HH>${brk.high} & HC>${brk.close}, got close=${conf.close} high=${conf.high}`
+      : `need close<${or.low} & LL<${brk.low} & LC<${brk.close}, got close=${conf.close} low=${conf.low}`;
+    return Object.assign(orBase, { reason: `Confirmation failed (${side}): ${detail} — no re-entry (1-trade rule)` });
+  }
+
+  // ── STEP 6: trend-regime filter (evaluated at the entry candle) ─────────
+  const closesAll = candles.map(c => c.close);
+  const highsAll  = candles.map(c => c.high);
+  const lowsAll   = candles.map(c => c.low);
+  const emaF = _emaAtLast(closesAll, cfg.emaFast);
+  const emaS = _emaAtLast(closesAll, cfg.emaSlow);
+  const adx  = _adxAtLast(highsAll, lowsAll, closesAll, cfg.adxPeriod);
+  orBase.emaFast = emaF != null ? _r2(emaF) : null;
+  orBase.emaSlow = emaS != null ? _r2(emaS) : null;
+  orBase.adx     = adx  != null ? _r2(adx)  : null;
+
+  if (emaF == null || emaS == null || adx == null) {
+    return Object.assign(orBase, { reason: `Trend filter not seeded (EMA${cfg.emaFast}/EMA${cfg.emaSlow}/ADX${cfg.adxPeriod} need history) — skip` });
+  }
+  if (side === "CE" && !(emaF > emaS)) return Object.assign(orBase, { reason: `Trend filter: EMA${cfg.emaFast} ${_r2(emaF)} ≤ EMA${cfg.emaSlow} ${_r2(emaS)} — not an uptrend regime, skip CE` });
+  if (side === "PE" && !(emaF < emaS)) return Object.assign(orBase, { reason: `Trend filter: EMA${cfg.emaFast} ${_r2(emaF)} ≥ EMA${cfg.emaSlow} ${_r2(emaS)} — not a downtrend regime, skip PE` });
+  if (!(adx > cfg.adxMin))             return Object.assign(orBase, { reason: `Trend filter: ADX ${_r2(adx)} ≤ ${cfg.adxMin} — no directional strength, skip` });
+
+  // ── ALL STEPS PASSED → enter on the confirmation candle's close ─────────
+  const entrySpot  = conf.close;
+  const slSpot     = side === "CE" ? or.low : or.high;   // reference; route sets real init SL from entry-candle low/high
+  const tgtMult    = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
+  const targetSpot = side === "CE" ? or.high + rangePts * tgtMult : or.low - rangePts * tgtMult;
+
+  if (!silent) {
+    const istStr = new Date(conf.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+    console.log(`[ORB ${istStr}] CONFIRMED ${side} | ORH=${or.high} ORL=${or.low} range=${rangePts}pt buf=${buffer} | brk close=${brk.close} body=${q.body}pt (${(q.bodyPct * 100).toFixed(0)}%) rsi=${orBase.rsi} | conf close=${conf.close} | EMA${cfg.emaFast}=${orBase.emaFast}>EMA${cfg.emaSlow}=${orBase.emaSlow} adx=${orBase.adx} [STRONG]`);
+  }
+
+  return Object.assign(orBase, {
+    signal:         side === "CE" ? "BUY_CE" : "BUY_PE",
+    side,
+    entrySpot:      _r2(entrySpot),
+    slSpot:         _r2(slSpot),
+    targetSpot:     _r2(targetSpot),
+    signalStrength: "STRONG",
+    confirmed:      true,
+    reason: `ORB CONFIRMED ${side}: brk close ${brk.close} ${side === "CE" ? ">" : "<"} ${side === "CE" ? "ORH" : "ORL"} ${side === "CE" ? or.high : or.low}+buf ${buffer} (body ${q.body}pt/${(q.bodyPct * 100).toFixed(0)}%, wick ${(q.wickPct * 100).toFixed(0)}%, rsi ${orBase.rsi}), next candle ${side === "CE" ? "HH+HC" : "LL+LC"} confirmed, EMA${cfg.emaFast}${side === "CE" ? ">" : "<"}EMA${cfg.emaSlow} adx ${orBase.adx}${gapPts != null ? `, gap ${gapPts}pt` : ""} [STRONG]`,
+  });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// V1 — LEGACY IMMEDIATE-ENTRY ENGINE (kept for A/B; ORB_ENTRY_V2_ENABLED=false)
+// ═════════════════════════════════════════════════════════════════════════════
+function _getSignalV1(candles, opts) {
+  const silent = !!(opts && opts.silent);
+  const alreadyTraded = !!(opts && opts.alreadyTraded);
+  const base = _baseSignal();
 
   if (!candles || candles.length < 4) {
     return Object.assign({}, base, { reason: `Warming up (${candles ? candles.length : 0}/4 candles)` });
   }
 
-  // ── Trading window ──────────────────────────────────────────────────────
   const entryStartMin = _parseMins("ORB_RANGE_END",   "09:30");
   const entryEndMin   = _parseMins("ORB_ENTRY_END",   "12:00");
   const last = candles[candles.length - 1];
@@ -203,7 +422,6 @@ function getSignal(candles, opts) {
     return Object.assign({}, base, { reason: "Already traded this session — ORB takes only 1 trade/day" });
   }
 
-  // ── Compute opening range ───────────────────────────────────────────────
   const or = computeOpeningRange(candles);
   if (!or) {
     return Object.assign({}, base, { reason: "Opening range not yet formed" });
@@ -212,7 +430,6 @@ function getSignal(candles, opts) {
   const minR = parseFloat(process.env.ORB_MIN_RANGE_PTS || "25");
   const maxR = parseFloat(process.env.ORB_MAX_RANGE_PTS || "100");
 
-  // Compute diagnostics that are used in skip reasons too
   const vwap = computeVwap(candles);
   const vwapAligned = (vwap == null) ? null
                     : (last.close > or.high ? last.close > vwap
@@ -239,11 +456,6 @@ function getSignal(candles, opts) {
     return Object.assign({}, orBase, { reason: `Range too wide (${rangePts}pt > ${maxR}pt) — open already moved, skip` });
   }
 
-  // ── Breakout check on the most recent CLOSED candle ─────────────────────
-  //    Require the close to CLEAR the OR edge by a buffer, not merely touch it.
-  //    Buffer = max(ORB_BREAKOUT_BUFFER_MIN, ORB_BREAKOUT_BUFFER_PCT × range).
-  //    A bare touch (close a fraction beyond ORH/ORL) was the dominant false-
-  //    breakout entry — every near-touch reversed straight back into the box.
   const bufMin = parseFloat(process.env.ORB_BREAKOUT_BUFFER_MIN || "8");
   const bufPct = parseFloat(process.env.ORB_BREAKOUT_BUFFER_PCT || "0.15");
   const buffer = Math.round(Math.max(bufMin, bufPct * rangePts) * 100) / 100;
@@ -265,8 +477,6 @@ function getSignal(candles, opts) {
 
   const side = bullishBreak ? "CE" : "PE";
 
-  // ── Wick-rejection filter ──────────────────────────────────────────────
-  // Bullish: upper wick must be small relative to body. Bearish: lower wick.
   const wickFilterOn = (process.env.ORB_WICK_FILTER_ENABLED || "true").toLowerCase() === "true";
   const maxWickRatio = parseFloat(process.env.ORB_MAX_WICK_RATIO || "0.6");
   const relevantWick = side === "CE" ? upperWick : lowerWick;
@@ -280,7 +490,6 @@ function getSignal(candles, opts) {
     });
   }
 
-  // ── VWAP alignment ─────────────────────────────────────────────────────
   const vwapFilterOn = (process.env.ORB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true";
   if (vwapFilterOn && vwap != null) {
     const ok = side === "CE" ? last.close > vwap : last.close < vwap;
@@ -293,7 +502,6 @@ function getSignal(candles, opts) {
     }
   }
 
-  // ── Volume confirmation ───────────────────────────────────────────────
   const volFilterOn = (process.env.ORB_VOL_FILTER_ENABLED || "false").toLowerCase() === "true";
   const volMult = parseFloat(process.env.ORB_VOL_MULT || "1.2");
   let volPass = null;
@@ -309,7 +517,6 @@ function getSignal(candles, opts) {
     }
   }
 
-  // ── Build signal ────────────────────────────────────────────────────────
   const entrySpot  = last.close;
   const slSpot     = side === "CE" ? or.low  : or.high;
   const tgtMult    = parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5");
@@ -344,6 +551,21 @@ function getSignal(candles, opts) {
     volPass:       volPass,
     reason: `ORB ${side} break (close ${last.close} ${side === "CE" ? ">" : "<"} ${side === "CE" ? "ORH" : "ORL"} ${side === "CE" ? or.high : or.low} + buffer ${buffer}pt, range=${rangePts}pt, body=${body.toFixed(1)}pt, wick=${wickRatio.toFixed(2)}${vwap != null ? `, vwap=${vwap}` : ""}${volRatio != null ? `, vol=${volRatio.toFixed(2)}×` : ""}) [${strength}]`,
   });
+}
+
+/**
+ * getSignal(candles, opts) — returns an ORB breakout signal. Dispatches to the
+ * confirmed-breakout engine (V2, default) or the legacy immediate-entry engine
+ * (V1) based on ORB_ENTRY_V2_ENABLED.
+ *
+ * @param {Array<{time, open, high, low, close, volume?}>} candles — IST-aware 5-min
+ *        candles. MUST include prior-day history (multi-day preload) so V2 can seed
+ *        EMA20/EMA50/ADX/RSI; OR + VWAP are day-scoped internally so that is safe.
+ * @param {object} [opts] silent — suppress console.log; alreadyTraded — 1 trade/day guard.
+ */
+function getSignal(candles, opts) {
+  const v2 = (process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true";
+  return v2 ? _getSignalV2(candles, opts) : _getSignalV1(candles, opts);
 }
 
 module.exports = { NAME, DESCRIPTION, getSignal, computeOpeningRange, computeVwap, computeVolumeRatio };
