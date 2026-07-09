@@ -6,6 +6,10 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Backtest — "🤖 Download for AI" on every backtest page
+
+- **Every backtest results page (EMA_RSI_ST / BB_RSI / PA / EMA9+VWAP / ORB) now has a "🤖 Download for AI" button** next to "📋 Copy Trade Log". It downloads a self-describing Markdown report — summary stats, a plain-English field legend, then the full trade table — that you can paste straight into an AI for analysis. Same shape as the Trade Logs "🤖 AI" export, so both read the same. Backtest results are ephemeral (no JSONL on disk), so the report is built in the browser from the trades already embedded in the page via a shared helper ([backtestAiExport.js](src/utils/backtestAiExport.js)) — no new route or server round-trip. P&L is labelled ₹ or pts to match the page (δ+θ option sim vs raw index points), and the header notes when the embedded set is capped for browser performance.
+
 ### ORB backtest — background job + batched fetch (fixes 0-trades on long ranges)
 
 - **The ORB backtest ran its whole candle fetch synchronously inside the HTTP request.** The fetch chunks the range into months (350ms rate-limit sleep + retries each), so a multi-month/multi-year range runs for minutes — past the HTTP/proxy timeout. The request then returned an empty candle set and the page rendered **0 trades** even over 5 years (the `runOrbBacktest` engine itself is fine — it produces trades on the same candles). Converted the route to the **same background-job pattern the EMA_RSI_ST backtest uses**: `GET /orb-backtest` now creates a job, runs the fetch + backtest in the background with a live progress page, and polls `GET /orb-backtest/status` until done — the server stays responsive and long ranges complete. Too-few-candles now **fails the job with a clear message** instead of silently showing 0 trades. `/orb-backtest/idle` now reports the shared job-manager idle state.

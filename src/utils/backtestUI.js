@@ -26,6 +26,7 @@
 
 const { buildSidebar, sidebarCSS, faviconLink, modalCSS, modalJS } = require("./sharedNav");
 const sharedSocketState = require("./sharedSocketState");
+const { aiExportButton, aiExportScriptTag } = require("./backtestAiExport");
 
 // ── Stats computer ──────────────────────────────────────────────────────────
 /**
@@ -333,6 +334,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
   <select id="fPP" onchange="doFilter()"><option value="5">5/page</option><option value="10" selected>10/page</option><option value="25">25/page</option><option value="9999">All</option></select>
   <span class="tbar-count" id="cntLabel"></span>
   <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+  ${aiExportButton()}
   <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
 </div>
 
@@ -373,6 +375,7 @@ ${extraStats.length ? `<div class="stat-grid">${extraStats.map(e => `<div class=
 </div></div></div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
+${aiExportScriptTag({ mode, strategyName, from, to, optionSim: !!(s && s.optionSim), fullCount: trades.length, extraCols: extraTradeColumns.map(c => ({ key: c.key, label: c.label })) })}
 <script>
 ${modalJS()}
 var ACCENT = '${accent}';

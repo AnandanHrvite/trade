@@ -10,6 +10,7 @@ const vixFilter = require("../services/vixFilter");
 const { VIX_SYMBOL } = vixFilter;
 const { isExpiryDate } = require("../utils/nseHolidays");
 const backtestJobs = require("../utils/backtestJobManager");
+const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 
 const inr      = (n) => typeof n === "number" ? "\u20b9" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "\u2014";
 const pts      = (n) => typeof n === "number" ? (n >= 0 ? "+" : "") + n.toFixed(2) + " pts" : "\u2014";
@@ -567,6 +568,7 @@ ${buildSidebar('ema9vwapBacktest', liveActive)}
     </select>
     <span class="tbar-count" id="cntLabel"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    ${aiExportButton()}
     <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
   </div>
 
@@ -608,6 +610,7 @@ ${buildSidebar('ema9vwapBacktest', liveActive)}
   </div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
+${aiExportScriptTag({ mode: "EMA9+VWAP", strategyName: ACTIVE, from, to, optionSim: !!(s && s.optionSim), fullCount: tradesData.length })}
 ${tradesTruncated ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:0.72rem;color:#b8a040;text-align:center;">Showing latest ${MAX_EMBEDDED_TRADES.toLocaleString()} of ${tradesData.length.toLocaleString()} trades for browser performance. Summary stats reflect ALL trades.</div>` : ''}
 <script>
 ${modalJS()}

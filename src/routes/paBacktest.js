@@ -14,6 +14,7 @@ const express = require("express");
 const router  = express.Router();
 const { fetchCandles, fetchCandlesCachedBT } = require("../services/backtestEngine");
 const paStrategy    = require("../strategies/price_action");
+const { aiExportButton, aiExportScriptTag } = require("../utils/backtestAiExport");
 const { saveResult }   = require("../utils/resultStore");
 const sharedSocketState = require("../utils/sharedSocketState");
 const { buildSidebar, sidebarCSS, modalCSS, modalJS } = require("../utils/sharedNav");
@@ -1008,6 +1009,7 @@ ${buildSidebar('paBacktest', liveActive)}
     </select>
     <span class="tbar-count" id="cntLabel"></span>
     <button class="copy-btn" onclick="copyTradeLog(this)" style="margin-left:auto;">📋 Copy Trade Log</button>
+    ${aiExportButton()}
     <button onclick="doReset()" style="background:#0d1320;border:1px solid #1a2236;color:#4a6080;padding:4px 10px;border-radius:6px;font-size:0.7rem;cursor:pointer;font-family:inherit;">Reset</button>
   </div>
 
@@ -1049,6 +1051,7 @@ ${buildSidebar('paBacktest', liveActive)}
   </div>
 
 <script id="trades-data" type="application/json">${tradesJSON}</script>
+${aiExportScriptTag({ mode: "PA", strategyName: paStrategy.NAME, from, to, optionSim: !!(s && s.optionSim), fullCount: tradesData.length })}
 ${tradesTruncated ? `<div style="background:#1a1800;border:1px solid #3a3000;border-radius:8px;padding:10px 16px;margin:0 0 12px;font-size:0.72rem;color:#b8a040;text-align:center;">Showing latest ${MAX_EMBEDDED_TRADES.toLocaleString()} of ${tradesData.length.toLocaleString()} trades for browser performance. Summary stats reflect ALL trades.</div>` : ''}
 <script>
 ${modalJS()}
