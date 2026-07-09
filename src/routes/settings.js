@@ -239,7 +239,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMON — Instrument & Backtest",
+    section: "Instrument & Backtest",
     icon: "📈",
     fields: [
       { key: "CHART_ENABLED", label: "Live NIFTY Chart", type: "toggle", effect: EFFECT.INSTANT, desc: "Show candlestick chart with entry/exit markers on status pages", default: "true" },
@@ -277,7 +277,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMON — Server & Broker",
+    section: "Server & Broker",
     icon: "🖥️",
     fields: [
       { key: "PORT", label: "Port", type: "number", min: 1000, max: 65535, step: 1, effect: EFFECT.SERVER },
@@ -289,7 +289,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMON — Backup & Restore",
+    section: "Backup & Restore",
     icon: "📦",
     fields: [
       { key: "BACKUP_ENABLED", label: "Daily Data Backup", type: "toggle", effect: EFFECT.INSTANT, desc: "Cut a daily downloadable .tar.gz snapshot of ~/trading-data + recorded ticks (caches & tokens excluded). Download it from the Backup & Restore card above so an EC2 loss never loses data.", default: "true" },
@@ -299,7 +299,7 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
-    section: "COMMON — Telegram",
+    section: "Telegram",
     icon: "📱",
     fields: [
       { key: "TELEGRAM_CHAT_ID", label: "Chat ID", type: "text", effect: EFFECT.INSTANT, desc: "Leave blank to disable notifications" },
@@ -458,7 +458,7 @@ const MODE_SECTION_TITLES = {
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
-  "COMMON — Instrument & Backtest",
+  "Instrument & Backtest",
   "CHARGES & STT — Trading Costs",
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
