@@ -75,12 +75,14 @@ function runOrbBacktest(allCandles, expirySet) {
   // trail that exited winners on the first pullback.)
   const TRAIL_EMA      = Math.max(2, parseInt(process.env.ORB_TRAIL_EMA || "20", 10));
   const BE_PTS         = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const BE_OR_MULT     = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");   // adaptive breakeven
   const OPP_ON         = (process.env.ORB_OPP_CANDLE_EXIT || "true").toLowerCase() === "true";
   const OPP_MULT       = parseFloat(process.env.ORB_OPP_CANDLE_BODY_MULT || "0.3");
   const MAX_TRADE_LOSS = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
+  const PREM_STOP_PCT  = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");     // premium disaster backstop
   const PREM_GATE_ON = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
-  const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "100");
-  const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "220");
+  const PREM_MIN     = parseFloat(process.env.ORB_PREMIUM_MIN || "120");           // widened for slightly-ITM
+  const PREM_MAX     = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
   // Signal engine (orb_breakout.getSignal) needs prior-day history to seed
   // EMA20/EMA50/ADX/RSI. We feed it a trailing MULTI-DAY window ending at the
   // current candle (OR + VWAP are day-scoped internally, so the prior days do
@@ -89,15 +91,14 @@ function runOrbBacktest(allCandles, expirySet) {
   // whole range (which then simply takes no trade — trend filter fails closed).
   const SIG_WINDOW      = parseInt(process.env.ORB_SIG_WINDOW || "260", 10);
   const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
-  const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "12:00");
-  const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "180");
-  // Retest-entry gate (experimental, default OFF). When on, we DON'T buy the
-  // breakout candle; we arm on the breakout and enter only once a later candle
-  // pulls back to within `tol` of the broken OR edge AND still closes on the
-  // breakout side (the level held). Filters poke-and-reverse false breakouts;
-  // the cost is skipping runaway days that never pull back. Backtest-only
-  // prototype — port to orb_breakout.getSignal before enabling in paper/live.
-  const RETEST_ON       = (process.env.ORB_RETEST_ENABLED || "false").toLowerCase() === "true";
+  const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
+  const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
+  // V3 (default) handles the OPTIONAL non-blocking retest INSIDE the engine, so the
+  // backtest just polls getSignal each candle and enters on the returned BUY (the
+  // engine returns BUY on the confirmation / retest / trend-resume candle). The old
+  // backtest-only `armed` retest gate below is V2-only (ORB_RETEST_ENABLED).
+  const V3_ON           = (process.env.ORB_ENTRY_V3_ENABLED || "true").toLowerCase() === "true";
+  const RETEST_ON       = (process.env.ORB_RETEST_ENABLED || "false").toLowerCase() === "true" && !V3_ON;
   const RETEST_TOL_MIN  = parseFloat(process.env.ORB_RETEST_TOL_MIN || "5");
   const RETEST_TOL_PCT  = parseFloat(process.env.ORB_RETEST_TOL_PCT || "0.1");
   const RETEST_MAX_WAIT = parseInt(process.env.ORB_RETEST_MAX_WAIT || "6", 10);
@@ -149,9 +150,11 @@ function runOrbBacktest(allCandles, expirySet) {
           closePos(position, c.close, c.time, `Strong opposite candle (body ${_bodyPts.toFixed(1)}pt)`);
           trades.push(buildTradeRecord(position)); position = null; continue;
         }
-        // 2. breakeven — lift hard SL to entry once far enough in profit
+        // 2. breakeven — lift hard SL to entry once far enough in profit (adaptive:
+        //    max(fixed, ORB_BREAKEVEN_OR_MULT × OR width), mirrors paper/live)
         const _favPts = (c.close - position.entrySpot) * (position.side === "CE" ? 1 : -1);
-        if (!position.breakevenArmed && BE_PTS > 0 && _favPts >= BE_PTS) {
+        const _bePts = (BE_OR_MULT > 0 && position.rangePts) ? Math.max(BE_PTS, Math.round(BE_OR_MULT * position.rangePts)) : BE_PTS;
+        if (!position.breakevenArmed && _bePts > 0 && _favPts >= _bePts) {
           if (position.side === "CE" && position.entrySpot > position.slSpot) position.slSpot = position.entrySpot;
           if (position.side === "PE" && position.entrySpot < position.slSpot) position.slSpot = position.entrySpot;
           position.breakevenArmed = true;
@@ -169,12 +172,14 @@ function runOrbBacktest(allCandles, expirySet) {
             else if (position.emaArmed) { closePos(position, c.close, c.time, `Closed above EMA${TRAIL_EMA}`); trades.push(buildTradeRecord(position)); position = null; continue; }
           }
         }
-        // 4. per-trade loss cap (worst-case sim premium within this candle)
-        if (MAX_TRADE_LOSS > 0) {
+        // 4. per-trade loss cap + premium disaster stop (worst-case sim premium within candle)
+        if (MAX_TRADE_LOSS > 0 || PREM_STOP_PCT > 0) {
           const _spotMove = position.side === "CE" ? (c.low - position.entrySpot) : (position.entrySpot - c.high);
           const _curPrem  = Math.max(0.05, position.optionEntryLtp + _spotMove * DELTA);
-          if ((_curPrem - position.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS) {
-            closePos(position, position.side === "CE" ? c.low : c.high, c.time, `Max trade loss (₹${MAX_TRADE_LOSS})`);
+          const _hitLoss  = MAX_TRADE_LOSS > 0 && (_curPrem - position.optionEntryLtp) * LOT_SIZE <= -MAX_TRADE_LOSS;
+          const _hitPrem  = PREM_STOP_PCT > 0 && _curPrem <= position.optionEntryLtp * (1 - PREM_STOP_PCT / 100);
+          if (_hitLoss || _hitPrem) {
+            closePos(position, position.side === "CE" ? c.low : c.high, c.time, (_hitPrem && !_hitLoss) ? `Premium disaster stop (−${PREM_STOP_PCT}%)` : `Max trade loss (₹${MAX_TRADE_LOSS})`);
             trades.push(buildTradeRecord(position)); position = null; continue;
           }
         }
@@ -330,7 +335,7 @@ function _renderOrbResults(res, from, to, trades, stats) {
       { label: "STRONG Signals", value: trades.filter(t => t.strength === "STRONG").length },
       { label: "Avg Held Candles", value: trades.length ? Math.round(trades.reduce((a, t) => a + (t.held || 0), 0) / trades.length) : "—" },
     ],
-    notes: `Premium is approximated using δ + θ from historical NIFTY 5-min candles (no live option chain in backtest). Treat absolute ₹ figures as directional only.${(process.env.ORB_RETEST_ENABLED || "false").toLowerCase() === "true" ? ` · RETEST-ENTRY GATE ON — enters on a pullback-and-hold of the OR edge (tol = max(${process.env.ORB_RETEST_TOL_MIN || "5"}pt, ${process.env.ORB_RETEST_TOL_PCT || "0.1"}×range), wait ≤ ${process.env.ORB_RETEST_MAX_WAIT || "6"} candles); days that never retest take no trade.` : ""}`,
+    notes: `Premium approximated via δ + θ from historical 5-min candles (no live option chain) — treat ₹ as directional only; slightly-ITM entry seeded at ₹${process.env.ORB_BT_SEED_PREMIUM || "240"}. Entry engine: ${(process.env.ORB_ENTRY_V3_ENABLED || "true").toLowerCase() === "true" ? `V3 trend-day — adaptive ATR-relative gates (OR vs ATR15 [${process.env.ORB_OR_ATR_MIN || "0.7"}–${process.env.ORB_OR_ATR_MAX || "2.5"}×], body vs ATR5, gap ≤ ${process.env.ORB_GAP_OR_MULT || "3"}×OR), break into fresh ground (prior-day H/L), ONE confirmation candle + VWAP side, ${(process.env.ORB_RETEST_MODE || "optional").toLowerCase() === "off" ? "no retest" : "OPTIONAL non-blocking retest"}` : ((process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true" ? "V2 confirmed-breakout" : "V1 legacy immediate")}. Exits: structural spot SL → adaptive breakeven → EMA${process.env.ORB_TRAIL_EMA || "20"} close-trail → strong-opposite-candle → ₹${process.env.ORB_MAX_TRADE_LOSS || "1500"} / −${process.env.ORB_PREMIUM_STOP_PCT || "35"}% caps → 15:15 EOD. STEP-8 premium/spread gates apply in paper/live only.`,
   });
   res.send(html);
 }

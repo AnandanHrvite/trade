@@ -31,7 +31,7 @@
  *   signal:  "BUY_CE" | "BUY_PE" | "NONE"
  */
 
-const { EMA, RSI, ADX } = require("technicalindicators");
+const { EMA, RSI, ADX, ATR } = require("technicalindicators");
 
 const NAME        = "ORB_15MIN";
 const DESCRIPTION = "Opening Range Breakout — 15-min OR, next-candle confirmation, ATM CE/PE buying";
@@ -553,17 +553,249 @@ function _getSignalV1(candles, opts) {
   });
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// V3 — TREND-DAY ENGINE (2026-07-10 redesign) ← DEFAULT
+//   Goal: capture trend days, kill false breakouts, keep the right tail — NOT
+//   trade more. Built for slightly-ITM (~delta 0.6) weekly options.
+//   • Adaptive thresholds (ATR-relative) so the gates hold across VIX regimes:
+//     OR-size vs ATR(15m), body vs ATR(5m), gap vs OR size — no fixed points.
+//   • Day filter: OR-size band + gap sanity + must break into fresh ground
+//     (clear prior-day High/Low).
+//   • Breakout: first strong 5-min close beyond OR ± an ATR/OR-scaled buffer.
+//   • Confirmation: ONE candle (higher-high/higher-close beyond the edge + on the
+//     right side of VWAP). The old EMA20/50 + ADX + RSI + EMA-slope stack is GONE
+//     (correlated filters that clipped the right tail — see the 2026-07-10 audit).
+//   • Retest: OPTIONAL and NON-BLOCKING. It is only a fallback for when the
+//     confirmation candle hesitates; a trend that never retests still enters. A
+//     mandatory retest measurably HURT expectancy (backtest 2026-07-09), so it can
+//     never veto a trend-day entry.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// True-range ATR at the last element (technicalindicators). null until seeded.
+function _atrAtLast(highs, lows, closes, period) {
+  if (!closes || closes.length < period + 1) return null;
+  const arr = ATR.calculate({ period, high: highs, low: lows, close: closes });
+  return arr && arr.length ? arr[arr.length - 1] : null;
+}
+
+// Aggregate 5-min candles into 15-min OHLC buckets (day + :00/:15/:30/:45 aligned),
+// time-ordered. Used only to seed ATR(15m) as the opening-range size yardstick.
+function _to15m(candles) {
+  const map = new Map(); const order = [];
+  for (const c of candles) {
+    const key = _istDayOf(c.time) * 1000 + Math.floor(_utcSecToIstMins(c.time) / 15);
+    let b = map.get(key);
+    if (!b) { b = { high: c.high, low: c.low, close: c.close }; map.set(key, b); order.push(key); }
+    else { if (c.high > b.high) b.high = c.high; if (c.low < b.low) b.low = c.low; b.close = c.close; }
+  }
+  return order.map(k => map.get(k));
+}
+
+// Prior trading day's High/Low from the multi-day window (day-scoped). null on day 1.
+function _priorDayHL(candles, day) {
+  let pd = -Infinity;
+  for (const c of candles) { const d = _istDayOf(c.time); if (d < day && d > pd) pd = d; }
+  if (pd === -Infinity) return null;
+  let ph = -Infinity, pl = Infinity;
+  for (const c of candles) { if (_istDayOf(c.time) === pd) { if (c.high > ph) ph = c.high; if (c.low < pl) pl = c.low; } }
+  return { pdh: _r2(ph), pdl: _r2(pl) };
+}
+
+function _vwapSideOk(c, side, vwap) {
+  if (vwap == null) return true;
+  return side === "CE" ? c.close > vwap : c.close < vwap;
+}
+
+// V3 breakout-candle quality — the ONLY entry filters: decisive body (ATR-scaled),
+// close in the extreme, VWAP side, and prior-day level cleared (fresh ground).
+function _breakoutQualityV3(c, side, atr5, vwapAt, pdhl, cfg) {
+  const range = c.high - c.low;
+  if (range <= 0) return { ok: false, why: "flat candle (high=low)" };
+  const body = Math.abs(c.close - c.open);
+  const closePos = side === "CE" ? (c.high - c.close) / range : (c.close - c.low) / range;
+  if (side === "CE" && !(c.close > c.open)) return { ok: false, why: "not a green candle" };
+  if (side === "PE" && !(c.close < c.open)) return { ok: false, why: "not a red candle" };
+  if (atr5 != null) {
+    const minBody = cfg.bodyAtrMult * atr5;
+    if (body < minBody) return { ok: false, why: `body ${body.toFixed(1)}pt < ${minBody.toFixed(1)}pt (${cfg.bodyAtrMult}×ATR5)` };
+  }
+  if (closePos > cfg.closePosPct) return { ok: false, why: `close not in ${side === "CE" ? "top" : "bottom"} ${(cfg.closePosPct * 100).toFixed(0)}% of candle` };
+  if (cfg.vwapOn && !_vwapSideOk(c, side, vwapAt)) return { ok: false, why: `close ${c.close} on wrong side of VWAP ${vwapAt}` };
+  if (cfg.priorDayOn && pdhl) {
+    if (side === "CE" && !(c.close > pdhl.pdh)) return { ok: false, why: `close ${c.close} ≤ prior-day high ${pdhl.pdh} (not fresh ground)` };
+    if (side === "PE" && !(c.close < pdhl.pdl)) return { ok: false, why: `close ${c.close} ≥ prior-day low ${pdhl.pdl} (not fresh ground)` };
+  }
+  return { ok: true, body: _r2(body), bodyPct: _r2(body / range), closePos: _r2(closePos) };
+}
+
+function _getSignalV3(candles, opts) {
+  const silent = !!(opts && opts.silent);
+  const alreadyTraded = !!(opts && opts.alreadyTraded);
+  const base = _baseSignal();
+  if (!candles || candles.length < 2) return Object.assign(base, { reason: `Warming up (${candles ? candles.length : 0} candles)` });
+
+  const cfg = {
+    atrPeriod:    parseInt  (process.env.ORB_ATR_PERIOD       || "14", 10),
+    orAtrMin:     parseFloat(process.env.ORB_OR_ATR_MIN       || "0.7"),
+    orAtrMax:     parseFloat(process.env.ORB_OR_ATR_MAX       || "2.5"),
+    gapOrMult:    parseFloat(process.env.ORB_GAP_OR_MULT      || "3.0"),
+    bufOrMult:    parseFloat(process.env.ORB_BUFFER_OR_MULT   || "0.15"),
+    bufAtrMult:   parseFloat(process.env.ORB_BUFFER_ATR_MULT  || "0.3"),
+    bodyAtrMult:  parseFloat(process.env.ORB_BODY_ATR_MULT    || "0.6"),
+    closePosPct:  parseFloat(process.env.ORB_CLOSE_POS_PCT    || "0.25"),
+    vwapOn:       (process.env.ORB_VWAP_FILTER_ENABLED || "true").toLowerCase() === "true",
+    priorDayOn:   (process.env.ORB_PRIORDAY_LEVEL_FILTER || "true").toLowerCase() === "true",
+    confirmOn:    (process.env.ORB_CONFIRM_ENABLED     || "true").toLowerCase() === "true",
+    retestMode:   (process.env.ORB_RETEST_MODE || "optional").toLowerCase(),   // optional | off
+    retestWindow: parseInt  (process.env.ORB_RETEST_MAX_WAIT  || "4", 10),
+    retestTolMin: parseFloat(process.env.ORB_RETEST_TOL_MIN   || "5"),
+    retestTolPct: parseFloat(process.env.ORB_RETEST_TOL_PCT   || "0.1"),
+    tgtMult:      parseFloat(process.env.ORB_TARGET_RANGE_MULT || "1.5"),
+  };
+
+  const entryStartMin = _parseMins("ORB_RANGE_END", "09:30");
+  const entryEndMin   = _parseMins("ORB_ENTRY_END", "11:30");
+  const last    = candles[candles.length - 1];
+  const lastIdx = candles.length - 1;
+  const lastIst = _utcSecToIstMins(last.time);
+  const day     = _istDayOf(last.time);
+
+  if (lastIst < entryStartMin) return Object.assign(base, { reason: `Building opening range (waiting for ${process.env.ORB_RANGE_END || "09:30"} IST)` });
+  if (lastIst >= entryEndMin)  return Object.assign(base, { reason: `Past ${process.env.ORB_ENTRY_END || "11:30"} IST — no new ORB entries (stale-breakout window)` });
+  if (alreadyTraded)           return Object.assign(base, { reason: "Already traded this session — ORB takes only 1 trade/day" });
+
+  const or = computeOpeningRange(candles);
+  if (!or) return Object.assign(base, { reason: "Opening range not yet formed" });
+  const rangePts = _r2(or.high - or.low);
+  const orBase = Object.assign(base, { orh: or.high, orl: or.low, rangePts });
+
+  // ── Adaptive volatility yardsticks (ATR-relative gates hold across VIX regimes) ──
+  const upto  = candles.slice(0, lastIdx + 1);
+  const atr5  = _atrAtLast(upto.map(c => c.high), upto.map(c => c.low), upto.map(c => c.close), cfg.atrPeriod);
+  const c15   = _to15m(upto);
+  const atr15 = _atrAtLast(c15.map(c => c.high), c15.map(c => c.low), c15.map(c => c.close), cfg.atrPeriod);
+  orBase.atr5  = atr5  != null ? _r2(atr5)  : null;
+  orBase.atr15 = atr15 != null ? _r2(atr15) : null;
+
+  // ── DAY FILTER 1 — OR size vs ATR(15m). Fail-open if ATR15 not yet seeded. ──
+  if (atr15 != null && atr15 > 0) {
+    const ratio = rangePts / atr15;
+    if (ratio < cfg.orAtrMin) return Object.assign(orBase, { reason: `OR ${rangePts}pt = ${ratio.toFixed(2)}×ATR15 < ${cfg.orAtrMin} — too tight (chop), skip day` });
+    if (ratio > cfg.orAtrMax) return Object.assign(orBase, { reason: `OR ${rangePts}pt = ${ratio.toFixed(2)}×ATR15 > ${cfg.orAtrMax} — open already ran / exhausted, skip day` });
+  }
+
+  // ── DAY FILTER 2 — gap sanity vs OR size. Fail-open when prior close unknown. ──
+  const gapPts = _computeGap(candles, day);
+  orBase.gapPts = gapPts;
+  if (cfg.gapOrMult > 0 && gapPts != null && Math.abs(gapPts) > cfg.gapOrMult * rangePts) {
+    return Object.assign(orBase, { reason: `Gap ${gapPts}pt > ${cfg.gapOrMult}×OR (${_r2(cfg.gapOrMult * rangePts)}pt) — exhaustion/news gap, skip day` });
+  }
+
+  const pdhl = _priorDayHL(candles, day);
+
+  // ── BREAKOUT — first day candle whose CLOSE clears OR ± buffer (one/day). ──
+  const buffer = _r2(Math.max(cfg.bufOrMult * rangePts, atr5 != null ? cfg.bufAtrMult * atr5 : 0, 1));
+  let b = -1, side = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    if (_istDayOf(c.time) !== day) continue;
+    const m = _utcSecToIstMins(c.time);
+    if (m < entryStartMin || m >= entryEndMin) continue;
+    if (c.close > or.high + buffer) { b = i; side = "CE"; break; }
+    if (c.close < or.low  - buffer) { b = i; side = "PE"; break; }
+  }
+  if (b < 0) return Object.assign(orBase, { reason: `No breakout yet — close ${last.close} within [${_r2(or.low - buffer)}, ${_r2(or.high + buffer)}]` });
+  orBase.side = side;
+
+  if (lastIdx === b) return Object.assign(orBase, { reason: `Breakout ${side} candle formed (close ${candles[b].close}) — DO NOT buy it; waiting for confirmation` });
+
+  // ── Breakout-candle quality (evaluated on the breakout candle `brk`) ──
+  const brk = candles[b];
+  const vwapAtBrk = computeVwap(candles.slice(0, b + 1));
+  if (vwapAtBrk == null) _warnNoVolumeOnce(silent);
+  orBase.vwap = vwapAtBrk;
+  const q = _breakoutQualityV3(brk, side, atr5, vwapAtBrk, pdhl, cfg);
+  if (!q.ok) return Object.assign(orBase, { reason: `Breakout candle failed quality (${side}): ${q.why} — no trade today` });
+  orBase.bodyPct = q.bodyPct;
+  orBase.wickPass = true;
+  orBase.vwapAligned = cfg.vwapOn ? true : null;
+
+  // ── Confirmation candle (b+1): HH/HC beyond edge + on the right side of VWAP ──
+  const confCandle = candles[b + 1];
+  const vwapAtConf = computeVwap(candles.slice(0, b + 2));
+  const confPass = !cfg.confirmOn || (_confirms(confCandle, brk, side, or.high, or.low) && _vwapSideOk(confCandle, side, vwapAtConf));
+
+  const tol = Math.max(cfg.retestTolMin, cfg.retestTolPct * rangePts);
+  const _entry = (extra, tag) => {
+    const entrySpot  = last.close;
+    const slSpot     = side === "CE" ? or.low : or.high;   // reference; route sets real init SL from entry-candle low/high
+    const targetSpot = side === "CE" ? or.high + rangePts * cfg.tgtMult : or.low - rangePts * cfg.tgtMult;
+    if (!silent) {
+      const istStr = new Date(last.time * 1000).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+      console.log(`[ORB ${istStr}] V3 ENTER ${side}${tag} | ORH=${or.high} ORL=${or.low} range=${rangePts}pt${atr15 ? ` (${(rangePts / atr15).toFixed(2)}×ATR15)` : ""} buf=${buffer} | brk body=${q.body}pt | ${extra} [STRONG]`);
+    }
+    return Object.assign(orBase, {
+      signal:         side === "CE" ? "BUY_CE" : "BUY_PE",
+      side,
+      entrySpot:      _r2(entrySpot),
+      slSpot:         _r2(slSpot),
+      targetSpot:     _r2(targetSpot),
+      signalStrength: "STRONG",
+      confirmed:      true,
+      reason: `ORB V3 ${side}${tag}: brk ${brk.close} beyond ${side === "CE" ? "ORH" : "ORL"} ${side === "CE" ? or.high : or.low}+buf ${buffer} (body ${q.body}pt), ${extra}${gapPts != null ? `, gap ${gapPts}pt` : ""}${pdhl ? `, PDH/PDL ${pdhl.pdh}/${pdhl.pdl}` : ""} [STRONG]`,
+    });
+  };
+
+  // ── PRIMARY entry: confirmation candle. Early — this is what keeps trend days. ──
+  if (confPass) {
+    if (lastIdx === b + 1) return _entry("confirmation candle extended (HH/HC beyond edge)", "");
+    return Object.assign(orBase, { reason: `Breakout confirmed earlier (candle #${b + 1}) — 1-trade rule, no second attempt today` });
+  }
+
+  // ── Confirmation hesitated → OPTIONAL, NON-BLOCKING retest fallback ──
+  if (cfg.retestMode === "off") return Object.assign(orBase, { reason: `Confirmation candle didn't extend and retest is OFF — no trade today` });
+  if (lastIdx === b + 1)        return Object.assign(orBase, { reason: `Confirmation candle didn't extend — armed for retest (≤${cfg.retestWindow} candles)` });
+
+  const invalidated = side === "CE" ? last.close < or.low : last.close > or.high;
+  if (invalidated) return Object.assign(orBase, { reason: `Breakout invalidated (close ${last.close} back through the box) — no trade today` });
+
+  if (lastIdx <= b + 1 + cfg.retestWindow) {
+    // Trend resumed with a fresh higher-high beyond the edge → enter promptly.
+    if (_confirms(last, brk, side, or.high, or.low) && _vwapSideOk(last, side, computeVwap(upto))) {
+      return _entry("trend resumed (fresh HH/HC beyond edge)", " [trend]");
+    }
+    // Pullback that RETESTED the edge and held → enter.
+    const retestHold = side === "CE"
+      ? (last.low  <= or.high + tol && last.close > or.high && _vwapSideOk(last, side, computeVwap(upto)))
+      : (last.high >= or.low  - tol && last.close < or.low  && _vwapSideOk(last, side, computeVwap(upto)));
+    if (retestHold) return _entry(`retest-and-hold of ${side === "CE" ? "ORH" : "ORL"} (tol ${_r2(tol)}pt)`, " [retest]");
+    // Window end: never retested but still trending → still enter (don't miss the trend).
+    if (lastIdx === b + 1 + cfg.retestWindow) {
+      const stillTrending = side === "CE"
+        ? (last.close > or.high + buffer && _vwapSideOk(last, side, computeVwap(upto)))
+        : (last.close < or.low  - buffer && _vwapSideOk(last, side, computeVwap(upto)));
+      if (stillTrending) return _entry("no retest but still trending at window end", " [trend]");
+      return Object.assign(orBase, { reason: `Retest window expired and not trending — no trade today` });
+    }
+    return Object.assign(orBase, { reason: `Waiting for retest/resume of ${side === "CE" ? "ORH" : "ORL"} (candle ${lastIdx - b}/${cfg.retestWindow + 1})` });
+  }
+  return Object.assign(orBase, { reason: `Retest window expired — no trade today` });
+}
+
 /**
  * getSignal(candles, opts) — returns an ORB breakout signal. Dispatches to the
- * confirmed-breakout engine (V2, default) or the legacy immediate-entry engine
- * (V1) based on ORB_ENTRY_V2_ENABLED.
+ * V3 trend-day engine (default), the V2 confirmed-breakout engine, or the V1
+ * legacy immediate-entry engine, based on ORB_ENTRY_V3_ENABLED / ORB_ENTRY_V2_ENABLED.
  *
  * @param {Array<{time, open, high, low, close, volume?}>} candles — IST-aware 5-min
- *        candles. MUST include prior-day history (multi-day preload) so V2 can seed
- *        EMA20/EMA50/ADX/RSI; OR + VWAP are day-scoped internally so that is safe.
+ *        candles. MUST include prior-day history (multi-day preload) so the engine
+ *        can seed ATR(5m)/ATR(15m) + prior-day High/Low; OR + VWAP are day-scoped
+ *        internally so the prior days never leak into today's opening range.
  * @param {object} [opts] silent — suppress console.log; alreadyTraded — 1 trade/day guard.
  */
 function getSignal(candles, opts) {
+  const v3 = (process.env.ORB_ENTRY_V3_ENABLED || "true").toLowerCase() === "true";
+  if (v3) return _getSignalV3(candles, opts);
   const v2 = (process.env.ORB_ENTRY_V2_ENABLED || "true").toLowerCase() === "true";
   return v2 ? _getSignalV2(candles, opts) : _getSignalV1(candles, opts);
 }

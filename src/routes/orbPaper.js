@@ -46,6 +46,7 @@ const { getCharges } = require("../utils/charges");
 const { fmtISTDateTime, getISTMinutes, getBucketStart, parseOptionDetails } = require("../utils/tradeUtils");
 const skipLogger = require("../utils/skipLogger");
 const tradeGuards = require("../utils/tradeGuards");
+const orbRiskState = require("../utils/orbRiskState");
 
 const NIFTY_INDEX_SYMBOL = "NSE:NIFTY50-INDEX";
 const CALLBACK_ID        = "orbPaper";
@@ -248,9 +249,10 @@ async function simulateBuy(side, sigSnapshot) {
     return;
   }
 
-  // ── STEP 8 — Option filter: ATM (resolved above), premium band, spread ──
-  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "100");
-  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "220");
+  // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
+  // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
+  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
+  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
   const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
     log(`⏸️ [ORB-PAPER] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
@@ -482,8 +484,12 @@ function _managePositionOnClose(bar) {
     }
   }
 
-  // 2. Breakeven — lift the hard SL to entry once far enough in profit (never loosens)
-  const bePts  = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  // 2. Breakeven — lift the hard SL to entry once far enough in profit (never loosens).
+  //    Adaptive: max(fixed pts, ORB_BREAKEVEN_OR_MULT × OR width) so a wide-range
+  //    day gets more room before the stop tightens to entry.
+  const beMult = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");
+  const beFixed = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const bePts  = (beMult > 0 && pos.rangePts) ? Math.max(beFixed, Math.round(beMult * pos.rangePts)) : beFixed;
   const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
   if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
     if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
@@ -538,6 +544,15 @@ function _checkExits(spotPrice) {
     return;
   }
 
+  // Premium disaster backstop — exit if the option premium collapses by
+  // ORB_PREMIUM_STOP_PCT% from entry (catches IV-crush / vega losses that the
+  // spot-based stop can miss). Whichever of this / the ₹ cap / the spot SL fires first.
+  const premStopPct = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");
+  if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) {
+    simulateSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
+    return;
+  }
+
   // Hard SL (breakout candle low/high, lifted to breakeven) — spot-based, per tick.
   if (pos.side === "CE" && spotPrice <= pos.slSpot) {
     simulateSell(`Hard SL hit (${spotPrice} ≤ ${pos.slSpot})`);
@@ -573,6 +588,14 @@ async function onCandleClose(bar) {
   // Max trades guard (default 1 — ORB is 1/day)
   const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
   if (state.tradesTaken >= maxTrades) return; // expected, not a skip
+
+  // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop.
+  const _throttle = orbRiskState.getThrottle("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl);
+  if (_throttle.block) {
+    log(`⏸️ [ORB-PAPER] Risk breaker: ${_throttle.reason}`);
+    skipLogger.appendSkipLog("orb", { gate: "risk_throttle", reason: _throttle.reason, spot: _spot });
+    return;
+  }
 
   // Expiry-day-only filter
   if (state._expiryDayBlocked) {
@@ -861,6 +884,10 @@ function stopSession() {
       log(`⚠️ [ORB-PAPER] Save failed: ${e.message}`);
     }
   }
+
+  // Record today's net for the risk breaker (0 on a no-trade/skip day → one-day
+  // cool-off resets a losing streak rather than deadlocking).
+  try { orbRiskState.recordDay("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl); } catch (_) {}
 
   log("🔴 [ORB-PAPER] Session stopped");
 

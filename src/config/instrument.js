@@ -437,7 +437,19 @@ function parseDateToCode(dateStr) {
  * Usage:  const { symbol, expiry, strike, invalid } = await validateAndGetOptionSymbol(spot, side);
  */
 async function validateAndGetOptionSymbol(spot, side, mode) {
-  const strike = calcATMStrike(spot, side);
+  let strike = calcATMStrike(spot, side);
+  // ── ORB trades slightly ITM (~delta 0.6): higher delta tracks the trend move
+  //    better and decays slower in % than ATM. Shift the strike ITM by
+  //    ORB_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
+  //    Set ORB_ITM_STEPS=0 to fall back to ATM. Applies to ORB mode only. ──────
+  if (String(mode || "").toUpperCase() === "ORB") {
+    const itmSteps = parseInt(process.env.ORB_ITM_STEPS || "1", 10);
+    if (itmSteps > 0 && (side === "CE" || side === "PE")) {
+      const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;
+      console.log(`[instrument] ORB ITM: ${side} strike ${strike} → ${shifted} (${itmSteps} step${itmSteps > 1 ? "s" : ""} ITM, ~delta 0.6)`);
+      strike = shifted;
+    }
+  }
   console.log(`[instrument] validateAndGetOptionSymbol() called: spot=${spot}, side=${side}, strike=${strike}${mode ? `, mode=${mode}` : ""}`);
 
   // ── Manual expiry override — skip all auto-detection ──────────────────────

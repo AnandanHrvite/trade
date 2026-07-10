@@ -46,6 +46,8 @@ const { bbRsiStyleCSS, bbRsiTopBar, bbRsiCapitalStrip, bbRsiStatGrid, bbRsiCurre
 const { isTradingAllowed } = require("../utils/nseHolidays");
 const vixFilter   = require("../services/vixFilter");
 const { checkLiveVix, fetchLiveVix, getCachedVix, resetCache: resetVixCache } = vixFilter;
+const oiFilter    = require("../services/oiFilter");   // paper-canonical: live must apply the same OI gate
+const orbRiskState = require("../utils/orbRiskState");
 const tradeLogger = require("../utils/tradeLogger");
 const skipLogger  = require("../utils/skipLogger");
 const fyers       = require("../config/fyers");
@@ -172,9 +174,10 @@ async function placeLiveBuy(side, sigSnapshot) {
   } catch (_) {}
   if (!optionEntryLtp) { log(`❌ Option LTP unavailable — entry blocked`); return; }
 
-  // ── STEP 8 — Option filter: ATM (resolved above), premium band, spread ──
-  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "100");
-  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "220");
+  // ── STEP 8 — Option filter: slightly-ITM (resolved above), premium band, spread ──
+  // Band widened for slightly-ITM premiums (higher intrinsic than ATM).
+  const premMin = parseFloat(process.env.ORB_PREMIUM_MIN || "120");
+  const premMax = parseFloat(process.env.ORB_PREMIUM_MAX || "400");
   const premGateOn = (process.env.ORB_PREMIUM_GATE_ENABLED || "true").toLowerCase() === "true";
   if (premGateOn && (optionEntryLtp < premMin || optionEntryLtp > premMax)) {
     log(`⏸️ [ORB-LIVE] Premium gate: ${optInfo.symbol} LTP ₹${optionEntryLtp} outside [${premMin}, ${premMax}] — entry skipped`);
@@ -231,6 +234,7 @@ async function placeLiveBuy(side, sigSnapshot) {
     breakevenArmed: false, emaArmed: false, lastEma: null,
     peakPremium: optionEntryLtp,
     signalStrength: sigSnapshot.signalStrength, vixAtEntry: getCachedVix(),
+    oiAtEntry: oiFilter.getCachedOi(), oiRegime: oiFilter.getCachedRegime(),
     vwapAtEntry: sigSnapshot.vwap, volRatio: sigSnapshot.volRatio, wickRatio: sigSnapshot.wickRatio,
     // Entry-context filter outcomes — already computed by getSignal(), captured for analysis.
     vwapAligned: sigSnapshot.vwapAligned != null ? sigSnapshot.vwapAligned : null,
@@ -379,7 +383,9 @@ async function _managePositionOnClose(bar) {
     if (pos.side === "PE" && bar.close > bar.open && bar.close > pos.orl) return placeLiveSell(`Strong opposite candle (green body ${bodyPts.toFixed(1)}pt ≥ ${oppThresh.toFixed(1)}pt, closed above ORL)`);
   }
 
-  const bePts  = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const beMult = parseFloat(process.env.ORB_BREAKEVEN_OR_MULT || "0.5");
+  const beFixed = parseFloat(process.env.ORB_BREAKEVEN_PTS || "20");
+  const bePts  = (beMult > 0 && pos.rangePts) ? Math.max(beFixed, Math.round(beMult * pos.rangePts)) : beFixed;
   const favPts = (close - pos.entrySpot) * (pos.side === "CE" ? 1 : -1);
   if (!pos.breakevenArmed && bePts > 0 && favPts >= bePts) {
     if (pos.side === "CE" && pos.entrySpot > pos.slSpot) pos.slSpot = Math.round(pos.entrySpot * 100) / 100;
@@ -424,18 +430,36 @@ function _checkExits(spotPrice) {
   const maxTradeLoss = parseFloat(process.env.ORB_MAX_TRADE_LOSS || "1500");
   if (maxTradeLoss > 0 && _curPnl <= -maxTradeLoss) return placeLiveSell(`Max trade loss (₹${Math.round(_curPnl)} ≤ -₹${maxTradeLoss})`);
 
+  // Premium disaster backstop — exit if the option premium collapses by
+  // ORB_PREMIUM_STOP_PCT% from entry (catches IV-crush / vega losses the spot stop misses).
+  const premStopPct = parseFloat(process.env.ORB_PREMIUM_STOP_PCT || "35");
+  if (premStopPct > 0 && optLtp <= pos.optionEntryLtp * (1 - premStopPct / 100)) return placeLiveSell(`Premium disaster stop (₹${optLtp} ≤ −${premStopPct}% of entry ₹${pos.optionEntryLtp})`);
+
   // Hard SL (breakout candle low/high, lifted to breakeven) — spot-based, per tick.
   if (pos.side === "CE" && spotPrice <= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≤ ${pos.slSpot})`);
   if (pos.side === "PE" && spotPrice >= pos.slSpot) return placeLiveSell(`Hard SL hit (${spotPrice} ≥ ${pos.slSpot})`);
 }
 
 async function onCandleClose(bar) {
+  // Sample futures OI each candle close (no-op unless an OI filter is enabled) so
+  // the buildup series stays filled — mirrors orbPaper (paper is canonical).
+  await oiFilter.recordOiSample(bar && bar.close);
+
   if (state.position) { await _managePositionOnClose(bar); return; }
   const _spot = bar && bar.close;
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) { skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot, _live: true }); return; }
   const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
   if (state.tradesTaken >= maxTrades) return;
+
+  // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop (live stream).
+  const _throttle = orbRiskState.getThrottle("orb-live", tradeLogger.istDateString(Date.now()), state.sessionPnl);
+  if (_throttle.block) {
+    log(`⏸️ Risk breaker: ${_throttle.reason}`);
+    skipLogger.appendSkipLog("orb", { gate: "risk_throttle", reason: _throttle.reason, spot: _spot, _live: true });
+    return;
+  }
+
   if (state._expiryDayBlocked) return;
 
   const sig = orbStrategy.getSignal(state.candles, { alreadyTraded: state.tradesTaken >= maxTrades });
@@ -452,6 +476,20 @@ async function onCandleClose(bar) {
       return;
     }
   }
+
+  // OI + price buildup gate — block entries fighting a confirmed buildup (mirrors
+  // orbPaper; paper is canonical, so live must apply the identical gate). Tags the
+  // entry reason with the regime so the trade records its OI context.
+  if (oiFilter.getOiEnabled("orb")) {
+    const _oi = await oiFilter.checkLiveOi(sig.side, _spot, { mode: "orb" });
+    if (!_oi.allowed) {
+      log(`⏸️ OI gate: ${_oi.reason}`);
+      skipLogger.appendSkipLog("orb", { gate: "oi", reason: _oi.reason, spot: _spot, side: sig.side, oi: _oi.oi ?? null, deltaOi: _oi.deltaOi ?? null, regime: _oi.regime ?? null, _live: true });
+      return;
+    }
+    if (_oi.regime) sig.reason = `${sig.reason} | ${_oi.reason}`;
+  }
+
   await placeLiveBuy(sig.side, sig);
 }
 
@@ -586,6 +624,8 @@ function stopSession() {
       log(`💾 Session saved — ${state.sessionTrades.length} trades, PnL ₹${state.sessionPnl}`);
     } catch (e) { log(`⚠️ Save failed: ${e.message}`); }
   }
+  // Record today's net for the risk breaker (separate live P&L stream).
+  try { orbRiskState.recordDay("orb-live", tradeLogger.istDateString(Date.now()), state.sessionPnl); } catch (_) {}
   log("🔴 Session stopped");
   notifyDayReport({ mode: `ORB-LIVE ${isDryRun() ? "(DRY-RUN)" : ""}`, sessionTrades: state.sessionTrades, sessionPnl: state.sessionPnl, sessionStart: state.sessionStart });
 }
