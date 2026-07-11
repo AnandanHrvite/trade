@@ -669,10 +669,22 @@ function _getSignalV3(candles, opts) {
   const rangePts = _r2(or.high - or.low);
   const orBase = Object.assign(base, { orh: or.high, orl: or.low, rangePts });
 
-  // ── Adaptive volatility yardsticks (ATR-relative gates hold across VIX regimes) ──
-  const upto  = candles.slice(0, lastIdx + 1);
-  const atr5  = _atrAtLast(upto.map(c => c.high), upto.map(c => c.low), upto.map(c => c.close), cfg.atrPeriod);
-  const c15   = _to15m(upto);
+  const upto = candles.slice(0, lastIdx + 1);   // current-session slice (VWAP uses this)
+
+  // ── Adaptive volatility yardstick, ANCHORED at the OR freeze (09:30) ──────────
+  // Compute ATR(5m)/ATR(15m) from data up to the last opening-range candle, NOT the
+  // current candle. The OR itself is frozen at 09:30, so its volatility context is
+  // frozen too: the OR-size gate, the breakout buffer, and the body-quality check
+  // all use ONE stable value for the whole day — no intraday drift, and the fixed
+  // breakout candle can never be re-judged by later data.
+  let orEndIdx = -1;
+  for (let i = 0; i <= lastIdx; i++) {
+    if (_istDayOf(candles[i].time) !== day) continue;
+    if (_utcSecToIstMins(candles[i].time) < entryStartMin) orEndIdx = i;
+  }
+  const yard  = orEndIdx >= 0 ? candles.slice(0, orEndIdx + 1) : upto;
+  const atr5  = _atrAtLast(yard.map(c => c.high), yard.map(c => c.low), yard.map(c => c.close), cfg.atrPeriod);
+  const c15   = _to15m(yard);
   const atr15 = _atrAtLast(c15.map(c => c.high), c15.map(c => c.low), c15.map(c => c.close), cfg.atrPeriod);
   orBase.atr5  = atr5  != null ? _r2(atr5)  : null;
   orBase.atr15 = atr15 != null ? _r2(atr15) : null;
