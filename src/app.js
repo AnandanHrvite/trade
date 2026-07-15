@@ -632,7 +632,7 @@ app.get("/", (req, res) => {
   // cards leave a clean 2-column gap in their last row, the Cumulative P&L card
   // tucks into that gap beside the last card; otherwise it falls back to a
   // full-width band below the grid (the default for any other card count).
-  const dashCardCount   = 1 + (bbRsiModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0);
+  const dashCardCount   = 1 + (bbRsiModeOn ? 1 : 0) + (paModeOn ? 1 : 0) + (orbModeOn ? 1 : 0) + (ema9vwapModeOn ? 1 : 0) + (trendPbModeOn ? 1 : 0);
   const cumInlineInGrid = (dashCardCount % 3) === 1;
   const cumCardInner = `
     <div class="dash-chart-hdr">
@@ -1015,6 +1015,7 @@ app.get("/", (req, res) => {
     .mm-card.pa       .mm-dot { background:#a78bfa; }
     .mm-card.orb      .mm-dot { background:#10b981; }
     .mm-card.ema9vwap .mm-dot { background:#06b6d4; }
+    .mm-card.trendpb  .mm-dot { background:#ec4899; }
     .mm-title { font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#a0b0c8; }
     /* Global Paper/Live source toggle (top-bar) — drives every chart on the dashboard */
     .dash-src-toggle { display:inline-flex; background:#07111f; border:1px solid #1a2236; border-radius:4px; padding:2px; flex-shrink:0; }
@@ -1333,6 +1334,17 @@ ${buildSidebar('dashboard', liveActive)}
       <div class="mm-stats" id="mm-stats-EMA9VWAP">—</div>
       <div class="mm-wrap"><canvas id="mmChart-EMA9VWAP"></canvas></div>
       <div class="mm-empty" id="mm-empty-EMA9VWAP" style="display:none;">No paper trades yet</div>
+    </div>
+    ` : ''}
+    ${trendPbModeOn ? `
+    <div class="mm-card trendpb" data-mode="TREND_PB">
+      <div class="mm-hdr">
+        <span class="mm-dot"></span>
+        <span class="mm-title">TREND PB</span>
+      </div>
+      <div class="mm-stats" id="mm-stats-TREND_PB">—</div>
+      <div class="mm-wrap"><canvas id="mmChart-TREND_PB"></canvas></div>
+      <div class="mm-empty" id="mm-empty-TREND_PB" style="display:none;">No paper trades yet</div>
     </div>
     ` : ''}
     ${cumInlineInGrid ? cumCardInline : ''}
@@ -1954,10 +1966,10 @@ document.addEventListener('click', function(e){
   if (!src || _dashSrc === src) return;
   _dashSrc = src;
   _dcToggle = src;
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(function(m){ _mmToggle[m] = src; });
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'].forEach(function(m){ _mmToggle[m] = src; });
   document.querySelectorAll('#dashSrcToggle .dst-btn').forEach(function(b){ b.classList.toggle('active', b === btn); });
   _renderDashTotal();
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'].forEach(_renderModuleChart);
   _applyAllBtnState(_allBtnState.paperOn, _allBtnState.liveOn);
 });
 
@@ -1966,7 +1978,7 @@ loadDashCumCharts();
 // ── Per-Module P&L Charts (Paper/Live toggle, all-time) ──────────────────────
 var _mmData = { paper: null, live: null };
 var _mmCharts = {};
-var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper' };
+var _mmToggle = { EMA_RSI_ST: 'paper', BB_RSI: 'paper', PA: 'paper', ORB: 'paper', EMA9VWAP: 'paper', TREND_PB: 'paper' };
 
 function _renderModuleChart(mode){
   var card = document.querySelector('.mm-card[data-mode="' + mode + '"]');
@@ -1990,7 +2002,7 @@ async function loadModuleCharts(){
     var r2 = await fetch('/live-consolidation/data', { cache: 'no-store' });
     if (r2.ok){ var d2 = await r2.json(); _mmData.live = (d2 && d2.trades) || []; }
   } catch(_){ _mmData.live = []; }
-  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP'].forEach(_renderModuleChart);
+  ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'].forEach(_renderModuleChart);
 }
 
 loadModuleCharts();

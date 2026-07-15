@@ -61,6 +61,7 @@ const STRATEGY_BADGE = {
   bb_rsi:    { label: "BB_RSI",    cls: "mode-bb_rsi" },
   pa:       { label: "PA",       cls: "mode-pa" },
   orb:      { label: "ORB",      cls: "mode-orb" },
+  trend_pb: { label: "TREND PB", cls: "mode-trend_pb" },
 };
 
 // Cache: abs path → { mtimeMs, meta } so we don't re-parse a file every list call.
@@ -82,7 +83,7 @@ function _istDateFromMs(ms) {
 function detectMeta(group, rel, abs, mtimeMs) {
   if (!group.tagged) return { strat: null, date: null };
   // Filename-encoded modes (replay / replay_sim outputs) — no per-file date.
-  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb)\b/i);
+  const nameMatch = path.basename(rel).match(/^(ema_rsi_st|bb_rsi|pa|orb|trend_pb)\b/i);
   if (nameMatch) return { strat: nameMatch[1].toLowerCase(), date: null };
   // Hash-named replay-cache JSON: read embedded mode/date, with an mtime cache.
   const cached = _tagCache.get(abs);
@@ -90,8 +91,8 @@ function detectMeta(group, rel, abs, mtimeMs) {
   let meta = { strat: null, date: null };
   try {
     const obj = JSON.parse(fs.readFileSync(abs, "utf-8"));
-    const m = String(obj && obj.mode || "").match(/^(ema_rsi_st|bb_rsi|pa|orb)/i);
-    if (m) meta.strat = m[1].toLowerCase();
+    const m = String(obj && obj.mode || "").match(/^(ema_rsi_st|bb_rsi|pa|orb|trend[-_]pb)/i);
+    if (m) meta.strat = m[1].toLowerCase().replace(/-/g, "_");   // "trend-pb" → "trend_pb"
     // `date` was added to cached results later; fall back to a numeric sessionId (epoch ms).
     if (typeof obj.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(obj.date)) meta.date = obj.date;
     else if (typeof obj.sessionId === "number") meta.date = _istDateFromMs(obj.sessionId);
@@ -368,6 +369,7 @@ router.get("/", (req, res) => {
     .mode-bb_rsi    { color:#fbbf24; }
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
+    .mode-trend_pb { color:#f472b6; }
     .mode-sim      { color:#ec4899; }
     .mode-desc { font-size:0.66rem; color:#4a6080; margin:6px 14px 0; font-style:italic; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
@@ -500,6 +502,7 @@ ${embed ? '' : buildSidebar('cacheFiles', liveActive)}
     bb_rsi:    { label: 'BB_RSI',    cls: 'mode-bb_rsi' },
     pa:       { label: 'PA',       cls: 'mode-pa' },
     orb:      { label: 'ORB',      cls: 'mode-orb' },
+    trend_pb: { label: 'TREND PB', cls: 'mode-trend_pb' },
   };
   function badgeHtml(strat) {
     var b = STRAT_BADGE[strat];

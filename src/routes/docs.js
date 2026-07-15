@@ -370,6 +370,7 @@ const GUIDE_STATUS = {
       { type: "bool", label: "Price Action Mode", key: "PA_MODE_ENABLED", def: "true" },
       { type: "bool", label: "ORB Mode", key: "ORB_MODE_ENABLED", def: "true" },
       { type: "bool", label: "EMA9+VWAP Mode", key: "EMA9VWAP_MODE_ENABLED", def: "true" },
+      { type: "bool", label: "Trend Pullback Mode", key: "TREND_PB_MODE_ENABLED", def: "true" },
     ] },
   ] },
 };

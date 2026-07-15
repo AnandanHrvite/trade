@@ -97,6 +97,7 @@ function modeGroup(mode) {
   if (m === "PA"       || m.startsWith("PA-")       || m.startsWith("PA_"))       return "PA";
   if (m === "ORB"      || m.startsWith("ORB-")      || m.startsWith("ORB_"))      return "ORB";
   if (m === "EMA9VWAP" || m.startsWith("EMA9VWAP-") || m.startsWith("EMA9VWAP_")) return "EMA9VWAP";
+  if (m === "TREND_PB" || m.startsWith("TREND_PB-") || m.startsWith("TREND_PB_")) return "TREND_PB";
   return "EMA_RSI_ST";
 }
 
@@ -363,6 +364,8 @@ function modeLabel(mode) {
   if (m.startsWith("ORB-LIVE"))        return "⚡ ORB LIVE" + m.slice("ORB-LIVE".length);
   if (m.startsWith("EMA9VWAP-PAPER"))  return "📄 EMA9+VWAP PAPER" + m.slice("EMA9VWAP-PAPER".length);
   if (m.startsWith("EMA9VWAP-LIVE"))   return "⚡ EMA9+VWAP LIVE" + m.slice("EMA9VWAP-LIVE".length);
+  if (m.startsWith("TREND_PB-PAPER"))  return "📈 TREND PB PAPER" + m.slice("TREND_PB-PAPER".length);
+  if (m.startsWith("TREND_PB-LIVE"))   return "⚡ TREND PB LIVE" + m.slice("TREND_PB-LIVE".length);
   return m;
 }
 
@@ -588,7 +591,7 @@ function notifyConsolidatedDayReport({ byMode }) {
   if (!canSend("TG_DAYREPORT_CONSOLIDATED")) return false;
 
   // Only include strategies that are currently enabled in Settings.
-  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP"].filter(isModeEnabled);
+  const groups = ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"].filter(isModeEnabled);
   let totalTrades = 0, totalPnl = 0, totalWins = 0, totalLosses = 0;
   const rows = [];
 

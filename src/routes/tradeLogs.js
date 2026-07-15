@@ -45,7 +45,7 @@ function sendAiSkipMarkdown(res, records, baseName, meta) {
   res.send(md);
 }
 
-const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap"];
+const MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb"];
 
 function validMode(m) { return MODES.includes(m); }
 function validDate(d) { return typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d); }
@@ -526,6 +526,7 @@ function enabledModesFromEnv() {
     pa:       on(process.env.PA_MODE_ENABLED),
     orb:      on(process.env.ORB_MODE_ENABLED),
     ema9vwap: on(process.env.EMA9VWAP_MODE_ENABLED),
+    trend_pb: on(process.env.TREND_PB_MODE_ENABLED),
   };
 }
 
@@ -581,6 +582,7 @@ router.get("/", (req, res) => {
     .mode-pa       { color:#a78bfa; }
     .mode-orb      { color:#10b981; }
     .mode-ema9vwap { color:#06b6d4; }
+    .mode-trend_pb { color:#ec4899; }
     .mode-meta { font-size:0.68rem; color:#4a6080; }
     table { width:100%; border-collapse:collapse; font-size:0.72rem; }
     th, td { padding:8px 12px; text-align:left; border-bottom:1px solid #121a2a; }
@@ -864,6 +866,7 @@ ${buildSidebar('tradeLogs', liveActive)}
         { name: 'PA',        url: '/pa-paper/reset' },
         { name: 'ORB',       url: '/orb-paper/reset' },
         { name: 'EMA9+VWAP', url: '/ema9vwap-paper/reset' },
+        { name: 'TREND PB',  url: '/trend-pb-paper/reset' },
       ];
       var done = [], skipped = [], failed = [];
       for (var i = 0; i < STRATS.length; i++) {
@@ -940,6 +943,7 @@ ${buildSidebar('tradeLogs', liveActive)}
     { key: 'pa',       label: 'PRICE ACTION', cls: 'mode-pa' },
     { key: 'orb',      label: 'ORB',          cls: 'mode-orb' },
     { key: 'ema9vwap', label: 'EMA9+VWAP',    cls: 'mode-ema9vwap' },
+    { key: 'trend_pb', label: 'TREND PB',     cls: 'mode-trend_pb' },
   ];
   function enabledModes() { return MODE_LIST.filter(function(m){ return ENABLED_MODES[m.key] !== false; }); }
 
@@ -953,8 +957,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   })();
 
   // Per-section page state.
-  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1 };
-  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1 };
+  var _filesPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1 };
+  var _skipsPage  = { ema_rsi_st:1, bb_rsi:1, pa:1, orb:1, ema9vwap:1, trend_pb:1 };
   var _auditPage  = 1;
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
