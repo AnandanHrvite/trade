@@ -1821,6 +1821,10 @@ router.get("/", (req, res) => {
           <span class="bc-current">⚙ Settings</span>
         </nav>
         <div class="top-bar-title">Settings</div>
+        <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
+          <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
+          <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
+        </div>
       </div>
       <div class="top-bar-btns" style="margin-left:auto;display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;">
         <a href="/docs" style="padding:6px 14px;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);border-radius:6px;font-size:0.75rem;font-weight:700;cursor:pointer;font-family:'IBM Plex Mono',monospace;letter-spacing:0.5px;text-decoration:none;">📄 DOCS</a>
@@ -3002,6 +3006,62 @@ function copySectionSummary() {
     setTimeout(function() { btn.textContent = 'COPY'; btn.style.color = '#10b981'; btn.style.background = 'rgba(16,185,129,0.12)'; }, 1500);
   });
 }
+
+// ── Expiry / Holiday schedule pills (mirror of the Dashboard top-bar) ─────────
+async function loadSettingsSchedulePills(){
+  function istDateISO(){ return new Date().toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' }); }
+  function diffDays(iso){
+    var p = iso.split('-');
+    var dt = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
+    var t = istDateISO().split('-');
+    var now = new Date(Date.UTC(+t[0], +t[1]-1, +t[2]));
+    return Math.round((dt - now) / 86400000);
+  }
+  function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
+  var expEl = document.getElementById('expiry-info-pill');
+  var holEl = document.getElementById('holiday-info-pill');
+  if (!expEl || !holEl) return;
+  try {
+    var [hr, er] = await Promise.all([
+      fetch('/api/holidays',     { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+      fetch('/api/expiry-dates', { cache:'no-store' }).then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; }),
+    ]);
+    var todayIso = istDateISO();
+    var expiries = (er && er.expiries) || [];
+    var nextExp = null;
+    for (var i = 0; i < expiries.length; i++) {
+      var d0 = expiries[i].actual || expiries[i].date;
+      if (d0 >= todayIso) { nextExp = { date:d0, monthly:expiries[i].monthly, preponed:expiries[i].preponed }; break; }
+    }
+    if (nextExp) {
+      var d = diffDays(nextExp.date);
+      var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
+      var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
+      expEl.classList.remove('empty');
+      expEl.textContent = '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
+    } else {
+      expEl.classList.add('empty');
+      expEl.textContent = '📅 No upcoming expiry';
+    }
+    var holidays = ((hr && hr.holidays) || []).slice().sort();
+    var nextHol = null;
+    for (var j = 0; j < holidays.length; j++) {
+      if (holidays[j] >= todayIso) { nextHol = holidays[j]; break; }
+    }
+    if (nextHol) {
+      var hd = diffDays(nextHol);
+      if (hd <= 1) {
+        holEl.classList.remove('empty');
+        holEl.textContent = '🎉 Holiday ' + fmtDMY(nextHol) + ' · ' + (hd === 0 ? 'today' : 'tomorrow');
+      } else {
+        holEl.textContent = ''; // :empty CSS rule hides it
+      }
+    } else {
+      holEl.textContent = '';
+    }
+  } catch(_){}
+}
+loadSettingsSchedulePills();
 </script>
 <!-- Section summary modal -->
 <div id="sectionSummaryModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;overflow-y:auto;padding:40px 20px;" onclick="if(event.target===this)this.style.display='none'">
