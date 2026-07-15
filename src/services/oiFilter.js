@@ -44,6 +44,7 @@ function getOiEnabled(mode = "ema_rsi_st") {
   if (mode === "bb_rsi") return process.env.BB_RSI_OI_ENABLED === "true";
   if (mode === "pa")    return process.env.PA_OI_ENABLED    === "true";
   if (mode === "orb")   return process.env.ORB_OI_ENABLED   === "true";
+  if (mode === "trend_pb") return process.env.TREND_PB_OI_ENABLED === "true";
   return process.env.EMA_RSI_ST_OI_ENABLED === "true"; // EMA_RSI_ST
 }
 

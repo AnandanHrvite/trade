@@ -42,6 +42,7 @@ All four strategies run **in parallel** on the same WebSocket — different cand
 | **EMA9+VWAP Live** | EMA 9 crosses VWAP ±σ band (Zerodha via harness) | 5-min | Zerodha | `/ema9vwap-live` |
 | **EMA9+VWAP Paper** | EMA 9 crosses VWAP ±σ band | 5-min | Simulated | `/ema9vwap-paper` |
 | **EMA9+VWAP Backtest** | EMA 9 crosses VWAP ±σ band | 5-min historical | Historical | `/ema9vwap-backtest` |
+| **Trend Pullback Paper** | 15m trend bias + 5m pullback/resumption (single-leg slightly-ITM CE/PE) | 5-min | Simulated | `/trend-pb-paper` |
 | **Replay** | Re-runs a recorded paper session through the paper `onTick()` | Recorded ticks | Recorded | `/replay` |
 | **All Backtest** | Unified backtest dashboard (per-strategy stats) | Per-strategy | Historical | `/all-backtest` |
 | **Manual Tracker** | — (trails SL only) | 15-min | Zerodha | `/tracker` |
@@ -135,6 +136,19 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 - **Guards**: the VIX gate uses the **GLOBAL** `VIX_*` keys (no per-mode key — `VIX_FILTER_ENABLED` on by default, block > `VIX_MAX_ENTRY=20`); OI-buildup + bid-ask-spread guards are live-only. Risk caps `EMA9VWAP_MAX_DAILY_TRADES=20` / `EMA9VWAP_MAX_DAILY_LOSS=5000` (fall back to the global `MAX_DAILY_*`). Circuit breakers: 3 consecutive losses → 5-min pause (4 candles) / 15-min daily kill; optional chop guard `EMA9VWAP_MAX_CONSEC_LOSSES` (0=off). Cooldowns: same-side SL cooldown `EMA9VWAP_SL_PAUSE_CANDLES=3` (inert unless an optional stop fires) + opposite-side flip cooldown `EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED=true`/`_CANDLES=3` after a signal-cross or reversal exit.
 - **LIVE = PAPER**: `/ema9vwap-live` runs the paper engine and places **Zerodha** orders via the harness, double-gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`. Backtest is a dedicated candle-loop engine ([src/services/ema9vwapBacktestEngine.js](src/services/ema9vwapBacktestEngine.js)) that mirrors the paper decisions exactly. Runs in parallel with the other strategies on the shared Fyers socket.
 
+### Strategy 6: Trend Pullback — 15m trend bias + 5m pullback/resumption (single-leg slightly-ITM CE/PE, Fyers)
+> **Phase A (paper only) ships now.** Backtest (`/trend-pb-backtest`, with walk-forward + a dumb-baseline comparison) and live (`/trend-pb-live`, dry-run gated) come in Phases B/C after paper is validated. Design doc: reviewed & approved before implementation (institutional-grade single-strategy build — capital preservation over trade frequency, ≤ ~7 real signal knobs).
+- **Philosophy**: the first question is *"should we trade at all?"* — most candles return NONE. Trade **with** an established trend, enter on a **healthy pullback that resumes**. No chasing breakouts, no predicting reversals. Price **structure** is primary; EMA/VWAP/ATR are supporting health filters. Signal source: [src/strategies/trend_pb.js](src/strategies/trend_pb.js) (pure, stateless; 15m + 5m both derived from the 5-min spot series the route feeds in).
+- **Entry** (CE / long; PE mirrors inverted) — **all** must hold:
+  1. **15m trend bias = UP**: confirmed **higher-high + higher-low** swing structure (`TREND_PB_SWING_LOOKBACK=2` pivots) **and** `EMA20(15m) > EMA50(15m)` **and** EMA20 sloping up **and** spot above session VWAP.
+  2. **Healthy 5m pullback**: over the last `TREND_PB_PULLBACK_WINDOW=6` bars, ≥ `TREND_PB_MIN_PULLBACK_BARS=2` against-trend candles dipped back into the `EMA20(5m)` zone **without** falling more than `TREND_PB_PULLBACK_MAX_ATR=1.5 × ATR(5m)` beyond it (rejects deep/broken pullbacks).
+  3. **Resumption candle** (the just-closed 5m bar): closes **back above `EMA20(5m)` and above the prior candle's high**, with **body ≥ `TREND_PB_BODY_ATR_MULT=0.5 × ATR(5m)`** — the conviction proxy that replaces volume (NIFTY spot has no real volume; same caveat as ORB/EMA9+VWAP VWAP). Enters on close, never a wick.
+  - Window `TREND_PB_ENTRY_START=09:45` → `TREND_PB_ENTRY_END=14:30`. Optional `TREND_PB_ATR_FLOOR_PTS` no-trade filter (0 = off) skips compressed-range days.
+- **Option filter**: slightly-ITM (`TREND_PB_ITM_STEPS=1`, ~delta 0.6), premium in `[TREND_PB_PREMIUM_MIN=120, TREND_PB_PREMIUM_MAX=400]`, bid-ask spread ≤ `TREND_PB_MAX_SPREAD_PTS=2` (via [tradeGuards](src/utils/tradeGuards.js), falls back to global `MAX_BID_ASK_SPREAD_PTS`).
+- **Exit — highest priority, right-tail focused, all measured on SPOT** (premium only for the backstop): initial **structural stop** at the pullback extreme, clamped to `[TREND_PB_STOP_CLAMP_MIN=8, TREND_PB_STOP_CLAMP_MAX=30]` pts → **breakeven** at `TREND_PB_BREAKEVEN_R=1.0 ×` initial risk → **ATR-chandelier trail** at `best-spot − TREND_PB_TRAIL_ATR_MULT=2.5 × ATR(5m)` (ratchets one way — the winner-runner) → **EMA20(5m)-close trend-failure** (`TREND_PB_TRAIL_EMA=20`) → **time-stop** (`TREND_PB_TIME_STOP_CANDLES=6` flat candles) → **EOD** `TREND_PB_FORCED_EXIT=15:15` → **premium disaster backstop** `TREND_PB_PREMIUM_STOP_PCT=35`. **No fixed target, no partial booking** (partials cap the right tail that pays for the small losers). Optional `TREND_PB_MAX_TRADE_LOSS` (₹, default off).
+- **Risk**: `TREND_PB_MAX_DAILY_TRADES=3` (selective), `TREND_PB_MAX_DAILY_LOSS=5000`, `TREND_PB_LOSS_STREAK_SKIP=3` consecutive-loss session cool-off. Fixed lot size (confidence-scaled sizing deliberately avoided until out-of-sample validated). **Guards**: per-mode VIX gate `TREND_PB_VIX_ENABLED` (off; `TREND_PB_VIX_MAX_ENTRY=22`, falls back to global `VIX_MAX_ENTRY`), OI-buildup gate `TREND_PB_OI_ENABLED` (off; needs master `OI_FILTER_ENABLED`).
+- Runs on the shared **Fyers** socket in parallel with the other strategies; paper trades persist to `~/trading-data/trend_pb_paper_trades.json` + the per-day JSONL audit log (`mode: "trend_pb"`).
+
 ### Tick Replay — deterministic re-run of recorded sessions
 - Every paper/live session records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
 - `/replay` re-runs a recorded session through the same paper `onTick()` handlers to produce **bit-identical** results.
@@ -203,6 +217,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   pa_live_trades.json             # Price action live sessions
   orb_paper_trades.json           # ORB paper sessions
   orb_live_trades.json            # ORB live sessions
+  trend_pb_paper_trades.json      # Trend Pullback paper sessions
   historical_pnl.json             # One-time P&L baselines per broker (Kite / Fyers)
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position

@@ -17,6 +17,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   let _paMode = null;
   let _orbMode = null;
   let _ema9vwapMode = null;
+  let _trendPbMode = null;
   let _anyTradeActive = false;
   try {
     const sss = require('./sharedSocketState');
@@ -25,6 +26,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     _paMode = sss.getPAMode();
     _orbMode = sss.getOrbMode ? sss.getOrbMode() : null;
     _ema9vwapMode = sss.getEma9VwapMode ? sss.getEma9VwapMode() : null;
+    _trendPbMode = sss.getTrendPbMode ? sss.getTrendPbMode() : null;
     _anyTradeActive = sss.isAnyActive ? sss.isAnyActive() : false;
   } catch (_) {}
 
@@ -50,6 +52,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const paModeOn       = (process.env.PA_MODE_ENABLED       || 'true').toLowerCase() === 'true';
   const orbModeOn      = (process.env.ORB_MODE_ENABLED      || 'true').toLowerCase() === 'true';
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
 
   // ── Per-module menu-visibility toggles (managed from Settings page) ──
   const showSim      = (process.env.UI_SHOW_SIMULATE || 'false').toLowerCase() === 'true';
@@ -87,6 +90,12 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showEma9vwapPaper     = (process.env.UI_SHOW_EMA9VWAP_PAPER       || 'true').toLowerCase() === 'true';
   const showEma9vwapLive      = (process.env.UI_SHOW_EMA9VWAP_LIVE        || 'true').toLowerCase() === 'true';
   const showEma9vwapHistory   = (process.env.UI_SHOW_EMA9VWAP_HISTORY     || 'true').toLowerCase() === 'true';
+  // Trend Pullback — Paper + History ship in Phase A; Backtest/Live default hidden until built.
+  const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'false').toLowerCase() === 'true';
+  const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
+  const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'false').toLowerCase() === 'true';
+  const showTrendPbLiveHarness = (process.env.UI_SHOW_TREND_PB_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
   const showTradeLogs  = (process.env.UI_SHOW_TRADE_LOGS  || 'true').toLowerCase() === 'true';
@@ -97,12 +106,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const paKeys      = ['paBacktest', 'paPatternBacktest', 'paPaper', 'paSim', 'paHistory', 'paCompare', 'paLive', 'paLiveHarness'];
   const orbKeys     = ['orbBacktest', 'orbPaper', 'orbLive', 'orbLiveHarness', 'orbHistory'];
   const ema9vwapKeys = ['ema9vwapBacktest', 'ema9vwapPaper', 'ema9vwapSim', 'ema9vwapLive', 'ema9vwapHistory'];
+  const trendPbKeys = ['trendPbBacktest', 'trendPbPaper', 'trendPbLive', 'trendPbLiveHarness', 'trendPbHistory'];
 
   const isTradingOpen  = tradingKeys.includes(activePage);
   const isBbRsiOpen    = bbRsiKeys.includes(activePage);
   const isPAOpen       = paKeys.includes(activePage);
   const isOrbOpen      = orbKeys.includes(activePage);
   const isEma9vwapOpen = ema9vwapKeys.includes(activePage);
+  const isTrendPbOpen  = trendPbKeys.includes(activePage);
 
   // When a strategy's PAPER session is running, hide its Live / Live (Harness)
   // entries — paper and live are mutually exclusive per strategy, so the live
@@ -112,6 +123,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const paPaperRunning       = _paMode       === 'PA_PAPER';
   const orbPaperRunning      = _orbMode      === 'ORB_PAPER';
   const ema9vwapPaperRunning = _ema9vwapMode === 'EMA9VWAP_PAPER';
+  const trendPbPaperRunning  = _trendPbMode  === 'TREND_PB_PAPER';
 
   // Build a ema_rsi_st items list with per-feature toggle
   const emaRsiStItems = [
@@ -159,6 +171,14 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
     ...(showEma9vwapHistory  ? [{ key: 'ema9vwapHistory',  href: '/ema9vwap-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 
+  const trendPbItems = [
+    ...(showTrendPbBacktest ? [{ key: 'trendPbBacktest', href: '/trend-pb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
+    ...(showTrendPbPaper    ? [{ key: 'trendPbPaper',    href: '/trend-pb-paper/status',  icon: '📈', label: 'Paper'   }] : []),
+    ...(showTrendPbLive && !trendPbPaperRunning ? [{ key: 'trendPbLive',     href: '/trend-pb-live/status',   icon: '📡', label: 'Live'    }] : []),
+    ...(showTrendPbLiveHarness && !trendPbPaperRunning ? [{ key: 'trendPbLiveHarness', href: '/trend-pb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
+  ];
+
   // ── Grouped navigation sections (collapsible) ──
   const topLevelItems = [
     ...(showDashboard   ? [{ key: 'dashboard',         href: '/',                   icon: '⌂',  label: 'Dashboard' }] : []),
@@ -198,6 +218,11 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
       header: 'EMA9+VWAP', collapsible: true, collapsed: !isEma9vwapOpen,
       groupId: 'nav-ema9vwap',
       items: ema9vwapItems,
+    }] : []),
+    ...(trendPbModeOn ? [{
+      header: 'TREND PULLBACK', collapsible: true, collapsed: !isTrendPbOpen,
+      groupId: 'nav-trend-pb',
+      items: trendPbItems,
     }] : []),
     {
       header: 'SYSTEM', collapsible: false,

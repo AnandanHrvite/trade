@@ -30,6 +30,9 @@ let orbMode = null;
 // EMA9+VWAP mode: "EMA9VWAP_PAPER" | "EMA9VWAP_LIVE" | null
 let ema9vwapMode = null;
 
+// Trend Pullback mode: "TREND_PB_PAPER" | "TREND_PB_LIVE" | null
+let trendPbMode = null;
+
 // ── Primary mode (15-min) ─────────────────────────────────────────────────
 
 function setActive(mode) {
@@ -120,12 +123,30 @@ function getEma9VwapMode() {
   return ema9vwapMode;
 }
 
+// ── Trend Pullback mode (5-min, secondary socket callback) ────────────────
+
+function setTrendPbActive(mode) {
+  trendPbMode = mode;
+}
+
+function clearTrendPb() {
+  trendPbMode = null;
+}
+
+function isTrendPbActive() {
+  return trendPbMode !== null;
+}
+
+function getTrendPbMode() {
+  return trendPbMode;
+}
+
 // ── Combined queries ──────────────────────────────────────────────────────
 
 /** Any mode using the socket? */
 function isAnyActive() {
   return primaryMode !== null || bbRsiMode !== null || paMode !== null ||
-         orbMode !== null || ema9vwapMode !== null;
+         orbMode !== null || ema9vwapMode !== null || trendPbMode !== null;
 }
 
 /** Can the given mode start? Returns { allowed, reason } */
@@ -171,6 +192,14 @@ function canStart(mode) {
       if (ema9vwapMode === "EMA9VWAP_PAPER") return { allowed: false, reason: "EMA9+VWAP Paper is running — stop it first" };
       if (ema9vwapMode === "EMA9VWAP_LIVE")  return { allowed: false, reason: "EMA9+VWAP Live is already running" };
       return { allowed: true };
+    case "TREND_PB_PAPER":
+      if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is running — stop it first" };
+      if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is already running" };
+      return { allowed: true };
+    case "TREND_PB_LIVE":
+      if (trendPbMode === "TREND_PB_PAPER") return { allowed: false, reason: "Trend Pullback Paper is running — stop it first" };
+      if (trendPbMode === "TREND_PB_LIVE")  return { allowed: false, reason: "Trend Pullback Live is already running" };
+      return { allowed: true };
     default:
       return { allowed: false, reason: "Unknown mode: " + mode };
   }
@@ -187,6 +216,8 @@ module.exports = {
   setOrbActive, clearOrb, isOrbActive, getOrbMode,
   // EMA9+VWAP
   setEma9VwapActive, clearEma9Vwap, isEma9VwapActive, getEma9VwapMode,
+  // Trend Pullback
+  setTrendPbActive, clearTrendPb, isTrendPbActive, getTrendPbMode,
   // Combined
   isAnyActive, canStart,
 };

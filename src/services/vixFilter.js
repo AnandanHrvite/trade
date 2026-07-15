@@ -33,6 +33,7 @@ function getVixEnabled(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return process.env.BB_RSI_VIX_ENABLED    === "true";
   if (mode === "pa")       return process.env.PA_VIX_ENABLED       === "true";
   if (mode === "orb")      return process.env.ORB_VIX_ENABLED      === "true";
+  if (mode === "trend_pb") return process.env.TREND_PB_VIX_ENABLED === "true";
   // EMA_RSI_ST default: on unless explicitly disabled
   return process.env.VIX_FILTER_ENABLED !== "false";
 }
@@ -41,6 +42,7 @@ function getVixMaxEntry(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_MAX_ENTRY    || process.env.VIX_MAX_ENTRY || "20");
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_MAX_ENTRY       || process.env.VIX_MAX_ENTRY || "20");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_MAX_ENTRY      || process.env.VIX_MAX_ENTRY || "22");
+  if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_MAX_ENTRY || process.env.VIX_MAX_ENTRY || "22");
   return parseFloat(process.env.VIX_MAX_ENTRY || "20");
 }
 
@@ -48,6 +50,7 @@ function getVixStrongOnly(mode = "ema_rsi_st") {
   if (mode === "bb_rsi")    return parseFloat(process.env.BB_RSI_VIX_STRONG_ONLY    || process.env.VIX_STRONG_ONLY || "16");
   if (mode === "pa")       return parseFloat(process.env.PA_VIX_STRONG_ONLY       || process.env.VIX_STRONG_ONLY || "16");
   if (mode === "orb")      return parseFloat(process.env.ORB_VIX_STRONG_ONLY      || process.env.VIX_STRONG_ONLY || "18");
+  if (mode === "trend_pb") return parseFloat(process.env.TREND_PB_VIX_STRONG_ONLY || process.env.VIX_STRONG_ONLY || "18");
   return parseFloat(process.env.VIX_STRONG_ONLY || "16");
 }
 

@@ -265,6 +265,44 @@ const SETTINGS_SCHEMA = [
     ],
   },
   {
+    section: "TREND PULLBACK STRATEGY — Fyers",
+    icon: "📈",
+    fields: [
+      { key: "TREND_PB_LIVE_ENABLED", label: "Trend Pullback Live Orders (gates /trend-pb-live/start)", type: "toggle", effect: EFFECT.INSTANT, desc: "Master switch for Trend Pullback Live trading (Phase C). Must be true AND LIVE_HARNESS_DRY_RUN=false AND TREND_PB_LIVE_DRY_RUN=false for real orders to fire.", default: "false" },
+      { key: "TREND_PB_LIVE_DRY_RUN", label: "Trend Pullback Live DRY-RUN override", type: "toggle", effect: EFFECT.SESSION, desc: "Keep Trend Pullback in DRY-RUN (log only, no real order) even when the global Live Harness DRY-RUN is OFF. Default off.", default: "false" },
+      // ── Entry (15m bias + 5m pullback/resumption) ──
+      { key: "TREND_PB_SWING_LOOKBACK", label: "Swing Pivot Lookback (15m bars)", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Bars on each side that define a confirmed 15-min swing high/low for the HH-HL / LH-LL trend structure. Default 2.", default: "2" },
+      { key: "TREND_PB_BODY_ATR_MULT", label: "Resumption Body ≥ ×ATR5", type: "number", min: 0, max: 2, step: 0.1, effect: EFFECT.INSTANT, desc: "The resumption candle's body must be ≥ this × ATR(5m) — the conviction proxy that replaces volume (NIFTY index has no real volume). Default 0.5.", default: "0.5" },
+      { key: "TREND_PB_PULLBACK_MAX_ATR", label: "Max Pullback Depth (×ATR5 below EMA20)", type: "number", min: 0.5, max: 4, step: 0.25, effect: EFFECT.INSTANT, desc: "Rejects deep/broken pullbacks — the pullback extreme may not fall more than this × ATR(5m) beyond EMA20(5m). Default 1.5.", default: "1.5" },
+      { key: "TREND_PB_PULLBACK_WINDOW", label: "Pullback Lookback Window (5m bars)", type: "number", min: 3, max: 12, step: 1, effect: EFFECT.INSTANT, desc: "How many 5-min bars before the resumption candle count as the pullback. Default 6.", default: "6" },
+      { key: "TREND_PB_MIN_PULLBACK_BARS", label: "Min Against-Trend Candles", type: "number", min: 1, max: 5, step: 1, effect: EFFECT.INSTANT, desc: "Minimum against-trend candles in the window for a real pause (not a 1-bar wick). Default 2.", default: "2" },
+      { key: "TREND_PB_ENTRY_START", label: "Entry Window Start", type: "time", effect: EFFECT.SESSION, desc: "No entries before this IST time (skips the opening noise). Default 09:45.", default: "09:45" },
+      { key: "TREND_PB_ENTRY_END", label: "Entry Window End", type: "time", effect: EFFECT.SESSION, desc: "No NEW entries at/after this IST time (a trailing position keeps running). Default 14:30.", default: "14:30" },
+      { key: "TREND_PB_ATR_FLOOR_PTS", label: "ATR5 Floor (skip if below, pts)", type: "number", min: 0, max: 100, step: 5, effect: EFFECT.INSTANT, desc: "No-trade filter: skip when ATR(5m) is below this (compressed range = no juice for buyers). 0 = OFF (default).", default: "0" },
+      // ── Exit (highest priority — right-tail via spot trailing) ──
+      { key: "TREND_PB_STOP_CLAMP_MIN", label: "Initial Stop Clamp — Min (pts)", type: "number", min: 3, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "Structural stop (pullback extreme) is clamped so risk is never below this many spot points. Default 8.", default: "8" },
+      { key: "TREND_PB_STOP_CLAMP_MAX", label: "Initial Stop Clamp — Max (pts)", type: "number", min: 10, max: 80, step: 1, effect: EFFECT.INSTANT, desc: "…and never above this many spot points (caps risk on a wide structure). Default 30.", default: "30" },
+      { key: "TREND_PB_BREAKEVEN_R", label: "Breakeven Trigger (× initial risk)", type: "number", min: 0, max: 3, step: 0.25, effect: EFFECT.INSTANT, desc: "Lift the stop to entry once favourable by this × the initial risk. 0 = OFF. Default 1.0 (1R).", default: "1.0" },
+      { key: "TREND_PB_TRAIL_ATR_MULT", label: "ATR Chandelier Trail (× ATR5)", type: "number", min: 1, max: 6, step: 0.5, effect: EFFECT.INSTANT, desc: "The right-tail engine — trail the spot stop at best-spot − this × ATR(5m), ratcheting one way. Higher = more room to run. Default 2.5.", default: "2.5" },
+      { key: "TREND_PB_TRAIL_EMA", label: "Trend-Failure EMA (5m period)", type: "number", min: 5, max: 50, step: 1, effect: EFFECT.INSTANT, desc: "Exit on a 5-min CLOSE back across this EMA after the move arms (momentum loss). Default 20.", default: "20" },
+      { key: "TREND_PB_ATR_PERIOD", label: "ATR Period (5m)", type: "number", min: 5, max: 30, step: 1, effect: EFFECT.INSTANT, desc: "ATR length used for the body filter, pullback depth and the chandelier trail. Default 14.", default: "14" },
+      { key: "TREND_PB_TIME_STOP_CANDLES", label: "Time Stop (flat candles)", type: "number", min: 0, max: 20, step: 1, effect: EFFECT.INSTANT, desc: "Exit if held this many 5-min candles while still roughly flat (theta bleed). 0 = OFF. Default 6.", default: "6" },
+      { key: "TREND_PB_PREMIUM_STOP_PCT", label: "Premium Disaster Stop (%)", type: "number", min: 0, max: 80, step: 5, effect: EFFECT.INSTANT, desc: "Hard exit if the option premium collapses this % from entry (catches gaps/IV-crush the spot stop misses). 0 = OFF. Default 35.", default: "35" },
+      { key: "TREND_PB_FORCED_EXIT", label: "EOD Square-Off", type: "time", effect: EFFECT.SESSION, desc: "Hard square-off time for any open position. Default 15:15 IST.", default: "15:15" },
+      // ── Option selection + risk ──
+      { key: "TREND_PB_ITM_STEPS", label: "ITM Steps (strikes in-the-money)", type: "number", min: 0, max: 3, step: 1, effect: EFFECT.INSTANT, desc: "How many 50-pt strikes in-the-money to buy (1 ≈ delta 0.6, less theta bleed than ATM). Default 1.", default: "1" },
+      { key: "TREND_PB_PREMIUM_MIN", label: "Min Option Premium (₹)", type: "number", min: 0, max: 1000, step: 10, effect: EFFECT.INSTANT, desc: "Reject entries priced below this (illiquid/too-far). Default 120.", default: "120" },
+      { key: "TREND_PB_PREMIUM_MAX", label: "Max Option Premium (₹)", type: "number", min: 0, max: 2000, step: 10, effect: EFFECT.INSTANT, desc: "Reject entries priced above this (too expensive). Default 400.", default: "400" },
+      { key: "TREND_PB_MAX_SPREAD_PTS", label: "Max Bid-Ask Spread (pts)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Reject entries when the option bid-ask spread exceeds this (fails open when depth is missing). Default 2.", default: "2" },
+      { key: "TREND_PB_MAX_DAILY_TRADES", label: "Max Trades/Day", type: "number", min: 1, max: 10, step: 1, effect: EFFECT.SESSION, desc: "Daily trade cap — trend pullback is selective. Default 3.", default: "3" },
+      { key: "TREND_PB_MAX_DAILY_LOSS", label: "Max Daily Loss (₹)", type: "number", min: 500, max: 50000, step: 500, effect: EFFECT.SESSION, desc: "Daily loss kill-switch. Default 5000.", default: "5000" },
+      { key: "TREND_PB_LOSS_STREAK_SKIP", label: "Consecutive-Loss Cool-Off", type: "number", min: 0, max: 6, step: 1, effect: EFFECT.SESSION, desc: "Pause entries for the rest of the session after this many consecutive losing trades. 0 = OFF. Default 3.", default: "3" },
+      { key: "TREND_PB_VIX_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Gate entries by India VIX band (too low = theta trap, too high = whipsaw). Uses TREND_PB_VIX_MAX_ENTRY (fallback global VIX_MAX_ENTRY). Default off.", default: "false" },
+      { key: "TREND_PB_VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block new entries when India VIX is above this. Default 22.", default: "22" },
+      { key: "TREND_PB_OI_ENABLED", label: "OI Buildup Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries fighting a confirmed NIFTY-futures OI buildup (needs master OI_FILTER_ENABLED on). Default off.", default: "false" },
+    ],
+  },
+  {
     section: "OPEN-INTEREST FILTER (OI + Price Buildup)",
     icon: "📊",
     fields: [
@@ -415,6 +453,7 @@ const SETTINGS_SCHEMA = [
       { key: "PA_MODE_ENABLED",        label: "Price Action Mode",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show the PRICE ACTION sidebar group AND the PA strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "ORB_MODE_ENABLED",       label: "ORB Mode (Opening Range Breakout)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the ORB sidebar group AND the ORB strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "EMA9VWAP_MODE_ENABLED",  label: "EMA9+VWAP Mode",            type: "toggle", effect: EFFECT.INSTANT, desc: "Show the EMA9+VWAP sidebar group AND the EMA9+VWAP strategy section in Settings. When off, both are hidden.", default: "true" },
+      { key: "TREND_PB_MODE_ENABLED",  label: "Trend Pullback Mode",       type: "toggle", effect: EFFECT.INSTANT, desc: "Show the TREND PULLBACK sidebar group AND the Trend Pullback strategy section in Settings. When off, both are hidden.", default: "true" },
       { key: "UI_SHOW_SIMULATE",       label: "Show Simulate Menu",        type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Simulate' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false", subheader: "Shared sub-menus (all strategies)" },
       { key: "UI_SHOW_COMPARE",        label: "Show Compare Menu",         type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Compare' inside EMA_RSI_ST / BB_RSI / Price Action groups in the sidebar", default: "false" },
       { key: "UI_SHOW_TRACKER",        label: "Show Tracker Menu (EMA_RSI_ST only)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Tracker' inside the EMA_RSI_ST group in the sidebar", default: "false" },
@@ -450,6 +489,13 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_EMA9VWAP_PAPER",    label: "EMA9+VWAP → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the EMA9+VWAP group", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_LIVE",     label: "EMA9+VWAP → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the EMA9+VWAP group — runs LIVE by wrapping PAPER (Zerodha orders), guaranteeing LIVE = PAPER decisions (needs EMA9VWAP_LIVE_ENABLED to actually fire)", default: "true" },
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the EMA9+VWAP group", default: "true" },
+
+      // ── Trend Pullback submenu (Paper + History ship in Phase A; Backtest/Live default off until built) ──
+      { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Trend Pullback group (Phase B — off until the backtest route ships)", default: "false", subheader: "Trend Pullback sub-menus" },
+      { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Trend Pullback group", default: "true" },
+      { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Trend Pullback group (Phase C — off until the live route ships; needs TREND_PB_LIVE_ENABLED to actually fire)", default: "false" },
+      { key: "UI_SHOW_TREND_PB_LIVE_HARNESS", label: "Trend Pullback → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Trend Pullback group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions (Phase C)", default: "false" },
+      { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Trend Pullback group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
       { key: "UI_SHOW_LOGS",       label: "Logs → Server Logs tab", type: "toggle", effect: EFFECT.INSTANT, desc: "Show the '📜 Server Logs' tab in the Logs page (live server-log viewer)", default: "true", subheader: "System sub-menus" },
@@ -496,6 +542,7 @@ const MODE_SECTION_TITLES = {
   pa:       "PRICE ACTION STRATEGY (5-min) — Fyers",
   orb:      "ORB STRATEGY (Opening Range Breakout) — Fyers",
   ema9vwap: "EMA9 + VWAP STRATEGY — Zerodha",
+  trend_pb: "TREND PULLBACK STRATEGY — Fyers",
 };
 const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "Instrument & Backtest",
@@ -503,7 +550,7 @@ const SNAPSHOT_COMMON_SECTION_TITLES = new Set([
   "OPEN-INTEREST FILTER (OI + Price Buildup)",
 ]);
 
-const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set() };
+const _MODE_KEYS = { ema_rsi_st: new Set(), bb_rsi: new Set(), pa: new Set(), orb: new Set(), ema9vwap: new Set(), trend_pb: new Set() };
 const _KEY_TO_MODES = new Map();
 (function buildModeKeyIndex() {
   const commonKeys = [];
@@ -916,7 +963,7 @@ router.post("/restart", (req, res) => {
 // cache & logs always clear fully. The aggregate paper JSON + capital restore is
 // handled client-side via the per-strategy /reset endpoints (full paper wipe only).
 // Auto-gated by the app.js x-api-secret middleware (not in OPEN_PATHS).
-const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap"];
+const RESET_PAPER_MODES = ["ema_rsi_st", "bb_rsi", "pa", "orb", "ema9vwap", "trend_pb"];
 const _RESET_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 router.post("/reset-data", (req, res) => {
@@ -1202,6 +1249,7 @@ router.get("/", (req, res) => {
   const paModeOn       = (envData["PA_MODE_ENABLED"]       ?? process.env.PA_MODE_ENABLED       ?? "true").toLowerCase() === "true";
   const orbModeOn      = (envData["ORB_MODE_ENABLED"]      ?? process.env.ORB_MODE_ENABLED      ?? "true").toLowerCase() === "true";
   const ema9vwapModeOn = (envData["EMA9VWAP_MODE_ENABLED"] ?? process.env.EMA9VWAP_MODE_ENABLED ?? "true").toLowerCase() === "true";
+  const trendPbModeOn  = (envData["TREND_PB_MODE_ENABLED"] ?? process.env.TREND_PB_MODE_ENABLED ?? "true").toLowerCase() === "true";
   // Server Logs (📜 LOGS) and Cache Files buttons moved into the Logs (/trade-logs) page as tabs —
   // UI_SHOW_LOGS / UI_SHOW_CACHE_FILES now gate those tabs there, not top-bar buttons here.
   // (bbRsiModeOn already computed above for isFieldFrozen)
@@ -1211,6 +1259,7 @@ router.get("/", (req, res) => {
     "PRICE ACTION STRATEGY (5-min) — Fyers":                        paModeOn,
     "ORB STRATEGY (Opening Range Breakout) — Fyers":                orbModeOn,
     "EMA9 + VWAP STRATEGY — Zerodha":                               ema9vwapModeOn,
+    "TREND PULLBACK STRATEGY — Fyers":                              trendPbModeOn,
   };
 
   const sectionsHtml = SETTINGS_SCHEMA.map((s, idx) => {

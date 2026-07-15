@@ -269,6 +269,11 @@ const OPEN_PATHS = [
   "/ema9vwap-paper/history",     // read-only history
   "/ema9vwap-paper/client.js",   // static asset
   "/ema9vwap-live/status/data",  // harness status poll (read-only)
+  "/trend-pb-paper/status",      // read-only status page
+  "/trend-pb-paper/status/data", // dashboard AJAX poll
+  "/trend-pb-paper/status/chart-data", // chart AJAX poll (read-only)
+  "/trend-pb-paper/history",     // read-only history
+  "/trend-pb-live/status/data",  // harness status poll (read-only, Phase C)
   "/tracker/status",          // read-only tracker page
   "/tracker/status/data",     // AJAX poll — must be open
   "/tracker/fetch-and-start", // auto-fetch + start (Zerodha read + SAR compute)
@@ -423,6 +428,8 @@ app.use("/orb-live",          require("./routes/orbLive"));       // ← ORB LIV
 app.use("/ema9vwap-paper",    require("./routes/ema9vwapPaper"));       // ← EMA9+VWAP paper trade
 app.use("/ema9vwap-backtest", require("./routes/ema9vwapBacktest"));    // ← EMA9+VWAP date-range backtest
 app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← EMA9+VWAP LIVE via PAPER + harness (Zerodha orders)
+// ── Trend Pullback routes (5-min; 15m bias + 5m pullback/resumption) ─────────
+app.use("/trend-pb-paper",    require("./routes/trendPbPaper"));        // ← Trend Pullback paper trade (Phase A; backtest/live in B/C)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics
@@ -558,6 +565,8 @@ app.get("/", (req, res) => {
   const orbModeOn   = (process.env.ORB_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const ema9vwapMode   = sharedSocketState.getEma9VwapMode ? sharedSocketState.getEma9VwapMode() : null;
   const ema9vwapModeOn = (process.env.EMA9VWAP_MODE_ENABLED || 'true').toLowerCase() === 'true';
+  const trendPbMode    = sharedSocketState.getTrendPbMode ? sharedSocketState.getTrendPbMode() : null;
+  const trendPbModeOn  = (process.env.TREND_PB_MODE_ENABLED || 'true').toLowerCase() === 'true';
   const analyticsPanelOn = (process.env.UI_DASHBOARD_ANALYTICS_PANEL || 'true').toLowerCase() === 'true';
   const activeStrategyName = getActiveStrategy().NAME;
 
@@ -570,7 +579,8 @@ app.get("/", (req, res) => {
     || (bbRsiModeOn && bbRsiMode)
     || (paModeOn && paMode)
     || (orbModeOn && orbMode)
-    || (ema9vwapModeOn && ema9vwapMode);
+    || (ema9vwapModeOn && ema9vwapMode)
+    || (trendPbModeOn && trendPbMode);
   // The mode-specific top-bar badges below only cover a subset of states
   // (EMA_RSI_ST live, BB_RSI_LIVE, PA_LIVE, ORB_PAPER). When some OTHER mode is
   // active (e.g. EMA_RSI_ST/BB_RSI/PA paper, ORB live) we still want a running
@@ -590,6 +600,7 @@ app.get("/", (req, res) => {
     { key: 'PA',       cls: 'pa',       label: 'PRICE ACTION', on: paModeOn },
     { key: 'ORB',      cls: 'orb',      label: 'ORB',          on: orbModeOn },
     { key: 'EMA9VWAP', cls: 'ema9vwap', label: 'EMA9+VWAP',    on: ema9vwapModeOn },
+    { key: 'TREND_PB', cls: 'trendpb',  label: 'TREND PB',     on: trendPbModeOn },
   ].filter((t) => t.on).map((t) => ({ key: t.key, cls: t.cls, label: t.label }));
 
   // ── Broker investment pools (paper) — remaining = pool + all-time paper P&L ──
@@ -1585,7 +1596,7 @@ async function pollDashboardStatus(){
 /* pollDashboardStatus disabled — dashboard no longer shows realtime data */
 
 // ── Quick Action: Start All Paper / All Live ────────────────────────────────
-var PAPER_ENDPOINTS = ['/ema_rsi_st-paper/start'${bbRsiModeOn ? ",'/bb_rsi-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}];
+var PAPER_ENDPOINTS = ['/ema_rsi_st-paper/start'${bbRsiModeOn ? ",'/bb_rsi-paper/start'" : ""}${paModeOn ? ",'/pa-paper/start'" : ""}${orbModeOn ? ",'/orb-paper/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-paper/start'" : ""}${trendPbModeOn ? ",'/trend-pb-paper/start'" : ""}];
 var LIVE_ENDPOINTS  = ['/ema_rsi_st-live/start'${bbRsiModeOn ? ",'/bb_rsi-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
 // Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
 // EMA9+VWAP has no separate pure-live engine — its /ema9vwap-live route IS the harness (Zerodha orders when dry-run off).
@@ -1749,6 +1760,7 @@ var ALL_BTN_POLL = [
   ${bbRsiModeOn ? ",{ url:'/bb_rsi-paper/status/data', kind:'paper' },{ url:'/bb_rsi-live/status/data', kind:'live' }" : ""}
   ${paModeOn ? ",{ url:'/pa-paper/status/data', kind:'paper' },{ url:'/pa-live/status/data', kind:'live' }" : ""}
   ${orbModeOn ? ",{ url:'/orb-paper/status/data', kind:'paper' },{ url:'/orb-live/status/data', kind:'live' }" : ""}
+  ${trendPbModeOn ? ",{ url:'/trend-pb-paper/status/data', kind:'paper' }" : ""}
 ];
 
 function _applyAllBtnState(paperOn, liveOn){
@@ -2051,7 +2063,7 @@ setInterval(loadMarketSchedulePills, 3600000); // hourly — these change daily 
   var SESSION_TILES = ${JSON.stringify(dashSessionTiles)};
   var LIVE_URLS = {
     EMA_RSI_ST:'/ema_rsi_st-paper/status/data', BB_RSI:'/bb_rsi-paper/status/data',
-    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data'
+    PA:'/pa-paper/status/data', ORB:'/orb-paper/status/data', TREND_PB:'/trend-pb-paper/status/data'
   };
 
   function fmtINR(n) {
@@ -2741,6 +2753,7 @@ async function gracefulShutdown(signal) {
     if (sharedSocketState.getPAMode())        activeModes.push(sharedSocketState.getPAMode());
     if (sharedSocketState.getOrbMode &&      sharedSocketState.getOrbMode())      activeModes.push(sharedSocketState.getOrbMode());
     if (sharedSocketState.getEma9VwapMode && sharedSocketState.getEma9VwapMode()) activeModes.push(sharedSocketState.getEma9VwapMode());
+    if (sharedSocketState.getTrendPbMode &&  sharedSocketState.getTrendPbMode())  activeModes.push(sharedSocketState.getTrendPbMode());
 
     if (activeModes.length === 0) {
       // No Telegram here: with no live positions in play there is nothing the
@@ -2763,6 +2776,7 @@ async function gracefulShutdown(signal) {
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
       "ORB_LIVE":       require("./routes/orbLive"),
+      "TREND_PB_PAPER": require("./routes/trendPbPaper"),
     };
     for (const mode of activeModes) {
       const route = routeMap[mode];
