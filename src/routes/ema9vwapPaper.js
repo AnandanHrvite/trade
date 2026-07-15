@@ -3903,9 +3903,9 @@ router.get("/history", (req, res) => {
   res.send(renderHistoryPage({
     routePrefix: "/ema9vwap-paper",
     sidebarKey: "ema9vwapHistory",
-    pageTitle: "📊 EMA_RSI_ST Paper Trade History",
-    pageDocTitle: "EMA_RSI_ST Paper — History",
-    modalLabel: "EMA_RSI_ST Paper",
+    pageTitle: "📊 EMA9+VWAP Paper Trade History",
+    pageDocTitle: "EMA9+VWAP Paper — History",
+    modalLabel: "EMA9+VWAP Paper",
     liveActive,
     sessions: data.sessions || [],
     capital: data.capital,
@@ -4172,7 +4172,7 @@ router.get("/client.js", (req, res) => {
         const ok = await showConfirm({
           icon: '⚠️',
           title: '0DTE Expiry Day — Not Recommended',
-          message: data.message + '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update EMA_RSI_ST Option Expiry in Settings instead.)',
+          message: data.message + '\\n\\nDo you want to start anyway? (Strongly recommend: cancel and update EMA9+VWAP Option Expiry in Settings instead.)',
           confirmText: 'Start Anyway',
           confirmClass: 'modal-btn-danger'
         });
