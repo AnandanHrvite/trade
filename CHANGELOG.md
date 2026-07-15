@@ -6,6 +6,18 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Trend Pullback — full-app parity sweep (fix surfaces the earlier wiring missed)
+
+A user-flagged gap (missing Telegram toggles) triggered an exhaustive audit of every per-strategy enumeration vs ORB/EMA9VWAP. Fixes:
+
+- **Telegram: 4 missing toggles added** — `TG_TREND_PB_{STARTED,ENTRY,EXIT,DAYREPORT}` in Settings ([src/routes/settings.js](src/routes/settings.js)). notify.js was already firing these (fail-open), so alerts sent but were un-silenceable from the UI; now they have toggles like every other strategy. No SIGNALS toggle (Trend Pullback, like ORB, emits no signal alerts).
+- **"Start All (Harness)" now starts Trend Pullback** — `HARNESS_ENDPOINTS` omitted `/trend-pb-live/start`, so the dashboard top-bar harness button silently skipped it ([src/app.js](src/app.js)). Also: dashboard **IDLE badge** condition, Start-All tooltip + confirm/toast mode labels (now list EMA9+VWAP + TREND PB), and `_prettyEndpoint` (widened regex + `trend-pb` label) for the Start-All failure modal.
+- **Deterministic replay** — `TREND_PB_OPTION_EXPIRY_OVERRIDE`/`_TYPE` added to tickReplay's expiry-pin list so a Trend Pullback session replays against its recorded expiry ([src/services/tickReplay.js](src/services/tickReplay.js)).
+- **Logs page** totals footer (`_filesTotals`/`_skipsTotals`) seeds `trend_pb` ([src/routes/tradeLogs.js](src/routes/tradeLogs.js)); notify.js JSDoc key enumerations updated.
+- **Docs**: new [documents/Trend_Pullback_Strategy_Guide.html](documents/Trend_Pullback_Strategy_Guide.html) + GUIDE_STATUS entry ([src/routes/docs.js](src/routes/docs.js)) — appears in the Documents tab with a live "as-per-settings" config panel, like every other strategy.
+- **README** synced: dedicated `### Trend Pullback Mode` env table, `### Trend Pullback` routes subsection, OI + LIVE_DRY_RUN rows, completed the MODE_ENABLED / UI_SHOW / Telegram brace-lists (also filling in EMA9VWAP where it was missing), Fyers investment-pool note, and the JSONL audit-log entry.
+- Still deferred (unchanged): positionPersist crash-recovery of an open live position (matches ORB).
+
 ### Trend Pullback — Phase C: live via paper-wrapping harness (triple-gated dry-run)
 
 - **New live route** `/trend-pb-live` ([src/routes/trendPbLiveHarness.js](src/routes/trendPbLiveHarness.js)): runs Live by wrapping the Paper engine with the shared `liveHarness` (like EMA9VWAP) — triggers `/trend-pb-paper/start` programmatically and places real **Fyers** orders as paper's notifyEntry/notifyExit fire. LIVE = PAPER by construction (no separate live decision path).

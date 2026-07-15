@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trend Pullback — Strategy Guide</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 18px 80px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.65; font-size: 16px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header.hero {
+    margin: 0 -18px 8px; padding: 40px 26px 30px;
+    background: linear-gradient(135deg, #161b22 0%, #1a1420 100%);
+    border-bottom: 3px solid #ec4899;
+  }
+  header.hero .kicker { color: #ec4899; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; font-size: 0.72rem; }
+  header.hero h1 { margin: 6px 0 8px; font-size: 2rem; color: #f0f6fc; }
+  header.hero p { margin: 0; color: #8b949e; max-width: 640px; }
+  h2 { color: #f0f6fc; font-size: 1.35rem; margin: 38px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+  h3 { color: #58a6ff; font-size: 1.05rem; margin: 24px 0 8px; }
+  code { background: rgba(110,118,129,0.18); color: #ec9bd0; padding: 1.5px 6px; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', ui-monospace, Menlo, monospace; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 18px 22px; margin: 14px 0; }
+  .card.accent { border-left: 4px solid #ec4899; }
+  .card.warn { border-left: 4px solid #d29922; background: #1c1a12; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.6px; }
+  td code { white-space: nowrap; }
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 14px 0; }
+  .flow .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 8px 14px; font-size: 0.85rem; }
+  .flow .arrow { color: #ec4899; font-weight: 700; }
+  .pill { display: inline-block; background: rgba(236,72,153,0.15); color: #ec4899; border: 1px solid rgba(236,72,153,0.35); border-radius: 20px; padding: 2px 12px; font-size: 0.78rem; font-weight: 600; }
+  .muted { color: #6e7681; font-size: 0.85rem; }
+  a { color: #58a6ff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Strategy 6 · Fyers</div>
+  <h1>Trend Pullback (TREND_PB)</h1>
+  <p>An intraday NIFTY option-buying strategy that waits for an established trend, lets it pull back to value, and enters only on a confirmed resumption — designed to buy into strength, not to guess reversals.</p>
+</header>
+
+<!--LIVE_STATUS_PANEL-->
+
+<h2>What it does, in one line</h2>
+<div class="card accent">
+  Establish a <strong>15-minute trend bias</strong> → wait for a <strong>healthy 5-minute pullback</strong> into the moving-average zone → enter a slightly-ITM option only when a <strong>resumption candle</strong> confirms the trend is continuing. Every exit rides on the <strong>spot</strong> (index) price, not the option premium, except one premium-based disaster backstop.
+</div>
+
+<h2>Why this design</h2>
+<div class="card">
+  <ul>
+    <li><strong>Price structure first, indicators second.</strong> The trend is defined by higher-highs / higher-lows (or lower-lows / lower-highs), with EMAs and VWAP only as health filters — not as the trigger.</li>
+    <li><strong>No volume input — by design.</strong> The NIFTY index has no real tradable volume. Instead of a fake volume proxy, entry conviction is measured by <em>candle body vs ATR</em> (a resumption candle must have a body ≥ 0.5× the recent ATR).</li>
+    <li><strong>Exits are weighted over entries.</strong> A structural stop protects capital, breakeven removes risk early, and an ATR chandelier trail lets winners run — the right tail is where option-buying makes its money.</li>
+    <li><strong>No fixed target, no partial booking.</strong> Partials cap the winners that pay for all the small losers, so the full position rides the trail.</li>
+    <li><strong>Binary gates, not confidence scores.</strong> A small parameter budget (~7 real knobs) keeps the strategy from over-fitting to noise.</li>
+  </ul>
+</div>
+
+<h2>Entry — all conditions must pass, in order</h2>
+
+<div class="flow">
+  <span class="step">① 15m trend bias</span>
+  <span class="arrow">→</span>
+  <span class="step">② healthy 5m pullback</span>
+  <span class="arrow">→</span>
+  <span class="step">③ resumption candle</span>
+  <span class="arrow">→</span>
+  <span class="step">④ gates pass</span>
+  <span class="arrow">→</span>
+  <span class="step">buy slightly-ITM option</span>
+</div>
+
+<h3>① 15-minute trend bias (uses only completed 15m bars)</h3>
+<ul>
+  <li><strong>Structure:</strong> last confirmed swing high &gt; prior swing high AND last swing low &gt; prior swing low (higher-high + higher-low for an uptrend; mirror for down).</li>
+  <li><strong>Health filters:</strong> EMA20(15m) &gt; EMA50(15m), EMA20 sloping in the trend direction, and spot on the correct side of the session-anchored VWAP.</li>
+</ul>
+
+<h3>② Healthy 5-minute pullback</h3>
+<ul>
+  <li>Price pulls back <em>into</em> the EMA20(5m) zone — a real pause, not a one-bar wick.</li>
+  <li>Depth cap: the pullback extreme (anchored to the swing peak/trough, not the whole window) stays within <code>TREND_PB_PULLBACK_MAX_ATR</code> × ATR5 — rejects deep, broken pullbacks that are really reversals.</li>
+</ul>
+
+<h3>③ Resumption candle — the trigger</h3>
+<ul>
+  <li>A 5m candle <strong>closes beyond the prior bar's high</strong> (low for shorts) AND reclaims EMA20(5m).</li>
+  <li>Body ≥ <code>TREND_PB_BODY_ATR_MULT</code> × ATR5 (default 0.5) — the conviction proxy that replaces volume.</li>
+  <li>Entry is on the <strong>close</strong>, never on a wick.</li>
+</ul>
+
+<h3>④ Gates (shared infrastructure)</h3>
+<ul>
+  <li>Inside the entry window (<code>TREND_PB_ENTRY_START</code>–<code>TREND_PB_ENTRY_END</code>).</li>
+  <li>VIX in band (optional, <code>TREND_PB_VIX_ENABLED</code>), bid-ask spread OK, optional OI-buildup gate, and daily loss / max-trades / loss-streak not tripped.</li>
+</ul>
+
+<h2>Exits — first hit wins (all on SPOT except the premium backstop)</h2>
+<table>
+  <tr><th>Priority</th><th>Exit</th><th>What it does</th></tr>
+  <tr><td>1</td><td>Structural stop</td><td>Below the pullback swing low (above for shorts), clamped to <code>[TREND_PB_STOP_CLAMP_MIN, MAX]</code> ≈ 8–30 pts.</td></tr>
+  <tr><td>2</td><td>Breakeven</td><td>Once favourable by <code>TREND_PB_BREAKEVEN_R</code> × initial risk (default 1R), the stop lifts to entry.</td></tr>
+  <tr><td>3</td><td>ATR chandelier trail</td><td>best-spot − <code>TREND_PB_TRAIL_ATR_MULT</code> × ATR5 (default 2.5). Ratchets one way only — the right-tail engine.</td></tr>
+  <tr><td>4</td><td>Trend-fail</td><td>A 5m candle closes back through EMA20(5m) after the move armed.</td></tr>
+  <tr><td>5</td><td>Time stop</td><td>Held ≥ <code>TREND_PB_TIME_STOP_CANDLES</code> and still flat → exit theta bleed.</td></tr>
+  <tr><td>6</td><td>EOD square-off</td><td><code>TREND_PB_FORCED_EXIT</code> (default 15:15 IST).</td></tr>
+  <tr><td>7</td><td>Premium disaster stop</td><td>Option LTP ≤ −35% of entry → hard exit (gap protection). The only premium-based rule.</td></tr>
+</table>
+<p class="muted">No fixed profit target and no partial booking — both deliberate. Position size is fixed lots.</p>
+
+<h2>Option selection</h2>
+<div class="card">
+  Buys a <span class="pill">slightly-ITM</span> CE (uptrend) or PE (downtrend) via the shared instrument resolver, shifted <code>TREND_PB_ITM_STEPS</code> strikes in-the-money (default 1 ≈ delta 0.6). Premium band and bid-ask spread are checked before entry; premium is polled every ~3s while in a position. Runs on the shared Fyers tick feed.
+</div>
+
+<h2>Key environment variables</h2>
+<table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+  <tr><td><code>TREND_PB_MODE_ENABLED</code></td><td>true</td><td>Master toggle — shows the sidebar group + Settings section.</td></tr>
+  <tr><td><code>TREND_PB_SWING_LOOKBACK</code></td><td>2</td><td>N-bar pivot for swing-structure detection.</td></tr>
+  <tr><td><code>TREND_PB_BODY_ATR_MULT</code></td><td>0.5</td><td>Resumption body must be ≥ this × ATR5.</td></tr>
+  <tr><td><code>TREND_PB_PULLBACK_MAX_ATR</code></td><td>1.5</td><td>Max pullback depth vs ATR5.</td></tr>
+  <tr><td><code>TREND_PB_TRAIL_ATR_MULT</code></td><td>2.5</td><td>ATR chandelier trail multiplier.</td></tr>
+  <tr><td><code>TREND_PB_BREAKEVEN_R</code></td><td>1.0</td><td>R multiple at which the stop moves to entry.</td></tr>
+  <tr><td><code>TREND_PB_STOP_CLAMP_MIN / MAX</code></td><td>8 / 30</td><td>Structural-stop clamp (spot points).</td></tr>
+  <tr><td><code>TREND_PB_TIME_STOP_CANDLES</code></td><td>6</td><td>Flat-trade time stop.</td></tr>
+  <tr><td><code>TREND_PB_ENTRY_START / END</code></td><td>09:45 / 14:30</td><td>Entry window (IST).</td></tr>
+  <tr><td><code>TREND_PB_FORCED_EXIT</code></td><td>15:15</td><td>EOD square-off (IST).</td></tr>
+  <tr><td><code>TREND_PB_ITM_STEPS</code></td><td>1</td><td>Strikes shifted in-the-money (~delta 0.6).</td></tr>
+  <tr><td><code>TREND_PB_VIX_ENABLED</code> / <code>_VIX_MAX_ENTRY</code></td><td>false / 22</td><td>VIX regime gate + ceiling.</td></tr>
+  <tr><td><code>TREND_PB_OI_ENABLED</code></td><td>false</td><td>Block entries fighting a confirmed OI buildup (needs the master OI filter on).</td></tr>
+  <tr><td><code>TREND_PB_MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily loss kill-switch (₹).</td></tr>
+  <tr><td><code>TREND_PB_LOSS_STREAK_SKIP</code></td><td>3</td><td>Pause after N consecutive losers (0 = off).</td></tr>
+  <tr><td><code>TREND_PB_LIVE_ENABLED</code> / <code>_LIVE_DRY_RUN</code></td><td>false / false</td><td>Live gating — see the panel at the top of this page.</td></tr>
+  <tr><td><code>TREND_PB_BT_SLIPPAGE_PTS</code></td><td>1.5</td><td>Backtest spread/slippage haircut, each way.</td></tr>
+  <tr><td><code>TREND_PB_BT_SEED_PREMIUM</code></td><td>240</td><td>Assumed slightly-ITM entry premium for the backtest δ+θ sim.</td></tr>
+</table>
+<p class="muted">The live "as-per-settings" panel at the top of this page reflects the current running values.</p>
+
+<h2>Pages &amp; routes</h2>
+<table>
+  <tr><th>Route</th><th>Purpose</th></tr>
+  <tr><td><code>/trend-pb-paper/status</code></td><td>Paper runtime — <strong>the canonical engine</strong>. Live chart with VWAP + EMA20 overlay, entry/exit markers, session trades.</td></tr>
+  <tr><td><code>/trend-pb-backtest</code></td><td>Date-range backtest replaying candles through the signal engine, with walk-forward OOS folds, a dumb baseline to beat, and δ+θ + slippage cost model.</td></tr>
+  <tr><td><code>/trend-pb-live</code></td><td>Live via a paper-wrapping harness (LIVE = PAPER by construction), Fyers orders, triple-gated to dry-run by default.</td></tr>
+</table>
+
+<h2>Live safety — triple-gated</h2>
+<div class="card warn">
+  A real Fyers order can fire <strong>only</strong> when all three are true: <code>TREND_PB_LIVE_ENABLED=true</code> <em>and</em> global <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>TREND_PB_LIVE_DRY_RUN=false</code> — plus a valid Fyers login. Out of the box it is dry-run: it logs the order it <em>would</em> place and sends nothing. Recommended path: watch it on paper, confirm Live decisions match Paper on a recorded <code>/replay</code> session, then consider flipping the gates.
+</div>
+
+<h2>Build status</h2>
+<p>All three phases shipped: <strong>Paper</strong> (canonical engine + UI), <strong>Backtest</strong> (walk-forward + baseline + cost haircut), and <strong>Live</strong> (via harness, dry-run by default). Crash-recovery of an open live position across a server restart is a documented deferral (matches ORB) and is not built yet.</p>
+
+<p class="muted" style="margin-top:40px;">Trend Pullback is independent of every other strategy — it shares only the single Fyers tick feed and the common guard/charge/instrument infrastructure. ORB and all other strategies are untouched by it.</p>
+
+</div>
+</body>
+</html>

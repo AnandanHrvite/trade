@@ -356,6 +356,12 @@ const GUIDE_STATUS = {
     { type: "bool", label: "2-Candle Reversal Exit", key: "EMA9VWAP_REVERSAL_EXIT_ENABLED", def: "true" },
     { type: "bool", label: "Opposite-Side Cooldown", key: "EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED", def: "true" },
   ] }] },
+  "Trend_Pullback_Strategy_Guide.html": { title: "Trend Pullback — Live Configuration", groups: [{ rows: [
+    { type: "bool", label: "Trend Pullback Mode (sidebar + Settings section)", key: "TREND_PB_MODE_ENABLED", def: "true" },
+    { type: "live", label: "Live Orders (Fyers, via paper harness)", enableKey: "TREND_PB_LIVE_ENABLED", dryKey: "TREND_PB_LIVE_DRY_RUN" },
+    { type: "bool", label: "VIX Regime Filter", key: "TREND_PB_VIX_ENABLED", def: "false" },
+    { type: "bool", label: "OI Buildup Gate", key: "TREND_PB_OI_ENABLED", def: "false" },
+  ] }] },
   "Application_Setup_Guide.html": { title: "System — Live Configuration", groups: [
     { heading: "Global gates", rows: [
       { type: "globaldry", label: "Live Harness DRY-RUN (global kill-switch)", key: "LIVE_HARNESS_DRY_RUN" },

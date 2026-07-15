@@ -1233,7 +1233,7 @@ ${buildSidebar('dashboard', liveActive)}
     </div>
     <div class="top-bar-right">
       ${anyModeActive ? '' : `
-      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (EMA_RSI_ST + BB_RSI + PA + ORB + EMA9+VWAP)">🧪 Start All (Harness)</button>
+      <button id="btn-all-harness" class="top-bar-btn" style="border-color:#b45309;color:#b45309;" onclick="startAllHarness(this)" title="Start all Live (Harness) modes in DRY-RUN — runs Paper + logs would-be broker orders (EMA_RSI_ST + BB_RSI + PA + ORB + EMA9+VWAP + TREND PB)">🧪 Start All (Harness)</button>
       <button id="btn-all-start" class="top-bar-btn run-paper" onclick="startAll(this)" title="Start all paper modes">▶ Start All (Paper)</button>
       <button onclick="hardReset()" class="top-bar-btn" title="Clears Fyers + Zerodha tokens and restarts the server — use when tokens look stuck">🔄 Reset Token</button>
       <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
@@ -1244,7 +1244,7 @@ ${buildSidebar('dashboard', liveActive)}
       ${paModeOn && paMode === 'PA_LIVE' ? '<span class="top-bar-badge live-active" style="border-color:#a78bfa;"><span style="width:5px;height:5px;border-radius:50%;background:#a78bfa;display:inline-block;"></span>PA LIVE</span>' : ''}
       ${orbModeOn && orbMode === 'ORB_PAPER' ? '<span class="top-bar-badge live-active" style="border-color:#10b981;"><span style="width:5px;height:5px;border-radius:50%;background:#10b981;display:inline-block;"></span>ORB PAPER</span>' : ''}
       ${anyModeActive && !specificBadgeShown ? '<span class="top-bar-badge live-active" style="border-color:#22c55e;"><span style="width:5px;height:5px;border-radius:50%;background:#22c55e;display:inline-block;"></span>TRADE ACTIVE</span>' : ''}
-      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
+      ${!liveActive && (!bbRsiModeOn || !bbRsiMode) && (!paModeOn || !paMode) && (!orbModeOn || !orbMode) && (!ema9vwapModeOn || !ema9vwapMode) && (!trendPbModeOn || !trendPbMode) ? '<span class="top-bar-badge">● IDLE</span>' : ''}
     </div>
   </div>
 
@@ -1614,7 +1614,7 @@ var PAPER_ENDPOINTS = ['/ema_rsi_st-paper/start'${bbRsiModeOn ? ",'/bb_rsi-paper
 var LIVE_ENDPOINTS  = ['/ema_rsi_st-live/start'${bbRsiModeOn ? ",'/bb_rsi-live/start'"  : ""}${paModeOn ? ",'/pa-live/start'"  : ""}${orbModeOn ? ",'/orb-live/start'" : ""}];
 // Harness routes wrap PAPER (LIVE = PAPER by construction); respect LIVE_HARNESS_DRY_RUN.
 // EMA9+VWAP has no separate pure-live engine — its /ema9vwap-live route IS the harness (Zerodha orders when dry-run off).
-var HARNESS_ENDPOINTS = ['/ema_rsi_st-live-harness/start'${bbRsiModeOn ? ",'/bb_rsi-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}];
+var HARNESS_ENDPOINTS = ['/ema_rsi_st-live-harness/start'${bbRsiModeOn ? ",'/bb_rsi-live-harness/start'" : ""}${paModeOn ? ",'/pa-live-harness/start'" : ""}${orbModeOn ? ",'/orb-live-harness/start'" : ""}${ema9vwapModeOn ? ",'/ema9vwap-live/start'" : ""}${trendPbModeOn ? ",'/trend-pb-live/start'" : ""}];
 
 function _escHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -1623,9 +1623,9 @@ function _escHtml(s){
 }
 
 function _prettyEndpoint(url){
-  var m = /\\/(\\w+)-(live|paper)(-harness)?\\/start/.exec(url);
+  var m = /\\/([\\w-]+)-(live|paper)(-harness)?\\/start/.exec(url);
   if (!m) return url;
-  var mode = { ema_rsi_st:'EMA_RSI_ST', bb_rsi:'BB_RSI', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP' }[m[1]] || m[1];
+  var mode = { ema_rsi_st:'EMA_RSI_ST', bb_rsi:'BB_RSI', pa:'Price Action', orb:'ORB', ema9vwap:'EMA9+VWAP', 'trend-pb':'TREND PB' }[m[1]] || m[1];
   var kind = m[2] === 'paper' ? 'Paper' : (m[3] ? 'Live (Harness)' : 'Live');
   return mode + ' ' + kind;
 }
@@ -1723,7 +1723,9 @@ async function startAllPaper(btn){
   var modeList = 'EMA_RSI_ST'
     + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
     + (${paModeOn ? "' + PA'" : "''"})
-    + (${orbModeOn ? "' + ORB'" : "''"});
+    + (${orbModeOn ? "' + ORB'" : "''"})
+    + (${ema9vwapModeOn ? "' + EMA9+VWAP'" : "''"})
+    + (${trendPbModeOn ? "' + TREND PB'" : "''"});
   var orig = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ Starting paper: ' + modeList + '...';
   var result = await _startAll(PAPER_ENDPOINTS);
@@ -1747,7 +1749,9 @@ async function startAllHarness(btn){
   var modeList = 'EMA_RSI_ST'
     + (${bbRsiModeOn ? "' + BB_RSI'" : "''"})
     + (${paModeOn ? "' + PA'" : "''"})
-    + (${orbModeOn ? "' + ORB'" : "''"});
+    + (${orbModeOn ? "' + ORB'" : "''"})
+    + (${ema9vwapModeOn ? "' + EMA9+VWAP'" : "''"})
+    + (${trendPbModeOn ? "' + TREND PB'" : "''"});
   var ok = await showConfirm({
     icon: '🧪', title: 'Start ALL Live (Harness)',
     message: 'Start ' + modeList + ' via Paper Harness?\\n\\nEach runs Paper unchanged and logs the broker order it WOULD place. Orders follow the global DRY-RUN flag — no real orders while LIVE_HARNESS_DRY_RUN is ON.',

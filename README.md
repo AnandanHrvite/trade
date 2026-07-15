@@ -231,6 +231,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   bb_rsi_paper_trades_log.jsonl
   pa_paper_trades_log.jsonl
   orb_paper_trades_log.jsonl
+  trend_pb_paper_trades_log.jsonl
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
                                   # (one file per strategy per day; seeded with a settings snapshot
                                   #  + checkpoint note, re-snapshotted on every config save)
@@ -430,12 +431,36 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `EMA9VWAP_CANDLE_TRAIL_ENABLED` / `_BARS` | `false` / `3` | Optional N-bar structural trailing stop (tighten-only) |
 | `EMA9VWAP_SL_MODE` | `ema` | `candle` re-enables the legacy time-stop; `ema` = pure signal exit |
 
+### Trend Pullback Mode (15m bias + 5m pullback, Fyers)
+Trend-continuation option-buyer: 15m trend bias (swing structure + EMA20>EMA50 + slope + session VWAP) → healthy 5m pullback into the EMA20(5m) zone → resumption candle closing beyond the prior bar with body ≥ ATR-fraction. All exits ride on **spot** except the premium disaster backstop. No fixed target, no partial booking, fixed lot size. Runs on the shared Fyers socket.
+| Key | Default | Notes |
+|-----|---------|-------|
+| `TREND_PB_MODE_ENABLED` | `true` | Master toggle — sidebar group + Settings section |
+| `TREND_PB_ENTRY_START` / `TREND_PB_ENTRY_END` | `09:45` / `14:30` | Entry window (IST) |
+| `TREND_PB_SWING_LOOKBACK` | `2` | N-bar pivot for swing-structure (HH/HL) detection |
+| `TREND_PB_BODY_ATR_MULT` | `0.5` | Resumption candle body must be ≥ this × ATR5 (the volume-replacement conviction gate) |
+| `TREND_PB_PULLBACK_MAX_ATR` | `1.5` | Max pullback depth vs ATR5 (rejects deep/broken pullbacks) |
+| `TREND_PB_TRAIL_ATR_MULT` | `2.5` | ATR-chandelier trail multiplier (best-spot − mult×ATR5) |
+| `TREND_PB_BREAKEVEN_R` | `1.0` | R multiple at which the stop lifts to entry |
+| `TREND_PB_STOP_CLAMP_MIN` / `TREND_PB_STOP_CLAMP_MAX` | `8` / `30` | Structural-stop clamp (spot pts) |
+| `TREND_PB_TIME_STOP_CANDLES` | `6` | Exit a still-flat trade after N candles (theta) |
+| `TREND_PB_FORCED_EXIT` | `15:15` | EOD square-off (IST) |
+| `TREND_PB_PREMIUM_STOP_PCT` | `35` | Premium disaster backstop — hard exit when option LTP ≤ −N% of entry |
+| `TREND_PB_ITM_STEPS` | `1` | Strikes shifted in-the-money (~delta 0.6) |
+| `TREND_PB_MAX_DAILY_LOSS` | `5000` | Daily loss kill-switch (₹) |
+| `TREND_PB_MAX_DAILY_TRADES` | `3` | Max entries per session (selective by design) |
+| `TREND_PB_LOSS_STREAK_SKIP` | `3` | Pause entries after N consecutive losers (0 = off) |
+| `TREND_PB_VIX_ENABLED` / `TREND_PB_VIX_MAX_ENTRY` | `false` / `22` | Per-mode VIX gate (falls back to global `VIX_MAX_ENTRY`) |
+| `TREND_PB_LIVE_ENABLED` | `false` | Master switch for live orders (Phase C) — see Live Harness table |
+| `TREND_PB_BT_SLIPPAGE_PTS` | `1.5` | Backtest spread/slippage haircut, each way (premium pts) |
+| `TREND_PB_BT_SEED_PREMIUM` | `240` | Assumed slightly-ITM entry premium for the backtest δ+θ sim |
+
 ### Paper Investment Pools (per broker)
 Paper capital is pooled per broker, not per strategy. Each strategy's running capital = its broker pool + that strategy's all-time paper P&L. The Real-Time Monitor (dashboard) shows each pool's remaining balance.
 | Key | Default | Notes |
 |-----|---------|-------|
 | `ZERODHA_INV_AMOUNT` | `100000` | Paper investment pool for Zerodha strategies (EMA_RSI_ST) |
-| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB) |
+| `FYERS_INV_AMOUNT` | `100000` | Paper investment pool for Fyers strategies (BB_RSI + PA + ORB + Trend Pullback) |
 
 ### VIX Filter (per-module)
 | Key | Default | Notes |
@@ -460,6 +485,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `BB_RSI_OI_ENABLED` | `false` | Apply to BB_RSI (requires master ON) |
 | `PA_OI_ENABLED` | `false` | Apply to PA (requires master ON) |
 | `ORB_OI_ENABLED` | `false` | Apply to ORB (requires master ON) |
+| `TREND_PB_OI_ENABLED` | `false` | Apply to Trend Pullback (requires master ON) |
 | `OI_LOOKBACK_CANDLES` | `3` | Candles back to measure ΔOI / Δspot (≈15 min at 5-min) |
 | `OI_MIN_DELTA_PCT` | `1` | Noise floor — |ΔOI| below this % over the lookback = NEUTRAL (allow) |
 | `OI_FAIL_MODE` | `open` | When futures OI can't be fetched: open = allow (default), closed = block |
@@ -491,6 +517,7 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `ORB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps ORB in dry-run even when the global flag is off. |
 | `PA_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the PA live harness in dry-run even when the global flag is off. |
 | `BB_RSI_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps BB_RSI in dry-run even when the global flag is off. BB_RSI Live has no master-enable gate, so this (with the global flag) is its primary safety switch. |
+| `TREND_PB_LIVE_DRY_RUN` | `false` | Per-strategy override — keeps the Trend Pullback live harness in dry-run even when the global flag is off. |
 | `BACKTEST_OPTION_SIM` | `true` | Legacy bar-based backtest only — Replay uses recorded option ticks |
 | `BACKTEST_DELTA` / `BACKTEST_THETA_DAY` / `BACKTEST_SLIPPAGE_PTS` | `0.5` / `12` / `0` | Bar-based backtest inputs |
 
@@ -505,11 +532,11 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `UI_SHOW_REPLAY` | `true` | Top-level "Replay" menu (tick replay of recorded paper sessions) |
 | `UI_SHOW_PAPER_HISTORY` / `UI_SHOW_LIVE_HISTORY` | `true` | Cross-mode history menus |
 | `UI_SHOW_EDGE_ANALYTICS` | `true` | Top-level "Edge Analytics" menu (`/edge-analytics`) |
-| `{EMA_RSI_ST,BB_RSI,PA,ORB}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
+| `{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_MODE_ENABLED` | `true` | Master toggle — hides sidebar group AND Settings section for that strategy |
 | `UI_SHOW_SIMULATE` | `false` | Show "Simulate" link under each mode in sidebar |
 | `UI_SHOW_COMPARE` | `false` | Show "Compare" link |
 | `UI_SHOW_TRACKER` | `false` | Show "Tracker" under EMA_RSI_ST |
-| `UI_SHOW_{EMA_RSI_ST,BB_RSI,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}` | `true` | Per-submenu toggles for each strategy group |
+| `UI_SHOW_{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_{BACKTEST,PAPER,LIVE,HISTORY}` | `true` | Per-submenu toggles for each strategy group |
 | `UI_SHOW_PA_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the PA group |
 | `UI_SHOW_{EMA_RSI_ST,BB_RSI,ORB}_LIVE_HARNESS` | `false` | Show "Live (Harness)" inside the EMA_RSI_ST/BB_RSI/ORB group — runs LIVE by wrapping PAPER (LIVE = PAPER) |
 | `UI_SHOW_PA_PATTERN_BACKTEST` | `true` | Show "Pattern Test" inside the PA group |
@@ -535,14 +562,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `TELEGRAM_BOT_TOKEN` | — | From @BotFather |
 | `TELEGRAM_CHAT_ID` | — | Your chat ID — leave blank to disable notifications |
 | `TG_ENABLED` | `true` | **Master gate** — when off, no alerts send regardless of below |
-| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED` | `true` | Session-start alerts per mode |
-| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY` | `true` | Trade-entry alerts per mode |
-| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT` | `true` | Trade-exit alerts per mode |
-| `TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS` | `true/false/false` | Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only — ORB emits no signal alerts) |
-| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT` | `true` | Per-mode day-report on session stop |
-| `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all five modes |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_STARTED` | `true` | Session-start alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_ENTRY` | `true` | Trade-entry alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_EXIT` | `true` | Trade-exit alerts per mode |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,EMA9VWAP}_SIGNALS` | `true/false/false/false` | Candle-close skip/signal reasoning (these modes only — ORB and Trend Pullback emit no signal alerts) |
+| `TG_{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_DAYREPORT` | `true` | Per-mode day-report on session stop |
+| `TG_DAYREPORT_CONSOLIDATED` | `true` | One combined day report at 15:30 IST across all six modes |
 
-> All alerts and the consolidated report also respect the strategy master toggles (`{EMA_RSI_ST,BB_RSI,PA,ORB}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
+> All alerts and the consolidated report also respect the strategy master toggles (`{EMA_RSI_ST,BB_RSI,PA,ORB,EMA9VWAP,TREND_PB}_MODE_ENABLED`): a disabled strategy sends no alerts and is omitted from the consolidated report, regardless of its `TG_*` toggles.
 
 ### Charges (April 2026 rates)
 | Key | Default | Notes |
@@ -607,6 +634,14 @@ Blocks directional entries that fight the prevailing Open-Interest buildup: read
 | `/ema9vwap-paper/status` | EMA9+VWAP paper trade + EMA9/VWAP±σ band overlay |
 | `/ema9vwap-paper/history` | EMA9+VWAP sessions (per-session delete + view modal) |
 | `/ema9vwap-live` | EMA9+VWAP live via the paper-wrapping harness (Zerodha orders; gated by `EMA9VWAP_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN`) |
+
+### Trend Pullback
+| URL | Description |
+|-----|-------------|
+| `/trend-pb-backtest` | Trend Pullback date-range backtest + walk-forward OOS folds + dumb-baseline delta |
+| `/trend-pb-paper/status` | Trend Pullback paper trade + NIFTY chart with VWAP/EMA20 overlay |
+| `/trend-pb-paper/history` | Trend Pullback sessions (per-session delete + view modal) |
+| `/trend-pb-live` | Trend Pullback live via the paper-wrapping harness (Fyers orders; gated by `TREND_PB_LIVE_ENABLED` + `LIVE_HARNESS_DRY_RUN` + `TREND_PB_LIVE_DRY_RUN`) |
 
 ### Analytics & Tools
 | URL | Description |

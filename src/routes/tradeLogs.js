@@ -963,8 +963,8 @@ ${buildSidebar('tradeLogs', liveActive)}
   var _view = { mode:null, date:null, kind:null, page:1, total:0, pageSize:25 }; // modal state
 
   // Section totals cached so the badge survives prev/next clicks without refetching all modes.
-  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0 };
-  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0 };
+  var _filesTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0 };
+  var _skipsTotals = { ema_rsi_st:0, bb_rsi:0, pa:0, orb:0, ema9vwap:0, trend_pb:0 };
 
   function fmtSize(n) {
     if (n < 1024) return n + ' B';

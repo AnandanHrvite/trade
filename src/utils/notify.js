@@ -12,14 +12,14 @@
  *
  * Toggle hierarchy:
  *   TG_ENABLED                                  — master gate; if false, nothing sends
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_STARTED             — session-start alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_ENTRY               — trade entry alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_EXIT                — trade exit alerts (per mode)
- *   TG_{EMA_RSI_ST|BB_RSI|PA}_SIGNALS                 — candle-close skip/signal alerts (EMA_RSI_ST/BB_RSI/PA only)
- *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB}_DAYREPORT           — per-mode day report on session stop
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_STARTED    — session-start alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_ENTRY      — trade entry alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_EXIT       — trade exit alerts (per mode)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|EMA9VWAP}_SIGNALS                 — candle-close skip/signal alerts (these modes only)
+ *   TG_{EMA_RSI_ST|BB_RSI|PA|ORB|EMA9VWAP|TREND_PB}_DAYREPORT  — per-mode day report on session stop
  *   TG_DAYREPORT_CONSOLIDATED                   — one combined day report at market close
  *
- *   (ORB emits no SIGNAL alerts, so it has no _SIGNALS toggle.)
+ *   (ORB and TREND_PB emit no SIGNAL alerts, so they have no _SIGNALS toggle.)
  *
  * If TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID are missing, all functions silently
  * do nothing — no errors.
@@ -580,7 +580,7 @@ function notifyDayReport({ mode, sessionTrades, sessionPnl, sessionStart, sessio
 }
 
 /**
- * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB } })
+ * notifyConsolidatedDayReport({ byMode: { EMA_RSI_ST, BB_RSI, PA, ORB, EMA9VWAP, TREND_PB } })
  * Fires once at market close (15:30 IST). Gated by TG_DAYREPORT_CONSOLIDATED.
  * Each byMode entry: { trades, wins, losses, pnl }
  * Returns true if a message was dispatched, false if gated off — the EOD
