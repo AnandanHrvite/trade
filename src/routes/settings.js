@@ -1820,8 +1820,8 @@ router.get("/", (req, res) => {
           <span class="bc-sep">›</span>
           <span class="bc-current">⚙ Settings</span>
         </nav>
-        <div class="top-bar-title">Settings</div>
-        <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div class="top-bar-title">Settings</div>
           <span id="expiry-info-pill" class="top-bar-cache schedule empty" title="Next NIFTY weekly/monthly expiry"></span>
           <span id="holiday-info-pill" class="top-bar-cache schedule empty" title="Next NSE trading holiday"></span>
         </div>
