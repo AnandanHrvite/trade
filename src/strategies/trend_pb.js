@@ -197,7 +197,15 @@ function getSignal(candles, opts) {
     return Object.assign(base, { reason: `ATR5 ${_r2(atr5)}pt < floor ${cfg.atrFloorPts}pt — range compressed, no juice for buyers (skip)` });
   }
 
-  const c15 = to15m(candles);
+  // Use only COMPLETED 15m bars for the trend gate. A 15m bucket (:00/:15/:30/:45)
+  // closes on its :10-minute 5m bar; until then the last c15 bar is partial. Both
+  // the EMA20>EMA50/slope check AND the swing structure read completed bars, so the
+  // two halves of the bias gate always agree on "the last 15m bar" (a partial bar's
+  // one-of-three 5m close otherwise carries ~1/3 weight and can flip EMA/slope a bar
+  // early, then reverse when the bucket actually closes).
+  const c15all = to15m(candles);
+  const _lastBucketClosed = (_utcSecToIstMins(last.time) % 15) === 10;
+  const c15 = _lastBucketClosed ? c15all : c15all.slice(0, -1);
   const closes15 = c15.map(c => c.close);
   const ema20_15 = _emaAtLast(closes15, cfg.emaFast);
   const ema50_15 = _emaAtLast(closes15, cfg.emaSlow);
@@ -208,7 +216,7 @@ function getSignal(candles, opts) {
     return Object.assign(base, { reason: `15m trend filter not seeded (EMA${cfg.emaFast}/EMA${cfg.emaSlow} need history) — warming up` });
   }
 
-  // ── 15m structure (primary): last two swing highs + lows ─────────────────
+  // ── 15m structure (primary): last two swing highs + lows (completed bars) ──
   const sw = _swings(c15, cfg.swingL);
   const nH = sw.highs.length, nL = sw.lows.length;
   if (nH < 2 || nL < 2) {
@@ -262,37 +270,43 @@ function getSignal(candles, opts) {
   }
 
   // Pullback window = the candles just before the resumption candle (today only).
+  // The dip is measured from the window's local swing PEAK (CE) / TROUGH (PE) to
+  // the resumption — so its depth is the actual retracement, NOT where price sat
+  // at the start of the window (in a trend the oldest bar sits far from the dip,
+  // which would over-state depth and set the structural stop too wide).
   const from = Math.max(0, n - 1 - cfg.pbWindow);
   const pbBars = [];
   for (let i = from; i < n - 1; i++) {
-    if (_istDayOf(candles[i].time) !== day) continue;
-    pbBars.push(candles[i]);
+    if (_istDayOf(candles[i].time) === day) pbBars.push(candles[i]);
   }
   let pullbackOk = false, pbWhy = "", pbLow = null, pbHigh = null;
-  if (pbBars.length >= cfg.pbMinBars) {
-    pbLow  = _r2(Math.min(...pbBars.map(c => c.low)));
-    pbHigh = _r2(Math.max(...pbBars.map(c => c.high)));
+  const touchTol = cfg.pbTouchAtr * atr5;
+  if (pbBars.length < cfg.pbMinBars + 1) {
+    pbWhy = `not enough candles before resumption (${pbBars.length} < ${cfg.pbMinBars + 1})`;
+  } else if (side === "CE") {
+    let pk = 0; for (let k = 1; k < pbBars.length; k++) if (pbBars[k].high >= pbBars[pk].high) pk = k;
+    const dipBars = pbBars.length - 1 - pk;                       // bars of descent after the peak
+    pbHigh = _r2(pbBars[pk].high);
+    pbLow  = _r2(Math.min(...pbBars.slice(pk).map(c => c.low))); // the actual pullback low
     base.pullbackLow = pbLow; base.pullbackHigh = pbHigh;
-    // "against-trend" candles = a real pause, not a 1-bar wick.
-    const against = pbBars.filter(c => side === "CE" ? c.close < c.open : c.close > c.open).length;
-    const touchTol = cfg.pbTouchAtr * atr5;
-    if (side === "CE") {
-      const touched = pbLow <= ema5 + touchTol;                  // dipped back into the EMA zone
-      const notTooDeep = pbLow >= ema5 - cfg.pbMaxAtr * atr5;    // but held (not broken)
-      if (against < cfg.pbMinBars) pbWhy = `only ${against} against-trend candle(s) < ${cfg.pbMinBars} — no real pullback`;
-      else if (!touched) pbWhy = `pullback low ${pbLow} never reached EMA${cfg.ema5Period}(5m) zone ${_r2(ema5)} (+${_r2(touchTol)}) — no dip to buy`;
-      else if (!notTooDeep) pbWhy = `pullback low ${pbLow} > ${cfg.pbMaxAtr}×ATR5 below EMA (${_r2(ema5 - cfg.pbMaxAtr * atr5)}) — too deep/broken`;
-      else pullbackOk = true;
-    } else {
-      const touched = pbHigh >= ema5 - touchTol;
-      const notTooDeep = pbHigh <= ema5 + cfg.pbMaxAtr * atr5;
-      if (against < cfg.pbMinBars) pbWhy = `only ${against} against-trend candle(s) < ${cfg.pbMinBars} — no real pullback`;
-      else if (!touched) pbWhy = `pullback high ${pbHigh} never reached EMA${cfg.ema5Period}(5m) zone ${_r2(ema5)} (−${_r2(touchTol)}) — no rally to sell`;
-      else if (!notTooDeep) pbWhy = `pullback high ${pbHigh} > ${cfg.pbMaxAtr}×ATR5 above EMA (${_r2(ema5 + cfg.pbMaxAtr * atr5)}) — too deep/broken`;
-      else pullbackOk = true;
-    }
+    const touched    = pbLow <= ema5 + touchTol;                  // dipped back into the EMA zone
+    const notTooDeep = pbLow >= ema5 - cfg.pbMaxAtr * atr5;       // but held (not broken)
+    if (dipBars < cfg.pbMinBars) pbWhy = `only ${dipBars} bar(s) of pullback after the swing high < ${cfg.pbMinBars} — no real pause`;
+    else if (!touched)    pbWhy = `pullback low ${pbLow} never reached EMA${cfg.ema5Period}(5m) zone ${_r2(ema5)} (+${_r2(touchTol)}) — no dip to buy`;
+    else if (!notTooDeep) pbWhy = `pullback low ${pbLow} > ${cfg.pbMaxAtr}×ATR5 below EMA (${_r2(ema5 - cfg.pbMaxAtr * atr5)}) — too deep/broken`;
+    else pullbackOk = true;
   } else {
-    pbWhy = `not enough candles before resumption (${pbBars.length} < ${cfg.pbMinBars})`;
+    let tr = 0; for (let k = 1; k < pbBars.length; k++) if (pbBars[k].low <= pbBars[tr].low) tr = k;
+    const dipBars = pbBars.length - 1 - tr;                       // bars of rally after the trough
+    pbLow  = _r2(pbBars[tr].low);
+    pbHigh = _r2(Math.max(...pbBars.slice(tr).map(c => c.high))); // the actual pullback high
+    base.pullbackLow = pbLow; base.pullbackHigh = pbHigh;
+    const touched    = pbHigh >= ema5 - touchTol;
+    const notTooDeep = pbHigh <= ema5 + cfg.pbMaxAtr * atr5;
+    if (dipBars < cfg.pbMinBars) pbWhy = `only ${dipBars} bar(s) of pullback after the swing low < ${cfg.pbMinBars} — no real pause`;
+    else if (!touched)    pbWhy = `pullback high ${pbHigh} never reached EMA${cfg.ema5Period}(5m) zone ${_r2(ema5)} (−${_r2(touchTol)}) — no rally to sell`;
+    else if (!notTooDeep) pbWhy = `pullback high ${pbHigh} > ${cfg.pbMaxAtr}×ATR5 above EMA (${_r2(ema5 + cfg.pbMaxAtr * atr5)}) — too deep/broken`;
+    else pullbackOk = true;
   }
 
   if (!pullbackOk) return Object.assign(base, { reason: `${side} bias ok but no healthy pullback: ${pbWhy}` });

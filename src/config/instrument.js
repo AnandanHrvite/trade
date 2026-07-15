@@ -438,15 +438,16 @@ function parseDateToCode(dateStr) {
  */
 async function validateAndGetOptionSymbol(spot, side, mode) {
   let strike = calcATMStrike(spot, side);
-  // ── ORB trades slightly ITM (~delta 0.6): higher delta tracks the trend move
-  //    better and decays slower in % than ATM. Shift the strike ITM by
-  //    ORB_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
-  //    Set ORB_ITM_STEPS=0 to fall back to ATM. Applies to ORB mode only. ──────
-  if (String(mode || "").toUpperCase() === "ORB") {
-    const itmSteps = parseInt(process.env.ORB_ITM_STEPS || "1", 10);
+  // ── ORB and TREND_PB trade slightly ITM (~delta 0.6): higher delta tracks the
+  //    trend move better and decays slower in % than ATM. Shift the strike ITM by
+  //    {MODE}_ITM_STEPS × 50 (CE → lower strike, PE → higher strike). Default 1 step.
+  //    Set {MODE}_ITM_STEPS=0 to fall back to ATM. ─────────────────────────────
+  const _itmMode = String(mode || "").toUpperCase();
+  if (_itmMode === "ORB" || _itmMode === "TREND_PB") {
+    const itmSteps = parseInt(process.env[`${_itmMode}_ITM_STEPS`] || "1", 10);
     if (itmSteps > 0 && (side === "CE" || side === "PE")) {
       const shifted = side === "CE" ? strike - itmSteps * 50 : strike + itmSteps * 50;
-      console.log(`[instrument] ORB ITM: ${side} strike ${strike} → ${shifted} (${itmSteps} step${itmSteps > 1 ? "s" : ""} ITM, ~delta 0.6)`);
+      console.log(`[instrument] ${_itmMode} ITM: ${side} strike ${strike} → ${shifted} (${itmSteps} step${itmSteps > 1 ? "s" : ""} ITM, ~delta 0.6)`);
       strike = shifted;
     }
   }

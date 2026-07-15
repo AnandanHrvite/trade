@@ -68,6 +68,7 @@ function renderPage({ liveActive, sidebarKey = "realtime", autoFlipBack = false 
     LIVE:  Object.fromEntries(strategies.map(s => [s.key, s.livePrefix  + '/status'])),
   });
   const labelsJson      = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.label])));
+  const accentsJson     = JSON.stringify(Object.fromEntries(strategies.map(s => [s.key, s.accentClass])));
   const dayLogPrefixes  = JSON.stringify(Object.fromEntries(strategies.filter(s => s.hasDayLog).map(s => [s.key, s.paperPrefix])));
   const strategyOrder   = JSON.stringify(strategies.map(s => s.key));
 
@@ -313,6 +314,7 @@ const STRATEGY_KEYS    = ${strategyOrder};
 const ENDPOINTS        = ${endpointsJson};
 const STATUS_PAGES     = ${statusPagesJson};
 const STRATEGY_LABELS  = ${labelsJson};
+const STRATEGY_ACCENTS = ${accentsJson};
 const JSONL_PREFIX     = ${dayLogPrefixes};
 const WALLET_POOLS     = ${poolsJson};
 const BROKER_OF        = ${brokerOfJson};
@@ -458,7 +460,7 @@ function renderRollup(all) {
   let html = '';
   for (const key of STRATEGY_KEYS) {
     const d = all[key];
-    const accent = key.toLowerCase();
+    const accent = STRATEGY_ACCENTS[key] || key.toLowerCase();
     const label = STRATEGY_LABELS[key];
     if (!d) {
       html += \`<tr class="\${accent}" data-key="\${key}"><td>\${label}</td><td>OFFLINE</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>\`;

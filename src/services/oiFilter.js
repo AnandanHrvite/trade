@@ -64,7 +64,7 @@ function getOiMinDelta(mode = "ema_rsi_st") {
 
 function anyOiEnabled() {
   return getOiEnabled("ema_rsi_st") || getOiEnabled("bb_rsi") ||
-         getOiEnabled("pa")    || getOiEnabled("orb");
+         getOiEnabled("pa")    || getOiEnabled("orb") || getOiEnabled("trend_pb");
 }
 
 // ── Shared OI series (ring buffer of {ts, oi, spot}, one sample per ~candle) ───

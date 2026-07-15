@@ -56,7 +56,7 @@ function getVixStrongOnly(mode = "ema_rsi_st") {
 
 function anyVixEnabled() {
   return getVixEnabled("ema_rsi_st") || getVixEnabled("bb_rsi") || getVixEnabled("pa") ||
-         getVixEnabled("orb");
+         getVixEnabled("orb") || getVixEnabled("trend_pb");
 }
 
 // ── Live VIX cache (60-second TTL, shared across all modes) ─────────────────
