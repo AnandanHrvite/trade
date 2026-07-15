@@ -2022,6 +2022,7 @@ async function loadMarketSchedulePills(){
     var nowDt = new Date(Date.UTC(+today[0], +today[1]-1, +today[2]));
     return Math.round((dt - nowDt) / 86400000);
   }
+  function fmtDMY(iso){ var p = iso.split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }
   var expEl = document.getElementById('expiry-info-pill');
   var holEl = document.getElementById('holiday-info-pill');
   if (!expEl || !holEl) return;
@@ -2041,11 +2042,10 @@ async function loadMarketSchedulePills(){
     }
     if (nextExp) {
       var d = diffDays(nextExp.date);
-      var typeLbl = nextExp.monthly ? 'Mo' : 'Wk';
-      var pre = nextExp.preponed ? '*' : '';
-      var when = d === 0 ? 'today' : d + 'd';
+      var typeLbl = (nextExp.monthly ? 'M' : 'W') + (nextExp.preponed ? '*' : '');
+      var when = d === 0 ? 'today' : d + (d === 1 ? ' day' : ' days');
       expEl.classList.remove('empty');
-      expEl.textContent = '📅 Expiry ' + nextExp.date + ' · ' + typeLbl + pre + ' · ' + when;
+      expEl.textContent = '📅 Next Expiry Date : ' + fmtDMY(nextExp.date) + ' - ' + typeLbl + ' - ' + when;
     } else {
       expEl.classList.add('empty');
       expEl.textContent = '📅 No upcoming expiry';
@@ -2058,12 +2058,18 @@ async function loadMarketSchedulePills(){
     }
     if (nextHol) {
       var hd = diffDays(nextHol);
-      var hwhen = hd === 0 ? 'today' : hd + 'd';
-      holEl.classList.remove('empty');
-      holEl.textContent = '🎉 Holiday ' + nextHol + ' · ' + hwhen;
+      // Only surface the holiday from the previous day onward (tomorrow / today) —
+      // no point showing a countdown to a holiday weeks away.
+      if (hd <= 1) {
+        var hwhen = hd === 0 ? 'today' : 'tomorrow';
+        holEl.style.display = '';
+        holEl.classList.remove('empty');
+        holEl.textContent = '🎉 Holiday ' + fmtDMY(nextHol) + ' · ' + hwhen;
+      } else {
+        holEl.style.display = 'none';
+      }
     } else {
-      holEl.classList.add('empty');
-      holEl.textContent = '🎉 No upcoming holiday';
+      holEl.style.display = 'none';
     }
   } catch(_){}
 }
