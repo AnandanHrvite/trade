@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Trend Pullback — Phase B: backtest with walk-forward + dumb-baseline + cost-modeling
+
+- **New backtest route** `/trend-pb-backtest` ([src/routes/trendPbBacktest.js](src/routes/trendPbBacktest.js)): replays 5-min candles through the same `getSignal` and **re-implements the paper SPOT exits** (paper is canonical; it deliberately does NOT use the shared EMA_RSI_ST-flavored backtestEngine). Background-job + progress-poll UI mirroring the ORB backtest. Uses `computeBacktestStats` so profit factor / expectancy / Sharpe / equity-curve max-drawdown come for free.
+- **Realistic costs**: option P&L is δ+θ simulated seeded slightly-ITM (`TREND_PB_BT_SEED_PREMIUM=240`) **plus a spread/slippage haircut** `TREND_PB_BT_SLIPPAGE_PTS=1.5`pt each way, with `getCharges` on top. Option-buying backtests without modeled spread look great and lose live — this closes that gap.
+- **Dumb baseline**: the same date range is also run with a naive engine (enter in the 15m-trend direction at the entry-window open, identical trail + EOD, **no** pullback/resumption filter). The results page shows the strategy-vs-baseline delta — if the filter doesn't beat the baseline out-of-sample, it's curve-fit noise.
+- **Walk-forward** ([src/utils/walkForward.js](src/utils/walkForward.js)): trades are split into rolling ~20-day out-of-sample folds (params are fixed defaults, so every fold is OOS by construction) with a stability verdict and **thin-fold flags** (< 20 trades = noise, not proven edge). Surfaced on the results page + `/all-backtest` panel.
+- Wired into `/all-backtest` (new pink TREND PB panel) and the sidebar/Settings (`UI_SHOW_TREND_PB_BACKTEST` now defaults on). Verified end-to-end offline: entry chain, per-candle management (breakeven/trail/EMA-fail/time-stop), EOD, costs on both winners and stop-outs, baseline, and walk-forward folds all execute correctly.
+
 ### Trend Pullback — new independent strategy (Phase A: paper + UI)
 
 - **New single-strategy, institutional-grade intraday option-buying engine** ([src/strategies/trend_pb.js](src/strategies/trend_pb.js) + [src/routes/trendPbPaper.js](src/routes/trendPbPaper.js)), fully independent — ORB and every other strategy are untouched. Design was critically reviewed and approved before any code (capital preservation over trade frequency; ≤ ~7 real signal knobs to minimise overfitting; price structure over indicator stacking; exits weighted over entries).

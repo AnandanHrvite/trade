@@ -300,6 +300,8 @@ const SETTINGS_SCHEMA = [
       { key: "TREND_PB_VIX_ENABLED", label: "VIX Filter", type: "toggle", effect: EFFECT.INSTANT, desc: "Gate entries by India VIX band (too low = theta trap, too high = whipsaw). Uses TREND_PB_VIX_MAX_ENTRY (fallback global VIX_MAX_ENTRY). Default off.", default: "false" },
       { key: "TREND_PB_VIX_MAX_ENTRY", label: "VIX Max Entry", type: "number", min: 8, max: 40, step: 1, effect: EFFECT.INSTANT, desc: "Block new entries when India VIX is above this. Default 22.", default: "22" },
       { key: "TREND_PB_OI_ENABLED", label: "OI Buildup Gate", type: "toggle", effect: EFFECT.INSTANT, desc: "Block entries fighting a confirmed NIFTY-futures OI buildup (needs master OI_FILTER_ENABLED on). Default off.", default: "false" },
+      { key: "TREND_PB_BT_SLIPPAGE_PTS", label: "Backtest Spread/Slippage Haircut (pts each way)", type: "number", min: 0, max: 10, step: 0.5, effect: EFFECT.INSTANT, desc: "Premium points shaved off EACH side (buy higher / sell lower) in the backtest to model the option bid-ask spread + slippage the δ+θ sim can't see. The single most important honesty knob for an option-buying backtest. Default 1.5.", default: "1.5" },
+      { key: "TREND_PB_BT_SEED_PREMIUM", label: "Backtest Seed Premium (₹)", type: "number", min: 50, max: 800, step: 10, effect: EFFECT.INSTANT, desc: "Assumed slightly-ITM option entry premium for the backtest δ+θ P&L sim (no historical option chain). Default 240.", default: "240" },
     ],
   },
   {
@@ -491,7 +493,7 @@ const SETTINGS_SCHEMA = [
       { key: "UI_SHOW_EMA9VWAP_HISTORY",  label: "EMA9+VWAP → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the EMA9+VWAP group", default: "true" },
 
       // ── Trend Pullback submenu (Paper + History ship in Phase A; Backtest/Live default off until built) ──
-      { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Trend Pullback group (Phase B — off until the backtest route ships)", default: "false", subheader: "Trend Pullback sub-menus" },
+      { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Trend Pullback group — walk-forward OOS folds + dumb-baseline comparison", default: "true", subheader: "Trend Pullback sub-menus" },
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Trend Pullback group", default: "true" },
       { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Trend Pullback group (Phase C — off until the live route ships; needs TREND_PB_LIVE_ENABLED to actually fire)", default: "false" },
       { key: "UI_SHOW_TREND_PB_LIVE_HARNESS", label: "Trend Pullback → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Trend Pullback group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions (Phase C)", default: "false" },

@@ -20,12 +20,14 @@ const { ACTIVE } = require("../strategies");
 const bbRsiStrategy = require("../strategies/bb_rsi");
 const paStrategy    = require("../strategies/price_action");
 const orbStrategy   = require("../strategies/orb_breakout");
+const trendPbStrategy = require("../strategies/trend_pb");
 const sharedSocketState = require("../utils/sharedSocketState");
 
 const EMA_RSI_ST_KEY = ACTIVE;
 const BB_RSI_KEY = "BB_RSI_BACKTEST";
 const PA_KEY    = "PA_BACKTEST";
 const ORB_KEY   = "ORB_BACKTEST";
+const TREND_PB_KEY = "TREND_PB_BACKTEST";
 
 function _modeOn(envKey) {
   return (process.env[envKey] || "true").toLowerCase() === "true";
@@ -133,11 +135,13 @@ router.get("/", (req, res) => {
   const bbRsiOn    = _modeOn("BB_RSI_MODE_ENABLED");
   const paOn       = _modeOn("PA_MODE_ENABLED");
   const orbOn      = _modeOn("ORB_MODE_ENABLED");
+  const trendPbOn  = _modeOn("TREND_PB_MODE_ENABLED");
 
   const emaRsiStResult    = emaRsiStOn    ? loadResult(EMA_RSI_ST_KEY)    : null;
   const bbRsiResult    = bbRsiOn    ? loadResult(BB_RSI_KEY)    : null;
   const paResult       = paOn       ? loadResult(PA_KEY)       : null;
   const orbResult      = orbOn      ? loadResult(ORB_KEY)      : null;
+  const trendPbResult  = trendPbOn  ? loadResult(TREND_PB_KEY) : null;
 
   const emaRsiStPanel = emaRsiStOn ? renderPanel(
     "EMA_RSI_ST", { bg: "rgba(59,130,246,0.12)", fg: "#60a5fa", border: "rgba(59,130,246,0.25)" },
@@ -157,6 +161,11 @@ router.get("/", (req, res) => {
     "ORB", { bg: "rgba(16,185,129,0.12)", fg: "#10b981", border: "rgba(16,185,129,0.25)" },
     orbStrategy && orbStrategy.NAME ? orbStrategy.NAME : "ORB_15MIN",
     ORB_KEY, "/orb-backtest", orbResult
+  ) : "";
+  const trendPbPanel = trendPbOn ? renderPanel(
+    "TREND PB", { bg: "rgba(236,72,153,0.12)", fg: "#f472b6", border: "rgba(236,72,153,0.25)" },
+    trendPbStrategy && trendPbStrategy.NAME ? trendPbStrategy.NAME : "TREND_PULLBACK",
+    TREND_PB_KEY, "/trend-pb-backtest", trendPbResult
   ) : "";
 
   res.setHeader("Content-Type", "text/html");
@@ -297,7 +306,8 @@ ${buildSidebar('allBacktest', liveActive)}
   ${bbRsiPanel}
   ${paPanel}
   ${orbPanel}
-  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn) ? `
+  ${trendPbPanel}
+  ${(!emaRsiStOn && !bbRsiOn && !paOn && !orbOn && !trendPbOn) ? `
   <div style="background:#08091a;border:0.5px solid #0e1428;border-radius:10px;padding:24px;text-align:center;color:#94a3b8;font-size:0.78rem;">
     No strategies enabled. Toggle one on in <a href="/settings" style="color:#60a5fa;">Settings → Strategy Modes</a>.
   </div>` : ""}

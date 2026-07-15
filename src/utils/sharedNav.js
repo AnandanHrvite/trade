@@ -90,8 +90,8 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const showEma9vwapPaper     = (process.env.UI_SHOW_EMA9VWAP_PAPER       || 'true').toLowerCase() === 'true';
   const showEma9vwapLive      = (process.env.UI_SHOW_EMA9VWAP_LIVE        || 'true').toLowerCase() === 'true';
   const showEma9vwapHistory   = (process.env.UI_SHOW_EMA9VWAP_HISTORY     || 'true').toLowerCase() === 'true';
-  // Trend Pullback — Paper + History ship in Phase A; Backtest/Live default hidden until built.
-  const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'false').toLowerCase() === 'true';
+  // Trend Pullback — Paper + History + Backtest live now; Live default hidden until Phase C.
+  const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'true').toLowerCase()  === 'true';
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
   const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'false').toLowerCase() === 'true';
   const showTrendPbLiveHarness = (process.env.UI_SHOW_TREND_PB_LIVE_HARNESS || 'false').toLowerCase() === 'true';
