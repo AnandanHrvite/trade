@@ -578,16 +578,20 @@ async function onCandleClose(bar) {
 
   const _spot = bar && bar.close;
 
-  // Daily-loss kill
+  // Max trades guard (default 1 — ORB is 1/day). Checked BEFORE the daily-loss
+  // kill: once the day's trade budget is spent we bail SILENTLY (day is over).
+  // A single ORB stop (~₹1.5k) already exceeds ORB_MAX_DAILY_LOSS, so leaving the
+  // loss gate first made it re-fire on every remaining candle and spam the skip
+  // log (200+ "daily_loss" rows/day) without ever changing an outcome.
+  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
+  if (state.tradesTaken >= maxTrades) return; // expected, not a skip
+
+  // Daily-loss kill — only bites while trade budget remains (maxTrades > 1).
   const maxLoss = parseFloat(process.env.ORB_MAX_DAILY_LOSS || "3000");
   if (state.sessionPnl <= -maxLoss) {
     skipLogger.appendSkipLog("orb", { gate: "daily_loss", reason: `sessionPnl ${state.sessionPnl} <= -${maxLoss}`, spot: _spot });
     return;
   }
-
-  // Max trades guard (default 1 — ORB is 1/day)
-  const maxTrades = parseInt(process.env.ORB_MAX_DAILY_TRADES || "1", 10);
-  if (state.tradesTaken >= maxTrades) return; // expected, not a skip
 
   // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop.
   const _throttle = orbRiskState.getThrottle("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl);
