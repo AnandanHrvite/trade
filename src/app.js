@@ -431,6 +431,7 @@ app.use("/ema9vwap-live",     require("./routes/ema9vwapLiveHarness")); // ← E
 // ── Trend Pullback routes (5-min; 15m bias + 5m pullback/resumption) ─────────
 app.use("/trend-pb-paper",    require("./routes/trendPbPaper"));        // ← Trend Pullback paper trade (Phase A)
 app.use("/trend-pb-backtest", require("./routes/trendPbBacktest"));     // ← Trend Pullback backtest — walk-forward + dumb-baseline (Phase B)
+app.use("/trend-pb-live",     require("./routes/trendPbLiveHarness"));  // ← Trend Pullback LIVE via PAPER + harness (Fyers orders, triple-gated dry-run) (Phase C)
 app.use("/deploy",         require("./routes/deploy"));         // ← GitHub Actions deploy status
 app.use("/consolidation",       require("./routes/consolidation"));     // ← unified cross-mode PAPER trade history + analytics
 app.use("/live-consolidation",  require("./routes/liveConsolidation")); // ← unified cross-mode LIVE trade history + analytics

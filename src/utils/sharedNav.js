@@ -93,8 +93,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   // Trend Pullback — Paper + History + Backtest live now; Live default hidden until Phase C.
   const showTrendPbBacktest    = (process.env.UI_SHOW_TREND_PB_BACKTEST     || 'true').toLowerCase()  === 'true';
   const showTrendPbPaper       = (process.env.UI_SHOW_TREND_PB_PAPER        || 'true').toLowerCase()  === 'true';
-  const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'false').toLowerCase() === 'true';
-  const showTrendPbLiveHarness = (process.env.UI_SHOW_TREND_PB_LIVE_HARNESS || 'false').toLowerCase() === 'true';
+  const showTrendPbLive        = (process.env.UI_SHOW_TREND_PB_LIVE         || 'true').toLowerCase()  === 'true';
   const showTrendPbHistory     = (process.env.UI_SHOW_TREND_PB_HISTORY      || 'true').toLowerCase()  === 'true';
 
   // ── System submenu toggles (Settings is always shown) ──
@@ -174,8 +173,7 @@ function buildSidebar(activePage, liveActive, isRunning = false, opts = {}) {
   const trendPbItems = [
     ...(showTrendPbBacktest ? [{ key: 'trendPbBacktest', href: '/trend-pb-backtest',      icon: '🔍', label: 'Backtest' }] : []),
     ...(showTrendPbPaper    ? [{ key: 'trendPbPaper',    href: '/trend-pb-paper/status',  icon: '📈', label: 'Paper'   }] : []),
-    ...(showTrendPbLive && !trendPbPaperRunning ? [{ key: 'trendPbLive',     href: '/trend-pb-live/status',   icon: '📡', label: 'Live'    }] : []),
-    ...(showTrendPbLiveHarness && !trendPbPaperRunning ? [{ key: 'trendPbLiveHarness', href: '/trend-pb-live-harness', icon: '🔧', label: 'Live (Harness)' }] : []),
+    ...(showTrendPbLive && !trendPbPaperRunning ? [{ key: 'trendPbLive', href: '/trend-pb-live', icon: '📡', label: 'Live' }] : []),
     ...(showTrendPbHistory  ? [{ key: 'trendPbHistory',  href: '/trend-pb-paper/history', icon: '📜', label: 'History' }] : []),
   ];
 

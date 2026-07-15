@@ -6,6 +6,13 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Trend Pullback — Phase C: live via paper-wrapping harness (triple-gated dry-run)
+
+- **New live route** `/trend-pb-live` ([src/routes/trendPbLiveHarness.js](src/routes/trendPbLiveHarness.js)): runs Live by wrapping the Paper engine with the shared `liveHarness` (like EMA9VWAP) — triggers `/trend-pb-paper/start` programmatically and places real **Fyers** orders as paper's notifyEntry/notifyExit fire. LIVE = PAPER by construction (no separate live decision path).
+- **Triple-gated to dry-run** — real orders require `TREND_PB_LIVE_ENABLED=true` AND `LIVE_HARNESS_DRY_RUN=false` AND `TREND_PB_LIVE_DRY_RUN` not-true, plus an authenticated Fyers session. By default nothing places a real order (verified: `isDryRun("TREND_PB")` returns true out of the box). Status page carries the standard dry-run/live warning banners + the paper chart (VWAP + EMA20 overlay) + harness event log.
+- Wired: mounted in app.js; `/trend-pb-live/status/data` in OPEN_PATHS (Phase A); sidebar Live item now points at the harness page and defaults on (`UI_SHOW_TREND_PB_LIVE=true`); the Real-Time monitor's LIVE column now resolves. The unused separate `UI_SHOW_TREND_PB_LIVE_HARNESS` toggle was removed (harness-only pattern).
+- **Deferred** (documented): positionPersist crash-recovery of an open live position (matches ORB's current state) and liveConsolidation (harness strategies don't write a `_live_trades.json` session file, so EMA9VWAP is absent there too — live trades surface via the `trend_pb-live` JSONL log + harness events).
+
 ### Trend Pullback — Phase B: backtest with walk-forward + dumb-baseline + cost-modeling
 
 - **New backtest route** `/trend-pb-backtest` ([src/routes/trendPbBacktest.js](src/routes/trendPbBacktest.js)): replays 5-min candles through the same `getSignal` and **re-implements the paper SPOT exits** (paper is canonical; it deliberately does NOT use the shared EMA_RSI_ST-flavored backtestEngine). Background-job + progress-poll UI mirroring the ORB backtest. Uses `computeBacktestStats` so profit factor / expectancy / Sharpe / equity-curve max-drawdown come for free.

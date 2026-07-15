@@ -495,8 +495,7 @@ const SETTINGS_SCHEMA = [
       // ── Trend Pullback submenu (Paper + History ship in Phase A; Backtest/Live default off until built) ──
       { key: "UI_SHOW_TREND_PB_BACKTEST", label: "Trend Pullback → Backtest", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Backtest' inside the Trend Pullback group — walk-forward OOS folds + dumb-baseline comparison", default: "true", subheader: "Trend Pullback sub-menus" },
       { key: "UI_SHOW_TREND_PB_PAPER",    label: "Trend Pullback → Paper",    type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Paper' inside the Trend Pullback group", default: "true" },
-      { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Trend Pullback group (Phase C — off until the live route ships; needs TREND_PB_LIVE_ENABLED to actually fire)", default: "false" },
-      { key: "UI_SHOW_TREND_PB_LIVE_HARNESS", label: "Trend Pullback → Live (Harness)", type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live (Harness)' inside the Trend Pullback group — runs LIVE by wrapping PAPER, guaranteeing LIVE = PAPER decisions (Phase C)", default: "false" },
+      { key: "UI_SHOW_TREND_PB_LIVE",     label: "Trend Pullback → Live",     type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'Live' inside the Trend Pullback group — runs LIVE by wrapping PAPER (Fyers orders), guaranteeing LIVE = PAPER decisions. Real orders need TREND_PB_LIVE_ENABLED=true AND LIVE_HARNESS_DRY_RUN=false; otherwise it's dry-run.", default: "true" },
       { key: "UI_SHOW_TREND_PB_HISTORY",  label: "Trend Pullback → History",  type: "toggle", effect: EFFECT.INSTANT, desc: "Show 'History' inside the Trend Pullback group", default: "true" },
 
       // ── System submenu (Settings is always shown) ──
