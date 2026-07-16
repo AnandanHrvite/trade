@@ -1,21 +1,20 @@
 /**
- * Consolidation Report — a single printable, filterable consolidated report of
- * every recorded trade (paper + live) across all strategies.
+ * Consolidation Report — a printable, DAILY consolidated report of every recorded
+ * trade (paper + live), rendered as one table with a row per trading day.
  *
- * Read-only. Loads the same per-strategy session files that /consolidation (paper)
- * and /live-consolidation (live) use, flattens them to one trade array (with the
- * richer per-trade fields the ledger needs), embeds it in the page, and computes
- * everything client-side so the Book / Strategy / Range / Group-by filters recompute
+ * Mirrors the Telegram "CONSOLIDATED DAY REPORT" layout (per-strategy trades + P&L,
+ * then Total / Wins / Losses / Win rate / Net P&L) but for every day at once, in a
+ * table you can filter (Book · week / month / date-range) and export to PDF.
+ *
+ * Reached via the "📑 Consolidation Report" button on the Edge Analytics page — it
+ * is NOT a separate sidebar menu item. Read-only: loads the same per-strategy session
+ * files that /consolidation (paper) + /live-consolidation (live) use, flattens them,
+ * embeds the trade array, and computes everything client-side so filters recompute
  * instantly with no server round-trip.
  *
- * Filters: Book (Paper / Live / Both), Strategy, and a Range preset covering
- * This week / Last week / This month / Last month / Last 7·30 days / This FY /
- * All time / Custom (from–to). A Group-by (Day / Week / Month / Strategy) drives
- * the period-breakdown table.
- *
- * Export: "Save as PDF" prints the report through a dedicated @media print
- * stylesheet (sidebar / toolbar / buttons hidden, white page, page-break-safe
- * tables). No external PDF library — the browser's native print-to-PDF is used.
+ * Export: "🖨 Save as PDF" prints the report through a dedicated @media print
+ * stylesheet (sidebar / toolbar / buttons hidden, white page, page-break-safe table).
+ * No external PDF library — the browser's native print-to-PDF is used.
  *
  * Gated by UI_SHOW_CONSOLIDATION_REPORT (Settings → Menu Visibility). No new data
  * is written.
@@ -63,17 +62,9 @@ function loadBook(sources, book) {
       for (const t of (s.trades || [])) {
         out.push({
           book,
-          mode:        src.mode,
-          date:        sessionDate,
-          side:        t.side || t.optionType || "",
-          symbol:      t.symbol || "",
-          qty:         t.qty || 0,
-          entryPrice:  t.entryPrice,
-          exitPrice:   t.exitPrice,
-          entryTime:   t.entryTime || "",
-          exitTime:    t.exitTime || "",
-          pnl:         Number(t.pnl) || 0,
-          exitReason:  t.exitReason || "",
+          mode: src.mode,
+          date: sessionDate,
+          pnl:  Number(t.pnl) || 0,
         });
       }
     }
@@ -81,9 +72,8 @@ function loadBook(sources, book) {
   return out;
 }
 
-// Cache the flattened+sorted trade list — same approach as consolidation.js /
-// edgeAnalytics.js. Invalidate by a cheap mtime+size signature so a new trade is
-// picked up immediately without re-parsing when nothing changed.
+// Cache the flattened trade list — same approach as consolidation.js / edgeAnalytics.js.
+// Invalidate by a cheap mtime+size signature so a new trade is picked up immediately.
 let _cache = null;
 let _sig   = null;
 function _sourcesSig() {
@@ -116,7 +106,6 @@ router.get("/", (req, res) => {
   ${faviconLink()}
   <title>ௐ Palani Andawar Thunai ॐ — Consolidation Report</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet"/>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script>(function(){ if ('${theme}' === 'light') document.documentElement.setAttribute('data-theme','light'); })();</script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
@@ -126,6 +115,7 @@ router.get("/", (req, res) => {
     @media(max-width:900px){.main-content{margin-left:0;padding:14px;}}
     .page-title{font-size:1.1rem;font-weight:700;color:#e0eaf8;margin-bottom:2px;}
     .page-sub{font-size:0.72rem;color:#4a6080;margin-bottom:14px;}
+    .page-sub a{color:#7dd3fc;text-decoration:none;}
     .tbar{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;margin-bottom:14px;flex-wrap:wrap;}
     .tbar label{font-size:0.58rem;text-transform:uppercase;letter-spacing:1px;color:#3a5070;font-family:'IBM Plex Mono',monospace;}
     .tbar input,.tbar select{background:#04090f;border:0.5px solid #0e1e36;color:#e0eaf8;padding:6px 10px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;outline:none;}
@@ -150,32 +140,32 @@ router.get("/", (req, res) => {
     .sc-sub{font-size:0.6rem;color:#4a6080;margin-top:3px;}
     .panel{background:#07111f;border:0.5px solid #0e1e36;border-radius:10px;padding:14px 16px;margin-bottom:14px;}
     .panel h3{font-size:0.62rem;text-transform:uppercase;letter-spacing:1.4px;color:#3a5070;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;}
-    .chart-wrap{position:relative;height:230px;}
     .tbl-scroll{overflow-x:auto;}
     .tbl{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;}
     .tbl th{padding:8px 10px;text-align:right;font-size:0.56rem;text-transform:uppercase;letter-spacing:1px;color:#1e3050;background:#04090f;border-bottom:0.5px solid #0e1e36;font-weight:600;white-space:nowrap;}
     .tbl th:first-child{text-align:left;}
-    .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;white-space:nowrap;}
+    .tbl td{padding:7px 10px;border-top:0.5px solid #0e1e36;color:#c8d8f0;text-align:right;white-space:nowrap;vertical-align:top;}
     .tbl td:first-child{text-align:left;}
     .tbl tr:hover td{background:rgba(56,189,248,0.05);}
     .tbl tfoot td{border-top:1px solid #17324f;font-weight:700;color:#e0eaf8;background:#04090f;}
-    .badge-mode{padding:2px 7px;border-radius:4px;font-size:0.58rem;font-weight:700;letter-spacing:0.5px;}
-    .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;border:0.5px solid rgba(59,130,246,0.3);}
-    .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;border:0.5px solid rgba(245,158,11,0.3);}
-    .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;border:0.5px solid rgba(168,85,247,0.3);}
-    .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;border:0.5px solid rgba(16,185,129,0.3);}
-    .badge-EMA9VWAP{background:rgba(6,182,212,0.12);color:#06b6d4;border:0.5px solid rgba(6,182,212,0.3);}
-    .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;border:0.5px solid rgba(236,72,153,0.3);}
-    .badge-book{padding:2px 6px;border-radius:4px;font-size:0.54rem;font-weight:700;letter-spacing:0.5px;}
-    .badge-paper{background:rgba(56,189,248,0.10);color:#38bdf8;border:0.5px solid rgba(56,189,248,0.28);}
-    .badge-live{background:rgba(239,68,68,0.10);color:#ef4444;border:0.5px solid rgba(239,68,68,0.28);}
+    .cnt{font-size:0.56rem;color:#4a6080;font-weight:400;}
+    .muted{color:#2a3a52;}
+    .badge-mode{padding:2px 6px;border-radius:4px;font-size:0.52rem;font-weight:700;letter-spacing:0.5px;}
+    .badge-EMA_RSI_ST{background:rgba(59,130,246,0.12);color:#3b82f6;}
+    .badge-BB_RSI{background:rgba(245,158,11,0.12);color:#f59e0b;}
+    .badge-PA{background:rgba(168,85,247,0.12);color:#a855f7;}
+    .badge-ORB{background:rgba(16,185,129,0.12);color:#10b981;}
+    .badge-EMA9VWAP{background:rgba(6,182,212,0.12);color:#06b6d4;}
+    .badge-TREND_PB{background:rgba(236,72,153,0.12);color:#ec4899;}
+    .res-profit{color:#10b981;font-weight:700;}
+    .res-loss{color:#ef4444;font-weight:700;}
+    .res-flat{color:#4a6080;}
     .empty{text-align:center;padding:50px 20px;color:#4a6080;font-size:0.85rem;}
-    .ledger-wrap{max-height:640px;overflow:auto;}
     /* light theme */
     :root[data-theme="light"] body{background:#f4f6f9!important;color:#334155!important;}
     :root[data-theme="light"] .main-content{background:#f4f6f9!important;}
     :root[data-theme="light"] .page-title,:root[data-theme="light"] .rh-title{color:#1e293b!important;}
-    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label,:root[data-theme="light"] .rh-meta,:root[data-theme="light"] .rh-brand{color:#64748b!important;}
+    :root[data-theme="light"] .page-sub,:root[data-theme="light"] .sc-label,:root[data-theme="light"] .sc-sub,:root[data-theme="light"] .panel h3,:root[data-theme="light"] .tbar label,:root[data-theme="light"] .rh-meta,:root[data-theme="light"] .rh-brand,:root[data-theme="light"] .cnt{color:#64748b!important;}
     :root[data-theme="light"] .sc,:root[data-theme="light"] .panel,:root[data-theme="light"] .rpt-head{background:#fff!important;border-color:#e0e4ea!important;box-shadow:0 1px 3px rgba(0,0,0,0.06)!important;}
     :root[data-theme="light"] .sc-val{color:#1e293b!important;}
     :root[data-theme="light"] .tbar{background:#fff!important;border-color:#e0e4ea!important;}
@@ -184,26 +174,24 @@ router.get("/", (req, res) => {
     :root[data-theme="light"] .tbl th{background:#f1f5f9!important;color:#64748b!important;border-bottom-color:#e0e4ea!important;}
     :root[data-theme="light"] .tbl td{border-color:#e0e4ea!important;color:#334155!important;}
     :root[data-theme="light"] .tbl tfoot td{background:#f1f5f9!important;color:#1e293b!important;}
+    :root[data-theme="light"] .muted{color:#cbd5e1!important;}
     :root[data-theme="light"] .empty{color:#94a3b8!important;}
-    /* ── PRINT / Save-as-PDF ─────────────────────────────────────────────
-       Hide the app chrome, force a light print theme, keep tables page-safe. */
+    /* ── PRINT / Save-as-PDF ─────────────────────────────────────────── */
     @media print {
       @page { size: A4 landscape; margin: 12mm; }
       body{background:#fff!important;color:#111!important;overflow:visible!important;}
-      .sidebar,.hamburger,.sidebar-overlay,.deploy-chip,#socket-broken-banner,#telegram-broken-banner,#backup-nag-banner,.tbar,.pdf-btn{display:none!important;}
+      .sidebar,.hamburger,.sidebar-overlay,.deploy-chip,#socket-broken-banner,#telegram-broken-banner,#backup-nag-banner,.tbar,.pdf-btn,.page-sub a{display:none!important;}
       .app-shell{display:block!important;}
       .main-content{margin-left:0!important;padding:0!important;min-height:auto!important;}
       .rpt-head,.sc,.panel{background:#fff!important;border:1px solid #d0d7e2!important;box-shadow:none!important;break-inside:avoid;}
       .rh-title{color:#111!important;} .rh-meta,.rh-brand,.page-sub{color:#555!important;}
       .sc-val{color:#111!important;} .sc-label,.sc-sub,.panel h3{color:#555!important;}
-      .tbl{font-size:0.62rem;} .tbl th{background:#eef2f7!important;color:#333!important;}
+      .tbl{font-size:0.6rem;} .tbl th{background:#eef2f7!important;color:#333!important;}
       .tbl td{color:#222!important;border-color:#d0d7e2!important;}
       .tbl tfoot td{background:#eef2f7!important;color:#111!important;}
-      .ledger-wrap{max-height:none!important;overflow:visible!important;}
       .tbl-scroll{overflow:visible!important;}
-      .panel,.tbl tr{break-inside:avoid;}
-      thead{display:table-header-group;}  /* repeat table header on each page */
-      .chart-wrap{height:200px!important;}
+      .tbl tr{break-inside:avoid;}
+      thead{display:table-header-group;}
     }
   </style>
 </head>
@@ -212,7 +200,7 @@ router.get("/", (req, res) => {
   ${buildSidebar('consolidationReport', false)}
   <div class="main-content">
     <h1 class="page-title">📑 Consolidation Report</h1>
-    <p class="page-sub">One consolidated, printable report of every recorded trade — filter by book, strategy, week / month / date range, then export to PDF.</p>
+    <p class="page-sub">Day-by-day consolidated report of every recorded trade — per-strategy P&amp;L, wins/losses and net for each day. <a href="/edge-analytics">← Edge Analytics</a></p>
 
     <div class="tbar">
       <label>Book</label>
@@ -221,16 +209,6 @@ router.get("/", (req, res) => {
         <button data-book="live">Live</button>
         <button data-book="all">Both</button>
       </div>
-      <label>Strategy</label>
-      <select id="fMode">
-        <option value="">All</option>
-        <option value="EMA_RSI_ST">EMA_RSI_ST</option>
-        <option value="BB_RSI">BB_RSI</option>
-        <option value="PA">Price Action</option>
-        <option value="ORB">ORB</option>
-        <option value="EMA9VWAP">EMA9+VWAP</option>
-        <option value="TREND_PB">Trend Pullback</option>
-      </select>
       <label>Range</label>
       <select id="fRange">
         <option value="all">All time</option>
@@ -247,13 +225,6 @@ router.get("/", (req, res) => {
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
       </span>
-      <label>Group by</label>
-      <select id="fGroup">
-        <option value="day">Day</option>
-        <option value="week">Week</option>
-        <option value="month" selected>Month</option>
-        <option value="mode">Strategy</option>
-      </select>
       <button class="pdf-btn" onclick="window.print()">🖨 Save as PDF</button>
     </div>
 
@@ -263,210 +234,125 @@ router.get("/", (req, res) => {
 
 <script>
 const ALL = ${JSON.stringify(trades)};
+const MODES = ['EMA_RSI_ST','BB_RSI','PA','ORB','EMA9VWAP','TREND_PB'];
+const MODE_LABEL={EMA_RSI_ST:'EMA_RSI_ST',BB_RSI:'BB_RSI',PA:'PA',ORB:'ORB',EMA9VWAP:'EMA9VWAP',TREND_PB:'TREND_PB'};
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
 function inr2(n){ return (n<0?'-':'')+'₹'+Math.abs(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
-function sign(n){ return n>0?'+':''; }
+function inr(n){ const v=Math.round(n); return (v<0?'-':'')+'₹'+Math.abs(v).toLocaleString('en-IN'); }
 function pc(n){ return n>=0?'#10b981':'#ef4444'; }
-function num(v){ return (v==null||v==='')?'—':(+v).toLocaleString('en-IN'); }
-const MODE_LABEL={EMA_RSI_ST:'EMA_RSI_ST',BB_RSI:'BB_RSI',PA:'Price Action',ORB:'ORB',EMA9VWAP:'EMA9+VWAP',TREND_PB:'Trend Pullback'};
 
 function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
 function fyStart(){ const now=new Date(); const y=now.getMonth()>=3?now.getFullYear():now.getFullYear()-1; return y+'-04-01'; }
-// Monday of the week that contains d (local time).
 function mondayOf(d){ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); const dow=(x.getDay()+6)%7; x.setDate(x.getDate()-dow); return x; }
+// 'YYYY-MM-DD' → "Tue, 14 Jul 2026"  (matches the Telegram day-report header)
+function prettyDate(s){ const d=new Date(s+'T12:00:00'); if(isNaN(d)) return s; return d.toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}); }
 
 function currentFilter(){
   const book = document.querySelector('#segBook button.on').dataset.book;
-  const mode = document.getElementById('fMode').value;
   const range = document.getElementById('fRange').value;
-  const group = document.getElementById('fGroup').value;
   const now=new Date();
   let from='', to='', rangeLabel='All time';
-  if(range==='custom'){
-    from=document.getElementById('fFrom').value; to=document.getElementById('fTo').value;
-    rangeLabel = (from||'…')+' → '+(to||'…');
-  } else if(range==='fy'){ from=fyStart(); rangeLabel='This FY ('+from.slice(0,4)+'–'+(+from.slice(0,4)+1)+')'; }
+  if(range==='custom'){ from=document.getElementById('fFrom').value; to=document.getElementById('fTo').value; rangeLabel=(from||'…')+' → '+(to||'…'); }
+  else if(range==='fy'){ from=fyStart(); rangeLabel='This FY ('+from.slice(0,4)+'–'+(+from.slice(0,4)+1)+')'; }
   else if(range==='7'||range==='30'){ const d=new Date(); d.setDate(d.getDate()-(+range)+1); from=ymd(d); rangeLabel='Last '+range+' days'; }
   else if(range==='tw'){ from=ymd(mondayOf(now)); rangeLabel='This week (from '+from+')'; }
   else if(range==='lw'){ const m=mondayOf(now); const s=new Date(m); s.setDate(s.getDate()-7); const e=new Date(m); e.setDate(e.getDate()-1); from=ymd(s); to=ymd(e); rangeLabel='Last week ('+from+' → '+to+')'; }
   else if(range==='tm'){ from=ymd(new Date(now.getFullYear(),now.getMonth(),1)); rangeLabel='This month'; }
   else if(range==='lm'){ from=ymd(new Date(now.getFullYear(),now.getMonth()-1,1)); to=ymd(new Date(now.getFullYear(),now.getMonth(),0)); rangeLabel='Last month'; }
-  return {book,mode,from,to,group,rangeLabel};
+  return {book,from,to,rangeLabel};
 }
 function applyFilter(f){
   return ALL.filter(t=>{
     if(f.book!=='all' && t.book!==f.book) return false;
-    if(f.mode && t.mode!==f.mode) return false;
     if(f.from && t.date < f.from) return false;
     if(f.to   && t.date > f.to)   return false;
     return true;
   });
 }
 
-function stats(arr){
-  let net=0,gw=0,gl=0,wins=0,losses=0,scratch=0,sumWin=0,sumLoss=0,best=-1e9,worst=1e9;
-  let eq=0,peak=0,maxDD=0,curW=0,curL=0,maxW=0,maxL=0; const eqS=[];
+// Build one bucket per day: per-strategy {n,pnl} + totals {n,wins,losses,net}
+function byDay(arr){
+  const m=new Map();
   for(const t of arr){
-    const p=t.pnl; net+=p; eq+=p; eqS.push(eq);
-    if(eq>peak) peak=eq;
-    if(eq-peak<maxDD) maxDD=eq-peak;
-    if(p>0){wins++;gw+=p;sumWin+=p;curW++;curL=0;if(curW>maxW)maxW=curW;}
-    else if(p<0){losses++;gl+=-p;sumLoss+=p;curL++;curW=0;if(curL>maxL)maxL=curL;}
-    else{scratch++;curW=0;curL=0;}
-    if(p>best)best=p; if(p<worst)worst=p;
+    const d=t.date||'—';
+    if(!m.has(d)) m.set(d,{ date:d, modes:{}, n:0, wins:0, losses:0, net:0 });
+    const g=m.get(d);
+    if(!g.modes[t.mode]) g.modes[t.mode]={n:0,pnl:0};
+    g.modes[t.mode].n++; g.modes[t.mode].pnl+=t.pnl;
+    g.n++; g.net+=t.pnl;
+    if(t.pnl>0) g.wins++; else if(t.pnl<0) g.losses++;
   }
-  const n=arr.length;
-  return { n, net, gw, gl, wins, losses, scratch,
-    wr: n?wins/n*100:0, exp: n?net/n:0,
-    pf: gl>0?gw/gl:(gw>0?Infinity:0),
-    avgWin: wins?sumWin/wins:0, avgLoss: losses?sumLoss/losses:0,
-    best: n?best:0, worst: n?worst:0, maxDD, maxW, maxL, eqS };
-}
-
-// group key + human label for the period-breakdown table
-function periodKey(t, group){
-  if(group==='mode') return {k:t.mode, label:MODE_LABEL[t.mode]||t.mode};
-  const d=t.date||''; if(!d) return {k:'—', label:'—'};
-  if(group==='day')   return {k:d, label:d};
-  if(group==='month') return {k:d.slice(0,7), label:d.slice(0,7)};
-  // week → Monday of that date
-  const dt=new Date(d+'T12:00:00'); const m=mondayOf(dt); const mk=ymd(m);
-  return {k:mk, label:'Wk '+mk};
-}
-
-let charts={};
-function destroyCharts(){ for(const k in charts){ try{charts[k].destroy();}catch(_){} } charts={}; }
-function themed(){
-  const light=document.documentElement.getAttribute('data-theme')==='light';
-  return { grid: light?'rgba(0,0,0,0.06)':'rgba(255,255,255,0.05)', tick: light?'#64748b':'#4a6080' };
+  return [...m.values()].sort((a,b)=>b.date.localeCompare(a.date)); // newest day first
 }
 
 function render(){
   const f=currentFilter();
   const arr=applyFilter(f);
-  destroyCharts();
   const C=document.getElementById('content');
 
   const bookLabel = f.book==='all'?'Paper + Live':(f.book==='live'?'Live':'Paper');
-  const modeLabel = f.mode?(MODE_LABEL[f.mode]||f.mode):'All strategies';
   const gen = new Date().toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'});
+  const days = byDay(arr);
 
-  // Report header (always shown; also the top of the printed page)
+  // Only show strategy columns that actually traded in this range (keeps it narrow)
+  const activeModes = MODES.filter(mo => arr.some(t => t.mode===mo));
+
+  // overall totals
+  let tN=0,tW=0,tL=0,tNet=0; const totByMode={};
+  for(const mo of activeModes) totByMode[mo]={n:0,pnl:0};
+  for(const t of arr){ tN++; tNet+=t.pnl; if(t.pnl>0)tW++; else if(t.pnl<0)tL++; if(totByMode[t.mode]){ totByMode[t.mode].n++; totByMode[t.mode].pnl+=t.pnl; } }
+  const tWR = tN?(tW/tN*100):0;
+
   let head='<div class="rpt-head"><div>'
-    +'<div class="rh-title">Consolidated Trade Report</div>'
-    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Strategy: <b>'+esc(modeLabel)+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b><br>'
-    +'Trades in report: <b>'+arr.length+'</b>'+(arr.length?(' &nbsp;·&nbsp; '+esc((arr[0].date||''))+' → '+esc((arr[arr.length-1].date||''))):'')+'</div>'
+    +'<div class="rh-title">Consolidated Day Report</div>'
+    +'<div class="rh-meta">Book: <b>'+bookLabel+'</b> &nbsp;·&nbsp; Period: <b>'+esc(f.rangeLabel)+'</b> &nbsp;·&nbsp; Trading days: <b>'+days.length+'</b> &nbsp;·&nbsp; Trades: <b>'+tN+'</b></div>'
     +'</div><div class="rh-brand">ௐ Palani Andawar Thunai ॐ<br>Generated '+esc(gen)+'</div></div>';
 
-  if(!arr.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching book / strategy.</div>'; return; }
-  const s=stats(arr);
+  if(!days.length){ C.innerHTML=head+'<div class="empty">No trades for this filter. Try widening the range or switching Book.</div>'; return; }
 
+  // summary cards (mirror the Telegram totals block)
   const cards=[
-    {l:'Trades',v:s.n,sub:s.wins+'W / '+s.losses+'L'+(s.scratch?' / '+s.scratch+'BE':''),a:'#38bdf8'},
-    {l:'Win Rate',v:s.wr.toFixed(1)+'%',sub:'',a:s.wr>=50?'#10b981':'#f59e0b'},
-    {l:'Net P&L',v:inr(s.net),sub:'expectancy '+inr(s.exp)+'/trade',a:pc(s.net)},
-    {l:'Gross Win / Loss',v:inr(s.gw)+' / -'+inr(s.gl),sub:'',a:'#38bdf8'},
-    {l:'Profit Factor',v:(s.pf===Infinity?'∞':s.pf.toFixed(2)),sub:'gross win ÷ loss',a:s.pf>=1.5?'#10b981':(s.pf>=1?'#f59e0b':'#ef4444')},
-    {l:'Max Drawdown',v:inr(s.maxDD),sub:'streaks '+s.maxW+'W / '+s.maxL+'L',a:'#ef4444'},
+    {l:'Total Trades',v:tN,sub:days.length+' trading days',a:'#38bdf8'},
+    {l:'Wins',v:tW,sub:'',a:'#10b981'},
+    {l:'Losses',v:tL,sub:'',a:'#ef4444'},
+    {l:'Win Rate',v:tWR.toFixed(1)+'%',sub:'',a:tWR>=50?'#10b981':'#f59e0b'},
+    {l:'Net P&L',v:inr(tNet),sub:tNet>=0?'🟢 PROFIT':'🔴 LOSS',a:pc(tNet)},
+    {l:'Avg / Day',v:inr(days.length?tNet/days.length:0),sub:'per trading day',a:pc(tNet)},
   ];
   let h=head+'<div class="stat-grid">';
   for(const c of cards) h+='<div class="sc" style="--accent:'+c.a+'"><div class="sc-label">'+c.l+'</div><div class="sc-val" style="color:'+c.a+'">'+c.v+'</div><div class="sc-sub">'+c.sub+'</div></div>';
   h+='</div>';
 
-  h+='<div class="panel"><h3>Equity Curve (cumulative net P&L · trade-by-trade)</h3><div class="chart-wrap"><canvas id="eqChart"></canvas></div></div>';
-  h+='<div class="panel"><h3>By Strategy</h3><div class="tbl-scroll">'+modeTable(arr)+'</div></div>';
-  h+='<div class="panel"><h3>By '+({day:'Day',week:'Week',month:'Month',mode:'Strategy'}[f.group])+'</h3><div class="tbl-scroll">'+periodTable(arr,f.group)+'</div></div>';
-  h+='<div class="panel"><h3>Trade Ledger ('+arr.length+' trades)</h3><div class="ledger-wrap tbl-scroll">'+ledgerTable(arr,f.book)+'</div></div>';
-  C.innerHTML=h;
+  // the daily table
+  let thead='<tr><th>Date</th>';
+  for(const mo of activeModes) thead+='<th>'+esc(MODE_LABEL[mo])+'</th>';
+  thead+='<th>Trades</th><th>W</th><th>L</th><th>Win%</th><th>Net P&amp;L</th><th>Result</th></tr>';
 
-  drawEquity(s.eqS);
-}
-
-function statRow(label, badge, st){
-  return '<tr><td>'+badge+'</td>'
-    +'<td>'+st.n+'</td><td>'+st.wr.toFixed(0)+'%</td>'
-    +'<td style="color:#10b981">'+inr(st.gw)+'</td>'
-    +'<td style="color:#ef4444">-'+inr(st.gl)+'</td>'
-    +'<td style="color:'+pc(st.net)+'">'+sign(st.net)+inr(st.net)+'</td>'
-    +'<td style="color:'+pc(st.exp)+'">'+inr(st.exp)+'</td>'
-    +'<td>'+(st.pf===Infinity?'∞':st.pf.toFixed(2))+'</td></tr>';
-}
-
-function modeTable(arr){
-  const m=new Map();
-  for(const t of arr){ if(!m.has(t.mode)) m.set(t.mode,[]); m.get(t.mode).push(t); }
-  const rows=[...m.entries()].map(([mode,ts])=>({mode,s:stats(ts)})).sort((a,b)=>b.s.net-a.s.net);
-  let h='<table class="tbl"><thead><tr><th>Strategy</th><th>Trades</th><th>WR</th><th>Gross Win</th><th>Gross Loss</th><th>Net</th><th>Exp</th><th>PF</th></tr></thead><tbody>';
-  for(const r of rows) h+=statRow(r.mode,'<span class="badge-mode badge-'+r.mode+'">'+(MODE_LABEL[r.mode]||r.mode)+'</span>',r.s);
-  h+='</tbody>';
-  const tot=stats(arr);
-  h+='<tfoot>'+statRow('TOTAL','<b>TOTAL</b>',tot).replace('<td><b>TOTAL</b></td>','<td><b>TOTAL</b></td>')+'</tfoot>';
-  return h+'</table>';
-}
-
-function periodTable(arr, group){
-  const m=new Map();
-  for(const t of arr){ const {k,label}=periodKey(t,group); if(!m.has(k)) m.set(k,{label,ts:[]}); m.get(k).ts.push(t); }
-  // chronological (strategy grouping falls back to net desc)
-  let keys=[...m.keys()];
-  if(group==='mode') keys.sort((a,b)=>stats(m.get(b).ts).net-stats(m.get(a).ts).net);
-  else keys.sort();
-  let cum=0;
-  let h='<table class="tbl"><thead><tr><th>'+({day:'Day',week:'Week',month:'Month',mode:'Strategy'}[group])+'</th><th>Trades</th><th>WR</th><th>Gross Win</th><th>Gross Loss</th><th>Net</th><th>Cumulative</th></tr></thead><tbody>';
-  for(const k of keys){
-    const st=stats(m.get(k).ts); cum+=st.net;
-    h+='<tr><td>'+esc(m.get(k).label)+'</td>'
-      +'<td>'+st.n+'</td><td>'+st.wr.toFixed(0)+'%</td>'
-      +'<td style="color:#10b981">'+inr(st.gw)+'</td>'
-      +'<td style="color:#ef4444">-'+inr(st.gl)+'</td>'
-      +'<td style="color:'+pc(st.net)+'">'+sign(st.net)+inr(st.net)+'</td>'
-      +'<td style="color:'+pc(cum)+'">'+sign(cum)+inr(cum)+'</td></tr>';
+  let body='';
+  for(const g of days){
+    let row='<td>'+esc(prettyDate(g.date))+'</td>';
+    for(const mo of activeModes){
+      const c=g.modes[mo];
+      if(!c || !c.n){ row+='<td class="muted">—</td>'; continue; }
+      row+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+' trade'+(c.n>1?'s':'')+'</span></td>';
+    }
+    const wr=g.n?(g.wins/g.n*100):0;
+    const rc = g.net>0?'res-profit':(g.net<0?'res-loss':'res-flat');
+    const rl = g.net>0?'🟢 PROFIT':(g.net<0?'🔴 LOSS':'— FLAT');
+    row+='<td>'+g.n+'</td><td style="color:#10b981">'+g.wins+'</td><td style="color:#ef4444">'+g.losses+'</td><td>'+wr.toFixed(0)+'%</td>'
+      +'<td style="color:'+pc(g.net)+';font-weight:700">'+inr2(g.net)+'</td><td class="'+rc+'">'+rl+'</td>';
+    body+='<tr>'+row+'</tr>';
   }
-  const tot=stats(arr);
-  h+='</tbody><tfoot><tr><td><b>TOTAL</b></td><td>'+tot.n+'</td><td>'+tot.wr.toFixed(0)+'%</td>'
-    +'<td style="color:#10b981">'+inr(tot.gw)+'</td><td style="color:#ef4444">-'+inr(tot.gl)+'</td>'
-    +'<td style="color:'+pc(tot.net)+'">'+sign(tot.net)+inr(tot.net)+'</td><td style="color:'+pc(tot.net)+'">'+sign(tot.net)+inr(tot.net)+'</td></tr></tfoot>';
-  return h+'</table>';
-}
 
-function ledgerTable(arr, book){
-  const showBook = book==='all';
-  let h='<table class="tbl"><thead><tr><th>#</th><th>Date</th>'+(showBook?'<th>Book</th>':'')+'<th>Strategy</th><th>Side</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Exit</th><th>In</th><th>Out</th><th>P&amp;L</th><th>Exit Reason</th></tr></thead><tbody>';
-  arr.forEach((t,i)=>{
-    const side=(t.side||'').toUpperCase();
-    const sideC = side==='CE'?'#10b981':(side==='PE'?'#ef4444':'#c8d8f0');
-    h+='<tr><td>'+(i+1)+'</td><td>'+esc(t.date||'—')+'</td>'
-      +(showBook?'<td><span class="badge-book badge-'+t.book+'">'+t.book.toUpperCase()+'</span></td>':'')
-      +'<td><span class="badge-mode badge-'+t.mode+'">'+(MODE_LABEL[t.mode]||t.mode)+'</span></td>'
-      +'<td style="color:'+sideC+';font-weight:700">'+esc(side||'—')+'</td>'
-      +'<td style="text-align:left;font-size:0.66rem">'+esc(t.symbol||'—')+'</td>'
-      +'<td>'+num(t.qty)+'</td><td>'+num(t.entryPrice)+'</td><td>'+num(t.exitPrice)+'</td>'
-      +'<td style="font-size:0.64rem">'+esc(String(t.entryTime||'—').slice(0,5)||'—')+'</td>'
-      +'<td style="font-size:0.64rem">'+esc(String(t.exitTime||'—').slice(0,5)||'—')+'</td>'
-      +'<td style="color:'+pc(t.pnl)+';font-weight:700">'+sign(t.pnl)+inr2(t.pnl)+'</td>'
-      +'<td style="text-align:left;max-width:220px;white-space:normal;font-size:0.64rem" title="'+esc(t.exitReason)+'">'+esc(t.exitReason||'—')+'</td></tr>';
-  });
-  const tot=stats(arr);
-  const span = showBook?11:10;
-  h+='</tbody><tfoot><tr><td colspan="'+span+'" style="text-align:right"><b>NET</b></td>'
-    +'<td style="color:'+pc(tot.net)+';font-weight:700">'+sign(tot.net)+inr2(tot.net)+'</td><td></td></tr></tfoot>';
-  return h+'</table>';
-}
+  // totals footer
+  let foot='<tr><td><b>TOTAL</b></td>';
+  for(const mo of activeModes){ const c=totByMode[mo]; foot+='<td><span style="color:'+pc(c.pnl)+'">'+inr2(c.pnl)+'</span><br><span class="cnt">'+c.n+'</span></td>'; }
+  foot+='<td>'+tN+'</td><td style="color:#10b981">'+tW+'</td><td style="color:#ef4444">'+tL+'</td><td>'+tWR.toFixed(0)+'%</td>'
+    +'<td style="color:'+pc(tNet)+'">'+inr2(tNet)+'</td><td class="'+(tNet>=0?'res-profit':'res-loss')+'">'+(tNet>=0?'🟢':'🔴')+'</td></tr>';
 
-function drawEquity(eqS){
-  const th=themed();
-  charts.eq=new Chart(document.getElementById('eqChart'),{
-    type:'line',
-    data:{ labels:eqS.map((_,i)=>i+1), datasets:[{
-      data:eqS, borderColor:'#38bdf8', borderWidth:2, pointRadius:0, tension:0.15,
-      fill:true, backgroundColor:(ctx)=>{ const g=ctx.chart.ctx.createLinearGradient(0,0,0,300); g.addColorStop(0,'rgba(56,189,248,0.25)'); g.addColorStop(1,'rgba(56,189,248,0)'); return g; },
-    }]},
-    options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{display:false},
-      tooltip:{callbacks:{title:i=>'Trade #'+i[0].label, label:c=>'Equity: '+inr(c.parsed.y)}}},
-      scales:{ x:{grid:{color:th.grid},ticks:{color:th.tick,maxTicksLimit:12}}, y:{grid:{color:th.grid},ticks:{color:th.tick,callback:v=>inr(v)}} } }
-  });
+  h+='<div class="panel"><h3>Daily Breakdown</h3><div class="tbl-scroll"><table class="tbl"><thead>'+thead+'</thead><tbody>'+body+'</tbody><tfoot>'+foot+'</tfoot></table></div></div>';
+  C.innerHTML=h;
 }
 
 // wire controls
@@ -474,8 +360,6 @@ document.querySelectorAll('#segBook button').forEach(b=>b.addEventListener('clic
   document.querySelectorAll('#segBook button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); render();
 }));
-document.getElementById('fMode').addEventListener('change',render);
-document.getElementById('fGroup').addEventListener('change',render);
 document.getElementById('fRange').addEventListener('change',()=>{
   document.getElementById('customWrap').style.display = document.getElementById('fRange').value==='custom'?'inline':'none';
   render();

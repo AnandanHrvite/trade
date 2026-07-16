@@ -6,15 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
-### New page: Consolidation Report (`/consolidation-report`)
+### New: Consolidation Report — daily report reached from the Edge Analytics page
 
-A single printable, filterable consolidated report of **every** recorded trade (paper + live) across all six strategies — the "till-now" report view the user asked for.
+A **day-by-day** consolidated report of every recorded trade (paper + live), mirroring the Telegram "CONSOLIDATED DAY REPORT" layout — the "till-now" report the user asked for. Reached via a **button on the Edge Analytics page**, not a separate sidebar item.
 
-- **New route** [src/routes/consolidationReport.js](src/routes/consolidationReport.js) — read-only, modelled on Edge Analytics: loads the same per-strategy session files as `/consolidation` + `/live-consolidation`, embeds the flattened trade array, and computes everything client-side so filters recompute instantly.
-- **Filters**: Book (Paper / Live / **Both**), Strategy, and a Range preset — **This week · Last week · This month · Last month · Last 7 / 30 days · This FY · All time · Custom (from–to)** — plus a **Group by** (Day / Week / Month / Strategy) that drives the period-breakdown table.
-- **Report body**: headline cards (trades, win rate, net P&L + expectancy, gross win/loss, profit factor, max drawdown + streaks), equity curve, **By Strategy** table, **By period** table with running cumulative, and a full **Trade Ledger** (date, book, strategy, side, symbol, qty, entry/exit, times, P&L, exit reason) with NET footer.
-- **PDF export**: **🖨 Save as PDF** button → `window.print()` through a dedicated `@media print` stylesheet (sidebar / toolbar / buttons hidden, white A4-landscape page, repeated table headers, page-break-safe rows). Uses the browser's native print-to-PDF — no external library added.
-- **Wiring** (per the repo's new-page rule): mounted in [src/app.js](src/app.js); sidebar entry in [src/utils/sharedNav.js](src/utils/sharedNav.js) gated by `UI_SHOW_CONSOLIDATION_REPORT`; **Settings toggle** `UI_SHOW_CONSOLIDATION_REPORT` (default on) in [src/routes/settings.js](src/routes/settings.js). README route + env-key tables synced.
+- **New route** [src/routes/consolidationReport.js](src/routes/consolidationReport.js) — read-only, loads the same per-strategy session files as `/consolidation` + `/live-consolidation`, embeds the flattened trade array, and aggregates **per trading day** client-side.
+- **Daily table** (row per day, newest first): per-strategy trades + P&L columns (only strategies that traded in range are shown), then **Total / Wins / Losses / Win rate / Net P&L** and a 🟢 PROFIT / 🔴 LOSS result per day, with a totals footer — verified to reproduce the Telegram day-report numbers exactly. Plus a summary card band (total trades, W, L, win rate, net P&L, avg/day).
+- **Filters**: Book (Paper / Live / **Both**) and a Range preset — **This week · Last week · This month · Last month · Last 7 / 30 days · This FY · All time · Custom (from–to)**.
+- **PDF export**: **🖨 Save as PDF** → `window.print()` through a dedicated `@media print` stylesheet (app chrome / toolbar / buttons hidden, white A4-landscape page, repeated table header, page-break-safe rows). Browser-native print-to-PDF — no external library.
+- **Entry point + wiring**: a `📑 Consolidation Report` button on the Edge Analytics toolbar ([src/routes/edgeAnalytics.js](src/routes/edgeAnalytics.js)), gated by the **Settings toggle** `UI_SHOW_CONSOLIDATION_REPORT` (default on) in [src/routes/settings.js](src/routes/settings.js); route mounted in [src/app.js](src/app.js). Not added to the sidebar. README route + env-key tables synced.
 
 ### Trend Pullback — full-app parity sweep (fix surfaces the earlier wiring missed)
 

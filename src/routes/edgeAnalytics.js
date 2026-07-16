@@ -99,6 +99,7 @@ router.get("/", (req, res) => {
   const trades = loadAllTrades();
 
   const theme = (process.env.UI_THEME || "dark").toLowerCase();
+  const showConsolidationReport = (process.env.UI_SHOW_CONSOLIDATION_REPORT || "true").toLowerCase() === "true";
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -124,6 +125,8 @@ router.get("/", (req, res) => {
     .seg{display:inline-flex;border:0.5px solid #0e1e36;border-radius:6px;overflow:hidden;}
     .seg button{background:#04090f;border:none;color:#4a6080;padding:6px 12px;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;cursor:pointer;}
     .seg button.on{background:#0c4a6e;color:#7dd3fc;}
+    .cr-link{margin-left:auto;background:#0c4a6e;border:0.5px solid #1e5a80;color:#7dd3fc;padding:7px 14px;border-radius:6px;font-family:'IBM Plex Mono',monospace;font-size:0.72rem;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+    .cr-link:hover{background:#0e5a84;}
     .stat-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:10px;margin-bottom:16px;}
     @media(max-width:1300px){.stat-grid{grid-template-columns:repeat(4,1fr);}}
     @media(max-width:560px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
@@ -198,7 +201,8 @@ router.get("/", (req, res) => {
         <label>From</label><input type="date" id="fFrom"/>
         <label>To</label><input type="date" id="fTo"/>
       </span>
-      <span id="cntPill" style="margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#4a6080;"></span>
+      ${showConsolidationReport ? `<a href="/consolidation-report" class="cr-link" title="Open the day-by-day consolidated report (with PDF export)">📑 Consolidation Report</a>` : ''}
+      <span id="cntPill" style="margin-left:${showConsolidationReport ? '12px' : 'auto'};font-family:'IBM Plex Mono',monospace;font-size:0.7rem;color:#4a6080;"></span>
     </div>
 
     <div id="content"></div>
