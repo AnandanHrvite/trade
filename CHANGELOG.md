@@ -6,6 +6,16 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### New page: Consolidation Report (`/consolidation-report`)
+
+A single printable, filterable consolidated report of **every** recorded trade (paper + live) across all six strategies — the "till-now" report view the user asked for.
+
+- **New route** [src/routes/consolidationReport.js](src/routes/consolidationReport.js) — read-only, modelled on Edge Analytics: loads the same per-strategy session files as `/consolidation` + `/live-consolidation`, embeds the flattened trade array, and computes everything client-side so filters recompute instantly.
+- **Filters**: Book (Paper / Live / **Both**), Strategy, and a Range preset — **This week · Last week · This month · Last month · Last 7 / 30 days · This FY · All time · Custom (from–to)** — plus a **Group by** (Day / Week / Month / Strategy) that drives the period-breakdown table.
+- **Report body**: headline cards (trades, win rate, net P&L + expectancy, gross win/loss, profit factor, max drawdown + streaks), equity curve, **By Strategy** table, **By period** table with running cumulative, and a full **Trade Ledger** (date, book, strategy, side, symbol, qty, entry/exit, times, P&L, exit reason) with NET footer.
+- **PDF export**: **🖨 Save as PDF** button → `window.print()` through a dedicated `@media print` stylesheet (sidebar / toolbar / buttons hidden, white A4-landscape page, repeated table headers, page-break-safe rows). Uses the browser's native print-to-PDF — no external library added.
+- **Wiring** (per the repo's new-page rule): mounted in [src/app.js](src/app.js); sidebar entry in [src/utils/sharedNav.js](src/utils/sharedNav.js) gated by `UI_SHOW_CONSOLIDATION_REPORT`; **Settings toggle** `UI_SHOW_CONSOLIDATION_REPORT` (default on) in [src/routes/settings.js](src/routes/settings.js). README route + env-key tables synced.
+
 ### Trend Pullback — full-app parity sweep (fix surfaces the earlier wiring missed)
 
 A user-flagged gap (missing Telegram toggles) triggered an exhaustive audit of every per-strategy enumeration vs ORB/EMA9VWAP. Fixes:
