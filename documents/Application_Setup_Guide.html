@@ -481,12 +481,12 @@
 <!-- HERO                                                       -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <header class="hero">
-  <h1>Application Setup &amp; Configuration Guide</h1>
-  <p class="subtitle">Palani Andawar Trading System &mdash; Complete Registration &amp; Secrets Reference</p>
+  <h1>Application Setup Guide</h1>
+  <p class="subtitle">How to install the trading app, log the brokers in, and run it &mdash; explained in plain English</p>
   <div class="meta">
-    <span><span class="badge badge-blue">v4.6.0</span></span>
-    <span>Generated: 2026-05-21 &middot; Rechecked: 2026-06-15</span>
-    <span>NIFTY Options Algo Trading &mdash; EMA_RSI_ST + BB_RSI + Price Action + ORB</span>
+    <span><span class="badge badge-blue">Plain-English edition</span></span>
+    <span>Updated: 2026-07-16</span>
+    <span>Palani Andawar Trading System &mdash; NIFTY options bot</span>
   </div>
 </header>
 
@@ -494,21 +494,19 @@
 <!-- TABLE OF CONTENTS                                          -->
 <!-- ═══════════════════════════════════════════════════════════ -->
 <nav class="toc">
-  <h2>&#9776; Table of Contents</h2>
+  <h2>&#9776; What's inside</h2>
   <ol>
-    <li><a href="#recheck0615">Recheck Notes (2026-06-15)</a></li>
-    <li><a href="#whatsnew60">What's New in v4.6.0</a></li>
-    <li><a href="#whatsnew50">v4.5.0 Highlights</a></li>
-    <li><a href="#architecture">System Architecture Overview</a></li>
-    <li><a href="#modes">Trading Modes &mdash; Backtest, Paper, Live, Replay</a></li>
-    <li><a href="#fyers">Fyers API Registration</a></li>
-    <li><a href="#zerodha">Zerodha Kite Connect Registration</a></li>
-    <li><a href="#ssl">SSL Certificate Setup</a></li>
-    <li><a href="#ec2">EC2 Server Deployment</a></li>
-    <li><a href="#telegram">Telegram Bot Setup</a></li>
-    <li><a href="#env">.env Variable Reference</a></li>
-    <li><a href="#auth-routes">Auth Status Routes</a></li>
-    <li><a href="#storage">Data Storage</a></li>
+    <li><a href="#what">What this app is</a></li>
+    <li><a href="#words">Words you'll see (plain meanings)</a></li>
+    <li><a href="#need">What you need before you start</a></li>
+    <li><a href="#install">Install &amp; run &mdash; step by step</a></li>
+    <li><a href="#commands">The commands, explained</a></li>
+    <li><a href="#brokers">Logging the brokers in (tokens)</a></li>
+    <li><a href="#data">Where your data is kept</a></li>
+    <li><a href="#settings">Changing settings</a></li>
+    <li><a href="#modes">Practice, Real money &amp; Testing</a></li>
+    <li><a href="#open">Opening it &amp; finding the guides</a></li>
+    <li><a href="#trouble">When something goes wrong</a></li>
   </ol>
 </nav>
 
@@ -517,1383 +515,332 @@
 <!--LIVE_STATUS_PANEL-->
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- RECHECK NOTES (2026-06-15)                                  -->
+<!-- 1. WHAT THIS APP IS                                         -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue" id="recheck0615">
-  <h2><span class="section-icon icon-blue">&#9734;</span> Recheck Notes (2026-06-15) &mdash; Rechecked against current code</h2>
-  <p>The version-history entries below are preserved as written. This pass corrected drift between the guide and the live code (<code>src/app.js</code> route mounts, <code>src/routes/settings.js</code> schema, <code>ecosystem.config.js</code>, <code>src/utils/positionPersist.js</code>). No version number was minted &mdash; the corrections are reconciliations, not features.</p>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Price Action rebuilt to 4 chart patterns only.</strong> PA was gutted to <strong>Double Bottom (W)</strong>, <strong>Double Top (M)</strong>, <strong>Ascending Triangle</strong>, <strong>Descending Triangle</strong> &mdash; all now default <code>true</code> in <code>settings.js</code>. The old patterns (Engulfing, Pin Bar, Break-of-Structure, Inside Bar) and their env keys are <strong>deleted</strong>. Likewise gone from the schema: <code>PA_RSI_*</code>, <code>PA_ADX_*</code>, <code>PA_SR_*</code>, <code>PA_MIN_BODY</code>, <code>PA_PIN_WICK_RATIO</code>, <code>PA_MAX_SL_PTS</code>/<code>PA_MIN_SL_PTS</code>/<code>PA_MAX_STRUCT_SL_PTS</code>, <code>PA_TRAIL_*</code>, <code>PA_CANDLE_TRAIL_*</code>, <code>PA_TIME_STOP_*</code>, <code>PA_OPT_STOP_PCT</code>. The PA env table and pattern table below were rewritten to match. <code>PA_BREAKEVEN_TRIGGER</code>/<code>PA_BREAKEVEN_BUFFER</code> are still in the Settings UI but remain inert (no PA reader).</li>
-    <li><strong>EMA_RSI_ST strategy rebuilt to EMA 20/50 + RSI + SuperTrend.</strong> Parabolic SAR was fully removed (2026-06-12); breakeven removed (2026-06-02). Stale EMA_RSI_ST keys (<code>MAX_SAR_DISTANCE</code>, <code>MIN_SAR_DISTANCE</code>, <code>BREAKEVEN_PTS</code>, <code>EMA30_FILTER</code>, <code>ADX_MIN_TREND</code>, <code>EMA_SLOPE_MIN</code>, <code>STRONG_*</code>, <code>LOGIC3_*</code>, <code>TRAIL_TIER*</code>, <code>EMA_RSI_ST_PREV_CANDLE_TRAIL_*</code>, hybrid-SL caps) were replaced by the current set (<code>EMA_RSI_ST_EMA_*</code>, <code>EMA_RSI_ST_SUPERTREND_*</code>, <code>EMA_RSI_ST_STOP_LOSS_PTS</code>, <code>EMA_RSI_ST_CANDLE_TRAIL_*</code>, <code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code>, cooldown keys) in the EMA_RSI_ST env table.</li>
-    <li><strong>Telegram is now fully per-strategy for all four.</strong> <code>settings.js</code> defines <code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_{STARTED,ENTRY,EXIT,DAYREPORT}</code> plus <code>TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS</code> (no SIGNALS toggle for ORB) &mdash; <strong>21 <code>TG_*</code> toggles</strong> incl. the master <code>TG_ENABLED</code> and the standalone <code>TG_DAYREPORT_CONSOLIDATED</code>. The old "17 per-mode" count and the "ORB not yet wired" note were stale and have been corrected.</li>
-    <li><strong>PM2 config corrected.</strong> <code>ecosystem.config.js</code> uses <code>--max-old-space-size=900</code> and <code>max_memory_restart 940M</code> (not 768/800), plus <code>stop_exit_codes: [10]</code>, <code>kill_timeout 8000</code>, <code>restart_delay 5000</code>, and <code>UV_THREADPOOL_SIZE=2</code>. Production reload uses <code>pm2 startOrRestart ecosystem.config.js --update-env</code> (the GitHub Actions deploy command, Node 16).</li>
-    <li><strong>Crash-recovery scope confirmed unchanged.</strong> <code>positionPersist.js</code> still handles <strong>EMA_RSI_ST / BB_RSI / PA only</strong> (<code>.active_{trade,bb_rsi,pa}_position.json</code>). ORB has <strong>no</strong> crash-recovery snapshot. The boot reconciliation in <code>app.js</code> reads the persisted EMA_RSI_ST/BB_RSI files and cross-checks Zerodha + Fyers broker positions for orphans (alert-only, never auto-closes).</li>
-    <li><strong>Default corrections (from <code>settings.js</code>):</strong> <code>MAX_DAILY_LOSS=3000</code> (was 5000), <code>MAX_DAILY_TRADES=5</code> (was 6), and the stale BB_RSI "V6.3" knobs (<code>BB_RSI_MAX_SL_PTS</code>, <code>BB_RSI_TRAIL_START</code>, <code>BB_RSI_TRAIL_TIERS</code>) referenced in the v4.6.0 note below do <strong>not</strong> exist &mdash; current BB_RSI is the points-based profit-lock V6 (<code>BB_RSI_PROFIT_LOCK_*</code>, <code>BB_RSI_STOP_LOSS_PTS</code>, <code>BB_RSI_BB_REENTRY_*</code>).</li>
-    <li><strong>Routes verified.</strong> All strategy Live/Paper/Backtest routes plus the harness routes are mounted in <code>app.js</code>: <code>/pa-live-harness</code>, <code>/ema_rsi_st-live-harness</code>, <code>/bb_rsi-live-harness</code>, <code>/orb-live-harness</code> (each gated by its own <code>UI_SHOW_*_LIVE_HARNESS</code>, default off). The routes table now notes the four harness routes. Auth routes section gained <code>/auth/socket-health</code>.</li>
-  </ul>
-</section>
+<section class="section blue" id="what">
+  <h2><span class="section-icon icon-blue">&#128161;</span> 1. What this app is</h2>
 
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0. WHAT'S NEW IN v4.6.0                                     -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue" id="whatsnew60">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0. What's New in v4.6.0 (2026-05-21)</h2>
-  <p>A new strategy (<strong>ORB</strong>) joins EMA_RSI_ST / BB_RSI / Price Action; a deterministic <strong>tick-replay</strong> backtest replaces ad-hoc bar-based simulation for new feature work; and a <strong>Live Harness</strong> + global DRY-RUN gate makes Live = Paper by construction. Setup is largely unchanged &mdash; you'll see new env-var sections below for ORB / Tick Recorder / Live Harness, and a few stale defaults in the old sections have been corrected.</p>
+  <p>This is a <strong>trading bot for NIFTY options</strong> &mdash; a program that watches the live NIFTY price and, following a set of rules, decides when to buy and sell options. What makes it a little unusual is that it runs <strong>several different trading strategies at the same time</strong>, all fed by <em>one</em> shared live price feed. So instead of running four separate programs, one program listens to the market once and hands that same price to every strategy.</p>
 
-  <h3>New Strategy</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>ORB (Opening Range Breakout)</strong> &mdash; routes <code>/orb-paper</code>, <code>/orb-live</code>, <code>/orb-backtest</code>. Buys CE on ORH break / PE on ORL break after the configured opening-range window (<code>ORB_RANGE_START</code> &rarr; <code>ORB_RANGE_END</code>, defaults <code>09:15</code>&rarr;<code>09:30</code>). Filters include wick-rejection (<code>ORB_WICK_FILTER_ENABLED</code>), VWAP alignment (<code>ORB_VWAP_FILTER_ENABLED</code>), volume confirmation (<code>ORB_VOL_FILTER_ENABLED</code>; auto-skipped on volumeless indices), a premium-range gate (<code>ORB_PREMIUM_GATE_ENABLED</code> + <code>ORB_PREMIUM_MIN/MAX</code>), and a sweet-spot tiering that determines STRONG vs MARGINAL. Exit stack: premium target (<code>ORB_TARGET_PCT=0.4</code>), premium SL (<code>ORB_STOP_PCT=0.25</code>), spot target = ORH/ORL &plusmn; (range &times; <code>ORB_TARGET_RANGE_MULT=1.5</code>), and a lock-in trail that ratchets the premium SL up to <code>entry &times; (1 + ORB_PREMIUM_LOCKIN_FLOOR_PCT)</code> once the option gains <code>ORB_PREMIUM_LOCKIN_PCT</code>. Defaults to 1 trade/day with forced square-off at <code>15:15</code>.</li>
-  </ul>
-
-  <h3>Tick Replay &mdash; Deterministic Backtest</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Tick Recorder</strong> &mdash; gated by <code>TICK_RECORDER_ENABLED</code> (default <code>true</code>), records every spot / option / VIX tick during any paper or live session to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code>. Pure observer; zero impact on the trade path. Retention via <code>TICK_RECORDER_RETAIN_DAYS</code> (default <code>30</code>). Around 10 MB/day across all streams.</li>
-    <li><strong>Replay route <code>/replay</code></strong> &mdash; re-runs a recorded session through the same paper <code>onTick()</code> handlers to produce bit-identical results. Two modes: <em>Snapshot</em> applies the recorded session-start settings (deterministic A/A), <em>Current Settings</em> uses live <code>process.env</code> (deterministic A/B for tuning). Outputs land in <code>~/trading-data/_replay_trades/</code> (snapshot) or <code>_replay_trades_sim/</code> (current). Single-date and date-range modes; per-row Replay buttons; downloadable diagnostic dump.</li>
-  </ul>
-
-  <h3>Live Harness + DRY-RUN Gate</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>New global gate <code>LIVE_HARNESS_DRY_RUN</code></strong> (default <code>true</code>) &mdash; when ON, every Live (Harness) route logs the broker call it <em>would</em> have made but places no real order. Switch off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</li>
-    <li><strong>New PA route <code>/pa-live-harness</code></strong> &mdash; runs Live by <em>wrapping</em> the Paper engine and forwarding decisions to a broker harness, so Live = Paper by construction. The legacy <code>/pa-live</code> stays available for parity comparison through the data-collection window.</li>
-    <li><strong>ORB Live route</strong> is also double-gated: <code>ORB_LIVE_ENABLED</code> must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders to fire.</li>
-  </ul>
-
-  <h3>Real-Time Monitor / Dashboard Rollups</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Real-Time Monitor</strong> (<code>/realtime</code>) now renders cards for <strong>every</strong> strategy enabled in Settings &mdash; EMA_RSI_ST, BB_RSI, PA, ORB. Each card is gated by <code>{STRATEGY}_MODE_ENABLED</code> and disappears when that toggle is off. Card grid auto-fits strategies responsively (was hardcoded 3-column).</li>
-  </ul>
-
-  <h3>Strategy &amp; Settings Adjustments</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>PA breakeven trigger &mdash; Settings UI knobs only, engine reader reverted.</strong> <code>PA_BREAKEVEN_TRIGGER</code> (default <code>300</code> &#8377;) + <code>PA_BREAKEVEN_BUFFER</code> (default <code>1</code> pt) appear in the Settings UI but the strategy reader code was reverted on 2026-05-21 (commit <code>5f1944d</code> reverted <code>c131923</code>). Same zombie state as <code>PA_ADX_DIRECTIONAL</code> before its UI row was removed &mdash; UI implies behaviour the engine doesn't perform. Either re-add the readers in <code>paPaper.js</code> / <code>paLive.js</code> / <code>paBacktest.js</code>, or drop the UI rows.</li>
-    <li><strong>PA_ADX_DIRECTIONAL removed from Settings UI</strong> &mdash; the toggle advertised a +DI/&minus;DI directional gate that no reader in <code>price_action.js</code> ever enforced. The row was misleading the operator. The gate itself can be re-introduced after the paper-trade data-collection window closes (&sim;2026-06-02).</li>
-    <li><strong>BB_RSI default corrections</strong> &mdash; <code>BB_RSI_MAX_DAILY_LOSS</code> raised to <code>4000</code> (was <code>2000</code>). <span style="color:var(--accent-orange);">(2026-06-15: the <code>BB_RSI_MAX_SL_PTS</code> / <code>BB_RSI_TRAIL_START</code> / <code>BB_RSI_TRAIL_TIERS</code> tweaks originally listed here referenced a trail design that no longer exists &mdash; current BB_RSI is the points-based profit-lock V6; see the BB_RSI env table below.)</span></li>
-    <li><strong>EMA_RSI_ST <code>MAX_DAILY_TRADES</code></strong> default is <code>5</code> in <code>settings.js</code> (anti-overtrade on chop days). <span style="color:var(--accent-orange);">(2026-06-15 correction &mdash; was shown as 6.)</span></li>
-    <li><strong>Per-mode option expiry overrides</strong> &mdash; <code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>EMA_RSI_ST_OPTION_EXPIRY_TYPE</code> let EMA_RSI_ST roll to next-week expiry while BB_RSI/PA stay on current. Blank values inherit the common expiry.</li>
-  </ul>
-
-  <h3>Persistence &amp; Storage</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li>New file groups under <code>~/trading-data/</code> &mdash; <code>orb_paper_trades.json</code> / <code>orb_live_trades.json</code>, <code>ticks/YYYY-MM-DD/</code>, <code>_replay_trades/</code>, <code>_replay_trades_sim/</code>.</li>
-    <li><strong>Persistence gap</strong> &mdash; <code>.active_orb_position.json</code> does not exist yet. ORB positions do not survive a crash; only EMA_RSI_ST/BB_RSI/PA do. Track that in <code>src/utils/positionPersist.js</code> if/when ORB needs restart-survival of an open position.</li>
-  </ul>
-
-  <h3>Auth / Security</h3>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Broker resilience env knobs</strong> exposed in Settings &mdash; circuit breaker (<code>BROKER_CB_FAIL_THRESHOLD=5</code>, <code>BROKER_CB_OPEN_SEC=30</code>) and retry policy (<code>BROKER_RETRY_WRITE_ATTEMPTS=2</code>, <code>BROKER_RETRY_READ_ATTEMPTS=3</code>, <code>BROKER_RETRY_BASE_MS=150</code>). Writes use linear backoff and only retry pre-flight errors (never double-place).</li>
-    <li><strong>Write rate-limit</strong> &mdash; per-IP cap on POST/PUT/DELETE/PATCH via <code>WRITE_RATE_PER_MIN</code> (default <code>120</code>) + <code>WRITE_RATE_BURST</code> (default <code>30</code>). Login and deploy-webhook have their own gates.</li>
-  </ul>
+  <p>Each strategy can run in three ways: <strong>practice</strong> (real prices, pretend money), <strong>real money</strong> (actual orders through your broker), and <strong>testing on the past</strong> (see how it would have done on old data). There's a web dashboard you open in a browser to start and stop everything, watch trades happen, and change settings &mdash; you never need to touch the code to use it day to day.</p>
 
   <div class="note note-info">
-    <strong>Backward-compatible:</strong> Every new strategy and feature is opt-in via env / Settings toggle (<code>ORB_MODE_ENABLED</code>, <code>UI_SHOW_REPLAY</code>, <code>TICK_RECORDER_ENABLED</code>). Existing EMA_RSI_ST/BB_RSI/PA workflows are unchanged. The Live Harness DRY-RUN gate defaults <code>true</code>, so a fresh checkout cannot place a real order until you explicitly disable it.
+    <strong>You don't need to be a programmer to run it.</strong> This guide walks through the setup one command at a time and explains, in plain words, what each command does and why you're running it. If a word looks technical, check the next section &mdash; it's probably explained there.
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.5.0                                    -->
+<!-- 2. GLOSSARY                                                 -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue" id="whatsnew50">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.5.0 Highlights (2026-05-14)</h2>
-  <p>Strategy tuning + auth hardening + observability. Most setup steps are unchanged; new env vars listed below, plus a EMA_RSI_ST default change worth knowing if you maintain a custom <code>.env</code>.</p>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>EMA_RSI_ST default candle resolution changed:</strong> <code>TRADE_RESOLUTION</code> default is now <code>5</code> (was <code>15</code>). 15-min wasn't taking entries during the paper-trade data-collection window. The strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code>, so flipping <code>TRADE_RESOLUTION=15</code> in <code>.env</code> (or via Settings UI) restores the prior behavior with no code change.</li>
-    <li><strong>New EMA_RSI_ST env var:</strong> <code>EMA_RSI_ST_STRONG_ONLY</code> (default <code>false</code>) &mdash; blocks MARGINAL signals on the candle-close entry path; intra-candle path was already STRONG-only.</li>
-    <li><strong>New BB_RSI env vars:</strong> <code>BB_RSI_PAUSE_OVERRIDE_ENABLED</code> (default <code>false</code>), <code>BB_RSI_PAUSE_OVERRIDE_PTS</code> (default <code>10</code>) &mdash; release per-side SL cooldown early on retest-and-resume. <code>BB_RSI_CPR_NARROW_PCT</code> is now editable via Settings UI (was code-only).</li>
-    <li><strong>0DTE handling:</strong> EMA_RSI_ST <code>/start</code> is blocked when configured expiry == today (gamma risk). Per-mode option expiry override now supported (each mode can roll independently of the global setting). Dashboard surfaces 0DTE refusal in the All-Paper / All-Live error modal; red banner appears when a stale manual expiry-override session has ended.</li>
-    <li><strong>Auth hardening:</strong> mobile-friendly login flow end-to-end; <strong>pre-start broker token verification</strong> (Fyers/Zerodha tokens validated before engines boot, so a position can't open with a dead token); access token displayed with Copy button after manual login; Fyers socket auth failure (code &minus;15) now bails out + sends Telegram alert instead of silently retrying.</li>
-    <li><strong>Trade Logs page</strong> (renamed from JSONL viewer) &mdash; per-mode file manager: per-day trade entries + cumulative skip logs in a separate tab. Per-mode <strong>Download All</strong> + <strong>Delete All</strong>. JSONL canonical format (CSV/PDF dropped &mdash; they were drifting on edge cases).</li>
-    <li><strong>Settings checkpoint notes</strong> &mdash; every Settings save can be tagged with a one-line note. Daily trade JSONL is seeded with the current settings snapshot at session start and re-appends on every save during the session, so the JSONL log carries the exact config that produced each day's trades.</li>
-    <li><strong>Sidebar visibility:</strong> per-menu and per-submenu toggles &mdash; hide entire mode sections (EMA_RSI_ST/BB_RSI/PA) or individual links (e.g., hide Backtest but keep Paper + Live), via env vars + Settings UI.</li>
-    <li><strong>PA logic fixes (additive to setup):</strong> reversal patterns (Engulfing, Pin Bar, Double Top/Bottom) RSI logic inverted; BOS / Inside-Bar / reversal patterns exempt from ADX directional gate; BOS/IB pending state now persisted across restart. See PA strategy guide for details.</li>
-    <li><strong>BB_RSI logic fixes (additive to setup):</strong> trail uses PnL floor (was spot-delta); breakeven snap fires per-tick (was per-bar); each trade record now logs BB/RSI/trend context + MFE.</li>
-    <li><strong>Performance:</strong> gzip middleware on all HTTP responses (~80% reduction; <code>/settings</code> dropped from 329 KB &rarr; 61 KB).</li>
-    <li><strong>Realtime monitor:</strong> per-card Open Status + Copy Day Log buttons; Copy Day Log copies raw entry + skip JSONL, not the human-readable summary.</li>
-    <li><strong>Activity log Copy button</strong> on emaRsiStLive / emaRsiStPaper / paLive / paPaper status pages.</li>
-    <li><strong>Misc:</strong> expiry calendar now shows Tue dates correctly (UTC shift bug); paper charts preserve zoom + drop pre-market junk + add strategy overlays; <code>/data</code> directory in <code>.gitignore</code>.</li>
-  </ul>
-</section>
+<section class="section cyan" id="words">
+  <h2><span class="section-icon icon-cyan">&#128218;</span> 2. Words you'll see (plain meanings)</h2>
 
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.4.1                                    -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue" id="whatsnew">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0a. v4.4.1 Highlights (2026-05-02)</h2>
-  <p>Single-screen real-time monitor with a PAPER/LIVE toggle — replaces the workflow of bouncing between six dedicated paper/live status pages just to see what's happening right now. Setup is unchanged from v4.4.0.</p>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>New route <code>/realtime</code></strong> (<code>src/routes/realtime.js</code>) and sidebar entry <strong>&#128225; Real-Time</strong>, sitting between Backtest and Paper Traded History.</li>
-    <li><strong>One screen, PAPER &harr; LIVE toggle</strong> &mdash; blue PAPER / red LIVE pill at the top right; polls every 4 seconds.</li>
-    <li><strong>Three side-by-side cards</strong> (EMA_RSI_ST / BB_RSI / PRICE ACTION) &mdash; each shows RUNNING/STOPPED/OFFLINE badge, open position (side, symbol, qty, entry spot/option, current option LTP, points moved, SL, entry time, unrealised P&amp;L with %), or "FLAT &mdash; no open position"; plus today's stat tiles (Trades, Wins/Losses, Session P&amp;L) and a footer with live LTP, last tick time, and tick count.</li>
-    <li><strong>Rollup table</strong> &mdash; one row per strategy + a TOTAL row, columns: Strategy, Status, Open P&amp;L, Closed P&amp;L (Today), Trades, W/L, <strong>Today Total (Open + Closed)</strong>. Page is today-only &mdash; cumulative-across-all-sessions number is intentionally absent here.</li>
-    <li><strong>Read-only</strong> &mdash; no Start/Stop/Exit buttons; drill-down still happens on the dedicated <code>/ema_rsi_st-paper</code>, <code>/ema_rsi_st-live</code>, etc. pages. Page stays reachable while any live session is active (not in the sidebar's <code>blocked</code> list, since it can't disturb broker state).</li>
-    <li><strong>Theme-aware</strong> &mdash; respects <code>UI_THEME</code> (Day / Night view); positive / negative P&amp;L stay green / red in both themes via <code>!important</code> semantic color classes (so light-mode <code>.rollup td</code> overrides can't beat them by selector specificity).</li>
-    <li><strong>No new backend aggregation</strong> &mdash; the browser polls each strategy's existing <code>/{mode}-{paper|live}/status/data</code> endpoint in parallel, so the unified screen always reads the same source the dedicated status pages already trust. One normalised key handles <code>unrealisedPnl</code> (swing) vs <code>unrealised</code> (bb_rsi/PA).</li>
-  </ul>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0a. WHAT'S NEW IN v4.4.0                                    -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0b. v4.4.0 Highlights (2026-04-27)</h2>
-  <p>Hybrid initial SL cap for EMA_RSI_ST, one-click <em>Sync to Local</em> for the EC2 trading-data directory, paper-history restore from append-only JSONL, and a paper-parity sweep across all 3 live engines. Setup is unchanged from v4.3.0; new env vars and routes are listed below.</p>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>EMA_RSI_ST hybrid initial SL cap</strong> &mdash; new env knobs <code>EMA_RSI_ST_USE_PREV_CANDLE_SL</code> (default <code>true</code>), <code>EMA_RSI_ST_MAX_INITIAL_SL_PTS</code> (default <code>50</code>), <code>EMA_RSI_ST_MIN_INITIAL_SL_PTS</code> (default <code>15</code>). Initial SL now takes the tightest of <code>[SAR, prev-candle structural, entry &plusmn; MAX_PTS]</code> floored at <code>MIN_PTS</code>. Wired into EMA_RSI_ST Paper + EMA_RSI_ST Live; backtest is intentionally untouched during the paper-data-collection window. New trade-record field <code>sarStopLoss</code> preserves raw SAR distance for analysis.</li>
-    <li><strong>One-click "Sync to Local"</strong> &mdash; Dashboard button hits <code>/sync/info</code> (size preview) then streams <code>/sync/download-all</code> (a <code>tar.gz</code> of <code>~/trading-data/</code>) to the browser. Server &rarr; client only; no upload path. Mirror EC2 trade data without SSH.</li>
-    <li><strong>Paper-history Restore</strong> &mdash; <code>POST /{swing|bb_rsi|pa}-paper/history/restore</code> rebuilds a deleted session for an IST date by replaying that day's append-only JSONL log. Idempotent; refuses while paper is running. Recovered sessions tagged <code>restoredFromJsonl: true</code>.</li>
-    <li><strong>Live paper-parity sweep</strong> &mdash; <code>emaRsiStLive</code> gains <code>pauseUntil</code>/<code>MAX_DAILY_TRADES</code> guards on candle-close path; <code>bbRsiLive</code> ports <code>BB_RSI_TRAIL_GRACE_SECS</code>; <code>paLive</code> mirrors PA Paper's audit + skip-log wiring (sharing the same JSONL skip file as PA Paper). All three now capture <code>signalStrength</code>, <code>vixAtEntry</code>, <code>entryHourIST</code>, <code>entryMinuteIST</code> at entry and surface them on exit.</li>
-    <li><strong>Settings cleanup</strong> &mdash; UI was drifting from code: <code>BACKTEST_GAMMA</code>, <code>ZERODHA_REDIRECT_URL</code> removed (no readers); <code>PA_ENABLED</code>, <code>PA_OPT_STOP_PCT</code>, <code>GAP_THRESHOLD_PTS</code>, <code>LTP_STALE_FALLBACK_SEC</code>, <code>MAX_BID_ASK_SPREAD_PTS</code>, <code>TIME_STOP_CANDLES</code>, <code>TIME_STOP_FLAT_PTS</code> added. <code>BACKTEST_FROM/TO/GAMMA</code> removed from <code>IMMEDIATE_KEYS</code>. Two unimported legacy bb_rsi strategies deleted.</li>
-    <li><strong>Expiry override re-grouped</strong> &mdash; <code>EXPIRY_OVERRIDE</code> + <code>EXPIRY_TYPE</code> moved from the EMA_RSI_ST section into <strong>Common &mdash; Instrument</strong> in the Settings UI (read by <code>src/config/instrument.js</code> for all 3 engines). Pure UI move; keys + <code>.env</code> + <code>IMMEDIATE_KEYS</code> classification unchanged.</li>
-    <li><strong>Consolidation date normalization</strong> &mdash; session date on <code>/consolidation</code> normalized to <code>YYYY-MM-DD</code> so daily/monthly/yearly roll-ups stay consistent across older sessions stored in mixed formats.</li>
-    <li><strong>SSL-cert failure hardening at startup</strong> &mdash; on missing/invalid <code>certs/cert.pem</code>/<code>key.pem</code>, bootstrap now clears the Telegram crash-marker and skips non-restart code so a misconfigured cert no longer triggers a phantom "recovered from crash" alert.</li>
-    <li><strong>Misc ema_rsi_st-paper-history fixes</strong> &mdash; eye-icon <em>View</em> wired to trade detail modal (parity with PA/BB_RSI); Delete Session reloads cleanly via injected toast JS; long-session template-literal <code>\n</code> escape fix.</li>
-  </ul>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 0b. WHAT'S NEW IN v4.3.0                                    -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0c. v4.3.0 Highlights (2026-04-24)</h2>
-  <p>Live-side analytics, per-module dashboard, trade guards, audit trails. Setup is unchanged from v4.2.0; new env vars and routes are listed below and reflected in the rest of this guide.</p>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>Live Traded History</strong> (<code>/live-consolidation</code>) &mdash; cross-mode live trade history (EMA_RSI_ST + BB_RSI + PA Live), parity with <code>/consolidation</code>.</li>
-    <li><strong>Per-mode <code>/reset</code> endpoints</strong> &mdash; <code>POST /ema_rsi_st-live/reset</code>, <code>POST /bb_rsi-live/reset</code>, <code>POST /pa-live/reset</code> from each live status page (gated when a session is active).</li>
-    <li><strong>Per-module dashboard cards</strong> &mdash; one card per strategy with its own Paper/Live toggle, stats, and cumulative P&amp;L chart (red/green by sign). Mutual lock between Start-All Paper and Start-All Live.</li>
-    <li><strong>Per-module VIX thresholds</strong> &mdash; <code>BB_RSI_VIX_MAX_ENTRY</code>, <code>BB_RSI_VIX_STRONG_ONLY</code>, <code>PA_VIX_MAX_ENTRY</code>, <code>PA_VIX_STRONG_ONLY</code> (each falls back to the swing values if unset).</li>
-    <li><strong>Trade guards</strong> shared across modes &mdash; <code>MAX_BID_ASK_SPREAD_PTS</code> (default <code>2</code>), <code>TIME_STOP_CANDLES</code>/<code>TIME_STOP_FLAT_PTS</code> (default <code>4</code>/<code>20</code>); PA tightens to <code>PA_TIME_STOP_CANDLES=3</code>, <code>PA_TIME_STOP_FLAT_PTS=10</code>.</li>
-    <li><strong>BB_RSI trend filter</strong> &mdash; <code>BB_RSI_TREND_FILTER</code> (default <code>true</code>) blocks counter-trend BB breakouts. Tunables: <code>BB_RSI_TREND_MOMENTUM_PCT=0.15</code>, <code>BB_RSI_TREND_MOMENTUM_LOOKBACK=5</code>, <code>BB_RSI_TREND_MID_SLOPE_LOOKBACK=3</code>.</li>
-    <li><strong>PA tightening</strong> &mdash; signal-layer SL bounded by <code>[PA_MIN_SL_PTS=8, PA_MAX_SL_PTS=12]</code>; <code>PA_MAX_STRUCT_SL_PTS=15</code> skips BOS/Inside-Bar setups with too-wide structural SL.</li>
-    <li><strong>Crash-safe JSONL trade log</strong> &mdash; new files <code>~/trading-data/{swing|bb_rsi|pa}_paper_trades_log.jsonl</code> (cumulative) and <code>~/trading-data/trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> (per-day). Append-only, atomic, downloadable per date from history pages.</li>
-    <li><strong>Per-filter near-miss audit</strong> (<code>src/utils/nearMissLog.js</code>) &mdash; logs candles that missed entry by exactly one filter, visible in <code>/logs</code> SSE feed. Quantifies opportunity cost per filter.</li>
-    <li><strong>Sidebar accordion + UI toggles</strong> &mdash; <code>UI_SHOW_SIMULATE</code>, <code>UI_SHOW_COMPARE</code>, <code>UI_SHOW_TRACKER</code> (all default <code>false</code>) hide optional menus. Login Logs moved out of the sidebar into the Settings top-bar; breadcrumbs added to Settings, Monitor, Docs, P&amp;L History.</li>
-    <li><strong>Bulk Edit modal</strong> &mdash; "<code>📋 BULK EDIT</code>" top-bar button on Settings opens a focused modal; lines starting with <code>-KEY</code> delete that key from <code>.env</code>.</li>
-    <li><strong>Telegram crash + startup-recovery alerts</strong> &mdash; synchronous <code>curl</code>-based send on shutdown so alerts survive <code>process.exit</code>; crash-marker file produces a recovery ping on next boot with cause + uptime.</li>
-    <li><strong>Operations</strong> &mdash; PM2 heap caps restored (<code>--max-old-space-size=900</code>, <code>max_memory_restart 940M</code>); SIGTERM crash root-cause fixed; backtest engine memory footprint shrunk; Monitor page maintenance actions.</li>
-  </ul>
-</section>
-
-<section class="section blue">
-  <h2><span class="section-icon icon-blue">&#9734;</span> 0d. v4.2.0 Highlights (2026-04-20)</h2>
-  <ul style="padding-left:22px; line-height:1.85;">
-    <li><strong>New routes</strong>: <code>/consolidation</code> (cross-mode paper trade history), <code>/pnl-history</code> (broker-wise realised P&amp;L with one-time baselines + live overlay).</li>
-    <li><strong>Live NIFTY candlestick chart</strong> on all paper + live status pages (EMA_RSI_ST / BB_RSI / PA). Toggleable via <code>CHART_ENABLED</code> env var.</li>
-    <li><strong>Dashboard Start-All buttons</strong> launch every enabled mode (EMA_RSI_ST + BB_RSI + PA) with one click.</li>
-    <li><strong>Telegram restructured</strong>: 17 per-mode toggles (<code>TG_{EMA_RSI_ST|BB_RSI|PA}_{STARTED|ENTRY|EXIT|SIGNALS|DAYREPORT}</code>) + master <code>TG_ENABLED</code> gate + consolidated 15:30 IST day report (<code>TG_DAYREPORT_CONSOLIDATED</code>).</li>
-    <li><strong>Settings UI</strong>: bulk paste config (KEY=VALUE pairs), one-click server restart, frozen dependent fields.</li>
-    <li><strong>BB_RSI V4 quality filters</strong> exposed in Settings UI: <code>BB_RSI_REQUIRE_APPROACH</code>, <code>BB_RSI_MIN_BODY_RATIO</code>, <code>BB_RSI_TRAIL_GRACE_SECS</code>.</li>
-    <li><strong>Login cookie</strong> now uses <code>SameSite=Lax</code> (was Strict) to fix mobile OAuth redirect loop.</li>
-    <li><strong>New persistent file</strong>: <code>~/trading-data/historical_pnl.json</code> holds one-time P&amp;L baselines per broker.</li>
-  </ul>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 1. SYSTEM ARCHITECTURE                                     -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section blue" id="architecture">
-  <h2><span class="section-icon icon-blue">&#9881;</span> 1. System Architecture Overview</h2>
-
-  <p>The trading system connects two brokers and orchestrates <strong>four independent strategy engines</strong> (EMA_RSI_ST, BB_RSI, Price Action, ORB), all running on a single HTTPS Node.js server on AWS EC2. Every engine reads from one shared Fyers WebSocket via a singleton fan-out &mdash; <em>never open a second socket</em>.</p>
-
-  <div class="arch-diagram">
-    <div class="arch-box arch-fyers">
-      Fyers API
-      <small>Single WebSocket<br>Historical Candles<br>BB_RSI / PA / ORB Orders</small>
-    </div>
-    <div class="arch-arrow">&#10145;</div>
-    <div class="arch-box arch-candle">
-      socketManager
-      <small>Singleton fan-out<br>1 / 3 / 5 / 15-min aggregation<br>VIX + option ticks</small>
-    </div>
-    <div class="arch-arrow">&#10145;</div>
-    <div class="arch-box arch-engine">
-      Strategy Engines
-      <small>EMA_RSI_ST (EMA20/50+RSI+SuperTrend)<br>BB_RSI (BB+PSAR+RSI)<br>PA (4 chart patterns)<br>ORB (15-min OR breakout)</small>
-    </div>
-    <div class="arch-arrow">&#10145;</div>
-    <div class="arch-box arch-zerodha">
-      Zerodha Kite
-      <small>Order Placement<br>EMA_RSI_ST Live Only</small>
-    </div>
-  </div>
-
-  <div class="arch-diagram" style="margin-top: 10px;">
-    <div class="arch-box arch-engine">
-      Strategy Engines
-    </div>
-    <div class="arch-arrow">&#10145;</div>
-    <div class="arch-box arch-tg">
-      Telegram Bot
-      <small>Trade Alerts<br>Entry / Exit / Signals<br>Crash + Startup recovery</small>
-    </div>
-    <div class="arch-arrow">&#10145;</div>
-    <div class="arch-box arch-candle">
-      Tick Recorder
-      <small>Spot / Option / VIX<br>~/trading-data/ticks/<br>Source of truth for Replay</small>
-    </div>
-  </div>
+  <p>A handful of technical words come up during setup. Here's what each one really means, in everyday language. Skim it once and keep it handy &mdash; the rest of the guide reads easily after this.</p>
 
   <table>
-    <thead>
-      <tr>
-        <th>Component</th>
-        <th>Role</th>
-        <th>Protocol</th>
-      </tr>
-    </thead>
+    <thead><tr><th>Word</th><th>What it actually means</th></tr></thead>
     <tbody>
-      <tr>
-        <td><strong>Fyers API</strong></td>
-        <td>Real-time data feed (single WebSocket, multi-callback fan-out via <code>socketManager</code>), historical candle data, order execution for <strong>BB_RSI / PA / ORB</strong></td>
-        <td>REST + WSS</td>
-      </tr>
-      <tr>
-        <td><strong>Zerodha Kite Connect</strong></td>
-        <td>Order placement exclusively for <strong>EMA_RSI_ST</strong> live trades</td>
-        <td>REST</td>
-      </tr>
-      <tr>
-        <td><strong>Node.js + Express Server</strong></td>
-        <td>HTTPS server on port 3000, candle aggregation, strategy evaluation, position management, Real-Time monitor, Replay engine</td>
-        <td>HTTPS (self-signed)</td>
-      </tr>
-      <tr>
-        <td><strong>sharedSocketState</strong></td>
-        <td>Per-strategy mutual exclusion (Live &perp; Paper within each strategy) while allowing cross-strategy parallelism. <code>{strategy}_MODE_ENABLED</code> toggles control sidebar + Settings visibility.</td>
-        <td>In-process</td>
-      </tr>
-      <tr>
-        <td><strong>Tick Recorder</strong></td>
-        <td>Pure observer &mdash; appends spot / option / VIX ticks to <code>~/trading-data/ticks/</code>. Required by <code>/replay</code>.</td>
-        <td>File-system</td>
-      </tr>
-      <tr>
-        <td><strong>Live Harness</strong></td>
-        <td>Wraps Paper engine + forwards decisions to broker via DRY-RUN gate <code>LIVE_HARNESS_DRY_RUN</code>. Live = Paper by construction.</td>
-        <td>In-process</td>
-      </tr>
-      <tr>
-        <td><strong>PM2 Process Manager</strong></td>
-        <td>Auto-restart, memory limits, production process management. Exit code <strong>10</strong> = config-error sentinel (PM2 will not restart) used by <code>app.js</code> to break crash loops on missing certs / malformed env.</td>
-        <td>&mdash;</td>
-      </tr>
-      <tr>
-        <td><strong>Telegram Bot</strong></td>
-        <td>Push notifications for trade entries, exits, signals, crash/startup recovery. Synchronous <code>curl</code> spawn on shutdown so alerts survive <code>process.exit()</code>.</td>
-        <td>HTTPS (Bot API)</td>
-      </tr>
+      <tr><td><strong>Node.js</strong></td><td>The engine that runs this app. The app is written in a language called JavaScript, and Node.js is the program that reads that code and makes it work. You install it once on the computer.</td></tr>
+      <tr><td><strong>npm</strong></td><td>"Node Package Manager" &mdash; a helper that comes with Node.js. It downloads the ready-made building blocks (other people's code) that this app is built on top of. Think of it as the app's shopping assistant.</td></tr>
+      <tr><td><strong>nodemon</strong></td><td>A convenience tool for development. It runs the app and, every time you edit a file, automatically restarts it for you so you see your change straight away. You only use it while tinkering, not in real running.</td></tr>
+      <tr><td><strong>PM2</strong></td><td>A "keep it running" manager. On the real server, PM2 launches the app, restarts it if it ever crashes, and starts it back up automatically after a reboot &mdash; so the bot stays alive without you babysitting it.</td></tr>
+      <tr><td><strong>.env file (environment file)</strong></td><td>A plain text file named <code>.env</code> that holds your settings and secret keys (broker passwords, phone/Telegram details, on/off switches). The app reads it on startup. It's kept out of the shared code so your secrets stay private.</td></tr>
+      <tr><td><strong>OAuth token / login token</strong></td><td>A temporary "pass" the broker gives the app after you log in, proving it's allowed to see prices and place orders on your behalf. Like a day-pass wristband &mdash; it works for a while, then expires and you log in again.</td></tr>
+      <tr><td><strong>WebSocket</strong></td><td>A always-open phone line between the app and the broker that streams live prices non-stop, the instant they change. This app opens exactly one such line and shares it with every strategy.</td></tr>
+      <tr><td><strong>EC2</strong></td><td>A rented computer in Amazon's cloud that stays on 24/7. The bot lives there so it can trade during market hours even when your own laptop is off. "The server" and "EC2" mean the same thing here.</td></tr>
+      <tr><td><strong>HTTPS / SSL certificate</strong></td><td>HTTPS is the secure (padlock) version of a web address. To use it, the app needs an "SSL certificate" &mdash; a small identity file. We make a self-signed one, which works fine but makes the browser show a one-time "are you sure?" warning (see Section 11).</td></tr>
+      <tr><td><strong>Fyers / Zerodha</strong></td><td>The two stock brokers this app connects to. <strong>Fyers</strong> supplies the live prices (and places orders for some strategies); <strong>Zerodha</strong> places orders for others. You need an account with each.</td></tr>
     </tbody>
   </table>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 1b. TRADING MODES OVERVIEW                                 -->
+<!-- 3. WHAT YOU NEED                                            -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section purple" id="modes">
-  <h2><span class="section-icon icon-purple">&#9654;</span> Trading Modes &mdash; Backtest, Paper, Live, Replay</h2>
+<section class="section green" id="need">
+  <h2><span class="section-icon icon-green">&#9989;</span> 3. What you need before you start</h2>
 
-  <p>Each of the four strategies (EMA_RSI_ST, BB_RSI, Price Action, ORB) runs in <strong>three primary execution modes</strong> (Backtest, Paper, Live), plus a deterministic <strong>Replay</strong> mode that re-plays recorded paper ticks through the same Paper <code>onTick()</code> handlers. The strategy logic is shared across all modes &mdash; only data source and order execution differ.</p>
-
-  <!-- ── Grand Overview SVG ── -->
-  <div style="margin:20px 0; padding:24px 16px; background:linear-gradient(135deg,rgba(13,17,23,0.8),rgba(28,35,51,0.5)); border:1px solid var(--border); border-radius:var(--radius);">
-    <svg viewBox="0 0 800 480" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:-apple-system,system-ui,sans-serif;">
-      <defs>
-        <marker id="setupArrG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3fb950"/></marker>
-        <marker id="setupArrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#58a6ff"/></marker>
-        <marker id="setupArrP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#bc8cff"/></marker>
-      </defs>
-
-      <!-- Title -->
-      <text x="400" y="22" fill="#8b949e" font-size="11" font-weight="600" text-anchor="middle" letter-spacing="1.5" style="text-transform:uppercase;">5 Strategies &times; (Backtest + Paper + Live + Replay) = 20 Execution Paths</text>
-
-      <!-- Column Headers -->
-      <text x="140" y="58" fill="#58a6ff" font-size="12" font-weight="700" text-anchor="middle">DATA SOURCE</text>
-      <text x="330" y="58" fill="#d29922" font-size="12" font-weight="700" text-anchor="middle">STRATEGY ENGINE</text>
-      <text x="530" y="58" fill="#3fb950" font-size="12" font-weight="700" text-anchor="middle">EXECUTION</text>
-      <text x="700" y="58" fill="#39d2c0" font-size="12" font-weight="700" text-anchor="middle">OUTPUT</text>
-
-      <!-- LIVE ROW -->
-      <rect x="10" y="75" width="780" height="90" rx="8" fill="rgba(63,185,80,0.04)" stroke="rgba(63,185,80,0.15)" stroke-width="1"/>
-      <text x="25" y="95" fill="#3fb950" font-size="13" font-weight="800">LIVE</text>
-
-      <rect x="60" y="100" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
-      <text x="138" y="120" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
-      <text x="138" y="137" fill="#6e7681" font-size="8" text-anchor="middle">Real-time 1-sec ticks</text>
-
-      <line x1="215" y1="124" x2="245" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
-
-      <rect x="250" y="82" width="155" height="86" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="328" y="98" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">EMA_RSI_ST: EMA+RSI+SuperTrend</text>
-      <text x="328" y="112" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">BB_RSI: BB+PSAR+RSI</text>
-      <text x="328" y="126" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">PA: 4 chart patterns</text>
-      <text x="328" y="140" fill="#d29922" font-size="9.5" font-weight="600" text-anchor="middle">ORB: 15-min OR break</text>
-
-      <line x1="405" y1="124" x2="435" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
-
-      <rect x="440" y="82" width="155" height="86" rx="8" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.25)" stroke-width="1"/>
-      <text x="518" y="98" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">EMA_RSI_ST: Zerodha Kite</text>
-      <text x="518" y="112" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">BB_RSI: Fyers Orders</text>
-      <text x="518" y="126" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">PA: Fyers (+ Harness)</text>
-      <text x="518" y="140" fill="#3fb950" font-size="9.5" font-weight="600" text-anchor="middle">ORB: Fyers Orders</text>
-
-      <line x1="595" y1="124" x2="625" y2="124" stroke="#3fb950" stroke-width="1.5" marker-end="url(#setupArrG)"/>
-
-      <rect x="630" y="100" width="145" height="48" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="703" y="120" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Telegram Alerts</text>
-      <text x="703" y="137" fill="#6e7681" font-size="8" text-anchor="middle">Entry/Exit/Signals</text>
-
-      <!-- PAPER ROW -->
-      <rect x="10" y="180" width="780" height="90" rx="8" fill="rgba(88,166,255,0.04)" stroke="rgba(88,166,255,0.15)" stroke-width="1"/>
-      <text x="25" y="200" fill="#58a6ff" font-size="13" font-weight="800">PAPER</text>
-
-      <rect x="60" y="205" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
-      <text x="138" y="225" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Fyers WebSocket</text>
-      <text x="138" y="242" fill="#6e7681" font-size="8" text-anchor="middle">Same real-time data</text>
-
-      <line x1="215" y1="229" x2="245" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
-
-      <rect x="250" y="200" width="155" height="55" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="328" y="220" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Same strategy logic</text>
-      <text x="328" y="240" fill="#6e7681" font-size="9" text-anchor="middle">Identical code path</text>
-
-      <line x1="405" y1="229" x2="435" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
-
-      <rect x="440" y="205" width="155" height="48" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
-      <text x="518" y="225" fill="#58a6ff" font-size="10" font-weight="600" text-anchor="middle">Simulated Fills</text>
-      <text x="518" y="242" fill="#6e7681" font-size="8" text-anchor="middle">In-memory, no broker</text>
-
-      <line x1="595" y1="229" x2="625" y2="229" stroke="#58a6ff" stroke-width="1.5" marker-end="url(#setupArrB)"/>
-
-      <rect x="630" y="205" width="145" height="48" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="703" y="225" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Disk Persistence</text>
-      <text x="703" y="242" fill="#6e7681" font-size="8" text-anchor="middle">~/trading-data/</text>
-
-      <!-- BACKTEST ROW -->
-      <rect x="10" y="285" width="780" height="90" rx="8" fill="rgba(188,140,255,0.04)" stroke="rgba(188,140,255,0.15)" stroke-width="1"/>
-      <text x="25" y="305" fill="#bc8cff" font-size="13" font-weight="800">BACKTEST</text>
-
-      <rect x="60" y="310" width="155" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
-      <text x="138" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Fyers History API</text>
-      <text x="138" y="347" fill="#6e7681" font-size="8" text-anchor="middle">Cached candle files</text>
-
-      <line x1="215" y1="334" x2="245" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
-
-      <rect x="250" y="305" width="155" height="55" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="328" y="325" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Same strategy logic</text>
-      <text x="328" y="345" fill="#6e7681" font-size="9" text-anchor="middle">+ Option Greeks sim</text>
-
-      <line x1="405" y1="334" x2="435" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
-
-      <rect x="440" y="310" width="155" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
-      <text x="518" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Option Sim + Charges</text>
-      <text x="518" y="347" fill="#6e7681" font-size="8" text-anchor="middle">&delta;=0.55, &theta;=10/day</text>
-
-      <line x1="595" y1="334" x2="625" y2="334" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#setupArrP)"/>
-
-      <rect x="630" y="310" width="145" height="48" rx="8" fill="rgba(188,140,255,0.08)" stroke="rgba(188,140,255,0.25)" stroke-width="1"/>
-      <text x="703" y="330" fill="#bc8cff" font-size="10" font-weight="600" text-anchor="middle">Result Store</text>
-      <text x="703" y="347" fill="#6e7681" font-size="8" text-anchor="middle">JSON reports &amp; charts</text>
-
-      <!-- REPLAY ROW -->
-      <rect x="10" y="390" width="780" height="60" rx="8" fill="rgba(57,210,192,0.04)" stroke="rgba(57,210,192,0.15)" stroke-width="1"/>
-      <text x="25" y="410" fill="#39d2c0" font-size="13" font-weight="800">REPLAY</text>
-
-      <rect x="60" y="402" width="155" height="36" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="138" y="418" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Recorded Ticks</text>
-      <text x="138" y="431" fill="#6e7681" font-size="8" text-anchor="middle">~/trading-data/ticks/</text>
-
-      <line x1="215" y1="420" x2="245" y2="420" stroke="#39d2c0" stroke-width="1.5"/>
-
-      <rect x="250" y="402" width="155" height="36" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="328" y="418" fill="#d29922" font-size="10" font-weight="600" text-anchor="middle">Paper onTick() handler</text>
-      <text x="328" y="431" fill="#6e7681" font-size="8" text-anchor="middle">Snapshot or current settings</text>
-
-      <line x1="405" y1="420" x2="435" y2="420" stroke="#39d2c0" stroke-width="1.5"/>
-
-      <rect x="440" y="402" width="155" height="36" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="518" y="418" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">Deterministic Fills</text>
-      <text x="518" y="431" fill="#6e7681" font-size="8" text-anchor="middle">Bit-identical re-run</text>
-
-      <line x1="595" y1="420" x2="625" y2="420" stroke="#39d2c0" stroke-width="1.5"/>
-
-      <rect x="630" y="402" width="145" height="36" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="703" y="418" fill="#39d2c0" font-size="10" font-weight="600" text-anchor="middle">_replay_trades/</text>
-      <text x="703" y="431" fill="#6e7681" font-size="8" text-anchor="middle">A/B compare via /replay</text>
-
-      <!-- Footer -->
-      <text x="400" y="465" fill="#6e7681" font-size="9" text-anchor="middle">Strategy engine is shared &mdash; all modes run identical signal &amp; exit logic. Replay enables deterministic A/B testing of settings against real recorded ticks.</text>
-    </svg>
-  </div>
-
-  <!-- ── Routes Table ── -->
-  <h3>Routes by Strategy &amp; Mode</h3>
-  <table>
-    <thead>
-      <tr><th>Strategy</th><th>Live Route</th><th>Paper Route</th><th>Backtest Route</th><th>Reset (live)</th><th>Broker</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td><strong>EMA_RSI_ST</strong> (EMA 20/50 + RSI + SuperTrend, 5/15-min)</td>
-        <td><code>/ema_rsi_st-live</code><br><code>/ema_rsi_st-live-harness</code></td>
-        <td><code>/ema_rsi_st-paper</code></td>
-        <td><code>/ema_rsi_st-backtest</code></td>
-        <td><code>POST /ema_rsi_st-live/reset</code></td>
-        <td>Zerodha Kite</td>
-      </tr>
-      <tr>
-        <td><strong>BB_RSI</strong> (BB+PSAR+RSI V6, 3/5-min)</td>
-        <td><code>/bb_rsi-live</code><br><code>/bb_rsi-live-harness</code></td>
-        <td><code>/bb_rsi-paper</code></td>
-        <td><code>/bb_rsi-backtest</code></td>
-        <td><code>POST /bb_rsi-live/reset</code></td>
-        <td>Fyers</td>
-      </tr>
-      <tr>
-        <td><strong>Price Action</strong> (4 chart patterns, 5-min)</td>
-        <td><code>/pa-live</code> (legacy)<br><code>/pa-live-harness</code> (Paper-wrapped)</td>
-        <td><code>/pa-paper</code></td>
-        <td><code>/pa-backtest</code><br><code>/pa-pattern-backtest</code></td>
-        <td><code>POST /pa-live/reset</code></td>
-        <td>Fyers</td>
-      </tr>
-      <tr>
-        <td><strong>ORB</strong> (Opening Range Breakout, 15-min OR)</td>
-        <td><code>/orb-live</code><br><code>/orb-live-harness</code></td>
-        <td><code>/orb-paper</code></td>
-        <td><code>/orb-backtest</code></td>
-        <td><code>POST /orb-live/reset</code></td>
-        <td>Fyers</td>
-      </tr>
-    </tbody>
-  </table>
-  <p style="margin-top:10px;"><strong>Live routes are double-gated.</strong> Each strategy's <code>*_LIVE_ENABLED</code> / <code>*_ENABLED</code> toggle (EMA_RSI_ST/ORB use <code>*_LIVE_ENABLED</code>; BB_RSI uses <code>BB_RSI_ENABLED</code>; PA uses <code>PA_ENABLED</code>) must be <code>true</code> AND the global <code>LIVE_HARNESS_DRY_RUN</code> must be <code>false</code> for real broker orders to fire. With DRY-RUN on (default), the Harness logs the broker call it would have made but places no real order.</p>
-  <p style="margin-top:6px;"><strong>Harness routes.</strong> EMA_RSI_ST, BB_RSI, PA, and ORB each have a <em>Live (Harness)</em> route (<code>/ema_rsi_st-live-harness</code>, <code>/bb_rsi-live-harness</code>, <code>/pa-live-harness</code>, <code>/orb-live-harness</code>) that runs Live by wrapping the Paper engine so Live = Paper by construction. Each is hidden by default behind its <code>UI_SHOW_{STRATEGY}_LIVE_HARNESS</code> toggle (default <code>false</code>).</p>
-
-  <h3>Cross-Mode &amp; Analytics Routes</h3>
-  <table>
-    <thead><tr><th>Route</th><th>Purpose</th></tr></thead>
-    <tbody>
-      <tr><td><code>/realtime</code></td><td>Unified Real-Time monitor with a PAPER/LIVE toggle &mdash; cards for every strategy enabled in Settings (gated by <code>{STRATEGY}_MODE_ENABLED</code>). Polls each strategy's <code>/status/data</code> every 4s. Read-only.</td></tr>
-      <tr><td><code>/consolidation</code></td><td>Cross-mode <strong>paper</strong> trade history + analytics (daily / monthly / yearly roll-ups, Day View, per-mode breakdown).</td></tr>
-      <tr><td><code>/live-consolidation</code></td><td>Cross-mode <strong>live</strong> trade history + analytics (parity with <code>/consolidation</code>).</td></tr>
-      <tr><td><code>/all-backtest</code></td><td>Unified backtest dashboard &mdash; runs the same date range across every enabled strategy and renders per-strategy stats side by side.</td></tr>
-      <tr><td><code>/replay</code></td><td>Tick Replay &mdash; deterministic re-run of recorded paper sessions through the paper <code>onTick()</code> handlers. Single-date + date-range modes. Snapshot mode (session-start settings) vs current-settings mode (live <code>process.env</code>).</td></tr>
-      <tr><td><code>/trade-logs</code></td><td>Per-mode JSONL file manager &mdash; per-day trade entries + cumulative skip logs in a separate tab. Per-mode Download-All / Delete-All. JSONL is canonical (CSV/PDF were dropped).</td></tr>
-      <tr><td><code>/pnl-history</code></td><td>Broker-wise realised P&amp;L &mdash; one-time past baselines per broker (Kite / Fyers) plus auto-computed live-bot P&amp;L by FY.</td></tr>
-      <tr><td><code>/settings</code></td><td>Live Settings UI + Bulk-Edit modal + checkpoint-note prompt + server restart. Saved notes append to that day's JSONL alongside a settings snapshot so the daily log carries the exact config that produced its trades.</td></tr>
-      <tr><td><code>/logs</code> / <code>/monitor</code> / <code>/login-logs</code></td><td>SSE log feed (with near-miss audit lines) / EC2 health + maintenance / failed-login attempts with geolocation.</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Daily Workflow Flowchart ── -->
-  <h3>Recommended Daily Workflow</h3>
-  <div style="margin:16px 0; padding:20px 16px; background:linear-gradient(135deg,rgba(13,17,23,0.8),rgba(28,35,51,0.5)); border:1px solid var(--border); border-radius:var(--radius);">
-    <svg viewBox="0 0 700 320" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;font-family:-apple-system,system-ui,sans-serif;">
-      <!-- Step 1 -->
-      <rect x="250" y="10" width="200" height="36" rx="18" fill="#58a6ff" stroke="none"/>
-      <text x="350" y="33" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">Before Market (8:30 AM)</text>
-      <line x1="350" y1="46" x2="350" y2="62" stroke="#6e7681" stroke-width="1.5"/>
-
-      <rect x="180" y="62" width="340" height="36" rx="8" fill="rgba(88,166,255,0.08)" stroke="rgba(88,166,255,0.25)" stroke-width="1"/>
-      <text x="350" y="85" fill="#e6edf3" font-size="10" text-anchor="middle">Visit /auth/status/all &mdash; check Fyers + Zerodha tokens</text>
-      <line x1="350" y1="98" x2="350" y2="114" stroke="#6e7681" stroke-width="1.5"/>
-
-      <!-- Step 2 -->
-      <rect x="180" y="114" width="340" height="36" rx="8" fill="rgba(210,153,34,0.08)" stroke="rgba(210,153,34,0.25)" stroke-width="1"/>
-      <text x="350" y="137" fill="#e6edf3" font-size="10" text-anchor="middle">If expired: /auth/login (Fyers) + /auth/zerodha/login</text>
-      <line x1="350" y1="150" x2="350" y2="166" stroke="#6e7681" stroke-width="1.5"/>
-
-      <!-- Step 3 -->
-      <rect x="180" y="166" width="340" height="36" rx="8" fill="rgba(63,185,80,0.08)" stroke="rgba(63,185,80,0.25)" stroke-width="1"/>
-      <text x="350" y="189" fill="#e6edf3" font-size="10" text-anchor="middle">Review /settings &mdash; verify strategy params for today</text>
-      <line x1="350" y1="202" x2="350" y2="218" stroke="#6e7681" stroke-width="1.5"/>
-
-      <!-- Step 4 -->
-      <rect x="250" y="218" width="200" height="36" rx="18" fill="#3fb950" stroke="none"/>
-      <text x="350" y="241" fill="#fff" font-size="11" font-weight="700" text-anchor="middle">Market Open (9:15 AM)</text>
-      <line x1="350" y1="254" x2="350" y2="270" stroke="#6e7681" stroke-width="1.5"/>
-
-      <!-- Step 5 -->
-      <rect x="140" y="270" width="420" height="36" rx="8" fill="rgba(57,210,192,0.08)" stroke="rgba(57,210,192,0.25)" stroke-width="1"/>
-      <text x="350" y="293" fill="#e6edf3" font-size="10" text-anchor="middle">Strategies auto-start &mdash; monitor via /logs or Telegram alerts</text>
-    </svg>
-  </div>
-
-  <div class="note note-info">
-    <strong>Progression path:</strong> Always start with <strong>Backtest</strong> (validate strategy on historical data) &rarr; <strong>Paper</strong> (validate with real-time data, no risk) &rarr; <strong>Live</strong> (real money, real orders).
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 2. FYERS API REGISTRATION                                  -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section green" id="fyers">
-  <h2><span class="section-icon icon-green">&#128279;</span> 2. Fyers API Registration</h2>
-
-  <h3>Create Your App</h3>
-  <ol class="steps">
-    <li>Go to <code>https://myapi.fyers.in</code> and log in with your Fyers credentials.</li>
-    <li>Click <strong>Create App</strong> on the dashboard.</li>
-    <li>
-      Fill in the form:
-      <table>
-        <thead><tr><th>Field</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>App Type</td><td><code>Web</code></td></tr>
-          <tr><td>App Name</td><td>Any descriptive name (e.g., <code>PalaniBot</code>)</td></tr>
-          <tr><td>Redirect URL</td><td><code>https://YOUR_EC2_IP:3000/auth/callback</code></td></tr>
-        </tbody>
-      </table>
-    </li>
-    <li>After creation, copy the <strong>APP_ID</strong> and <strong>SECRET_KEY</strong> into your <code>.env</code> file.</li>
-  </ol>
-
-  <h3>OAuth Authentication Flow</h3>
-
-  <div class="oauth-flow">
-    <div class="oauth-step">
-      <div class="oauth-box ob-blue">
-        User visits<br><code>/auth/login</code>
-        <small>Browser redirect</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-orange">
-        Fyers OAuth<br>Login Page
-        <small>User enters credentials</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-purple">
-        Redirect to<br><code>/auth/callback</code>
-        <small>With auth_code</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-green">
-        Token Stored<br><code>~/.fyers_token</code>
-        <small>trading-data dir</small>
-      </div>
-    </div>
-  </div>
-
-  <h3>Token Lifecycle</h3>
   <ul>
-    <li>Token is stored at <code>~/trading-data/.fyers_token</code></li>
-    <li>Auto-validates daily using IST date check</li>
-    <li>Fallback: token is considered expired after <strong>20 hours</strong> of age</li>
-    <li>Re-authentication required each trading day before market open</li>
-  </ul>
-
-  <div class="note note-info">
-    <strong>Note:</strong> The Fyers token is used for both data feed (WebSocket, candles) and order placement for BB_RSI and Price Action strategies. Strategy 1 live orders go through Zerodha.
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 3. ZERODHA KITE CONNECT                                    -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section purple" id="zerodha">
-  <h2><span class="section-icon icon-purple">&#128273;</span> 3. Zerodha Kite Connect Registration</h2>
-
-  <h3>Create Your App</h3>
-  <ol class="steps">
-    <li>Go to <code>https://developers.kite.trade</code> and log in.</li>
-    <li>Click <strong>Create App</strong> (Kite Connect type).</li>
-    <li>
-      Fill in the details:
-      <table>
-        <thead><tr><th>Field</th><th>Value</th></tr></thead>
-        <tbody>
-          <tr><td>App Name</td><td>Any name (e.g., <code>PalaniTrader</code>)</td></tr>
-          <tr><td>Redirect URL</td><td><code>https://YOUR_EC2_IP:3000/auth/zerodha/callback</code></td></tr>
-        </tbody>
-      </table>
-    </li>
-    <li>Copy <strong>ZERODHA_API_KEY</strong> and <strong>ZERODHA_API_SECRET</strong> into your <code>.env</code> file.</li>
-  </ol>
-
-  <h3>OAuth Authentication Flow</h3>
-
-  <div class="oauth-flow">
-    <div class="oauth-step">
-      <div class="oauth-box ob-blue">
-        User visits<br><code>/auth/zerodha/login</code>
-        <small>Browser redirect</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-orange">
-        Kite Login<br>Page
-        <small>User enters credentials</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-purple">
-        Redirect to<br><code>/auth/zerodha/callback</code>
-        <small>With request_token</small>
-      </div>
-    </div>
-    <div class="oauth-connector"><span></span></div>
-    <div class="oauth-step">
-      <div class="oauth-box ob-green">
-        Token Stored<br><code>~/.zerodha_token</code>
-        <small>trading-data dir</small>
-      </div>
-    </div>
-  </div>
-
-  <h3>Token Lifecycle</h3>
-  <ul>
-    <li>Token is stored at <code>~/trading-data/.zerodha_token</code></li>
-    <li>Expires at <strong>6:00 AM IST</strong> the next day (Zerodha policy)</li>
-    <li>Must re-authenticate every trading day before market open</li>
+    <li><strong>A computer to run it on.</strong> For real trading this is a cloud server (EC2) that stays on all day. For trying things out, your own laptop is fine.</li>
+    <li><strong>Node.js version 16.</strong> This is important &mdash; the app is pinned to <strong>Node 16</strong> on the server. Newer versions (18, 20) will <em>not</em> run there, because the server's operating system (Amazon Linux 2) is too old for them. On the server, Node 16 is selected automatically during deployment; on your own laptop, install Node 16 yourself.</li>
+    <li><strong>The app's code.</strong> A copy of this project folder on the machine.</li>
+    <li><strong>Broker accounts.</strong> A <strong>Fyers</strong> account (for prices and some orders) and a <strong>Zerodha</strong> account (for other orders), each with its "developer/API" keys set up.</li>
+    <li><strong>Optional: a Telegram bot.</strong> If you want the app to text you when it starts, enters, or exits a trade, you set up a Telegram bot and paste its details into the settings. This is optional.</li>
   </ul>
 
   <div class="note note-warn">
-    <strong>Important:</strong> Zerodha tokens expire strictly at 6 AM IST. Unlike Fyers, there is no age-based fallback &mdash; the token is invalidated server-side by Zerodha at the fixed time.
+    <strong>Why Node 16 exactly?</strong> The cloud server runs an older system that only supports up to Node 16. Node 18 and 20 need a newer system component the server doesn't have, so they simply won't start there. When in doubt, use Node 16.
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 4. SSL CERTIFICATE                                         -->
+<!-- 4. INSTALL & RUN                                            -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section orange" id="ssl">
-  <h2><span class="section-icon icon-orange">&#128274;</span> 4. SSL Certificate Setup</h2>
+<section class="section purple" id="install">
+  <h2><span class="section-icon icon-purple">&#128640;</span> 4. Install &amp; run &mdash; step by step</h2>
 
-  <p>Both Fyers and Zerodha OAuth require HTTPS redirect URLs. Generate a self-signed certificate for your EC2 instance:</p>
+  <p>Follow these in order. Each step has the exact command to type (in the dark box) and, underneath, a plain note on what it does and when you run it. Every command is typed into a "terminal" &mdash; the text window where you talk to the computer.</p>
 
-  <pre><code><span class="cmt"># Create the certs directory in the project root</span>
-<span class="cmd">mkdir</span> <span class="flag">-p</span> certs
-
-<span class="cmt"># Generate a 4096-bit RSA self-signed certificate (valid for 10 years)</span>
-<span class="cmd">openssl</span> req <span class="flag">-x509</span> <span class="flag">-newkey</span> rsa:4096 \
-  <span class="flag">-keyout</span> <span class="str">certs/key.pem</span> <span class="flag">-out</span> <span class="str">certs/cert.pem</span> \
-  <span class="flag">-days</span> <span class="num">3650</span> <span class="flag">-nodes</span> <span class="flag">-subj</span> <span class="str">"/CN=YOUR_EC2_IP"</span></code></pre>
-
-  <table>
-    <thead><tr><th>File</th><th>Purpose</th><th>Location</th></tr></thead>
-    <tbody>
-      <tr><td><code>certs/key.pem</code></td><td>Private key (RSA 4096-bit)</td><td>Project root &rarr; <code>certs/</code></td></tr>
-      <tr><td><code>certs/cert.pem</code></td><td>Self-signed X.509 certificate</td><td>Project root &rarr; <code>certs/</code></td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-danger">
-    <strong>Security:</strong> Never commit <code>certs/</code> to version control. Ensure it is listed in <code>.gitignore</code>. The private key must remain on the server only.
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 5. EC2 SERVER DEPLOYMENT                                   -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section cyan" id="ec2">
-  <h2><span class="section-icon icon-cyan">&#9729;</span> 5. EC2 Server Deployment</h2>
-
-  <h3>Initial Setup</h3>
-  <pre><code><span class="cmt"># 1. Clone the repository</span>
-<span class="cmd">git</span> clone &lt;your-repo-url&gt; trade
-<span class="cmd">cd</span> trade
-
-<span class="cmt"># 2. Install dependencies</span>
-<span class="cmd">npm</span> install
-
-<span class="cmt"># 3. Create the persistent data directory</span>
-<span class="cmd">mkdir</span> <span class="flag">-p</span> ~/trading-data
-
-<span class="cmt"># 4. Copy environment template and fill in values</span>
-<span class="cmd">cp</span> .env.example .env
-<span class="cmd">nano</span> .env   <span class="cmt"># Fill in all required values</span>
-
-<span class="cmt"># 5. Generate SSL certificates (see Section 4)</span>
-<span class="cmd">mkdir</span> <span class="flag">-p</span> certs
-<span class="cmd">openssl</span> req <span class="flag">-x509</span> <span class="flag">-newkey</span> rsa:4096 \
-  <span class="flag">-keyout</span> certs/key.pem <span class="flag">-out</span> certs/cert.pem \
-  <span class="flag">-days</span> <span class="num">3650</span> <span class="flag">-nodes</span> <span class="flag">-subj</span> <span class="str">"/CN=YOUR_EC2_IP"</span></code></pre>
-
-  <h3>PM2 Process Management</h3>
-  <pre><code><span class="cmt"># Install PM2 globally</span>
-<span class="cmd">npm</span> install <span class="flag">-g</span> pm2
-
-<span class="cmt"># Start the trading bot</span>
-<span class="cmd">pm2</span> start ecosystem.config.js
-
-<span class="cmt"># Enable startup on reboot</span>
-<span class="cmd">pm2</span> startup
-<span class="cmd">pm2</span> save
-
-<span class="cmt"># Useful commands</span>
-<span class="cmd">pm2</span> logs trading-bot      <span class="cmt"># View live logs</span>
-<span class="cmd">pm2</span> restart trading-bot   <span class="cmt"># Restart the process</span>
-<span class="cmd">pm2</span> monit                 <span class="cmt"># Monitor CPU/Memory</span></code></pre>
-
-  <h3>PM2 Ecosystem Config</h3>
-  <table>
-    <thead><tr><th>Setting</th><th>Value</th><th>Purpose</th></tr></thead>
-    <tbody>
-      <tr><td><code>script</code></td><td><code>src/app.js</code></td><td>Application entry point</td></tr>
-      <tr><td><code>node_args</code></td><td><code>--expose-gc --max-old-space-size=900</code></td><td>V8 heap limit (900 MB, just below the restart threshold so GC runs before PM2 kills); <code>--expose-gc</code> lets the backtest engine trigger GC manually</td></tr>
-      <tr><td><code>max_memory_restart</code></td><td><code>940M</code></td><td>Auto-restart if RSS exceeds this (t3.micro has &asymp;956 MB usable)</td></tr>
-      <tr><td><code>autorestart</code></td><td><code>true</code></td><td>Restart on crash</td></tr>
-      <tr><td><code>restart_delay</code></td><td><code>5000 ms</code></td><td>Wait 5 seconds between restarts</td></tr>
-      <tr><td><code>kill_timeout</code></td><td><code>8000 ms</code></td><td>Grace period for graceful shutdown (square-off + state flush) before SIGKILL</td></tr>
-      <tr><td><code>stop_exit_codes</code></td><td><code>[10]</code></td><td>Exit code <strong>10</strong> = config-error sentinel &mdash; PM2 will <strong>not</strong> restart, breaking crash loops on missing certs / malformed env</td></tr>
-      <tr><td><code>NODE_ENV</code></td><td><code>production</code></td><td>Production environment flag</td></tr>
-      <tr><td><code>UV_THREADPOOL_SIZE</code></td><td><code>2</code></td><td>libuv thread-pool size (kept small for the t3.micro)</td></tr>
-    </tbody>
-  </table>
-  <div class="note note-info">
-    <strong>Production reload:</strong> deploys use <code>pm2 startOrRestart ecosystem.config.js --update-env</code> so changes to <code>ecosystem.config.js</code> take effect. The GitHub Actions workflow (<code>.github/workflows/deployCodeToEc2.yml</code>) pins <strong>Node 16</strong> (Amazon Linux 2 / GLIBC 2.17) and runs this command on push to <code>main</code>.
-  </div>
-
-  <h3>GitHub Actions Deploy Webhook</h3>
-  <p>The server exposes a deploy webhook for automated CI/CD:</p>
-  <pre><code><span class="cmt"># GitHub Actions calls this endpoint after a successful build</span>
-<span class="cmd">POST</span> <span class="str">https://YOUR_EC2_IP:3000/deploy/webhook</span></code></pre>
-  <p>Configure the webhook URL and secret in your GitHub repository settings or workflow file.</p>
-
-  <div class="note note-info">
-    <strong>EC2 Security Group:</strong> Ensure port <strong>3000</strong> is open for inbound TCP traffic (HTTPS). Restrict source IPs if possible for additional security.
-  </div>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 6. TELEGRAM BOT                                            -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section pink" id="telegram">
-  <h2><span class="section-icon icon-pink">&#128172;</span> 6. Telegram Bot Setup</h2>
-
-  <h3>Create the Bot</h3>
   <ol class="steps">
-    <li>Open Telegram and search for <code>@BotFather</code>.</li>
-    <li>Send <code>/newbot</code> and follow the prompts to name your bot.</li>
-    <li>Copy the <strong>BOT_TOKEN</strong> provided by BotFather.</li>
-    <li>Open a conversation with your new bot and send any message (e.g., <code>/start</code>).</li>
     <li>
-      Get your <strong>Chat ID</strong> by calling the Telegram API:
-      <pre><code><span class="cmd">curl</span> <span class="str">"https://api.telegram.org/bot&lt;YOUR_BOT_TOKEN&gt;/getUpdates"</span> | <span class="cmd">jq</span> <span class="str">'.result[0].message.chat.id'</span></code></pre>
+      <strong>Get the code onto the machine.</strong>
+      <pre><code>git clone &lt;repo&gt; trading-bot
+cd trading-bot</code></pre>
+      This downloads the project into a folder called <code>trading-bot</code> and then steps inside it. You only do this once. (If the folder is already there, skip this.)
     </li>
-    <li>Set both values in your <code>.env</code> file.</li>
+    <li>
+      <strong>Download the building blocks.</strong>
+      <pre><code>npm install</code></pre>
+      This fetches all the ready-made pieces of code the app is built on (the price-feed library, the broker libraries, and so on). Run it <strong>once</strong> after you first get the code, and again only when the building blocks change.
+    </li>
+    <li>
+      <strong>Create your settings file.</strong>
+      <pre><code>cp .env.example .env</code></pre>
+      This makes your own settings file (<code>.env</code>) by copying the example one. Then open <code>.env</code> in any text editor and fill in your details &mdash; your Fyers keys, your Zerodha keys, your server address, and (optionally) your Telegram details. This file holds your secrets, so keep it private.
+    </li>
+    <li>
+      <strong>Make the security certificate (one time).</strong>
+      <pre><code>mkdir -p certs
+openssl req -x509 -newkey rsa:4096 \
+  -keyout certs/key.pem -out certs/cert.pem \
+  -days 3650 -nodes -subj "/CN=$(curl -s ifconfig.me)"</code></pre>
+      The app serves its dashboard over the secure (padlock) HTTPS address, and for that it needs a certificate. This command creates a self-signed one that's good for ten years. You do this once. (Without it the app refuses to start &mdash; see Section 11.)
+    </li>
+    <li>
+      <strong>Start the app.</strong> On the real server, start it with the keep-it-running manager, PM2:
+      <pre><code>pm2 start src/app.js --name trade</code></pre>
+      This launches the bot and names it <code>trade</code> so PM2 can watch over it. If it ever crashes, PM2 brings it straight back.
+    </li>
+    <li>
+      <strong>Make it survive a reboot.</strong>
+      <pre><code>pm2 startup &amp;&amp; pm2 save</code></pre>
+      This tells the server to start the bot automatically the next time it's switched on or restarted &mdash; so you don't have to log in and start it by hand. One-time step.
+    </li>
+    <li>
+      <strong>Open it in your browser.</strong> Go to your server's address on port 3000, using <code>https</code>:
+      <pre><code>https://YOUR_SERVER_IP:3000</code></pre>
+      That's the dashboard. From here on you start, stop, and configure everything by clicking, not by typing commands. (See Section 10 for the first-visit browser warning.)
+    </li>
   </ol>
-
-  <h3>Notification Toggles (21 <code>TG_*</code> + master gate)</h3>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">All four strategies now have per-strategy STARTED / ENTRY / EXIT / DAYREPORT toggles. SIGNALS exists only for EMA_RSI_ST / BB_RSI / PA (no ORB SIGNALS toggle).</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, no alerts sent regardless of below</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy (4 toggles)</td></tr>
-      <tr><td><code>TG_EMA_RSI_ST_SIGNALS</code> / <code>TG_BB_RSI_SIGNALS</code> / <code>TG_PA_SIGNALS</code></td><td><code>true</code>/<code>false</code>/<code>false</code></td><td>Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only)</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop (4 toggles)</td></tr>
-      <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined EOD summary across all modes at 15:30 IST (weekdays only)</td></tr>
-      <tr><td><code>BACKUP_TG_ENABLED</code></td><td><code>false</code></td><td>(Backup section) Telegram heartbeat when the daily data backup snapshot is ready</td></tr>
-    </tbody>
-  </table>
-
-  <div class="note note-info">
-    <strong>Count:</strong> 21 <code>TG_*</code> toggles in total &mdash; <code>TG_ENABLED</code> (master) + 4&times;STARTED + 4&times;ENTRY + 4&times;EXIT + 3&times;SIGNALS + 4&times;DAYREPORT + <code>TG_DAYREPORT_CONSOLIDATED</code>. ORB is now fully wired (was previously a gap). <code>BACKUP_TG_ENABLED</code> is a separate Telegram toggle in the Backup section.
-  </div>
-
-  <h3>Crash + Startup-Recovery Alerts (v4.3.0)</h3>
-  <p>The bot writes a <strong>crash-marker file</strong> on uncaught exceptions / SIGTERM capturing the cause + stack. On the next startup the marker is read and a recovery alert is sent over Telegram (cause + uptime), and any orphaned positions from <code>~/trading-data/.active_*.json</code> are reconciled against broker positions; mismatches alert immediately. Telegram on shutdown uses a <strong>synchronous <code>curl</code></strong> spawn so alerts survive <code>process.exit()</code>.</p>
 
   <div class="note note-success">
-    <strong>Tip:</strong> Leave <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> blank to disable all Telegram notifications without changing individual toggle values. Or set <code>TG_ENABLED=false</code> as a master switch that preserves per-mode config.
+    <strong>Just testing on your own laptop?</strong> Steps 1&ndash;4 are the same. For step 5, instead of PM2 you can run <code>npm run dev</code> &mdash; that starts the app and auto-restarts it whenever you change a file, which is handy while experimenting. Then open <code>https://localhost:3000</code>. Use PM2 (steps 5&ndash;6) for the real, always-on server.
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 7. COMPLETE .ENV REFERENCE                                 -->
+<!-- 5. THE COMMANDS                                             -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section red" id="env">
-  <h2><span class="section-icon icon-red">&#128221;</span> 7. Complete .env Variable Reference</h2>
+<section class="section orange" id="commands">
+  <h2><span class="section-icon icon-orange">&#9881;</span> 5. The commands, explained</h2>
 
-  <p>All environment variables grouped by section. Copy <code>.env.example</code> to <code>.env</code> and fill in values.</p>
-
-  <!-- ── Fyers ─────────────────────────────────────────── -->
-  <div class="env-group">Fyers &mdash; Data Feed, WebSocket, Historical Candles, BB_RSI Orders</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>APP_ID</code></td><td>&mdash;</td><td>Fyers App ID from myapi.fyers.in</td></tr>
-      <tr><td><code>SECRET_KEY</code></td><td>&mdash;</td><td>Fyers App Secret</td></tr>
-      <tr><td><code>REDIRECT_URL</code></td><td><code>https://IP:3000/auth/callback</code></td><td>OAuth callback URL</td></tr>
-      <tr><td><code>ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Fyers access token</td></tr>
-      <tr><td><code>NIFTY_SPOT_FALLBACK</code></td><td><code>24000</code></td><td>Fallback NIFTY spot price if API fails</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Zerodha ───────────────────────────────────────── -->
-  <div class="env-group g-green">Zerodha &mdash; Order Placement (Strategy 1 Live Trade Only)</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>ZERODHA_API_KEY</code></td><td>&mdash;</td><td>Kite Connect API key</td></tr>
-      <tr><td><code>ZERODHA_API_SECRET</code></td><td>&mdash;</td><td>Kite Connect API secret</td></tr>
-      <tr><td><code>ZERODHA_ACCESS_TOKEN</code></td><td><em>(auto-filled)</em></td><td>Current Zerodha access token. (The Zerodha redirect URL is configured in the Kite developer console, not via env &mdash; there is no <code>ZERODHA_REDIRECT_URL</code> reader; the old key was removed.)</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Security ──────────────────────────────────────── -->
-  <div class="env-group g-red">Security</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>API_SECRET</code></td><td>&mdash;</td><td>Secret for API authentication</td></tr>
-      <tr><td><code>LOGIN_SECRET</code></td><td>&mdash;</td><td>Secret for login session management</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Server ────────────────────────────────────────── -->
-  <div class="env-group g-cyan">Server</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Example / Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>PORT</code></td><td><code>3000</code></td><td>HTTPS server port</td></tr>
-      <tr><td><code>EC2_IP</code></td><td>&mdash;</td><td>Public IP of the EC2 instance</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Instrument ────────────────────────────────────── -->
-  <div class="env-group g-orange">Instrument</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>INSTRUMENT</code></td><td><code>NIFTY_OPTIONS</code></td><td>Trading instrument</td></tr>
-      <tr><td><code>NIFTY_LOT_SIZE</code></td><td><code>65</code></td><td>Lot size for NIFTY options (exchange-set)</td></tr>
-      <tr><td><code>LOT_MULTIPLIER</code></td><td><code>1</code></td><td>Number of lots per trade</td></tr>
-      <tr><td><code>STRIKE_OFFSET_CE</code></td><td><code>0</code></td><td>CE strike offset from ATM</td></tr>
-      <tr><td><code>STRIKE_OFFSET_PE</code></td><td><code>0</code></td><td>PE strike offset from ATM</td></tr>
-      <tr><td><code>OPTION_EXPIRY_TYPE</code></td><td><code>weekly</code></td><td>Expiry type: <code>weekly</code> or <code>monthly</code></td></tr>
-      <tr><td><code>OPTION_EXPIRY_OVERRIDE</code></td><td><em>(blank)</em></td><td>Override specific expiry date</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── EMA_RSI_ST ────────────────────────────────────────── -->
-  <div class="env-group g-purple">EMA_RSI_ST Strategy &mdash; EMA 20/50 + RSI + SuperTrend (5/15-min, Zerodha Orders)</div>
-  <p style="margin:6px 0 10px 0; color:var(--accent-orange);">Rebuilt 2026-05/06: <strong>Parabolic SAR fully removed (2026-06-12)</strong> &mdash; SuperTrend is the only trend source and EMA21 the only trail SL; breakeven removed (2026-06-02). The old SAR / EMA9 / ADX-slope / Logic-3 / hybrid-SL-cap / 3-tier-trail keys no longer exist in <code>settings.js</code>.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>EMA_RSI_ST_MODE_ENABLED</code></td><td><code>true</code></td><td>Show EMA_RSI_ST sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>EMA_RSI_ST_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for Zerodha order placement. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for live orders to fire.</td></tr>
-      <tr><td><code>EMA_RSI_ST_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>)</td></tr>
-      <tr><td><code>TRADE_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes. Strategy code branches on <code>TRADE_RES === 5</code> vs <code>&gt;= 15</code>; set <code>15</code> for the slower variant.</td></tr>
-      <tr><td><code>TRADE_START_TIME</code></td><td><code>09:15</code></td><td>Trading window start (IST) &mdash; Common section</td></tr>
-      <tr><td><code>TRADE_STOP_TIME</code></td><td><code>15:30</code></td><td>Trading window end (IST) &mdash; Common section</td></tr>
-      <tr><td><code>TRADE_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest entry time (IST)</td></tr>
-      <tr><td><code>TRADE_ENTRY_END</code></td><td><code>14:00</code></td><td>Latest entry time (IST)</td></tr>
-      <tr><td><code>EMA_RSI_ST_EOD_EXIT_TIME</code></td><td><code>14:30</code></td><td>Exit any open EMA_RSI_ST position before this time (exit-before-close)</td></tr>
-      <tr><td><code>TRADE_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day. EMA_RSI_ST <code>/start</code> is also auto-blocked when configured expiry == today (0DTE refusal &mdash; gamma risk).</td></tr>
-      <tr><td><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code></td><td><em>(blank)</em></td><td>EMA_RSI_ST-only expiry override. Use to keep swing on next-week expiry while BB_RSI/PA trade current. Blank inherits the common expiry.</td></tr>
-      <tr><td><code>EMA_RSI_ST_OPTION_EXPIRY_TYPE</code></td><td><em>(blank)</em></td><td>EMA_RSI_ST-only expiry type (<code>weekly</code> / <code>monthly</code>). Blank inherits common.</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Signal Params (EMA + RSI + SuperTrend)</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Entry (intra-candle, all true): CE = EMA-fast above EMA-slow (or triple-stack EMA9 &gt; EMA20 &gt; EMA50), RSI(14) in <code>[RSI_CE_MIN, RSI_CE_MAX]</code>, SuperTrend bullish; PE = mirror.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>EMA_RSI_ST_EMA_FAST</code></td><td><code>20</code></td><td>Fast/mid EMA period (close). 2-EMA mode: CE needs EMA-fast above EMA-slow; PE below. Triple-stack: this is the MID EMA.</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_SLOW</code></td><td><code>50</code></td><td>Slow EMA period (close) &mdash; the EMA-fast vs EMA-slow alignment is the directional gate</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED</code></td><td><code>false</code></td><td><code>false</code> = 2-EMA cross. <code>true</code> = require EMA-fastest &gt; EMA-mid &gt; EMA-slow (CE) / reverse (PE).</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_FASTEST</code></td><td><code>9</code></td><td>Fastest EMA period in the 9&gt;20&gt;50 stack. Only used when triple-stack is on.</td></tr>
-      <tr><td><code>RSI_CE_MIN</code></td><td><code>52</code></td><td>CE entry: RSI(14) must be above this</td></tr>
-      <tr><td><code>RSI_CE_MAX</code></td><td><code>70</code></td><td>CE entry: RSI(14) must be below this (overbought guard)</td></tr>
-      <tr><td><code>RSI_PE_MAX</code></td><td><code>48</code></td><td>PE entry: RSI(14) must be below this</td></tr>
-      <tr><td><code>RSI_PE_MIN</code></td><td><code>30</code></td><td>PE entry: RSI(14) must be above this (oversold guard)</td></tr>
-      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code></td><td><code>10</code></td><td>SuperTrend ATR period &mdash; SuperTrend is the directional trend gate</td></tr>
-      <tr><td><code>EMA_RSI_ST_SUPERTREND_MULT</code></td><td><code>3</code></td><td>SuperTrend ATR multiplier</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Stops, Trail &amp; Risk</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Initial SL = previous candle low (CE) / high (PE), then trailed by EMA21 (tighten-only; EMA21 touch-back is an explicit exit). Optionally layer an N-bar candle trail.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Daily kill-switch in INR (also latched on 3 consecutive losses). Common section.</td></tr>
-      <tr><td><code>MAX_DAILY_TRADES</code></td><td><code>5</code></td><td>Hard cap on entries per session &mdash; anti-overtrade on chop days. Common section.</td></tr>
-      <tr><td><code>OPT_STOP_PCT</code></td><td><code>0.25</code></td><td>Option-premium stop &mdash; exit if the option premium drops this fraction below entry premium</td></tr>
-      <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td><code>25</code></td><td>Per-trade catastrophic loss cap (spot points against entry), checked before the structural/trail SL. <code>0</code> = disabled.</td></tr>
-      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code></td><td><code>true</code></td><td>Layer an N-bar candle trail on top of the EMA21 SL (tighter-of). Banks more of a winner; never loosens.</td></tr>
-      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_BARS</code></td><td><code>2</code></td><td>Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. <code>1</code> = tightest.</td></tr>
-      <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Choppy-day guard: halt new entries after N consecutive losers (any winner resets). <code>0</code> = off.</td></tr>
-      <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Same-side cooldown candles after an SL hit</td></tr>
-      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code></td><td><code>true</code></td><td>Pause the opposite side too after an SL hit</td></tr>
-      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES</code></td><td><code>2</code></td><td>Opposite-side cooldown duration in candles</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── VIX Filter (per-module) ───────────────────────── -->
-  <div class="env-group g-red">VIX Filter &mdash; Per-Module Market Regime Filter (v4.3.0)</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Enable VIX-based entry blocking (EMA_RSI_ST)</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>EMA_RSI_ST &mdash; block all entries when VIX exceeds this</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>EMA_RSI_ST &mdash; only strong signals when VIX &gt; this</td></tr>
-      <tr><td><code>VIX_FAIL_MODE</code></td><td><code>closed</code></td><td>When VIX feed unavailable: <code>closed</code> = block (safe), <code>open</code> = allow</td></tr>
-      <tr><td><code>BB_RSI_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for BB_RSI (independent toggle)</td></tr>
-      <tr><td><code>BB_RSI_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for BB_RSI</td></tr>
-      <tr><td><code>BB_RSI_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for BB_RSI</td></tr>
-      <tr><td><code>PA_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for Price Action (independent toggle)</td></tr>
-      <tr><td><code>PA_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode threshold for PA</td></tr>
-      <tr><td><code>PA_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold for PA</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Trade Guards (shared) ─────────────────────────── -->
-  <div class="env-group g-red">Trade Guards &mdash; Shared Across Modes (v4.3.0)</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Block entry if option bid-ask spread &gt; N points (fails open if quotes missing)</td></tr>
-      <tr><td><code>TIME_STOP_CANDLES</code></td><td><code>4</code></td><td>Auto-exit a trade flat for N candles (theta-bleed guard). Shared guard via <code>tradeGuards.js</code>.</td></tr>
-      <tr><td><code>TIME_STOP_FLAT_PTS</code></td><td><code>20</code></td><td>"Flat" defined as |PnL| &lt; N points</td></tr>
-      <tr><td><code>GAP_THRESHOLD_PTS</code></td><td><code>50</code></td><td>Treat an open as a gap (and adjust handling) when it exceeds prior close by this many points</td></tr>
-      <tr><td><code>LTP_STALE_FALLBACK_SEC</code></td><td><code>5</code></td><td>After this many seconds without a fresh option LTP, fall back to the last good price for exit math</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── BB_RSI ─────────────────────────────────────────── -->
-  <div class="env-group g-cyan">BB_RSI &mdash; BB+PSAR+RSI V5 Strategy (Fyers Orders)</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BB_RSI_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide bb_rsi UI and engine in sidebar + Settings</td></tr>
-      <tr><td><code>BB_RSI_ENABLED</code></td><td><code>false</code></td><td>Live-orders master switch (BB_RSI uses <code>BB_RSI_ENABLED</code>, not <code>BB_RSI_LIVE_ENABLED</code>). Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
-      <tr><td><code>BB_RSI_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>). Common section.</td></tr>
-      <tr><td><code>BB_RSI_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes &mdash; <code>3</code> or <code>5</code></td></tr>
-      <tr><td><code>BB_RSI_ENTRY_START</code></td><td><code>09:21</code></td><td>Entry window start (IST)</td></tr>
-      <tr><td><code>BB_RSI_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
-      <tr><td><code>BB_RSI_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Trade only on expiry day</td></tr>
-    </tbody>
-  </table>
-
-  <h4>BB_RSI Signal Params (BB + PSAR + RSI)</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Entry (at candle close): CE = close &ge; BB upper + PSAR below close + RSI &gt; CE threshold; PE = mirror. Overbought/oversold guards block exhausted moves.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BB_RSI_BB_PERIOD</code></td><td><code>20</code></td><td>Bollinger Band period</td></tr>
-      <tr><td><code>BB_RSI_BB_STDDEV</code></td><td><code>1</code></td><td>Bollinger Band std deviation</td></tr>
-      <tr><td><code>BB_RSI_RSI_PERIOD</code></td><td><code>14</code></td><td>RSI period</td></tr>
-      <tr><td><code>BB_RSI_RSI_CE_THRESHOLD</code></td><td><code>70</code></td><td>Take CE entry only when RSI is above this</td></tr>
-      <tr><td><code>BB_RSI_RSI_PE_THRESHOLD</code></td><td><code>40</code></td><td>Take PE entry only when RSI is below this</td></tr>
-      <tr><td><code>BB_RSI_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction</td></tr>
-      <tr><td><code>BB_RSI_PSAR_STEP</code></td><td><code>0.02</code></td><td>Parabolic SAR step</td></tr>
-      <tr><td><code>BB_RSI_PSAR_MAX</code></td><td><code>0.2</code></td><td>Parabolic SAR max</td></tr>
-      <tr><td><code>BB_RSI_USE_SUPERTREND</code></td><td><code>false</code></td><td>Optional SuperTrend confirmation gate</td></tr>
-      <tr><td><code>BB_RSI_SUPERTREND_PERIOD</code> / <code>BB_RSI_SUPERTREND_MULT</code></td><td><code>10</code> / <code>3</code></td><td>SuperTrend ATR period / multiplier (used only when <code>BB_RSI_USE_SUPERTREND=true</code>)</td></tr>
-      <tr><td><code>BB_RSI_ADX_ENABLED</code></td><td><code>false</code></td><td>Optional ADX trend-strength filter</td></tr>
-      <tr><td><code>BB_RSI_ADX_MIN</code></td><td><code>20</code></td><td>Min ADX when the ADX filter is on (below = block)</td></tr>
-    </tbody>
-  </table>
-
-  <h4>BB_RSI Stops &amp; Break-even</h4>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">V6.1: initial SL = the PSAR value at entry (no clamp; far-PSAR entries filtered by <code>BB_RSI_MAX_ENTRY_SL_PTS</code>); exit on a per-tick <strong>profit lock</strong> (the only intra-tick exit) plus two candle-close exits: <strong>BB re-entry</strong> (failed breakout) and the <strong>PSAR flip</strong>. No break-even-to-entry snap, no %-profit trail, no time-stop, no PSAR/prev-candle trail.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BB_RSI_MAX_ENTRY_SL_PTS</code></td><td><code>50</code></td><td>Skip entries where PSAR is more than this many pts from close (caps risk). <code>0</code> = off</td></tr>
-      <tr><td><code>BB_RSI_PROFIT_LOCK_TRIGGER_PTS</code></td><td><code>25</code></td><td>Arm the profit lock once the favourable spot move (points) reaches this &mdash; the per-tick upside exit. Points-based. <code>0</code> disables.</td></tr>
-      <tr><td><code>BB_RSI_PROFIT_LOCK_PCT</code></td><td><code>50</code></td><td>Once armed, exit when open P&amp;L falls below this % of peak (ratchets up)</td></tr>
-      <tr><td><code>BB_RSI_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>Catastrophic loss cap &mdash; exit if the trade moves this many spot points against entry. Wide; only clips deep failed-fade excursions. <code>0</code> disables.</td></tr>
-      <tr><td><code>BB_RSI_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit on candle close if price closes back inside the Bollinger Band (failed breakout)</td></tr>
-      <tr><td><code>BB_RSI_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm the BB-re-entry exit once price has moved this many points beyond the band first (avoids chopping out on a marginal break)</td></tr>
-      <tr><td><code>BB_RSI_RSI_TURNING</code></td><td><code>false</code></td><td>Require RSI momentum to confirm direction (already listed under signal params)</td></tr>
-      <tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry &amp; SL exit (points against you)</td></tr>
-    </tbody>
-  </table>
-
-  <h4>BB_RSI Risk &amp; SL-Pause Controls</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BB_RSI_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max bb_rsi trades per day</td></tr>
-      <tr><td><code>BB_RSI_MAX_DAILY_LOSS</code></td><td><code>4000</code></td><td>Max daily bb_rsi loss (&#8377;) &mdash; kill switch</td></tr>
-      <tr><td><code>BB_RSI_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Candles to pause after SL hit</td></tr>
-      <tr><td><code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL after the 2nd</td></tr>
-      <tr><td><code>BB_RSI_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>An SL on CE only pauses CE entries; PE remains free</td></tr>
-    </tbody>
-  </table>
-
-  <h4>BB_RSI VIX Filter (per-module)</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BB_RSI_VIX_ENABLED</code></td><td><code>false</code></td><td>Enable VIX filter for bb_rsi (independent toggle)</td></tr>
-      <tr><td><code>BB_RSI_VIX_MAX_ENTRY</code></td><td>inherits <code>VIX_MAX_ENTRY</code></td><td>Per-mode block-entry threshold</td></tr>
-      <tr><td><code>BB_RSI_VIX_STRONG_ONLY</code></td><td>inherits <code>VIX_STRONG_ONLY</code></td><td>Per-mode strong-only threshold</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Price Action ──────────────────────────────────── -->
-  <div class="env-group g-pink">Price Action Strategy &mdash; 4 Chart Patterns (5-min, Fyers Orders)</div>
-  <p style="margin:6px 0 10px 0; color:var(--accent-orange);"><strong>Rebuilt 2026-06.</strong> PA was gutted to <strong>only 4 chart patterns</strong> (Double Bottom, Double Top, Ascending Triangle, Descending Triangle), all default <code>true</code>. The old candlestick/structure patterns (Engulfing, Pin Bar, BOS, Inside Bar) and the entire <code>PA_RSI_*</code> / <code>PA_ADX_*</code> / <code>PA_SR_*</code> / <code>PA_*_SL_PTS</code> / <code>PA_TRAIL_*</code> / <code>PA_CANDLE_TRAIL_*</code> / <code>PA_TIME_STOP_*</code> / <code>PA_OPT_STOP_PCT</code> / <code>PA_MIN_BODY</code> / <code>PA_PIN_WICK_RATIO</code> key families were <strong>deleted</strong>. Exits are now structural SL + breakeven&rarr;swing trail in code (no env knobs).</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>PA_MODE_ENABLED</code></td><td><code>true</code></td><td>Show PA sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>PA_ENABLED</code></td><td><code>false</code></td><td>Live-orders master switch (PA uses <code>PA_ENABLED</code>, not <code>PA_LIVE_ENABLED</code>). Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders. Covers both legacy <code>/pa-live</code> and the harness <code>/pa-live-harness</code>.</td></tr>
-      <tr><td><code>PA_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>). Common section.</td></tr>
-      <tr><td><code>PA_ENTRY_START</code></td><td><code>09:20</code></td><td>Entry window start (IST)</td></tr>
-      <tr><td><code>PA_ENTRY_END</code></td><td><code>14:30</code></td><td>Entry window end (IST)</td></tr>
-      <tr><td><code>PA_RESOLUTION</code></td><td><code>5</code></td><td>Candle resolution in minutes (<code>5</code> or <code>3</code>)</td></tr>
-      <tr><td><code>PA_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow PA entries on weekly-expiry day</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Price Action Risk &amp; Pause</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>PA_MAX_DAILY_TRADES</code></td><td><code>30</code></td><td>Max PA trades per day</td></tr>
-      <tr><td><code>PA_MAX_DAILY_LOSS</code></td><td><code>2000</code></td><td>Max daily PA loss (&#8377;)</td></tr>
-      <tr><td><code>PA_SL_PAUSE_CANDLES</code></td><td><code>2</code></td><td>Candles to pause after SL hit</td></tr>
-      <tr><td><code>PA_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra candles pause per consecutive SL</td></tr>
-      <tr><td><code>PA_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points for backtest</td></tr>
-      <tr><td><code>PA_BREAKEVEN_TRIGGER</code></td><td><code>300</code></td><td><strong style="color:var(--accent-red);">⚠ UI-only, inert</strong> &mdash; appears in the Settings UI but no PA code reads it. Changing this value has no effect on trades.</td></tr>
-      <tr><td><code>PA_BREAKEVEN_BUFFER</code></td><td><code>1</code></td><td><strong style="color:var(--accent-red);">⚠ UI-only, inert</strong> &mdash; same status as <code>PA_BREAKEVEN_TRIGGER</code> above.</td></tr>
-    </tbody>
-  </table>
-
-  <h4>Price Action Patterns (per-signal toggles) &mdash; 4 chart patterns</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>PA_PATTERN_DOUBLE_BOTTOM</code></td><td><code>true</code></td><td>Double Bottom (W) bullish reversal</td></tr>
-      <tr><td><code>PA_PATTERN_DOUBLE_TOP</code></td><td><code>true</code></td><td>Double Top (M) bearish reversal</td></tr>
-      <tr><td><code>PA_PATTERN_ASC_TRIANGLE</code></td><td><code>true</code></td><td>Ascending Triangle bullish breakout</td></tr>
-      <tr><td><code>PA_PATTERN_DESC_TRIANGLE</code></td><td><code>true</code></td><td>Descending Triangle bearish breakdown</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── ORB ──────────────────────────────────────────── -->
-  <div class="env-group g-orange">ORB Strategy &mdash; Opening Range Breakout (Fyers Orders) <span style="font-size:0.7em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;margin-left:6px;">v4.6.0</span></div>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">Buys CE on ORH break / PE on ORL break after the configured opening-range window (defaults <code>09:15</code>&rarr;<code>09:30</code>). Single-leg directional play. <strong>1 trade/day</strong> by default.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for ORB Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
-      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy dry-run gate (composes with the global <code>LIVE_HARNESS_DRY_RUN</code>)</td></tr>
-      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow ORB entries on weekly expiry day (Tuesday)</td></tr>
-      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>Opening range start (IST)</td></tr>
-      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>Opening range end (IST). 15-min ORB = 09:15&rarr;09:30.</td></tr>
-      <tr><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>Stale-breakout cutoff &mdash; no new entries after this</td></tr>
-      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard square-off for any open ORB position</td></tr>
-      <tr><td><code>ORB_MIN_RANGE_PTS</code></td><td><code>25</code></td><td>Skip when opening range is too tight (noise filter)</td></tr>
-      <tr><td><code>ORB_MAX_RANGE_PTS</code></td><td><code>120</code></td><td>Skip when opening range is too wide (exhausted move)</td></tr>
-      <tr><td><code>ORB_MIN_BODY</code></td><td><code>8</code></td><td>Require the breakout candle's body to be at least this many points</td></tr>
-      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td><code>1.5</code></td><td>Spot target = ORH/ORL &plusmn; (range &times; this multiplier)</td></tr>
-      <tr><td><code>ORB_TARGET_PCT</code></td><td><code>0.4</code></td><td>Premium target as fraction of entry premium (0.4 = +40%)</td></tr>
-      <tr><td><code>ORB_STOP_PCT</code></td><td><code>0.25</code></td><td>Premium SL as fraction of entry premium (0.25 = &minus;25%)</td></tr>
-      <tr><td><code>ORB_PREMIUM_LOCKIN_PCT</code></td><td><code>0.25</code></td><td>Lock-in trail trigger: once option LTP gains this fraction, ratchet premium SL up. <code>0</code> disables.</td></tr>
-      <tr><td><code>ORB_PREMIUM_LOCKIN_FLOOR_PCT</code></td><td><code>0.05</code></td><td>Floor the premium SL ratchets to once lockin triggers (entry &times; (1 + 5%))</td></tr>
-    </tbody>
-  </table>
-
-  <h4>ORB Entry Filters</h4>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_WICK_FILTER_ENABLED</code></td><td><code>true</code></td><td>Reject breakout candles with large opposing wick (close near mid-candle = weak break)</td></tr>
-      <tr><td><code>ORB_MAX_WICK_RATIO</code></td><td><code>0.6</code></td><td>Upper wick (CE) or lower wick (PE) must be &le; this fraction of body. 0.6 = wick can be 60% of body.</td></tr>
-      <tr><td><code>ORB_VWAP_FILTER_ENABLED</code></td><td><code>true</code></td><td>CE only if breakout close &gt; session VWAP; PE only if close &lt; VWAP. Falls back to TWAP if candles lack volume.</td></tr>
-      <tr><td><code>ORB_VOL_FILTER_ENABLED</code></td><td><code>true</code></td><td>Require breakout volume &ge; multiplier &times; prior N-candle avg. Auto-skipped on volumeless indices.</td></tr>
-      <tr><td><code>ORB_VOL_MULT</code></td><td><code>1.2</code></td><td>Breakout volume must be &ge; this &times; prior-N avg (1.2 = 20% above avg)</td></tr>
-      <tr><td><code>ORB_VOL_LOOKBACK</code></td><td><code>5</code></td><td>Number of prior candles in the volume SMA window</td></tr>
-      <tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>true</code></td><td>Skip entries when ATM option LTP is outside the band (filters out deep-OTM lottery tickets and ITM-acting-like-futures)</td></tr>
-      <tr><td><code>ORB_PREMIUM_MIN</code></td><td><code>80</code></td><td>Skip entry if ATM LTP below this (&#8377;)</td></tr>
-      <tr><td><code>ORB_PREMIUM_MAX</code></td><td><code>250</code></td><td>Skip entry if ATM LTP above this (&#8377;)</td></tr>
-      <tr><td><code>ORB_SWEET_MIN</code></td><td><code>30</code></td><td>Range below this = MARGINAL (still allowed)</td></tr>
-      <tr><td><code>ORB_SWEET_MAX</code></td><td><code>80</code></td><td>Range above this = MARGINAL (still allowed)</td></tr>
-      <tr><td><code>ORB_STRONG_BODY</code></td><td><code>15</code></td><td>Breakout body &ge; this AND range in sweet spot &rarr; STRONG</td></tr>
-      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Independent VIX filter for ORB</td></tr>
-      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Block ORB entries above this VIX</td></tr>
-      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Above this VIX, allow only STRONG signals</td></tr>
-      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>ORB is textbook 1 trade/day &mdash; cap higher only if you accept the chop</td></tr>
-      <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>ORB daily loss kill-switch (&#8377;)</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Tick Recorder / Replay / Live Harness ────────── -->
-  <div class="env-group g-cyan">Tick Recorder, Replay, Live Harness <span style="font-size:0.7em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;margin-left:6px;">v4.6.0</span></div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>TICK_RECORDER_ENABLED</code></td><td><code>true</code></td><td>Record every spot / option / VIX tick to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code> during paper/live sessions. <strong>Required for Replay backtest.</strong> Pure observer &mdash; no trade-path impact.</td></tr>
-      <tr><td><code>TICK_RECORDER_RETAIN_DAYS</code></td><td><code>30</code></td><td>Auto-delete tick recordings older than this many days. &sim;10 MB/day across all streams; 30 days &asymp; 300 MB. Lower if EBS is tight.</td></tr>
-      <tr><td><code>LIVE_HARNESS_DRY_RUN</code></td><td><code>true</code></td><td><strong>Global gate.</strong> When ON, Live (Harness) routes log the broker call that <em>would</em> have been made but place no real order. Switch OFF only after verifying decisions match paper via <code>/replay</code>.</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Security & Safety ────────────────────────────── -->
-  <div class="env-group g-red">Security &amp; Safety &mdash; Rate Limits, Broker Resilience</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>API_SECRET</code></td><td>&mdash;</td><td>Protects action routes (start/stop/exit) &amp; settings page. Leave blank to disable.</td></tr>
-      <tr><td><code>LOGIN_SECRET</code></td><td>&mdash;</td><td>Page-level password gate. Leave blank for open access.</td></tr>
-      <tr><td><code>LOGIN_SESSION_MIN</code></td><td><code>15</code></td><td>Idle minutes before the login cookie expires. Each request slides the timer.</td></tr>
-      <tr><td><code>LOGIN_RATE_MAX</code></td><td><code>5</code></td><td>Max failed login attempts per IP before rate-limit kicks in</td></tr>
-      <tr><td><code>LOGIN_RATE_WINDOW_MIN</code></td><td><code>15</code></td><td>Failed-attempt window length (minutes)</td></tr>
-      <tr><td><code>WRITE_RATE_PER_MIN</code></td><td><code>120</code></td><td>Per-IP cap on state-changing requests (POST/PUT/DELETE/PATCH). <code>0</code> disables. Login + deploy webhook have their own gates.</td></tr>
-      <tr><td><code>WRITE_RATE_BURST</code></td><td><code>30</code></td><td>Burst bucket size &mdash; short spikes up to this many requests are allowed before throttling</td></tr>
-      <tr><td><code>BROKER_CB_FAIL_THRESHOLD</code></td><td><code>5</code></td><td>Consecutive thrown failures (per broker) before the circuit OPENs and calls fail fast</td></tr>
-      <tr><td><code>BROKER_CB_OPEN_SEC</code></td><td><code>30</code></td><td>Seconds the circuit stays OPEN before allowing a single HALF-OPEN probe. If the probe succeeds it CLOSEs.</td></tr>
-      <tr><td><code>BROKER_RETRY_WRITE_ATTEMPTS</code></td><td><code>2</code></td><td>Total attempts for non-idempotent writes (place / modify / cancel / exit). Only retries pre-flight network errors &mdash; never double-places an order.</td></tr>
-      <tr><td><code>BROKER_RETRY_READ_ATTEMPTS</code></td><td><code>3</code></td><td>Total attempts for idempotent reads (getOrders / getPositions / getFunds) on transient errors</td></tr>
-      <tr><td><code>BROKER_RETRY_BASE_MS</code></td><td><code>150</code></td><td>Base backoff between retries; reads use exp backoff, writes use linear</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Menu Visibility (expanded) ─────────────────────── -->
-  <div class="env-group g-cyan">Menu Visibility &mdash; Show / Hide Sidebar Items <span style="font-size:0.7em;background:rgba(63,185,80,0.18);color:#3fb950;padding:2px 8px;border-radius:6px;margin-left:6px;">expanded</span></div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>UI_THEME</code></td><td><code>dark</code></td><td>Application theme &mdash; <code>dark</code> (night view) or <code>light</code> (day view)</td></tr>
-      <tr><td><code>UI_SHOW_DASHBOARD</code></td><td><code>false</code></td><td>Show the top-level Dashboard menu. When off, <code>/</code> redirects to Settings.</td></tr>
-      <tr><td><code>UI_SHOW_ALL_BACKTEST</code></td><td><code>true</code></td><td>Show the top-level Backtest (all-strategy) menu</td></tr>
-      <tr><td><code>UI_SHOW_REALTIME</code></td><td><code>true</code></td><td>Dashboard auto-swaps to Real-Time monitor whenever any paper/live session is running</td></tr>
-      <tr><td><code>UI_DASHBOARD_ANALYTICS_PANEL</code></td><td><code>true</code></td><td>Show bottom analytics panel on the Dashboard. Market hours: live session P&amp;L per strategy + next expiry. After-hours: last-session breakdown, 7-day rolling, next holiday.</td></tr>
-      <tr><td><code>UI_SHOW_REPLAY</code></td><td><code>true</code></td><td>Show the top-level Replay menu (tick replay of recorded paper sessions)</td></tr>
-      <tr><td><code>UI_SHOW_PAPER_HISTORY</code> / <code>UI_SHOW_LIVE_HISTORY</code></td><td><code>true</code></td><td>Cross-mode history menus</td></tr>
-      <tr><td><code>EMA_RSI_ST_MODE_ENABLED</code> / <code>BB_RSI_MODE_ENABLED</code> / <code>PA_MODE_ENABLED</code> / <code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Master toggle per strategy &mdash; hides sidebar group AND Settings section</td></tr>
-      <tr><td><code>UI_SHOW_SIMULATE</code> / <code>UI_SHOW_COMPARE</code> / <code>UI_SHOW_TRACKER</code></td><td><code>false</code></td><td>Optional sub-menus under each strategy group</td></tr>
-      <tr><td><code>UI_SHOW_{EMA_RSI_ST,BB_RSI,PA,ORB}_{BACKTEST,PAPER,LIVE,HISTORY}</code></td><td><code>true</code></td><td>Per-strategy submenu toggles &mdash; hide individual links (e.g., hide Backtest but keep Paper + Live) within a still-visible mode</td></tr>
-      <tr><td><code>UI_SHOW_PA_LIVE_HARNESS</code></td><td><code>false</code></td><td>Show "Live (Harness)" inside the PA group</td></tr>
-      <tr><td><code>UI_SHOW_PA_PATTERN_BACKTEST</code></td><td><code>true</code></td><td>Show "Pattern Test" inside the PA group</td></tr>
-      <tr><td><code>UI_SHOW_LOGS</code> / <code>UI_SHOW_TRADE_LOGS</code></td><td><code>true</code></td><td>System menu items (LOGS button on Settings top-bar; Trade Logs in System group)</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Paper Trade ───────────────────────────────────── -->
-  <div class="env-group">Paper Investment Pool (per broker, not per strategy)</div>
-  <p style="margin:6px 0 10px 0; color:var(--text-secondary);">There are no per-strategy <code>*_PAPER_CAPITAL</code> keys. Paper investment is pooled by broker: EMA_RSI_ST reads <code>ZERODHA_INV_AMOUNT</code>; BB_RSI / PA / ORB read <code>FYERS_INV_AMOUNT</code>. Paper trade P&amp;L is added to / subtracted from the pool.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>ZERODHA_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Zerodha-brokered strategies (<strong>EMA_RSI_ST</strong>)</td></tr>
-      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Paper investment pool for Fyers-brokered strategies (<strong>BB_RSI + PA + ORB</strong>)</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Backtest ──────────────────────────────────────── -->
-  <div class="env-group g-purple">Backtest</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BACKTEST_CAPITAL</code></td><td><code>100000</code></td><td>Starting capital for backtest. (Date range is entered in the Backtest UI per-run, not via env &mdash; there are no <code>BACKTEST_FROM</code>/<code>BACKTEST_TO</code> keys.)</td></tr>
-      <tr><td><code>BACKTEST_OPTION_SIM</code></td><td><code>true</code></td><td>Simulate option prices from NIFTY spot (legacy bar-based backtest only; Replay uses recorded option ticks)</td></tr>
-      <tr><td><code>BACKTEST_DELTA</code></td><td><code>0.55</code></td><td>Option delta for simulation</td></tr>
-      <tr><td><code>BACKTEST_THETA_DAY</code></td><td><code>10</code></td><td>Theta decay per day (points)</td></tr>
-      <tr><td><code>BACKTEST_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Slippage points per trade</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Capital Protection ────────────────────────────── -->
-  <div class="env-group g-red">Capital Protection</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>LTP_STALE_THRESHOLD_SEC</code></td><td><code>15</code></td><td>Warn if no fresh LTP for this many seconds</td></tr>
-      <tr><td><code>HARD_SL_ENABLED</code></td><td><code>false</code></td><td>Place SL-M order at exchange on every entry</td></tr>
-      <tr><td><code>HARD_SL_DELTA</code></td><td><code>0.5</code></td><td>Delta multiplier for hard SL calculation</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Telegram ──────────────────────────────────────── -->
-  <div class="env-group g-cyan">Telegram (Optional)</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td><em>(blank)</em></td><td>Bot token from @BotFather</td></tr>
-      <tr><td><code>TELEGRAM_CHAT_ID</code></td><td><em>(blank)</em></td><td>Your Telegram chat ID</td></tr>
-      <tr><td><code>TG_ENABLED</code></td><td><code>true</code></td><td><strong>Master gate</strong> &mdash; when <code>false</code>, mutes all alerts</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_STARTED</code></td><td><code>true</code></td><td>Session-start alerts per strategy</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_ENTRY</code></td><td><code>true</code></td><td>Trade-entry alerts per strategy</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_EXIT</code></td><td><code>true</code></td><td>Trade-exit alerts per strategy</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA}_SIGNALS</code></td><td><code>true/false/false</code></td><td>Candle-close skip/signal reasoning (EMA_RSI_ST/BB_RSI/PA only &mdash; no ORB SIGNALS)</td></tr>
-      <tr><td><code>TG_{EMA_RSI_ST,BB_RSI,PA,ORB}_DAYREPORT</code></td><td><code>true</code></td><td>Per-strategy day summary on session stop</td></tr>
-      <tr><td><code>TG_DAYREPORT_CONSOLIDATED</code></td><td><code>true</code></td><td>One combined day report at 15:30 IST across all modes</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Backup & Data ─────────────────────────────────── -->
-  <div class="env-group g-orange">Backup &amp; Data Snapshots</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>BACKUP_ENABLED</code></td><td><code>true</code></td><td>Take a daily downloadable snapshot of <code>~/trading-data/</code>; surfaces the download-nag banner until you grab it</td></tr>
-      <tr><td><code>BACKUP_HOUR_IST</code></td><td><code>16</code></td><td>IST hour to cut the daily snapshot (after market close)</td></tr>
-      <tr><td><code>BACKUP_RETAIN_DAYS</code></td><td><code>14</code></td><td>Auto-delete snapshots older than this many days</td></tr>
-      <tr><td><code>BACKUP_TG_ENABLED</code></td><td><code>false</code></td><td>Telegram heartbeat when the daily backup snapshot is ready</td></tr>
-    </tbody>
-  </table>
-
-  <!-- ── Display & Cache ───────────────────────────────── -->
-  <div class="env-group">Display &amp; Cache</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>CHART_ENABLED</code></td><td><code>true</code></td><td>Show the live NIFTY candlestick chart on paper/live status pages</td></tr>
-      <tr><td><code>NIFTY_SPOT_FALLBACK</code></td><td><code>24000</code></td><td>Fallback NIFTY spot price if the feed is unavailable</td></tr>
-      <tr><td><code>CACHE_MAX_DAYS</code></td><td><code>60</code></td><td>Max days to retain cached candle data</td></tr>
-    </tbody>
-  </table>
-</section>
-
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 8. AUTH STATUS ROUTES                                      -->
-<!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section green" id="auth-routes">
-  <h2><span class="section-icon icon-green">&#128268;</span> 8. Auth Status Routes</h2>
-
-  <p>Use these endpoints to check broker authentication status and manage tokens.</p>
+  <p>These are the handful of commands you'll actually use. You don't need to memorise them &mdash; just know what each one is for.</p>
 
   <table>
-    <thead><tr><th>Method</th><th>Route</th><th>Description</th></tr></thead>
+    <thead><tr><th>Command</th><th>What it does &mdash; and when you run it</th></tr></thead>
     <tbody>
       <tr>
-        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
-        <td><code>/auth/status</code></td>
-        <td>Check Fyers authentication status. Returns token validity and expiry info.</td>
+        <td><code>npm install</code></td>
+        <td>Downloads all the building blocks the app needs. Run it <strong>once</strong> after you first get the code (and again only if the building blocks are updated).</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
-        <td><code>/auth/zerodha/status</code></td>
-        <td>Check Zerodha Kite Connect authentication status.</td>
+        <td><code>npm run dev</code></td>
+        <td>Starts the app in "development" mode using <em>nodemon</em>, which auto-restarts it every time you edit a file. Great while tinkering on your own machine; you'll see changes without stopping and starting by hand.</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(88,166,255,0.15);color:var(--accent-blue);">GET</code></td>
-        <td><code>/auth/status/all</code></td>
-        <td>Combined status for both Fyers and Zerodha brokers in a single response.</td>
+        <td><code>npm start</code></td>
+        <td>Starts the app plainly, with no auto-restart. It's the same as running <code>node src/app.js</code>. A simple way to run it once without PM2.</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(248,81,73,0.15);color:var(--accent-red);">GET</code></td>
-        <td><code>/auth/zerodha/logout</code></td>
-        <td>Clear Zerodha token and force re-authentication.</td>
+        <td><code>node -c src/app.js</code></td>
+        <td>A quick spell-check for the code &mdash; it reads the main file and confirms there are no obvious typos that would stop it starting, <em>without</em> actually running it. Fast way to sanity-check before deploying. (There's no separate test or build step in this project.)</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(88,166,255,0.15);color:var(--accent-blue);">GET</code></td>
-        <td><code>/auth/socket-health</code></td>
-        <td>Broker-socket health JSON polled by every page (the red "Broker socket disconnected / auth failed" banner). Reports <code>broken</code>, <code>reason</code> (<code>auth-failed</code> / <code>down</code>), and downtime.</td>
+        <td><code>pm2 startOrRestart ecosystem.config.js --update-env</code></td>
+        <td>The production reload. It (re)starts the app under PM2 using the project's settings file (<code>ecosystem.config.js</code>), picking up the latest memory limits and settings. This is what the automatic deployment runs on the server after new code arrives.</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(210,153,34,0.15);color:var(--accent-orange);">GET</code></td>
-        <td><code>/auth/callback</code> &middot; <code>/auth/zerodha/callback</code></td>
-        <td>OAuth redirect targets &mdash; the broker calls these after login to deliver the auth code. Open paths (bypass <code>API_SECRET</code>).</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h3>Login Endpoints</h3>
-  <table>
-    <thead><tr><th>Method</th><th>Route</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
-        <td><code>/auth/login</code></td>
-        <td>Initiates Fyers OAuth flow. Redirects browser to Fyers login page.</td>
+        <td><code>pm2 start src/app.js --name trade</code></td>
+        <td>First-time launch under PM2, naming the app <code>trade</code>. After this, PM2 keeps it alive and restarts it if it crashes.</td>
       </tr>
       <tr>
-        <td><code style="background:rgba(63,185,80,0.15);color:var(--accent-green);">GET</code></td>
-        <td><code>/auth/zerodha/login</code></td>
-        <td>Initiates Zerodha OAuth flow. Redirects browser to Kite login page.</td>
+        <td><code>pm2 startup &amp;&amp; pm2 save</code></td>
+        <td>Tells the server to start the app on its own after any reboot. One-time step.</td>
       </tr>
     </tbody>
   </table>
 
   <div class="note note-info">
-    <strong>Daily Workflow:</strong> Before market open each trading day, visit <code>/auth/status/all</code> to verify both tokens are valid. If expired, use the respective <code>/login</code> endpoints to re-authenticate.
+    <strong>How new code reaches the server.</strong> When approved changes are saved to the project's main branch, the server picks them up automatically: it selects Node 16, installs any new building blocks, and reloads the app with <code>pm2 startOrRestart ecosystem.config.js --update-env</code>. You usually don't run these by hand &mdash; it happens for you.
   </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
-<!-- 9. DATA STORAGE                                            -->
+<!-- 6. BROKERS                                                  -->
 <!-- ═══════════════════════════════════════════════════════════ -->
-<section class="section orange" id="storage">
-  <h2><span class="section-icon icon-orange">&#128451;</span> 9. Data Storage</h2>
+<section class="section blue" id="brokers">
+  <h2><span class="section-icon icon-blue">&#128273;</span> 6. Logging the brokers in (tokens)</h2>
 
-  <p>All persistent data is stored in <code>~/trading-data/</code>, which lives <strong>outside</strong> the project directory. This ensures data survives code deployments, git pulls, and PM2 restarts.</p>
+  <p>The app can't see prices or place orders until you log the brokers in. You do this from the app's own login page in the browser &mdash; it sends you to Fyers (and Zerodha), you sign in there, and each broker hands back a <strong>login token</strong> (a temporary pass). The app saves those passes and uses them for the rest of the session.</p>
 
   <table>
-    <thead><tr><th>File / Directory</th><th>Purpose</th><th>Lifecycle</th></tr></thead>
+    <thead><tr><th>Broker</th><th>What it's for</th><th>Where the pass is saved</th></tr></thead>
     <tbody>
-      <tr><td><code>.fyers_token</code> / <code>.zerodha_token</code></td><td>Broker OAuth tokens</td><td>Refreshed daily</td></tr>
-      <tr><td><code>paper_trades.json</code> / <code>bb_rsi_paper_trades.json</code> / <code>pa_paper_trades.json</code> / <code>orb_paper_trades.json</code></td><td>Per-mode paper trade sessions (one row per session)</td><td>Persistent, in-place updates</td></tr>
-      <tr><td><code>live_trades.json</code> / <code>bb_rsi_live_trades.json</code> / <code>pa_live_trades.json</code> / <code>orb_live_trades.json</code></td><td>Per-mode live trade sessions</td><td>Persistent, in-place updates</td></tr>
-      <tr><td><code>{swing|bb_rsi|pa|orb}_paper_trades_log.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0+)</span></td><td>Crash-safe per-trade JSONL audit (cumulative)</td><td>Append-only; survives crashes via <code>O_APPEND</code></td></tr>
-      <tr><td><code>trades/{mode}_paper_trades_YYYY-MM-DD.jsonl</code> <span style="color:var(--accent-orange);">(v4.3.0)</span></td><td>Per-day trade JSONL files. Seeded with a settings snapshot + checkpoint note at session start; re-snapshotted on every Settings save that affects the mode.</td><td>Append-only; downloadable per date from <code>/trade-logs</code></td></tr>
-      <tr><td><code>ticks/YYYY-MM-DD/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Recorded spot / option / VIX ticks &mdash; source of truth for <code>/replay</code>. Gated by <code>TICK_RECORDER_ENABLED</code>.</td><td>Append-only; auto-pruned per <code>TICK_RECORDER_RETAIN_DAYS</code> (default 30)</td></tr>
-      <tr><td><code>_replay_trades/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Replay outputs &mdash; <strong>snapshot mode</strong> (uses session-start settings; deterministic A/A)</td><td>Per-replay folders; never merged with canonical paper logs</td></tr>
-      <tr><td><code>_replay_trades_sim/</code> <span style="color:var(--accent-green);">(v4.6.0)</span></td><td>Replay outputs &mdash; <strong>current-settings mode</strong> (uses live <code>process.env</code>; deterministic A/B)</td><td>Per-replay folders; safe to delete after analysis</td></tr>
-      <tr><td><code>historical_pnl.json</code></td><td>One-time past P&amp;L baselines per broker (Kite + Fyers)</td><td>Persistent</td></tr>
-      <tr><td><code>.active_ema_rsi_st_position.json</code> / <code>.active_bb_rsi_position.json</code> / <code>.active_pa_position.json</code></td><td>Crash recovery &mdash; persisted active position per mode (EMA_RSI_ST / BB_RSI / PA only)</td><td>Created on entry, removed on exit. ORB does <strong>not</strong> currently persist (gap).</td></tr>
-      <tr><td><code>backtest_cache/</code></td><td>Cached historical candles</td><td>90-day auto-prune</td></tr>
-      <tr><td><code>candle_cache/</code></td><td>Live candle cache</td><td>60-day trim (<code>CACHE_MAX_DAYS</code>)</td></tr>
-      <tr><td><code>reports/</code></td><td>Daily trade reports</td><td>Persistent</td></tr>
+      <tr><td><strong>Fyers</strong></td><td>The live price feed for every strategy, plus real orders for some of them.</td><td><code>~/trading-data/.fyers_token</code></td></tr>
+      <tr><td><strong>Zerodha</strong></td><td>Real orders for the other strategies.</td><td><code>~/trading-data/.zerodha_token</code></td></tr>
     </tbody>
   </table>
-
-  <h3>Directory Structure</h3>
-  <pre><code><span class="var">~/trading-data/</span>
-  <span class="cmt">|--</span> <span class="str">.fyers_token</span> / <span class="str">.zerodha_token</span>                <span class="cmt"># Broker OAuth tokens</span>
-  <span class="cmt">|--</span> <span class="str">paper_trades.json</span>                            <span class="cmt"># EMA_RSI_ST paper sessions</span>
-  <span class="cmt">|--</span> <span class="str">bb_rsi_paper_trades.json</span>                      <span class="cmt"># BB_RSI paper sessions</span>
-  <span class="cmt">|--</span> <span class="str">pa_paper_trades.json</span>                         <span class="cmt"># PA paper sessions</span>
-  <span class="cmt">|--</span> <span class="str">orb_paper_trades.json</span>                        <span class="cmt"># ORB paper sessions (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="str">live_trades.json</span>                             <span class="cmt"># EMA_RSI_ST live sessions</span>
-  <span class="cmt">|--</span> <span class="str">bb_rsi_live_trades.json</span>                       <span class="cmt"># BB_RSI live sessions</span>
-  <span class="cmt">|--</span> <span class="str">pa_live_trades.json</span>                          <span class="cmt"># PA live sessions</span>
-  <span class="cmt">|--</span> <span class="str">orb_live_trades.json</span>                         <span class="cmt"># ORB live sessions (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="str">historical_pnl.json</span>                          <span class="cmt"># One-time P&amp;L baselines per broker</span>
-  <span class="cmt">|--</span> <span class="str">{swing|bb_rsi|pa|orb}_paper_trades_log.jsonl</span> <span class="cmt"># Cumulative JSONL audit</span>
-  <span class="cmt">|--</span> <span class="var">trades/</span>                                      <span class="cmt"># Per-day JSONL trade files</span>
-  <span class="cmt">|     |--</span> <span class="str">{mode}_paper_trades_YYYY-MM-DD.jsonl</span>     <span class="cmt"># Seeded with settings snapshot</span>
-  <span class="cmt">|--</span> <span class="var">ticks/YYYY-MM-DD/</span>                            <span class="cmt"># Spot/option/VIX tick recordings (v4.6.0)</span>
-  <span class="cmt">|     |--</span> <span class="str">*.jsonl</span>                                 <span class="cmt"># Source of truth for /replay</span>
-  <span class="cmt">|--</span> <span class="var">_replay_trades/</span>                              <span class="cmt"># Replay output - snapshot mode (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="var">_replay_trades_sim/</span>                          <span class="cmt"># Replay output - current settings (v4.6.0)</span>
-  <span class="cmt">|--</span> <span class="str">.active_ema_rsi_st_position.json</span>                  <span class="cmt"># Crash recovery (swing)</span>
-  <span class="cmt">|--</span> <span class="str">.active_bb_rsi_position.json</span>                  <span class="cmt"># Crash recovery (bb_rsi)</span>
-  <span class="cmt">|--</span> <span class="str">.active_pa_position.json</span>                     <span class="cmt"># Crash recovery (PA)</span>
-  <span class="cmt">|     (ORB positions don't persist yet - see note below)</span>
-  <span class="cmt">|--</span> <span class="var">backtest_cache/</span>                              <span class="cmt"># Historical candles (90-day auto-prune)</span>
-  <span class="cmt">|--</span> <span class="var">candle_cache/</span>                                <span class="cmt"># Live candle cache (60-day trim)</span>
-  <span class="cmt">|--</span> <span class="var">reports/</span>                                     <span class="cmt"># Daily trade reports</span></code></pre>
-
-  <div class="note note-warn">
-    <strong>Backup:</strong> The <code>~/trading-data/</code> directory contains all trade history, tokens, JSONL audit, and tick recordings. Back it up regularly, especially before any EC2 instance changes or migrations. The <code>ticks/</code> sub-tree is the heaviest contributor (&sim;10 MB/day across all streams &mdash; 30 days &asymp; 300 MB). Lower <code>TICK_RECORDER_RETAIN_DAYS</code> if EBS is tight.
-  </div>
 
   <div class="note note-danger">
-    <strong>Crash-recovery gap (v4.6.0):</strong> <code>src/utils/positionPersist.js</code> currently only handles EMA_RSI_ST / BB_RSI / PA. ORB positions do <strong>not</strong> survive a process crash &mdash; if ORB holds an open position when the bot restarts, the position is orphaned at the broker and not reconciled by <code>app.js</code> boot logic. Add a <code>saveORBPosition()</code> helper (mirroring the existing EMA_RSI_ST/BB_RSI/PA pattern) before relying on ORB for unattended live trading.
+    <strong>Most common gotcha: the Fyers pass expires daily.</strong> The Fyers login token stops working after about a day. When it's expired, running a <em>backtest</em> (testing on past data) comes back with "no historical candles" or <strong>0 candles</strong> &mdash; it looks like a data problem, but it almost always just means the <strong>Fyers token has expired</strong>. The fix is simple: <strong>log in to Fyers again</strong> from the app, and backtests work immediately. It does <em>not</em> mean the dates are wrong or the strategy is broken.
   </div>
 
+  <p>Because these passes are saved under <code>~/trading-data/</code> (see the next section), they survive code updates and restarts &mdash; you only log in again when a pass actually expires.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 7. DATA STORAGE                                             -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="data">
+  <h2><span class="section-icon icon-cyan">&#128190;</span> 7. Where your data is kept</h2>
+
+  <p>Everything the app needs to remember &mdash; your trade history, your broker passes, your recorded price data &mdash; lives in a folder called <code>~/trading-data/</code>, which sits <strong>outside</strong> the app's code folder. That's on purpose and it's important:</p>
+
+  <div class="note note-success">
+    <strong>Your history is safe across updates.</strong> Because the data lives outside the code folder, pulling new code or restarting the app <strong>never</strong> wipes your trades or your broker logins. New versions of the app come and go; your data stays put.
+  </div>
+
+  <p>Here's what's in that folder, in plain terms &mdash; you rarely need to open any of it, but it helps to know it's there:</p>
+
+  <table>
+    <thead><tr><th>What's in it</th><th>In plain words</th></tr></thead>
+    <tbody>
+      <tr><td><code>.fyers_token</code> / <code>.zerodha_token</code></td><td>Your broker login passes (see Section 6).</td></tr>
+      <tr><td><code>*_paper_trades.json</code> / <code>*_live_trades.json</code></td><td>Your saved trades &mdash; separate files for each strategy, and separate ones for practice ("paper") vs real money ("live").</td></tr>
+      <tr><td><code>.active_*_position.json</code></td><td>A safety snapshot of any open trade, so that if the app restarts mid-trade it can pick the trade back up. (Kept for most strategies.)</td></tr>
+      <tr><td><code>trades/</code> and <code>*_log.jsonl</code></td><td>A day-by-day written record of every trade &mdash; the permanent audit trail.</td></tr>
+      <tr><td><code>ticks/</code></td><td>Recorded price ticks for each day. These let you "replay" a past day exactly as it happened, to test tweaks safely after market hours.</td></tr>
+      <tr><td><code>backtest_cache/</code> / <code>candle_cache/</code></td><td>Saved copies of past price data so testing is faster. The app cleans these up automatically.</td></tr>
+      <tr><td><code>reports/</code></td><td>Daily trade summary reports.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 8. SETTINGS                                                 -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section purple" id="settings">
+  <h2><span class="section-icon icon-purple">&#128295;</span> 8. Changing settings</h2>
+
+  <p>You don't edit files to change how the app behaves &mdash; you use the <strong>Settings page</strong> inside the app (there's a "Settings" link in the menu). Every switch and number you can change there &mdash; which strategies are on, how much it's allowed to lose in a day, what time it stops trading, and so on &mdash; is saved and used the next time a strategy runs.</p>
+
+  <ul>
+    <li><strong>Each strategy has its own pages.</strong> Every strategy gives you three: a <strong>Paper</strong> page (practice), a <strong>Live</strong> page (real money), and a <strong>Backtest</strong> page (test on the past). You open the one you want from the menu.</li>
+    <li><strong>Settings are just labelled switches.</strong> Behind the scenes each setting is a named on/off switch or number (what programmers call an "environment variable"), but on the Settings page they're shown as plain toggles and boxes you fill in.</li>
+    <li><strong>Every change is remembered with your notes.</strong> When you save the Settings page it can tag the change with a one-line note, and it writes a snapshot of the settings into that day's trade record &mdash; so you always know exactly which settings produced which trades.</li>
+  </ul>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 9. MODES                                                    -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section red" id="modes">
+  <h2><span class="section-icon icon-red">&#127919;</span> 9. Practice, Real money &amp; Testing</h2>
+
+  <p>Every strategy can run in three ways. It's worth understanding the difference before you ever risk real money.</p>
+
+  <table>
+    <thead><tr><th>Mode</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Paper (practice)</strong></td><td>Real live prices, but pretend money &mdash; no real orders are ever placed. This is the safe way to watch a strategy work and the "source of truth" everything else is checked against.</td></tr>
+      <tr><td><strong>Live (real money)</strong></td><td>Real orders through your broker. Locked behind two safety switches (below) so it can't fire by accident.</td></tr>
+      <tr><td><strong>Backtest (test on the past)</strong></td><td>Runs the strategy over old days to see how it would have done. Needs a valid Fyers login for the historical prices (see Section 6).</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The two safety switches on real-money trading</h3>
+  <p>Placing a real order is deliberately hard to do by accident. <strong>Two</strong> separate switches must both be set the right way before a single real order can go out:</p>
+
+  <div class="note note-danger">
+    <strong>1. The strategy's own live switch</strong> (for example <code>ORB_LIVE_ENABLED</code>) must be turned on, <strong>and 2. the global "dry-run" switch</strong> <code>LIVE_HARNESS_DRY_RUN</code> must be turned <em>off</em>. By default the dry-run switch is <strong>on</strong>, which means even a "Live" page only <em>pretends</em>: it writes down the order it <em>would</em> have placed but sends nothing to the broker. A fresh install therefore cannot place a real trade until you deliberately turn dry-run off.
+  </div>
+
+  <p>The safe habit: prove a strategy behaves the same in practice and in "pretend live" first &mdash; only then turn the dry-run switch off for real trading.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 10. OPEN IT & DOCS                                          -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section green" id="open">
+  <h2><span class="section-icon icon-green">&#127760;</span> 10. Opening it &amp; finding the guides</h2>
+
+  <ol class="steps">
+    <li>
+      <strong>Open the dashboard in a browser.</strong> Type your server's address with <code>https</code> and port <code>3000</code>:
+      <pre><code>https://YOUR_SERVER_IP:3000</code></pre>
+      On your own laptop that's <code>https://localhost:3000</code>.
+    </li>
+    <li>
+      <strong>Accept the one-time security warning.</strong> Because the certificate is self-signed (Section 2), the browser shows a "your connection is not private" page the first time. That's expected &mdash; click <em>Advanced</em>, then <em>Proceed / Continue</em>. It's your own server, so it's safe.
+    </li>
+    <li>
+      <strong>Log the brokers in.</strong> From the dashboard, use the login page to sign in to Fyers (and Zerodha). Now the app can see prices and, once you allow it, trade.
+    </li>
+    <li>
+      <strong>Read the strategy guides on the Docs page.</strong> There's a <strong>Docs</strong> link in the menu (or go to <code>/docs</code>). It lists the plain-English guides for each strategy &mdash; for example the Opening Range Breakout (ORB) guide &mdash; kept alongside this setup guide.
+    </li>
+  </ol>
+
   <div class="note note-info">
-    <strong>Sync to Local:</strong> The Dashboard has a <strong>Sync to Local</strong> button (<code>/sync/info</code> for size preview, <code>/sync/download-all</code> for a <code>tar.gz</code> of the entire directory). Server &rarr; client only &mdash; no upload path. Mirror EC2 trade data + tick recordings without SSH.
+    <strong>The Docs page is just this folder, shown in the browser.</strong> Any guide placed in the app's <code>documents/</code> folder shows up on the <code>/docs</code> page automatically, so that's the one place to look for how each strategy works.
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 11. TROUBLESHOOTING                                         -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<section class="section red" id="trouble">
+  <h2><span class="section-icon icon-red">&#9888;</span> 11. When something goes wrong</h2>
+
+  <table>
+    <thead><tr><th>What you see</th><th>What it usually means &amp; the fix</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>A backtest returns <strong>"0 candles"</strong> or "no historical candles"</td>
+        <td>Almost always an <strong>expired Fyers login</strong>, not a data or date problem. <strong>Log in to Fyers again</strong> from the app and re-run &mdash; it works immediately.</td>
+      </tr>
+      <tr>
+        <td>The browser warns <strong>"your connection is not private"</strong></td>
+        <td>Normal on first visit &mdash; the certificate is self-signed. Click <em>Advanced</em> then <em>Proceed</em>. It's your own server.</td>
+      </tr>
+      <tr>
+        <td>The app <strong>won't start / keeps stopping</strong></td>
+        <td>Usually the security certificate is missing or the settings file has a bad value. Make sure you did the certificate step (Section 4, step 4) and that your <code>.env</code> is filled in. The app deliberately stops itself (rather than restarting forever) when the certificate or settings are wrong, so PM2 doesn't loop.</td>
+      </tr>
+      <tr>
+        <td>A "Live" page <strong>isn't placing real orders</strong></td>
+        <td>Expected unless you've thrown <em>both</em> safety switches (Section 9): the strategy's own live switch on, <em>and</em> the global dry-run switch off. Until then, Live only pretends.</td>
+      </tr>
+      <tr>
+        <td>Can't <strong>reach the dashboard</strong> at all</td>
+        <td>Check the address uses <code>https</code> and port <code>3000</code>, and that the server's firewall allows port 3000. On the server, <code>pm2 status</code> shows whether the app is running.</td>
+      </tr>
+      <tr>
+        <td>New code <strong>didn't take effect</strong> on the server</td>
+        <td>Make sure the reload used the settings file: <code>pm2 startOrRestart ecosystem.config.js --update-env</code>. Reloading without naming that file reuses the old settings.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note note-warn">
+    <strong>Last updated: 16 July 2026.</strong> This guide was rewritten in plain English for non-technical readers. Every command and file path above was checked against the project's own README, its startup settings, and the deployment steps.
   </div>
 </section>
 
 </div><!-- /.container -->
 
-<!-- ═══════════════════════════════════════════════════════════ -->
-<!-- FOOTER                                                     -->
-<!-- ═══════════════════════════════════════════════════════════ -->
 <footer class="page-footer">
-  Palani Andawar Trading System &mdash; Setup Guide &nbsp;|&nbsp; v4.6.0 &nbsp;|&nbsp; 2026-05-21 &middot; Rechecked 2026-06-15
+  Application Setup Guide (plain-English edition) &nbsp;|&nbsp; Palani Andawar Trading System &nbsp;|&nbsp; updated 16 July 2026
 </footer>
 
 </body>

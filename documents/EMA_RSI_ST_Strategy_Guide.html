@@ -420,320 +420,364 @@
 </head>
 <body>
 <div class="cover">
-  <div class="badge">Strategy Reference</div>
-  <h1>EMA_RSI_ST STRATEGY</h1>
-  <div class="sub">EMA20/EMA50 + RSI + SuperTrend · EMA21 Trailing Stop</div>
-  <div class="sub2">NIFTY index options · Zerodha (live) · Fyers (data) · 5 / 15-min</div>
+  <div class="badge">Plain-English Guide</div>
+  <h1>EMA_RSI_ST Strategy</h1>
+  <div class="sub">Ride a trend: buy a call when the market is clearly going up, a put when it's clearly going down</div>
+  <div class="sub2">NIFTY index options &middot; Zerodha (live orders) &middot; Fyers (price data) &middot; 5-minute candles</div>
   <div class="version-box">
-    <strong>PSAR stripped 2026-06-12</strong> — direction is now SuperTrend(10,3). Entry is a <strong>4-gate</strong> check (EMA alignment + RSI band + SuperTrend side + close beyond the base EMA), and a confirmation candle times the fill. Replaces the EMA21-touch / Parabolic-SAR system.<br/>
-    Code: <code>src/strategies/strategy1_sar_ema_rsi.js</code> (<code>getSignal</code>) — shared by all modes.<br/>
-    <span style="color:var(--text3);">(2026-07-05) verification recheck vs code + README — added the 4th entry gate (<code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code>, on), the confirmation candle (<code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code>, on), the negative-candle stop (<code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code>) and the optional N-bar candle trail. The Settings tables below list the code <code>||</code> fallback defaults (what runs with the key unset); the Settings-UI seed differs for several keys — see the callout in §10.</span>
+    <strong>Plain-English edition &mdash; updated 2026-07-16.</strong> This guide explains the whole strategy in everyday language, with a glossary up front and a worked example in real rupees. Every setting and default here was read straight from the live code and the README.<br/>
+    <span style="color:var(--text3);">Nothing about how the strategy behaves has been changed &mdash; only how it's written. (One number was corrected: the option safety-stop default is <strong>15%</strong>, not 25%.)</span>
   </div>
   <div class="toc">
     <div class="toc-title">Contents</div>
-    <a href="#s1"><span class="num">01</span> Strategy Overview</a>
-    <a href="#s2"><span class="num">02</span> Indicators</a>
-    <a href="#s3"><span class="num">03</span> Trading Modes</a>
-    <a href="#s4"><span class="num">04</span> Entry Logic — 4 Conditions</a>
-    <a href="#s5"><span class="num">05</span> Stop Loss &amp; Trailing</a>
-    <a href="#s6"><span class="num">06</span> Exit Logic</a>
-    <a href="#s7"><span class="num">07</span> Same-Side Cooldown</a>
-    <a href="#s8"><span class="num">08</span> Risk Guards</a>
-    <a href="#s9"><span class="num">09</span> Charts</a>
-    <a href="#s10"><span class="num">10</span> Settings Reference</a>
-    <a href="#s11"><span class="num">11</span> Expiry &amp; Live Gating</a>
-    <a href="#s12"><span class="num">12</span> Removed vs Old Strategy</a>
+    <a href="#s1"><span class="num">01</span> The idea in one minute</a>
+    <a href="#s2"><span class="num">02</span> Words you'll see (plain meanings)</a>
+    <a href="#s3"><span class="num">03</span> Where you run it &mdash; Paper, Live, Backtest</a>
+    <a href="#s4"><span class="num">04</span> Step 1 &mdash; The 4-point entry checklist</a>
+    <a href="#s5"><span class="num">05</span> Step 2 &mdash; Wait for one candle of proof</a>
+    <a href="#s6"><span class="num">06</span> Step 3 &mdash; The moving safety line</a>
+    <a href="#s7"><span class="num">07</span> Step 4 &mdash; When we sell</a>
+    <a href="#s8"><span class="num">08</span> The cool-downs &mdash; no chasing the same loss</a>
+    <a href="#s9"><span class="num">09</span> Safety limits &amp; the "too jumpy" filter</a>
+    <a href="#s10"><span class="num">10</span> All the settings, explained</a>
+    <a href="#s11"><span class="num">11</span> Expiry &amp; going live (real money)</a>
+    <a href="#s12"><span class="num">12</span> What changed from the old strategy</a>
   </div>
 </div>
 
 <!--LIVE_STATUS_PANEL-->
 
+<!-- ════════════════════════════════════════════════ 01 ═══ -->
 <div class="section">
-  <h2 id="s1">01 — Strategy Overview</h2>
-  <p>A deliberately simple, chart-driven strategy. <strong>Four gates</strong> decide entries — an EMA alignment,
-  an RSI band, the SuperTrend side, and a close beyond the base EMA — then a confirmation candle times the fill, and the
-  stop is seeded at the previous candle's extreme and trailed to EMA21 candle-by-candle.
-  The same <code>getSignal()</code> drives Backtest, Paper, Live, Replay and the Live Harness, so all modes agree by construction.</p>
+  <h2 id="s1">01 &mdash; The idea in one minute</h2>
+  <p>This strategy is a <strong>trend-follower</strong>. It sits and watches NIFTY, and it only buys when <strong>four different signs all point the same way at once</strong> &mdash; a strong hint that the market has really picked a direction. Then it buys a single option and rides the move for as long as it lasts.</p>
+  <ul style="margin:8px 0 8px 18px;line-height:1.7;">
+    <li>When everything points <strong>up</strong> &rarr; we buy a <strong>CE (a call option)</strong>, which gains when NIFTY rises.</li>
+    <li>When everything points <strong>down</strong> &rarr; we buy a <strong>PE (a put option)</strong>, which gains when NIFTY falls.</li>
+  </ul>
+  <p>We only ever hold <strong>one option at a time</strong> &mdash; no pairs, no hedges. We watch <strong>5-minute candles</strong> (a candle is one 5-minute price bar; more on that below). Once we're in a trade, we keep a <strong>safety line</strong> that climbs along behind the price. As long as the trend keeps going, we keep holding; the moment the trend clearly breaks, that safety line gets touched and we're out.</p>
+
   <div class="card blue-border">
-    <h3 class="blue">In one line</h3>
-    <p><strong>CE</strong> = EMA20 above EMA50 &amp; RSI in the CE band &amp; SuperTrend bullish &amp; the signal candle closes above the base EMA. <strong>PE</strong> = mirror.
-    By default a <em>confirmation candle</em> arms on the signal bar's close and the fill fires intra-bar when the next candle crosses that close.
-    Initial stop = previous candle low (CE) / high (PE); thereafter the SL trails to EMA21 (tighten-only), optionally tightened by an N-bar candle trail.
-    Exits: points-stop · option-stop · trailed-SL · negative-candle stop · EMA21 touch-back · opposite signal · exit-before-close · EOD.</p>
+    <h3 class="blue">The everyday version</h3>
+    <p>Think of merging onto a highway behind a fast car. You don't pull out until the road is genuinely clear &mdash; you want <em>several</em> green lights, not just one. Once you're following, you keep a safe distance behind the car and you <em>tighten</em> that distance as you go, so you can never fall too far back. You stay behind it until it clearly turns off &mdash; then you take your exit. The four entry checks are your "is the road clear?" and the moving safety line is your "safe following distance."</p>
   </div>
-  <div class="note warn">There is <strong>no Parabolic SAR</strong> (removed 2026-06-12), no strength tier, no ADX, no EMA30,
-  no candle-body or distance gate, and no 3-tier trail. <strong>Breakeven-to-entry was removed</strong> — only a dead code comment remains.
-  EMA9 is only an entry input when the optional triple-stack toggle is on; otherwise it is a chart overlay (see section 12).</div>
+
+  <p>Live orders go through <strong>Zerodha</strong>; all the price data comes from <strong>Fyers</strong>. The maths never changes with the market's mood &mdash; the same rules run whether NIFTY is calm or wild.</p>
 </div>
 
+<!-- ════════════════════════════════════════════════ 02 ═══ -->
 <div class="section">
-  <h2 id="s2">02 — Indicators</h2>
+  <h2 id="s2">02 &mdash; Words you'll see (plain meanings)</h2>
+  <p>A handful of terms come up again and again. Here's each one in everyday language &mdash; keep this nearby and the rest reads easily.</p>
   <table>
-    <tr><th>Indicator</th><th>Params</th><th>Used for</th></tr>
-    <tr><td><strong>EMA 20 / EMA 50</strong></td><td>periods <code>EMA_RSI_ST_EMA_FAST</code>/<code>EMA_RSI_ST_EMA_SLOW</code>, on <code>close</code></td><td>Direction gate: EMA20 above EMA50 → CE, below → PE</td></tr>
-    <tr><td><strong>EMA 9</strong> (optional)</td><td>period <code>EMA_RSI_ST_EMA_FASTEST</code>, on <code>close</code></td><td>Only an entry input when <code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED=true</code> (gate becomes EMA9&gt;20&gt;50 / EMA9&lt;20&lt;50). Otherwise a chart overlay only</td></tr>
-    <tr><td><strong>RSI 14</strong></td><td>period 14, on close</td><td>Momentum band gate (floor + overbought/oversold cap)</td></tr>
-    <tr><td><strong>SuperTrend (10, 3)</strong></td><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code> / <code>EMA_RSI_ST_SUPERTREND_MULT</code></td><td>The only directional source: <code>trend=1</code> (line below price) → CE, <code>trend=-1</code> (line above) → PE</td></tr>
-    <tr><td><strong>EMA 21</strong></td><td>period 21, on <code>OHLC4</code></td><td>Trailing-stop line + record snapshot only — <em>not</em> an entry input</td></tr>
+    <tr><th>Term</th><th>What it really means</th></tr>
+    <tr><td><strong>Candle</strong></td><td>One 5-minute price bar. It shows where NIFTY opened, where it closed, and its high and low in those 5 minutes. A <strong>green</strong> candle closed higher than it opened; a <strong>red</strong> one closed lower. A "finished" (closed) candle is one whose 5 minutes are over.</td></tr>
+    <tr><td><strong>CE / PE</strong></td><td><strong>CE</strong> (a call) makes money when NIFTY goes <em>up</em>. <strong>PE</strong> (a put) makes money when NIFTY goes <em>down</em>. We buy only one of them at a time.</td></tr>
+    <tr><td><strong>Premium / LTP</strong></td><td>The <strong>premium</strong> is the price you pay for the option, quoted per unit (e.g. &#8377;200). <strong>LTP</strong> just means "last traded price" &mdash; the option's price right now. If the premium falls from &#8377;200 to &#8377;170, the option lost &#8377;30 of value per unit.</td></tr>
+    <tr><td><strong>Lot</strong></td><td>Options are bought in fixed bundles called lots. One NIFTY lot is <strong>75 units</strong>, so a &#8377;10 move in the premium is &#8377;750 in your pocket (or out of it).</td></tr>
+    <tr><td><strong>EMA</strong></td><td>A smoothed average of recent closing prices &mdash; a trend line that follows price with a slight lag. The number is how many candles it averages: <strong>EMA20</strong> is smooth and slow, <strong>EMA9</strong> is quick and jumpy, <strong>EMA50</strong> is the slowest. When a faster EMA sits above a slower one, the trend is up.</td></tr>
+    <tr><td><strong>RSI</strong></td><td>A 0&ndash;100 "momentum meter." Low (near 20&ndash;30) means the move down is tired; high (near 70&ndash;80) means the move up is tired. We want RSI strong enough to show real push, but not so extreme that the move is about to run out of steam.</td></tr>
+    <tr><td><strong>SuperTrend</strong></td><td>A single line that flips from below the price (it's saying "trend is up") to above the price ("trend is down"). One clean yes/no read on which way the market is leaning.</td></tr>
+    <tr><td><strong>Trailing stop (safety line)</strong></td><td>A price level that automatically closes the trade if it's hit. "Trailing" means it <em>follows</em> the price in the winning direction and only ever gets tighter &mdash; it never loosens. It's how we lock in more and more of a winner while capping a loser.</td></tr>
+    <tr><td><strong>Break-even</strong></td><td>Moving your safety line to the price you paid, so the trade can't turn into a loss. (This strategy used to do this; it has since been <em>removed</em> &mdash; see Section 12.)</td></tr>
+    <tr><td><strong>Points</strong></td><td>NIFTY index points. If NIFTY goes from 24,300 to 24,325, that's a 25-point move.</td></tr>
+    <tr><td><strong>Bid-ask spread</strong></td><td>The gap between the price you can buy an option at and the price you can sell it at. A wide gap quietly eats your profit every time you enter and exit, so a live trade is skipped if the gap is too wide.</td></tr>
+    <tr><td><strong>OI (open interest)</strong></td><td>How many option contracts are currently held open &mdash; a read on where the big money is positioned. An optional live-only check.</td></tr>
+    <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX means jumpy prices and expensive, fast-moving options &mdash; a riskier time to trade. We can tell the strategy to sit out when VIX is too high.</td></tr>
   </table>
-  <p>Warm-up: <code>max(EMA_SLOW, 30) + 5</code> candles (<strong>55</strong> at defaults) before any signal. Trading window:
-  <code>TRADE_ENTRY_START</code>–<code>TRADE_ENTRY_END</code> IST (code default 09:30–14:00; Settings UI seeds a 10:30 start).</p>
-  <div class="note warn">Parabolic SAR was removed on 2026-06-12; SuperTrend is the sole trend confirmation. The file name
-  <code>strategy1_sar_ema_rsi.js</code> is historical — there is no SAR in the entry logic anymore.</div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 03 ═══ -->
 <div class="section">
-  <h2 id="s3">03 — Trading Modes</h2>
-  <p>All five modes call the one shared <code>getSignal()</code>; only the plumbing differs.</p>
+  <h2 id="s3">03 &mdash; Where you run it: Paper, Live, Backtest</h2>
+  <p>The exact same decision-making brain runs everywhere &mdash; only the plumbing around it changes. That's on purpose: it means practice, real trading, and testing can't quietly disagree with each other.</p>
   <table>
-    <tr><th>Mode</th><th>Route</th><th>Data / Execution</th></tr>
-    <tr><td>Live</td><td><code>/ema_rsi_st-live</code></td><td>Fyers ticks → Zerodha orders (double-gated, see §11)</td></tr>
-    <tr><td>Paper</td><td><code>/ema_rsi_st-paper</code></td><td>Live Fyers ticks → simulated fills (canonical for behaviour)</td></tr>
-    <tr><td>Backtest</td><td><code>/ema_rsi_st-backtest</code></td><td>Historical candles → option-sim P&amp;L</td></tr>
-    <tr><td>Replay</td><td><code>/replay</code></td><td>Recorded ticks → drives the Paper engine</td></tr>
-    <tr><td>Sim / Harness</td><td><code>/ema_rsi_st-paper/simulate</code></td><td>Wrap the Paper/Live engine; inherit automatically</td></tr>
+    <tr><th>Mode</th><th>Page</th><th>What happens</th></tr>
+    <tr><td><strong>Paper</strong></td><td><code>/ema_rsi_st-paper</code></td><td>Practice mode. Real live prices, but pretend money &mdash; no real orders are ever sent. This is treated as the <em>official</em> behaviour: if live or backtest ever disagree with paper, paper is the one that's right.</td></tr>
+    <tr><td><strong>Live</strong></td><td><code>/ema_rsi_st-live</code></td><td>Real money through Zerodha. Locked behind <em>two</em> safety switches so it can't fire by accident (see Section 11).</td></tr>
+    <tr><td><strong>Backtest</strong></td><td><code>/ema_rsi_st-backtest</code></td><td>Runs the strategy over past days to see how it would have done. History doesn't store old option prices, so it <em>estimates</em> the option's price &mdash; a good approximation, not exact fills.</td></tr>
+    <tr><td><strong>Replay</strong></td><td><code>/replay</code></td><td>Re-runs a day you recorded, tick by tick, with either the original settings or your current ones &mdash; a safe way to test a change against real past prices after market hours.</td></tr>
   </table>
-  <p>Resolution is set by <code>TRADE_RESOLUTION</code> — <strong>3, 5 or 15-min</strong> (default 5). By default
-  (<code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code>, on) the engine arms on the <em>signal candle's</em> close and the fill fires
-  intra-bar the moment the next candle crosses that close; with the toggle off, entry evaluates intra-candle on every tick.
-  Smaller candles → tighter prev-candle stops.</p>
+  <p>The candle size is set by <code>TRADE_RESOLUTION</code> &mdash; usually <strong>5 minutes</strong>, but 3 or 15 also work. Before it will trade at all in the morning, the strategy needs about <strong>55 candles</strong> of history to "warm up" its trend lines, so it doesn't act on half-formed averages.</p>
 </div>
 
+<!-- ════════════════════════════════════════════════ 04 ═══ -->
 <div class="section">
-  <h2 id="s4">04 — Entry Logic — 4 Conditions</h2>
-  <p><strong>All four gates</strong> must agree on a fully-closed bar — the <em>signal candle</em>. The EMA gate is a
-  <em>cross-state</em> check (it holds while the alignment does, not only on the crossing bar). By default the
-  <strong>confirmation candle</strong> (<code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code>, on) means entry does <em>not</em> fire on
-  the signal candle: the engine arms on its close, then the fill fires intra-bar the moment the <strong>next</strong> candle
-  strictly crosses the signal candle's close (CE above / PE below). With the toggle off it reverts to legacy intra-candle
-  entry on the signal bar itself.</p>
+  <h2 id="s4">04 &mdash; Step 1: The 4-point entry checklist</h2>
+  <p>Before any trade, <strong>all four</strong> checks below must be true &mdash; on the same <strong>finished</strong> 5-minute candle. We call that candle the <strong>signal candle</strong>. If even one check fails, we don't trade. (For a PE, every check is simply flipped upside-down.)</p>
+
+  <div class="pipeline">
+    <div class="gate">
+      <div class="gate-num">1</div>
+      <div class="gate-content">
+        <div class="gate-name">The trend lines are stacked the right way</div>
+        <div class="gate-desc">The faster trend line (EMA20) has to sit <em>above</em> the slower one (EMA50) for a CE &mdash; that's the picture of an up-trend. There's an optional stricter version that also demands the very fast EMA9 be on top (EMA9 above EMA20 above EMA50), which throws out weak, flat setups.</div>
+        <div class="gate-rule">CE: EMA20 above EMA50 &nbsp;|&nbsp; (optional strict: EMA9 &gt; EMA20 &gt; EMA50)</div>
+      </div>
+    </div>
+    <div class="gate">
+      <div class="gate-num">2</div>
+      <div class="gate-content">
+        <div class="gate-name">Momentum is strong &mdash; but not exhausted</div>
+        <div class="gate-desc">The RSI momentum meter has to be pushing our way, yet not so extreme that the move is about to tire out. For a CE it must be above the "real push" floor but below the "overbought, don't chase" ceiling.</div>
+        <div class="gate-rule">CE: RSI above 52 and below 80 &nbsp;|&nbsp; PE: RSI below 48 and above 20</div>
+      </div>
+    </div>
+    <div class="gate">
+      <div class="gate-num">3</div>
+      <div class="gate-content">
+        <div class="gate-name">SuperTrend agrees</div>
+        <div class="gate-desc">The SuperTrend line must be on the "up" side for a CE (its line sitting <em>below</em> the price). This is the single clearest yes/no read on direction, and it's the strategy's main trend source.</div>
+        <div class="gate-rule">CE: SuperTrend line below price (up) &nbsp;|&nbsp; PE: line above price (down)</div>
+      </div>
+    </div>
+    <div class="gate">
+      <div class="gate-num">4</div>
+      <div class="gate-content">
+        <div class="gate-name">The candle actually closes on the right side</div>
+        <div class="gate-desc">The signal candle must <em>close</em> above the base trend line (EMA20) for a CE. This stops us from buying a dip that only <em>looks</em> bullish because older lines are still stacked &mdash; the price itself has to close on our side, right now.</div>
+        <div class="gate-rule">CE: close above EMA20 &nbsp;|&nbsp; PE: close below EMA20 &nbsp;(EMA9 if strict mode is on)</div>
+      </div>
+    </div>
+  </div>
+
   <div class="logic-cards">
     <div class="logic-card" style="border-left:3px solid var(--green);">
-      <div class="lc-num" style="color:var(--green2);">BUY_CE — long call</div>
-      <div class="lc-title">Bullish</div>
+      <div class="lc-num" style="color:var(--green2);">Buy a CE (call) when the market points UP</div>
+      <div class="lc-title">Bullish setup</div>
       <div class="lc-desc">
-        1. EMA alignment bullish → <code>EMA20 &gt; EMA50</code> <span style="opacity:.75;">(triple-stack: <code>EMA9 &gt; EMA20 &gt; EMA50</code>)</span><br/>
-        2. <code>RSI_CE_MIN &lt; RSI &lt; RSI_CE_MAX</code> (above momentum floor, below overbought cap)<br/>
-        3. SuperTrend bullish → <code>trend = 1</code> (line below price)<br/>
-        4. Signal candle <strong>close above the base EMA</strong> <span style="opacity:.75;">(<code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code>; base = EMA9 when triple-stack on, else EMA20)</span>
+        1. EMA20 above EMA50 (trend up)<br/>
+        2. RSI above 52 and below 80 (strong, not overheated)<br/>
+        3. SuperTrend on the up side<br/>
+        4. Candle closes above the base EMA
       </div>
-      <div class="lc-condition">→ Initial SL = previous candle LOW</div>
+      <div class="lc-condition">&rarr; first safety line = the previous candle's LOW</div>
     </div>
     <div class="logic-card" style="border-left:3px solid var(--red);">
-      <div class="lc-num" style="color:var(--red2);">BUY_PE — long put</div>
-      <div class="lc-title">Bearish</div>
+      <div class="lc-num" style="color:var(--red2);">Buy a PE (put) when the market points DOWN</div>
+      <div class="lc-title">Bearish setup</div>
       <div class="lc-desc">
-        1. EMA alignment bearish → <code>EMA20 &lt; EMA50</code> <span style="opacity:.75;">(triple-stack: <code>EMA9 &lt; EMA20 &lt; EMA50</code>)</span><br/>
-        2. <code>RSI_PE_MIN &lt; RSI &lt; RSI_PE_MAX</code> (above oversold floor, below momentum cap)<br/>
-        3. SuperTrend bearish → <code>trend = -1</code> (line above price)<br/>
-        4. Signal candle <strong>close below the base EMA</strong> <span style="opacity:.75;">(<code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code>; base = EMA9 when triple-stack on, else EMA20)</span>
+        1. EMA20 below EMA50 (trend down)<br/>
+        2. RSI below 48 and above 20 (strong, not overheated)<br/>
+        3. SuperTrend on the down side<br/>
+        4. Candle closes below the base EMA
       </div>
-      <div class="lc-condition">→ Initial SL = previous candle HIGH</div>
+      <div class="lc-condition">&rarr; first safety line = the previous candle's HIGH</div>
     </div>
   </div>
-  <div class="note">Code-default RSI band: <code>RSI_CE_MIN=52</code>, <code>RSI_CE_MAX=80</code>, <code>RSI_PE_MAX=48</code>, <code>RSI_PE_MIN=20</code>
-  (the Settings UI seeds a tighter <code>RSI_CE_MAX=70</code> / <code>RSI_PE_MIN=30</code>). The overbought/oversold caps stop you chasing exhausted moves.
-  Gate 4 (<code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code>, on) requires the signal candle to <em>close</em> on the trade side of the base EMA —
-  it blocks buying dips that close back under the fast EMA while the lines stay stacked from an earlier move. The EMA gate defaults to the 2-EMA cross
-  (<code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED=false</code>); set it true to require the EMA9&gt;20&gt;50 stack. With the confirmation candle on, entry price = the tick LTP at the confirming cross.</div>
+
+  <div class="note">The RSI numbers above (52&ndash;80 for CE, 20&ndash;48 for PE) are the built-in code defaults. The saved Settings page uses a slightly tighter band (ceiling 70 for CE, floor 30 for PE) &mdash; so a real install is a touch more cautious than these raw defaults. The "not overheated" ceiling is what keeps us from jumping onto a move that has already run too far.</div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 05 ═══ -->
 <div class="section">
-  <h2 id="s5">05 — Stop Loss &amp; Trailing</h2>
+  <h2 id="s5">05 &mdash; Step 2: Wait for one candle of proof</h2>
+  <p>Here's the part that keeps us off fakeouts: <strong>we don't buy the moment the checklist passes.</strong> The candle that passes all four checks is only the <em>signal</em>. We then wait for the <strong>very next</strong> candle to keep pushing the same way &mdash; specifically, to trade <em>past</em> the signal candle's closing price. The instant it does, we buy (we don't even wait for that candle to finish).</p>
   <div class="card green-border">
-    <h3 class="green">EMA21 trailing stop (seeded at the previous candle's extreme)</h3>
-    <p><strong>Initial SL</strong> = the prior completed candle's <strong>low (CE) / high (PE)</strong>, used as-is — no cap, no floor.</p>
-    <p><strong>Trail</strong>: at every candle close the SL is moved to the current <strong>EMA21 (OHLC4)</strong> value,
-    tighten-only (higher for CE / lower for PE; it never loosens). The new level is enforced intra-candle (tick-by-tick)
-    during the next bar; in Live it is also pushed to the broker hard-SL when <code>HARD_SL_ENABLED</code>.</p>
-    <p><strong>Optional candle trail</strong>: with <code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED=true</code>, an N-bar low (CE) / high (PE)
-    over <code>EMA_RSI_ST_CANDLE_TRAIL_BARS</code> bars (default 3) is also computed, and whichever of (EMA21, candle level) is <em>tighter</em> wins.</p>
-    <p><strong>Negative-candle stop</strong> (<code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code>, default 2, <code>0</code>=off): if a trade is still
-    in the red (option premium below entry) at the close of N candles, it is squared off — an asymmetric loss-cut that cuts losers
-    early while <em>winners keep riding the trail</em>. A hard spot-points cap <code>EMA_RSI_ST_STOP_LOSS_PTS</code> is checked first on
-    every tick, so a deep adverse excursion is clipped before the structural/trail SL when the prev-candle stop sits wider; <code>0</code> disables it.</p>
-    <p><strong>Breakeven-to-entry was removed</strong> — there is no active breakeven snap in the swing engine (only a dead code comment remains;
-    <code>BREAKEVEN_PTS</code> drives the separate Manual Tracker only).</p>
+    <h3 class="green">Why bother waiting?</h3>
+    <p>Lots of candles look great right as they close and then immediately reverse &mdash; a classic one-candle head-fake. Asking the <em>next</em> candle to push further in our direction is cheap, quick proof that the move is real and not just a single flicker. It costs us a few points of "best entry," and in return it filters out a whole category of instant losers.</p>
   </div>
-  <div class="note warn">Because the SL hugs EMA21, a candle whose range touches back through EMA21 is treated as an explicit
-  exit (see §6). Expect frequent small stop-outs in chop; tighter timeframes amplify this.</div>
+  <p>This waiting behaviour is on by default (<code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code>). If you turn it off, the strategy reverts to the older style of buying the instant the four checks pass, without waiting for proof.</p>
 </div>
 
+<!-- ════════════════════════════════════════════════ 06 ═══ -->
 <div class="section">
-  <h2 id="s6">06 — Exit Logic</h2>
-  <p>Two precedence groups: <strong>per-tick</strong> (first hit wins) and <strong>candle-close</strong> (evaluated in order at each bar close):</p>
+  <h2 id="s6">06 &mdash; Step 3: The moving safety line</h2>
+  <p>Every trade carries a <strong>safety line</strong> (a stop-loss): if the price hits it, we're out. It starts in one place and then climbs along behind the trade, only ever tightening.</p>
+
+  <h3 class="blue">Where it starts</h3>
+  <p>The moment we buy, the safety line is set to <strong>the previous candle's low</strong> (for a CE) or <strong>its high</strong> (for a PE). That's a natural "if price falls back through here, I was wrong" level &mdash; used as-is, with no fixed cap.</p>
+
+  <h3 class="purple">How it climbs &mdash; the EMA21 trail</h3>
+  <p>After that, at the close of every candle, the safety line is moved up to the <strong>EMA21</strong> line (a 21-candle trend average). It only ever moves in the winning direction &mdash; up for a CE, down for a PE &mdash; and never backs off. Because the safety line hugs EMA21, a candle that dips back and <em>touches</em> EMA21 is treated as the trend breaking, and we exit (more on that in Section 7).</p>
+
+  <div class="card yellow-border">
+    <h3>Two optional tighteners</h3>
+    <p><strong>Candle trail:</strong> you can also track the lowest low of the last 3 candles (for a CE) and use whichever line is <em>tighter</em> &mdash; the EMA21 or that recent low. It banks more of a winner. (Off in the raw code, but the saved Settings page turns it on.)</p>
+    <p><strong>Negative-candle stop:</strong> if a trade is <em>still</em> showing a loss (the option is worth less than we paid) at the close of <strong>2 candles</strong>, we simply cut it. The idea is deliberately lopsided: losers get shown the door quickly, while winners are left alone to keep riding the trail.</p>
+  </div>
+
+  <div class="note warn">There is <strong>no</strong> "move-to-break-even" step anymore &mdash; that was removed. The safety line's job is done entirely by the starting level, the EMA21 trail, and the optional tighteners above.</div>
+</div>
+
+<!-- ════════════════════════════════════════════════ 07 ═══ -->
+<div class="section">
+  <h2 id="s7">07 &mdash; Step 4: When we sell</h2>
+  <p>There's <strong>no fixed profit target</strong> &mdash; we never say "take +40% and walk away." Instead several exit rules watch the trade at once, and <strong>whichever one triggers first</strong> closes it. Some are checked on every price tick; the rest are checked when a candle finishes.</p>
   <table>
-    <tr><th>#</th><th>Exit</th><th>Rule</th></tr>
-    <tr><td>1</td><td><span class="tag tag-red">per-tick</span> Points stop</td><td>Checked first: exit once spot has moved <code>EMA_RSI_ST_STOP_LOSS_PTS</code> against entry (catastrophic cap; <code>0</code> = off)</td></tr>
-    <tr><td>2</td><td><span class="tag tag-red">per-tick</span> Option-premium stop</td><td>Exit if option LTP <code>≤ entryLtp × (1 − OPT_STOP_PCT)</code> (default 25%)</td></tr>
-    <tr><td>3</td><td><span class="tag tag-red">per-tick</span> Trailed-SL hit</td><td>CE <code>ltp ≤ SL</code> · PE <code>ltp ≥ SL</code> (SL = EMA21 trail, seeded at prev-candle extreme; optional N-bar candle trail, tighter wins)</td></tr>
-    <tr><td>4</td><td><span class="tag tag-yellow">candle-close</span> Negative-candle stop</td><td>If still red (option premium below entry) after <code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code> candles (default 2) → square off. Winners ride the trail. <code>0</code> = off</td></tr>
-    <tr><td>5</td><td><span class="tag tag-yellow">candle-close</span> EMA21 touch-back</td><td>If the candle range straddles EMA21 (<code>low ≤ EMA21 ≤ high</code>) → exit. Skipped on the entry bar</td></tr>
-    <tr><td>6</td><td><span class="tag tag-yellow">candle-close</span> Opposite signal</td><td>Holding CE and a BUY_PE fires → exit (and vice-versa)</td></tr>
-    <tr><td>7</td><td><span class="tag tag-yellow">candle-close</span> Exit before close</td><td>Square off any open position at <code>EMA_RSI_ST_EOD_EXIT_TIME</code></td></tr>
-    <tr><td>8</td><td><span class="tag tag-yellow">candle-close</span> EOD auto-stop</td><td>At <code>TRADE_STOP_TIME</code> (15:30) — square off + stop the engine</td></tr>
+    <tr><th>What sells us out</th><th>When</th><th>In plain words</th></tr>
+    <tr><td><strong>Points stop</strong></td><td>every tick</td><td>A hard "catastrophe" cap: if NIFTY moves a set number of points against us, we bail immediately. Off by default (turned on in the saved Settings, at 25 points).</td></tr>
+    <tr><td><strong>Option meltdown stop</strong></td><td>every tick</td><td>If the option's price falls <strong>15%</strong> below what we paid, we're out &mdash; even if NIFTY hasn't hit our other stops. This catches the "the option just bled away" losses.</td></tr>
+    <tr><td><strong>Safety line hit</strong></td><td>every tick</td><td>The main stop: price reaches the trailing safety line (the EMA21 trail, plus the optional tighteners). Whichever line is tighter wins.</td></tr>
+    <tr><td><strong>Negative-candle stop</strong></td><td>candle close</td><td>Still losing after 2 finished candles &rarr; cut it. Winners are never touched by this rule &mdash; they keep riding the trail.</td></tr>
+    <tr><td><strong>EMA21 touch-back</strong></td><td>candle close</td><td>If a candle's range dips back and touches the EMA21 line, the trend has broken &mdash; we exit. (Ignored on the very first candle, so we don't get shaken out instantly.)</td></tr>
+    <tr><td><strong>Opposite signal</strong></td><td>candle close</td><td>We're holding a CE and a fresh <em>PE</em> setup appears (or vice-versa) &mdash; the market has flipped, so we exit.</td></tr>
+    <tr><td><strong>Exit before close</strong></td><td>candle close</td><td>Square off any open trade at a set afternoon time (<code>EMA_RSI_ST_EOD_EXIT_TIME</code>), ahead of the final bell.</td></tr>
+    <tr><td><strong>End of day</strong></td><td>15:30</td><td>Anything still open is sold and the engine stops. We never hold overnight.</td></tr>
   </table>
-  <div class="note">The legacy time-stop is inert (only fires under the disabled <code>EMA_RSI_ST_SL_MODE=candle</code> path; the default
-  <code>ema</code> trail owns the SL). In Backtest there is no live option LTP, so the option-stop is approximated as an
-  equivalent adverse spot move (<code>OPT_STOP_PCT × est-premium ÷ delta</code>, <code>BACKTEST_DELTA≈0.55</code>); it is disabled for futures.</div>
+
+  <h3 class="green">A worked example &mdash; a CE trend day</h3>
+  <pre style="background:var(--bg2);border:1px solid var(--card-border);border-radius:8px;padding:14px 16px;overflow-x:auto;font-size:0.82rem;line-height:1.6;color:var(--text);margin:14px 0;">10:35  A 5-min candle closes at 24,352.
+       - EMA20 (24,330) is above EMA50 (24,300)        -> trend up   [check 1]
+       - RSI is 63 (above 52, below 80)                -> strong     [check 2]
+       - SuperTrend line sits below price              -> up         [check 3]
+       - The candle closed at 24,352, above EMA20      -> on-side    [check 4]
+       All four pass. This is the SIGNAL candle. We do NOT buy yet.
+
+10:40  The next candle trades up through 24,352 (the signal's close).
+       -> That's our proof.  BUY a CE.  Spot ~24,358, premium paid = Rs 200.
+       First safety line = the previous candle's low, 24,340.
+       Meltdown line = 15% below Rs 200 = Rs 170 (a Rs 30-per-unit drop).
+
+11:15  Trade is nicely up; each finished candle drags EMA21 higher,
+       so the safety line keeps climbing behind price. We just hold.
+
+12:30  Spot is 24,430, the option is worth Rs 300. Still trending. Hold.
+
+13:05  A candle finally dips back and its range TOUCHES the EMA21 line.
+       -> Trend broken.  SELL the CE at premium Rs 280.
+
+       Result: Rs 280 - Rs 200 = Rs 80 per unit.
+       One lot = 75 units, so profit = 80 x 75 = Rs 6,000.
+       The meltdown stop (Rs 170) and points stop never had to fire.</pre>
+
+  <div class="note success"><strong>Why no fixed target?</strong> If we always sold at "+40%," we'd cut our biggest trend days short &mdash; and a few big days are what pay for all the small losing ones over a month. The trailing safety line keeps us in the move as long as it lasts, while the meltdown stop, points stop and negative-candle stop make sure a bad trade dies small.</div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 08 ═══ -->
 <div class="section">
-  <h2 id="s7">07 — Same-Side Cooldown</h2>
-  <p>After an <strong>SL hit or option-stop</strong> on a side, new entries on <em>that</em> side are blocked for
-  <code>EMA_RSI_ST_SL_PAUSE_CANDLES</code> candles (code default 3; Settings-UI seed 2). The other side is free. Set to <code>0</code> to disable.
-  This prevents immediately re-entering the same losing setup tick-after-tick.</p>
-  <p>Separately, an <strong>opposite-side (flip) cooldown</strong> (<code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code>, default on;
-  <code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES</code>, code default 3 / UI seed 2) blocks a flip to the OPPOSITE side for N candles after any
-  non-flip exit (SL / trail SL / option-stop / EMA touch-back) — it kills whipsaw CE↔PE flip-clusters on chop (historically the single
-  biggest drag-reducer for EMA_RSI_ST). Opposite-signal / EOD / manual exits do not trigger it. An optional chop guard
-  (<code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code>, default 0 = off) halts the session after N consecutive losses.</p>
-</div>
-
-<div class="section">
-  <h2 id="s8">08 — Risk Guards</h2>
+  <h2 id="s8">08 &mdash; The cool-downs: no chasing the same loss</h2>
+  <p>Choppy, sideways days are where a trend-follower bleeds &mdash; it keeps getting tricked into buying, then stopped out, over and over. Three "cool-down" rules exist to stop that from snowballing.</p>
   <table>
-    <tr><th>Guard</th><th>Env</th><th>Effect</th></tr>
-    <tr><td>Daily loss kill</td><td><code>MAX_DAILY_LOSS</code></td><td>Stop entries once session loss ≥ this (code default ₹5,000; UI seed ₹3,000)</td></tr>
-    <tr><td>Max trades</td><td><code>MAX_DAILY_TRADES</code></td><td>Hard cap on entries per session (code default 20; UI seed 5; paper, live &amp; backtest)</td></tr>
-    <tr><td>VIX gate</td><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>Block entries above this VIX (EMA_RSI_ST-scoped)</td></tr>
-    <tr><td>Trading window</td><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>No new entries outside the window</td></tr>
-    <tr><td>Flip / same-side cooldowns</td><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_*</code> / <code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td>Block the opposite side after a non-flip exit; block the same side after an SL/option-stop (see §7)</td></tr>
-    <tr><td>Chop guard</td><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td>Halt the session after N consecutive losers (0 = off)</td></tr>
-    <tr><td>OI buildup gate <span class="tag tag-blue">live</span></td><td><code>EMA_RSI_ST_OI_ENABLED</code></td><td>Require supportive option OI buildup before a live entry (live only, default off)</td></tr>
-    <tr><td>Bid-ask spread <span class="tag tag-blue">live</span></td><td><code>tradeGuards.js</code></td><td>Skip entries when the option bid-ask spread is too wide (live only)</td></tr>
+    <tr><th>Cool-down</th><th>What it does</th></tr>
+    <tr><td><strong>Same-side pause</strong></td><td>After a stop-out on one side (say a CE), we refuse to buy <em>that same side</em> again for a few candles. Stops us re-buying the exact setup that just lost, tick after tick. (Default 3 candles; the saved Settings use 2.)</td></tr>
+    <tr><td><strong>Opposite-side (flip) pause</strong></td><td>After any stop-type exit, we also refuse to immediately <em>flip</em> to the other side for a few candles. This is the big one &mdash; it kills the "CE stopped out, buy PE, PE stopped out, buy CE&hellip;" whipsaw that quietly drains an account on a choppy day. It's on by default. (A normal opposite-signal exit or an end-of-day exit does not trigger this pause.)</td></tr>
+    <tr><td><strong>Choppy-day brake</strong></td><td>An optional switch: after a set number of losing trades in a row in one session, stop taking new trades for the rest of the day. Any single winner resets the count. Off by default.</td></tr>
   </table>
-  <div class="note warn"><strong>Tuning tip:</strong> the default 25% option-stop on a ~₹200 premium ≈ ₹3,750 on one lot — a
-  couple of these can approach a small <code>MAX_DAILY_LOSS</code>. Keep <code>OPT_STOP_PCT</code> and <code>MAX_DAILY_LOSS</code> consistent.</div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 09 ═══ -->
 <div class="section">
-  <h2 id="s9">09 — Charts</h2>
-  <p>Every swing chart (Paper status, Live status, Replay) overlays exactly what the strategy decides on:</p>
+  <h2 id="s9">09 &mdash; Safety limits &amp; the "too jumpy" filter</h2>
+  <p>On top of the per-trade stops, a few account-level limits act like circuit breakers.</p>
   <table>
-    <tr><th>Overlay</th><th>Render</th></tr>
-    <tr><td><span class="tag tag-blue">EMA20 / EMA50</span></td><td>The two close-based EMAs whose alignment gates direction</td></tr>
-    <tr><td><span class="tag tag-purple">EMA9</span></td><td>Always drawn (violet) for reference; an entry input only under the triple-stack toggle</td></tr>
-    <tr><td><span class="tag tag-green">SuperTrend</span></td><td>Step line that flips side with the trend (the directional source)</td></tr>
-    <tr><td><span class="tag tag-yellow">EMA21</span></td><td>The trailing-stop line (OHLC4)</td></tr>
-    <tr><td><span class="tag tag-blue">RSI</span></td><td>Own bottom price-scale, with dashed level lines at <code>RSI_CE_MIN</code> (CE) and <code>RSI_PE_MAX</code> (PE)</td></tr>
+    <tr><th>Limit</th><th>What it does</th></tr>
+    <tr><td><strong>Daily loss cap</strong> (<code>MAX_DAILY_LOSS</code>)</td><td>Once the day's losses reach a set rupee amount, stop taking new trades. (Code default &#8377;5,000; the saved Settings use a tighter &#8377;3,000.)</td></tr>
+    <tr><td><strong>Max trades per day</strong> (<code>MAX_DAILY_TRADES</code>)</td><td>A hard cap on how many trades can be opened in one session &mdash; an anti-over-trading brake. (Code default 20; saved Settings use 5.)</td></tr>
+    <tr><td><strong>Trading window</strong> (<code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code>)</td><td>New trades only allowed inside set hours (roughly late morning to early afternoon). No entries outside the window.</td></tr>
+    <tr><td><strong>VIX filter</strong> (<code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code>)</td><td>The "too jumpy" filter: block new trades when the market's fear gauge (VIX) is above the limit &mdash; those days swing hard and options get expensive.</td></tr>
+    <tr><td><strong>OI check</strong> (<code>EMA_RSI_ST_OI_ENABLED</code>) <span class="tag tag-blue">live</span></td><td>Optional: before a real trade, require the big-money option positioning (open interest) to support our direction. Live only, off by default.</td></tr>
+    <tr><td><strong>Wide-spread skip</strong> <span class="tag tag-blue">live</span></td><td>Skip a real trade if the option's buy/sell gap is too wide to enter cleanly. Live only.</td></tr>
   </table>
-  <p>Chart data contract: <code>GET /ema_rsi_st-{paper,live}/status/chart-data</code> →
-  <code>{ candles, markers, ema9, ema20, ema50, supertrend, trendSource:"SUPERTREND", rsi, rsiCeMin, rsiPeMax, tripleStack, stopLoss, entryPrice }</code>.
-  Replay harvests the same. Backtest uses Chart.js equity curves (no candlestick overlays).</p>
+  <div class="note warn"><strong>Keeping two numbers in sync:</strong> the option-meltdown stop is 15% of the premium. On a typical &#8377;200 option that's about &#8377;30 per unit, or roughly <strong>&#8377;2,250 on one lot</strong> (75 units). Two of those in a day already get close to a small daily-loss cap &mdash; so if you tighten one, sanity-check the other.</div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 10 ═══ -->
 <div class="section">
-  <h2 id="s10">10 — Settings Reference</h2>
-  <div class="note warn"><strong>Defaults below are the code <code>||</code> fallbacks</strong> (what runs if the env key is unset).
-  The Settings UI seeds more conservative values that a saved install actually runs — notably
-  <code>MAX_DAILY_TRADES=5</code>, <code>MAX_DAILY_LOSS=3000</code>, <code>RSI_CE_MAX=70</code> / <code>RSI_PE_MIN=30</code>,
-  <code>EMA_RSI_ST_STOP_LOSS_PTS=25</code> (ON), <code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED=true</code> (ON),
-  <code>EMA_RSI_ST_SL_PAUSE_CANDLES=2</code>, <code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_CANDLES=2</code>,
-  <code>EMA_RSI_ST_EOD_EXIT_TIME=14:30</code>, <code>TRADE_ENTRY_START=10:30</code>. Read the real config from the day's
-  <code>settings_snapshot</code>, not this table.</div>
+  <h2 id="s10">10 &mdash; All the settings, explained</h2>
+  <div class="note warn"><strong>Two sets of defaults.</strong> The numbers below are the built-in code defaults (what runs if a setting is left blank). A real, saved install uses the slightly more cautious values on the Settings page &mdash; notably <code>MAX_DAILY_TRADES=5</code>, <code>MAX_DAILY_LOSS=3000</code>, RSI ceiling 70 / floor 30, the points-stop turned on at 25, the candle trail turned on, shorter cool-downs (2 candles), an earlier exit-before-close (14:30) and a 10:30 start. When in doubt, trust the day's saved settings snapshot, not this table.</div>
+
   <div class="env-group">
-    <div class="env-group-title">Entry — EMAs &amp; trend</div>
+    <div class="env-group-title">Entry &mdash; the trend lines &amp; timing</div>
     <table>
-      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>3, 5 or 15-min candles</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_FAST</code></td><td>20</td><td>Fast EMA (close) — top leg of the alignment gate</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_SLOW</code></td><td>50</td><td>Slow EMA (close) — bottom leg of the alignment gate</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED</code></td><td>false</td><td>Require EMA9&gt;20&gt;50 (CE) / EMA9&lt;20&lt;50 (PE) instead of the 2-EMA cross</td></tr>
-      <tr><td><code>EMA_RSI_ST_EMA_FASTEST</code></td><td>9</td><td>Fastest EMA (close) — only an input when triple-stack is on</td></tr>
-      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code> / <code>EMA_RSI_ST_SUPERTREND_MULT</code></td><td>10 / 3</td><td>SuperTrend params — the directional confirmation</td></tr>
-      <tr><td><code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code></td><td>true</td><td>Gate 4: signal candle must <em>close</em> above (CE) / below (PE) the base EMA (= EMA9 when triple-stack on, else EMA20). Blocks false-breakout entries that close back under the fast EMA</td></tr>
-      <tr><td><code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code></td><td>true</td><td>Confirmation candle: entry doesn't fire on the signal bar — the next candle must cross the signal candle's close; fill fires intra-bar on the cross. Off = legacy intra-candle entry</td></tr>
+      <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+      <tr><td><code>TRADE_RESOLUTION</code></td><td>5</td><td>Candle size in minutes &mdash; 3, 5 or 15. Smaller candles mean tighter, twitchier stops.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_FAST</code></td><td>20</td><td>The faster trend line. For a CE it has to be above the slower one.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_SLOW</code></td><td>50</td><td>The slower trend line. Fast-above-slow (or below) is the core direction check.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_TRIPLE_STACK_ENABLED</code></td><td>false</td><td>Stricter mode. Off = just fast-vs-slow. On = also require the very fast EMA9 on top (EMA9 &gt; EMA20 &gt; EMA50). Cuts weak, flat setups.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EMA_FASTEST</code></td><td>9</td><td>The very fast trend line &mdash; only used when the stricter mode above is on.</td></tr>
+      <tr><td><code>EMA_RSI_ST_SUPERTREND_PERIOD</code> / <code>_MULT</code></td><td>10 / 3</td><td>The two dials that shape the SuperTrend line &mdash; the main direction check.</td></tr>
+      <tr><td><code>EMA_RSI_ST_CLOSE_BEYOND_EMA_ENABLED</code></td><td>true</td><td>Check 4: the signal candle must actually <em>close</em> on our side of the base trend line. Blocks dips that only look bullish because older lines are still stacked.</td></tr>
+      <tr><td><code>EMA_RSI_ST_CONFIRM_CANDLE_ENABLED</code></td><td>true</td><td>The "wait for proof" step: don't buy the signal candle &mdash; wait for the next candle to push past its close. Off = buy immediately (older style).</td></tr>
     </table>
   </div>
+
   <div class="env-group">
-    <div class="env-group-title">Entry — RSI band</div>
+    <div class="env-group-title">Entry &mdash; the RSI momentum band</div>
     <table>
-      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>CE momentum floor (RSI must be above)</td></tr>
-      <tr><td><code>RSI_CE_MAX</code></td><td>80</td><td>CE overbought cap (blocked at/above). <em>UI seeds 70.</em></td></tr>
-      <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>PE momentum cap (RSI must be below)</td></tr>
-      <tr><td><code>RSI_PE_MIN</code></td><td>20</td><td>PE oversold floor (blocked at/below). <em>UI seeds 30.</em></td></tr>
+      <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+      <tr><td><code>RSI_CE_MIN</code></td><td>52</td><td>For a CE, RSI must be above this &mdash; proof of real upward push.</td></tr>
+      <tr><td><code>RSI_CE_MAX</code></td><td>80</td><td>For a CE, RSI must be below this &mdash; don't chase an overheated move. (Settings page uses 70.)</td></tr>
+      <tr><td><code>RSI_PE_MAX</code></td><td>48</td><td>For a PE, RSI must be below this &mdash; proof of real downward push.</td></tr>
+      <tr><td><code>RSI_PE_MIN</code></td><td>20</td><td>For a PE, RSI must be above this &mdash; don't chase an already-crushed move. (Settings page uses 30.)</td></tr>
     </table>
   </div>
+
   <div class="env-group">
     <div class="env-group-title">Stops &amp; exits</div>
     <table>
-      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>OPT_STOP_PCT</code></td><td>0.25</td><td>Exit if option premium drops this fraction below entry</td></tr>
-      <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Negative-candle stop — square off a trade still red (option premium below entry) after N candles; winners ride the trail (0 = off)</td></tr>
-      <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td>0</td><td>Hard spot-points cap from entry, checked before the structural/trail SL (0 = off). <em>UI seeds 25 (ON).</em></td></tr>
-      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>EMA_RSI_ST_CANDLE_TRAIL_BARS</code></td><td>false / 3</td><td>Add an N-bar low/high trail; tighter of (EMA21, candle level) wins. <em>UI seeds ENABLED=true.</em></td></tr>
-      <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side cooldown after an SL/option-stop hit. <em>UI seeds 2.</em></td></tr>
-      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Block the opposite side for N candles after a non-flip exit (whipsaw-flip guard). <em>UI seeds 2 candles.</em></td></tr>
-      <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Halt session after N consecutive losses (0 = off)</td></tr>
-      <tr><td><code>EMA_RSI_ST_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square off open position ahead of the close. <em>UI seeds 14:30.</em></td></tr>
+      <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+      <tr><td><code>OPT_STOP_PCT</code></td><td>0.15</td><td>The option-meltdown stop: exit if the option's price falls this fraction below what we paid. <strong>0.15 = 15%</strong> (e.g. a &#8377;200 option, exit at &#8377;170).</td></tr>
+      <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Cut a trade that's still losing after this many finished candles. Winners are left alone. 0 = off.</td></tr>
+      <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td>0</td><td>Hard "catastrophe" cap in NIFTY points. 0 = off. (Settings page turns it on at 25.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td>false / 3</td><td>Add a recent-lows trail on top of EMA21; the tighter of the two wins. (Settings page turns this on.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_SL_PAUSE_CANDLES</code></td><td>3</td><td>Same-side pause: block re-buying the side that just got stopped, for this many candles. (Settings page uses 2.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td>true / 3</td><td>Flip pause: after a stop-out, block flipping to the other side for this many candles &mdash; the whipsaw guard. (Settings page uses 2.)</td></tr>
+      <tr><td><code>EMA_RSI_ST_MAX_CONSEC_LOSSES</code></td><td>0</td><td>Choppy-day brake: stop trading for the day after this many losses in a row. 0 = off.</td></tr>
+      <tr><td><code>EMA_RSI_ST_EOD_EXIT_TIME</code></td><td>15:15</td><td>Square off any open trade at this time, ahead of the close. (Settings page uses 14:30.)</td></tr>
     </table>
   </div>
+
   <div class="env-group">
-    <div class="env-group-title">Risk &amp; session</div>
+    <div class="env-group-title">Risk &amp; the trading day</div>
     <table>
-      <tr><th>Key</th><th>Default</th><th>Notes</th></tr>
-      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily kill-switch (₹). <em>UI seeds 3000.</em></td></tr>
-      <tr><td><code>MAX_DAILY_TRADES</code></td><td>20</td><td>Entries per session. <em>UI seeds 5.</em></td></tr>
-      <tr><td><code>EMA_RSI_ST_OI_ENABLED</code></td><td>false</td><td>Require supportive option OI buildup before a live entry (live only)</td></tr>
-      <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block entries above this VIX</td></tr>
-      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>09:30 / 14:00</td><td>Entry window (IST). <em>UI seeds 10:30 start.</em></td></tr>
-      <tr><td><code>TRADE_STOP_TIME</code></td><td>15:30</td><td>EOD square-off + engine auto-stop (IST)</td></tr>
+      <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Stop new trades once the day's loss hits this (&#8377;). (Settings page uses 3000.)</td></tr>
+      <tr><td><code>MAX_DAILY_TRADES</code></td><td>20</td><td>Most trades allowed in one day. (Settings page uses 5.)</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block new trades when VIX (the fear gauge) is above the limit.</td></tr>
+      <tr><td><code>EMA_RSI_ST_OI_ENABLED</code></td><td>false</td><td>Require supportive big-money option positioning before a real trade (live only).</td></tr>
+      <tr><td><code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code></td><td>09:30 / 14:00</td><td>The window in which new trades may start. (Settings page starts at 10:30.)</td></tr>
+      <tr><td><code>TRADE_STOP_TIME</code></td><td>15:30</td><td>Sell everything and stop the engine at this time. Never hold overnight.</td></tr>
     </table>
   </div>
 </div>
 
+<!-- ════════════════════════════════════════════════ 11 ═══ -->
 <div class="section">
-  <h2 id="s11">11 — Expiry &amp; Live Gating</h2>
+  <h2 id="s11">11 &mdash; Expiry &amp; going live (real money)</h2>
   <ul style="margin:8px 0 8px 18px;line-height:1.7;">
-    <li><strong>0DTE refusal</strong>: live/paper <code>/start</code> is blocked when the configured expiry == today.
-    Replay bypasses this (<code>force=1</code>) so historical sessions aren't aborted.</li>
-    <li><code>TRADE_EXPIRY_DAY_ONLY</code> — when on, only trade on NIFTY expiry day.</li>
-    <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>EMA_RSI_ST_OPTION_EXPIRY_TYPE</code> let EMA_RSI_ST run a different expiry from the other strategies; blank inherits the common expiry.</li>
-    <li><strong>Live orders are double-gated</strong>: <code>EMA_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> global <code>LIVE_HARNESS_DRY_RUN=false</code>,
-    with a per-strategy <code>EMA_RSI_ST_LIVE_DRY_RUN</code> override to keep EMA_RSI_ST simulated while others trade live.</li>
+    <li><strong>No trading on expiry day itself.</strong> If the option's expiry date is <em>today</em>, the strategy refuses to start &mdash; holding an option through its own expiry is too risky. (A replay of a past day is allowed to bypass this.)</li>
+    <li><code>TRADE_EXPIRY_DAY_ONLY</code> &mdash; the opposite switch: when on, <em>only</em> trade on NIFTY expiry day.</li>
+    <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> let this strategy trade a different weekly expiry from the other strategies. Left blank, it just follows the shared expiry.</li>
+    <li><strong>Live trading has two locks.</strong> Real Zerodha orders only go out when <code>EMA_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> the global dry-run switch (<code>LIVE_HARNESS_DRY_RUN</code>) is off. While dry-run is on (the default), the system <em>shows</em> the order it would have placed but sends nothing. Only turn dry-run off after checking that live and paper make the same decisions on a replayed day.</li>
   </ul>
 </div>
 
+<!-- ════════════════════════════════════════════════ 12 ═══ -->
 <div class="section">
-  <h2 id="s12">12 — Removed / Changed vs Old Strategy</h2>
-  <p>The 2026-05-31 redefinition and the 2026-06-12 PSAR strip removed all of the following (and their Settings fields):</p>
+  <h2 id="s12">12 &mdash; What changed from the old strategy</h2>
+  <p>This strategy used to be called <strong>"SWING"</strong> and was more complicated. Over time it was simplified down to the clean four-check version in this guide. The biggest change: an indicator called <strong>Parabolic SAR</strong> was fully removed, and <strong>SuperTrend</strong> is now the only direction source. (The code file is still named <code>strategy1_sar_ema_rsi.js</code> for historical reasons &mdash; but there is no SAR left in it.)</p>
+  <p><strong>Taken out:</strong></p>
   <p>
-    <span class="tag tag-red">Parabolic SAR (entry)</span>
+    <span class="tag tag-red">Parabolic SAR</span>
     <span class="tag tag-red">EMA21-touch entry</span>
     <span class="tag tag-red">EMA30 trend gate</span>
     <span class="tag tag-red">ADX filter</span>
     <span class="tag tag-red">candle-body filter</span>
-    <span class="tag tag-red">min/max SAR-distance</span>
-    <span class="tag tag-red">Logic-3 SAR-lag overrides</span>
-    <span class="tag tag-red">STRONG / MARGINAL tiers</span>
+    <span class="tag tag-red">SAR-distance rules</span>
+    <span class="tag tag-red">"strong / marginal" grading</span>
     <span class="tag tag-red">3-tier trailing</span>
-    <span class="tag tag-red">hybrid initial-SL cap</span>
-    <span class="tag tag-red">50% candle rule</span>
-    <span class="tag tag-red">near-miss N/8 audit</span>
-    <span class="tag tag-red">breakeven-to-entry snap</span>
+    <span class="tag tag-red">move-to-break-even</span>
   </p>
-  <p><strong>Now in place:</strong>
-    <span class="tag tag-green">EMA20/EMA50 cross gate</span>
+  <p><strong>In place now:</strong></p>
+  <p>
+    <span class="tag tag-green">EMA20 vs EMA50 trend check</span>
     <span class="tag tag-green">optional EMA9&gt;20&gt;50 stack</span>
-    <span class="tag tag-green">SuperTrend(10,3) direction</span>
-    <span class="tag tag-green">close-beyond-base-EMA gate</span>
-    <span class="tag tag-green">confirmation candle</span>
-    <span class="tag tag-green">EMA21 trailing SL</span>
-    <span class="tag tag-green">optional N-bar candle trail</span>
+    <span class="tag tag-green">SuperTrend direction</span>
+    <span class="tag tag-green">close-beyond-the-EMA check</span>
+    <span class="tag tag-green">wait-for-proof candle</span>
+    <span class="tag tag-green">EMA21 trailing safety line</span>
+    <span class="tag tag-green">optional recent-lows trail</span>
     <span class="tag tag-green">negative-candle stop</span>
     <span class="tag tag-green">EMA21 touch-back exit</span>
   </p>
-  <div class="note success">Entry defaults to the confirmation-candle flow (arm on the signal bar's close, fill on the next
-  candle's cross) — no STRONG/MARGINAL timing split. The stop is seeded at the previous candle's extreme, then trails to EMA21;
-  breakeven-to-entry is gone (only a dead code comment remains). See <code>EMA_RSI_ST.md</code> in the repo for the code-level reference.</div>
+  <div class="note success">Bottom line: the strategy is now <em>four clear checks &rarr; one candle of proof &rarr; ride the trend behind a climbing safety line</em>. Simple to follow, and every mode (practice, live, backtest, replay) runs the exact same logic.</div>
 </div>
 
 <hr/>
 <p style="text-align:center;color:var(--text3);font-size:0.78rem;">
-  Reference only — the code is authoritative (<code>strategy1_sar_ema_rsi.js</code>, <code>emaRsiStPaper.js</code>, <code>emaRsiStLive.js</code>, <code>backtestEngine.js</code>).
-  Regenerated 2026-07-05 for the 4-gate entry (EMA + RSI + SuperTrend + close-beyond-EMA) with confirmation candle, EMA21 / N-bar candle trail, and the negative-candle stop (Parabolic SAR removed 2026-06-12; breakeven removed 2026-06-02).
+  EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 16 July 2026 &nbsp;|&nbsp; all defaults read from the live code &amp; README.
+  The code is always the final word (<code>strategy1_sar_ema_rsi.js</code>, <code>emaRsiStPaper.js</code>).
 </p>
 </body>
 </html>

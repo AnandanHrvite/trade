@@ -192,28 +192,30 @@
 
 <header class="hero">
   <h1>Opening Range Breakout (ORB)</h1>
-  <p class="subtitle">Single-Leg CE / PE Breakout of the First 15-Minute Range &mdash; Fyers Orders</p>
+  <p class="subtitle">Buy a CE or PE when NIFTY breaks out of its first 15-minute range on a trending day &mdash; explained in plain English</p>
   <div class="meta">
-    <span><span class="badge badge-orange">v5.0.0</span></span>
-    <span>Rechecked: 2026-07-05</span>
-    <span>NIFTY Options &mdash; 1 Trade / Day (default) &mdash; Candle-Structure Trailing Stop</span>
+    <span><span class="badge badge-orange">v6.0.0</span></span>
+    <span>Updated: 2026-07-16</span>
+    <span>NIFTY Options &mdash; 1 Trade / Day &mdash; Rides Trend Days</span>
   </div>
 </header>
 
 <nav class="toc">
-  <h2>&#9776; Table of Contents</h2>
+  <h2>&#9776; What's inside</h2>
   <ol>
-    <li><a href="#overview">Strategy Overview</a></li>
-    <li><a href="#window">Opening Range Window</a></li>
-    <li><a href="#entry">Entry Logic &mdash; 9 Gate Pipeline</a></li>
-    <li><a href="#strength">Sweet-Spot Tiering &mdash; STRONG vs MARGINAL</a></li>
-    <li><a href="#sl">Exit Model &mdash; Candle-Structure Trailing Stop</a></li>
-    <li><a href="#exit">Exit Priority &amp; the Removed Old Model</a></li>
-    <li><a href="#vix">VIX Regime Filter</a></li>
-    <li><a href="#risk">Risk Management</a></li>
-    <li><a href="#modes">Operating Modes</a></li>
-    <li><a href="#config">Complete Configuration Reference</a></li>
-    <li><a href="#gaps">Known Gaps &amp; Roadmap</a></li>
+    <li><a href="#overview">The idea in one minute</a></li>
+    <li><a href="#glossary">Words you'll see (plain meanings)</a></li>
+    <li><a href="#window">Step 1 &mdash; Draw the opening box</a></li>
+    <li><a href="#entry">Step 2 &mdash; Is today worth trading?</a></li>
+    <li><a href="#confirm">Step 3 &mdash; Wait for proof, then buy</a></li>
+    <li><a href="#option">Step 4 &mdash; Pick the option</a></li>
+    <li><a href="#exit">Step 5 &mdash; When we sell</a></li>
+    <li><a href="#vix">The "market too jumpy" filter (VIX)</a></li>
+    <li><a href="#risk">Safety limits &amp; the losing-streak brake</a></li>
+    <li><a href="#legacy">The older versions (V2 / V1)</a></li>
+    <li><a href="#modes">Paper, Live &amp; Backtest</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#gaps">What's still missing</a></li>
   </ol>
 </nav>
 
@@ -225,493 +227,519 @@
 <!-- 1. OVERVIEW                                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="overview">
-  <h2><span class="section-icon icon-orange">&#9881;</span> 1. Strategy Overview</h2>
+  <h2><span class="section-icon icon-orange">&#9881;</span> 1. The idea in one minute</h2>
 
-  <p><strong>Opening Range Breakout (ORB)</strong> is a directional intraday strategy that defines the day's "opening range" as the high/low of the first <code>N</code>-minute window after the market open (default <code>09:15</code> &rarr; <code>09:30</code> &mdash; the standard 15-minute ORB). Once the range is closed, the strategy waits for a candle whose <em>close</em> breaks above the Opening Range High (ORH) for a <strong>CE</strong> entry or below the Opening Range Low (ORL) for a <strong>PE</strong> entry. Single-leg buy &mdash; no paired hedge.</p>
+  <p>Every morning, in its <strong>first 15 minutes</strong> (9:15 to 9:30), NIFTY draws a small high-and-low box. Think of it as the market "making up its mind." This strategy watches that box and asks one question: <strong>does the price break out of the box and keep running?</strong></p>
 
-  <p>ORB is a <strong>momentum-confirmation</strong> strategy, not a fade. The thesis: directional days often reveal themselves by the first hour. If price has built a real range and then committed beyond it with a clean candle (decent body, aligned with VWAP, adequate volume), the move tends to extend in that direction through the morning session. If the breakout candle is wicky, against VWAP, or on thin volume, the breakout is more likely a fakeout and is skipped.</p>
+  <ul>
+    <li>If price <strong>breaks above the box and keeps going up</strong> &rarr; we buy a <strong>CE (call option)</strong> to profit from the rise.</li>
+    <li>If price <strong>breaks below the box and keeps falling</strong> &rarr; we buy a <strong>PE (put option)</strong> to profit from the drop.</li>
+  </ul>
 
-  <div class="pillars">
-    <div class="pillar">15-Min Opening Range</div>
-    <div class="pillar">Single-Leg CE / PE</div>
-    <div class="pillar">Wick Rejection Filter</div>
-    <div class="pillar">VWAP Alignment</div>
-    <div class="pillar">Volume Confirmation</div>
-    <div class="pillar">Premium Range Gate</div>
-    <div class="pillar">Sweet-Spot Tiering</div>
-    <div class="pillar">Candle-Structure Trail</div>
-    <div class="pillar">1 Trade / Day (default)</div>
+  <p>We buy only <strong>one option at a time</strong> (no pairs, no hedges), and normally <strong>only one trade for the whole day</strong>. The whole point is to catch a <em>trending day</em> &mdash; a day that picks a direction in the morning and runs with it &mdash; and to <strong>skip the days that just wobble sideways</strong> and trap you.</p>
+
+  <div class="note note-success">
+    <strong>The version running today: "V3 &mdash; the trend-day engine" (built 10 July 2026).</strong>
+    Its goal is simple: <strong>catch the strong trend days and throw away the fake breakouts &mdash; not to trade more often.</strong> It buys options that are <em>slightly in-the-money</em> (explained below), and it measures everything against how much NIFTY is <em>normally</em> moving that day, so the same settings keep working whether the market is calm or wild. Two older versions (V2 and V1) still exist as a fallback, but everything in this guide describes V3.
   </div>
 
-  <h3>Why &ldquo;textbook 1 trade per day&rdquo;</h3>
-  <p>The textbook ORB convention is one entry per session. The reasoning is that the opening range is a <em>once-per-day</em> structural feature &mdash; a second breakout later in the day is usually a different setup entirely (range expansion, news, late momentum). Allowing multiple entries tends to invite chop into the P&amp;L distribution. The default is <code>ORB_MAX_DAILY_TRADES=1</code>; you can raise it via Settings if you accept the chop.</p>
+  <h3>Why only one trade a day?</h3>
+  <p>The morning box only forms once. A "breakout" that shows up at 2 PM is usually a completely different situation (news, a late surge) and tends to be a coin-flip. So V3 commits to a <strong>single</strong> breakout: the first clean one it sees. If that one doesn't work out, it does <strong>not</strong> go looking for a second try. Trying to squeeze in more trades just adds afternoon chop to the results.</p>
 
-  <h3>Routes &amp; Brokers</h3>
+  <h3>Where you run it</h3>
   <table>
-    <thead><tr><th>Mode</th><th>Route</th><th>Broker</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Mode</th><th>Page</th><th>What happens</th></tr></thead>
     <tbody>
-      <tr><td><strong>Paper</strong></td><td><code>/orb-paper</code></td><td>Simulated</td><td>Canonical decision/fill/exit logic. The source of truth for ORB behaviour.</td></tr>
-      <tr><td><strong>Live</strong></td><td><code>/orb-live</code></td><td>Fyers</td><td>Real Fyers orders. Double-gated: <code>ORB_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
-      <tr><td><strong>Backtest</strong></td><td><code>/orb-backtest</code></td><td>Historical</td><td>Date-range backtest. Records option LTP polls so Replay can reproduce.</td></tr>
-      <tr><td><strong>History</strong></td><td><code>/orb-paper/history</code></td><td>&mdash;</td><td>Per-session delete + view modal. Restore from JSONL daily log.</td></tr>
+      <tr><td><strong>Paper</strong></td><td><code>/orb-paper</code></td><td>Practice mode. Real live prices, but pretend money &mdash; no real orders. This is the "official" behaviour everything else is checked against.</td></tr>
+      <tr><td><strong>Live</strong></td><td><code>/orb-live</code></td><td>Real money through Fyers. Locked behind <em>two</em> safety switches so it can't fire by accident (see below).</td></tr>
+      <tr><td><strong>Backtest</strong></td><td><code>/orb-backtest</code></td><td>Test the strategy on past days. There's no real option data in history, so it estimates the option price (details in Section 11).</td></tr>
+      <tr><td><strong>History</strong></td><td><code>/orb-paper/history</code></td><td>Look back at past sessions and their trades.</td></tr>
     </tbody>
   </table>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 2. OPENING RANGE WINDOW                                                 -->
+<!-- 2. GLOSSARY                                                             -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section blue" id="window">
-  <h2><span class="section-icon icon-blue">&#128340;</span> 2. Opening Range Window</h2>
+<section class="section cyan" id="glossary">
+  <h2><span class="section-icon icon-cyan">&#128218;</span> 2. Words you'll see (plain meanings)</h2>
 
-  <p>The opening range is defined by two times and observed in real-time as the session opens. Once the window closes, ORH/ORL are frozen for the rest of the day.</p>
+  <p>A few terms come up again and again. Here's what each one means, in everyday language &mdash; keep this handy and the rest of the guide reads easily.</p>
 
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Term</th><th>What it really means</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>Opening range starts (IST). Aligns with NSE market open.</td></tr>
-      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>Opening range closes. ORH/ORL are now frozen for the session.</td></tr>
-      <tr><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>Stale-breakout cutoff. No new entries past this time even if ORH/ORL is broken.</td></tr>
-      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard square-off for any open ORB position regardless of P&amp;L.</td></tr>
-      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>When <code>true</code>, only allow ORB entries on weekly-expiry day (Tuesday).</td></tr>
+      <tr><td><strong>Opening range (OR)</strong></td><td>The high and low of NIFTY's first 15 minutes. The "box" the market draws while it makes up its mind. "OR width" = how tall the box is, in points.</td></tr>
+      <tr><td><strong>CE / PE</strong></td><td>CE (call) makes money when NIFTY goes <em>up</em>. PE (put) makes money when NIFTY goes <em>down</em>. We only ever buy one of them at a time.</td></tr>
+      <tr><td><strong>Candle</strong></td><td>A 5-minute price bar showing where NIFTY opened, closed, and its high/low in that 5 minutes. A "green" candle closed higher than it opened; "red" closed lower.</td></tr>
+      <tr><td><strong>ATR</strong></td><td>"Average True Range" &mdash; simply <em>how much NIFTY normally moves</em> in a bar. If ATR is 30, a typical 5-minute candle spans about 30 points. We use it as a ruler: a "big" move on a calm day is small on a wild day, and ATR tells us which is which.</td></tr>
+      <tr><td><strong>VWAP</strong></td><td>The day's <em>fair-value line</em> &mdash; the average price weighted by how much traded there. If price is above VWAP, buyers are in control; below it, sellers are. We only buy CE above the line, PE below it.</td></tr>
+      <tr><td><strong>In-the-money (ITM) option</strong></td><td>An option that already has real value baked in, so it moves almost point-for-point with NIFTY and loses value slowly. We buy <em>slightly</em> ITM because it tracks a trend better than a cheap far-away option.</td></tr>
+      <tr><td><strong>Premium</strong></td><td>The price you pay for the option (in &#8377; per unit). "Premium collapsed 35%" means the option lost about a third of its value.</td></tr>
+      <tr><td><strong>Bid-ask spread</strong></td><td>The gap between the buy price and the sell price of an option. A wide gap means you lose money just entering and exiting &mdash; so we skip options with a wide spread.</td></tr>
+      <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX = jumpy, expensive options and bigger swings. We can tell the strategy to sit out when VIX is too high.</td></tr>
+      <tr><td><strong>EMA20</strong></td><td>A smoothed average of the last several closes (the "20" is how many). We use it as a moving trend line: as long as price stays on the right side of it, the trend is still alive.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. THE BOX                                                              -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section blue" id="window">
+  <h2><span class="section-icon icon-blue">&#128340;</span> 3. Step 1 &mdash; Draw the opening box</h2>
+
+  <p>From <strong>9:15 to 9:30</strong>, the strategy watches every price tick and records the highest high and lowest low. At 9:30 sharp, the box is <strong>locked for the rest of the day</strong> &mdash; the top of the box (ORH) and bottom (ORL) never change again, no matter what happens later.</p>
+
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>When the box starts (market open).</td></tr>
+      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>When the box locks. After this, the top and bottom are fixed.</td></tr>
+      <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest we'll take a new trade. A breakout after this is "too late" &mdash; the day is half over. (The older V1/V2 versions used 12:00.)</td></tr>
+      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>If we're still holding anything at this time, sell it &mdash; win or lose. We never carry overnight.</td></tr>
+      <tr><td><code>ORB_ATR_PERIOD</code></td><td><code>14</code></td><td>How many bars go into the "how much NIFTY normally moves" ruler (ATR).</td></tr>
+      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>If turned on, only trade on weekly-expiry day (Tuesday).</td></tr>
     </tbody>
   </table>
 
-  <h3>Building the Range</h3>
-  <p>From <code>ORB_RANGE_START</code> until <code>ORB_RANGE_END</code>, the strategy tracks the highest high (ORH) and lowest low (ORL) across all candles in the window. Skip states until the range is fully formed:</p>
+  <h3>First question: is the box a good one?</h3>
+  <p>Not every morning box is worth trading. Before looking for a breakout, the strategy checks the box itself and can decide to <strong>skip the whole day</strong>:</p>
   <ul>
-    <li><code>reason: "Building opening range (waiting for 09:30 IST)"</code> &mdash; window still open</li>
-    <li><code>reason: "Opening range not yet formed"</code> &mdash; warming up; not enough candles to compute ORH/ORL yet</li>
-    <li><code>reason: "Warming up (X/4 candles)"</code> &mdash; less than 4 candles available; need indicators to settle</li>
-  </ul>
-
-  <h3>Width Sanity Check &mdash; <code>ORB_MIN_RANGE_PTS</code> / <code>ORB_MAX_RANGE_PTS</code></h3>
-  <p>Once the range is formed, its width (ORH &minus; ORL) is sanity-checked before any breakout can be taken.</p>
-  <ul>
-    <li><strong>Range too tight</strong> (width &lt; <code>ORB_MIN_RANGE_PTS</code>, default <code>25</code> pts) &rarr; likely noise / pre-market indecision. Skip the day.</li>
-    <li><strong>Range too wide</strong> (width &gt; <code>ORB_MAX_RANGE_PTS</code>, default <code>120</code> pts) &rarr; open already moved; the breakout is chasing an exhausted setup. Skip the day.</li>
+    <li><strong>Is the box a sensible size?</strong> Compared to how much NIFTY is normally moving (ATR), the box shouldn't be too tiny (that's just sideways noise) or too huge (the big move already happened before 9:30, so we'd be chasing). It has to sit between <strong>0.7&times; and 2.5&times;</strong> the normal move.</li>
+    <li><strong>Did the market gap open crazily?</strong> If NIFTY opened <em>miles</em> away from yesterday's close (more than 3&times; the box height), that's usually news or panic that has already spent its energy &mdash; skip the day.</li>
   </ul>
 
   <div class="note note-info">
-    <strong>Sweet spot (sub-tiering):</strong> ranges between <code>ORB_SWEET_MIN=30</code> and <code>ORB_SWEET_MAX=80</code> pts are considered the "sweet spot" and qualify the breakout as <strong>STRONG</strong> when combined with breakout body &ge; <code>ORB_STRONG_BODY=15</code> pts. Ranges outside the sweet spot but still inside the min/max band fire as <strong>MARGINAL</strong> &mdash; still allowed, just classified differently for P&amp;L attribution.
+    <strong>Why measure against "the normal move" instead of fixed points?</strong> A 40-point box means something very different on a sleepy day than on a stormy one. By comparing the box to how much NIFTY is <em>actually</em> moving today, the same settings keep making sense in any market &mdash; you never have to re-tune numbers when volatility changes.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. ENTRY LOGIC                                                          -->
+<!-- 4. IS TODAY WORTH TRADING (entry gates)                                 -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section green" id="entry">
-  <h2><span class="section-icon icon-green">&#9654;</span> 3. Entry Logic &mdash; 9 Gate Pipeline</h2>
+  <h2><span class="section-icon icon-green">&#9654;</span> 4. Step 2 &mdash; The checklist before a trade</h2>
 
-  <p>A candidate breakout candle goes through 9 sequential gates. <strong>All must pass</strong> for an entry to fire. The first failing gate is recorded in the skip log with its specific reason string &mdash; useful for diagnosing "why didn't we enter today?" via <code>/trade-logs</code>.</p>
+  <p>For a trade to happen, <strong>every</strong> box below has to tick "yes," <strong>in order</strong>. If any one fails, we skip &mdash; and the reason is written into the log so you can see exactly why nothing traded today.</p>
 
   <div class="gate">
     <div class="gate-num">1</div>
     <div class="gate-content">
-      <div class="gate-name">Time Window</div>
-      <div class="gate-desc">Candle closed after <code>ORB_RANGE_END</code> AND before <code>ORB_ENTRY_END</code></div>
-      <div class="gate-rule">09:30 &le; lastIst &lt; 12:00</div>
+      <div class="gate-name">Is the box a good size?</div>
+      <div class="gate-desc">Not too tiny, not too huge &mdash; sized against how much NIFTY normally moves.</div>
+      <div class="gate-rule">box height is between 0.7&times; and 2.5&times; the normal 15-min move</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">2</div>
     <div class="gate-content">
-      <div class="gate-name">Range Width</div>
-      <div class="gate-desc">Opening range width within configured band</div>
-      <div class="gate-rule">ORB_MIN_RANGE_PTS &le; (ORH &minus; ORL) &le; ORB_MAX_RANGE_PTS</div>
+      <div class="gate-name">Did the market open calmly?</div>
+      <div class="gate-desc">No giant news-gap that already burned off the day's move.</div>
+      <div class="gate-rule">gap from yesterday's close is smaller than 3&times; the box height</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">3</div>
     <div class="gate-content">
-      <div class="gate-name">Breakout Confirmation</div>
-      <div class="gate-desc">Candle closes beyond the range &mdash; <em>close</em>, not just a high/low touch</div>
-      <div class="gate-rule">CE: close &gt; ORH &nbsp;|&nbsp; PE: close &lt; ORL</div>
+      <div class="gate-name">Is the breakout into fresh ground?</div>
+      <div class="gate-desc">Price must also break past <strong>yesterday's</strong> high (for CE) or low (for PE). That's where trapped traders are forced to buy/sell &mdash; extra fuel for the move. This is the strictest check; turn it off if it blocks too many days.</div>
+      <div class="gate-rule">CE: close above yesterday's high &nbsp;|&nbsp; PE: close below yesterday's low</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">4</div>
     <div class="gate-content">
-      <div class="gate-name">Min Breakout Body</div>
-      <div class="gate-desc">The breakout candle must commit &mdash; doji-thin bodies don't count</div>
-      <div class="gate-rule">|close &minus; open| &ge; ORB_MIN_BODY (default 8 pts)</div>
+      <div class="gate-name">A real break, not a toe over the line</div>
+      <div class="gate-desc">The first 5-min candle to close <em>clearly</em> past the box edge (past a small buffer) is the day's <strong>one and only</strong> breakout. No second chances.</div>
+      <div class="gate-rule">close beyond the edge by a small ATR-sized cushion</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">5</div>
     <div class="gate-content">
-      <div class="gate-name">Wick Rejection Filter</div>
-      <div class="gate-desc">Opposing wick must not dominate the body &mdash; a long upper wick on a CE break = exhaustion signal</div>
-      <div class="gate-rule">CE: upper_wick &le; ORB_MAX_WICK_RATIO &times; body &nbsp;|&nbsp; PE: lower_wick &le; ...</div>
+      <div class="gate-name">Was the breakout candle strong?</div>
+      <div class="gate-desc">That candle should be a decisive one: coloured the right way, a solid body (not a tiny doji), closing near its extreme, and on the correct side of the fair-value line (VWAP).</div>
+      <div class="gate-rule">big body &middot; closes near the high/low &middot; CE above VWAP, PE below VWAP</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">6</div>
     <div class="gate-content">
-      <div class="gate-name">VWAP Alignment</div>
-      <div class="gate-desc">Trade in the direction the institutional flow is pricing &mdash; CE only above session VWAP, PE only below</div>
-      <div class="gate-rule">CE: close &gt; VWAP &nbsp;|&nbsp; PE: close &lt; VWAP &nbsp;(falls back to TWAP on volumeless candles)</div>
+      <div class="gate-name">Wait for one more candle to agree</div>
+      <div class="gate-desc"><strong>We do NOT buy the breakout candle itself.</strong> We wait for the <em>next</em> candle to keep pushing in the same direction. This one extra step is what keeps us on the real trend days and off the fakeouts.</div>
+      <div class="gate-rule">next candle makes a higher high &amp; higher close (CE) / lower low &amp; lower close (PE)</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">7</div>
     <div class="gate-content">
-      <div class="gate-name">Volume Confirmation</div>
-      <div class="gate-desc"><strong>OFF by default</strong> (<code>ORB_VOL_FILTER_ENABLED=false</code>). When enabled, breakout volume must materially exceed the recent average &mdash; but NIFTY spot has no real volume (paper/live see a tick count, backtest sees zero), so the gate can't agree across modes and is disabled.</div>
-      <div class="gate-rule">vol &ge; ORB_VOL_MULT &times; avg(prior N=ORB_VOL_LOOKBACK candles)</div>
+      <div class="gate-name">A backup way in (optional)</div>
+      <div class="gate-desc">If that next candle hesitates, we get a short second window to enter on a pullback-and-hold or a fresh push. But this is a <em>bonus</em> path &mdash; it never blocks a trade (see Section 5).</div>
+      <div class="gate-rule">optional retest within the next few candles</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">8</div>
     <div class="gate-content">
-      <div class="gate-name">Premium-Range Gate</div>
-      <div class="gate-desc">ATM option LTP must sit inside the configured band &mdash; filters out deep-OTM lottery tickets and ITM-acting-like-futures</div>
-      <div class="gate-rule">ORB_PREMIUM_MIN &le; ATM_LTP &le; ORB_PREMIUM_MAX (default 80 &mdash; 250 &#8377;)</div>
+      <div class="gate-name">Is the option worth buying?</div>
+      <div class="gate-desc">Pick a slightly in-the-money strike, make sure its price is in a sensible range, and that the buy/sell gap (spread) is tight. (Live/paper only &mdash; history has no option prices.)</div>
+      <div class="gate-rule">premium between &#8377;120 and &#8377;400 &middot; spread &le; 2 pts</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">9</div>
     <div class="gate-content">
-      <div class="gate-name">VIX Regime</div>
-      <div class="gate-desc">Optional &mdash; block entries when implied volatility is too high (premiums pumped, R:R deteriorates)</div>
-      <div class="gate-rule">VIX &le; ORB_VIX_MAX_ENTRY (default 22) &nbsp;|&nbsp; STRONG-only above ORB_VIX_STRONG_ONLY (18)</div>
+      <div class="gate-name">Haven't we already traded today?</div>
+      <div class="gate-desc">One trade per day. And only inside the window (after 9:30, before 11:30).</div>
+      <div class="gate-rule">trades today = 0 &middot; time is 09:30&ndash;11:30</div>
     </div>
   </div>
 
   <div class="note note-info">
-    <strong>Daily-count gate (pre-filter):</strong> Before any of the gates evaluate, the strategy first checks <code>ORB_MAX_DAILY_TRADES</code>. With the default of <code>1</code>, after the first successful entry the strategy skips all further candles with <code>reason: "Already traded this session — ORB takes only 1 trade/day"</code>.
-  </div>
-  <div class="note note-warn">
-    <strong>Where each gate lives:</strong> gates 1&ndash;7 run inside <code>orb_breakout.js</code> <code>getSignal()</code> (pure signal). The <strong>premium-range gate (8)</strong> and <strong>VIX gate (9)</strong> are applied <em>after</em> the signal fires, at the route layer in <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; so their skip-log entries appear once a valid breakout has already been detected. Backtest seeds a fixed entry premium (<code>ORB_BT_SEED_PREMIUM</code>, default 180) and ignores VIX entirely; it still evaluates the premium-range gate, but against that seeded premium &mdash; so the gate acts as a config sanity check (it skips <em>every</em> trade if the seed lies outside the band) rather than a per-trade filter.
+    <strong>What changed from the old version:</strong> the previous engine (V2) also demanded a stack of extra indicators (EMA20/50, ADX, RSI). Testing showed those filters mostly cancelled each other out and, worse, they threw away the big runaway winners. So V3 dropped them and relies on the structural checks above &mdash; the box, the fresh-ground break, the strong candle, and the confirmation.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. SWEET-SPOT TIERING                                                   -->
+<!-- 5. CONFIRMATION & RETEST                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section purple" id="strength">
-  <h2><span class="section-icon icon-purple">&#11088;</span> 4. Sweet-Spot Tiering &mdash; STRONG vs MARGINAL</h2>
+<section class="section purple" id="confirm">
+  <h2><span class="section-icon icon-purple">&#128260;</span> 5. Step 3 &mdash; Wait for proof, then buy</h2>
 
-  <p>Every passing breakout is classified as <strong>STRONG</strong> or <strong>MARGINAL</strong> based on the range width and breakout body. Both classifications fire entries by default &mdash; the tiering is for P&amp;L attribution and for the VIX <code>STRONG_ONLY</code> gate (under elevated VIX, only STRONG signals are allowed).</p>
+  <p>The strategy never jumps on the breakout candle itself. It waits for proof. There are two ways it can decide to actually buy:</p>
 
-  <table>
-    <thead><tr><th>Class</th><th>Condition</th><th>Interpretation</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><strong style="color:var(--accent-green);">STRONG</strong></td>
-        <td><code>ORB_SWEET_MIN &le; range &le; ORB_SWEET_MAX</code> <br>AND <code>body &ge; ORB_STRONG_BODY</code><br>AND volume strong (no vol-data, or vol &ge; 1.25&times; the vol-gate threshold &asymp; 1.5&times; avg)<br>AND wick clean (wick ratio &le; 0.6&times; <code>ORB_MAX_WICK_RATIO</code> &asymp; 0.36)</td>
-        <td>Range built in the sweet spot (30&ndash;80 pts), a real commitment body (&ge; 15 pts), confirming volume and a clean (low-wick) candle. Highest-quality setup.</td>
-      </tr>
-      <tr>
-        <td><strong style="color:var(--accent-orange);">MARGINAL</strong></td>
-        <td>All entry gates passed but at least one STRONG sub-condition missed:<br>&bull; range outside sweet spot (but inside min/max)<br>&bull; body &lt; ORB_STRONG_BODY<br>&bull; volume only marginally above average<br>&bull; wick ratio above the strict 0.36 bound</td>
-        <td>Valid breakout, but the setup is less optimal. Will be blocked when <code>VIX &gt; ORB_VIX_STRONG_ONLY</code>.</td>
-      </tr>
-    </tbody>
-  </table>
+  <h3>The main way &mdash; confirmation</h3>
+  <p>After a strong breakout candle, we look at the <strong>very next</strong> 5-minute candle. If it keeps pushing the same way (a higher high and higher close for a CE, still above the fair-value line), that's our proof &mdash; we buy when that candle closes. This catches the days that break out and just keep going.</p>
 
-  <h3>Entry-Reason Format</h3>
-  <p>The skip / entry log on each candle uses a consistent format that surfaces all 9 gate values + tier:</p>
-  <pre><code>ORB CE break (close 24350 &gt; ORH 24325, range=45pt, body=18pt, wick=0.32, vwap=24310, vol=1.8&times;) [STRONG]</code></pre>
-  <p>When you analyse a session log, this fingerprint identifies the trade as ORB unambiguously. See the <strong>signal-signatures</strong> memory note for cross-strategy disambiguation.</p>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 5. EXIT MODEL — CANDLE-STRUCTURE TRAILING STOP                          -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section red" id="sl">
-  <h2><span class="section-icon icon-red">&#128683;</span> 5. Exit Model &mdash; Candle-Structure Trailing Stop</h2>
-
-  <div class="note note-warn">
-    <strong>Rewritten 2026-06-19 (commit 0c7f3bf).</strong> The old two-target / premium-%-stop / spot-OR-edge / move-to-breakeven / premium-lock-in model was <strong>removed in full</strong> and replaced by the single candle-structure trailing stop below. If you remember the &ldquo;+40% target, &minus;25% premium SL, +5% lock-in floor&rdquo; behaviour, that code is gone &mdash; see &sect;6 for the complete removed list.
-  </div>
-
-  <p>ORB now has <strong>exactly one stop</strong>: a <strong>candle-structure trailing stop</strong> that follows the swing of the last <code>N</code> closed candles. There is no fixed profit target, no premium %-based stop, no opposite-OR-edge spot stop, no move-to-breakeven, and no premium lock-in. A winner simply <strong>rides until price breaks structure</strong> (or the 15:15 EOD square-off fires).</p>
-
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>What it controls</th></tr></thead>
-    <tbody>
-      <tr>
-        <td><code>ORB_SL_CANDLES</code></td>
-        <td><code>2</code></td>
-        <td>Number of most-recent <em>closed</em> candles whose swing defines the stop. CE stop = the <strong>lowest low</strong> of the last N candles; PE stop = the <strong>highest high</strong>.</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <h3>How the stop is set and trailed</h3>
+  <h3>The backup way &mdash; the optional "retest"</h3>
+  <p>Sometimes the next candle stalls instead of pushing. Rather than give up, the strategy keeps watching for a few more candles and can still get in if price:</p>
   <ul>
-    <li><strong>Initial SL (at entry):</strong> the swing of the last <code>ORB_SL_CANDLES</code> closed candles &mdash; CE &rarr; lowest low, PE &rarr; highest high. This is both <code>initialSlSpot</code> and <code>slSpot</code>.</li>
-    <li><strong>Trail (on every candle close):</strong> <code>_updateCandleTrail()</code> re-reads the swing of the last N candles and ratchets the SL <strong>in the favourable direction only</strong> &mdash; CE raises the SL to a higher low (never lowers it), PE drops the SL to a lower high (never raises it). The stop <strong>never loosens</strong>.</li>
-    <li><strong>Trigger (on every tick):</strong> the exit is checked per-tick on <em>spot</em> in <code>_checkExits()</code> &mdash; CE exits when <code>spot &le; slSpot</code>, PE exits when <code>spot &ge; slSpot</code>. The fill is the option LTP at that tick.</li>
+    <li><strong>Pushes back up</strong> in the breakout direction (the trend resumes), or</li>
+    <li><strong>Dips back to the box edge, touches it, and bounces</strong> the right way (a "retest" that holds), or</li>
+    <li><strong>Is still clearly trending</strong> when the short backup window ends.</li>
   </ul>
 
+  <div class="note note-warn">
+    <strong>Important: this backup is optional and never blocks a trade.</strong> If price simply rockets away and never comes back to retest, <strong>we still buy</strong> &mdash; we don't wait for a pullback that may never come. We tried the opposite (forcing a retest before every trade) and it actually made results <em>worse</em>: demanding a pullback kept us in the weak, stall-and-fade breakouts and made us miss the strong ones that never look back &mdash; which are exactly the trades that make the whole strategy profitable. So the retest is only ever a helpful fallback, never a rule.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 6. OPTION SELECTION                                                     -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="option">
+  <h2><span class="section-icon icon-cyan">&#127919;</span> 6. Step 4 &mdash; Pick the option</h2>
+
+  <p>Once we've decided to trade, we still have to choose <em>which</em> option to buy and check it's worth trading.</p>
+
+  <table>
+    <thead><tr><th>Check</th><th>Default</th><th>In plain words</th></tr></thead>
+    <tbody>
+      <tr><td>Which strike</td><td><code>1 step in-the-money</code></td><td>We pick a strike one step <em>inside</em> the money (for CE that's a lower strike, for PE a higher one). This option already has real value, so it follows NIFTY almost point-for-point and loses value slowly &mdash; much better for riding a trend than a cheap far-out option.</td></tr>
+      <tr><td>Price range</td><td><code>&#8377;120 &ndash; &#8377;400</code></td><td>Skip if the option is too cheap (a near-worthless lottery ticket) or too pricey. Keeps us in options that actually move well.</td></tr>
+      <tr><td>Buy/sell gap</td><td><code>&le; 2 points</code></td><td>Skip if the gap between the buy and sell price is wide &mdash; a wide gap quietly eats your profit on entry and exit.</td></tr>
+      <tr><td>Crowd positioning (OI)</td><td><code>off by default</code></td><td>An optional check on where the big money is building positions. Now works the same in practice and live modes.</td></tr>
+    </tbody>
+  </table>
+
   <div class="note note-info">
-    <strong>Update cadence vs. trigger cadence.</strong> The trail level <em>moves</em> only at candle close, but it is <em>tested</em> on every incoming spot tick. So the SL sits still through a candle, then steps up (CE) / down (PE) when the candle closes with a more favourable structure &mdash; and any tick that pierces the current level closes the trade immediately. The <strong>same level</strong> serves as both the initial stop and the trailing stop; there is no separate initial-vs-trail logic.
+    <strong>In the backtest, there are no real option prices.</strong> History doesn't record option quotes, so the backtest <em>estimates</em> the option: it starts from a typical slightly-ITM price (&#8377;240) and models how it would move with NIFTY. So backtest profit is a good approximation, not the exact fills you'd get live &mdash; always confirm against paper trading.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 7. EXIT MODEL                                                           -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section red" id="exit">
+  <h2><span class="section-icon icon-red">&#128683;</span> 7. Step 5 &mdash; When we sell</h2>
+
+  <p>The exits are built to <strong>let a winner run</strong> while cutting the losers quickly. There is <strong>no fixed profit target</strong> &mdash; we don't cap the trade at "+40%" and walk away. Instead, a handful of rules watch the trade, and whichever one triggers first closes it:</p>
+
+  <table>
+    <thead><tr><th>What sells us out</th><th>Default</th><th>In plain words</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Starting stop-loss</strong></td><td>&mdash;</td><td>Right after we buy, our safety line is the low of our entry candle (for CE) or its high (for PE). If price falls back through that, we're out.</td></tr>
+      <tr><td><strong>Move to break-even</strong></td><td>~20 pts profit</td><td>Once the trade is comfortably in profit (about 20 points, more on a wide-box day), we slide the stop up to our entry price. From here the trade can't turn into a loss.</td></tr>
+      <tr><td><strong>Trend trail (EMA20)</strong></td><td>EMA 20</td><td>The main exit. We ride the trend and only sell when a candle <em>closes</em> back across the moving trend line. One quick dip that closes back on-side does <strong>not</strong> shake us out &mdash; the trend has to genuinely break.</td></tr>
+      <tr><td><strong>Strong candle against us</strong></td><td>on</td><td>If a big candle slams back the other way and closes inside the box, that's a clear rejection &mdash; we exit.</td></tr>
+      <tr><td><strong>Rupee loss cap</strong></td><td>&#8377;1,500</td><td>A hard floor: if the trade is losing &#8377;1,500, we're out, no matter what the candles say.</td></tr>
+      <tr><td><strong>Option melted down</strong></td><td>&minus;35%</td><td>If the option price collapses 35% from what we paid (even if NIFTY hasn't hit our spot stop), we bail. This catches the "the option bled out on time-decay" losses.</td></tr>
+      <tr><td><strong>End of day</strong></td><td>15:15</td><td>Anything still open at 3:15 PM is sold. We never hold overnight.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-info">
+    <strong>There's a "target" line on the chart, but it's just for looking.</strong> You'll see a target level drawn on the ORB page (1.5&times; the box height beyond the edge). Nothing actually sells when price reaches it &mdash; the trend trail decides how far a winner runs.
   </div>
 
-  <h3>Worked Example &mdash; CE breakout</h3>
-  <p>Breakout candle closes at 24,350 above ORH 24,325 &rarr; CE entry, spot 24,350, <code>ORB_SL_CANDLES=2</code>:</p>
-  <pre><code>ENTRY  spot 24,350. Last 2 closed candle lows = 24,300 &amp; 24,315.
-       Initial SL = lowest low = 24,300 (spot).  Risk = 50 pts of spot.
+  <h3>A worked example &mdash; a CE trend day</h3>
+  <pre><code>9:30   Box locks: top 24,325 / bottom 24,265  (60 points tall).
+       Normal move today is ~40, so 60 is a healthy box (1.5×)      → good day
+       Market opened near yesterday's close, no crazy gap           → good day
+       Yesterday's high was 24,300 (below the box top)              → fresh ground is live
 
-Candle closes higher. Last 2 lows now 24,315 &amp; 24,345.
-       lowest low = 24,315 &gt; 24,300  &rarr;  SL ratchets UP to 24,315.
+9:40   A candle closes at 24,352 — clearly above the box top + cushion,
+       AND above yesterday's high 24,300. Big green body, closes near its high,
+       above the fair-value line.  →  This is the day's breakout.
+       (We do NOT buy yet.)
 
-Candle closes higher again. Last 2 lows now 24,345 &amp; 24,372.
-       lowest low = 24,345 &gt; 24,315  &rarr;  SL ratchets UP to 24,345 (now locking gains).
+9:45   Next candle pushes higher and closes at 24,371.  →  Proof.  BUY a CE.
+       Option is 1-step in-the-money, priced ₹190, tight spread.
+       Safety line = this candle's low, 24,340.
 
-Price rolls over. A tick prints spot 24,344 (&le; 24,345).
-       CE EXIT on that tick, fill at the option LTP.  No premium target ever armed —
-       the winner rode the structure until it broke.</code></pre>
+10:05  Trade is +32 points in profit  →  stop moves up to our entry (can't lose now).
+10:40  Trend keeps running; every candle stays above the EMA20 line. We just hold.
+13:10  Finally a candle CLOSES below the EMA20 line  →  SELL. Trend's over.
+       Big win banked. The rupee-cap and meltdown stops never had to fire.</code></pre>
 
   <div class="note note-success">
-    <strong>Why structure, not premium.</strong> The candle stop keeps ORB in a trending move for as long as price keeps printing higher lows (CE) / lower highs (PE), instead of capping the trade at a fixed +40%. On tight-range days the stop sits close to price, so a dead-on-arrival fakeout exits fast and small rather than bleeding a wide premium stop. Note it does <strong>not</strong> rescue a trade that reverses straight off entry before any candle prints a better low/high &mdash; entry quality, not the stop, is ORB&rsquo;s real lever (see &sect;11).
+    <strong>Why no fixed target?</strong> If we always sold at "+40%," we'd throw away the big trend days &mdash; and a few of those big days are what make the whole strategy profitable over a month. The trend trail keeps us in the move as long as it lasts, while the break-even, rupee-cap and meltdown stops make sure a bad trade dies small. The real skill is in the <em>entry</em> checklist &mdash; the exit just decides how much of a good entry we get to keep.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. EXIT PRIORITY & REMOVED OLD MODEL                                    -->
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<section class="section purple" id="exit">
-  <h2><span class="section-icon icon-purple">&#128205;</span> 6. Exit Priority &amp; the Removed Old Model</h2>
-
-  <p>With the exit model reduced to a single stop, the runtime evaluation is short. There are only two ways an open ORB position can close:</p>
-  <ol style="margin-left:24px;">
-    <li><strong>Candle-structure trailing stop</strong> (per-tick, on spot) &mdash; CE: <code>spot &le; slSpot</code> &nbsp;|&nbsp; PE: <code>spot &ge; slSpot</code>. The <code>slSpot</code> level is ratcheted on each candle close (&sect;5). This is the <strong>only</strong> stop.</li>
-    <li><strong>EOD forced square-off</strong> (clock, in <code>onTick</code>) &mdash; any position still open at <code>ORB_FORCED_EXIT</code> (15:15 IST default) is squared off regardless of P&amp;L. This is the only non-stop exit &mdash; a safety net, not a strategy signal.</li>
-  </ol>
-
-  <div class="note note-warn">
-    <strong><code>ORB_MAX_DAILY_LOSS</code> does NOT kill an open trade.</strong> The daily-loss check runs in <code>onCandleClose</code> <em>only when flat</em> &mdash; the handler early-returns (<code>if (state.position) return</code>) the moment a position is open, and it counts <strong>realised</strong> <code>sessionPnl</code> only. A live ORB trade sitting at &minus;&#8377;800 is never force-closed by it; the position exits only on the candle trail or the 15:15 square-off. At the default <strong>1 trade/day</strong>, this gate is effectively inert. <strong>There is no per-trade unrealised-&#8377; stop today</strong> &mdash; adding one would mean a new <code>ORB_MAX_TRADE_LOSS</code> wired into <code>_checkExits</code> on every tick.
-  </div>
-
-  <div class="note note-info">
-    <strong><code>ORB_TARGET_RANGE_MULT</code> (1.5) is not an exit.</strong> It survives only as an informational chart line (<code>targetSpot</code> = CE: ORH + range&times;1.5, PE: ORL &minus; range&times;1.5) drawn on the ORB status page. Nothing exits when spot reaches it.
-  </div>
-
-  <div class="note note-warn">
-    <strong>No bid-ask spread guard on ORB exits.</strong> The shared <code>MAX_BID_ASK_SPREAD_PTS</code> guard is <em>not</em> wired into <code>orbPaper.js</code> / <code>orbLive.js</code> &mdash; ORB exits fill on the next tick without a spread check (it is a EMA_RSI_ST/BB_RSI/PA guard). Confirm the spread on illiquid expiries before going live.
-  </div>
-
-  <div class="note note-danger">
-    <strong>Removed (old exit model) &mdash; do not expect any of these:</strong>
-    <ul style="margin-top:6px;margin-bottom:0;">
-      <li>&minus;25% premium stop (<code>ORB_STOP_PCT</code>)</li>
-      <li>+40% premium target (<code>ORB_TARGET_PCT</code>)</li>
-      <li>1.5&times;-range spot <em>target</em> as an exit (<code>ORB_TARGET_RANGE_MULT</code> now chart-only)</li>
-      <li>Opposite-OR-edge spot stop (CE: spot&le;ORL / PE: spot&ge;ORH)</li>
-      <li>Move-to-breakeven ratchet (SL &rarr; entry after 1&times; range in favour)</li>
-      <li>Premium lock-in (<code>ORB_PREMIUM_LOCKIN_PCT</code> / <code>ORB_PREMIUM_LOCKIN_FLOOR_PCT</code>)</li>
-      <li>Continuous-premium peak-giveback trail (<code>ORB_TRAIL_*</code>)</li>
-    </ul>
-    <p style="margin:8px 0 0;">All removed 2026-06-19 (commit 0c7f3bf). Their env keys are no longer read by the code (grep-confirmed) and were dropped from the Settings UI.</p>
-  </div>
-</section>
-
-<!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 7. VIX FILTER                                                           -->
+<!-- 8. VIX FILTER                                                           -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="vix">
-  <h2><span class="section-icon icon-red">&#128261;</span> 7. India VIX Regime Filter</h2>
+  <h2><span class="section-icon icon-red">&#128261;</span> 8. The "market too jumpy" filter (VIX)</h2>
 
-  <p>ORB has its own independent VIX gate. The cross-strategy <code>VIX_FAIL_MODE</code> applies (when set to <code>closed</code>, missing VIX data blocks entries; when <code>open</code>, missing VIX data allows entries).</p>
+  <p>VIX is the market's fear gauge. When it's high, options get expensive and swings get violent &mdash; a riskier time to trade. ORB has its own optional VIX filter to sit out those days.</p>
 
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>In plain words</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Master toggle. When <code>false</code>, ORB ignores VIX entirely.</td></tr>
-      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, all ORB entries are blocked &mdash; premiums are pumped, R:R deteriorates.</td></tr>
-      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and <code>ORB_VIX_MAX_ENTRY</code>, only STRONG signals fire (MARGINAL blocked).</td></tr>
+      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>The on/off switch. Off by default, so VIX is ignored unless you turn it on.</td></tr>
+      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>If VIX is above 22, don't trade at all today &mdash; too jumpy.</td></tr>
+      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between 18 and 22, only take the very best setups.</td></tr>
     </tbody>
   </table>
 
   <div class="note note-info">
-    <strong>Why ORB has its own VIX thresholds:</strong> ORB premiums are most sensitive to VIX of all the strategies in this suite because the trade is held intraday with a +40% target. High VIX days have higher premium ranges but disproportionately bigger drawdowns &mdash; the textbook 1-trade-per-day approach also amplifies single-day variance.
+    <strong>Why ORB has its own VIX limits:</strong> because we hold the trade for hours with no fixed target, our option's value is especially sensitive to how jumpy the market is. High-VIX days can swing hard against us, so ORB uses its own ceiling rather than the shared one.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. RISK MANAGEMENT                                                      -->
+<!-- 9. RISK & PORTFOLIO BREAKER                                             -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="risk">
-  <h2><span class="section-icon icon-orange">&#128737;</span> 8. Risk Management</h2>
+  <h2><span class="section-icon icon-orange">&#128737;</span> 9. Safety limits &amp; the losing-streak brake</h2>
+
+  <p>Several limits protect the account. Think of them as circuit-breakers of increasing size &mdash; per trade, per day, and per week.</p>
 
   <table>
-    <thead><tr><th>Layer</th><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <thead><tr><th>Limit</th><th>Default</th><th>In plain words</th></tr></thead>
     <tbody>
-      <tr><td>Daily trade cap</td><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>After N entries, no more for the session</td></tr>
-      <tr><td>Per-trade stop</td><td><code>ORB_SL_CANDLES</code></td><td><code>2</code></td><td>Candle-structure trailing stop (&sect;5) &mdash; the only stop. CE = lowest low / PE = highest high of last N candles, ratcheted on each candle close, triggered per-tick on spot</td></tr>
-      <tr><td>Daily loss kill-switch</td><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code> &#8377;</td><td><strong>Entries only, when flat.</strong> Realised loss &ge; threshold halts <em>new</em> entries; does <strong>not</strong> close an open trade. Effectively inert at 1 trade/day (see &sect;6)</td></tr>
-      <tr><td>Stale-breakout cutoff</td><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>No new entries after this time even if ORH/ORL is broken</td></tr>
-      <tr><td>EOD forced exit</td><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Any open position is squared off at this time &mdash; the only non-stop exit</td></tr>
-      <tr><td>VIX gate</td><td><code>ORB_VIX_*</code></td><td>see &sect;7</td><td>Per-mode VIX regime filter (off by default)</td></tr>
-      <tr><td>Expiry-day-only</td><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Optional restriction to Tuesday weekly expiry days</td></tr>
-      <tr><td>Bid-ask spread guard</td><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td><strong>Not wired into ORB</strong> &mdash; the shared guard applies to EMA_RSI_ST/BB_RSI/PA, not ORB entries/exits</td></tr>
+      <tr><td>One trade a day</td><td><code>1</code></td><td>After today's trade, we're done &mdash; a failed trade is not a reason to try again.</td></tr>
+      <tr><td>Most we'll lose on one trade</td><td><code>&#8377;1,500</code></td><td>Hard stop on a single trade's loss.</td></tr>
+      <tr><td>Option-meltdown stop</td><td><code>&minus;35%</code></td><td>Exit if the option loses 35% of its value (time-decay / volatility crush).</td></tr>
+      <tr><td>Daily loss brake</td><td><code>&#8377;3,000</code></td><td>Stop taking <em>new</em> trades once the day's loss hits &#8377;3,000. (With one trade a day, rarely matters.)</td></tr>
+      <tr><td>Weekly loss brake</td><td><code>&#8377;9,000</code></td><td>If the week's losses reach &#8377;9,000, sit out the rest of the week (Monday&ndash;Friday).</td></tr>
+      <tr><td>Losing-streak brake</td><td><code>4 days</code></td><td>After 4 losing days in a row, take a one-day break to reset.</td></tr>
+      <tr><td>Latest new trade</td><td><code>11:30</code></td><td>No fresh entries after 11:30 &mdash; the day's too far gone.</td></tr>
+      <tr><td>Sell everything by</td><td><code>15:15</code></td><td>Close any open trade at 3:15 PM.</td></tr>
+      <tr><td>Skip wide spreads</td><td><code>2 pts</code></td><td>Don't trade an option whose buy/sell gap is too wide.</td></tr>
     </tbody>
   </table>
+
+  <div class="note note-info">
+    <strong>The weekly &amp; streak brakes are new in V3.</strong> The strategy remembers its recent losses (saved to disk, so it survives a restart) and will <strong>stop itself from trading</strong> during a bad run &mdash; even across days. Practice and live mode keep separate memories, so a rough patch in practice never freezes your live trading, and vice-versa.
+  </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. OPERATING MODES                                                      -->
+<!-- 10. LEGACY ENGINES                                                      -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section purple" id="legacy">
+  <h2><span class="section-icon icon-purple">&#128230;</span> 10. The older versions (V2 / V1)</h2>
+
+  <p>V3 (described in this guide) is what runs by default. The two earlier designs are still in the code as a safety net &mdash; if you ever wanted to compare, you can switch back with <code>ORB_ENTRY_V3_ENABLED=false</code>. In short:</p>
+
+  <table>
+    <thead><tr><th>Version</th><th>What it did differently</th></tr></thead>
+    <tbody>
+      <tr><td><strong>V2</strong> &mdash; "confirmed breakout"</td><td>Same breakout idea, but it piled on extra indicator checks (EMA20/50, ADX, RSI). Those turned out to cancel each other and throw away the big winners, so V3 dropped them.</td></tr>
+      <tr><td><strong>V1</strong> &mdash; "the textbook version"</td><td>The original: it bought <em>immediately</em> on the breakout candle (no waiting for proof), used fixed point sizes for the box, and graded trades as "strong" or "marginal." Simple, but it took too many fakeouts.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note note-warn">
+    <strong>A few checks apply no matter which version you run:</strong> the VIX filter, the crowd-positioning (OI) check, the option price/spread checks, and the expiry-day-only option. The old fixed-point settings simply do nothing while V3 is on.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 11. OPERATING MODES                                                     -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section cyan" id="modes">
-  <h2><span class="section-icon icon-cyan">&#9881;</span> 9. Operating Modes</h2>
+  <h2><span class="section-icon icon-cyan">&#9881;</span> 11. Paper, Live &amp; Backtest</h2>
 
-  <h3 style="color:var(--accent-blue);">Paper Mode &mdash; <code>/orb-paper</code></h3>
-  <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated fills (no broker round-trip). Canonical decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/orb_paper_trades.json</code>; per-day JSONL audit at <code>~/trading-data/trades/orb_paper_trades_YYYY-MM-DD.jsonl</code> (seeded with a settings snapshot at session start, re-snapshotted on every Settings save during the session). When <code>TICK_RECORDER_ENABLED=true</code> (default), every spot/option/VIX tick is recorded to <code>~/trading-data/ticks/YYYY-MM-DD/*.jsonl</code> for Replay.</p>
+  <h3 style="color:var(--accent-blue);">Paper &mdash; <code>/orb-paper</code> (practice)</h3>
+  <p>Real live prices, pretend money. No real orders are ever placed. This is the "official" version of the strategy &mdash; whenever live or backtest behaves differently, paper is treated as correct. Every trade is saved to your trading-data folder, and every price tick can be recorded so you can replay the exact day later.</p>
 
-  <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/orb-live</code></h3>
-  <p>Real Fyers orders. <strong>Double-gated</strong>: both <code>ORB_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required. With DRY-RUN on (default), the broker call is logged but no real order is placed. Switch DRY-RUN off only after verifying Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+  <h3 style="color:var(--accent-green);">Live &mdash; <code>/orb-live</code> (real money)</h3>
+  <p>Real orders through Fyers &mdash; but locked behind <strong>two</strong> safety switches so it can never fire by accident: <code>ORB_LIVE_ENABLED</code> must be on <em>and</em> the global dry-run switch must be off. While dry-run is on (the default), the system <em>shows</em> the order it would place but doesn't actually send it. Only turn dry-run off after you've checked that live and paper make the same decisions on a replayed day.</p>
 
-  <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/orb-backtest</code></h3>
-  <p>Date-range backtest replaying historical 1-minute candles. Records option LTP polls during the run so Replay can reproduce the same trades deterministically. Honors <code>LOT_MULTIPLIER</code> end-to-end and <code>ORB_EXPIRY_DAY_ONLY</code> for expiry-day regime filtering. Result stored under <code>~/trading-data/backtest_cache/</code>.</p>
+  <h3 style="color:var(--accent-purple);">Backtest &mdash; <code>/orb-backtest</code> (test on the past)</h3>
+  <p>Runs the strategy over past dates to see how it would have done. Since history has no option prices, it estimates the option's price and movement (see Section 6). You get a downloadable summary at the end.</p>
 
-  <h3 style="color:var(--accent-orange);">Replay Mode &mdash; <code>/replay</code></h3>
-  <p>Re-runs a recorded paper session through the paper <code>onTick()</code> handler. Two sub-modes:</p>
-  <ul>
-    <li><strong>Snapshot</strong> &mdash; applies the recorded session-start settings; deterministic A/A reproduction.</li>
-    <li><strong>Current Settings</strong> &mdash; applies the live <code>process.env</code>; deterministic A/B for tuning settings against real ticks after market hours.</li>
-  </ul>
-  <p>Replay outputs land in <code>~/trading-data/_replay_trades/</code> (snapshot) or <code>_replay_trades_sim/</code> (current settings) &mdash; kept separate from the canonical paper logs.</p>
+  <h3 style="color:var(--accent-orange);">Replay &mdash; <code>/replay</code> (re-run a recorded day)</h3>
+  <p>Takes a day you recorded in paper mode and runs it again, tick by tick. You can replay it with the <em>original</em> settings (to reproduce exactly what happened) or with your <em>current</em> settings (to test a tweak against the same real prices, after market hours). Great for safely trying out changes.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. CONFIG REFERENCE                                                    -->
+<!-- 12. CONFIG REFERENCE                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="config">
-  <h2><span class="section-icon icon-orange">&#128221;</span> 10. Complete Configuration Reference</h2>
+  <h2><span class="section-icon icon-orange">&#128221;</span> 12. All the settings, explained</h2>
 
-  <div class="env-group">Master toggles</div>
+  <p>This is the full list of ORB settings and their defaults &mdash; the same names you'll find in the Settings page. You don't need to touch most of them; the defaults are the tuned V3 setup.</p>
+
+  <div class="env-group">On/off switches</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB sidebar group AND Settings section. When off, both are hidden.</td></tr>
-      <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for ORB Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Fyers orders.</td></tr>
-      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; keeps ORB in dry-run (log only, no real order) even when the global <code>LIVE_HARNESS_DRY_RUN</code> is off. Lets you take EMA_RSI_ST/etc. live while ORB stays simulated.</td></tr>
-      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only allow ORB entries on weekly expiry day (Tuesday)</td></tr>
+      <tr><td><code>ORB_MODE_ENABLED</code></td><td><code>true</code></td><td>Show ORB in the menu and Settings. Off = hidden.</td></tr>
+      <tr><td><code>ORB_LIVE_ENABLED</code></td><td><code>false</code></td><td>The master switch for real orders (still needs the global dry-run off).</td></tr>
+      <tr><td><code>ORB_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep ORB in "pretend" mode even when other strategies go live.</td></tr>
+      <tr><td><code>ORB_OI_ENABLED</code></td><td><code>false</code></td><td>Turn on the crowd-positioning (OI) check.</td></tr>
+      <tr><td><code>ORB_EXPIRY_DAY_ONLY</code></td><td><code>false</code></td><td>Only trade on weekly-expiry day (Tuesday).</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Opening range window</div>
+  <div class="env-group">The box &amp; timing</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_RANGE_START</code></td><td><code>09:15</code></td><td>Opening range start (IST)</td></tr>
-      <tr><td><code>ORB_RANGE_END</code></td><td><code>09:30</code></td><td>Opening range end (IST). 15-min ORB = 09:15 &rarr; 09:30.</td></tr>
-      <tr><td><code>ORB_ENTRY_END</code></td><td><code>12:00</code></td><td>Stale-breakout cutoff &mdash; no new entries after this time</td></tr>
-      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Hard EOD square-off for any open ORB position</td></tr>
+      <tr><td><code>ORB_RANGE_START</code> / <code>ORB_RANGE_END</code></td><td><code>09:15</code> / <code>09:30</code></td><td>When the box starts and locks.</td></tr>
+      <tr><td><code>ORB_ENTRY_END</code></td><td><code>11:30</code></td><td>Latest a new trade may start (V1/V2 used 12:00).</td></tr>
+      <tr><td><code>ORB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Sell everything by this time.</td></tr>
+      <tr><td><code>ORB_ATR_PERIOD</code></td><td><code>14</code></td><td>Bars used for the "normal move" ruler (ATR).</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Range &amp; breakout-body sanity</div>
+  <div class="env-group">The day &amp; breakout checks (V3)</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_MIN_RANGE_PTS</code></td><td><code>25</code></td><td>Skip when opening range is too tight &mdash; likely noise / pre-market indecision</td></tr>
-      <tr><td><code>ORB_MAX_RANGE_PTS</code></td><td><code>120</code></td><td>Skip when opening range is too wide &mdash; exhausted move, breakout is chasing</td></tr>
-      <tr><td><code>ORB_MIN_BODY</code></td><td><code>8</code></td><td>Require the breakout candle's body to be at least this many points (filters doji)</td></tr>
+      <tr><td><code>ORB_ENTRY_V3_ENABLED</code></td><td><code>true</code></td><td>Use the trend-day engine (this guide). Off = fall back to the old versions.</td></tr>
+      <tr><td><code>ORB_OR_ATR_MIN</code> / <code>ORB_OR_ATR_MAX</code></td><td><code>0.7</code> / <code>2.5</code></td><td>Allowed box size, as a multiple of the normal move. Outside this = skip the day.</td></tr>
+      <tr><td><code>ORB_GAP_OR_MULT</code></td><td><code>3</code></td><td>Skip if the open gap is bigger than this &times; the box height (<code>0</code> = ignore gaps).</td></tr>
+      <tr><td><code>ORB_PRIORDAY_LEVEL_FILTER</code></td><td><code>true</code></td><td>Require the break to also clear yesterday's high/low (fresh ground). Turn off if it blocks too many days.</td></tr>
+      <tr><td><code>ORB_BUFFER_OR_MULT</code> / <code>ORB_BUFFER_ATR_MULT</code></td><td><code>0.15</code> / <code>0.3</code></td><td>How far past the edge counts as a real break (a small cushion).</td></tr>
+      <tr><td><code>ORB_BODY_ATR_MULT</code></td><td><code>0.6</code></td><td>How big the breakout candle's body must be, vs the normal move.</td></tr>
+      <tr><td><code>ORB_CLOSE_POS_PCT</code></td><td><code>0.25</code></td><td>Breakout candle must close near its extreme (top/bottom quarter).</td></tr>
+      <tr><td><code>ORB_VWAP_FILTER_ENABLED</code></td><td><code>true</code></td><td>Only CE above the fair-value line, PE below it.</td></tr>
+      <tr><td><code>ORB_CONFIRM_ENABLED</code></td><td><code>true</code></td><td>Require the next candle to agree before buying.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Entry filters</div>
+  <div class="env-group">The optional backup entry (retest)</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_WICK_FILTER_ENABLED</code></td><td><code>true</code></td><td>Reject breakout candles with large opposing wick (close near mid-candle = weak break)</td></tr>
-      <tr><td><code>ORB_MAX_WICK_RATIO</code></td><td><code>0.6</code></td><td>Upper wick (CE) or lower wick (PE) must be &le; this fraction of body. 0.6 = wick can be up to 60% of body.</td></tr>
-      <tr><td><code>ORB_VWAP_FILTER_ENABLED</code></td><td><code>true</code></td><td>CE only if breakout close &gt; session VWAP; PE only if close &lt; VWAP. Falls back to TWAP on volumeless candles.</td></tr>
-      <tr><td><code>ORB_VOL_FILTER_ENABLED</code></td><td><code>false</code></td><td><strong>Off by default</strong> &mdash; require breakout volume &ge; multiplier &times; prior N-candle avg. Disabled because NIFTY spot has no real volume (paper/live see a tick count, backtest sees zero), so the gate can't agree across modes.</td></tr>
-      <tr><td><code>ORB_VOL_MULT</code></td><td><code>1.2</code></td><td>Breakout volume must be &ge; this &times; prior-N avg (1.2 = 20% above average)</td></tr>
-      <tr><td><code>ORB_VOL_LOOKBACK</code></td><td><code>5</code></td><td>Number of prior candles in the volume SMA window</td></tr>
-      <tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>true</code></td><td>Skip entries when ATM option LTP is outside the band</td></tr>
-      <tr><td><code>ORB_PREMIUM_MIN</code></td><td><code>80</code></td><td>Skip entry if ATM LTP below this (&#8377;) &mdash; filters out deep-OTM lottery tickets</td></tr>
-      <tr><td><code>ORB_PREMIUM_MAX</code></td><td><code>250</code></td><td>Skip entry if ATM LTP above this (&#8377;) &mdash; filters out ITM-acting-like-futures</td></tr>
+      <tr><td><code>ORB_RETEST_MODE</code></td><td><code>optional</code></td><td><code>optional</code> = allow the backup entry but never require it; <code>off</code> = confirmation only.</td></tr>
+      <tr><td><code>ORB_RETEST_TOL_MIN</code> / <code>ORB_RETEST_TOL_PCT</code></td><td><code>5</code> / <code>0.1</code></td><td>How close to the edge a pullback must come to count as a retest.</td></tr>
+      <tr><td><code>ORB_RETEST_MAX_WAIT</code></td><td><code>4</code></td><td>How many candles the backup window stays open.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Sweet-spot tiering (STRONG vs MARGINAL)</div>
+  <div class="env-group">Picking &amp; checking the option</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_SWEET_MIN</code></td><td><code>30</code></td><td>Range below this = MARGINAL (still allowed)</td></tr>
-      <tr><td><code>ORB_SWEET_MAX</code></td><td><code>80</code></td><td>Range above this = MARGINAL (still allowed)</td></tr>
-      <tr><td><code>ORB_STRONG_BODY</code></td><td><code>15</code></td><td>Breakout body &ge; this AND range in sweet spot &rarr; STRONG</td></tr>
+      <tr><td><code>ORB_ITM_STEPS</code></td><td><code>1</code></td><td>How many strikes in-the-money to buy (<code>0</code> = at-the-money).</td></tr>
+      <tr><td><code>ORB_PREMIUM_GATE_ENABLED</code></td><td><code>true</code></td><td>Turn the option price-range check on/off.</td></tr>
+      <tr><td><code>ORB_PREMIUM_MIN</code> / <code>ORB_PREMIUM_MAX</code></td><td><code>120</code> / <code>400</code></td><td>Allowed option price range (&#8377;).</td></tr>
+      <tr><td><code>ORB_MAX_SPREAD_PTS</code></td><td><code>2</code></td><td>Skip if the buy/sell gap is wider than this.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Stop / target (single candle-structure stop)</div>
+  <div class="env-group">When we sell</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_SL_CANDLES</code></td><td><code>2</code></td><td><strong>The only stop.</strong> SL = swing of the last N closed candles (CE &rarr; lowest low, PE &rarr; highest high), ratcheted in the favourable direction on each candle close, triggered per-tick on spot. Same level is both the initial SL and the trail. No premium SL, no profit target.</td></tr>
-      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td><code>1.5</code></td><td>Informational chart target line only (<code>targetSpot</code> = ORH/ORL &plusmn; range &times; this) &mdash; <strong>no longer an exit</strong>.</td></tr>
-    </tbody>
-  </table>
-  <div class="note note-danger">
-    <strong>Dead keys &mdash; removed 2026-06-19, no longer read:</strong> <code>ORB_STOP_PCT</code>, <code>ORB_TARGET_PCT</code>, <code>ORB_PREMIUM_LOCKIN_PCT</code>, <code>ORB_PREMIUM_LOCKIN_FLOOR_PCT</code>, <code>ORB_TRAIL_*</code>. Setting them has no effect. See &sect;6.
-  </div>
-
-  <div class="env-group">VIX regime filter</div>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
-    <tbody>
-      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Independent VIX gate for ORB</td></tr>
-      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Block all ORB entries above this VIX</td></tr>
-      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between this and VIX_MAX_ENTRY, allow only STRONG signals</td></tr>
+      <tr><td><code>ORB_TRAIL_EMA</code></td><td><code>20</code></td><td>The trend line we trail behind; exit when a candle closes across it.</td></tr>
+      <tr><td><code>ORB_BREAKEVEN_PTS</code> / <code>ORB_BREAKEVEN_OR_MULT</code></td><td><code>20</code> / <code>0.5</code></td><td>How much profit before we move the stop to break-even.</td></tr>
+      <tr><td><code>ORB_OPP_CANDLE_EXIT</code> / <code>ORB_OPP_CANDLE_BODY_MULT</code></td><td><code>true</code> / <code>0.3</code></td><td>Exit on a big candle that slams back the other way.</td></tr>
+      <tr><td><code>ORB_MAX_TRADE_LOSS</code></td><td><code>1500</code></td><td>Most we'll lose on one trade, in &#8377; (<code>0</code> = off).</td></tr>
+      <tr><td><code>ORB_PREMIUM_STOP_PCT</code></td><td><code>35</code></td><td>Exit if the option loses this % of its value (<code>0</code> = off).</td></tr>
+      <tr><td><code>ORB_TARGET_RANGE_MULT</code></td><td><code>1.5</code></td><td>A target line on the chart only &mdash; it does not trigger a sale.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Risk caps</div>
+  <div class="env-group">Jumpiness filter (VIX)</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Textbook 1 trade/day &mdash; raise only if you accept the chop</td></tr>
-      <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>ORB daily loss kill-switch (&#8377;)</td></tr>
-      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting capital for ORB paper trading (&#8377;) &mdash; shared Fyers-side investment amount, not an ORB-specific key</td></tr>
+      <tr><td><code>ORB_VIX_ENABLED</code></td><td><code>false</code></td><td>Turn the VIX filter on/off.</td></tr>
+      <tr><td><code>ORB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>Above this VIX, don't trade.</td></tr>
+      <tr><td><code>ORB_VIX_STRONG_ONLY</code></td><td><code>18</code></td><td>Between here and the max, take only the best setups.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Safety limits &amp; the losing-streak brake</div>
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_MAX_DAILY_TRADES</code></td><td><code>1</code></td><td>Trades allowed per day.</td></tr>
+      <tr><td><code>ORB_MAX_DAILY_LOSS</code></td><td><code>3000</code></td><td>Stop new trades once the day's loss hits this (&#8377;).</td></tr>
+      <tr><td><code>ORB_RISK_THROTTLE_ENABLED</code></td><td><code>true</code></td><td>Turn on the weekly / losing-streak brakes.</td></tr>
+      <tr><td><code>ORB_MAX_WEEKLY_LOSS</code></td><td><code>9000</code></td><td>Sit out the rest of the week after losing this much (&#8377;).</td></tr>
+      <tr><td><code>ORB_LOSS_STREAK_SKIP</code></td><td><code>4</code></td><td>Take a break after this many losing days in a row.</td></tr>
+      <tr><td><code>ORB_SIG_WINDOW</code></td><td><code>260</code></td><td>Backtest only: how many past bars to feed in (to seed the rulers).</td></tr>
+      <tr><td><code>ORB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>Backtest only: the estimated starting option price.</td></tr>
+      <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting practice capital (&#8377;) &mdash; shared across Fyers strategies.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="env-group">Old-version settings (ignored while V3 is on)</div>
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>ORB_ENTRY_V2_ENABLED</code></td><td>&mdash;</td><td>Use the V2 engine (only if V3 is off).</td></tr>
+      <tr><td><code>ORB_RETEST_ENABLED</code></td><td><code>false</code></td><td>An old V2 backtest experiment &mdash; ignored by V3.</td></tr>
+      <tr><td><code>ORB_MIN_RANGE_PTS</code> / <code>ORB_MAX_RANGE_PTS</code> / <code>ORB_MIN_BODY</code></td><td><code>30</code> / <code>80</code> / <code>15</code></td><td>Old fixed-point box/body sizes &mdash; V2 only.</td></tr>
+      <tr><td><code>ORB_RSI_*</code>, <code>ORB_TREND_EMA_*</code>, <code>ORB_ADX_*</code>, <code>ORB_WICK_FILTER_ENABLED</code>, <code>ORB_VOL_FILTER_ENABLED</code>, <code>ORB_SWEET_*</code>, <code>ORB_STRONG_BODY</code></td><td>&mdash;</td><td>Old indicator / grading settings from V2 and V1 &mdash; not used by V3.</td></tr>
     </tbody>
   </table>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. KNOWN GAPS                                                          -->
+<!-- 13. KNOWN GAPS                                                          -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="gaps">
-  <h2><span class="section-icon icon-red">&#9888;</span> 11. Known Gaps &amp; Roadmap</h2>
+  <h2><span class="section-icon icon-red">&#9888;</span> 13. What's still missing</h2>
 
   <ul>
-    <li><strong>Crash-recovery gap (still open).</strong> <code>src/utils/positionPersist.js</code> does not handle ORB positions. The other strategies (EMA_RSI_ST / BB_RSI / PA) write <code>.active_*_position.json</code> on entry via their legacy <code>*Live.js</code> routes; ORB does not, so an open ORB position is <strong>not</strong> reconciled on restart. If a process crash happens with an open ORB Live position, it will be orphaned at the broker and not automatically squared off. (<code>orbPaper.js:rehydrateSessionFromJsonl</code> restores <em>closed</em> session trades from the day JSONL for display only &mdash; it is not position recovery.) <strong>Mitigation:</strong> add <code>saveORBPosition()</code> / <code>loadORBPosition()</code> / <code>clearORBPosition()</code> helpers and wire them into the ORB routes + <code>app.js</code> boot reconciliation. Until then, prefer Paper or DRY-RUN for unattended ORB sessions.</li>
-    <li><strong>No per-trade unrealised-&#8377; stop.</strong> The candle-structure trail (&sect;5) and the 15:15 square-off are the only exits; <code>ORB_MAX_DAILY_LOSS</code> guards <em>entries</em> only and never closes an open trade (&sect;6). A trade can therefore sit deep red between candle closes with no rupee-cap intervention. Adding one would mean a new <code>ORB_MAX_TRADE_LOSS</code> checked in <code>_checkExits</code> on every tick.</li>
-    <li><strong>Entry quality, not exits, is the loss lever.</strong> The pre-rewrite cohort (15&ndash;19 Jun, 0/4, &minus;&#8377;6,465) showed the losses came from <em>dead-on-arrival false breakouts</em> &mdash; trades that reversed straight back through the box, peak premium &asymp; entry. The candle trail exits those faster and smaller, but it cannot rescue a move that never goes in favour. The real improvement is breakout <em>confirmation</em> / entry filtering, not further exit tuning.</li>
-    <li><strong>No <code>STRONG_ONLY</code> standalone toggle.</strong> The strength classification exists (sweet-spot tiering), but only the VIX gate uses it. Other strategies have a stand-alone <code>*_STRONG_ONLY</code> env that blocks MARGINAL regardless of VIX; ORB does not. (In live data STRONG essentially never fires &mdash; every real trade has been MARGINAL.) If you want STRONG-only behaviour without VIX, this would be a small additive change in <code>src/strategies/orb_breakout.js</code>.</li>
-    <li><strong>No bid-ask spread guard on ORB.</strong> <code>MAX_BID_ASK_SPREAD_PTS</code> is not wired into ORB entries or exits (see &sect;6 / &sect;8). On illiquid expiries an ORB exit can fill through a wide spread.</li>
+    <li><strong>No crash-recovery yet.</strong> If the server crashes while a <em>live</em> ORB trade is open, the system won't automatically remember and manage that trade after restart (the other strategies do). Until this is added, prefer practice or dry-run mode for trades you can't watch.</li>
+    <li><strong>Backtest option prices are estimated.</strong> Since history has no option quotes, backtest profit is an approximation, not exact fills. Always sanity-check against paper/replay.</li>
+    <li><strong>Results are lumpy by design.</strong> ORB's profit comes from a handful of big trend days. Expect quiet, flat stretches between them &mdash; judge it over a few weeks, not a few days.</li>
+    <li><strong>The "fresh ground" check is strict.</strong> Requiring the break to clear yesterday's high/low will skip some otherwise-clean days. It's on because those trapped-trader setups are the best ones &mdash; but you can turn it off if it's too restrictive for you.</li>
   </ul>
 
   <div class="note note-success">
-    <strong>Resolved since earlier editions:</strong> Telegram per-strategy toggles <em>are</em> now wired &mdash; <code>TG_ORB_STARTED</code> / <code>TG_ORB_ENTRY</code> / <code>TG_ORB_EXIT</code> / <code>TG_ORB_DAYREPORT</code> exist in <code>src/utils/notify.js</code> (ORB emits no signal-level alerts, so there is no <code>TG_ORB_SIGNALS</code>).
-  </div>
-
-  <div class="note note-info">
-    <strong>Tuning posture:</strong> the paper-data-collection no-tuning window was <strong>lifted on 2026-05-27</strong> &mdash; strategy tuning and bug fixes are in scope for ORB. Caveat: don't tune thresholds on trades generated <em>before</em> a bug fix; collect clean post-fix sessions first (in particular, discard exit behaviour from before the 2026-06-19 exit rewrite). The remaining gaps above can be addressed directly.
+    <strong>Recently fixed (used to be on this list):</strong> there's now a per-trade rupee stop <em>and</em> an option-meltdown stop; a buy/sell-spread check on the option; a weekly / losing-streak brake that pauses trading in a bad run; and the crowd-positioning (OI) check now behaves the same in practice and live.
   </div>
 
   <div class="note note-warn">
-    <strong>(2026-07-05) verification recheck.</strong> Re-verified the full guide against <code>orb_breakout.js</code> / <code>orbPaper.js</code> / <code>settings.js</code> / README. Major correction: the <strong>entire exit model was rewritten on 2026-06-19 (commit 0c7f3bf)</strong> &mdash; the two-target system, &minus;25% premium stop, opposite-OR-edge spot stop, move-to-breakeven ratchet and premium lock-in were all removed and replaced by the single candle-structure trailing stop (<code>ORB_SL_CANDLES</code>, &sect;5&ndash;&sect;6). Dead env keys (<code>ORB_STOP_PCT</code>, <code>ORB_TARGET_PCT</code>, <code>ORB_PREMIUM_LOCKIN_*</code>, <code>ORB_TRAIL_*</code>) removed from the config reference; <code>ORB_SL_CANDLES</code> added. Also corrected the volume filter default (<code>false</code>, not <code>true</code>). Entry rules, gate pipeline, sweet-spot tiering, VIX gate and defaults re-verified accurate.
+    <strong>Last checked: 16 July 2026</strong> &mdash; this guide was rewritten in plain English and updated to match the current V3 trend-day engine. All the default values above were read straight from the live code.
   </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  Opening Range Breakout (ORB) &mdash; Strategy Guide &nbsp;|&nbsp; v5.0.0 &nbsp;|&nbsp; rechecked 2026-07-05 against orb_breakout.js / orbPaper.js
+  Opening Range Breakout (ORB) &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; v6.0.0 &nbsp;|&nbsp; updated 16 July 2026
 </footer>
 
 </body>

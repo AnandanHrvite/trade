@@ -46,127 +46,365 @@
 <div class="wrap">
 
 <header class="hero">
-  <div class="kicker">Strategy 6 · Fyers</div>
+  <div class="kicker">Strategy 6 · Fyers · Plain-English edition</div>
   <h1>Trend Pullback (TREND_PB)</h1>
-  <p>An intraday NIFTY option-buying strategy that waits for an established trend, lets it pull back to value, and enters only on a confirmed resumption — designed to buy into strength, not to guess reversals.</p>
+  <p>Wait for a clear trend, let the price dip back to a good buying spot, then buy an option only when the trend proves it is starting again. Buy into strength — never guess a turn. Explained here in everyday language.</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-07-16 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; all defaults read straight from the live code</p>
 </header>
 
 <!--LIVE_STATUS_PANEL-->
 
-<h2>What it does, in one line</h2>
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- CONTENTS                                                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="card">
+  <strong>What's inside</strong>
+  <ol style="margin:10px 0 0; columns:2; column-gap:30px;">
+    <li><a href="#idea">The idea in one minute</a></li>
+    <li><a href="#glossary">Words you'll see (plain meanings)</a></li>
+    <li><a href="#step1">Step 1 — Read the big-picture trend</a></li>
+    <li><a href="#step2">Step 2 — Wait for the pullback</a></li>
+    <li><a href="#step3">Step 3 — The resumption candle</a></li>
+    <li><a href="#step4">Step 4 — Pick the option</a></li>
+    <li><a href="#step5">Step 5 — When we sell</a></li>
+    <li><a href="#vix">The "market too jumpy" filter (VIX)</a></li>
+    <li><a href="#risk">Safety limits &amp; the losing-streak brake</a></li>
+    <li><a href="#modes">Paper, Live &amp; Backtest</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#gaps">What's still missing</a></li>
+  </ol>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 1. THE IDEA                                             -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="idea">1. The idea in one minute</h2>
+
+<p>Picture a river already flowing one way. Now and then the water eddies backwards for a moment, but the river keeps going. This strategy waits for a market that is clearly "flowing" in one direction, waits for a small backward eddy (a <strong>pullback</strong>), and buys the moment the flow starts pushing forward again.</p>
+
+<ul>
+  <li>If NIFTY is in a clear <strong>uptrend</strong> and dips then turns back up &rarr; we buy a <strong>CE (call option)</strong> to profit from the rise.</li>
+  <li>If NIFTY is in a clear <strong>downtrend</strong> and bounces then rolls back down &rarr; we buy a <strong>PE (put option)</strong> to profit from the fall.</li>
+</ul>
+
+<p>We buy <strong>one option at a time</strong> — no pairs, no hedges — and we are picky: on most days nothing looks good enough and we simply don't trade. The whole point is to join a move that is <em>already working</em>, not to be clever and guess a top or a bottom.</p>
+
 <div class="card accent">
-  Establish a <strong>15-minute trend bias</strong> → wait for a <strong>healthy 5-minute pullback</strong> into the moving-average zone → enter a slightly-ITM option only when a <strong>resumption candle</strong> confirms the trend is continuing. Every exit rides on the <strong>spot</strong> (index) price, not the option premium, except one premium-based disaster backstop.
+  <strong>The three questions, in order.</strong> Every trade must answer "yes" to all three, one after the other:
+  <div class="flow">
+    <span class="step">① Is there a real trend? <span class="muted">(15-min chart)</span></span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">② Did it pull back to a good price? <span class="muted">(5-min chart)</span></span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">③ Is the trend starting again? <span class="muted">(resumption candle)</span></span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">buy a slightly-ITM option</span>
+  </div>
+  If any question is "no", we wait. Most of the day is spent waiting — that is the strategy working as designed.
 </div>
 
-<h2>Why this design</h2>
+<h3>One important quirk: no volume check</h3>
+<p>Many strategies confirm a move by checking trading <em>volume</em> (how many contracts changed hands). The NIFTY index itself has no real tradable volume — it's just a number, not a thing you buy. So instead of faking a volume figure, this strategy measures conviction a different way: <strong>how big the candle is</strong>. A decisive, full-bodied candle is our proof that buyers (or sellers) really showed up. This is deliberate — see Step 3.</p>
+
+<h3>Where you run it</h3>
+<table>
+  <tr><th>Mode</th><th>Page</th><th>What happens</th></tr>
+  <tr><td><strong>Paper</strong></td><td><code>/trend-pb-paper</code></td><td>Practice mode. Real live prices, pretend money — no real orders. This is the "official" version; everything else is checked against it.</td></tr>
+  <tr><td><strong>Live</strong></td><td><code>/trend-pb-live</code></td><td>Real money through Fyers. It works by <em>wrapping</em> the paper engine, so live and paper always make the same decisions. Locked behind three safety switches (see Section 10).</td></tr>
+  <tr><td><strong>Backtest</strong></td><td><code>/trend-pb-backtest</code></td><td>Test the strategy on past days. History has no option prices, so it estimates them (details in Section 10).</td></tr>
+  <tr><td><strong>History</strong></td><td><code>/trend-pb-paper/history</code></td><td>Look back at past practice sessions and their trades.</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 2. GLOSSARY                                             -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="glossary">2. Words you'll see (plain meanings)</h2>
+
+<p>A handful of terms come up again and again. Here's each one in everyday language — keep this nearby and the rest reads easily.</p>
+
+<table>
+  <tr><th>Term</th><th>What it really means</th></tr>
+  <tr><td><strong>Candle</strong></td><td>A price bar for a slice of time, showing where NIFTY opened, closed, and its high and low in that slice. A "5-minute candle" covers 5 minutes; a "15-minute candle" covers 15. A green candle closed higher than it opened; a red one closed lower. The candle's "body" is the fat part between open and close.</td></tr>
+  <tr><td><strong>Trend bias</strong></td><td>The market's overall direction right now — up, down, or unclear. We work it out from the slower 15-minute chart, and we only ever trade in the same direction as the bias.</td></tr>
+  <tr><td><strong>Higher-high / higher-low</strong></td><td>How we spot an uptrend by eye: each peak is taller than the last peak, and each dip bottoms out higher than the last dip — like climbing a staircase. A downtrend is the mirror image (lower highs and lower lows), a staircase going down.</td></tr>
+  <tr><td><strong>EMA20 / EMA50</strong></td><td>Two smoothed average-price lines. EMA20 follows the last ~20 candles, EMA50 the last ~50, so EMA20 reacts faster. When the fast line (EMA20) sits above the slow line (EMA50) and is rising, the trend is healthy and up. We use them as a trend "health check", not as the trigger.</td></tr>
+  <tr><td><strong>VWAP</strong></td><td>The day's fair-value line — roughly the average price so far. Above it, buyers are in charge; below it, sellers. We only take CE trades above the line and PE trades below it.</td></tr>
+  <tr><td><strong>Pullback</strong></td><td>A short move <em>against</em> the trend — the backward eddy in the river. In an uptrend it's a small dip; in a downtrend a small bounce. It's the discount we're waiting to buy at.</td></tr>
+  <tr><td><strong>Resumption candle</strong></td><td>The one candle that tells us the pullback is over and the trend is pushing on again. It's our buy trigger (Step 3).</td></tr>
+  <tr><td><strong>ATR</strong></td><td>"Average True Range" — simply <em>how much NIFTY normally moves</em> in a candle. If ATR is 20, a typical 5-minute candle spans about 20 points. We use it as a ruler: a "big" move on a calm day is small on a wild day, and ATR tells us which is which.</td></tr>
+  <tr><td><strong>Chandelier trail</strong></td><td>A trailing stop-loss that hangs a fixed distance below the highest price the trade has reached (like a chandelier hanging below the ceiling). As price climbs, the stop climbs with it, but it never drops back — it only ratchets one way. It's how we let a winner run yet still lock in gains.</td></tr>
+  <tr><td><strong>Breakeven</strong></td><td>Moving the stop-loss up to our entry price once a trade is nicely in profit. From that point the worst case is a zero — the trade can no longer become a loss.</td></tr>
+  <tr><td><strong>R (R-multiple)</strong></td><td>"R" is the amount we risked on the trade — the distance from our entry to our first stop-loss. "1R of profit" means we've made as much as we first put at risk. It's a simple way to size profit against risk without rupees.</td></tr>
+  <tr><td><strong>Time-stop</strong></td><td>A rule that exits a trade that has gone nowhere for too long. Options quietly lose value as time passes, so a stuck trade is a slow bleed — better to free up and move on.</td></tr>
+  <tr><td><strong>ITM / OTM</strong></td><td>"In-the-money" (ITM) options already have real value baked in, so they move almost point-for-point with NIFTY and decay slowly. "Out-of-the-money" (OTM) options are cheaper lottery tickets that decay fast. We buy <em>slightly</em> ITM because it tracks a trend far better.</td></tr>
+  <tr><td><strong>Premium</strong></td><td>The price you pay for the option (in &#8377; per unit). "Premium fell 35%" means the option lost about a third of its value.</td></tr>
+  <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX = jumpy, expensive options and bigger swings. We can tell the strategy to sit out when VIX is too high.</td></tr>
+  <tr><td><strong>OI (open interest)</strong></td><td>How many option contracts are currently held open — a read on where the big money is positioned. An optional filter can use it to avoid buying into a wall of opposing bets. Off by default.</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 3. STEP 1 — TREND BIAS                                  -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="step1">3. Step 1 — Read the big-picture trend</h2>
+
+<p>Before anything else, the strategy zooms out to the <strong>15-minute chart</strong> (each candle covers 15 minutes) and asks one question: <strong>is there a genuine trend right now?</strong> If the answer is no, the day is over before it started — we don't trade.</p>
+
+<p>For an <strong>uptrend</strong>, <em>all four</em> of these must be true at once. A downtrend is the exact mirror.</p>
+
+<table>
+  <tr><th>Check</th><th>In plain words</th></tr>
+  <tr><td><strong>1. Staircase up</strong></td><td>The recent peaks and dips form a rising staircase — a <strong>higher high</strong> and a <strong>higher low</strong>. This is the main test; it's the price telling us the direction, not an indicator.</td></tr>
+  <tr><td><strong>2. Fast line above slow line</strong></td><td>The EMA20 line is above the EMA50 line — the faster average is leading the way up.</td></tr>
+  <tr><td><strong>3. Fast line rising</strong></td><td>That EMA20 line is actually tilting upward, not flat or drooping.</td></tr>
+  <tr><td><strong>4. Above fair value</strong></td><td>Price is above the day's VWAP (fair-value) line — buyers are in control today.</td></tr>
+</table>
+
 <div class="card">
-  <ul>
-    <li><strong>Price structure first, indicators second.</strong> The trend is defined by higher-highs / higher-lows (or lower-lows / lower-highs), with EMAs and VWAP only as health filters — not as the trigger.</li>
-    <li><strong>No volume input — by design.</strong> The NIFTY index has no real tradable volume. Instead of a fake volume proxy, entry conviction is measured by <em>candle body vs ATR</em> (a resumption candle must have a body ≥ 0.5× the recent ATR).</li>
-    <li><strong>Exits are weighted over entries.</strong> A structural stop protects capital, breakeven removes risk early, and an ATR chandelier trail lets winners run — the right tail is where option-buying makes its money.</li>
-    <li><strong>No fixed target, no partial booking.</strong> Partials cap the winners that pay for all the small losers, so the full position rides the trail.</li>
-    <li><strong>Binary gates, not confidence scores.</strong> A small parameter budget (~7 real knobs) keeps the strategy from over-fitting to noise.</li>
-  </ul>
+  <strong>Why so many checks?</strong> Any one of them can be fooled on its own — a single tall candle, a fluke crossing. Demanding the <em>price staircase</em> and <em>two moving-average health checks</em> and <em>fair-value</em> all agree is what keeps us out of choppy, going-nowhere days. If the checks disagree, the trend is "unclear" and we simply wait. To avoid being tricked by a half-finished bar, the strategy only reads 15-minute candles that have fully <strong>closed</strong>.
 </div>
 
-<h2>Entry — all conditions must pass, in order</h2>
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 4. STEP 2 — THE PULLBACK                                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="step2">4. Step 2 — Wait for the pullback</h2>
 
-<div class="flow">
-  <span class="step">① 15m trend bias</span>
-  <span class="arrow">→</span>
-  <span class="step">② healthy 5m pullback</span>
-  <span class="arrow">→</span>
-  <span class="step">③ resumption candle</span>
-  <span class="arrow">→</span>
-  <span class="step">④ gates pass</span>
-  <span class="arrow">→</span>
-  <span class="step">buy slightly-ITM option</span>
-</div>
+<p>Once the big picture says "clear uptrend", we do <strong>not</strong> chase the price higher. Chasing means buying at a bad, stretched price. Instead we drop to the faster <strong>5-minute chart</strong> and wait patiently for the price to dip back toward the EMA20 line — the "good buying spot". Think of it as waiting for a sale instead of paying full price.</p>
 
-<h3>① 15-minute trend bias (uses only completed 15m bars)</h3>
+<p>But not just any dip. The pullback has to be a <strong>healthy pause</strong>, not a collapse:</p>
+
 <ul>
-  <li><strong>Structure:</strong> last confirmed swing high &gt; prior swing high AND last swing low &gt; prior swing low (higher-high + higher-low for an uptrend; mirror for down).</li>
-  <li><strong>Health filters:</strong> EMA20(15m) &gt; EMA50(15m), EMA20 sloping in the trend direction, and spot on the correct side of the session-anchored VWAP.</li>
+  <li><strong>It must actually reach the discount zone.</strong> The dip has to come back down and touch the EMA20(5m) area. A move that stays stretched far above it never gave us a good price, so we pass.</li>
+  <li><strong>It must be a real pause, not a one-candle flick.</strong> At least a couple of candles need to lean against the trend — a genuine breather, not a single wick.</li>
+  <li><strong>It must not fall too far.</strong> If the dip drops more than <strong>1.5&times; the normal candle move (ATR)</strong> below the EMA20 line, that's not a pause — the trend is probably breaking. Too deep = we walk away.</li>
 </ul>
 
-<h3>② Healthy 5-minute pullback</h3>
-<ul>
-  <li>Price pulls back <em>into</em> the EMA20(5m) zone — a real pause, not a one-bar wick.</li>
-  <li>Depth cap: the pullback extreme (anchored to the swing peak/trough, not the whole window) stays within <code>TREND_PB_PULLBACK_MAX_ATR</code> × ATR5 — rejects deep, broken pullbacks that are really reversals.</li>
-</ul>
-
-<h3>③ Resumption candle — the trigger</h3>
-<ul>
-  <li>A 5m candle <strong>closes beyond the prior bar's high</strong> (low for shorts) AND reclaims EMA20(5m).</li>
-  <li>Body ≥ <code>TREND_PB_BODY_ATR_MULT</code> × ATR5 (default 0.5) — the conviction proxy that replaces volume.</li>
-  <li>Entry is on the <strong>close</strong>, never on a wick.</li>
-</ul>
-
-<h3>④ Gates (shared infrastructure)</h3>
-<ul>
-  <li>Inside the entry window (<code>TREND_PB_ENTRY_START</code>–<code>TREND_PB_ENTRY_END</code>).</li>
-  <li>VIX in band (optional, <code>TREND_PB_VIX_ENABLED</code>), bid-ask spread OK, optional OI-buildup gate, and daily loss / max-trades / loss-streak not tripped.</li>
-</ul>
-
-<h2>Exits — first hit wins (all on SPOT except the premium backstop)</h2>
-<table>
-  <tr><th>Priority</th><th>Exit</th><th>What it does</th></tr>
-  <tr><td>1</td><td>Structural stop</td><td>Below the pullback swing low (above for shorts), clamped to <code>[TREND_PB_STOP_CLAMP_MIN, MAX]</code> ≈ 8–30 pts.</td></tr>
-  <tr><td>2</td><td>Breakeven</td><td>Once favourable by <code>TREND_PB_BREAKEVEN_R</code> × initial risk (default 1R), the stop lifts to entry.</td></tr>
-  <tr><td>3</td><td>ATR chandelier trail</td><td>best-spot − <code>TREND_PB_TRAIL_ATR_MULT</code> × ATR5 (default 2.5). Ratchets one way only — the right-tail engine.</td></tr>
-  <tr><td>4</td><td>Trend-fail</td><td>A 5m candle closes back through EMA20(5m) after the move armed.</td></tr>
-  <tr><td>5</td><td>Time stop</td><td>Held ≥ <code>TREND_PB_TIME_STOP_CANDLES</code> and still flat → exit theta bleed.</td></tr>
-  <tr><td>6</td><td>EOD square-off</td><td><code>TREND_PB_FORCED_EXIT</code> (default 15:15 IST).</td></tr>
-  <tr><td>7</td><td>Premium disaster stop</td><td>Option LTP ≤ −35% of entry → hard exit (gap protection). The only premium-based rule.</td></tr>
-</table>
-<p class="muted">No fixed profit target and no partial booking — both deliberate. Position size is fixed lots.</p>
-
-<h2>Option selection</h2>
 <div class="card">
-  Buys a <span class="pill">slightly-ITM</span> CE (uptrend) or PE (downtrend) via the shared instrument resolver, shifted <code>TREND_PB_ITM_STEPS</code> strikes in-the-money (default 1 ≈ delta 0.6). Premium band and bid-ask spread are checked before entry; premium is polled every ~3s while in a position. Runs on the shared Fyers tick feed.
+  <strong>Why measure the dip against ATR instead of fixed points?</strong> A 25-point dip is nothing on a wild day but a big warning on a calm one. By comparing the dip to how much NIFTY is <em>actually</em> moving today (ATR), the same rule keeps making sense in any market — you never have to re-tune numbers when volatility changes. The strategy also measures the dip from the <em>peak</em> of the little run-up (not from the start of the window), so "how deep" reflects the true give-back.
 </div>
 
-<h2>Key environment variables</h2>
-<table>
-  <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
-  <tr><td><code>TREND_PB_MODE_ENABLED</code></td><td>true</td><td>Master toggle — shows the sidebar group + Settings section.</td></tr>
-  <tr><td><code>TREND_PB_SWING_LOOKBACK</code></td><td>2</td><td>N-bar pivot for swing-structure detection.</td></tr>
-  <tr><td><code>TREND_PB_BODY_ATR_MULT</code></td><td>0.5</td><td>Resumption body must be ≥ this × ATR5.</td></tr>
-  <tr><td><code>TREND_PB_PULLBACK_MAX_ATR</code></td><td>1.5</td><td>Max pullback depth vs ATR5.</td></tr>
-  <tr><td><code>TREND_PB_TRAIL_ATR_MULT</code></td><td>2.5</td><td>ATR chandelier trail multiplier.</td></tr>
-  <tr><td><code>TREND_PB_BREAKEVEN_R</code></td><td>1.0</td><td>R multiple at which the stop moves to entry.</td></tr>
-  <tr><td><code>TREND_PB_STOP_CLAMP_MIN / MAX</code></td><td>8 / 30</td><td>Structural-stop clamp (spot points).</td></tr>
-  <tr><td><code>TREND_PB_TIME_STOP_CANDLES</code></td><td>6</td><td>Flat-trade time stop.</td></tr>
-  <tr><td><code>TREND_PB_ENTRY_START / END</code></td><td>09:45 / 14:30</td><td>Entry window (IST).</td></tr>
-  <tr><td><code>TREND_PB_FORCED_EXIT</code></td><td>15:15</td><td>EOD square-off (IST).</td></tr>
-  <tr><td><code>TREND_PB_ITM_STEPS</code></td><td>1</td><td>Strikes shifted in-the-money (~delta 0.6).</td></tr>
-  <tr><td><code>TREND_PB_VIX_ENABLED</code> / <code>_VIX_MAX_ENTRY</code></td><td>false / 22</td><td>VIX regime gate + ceiling.</td></tr>
-  <tr><td><code>TREND_PB_OI_ENABLED</code></td><td>false</td><td>Block entries fighting a confirmed OI buildup (needs the master OI filter on).</td></tr>
-  <tr><td><code>TREND_PB_MAX_DAILY_LOSS</code></td><td>5000</td><td>Daily loss kill-switch (₹).</td></tr>
-  <tr><td><code>TREND_PB_LOSS_STREAK_SKIP</code></td><td>3</td><td>Pause after N consecutive losers (0 = off).</td></tr>
-  <tr><td><code>TREND_PB_LIVE_ENABLED</code> / <code>_LIVE_DRY_RUN</code></td><td>false / false</td><td>Live gating — see the panel at the top of this page.</td></tr>
-  <tr><td><code>TREND_PB_BT_SLIPPAGE_PTS</code></td><td>1.5</td><td>Backtest spread/slippage haircut, each way.</td></tr>
-  <tr><td><code>TREND_PB_BT_SEED_PREMIUM</code></td><td>240</td><td>Assumed slightly-ITM entry premium for the backtest δ+θ sim.</td></tr>
-</table>
-<p class="muted">The live "as-per-settings" panel at the top of this page reflects the current running values.</p>
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 5. STEP 3 — RESUMPTION CANDLE                           -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="step3">5. Step 3 — The resumption candle (the trigger)</h2>
 
-<h2>Pages &amp; routes</h2>
+<p>A pullback alone isn't a reason to buy — the dip could keep going. We wait for one clear candle that says "the pause is over, the trend is back on." That's the <strong>resumption candle</strong>, and it's the moment we actually buy. For an uptrend (CE), the just-closed 5-minute candle must tick every box below.</p>
+
 <table>
-  <tr><th>Route</th><th>Purpose</th></tr>
-  <tr><td><code>/trend-pb-paper/status</code></td><td>Paper runtime — <strong>the canonical engine</strong>. Live chart with VWAP + EMA20 overlay, entry/exit markers, session trades.</td></tr>
-  <tr><td><code>/trend-pb-backtest</code></td><td>Date-range backtest replaying candles through the signal engine, with walk-forward OOS folds, a dumb baseline to beat, and δ+θ + slippage cost model.</td></tr>
-  <tr><td><code>/trend-pb-live</code></td><td>Live via a paper-wrapping harness (LIVE = PAPER by construction), Fyers orders, triple-gated to dry-run by default.</td></tr>
+  <tr><th>The resumption candle must…</th><th>In plain words</th></tr>
+  <tr><td><strong>Be green and push up</strong></td><td>It closes higher than it opened — buyers won that candle.</td></tr>
+  <tr><td><strong>Have a solid body</strong></td><td>Its body is at least <strong>0.5&times; the normal move (ATR)</strong>. A big, decisive body is our stand-in for a volume check — it's the proof that buyers really showed up, not just drifted.</td></tr>
+  <tr><td><strong>Reclaim the trend line</strong></td><td>It closes back <em>above</em> the EMA20(5m) line — price has climbed out of the dip.</td></tr>
+  <tr><td><strong>Break the previous candle's high</strong></td><td>It closes above the high of the candle just before it — a fresh push, not a sideways shuffle.</td></tr>
 </table>
 
-<h2>Live safety — triple-gated</h2>
+<p>We buy on that candle's <strong>close</strong> — a confirmed, finished candle — never on a mid-candle spike (a "wick") that might vanish. For a downtrend it's the mirror: a red candle with a solid body that closes below EMA20(5m) and below the prior candle's low, and we buy a PE.</p>
+
+<div class="card accent">
+  <strong>This is the "no volume" design in action.</strong> Because the NIFTY index has no genuine volume figure to lean on, the size of this candle's body <em>is</em> the conviction test. A big body means real buying pressure; a puny body means the bounce is half-hearted and we skip it. Simple, honest, and it can't be faked.
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 6. STEP 4 — PICK THE OPTION                             -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="step4">6. Step 4 — Pick the option</h2>
+
+<p>Once all three questions are "yes", we still have to choose <em>which</em> option to buy and make sure it's worth trading.</p>
+
+<table>
+  <tr><th>Check</th><th>Default</th><th>In plain words</th></tr>
+  <tr><td>Which option</td><td><span class="pill">1 step in-the-money</span></td><td>A CE in an uptrend, a PE in a downtrend, shifted one strike <em>inside</em> the money (roughly a "delta 0.6" option). This option already has real value, so it follows NIFTY almost point-for-point and loses value slowly — far better for riding a trend than a cheap far-out option.</td></tr>
+  <tr><td>Price range</td><td><code>&#8377;120 – &#8377;400</code></td><td>Skip if the option is too cheap (a near-worthless lottery ticket) or too pricey. Keeps us in options that actually move well.</td></tr>
+  <tr><td>Buy/sell gap</td><td><code>&le; 2 points</code></td><td>Skip if the gap between the option's buy price and sell price is wide — a wide gap quietly eats your profit just to get in and out.</td></tr>
+</table>
+
+<p class="muted">Position size is a fixed number of lots — we do not bet bigger on "better-looking" setups (that kind of confidence-scaling is deliberately avoided until it's proven out-of-sample). While the trade is open, the option's price is re-checked every few seconds.</p>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 7. STEP 5 — EXITS                                       -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="step5">7. Step 5 — When we sell</h2>
+
+<p>The exits are built to <strong>let a winner run</strong> while cutting losers quickly. There is <strong>no fixed profit target</strong> — we never say "+40% and I'm out." And there are <strong>no partial exits</strong> — we don't sell half and keep half. The whole position rides until one of the rules below fires, and whichever fires <em>first</em> closes the trade.</p>
+
+<p>A key detail: almost every exit watches the <strong>NIFTY index price (spot)</strong>, not the option's own price. Spot is steadier and cleaner to trail. The one exception is the last-resort premium backstop.</p>
+
+<table>
+  <tr><th>Order</th><th>What sells us out</th><th>Default</th><th>In plain words</th></tr>
+  <tr><td>1</td><td><strong>Starting stop-loss</strong></td><td>clamped 8–30 pts</td><td>Right after we buy, our safety line sits at the bottom of the pullback dip (the top of the bounce, for a PE). If price falls back through it, we're out. The distance is kept sensible — never tighter than 8 points, never wider than 30.</td></tr>
+  <tr><td>2</td><td><strong>Move to breakeven</strong></td><td>1R profit</td><td>Once the trade is up by as much as we first risked (1R), we slide the stop up to our entry price. From here the trade can't turn into a loss.</td></tr>
+  <tr><td>3</td><td><strong>Chandelier trail</strong></td><td>2.5&times; ATR</td><td>The main winner-runner. The stop hangs 2.5&times; the normal move below the best price reached, and climbs as price climbs — but never drops back. We ride the trend and only give back a little at the end.</td></tr>
+  <tr><td>4</td><td><strong>Trend broke</strong></td><td>EMA20(5m)</td><td>If a 5-minute candle <em>closes</em> back through the EMA20 trend line, the move is over — we exit.</td></tr>
+  <tr><td>5</td><td><strong>Going nowhere (time-stop)</strong></td><td>6 candles</td><td>If we've held for about 6 candles (~30 minutes) and the trade is still flat, we cut it loose rather than bleed value to time-decay.</td></tr>
+  <tr><td>6</td><td><strong>End of day</strong></td><td>15:15</td><td>Anything still open at 3:15 PM is sold, win or lose. We never hold overnight.</td></tr>
+  <tr><td>7</td><td><strong>Option melted down</strong></td><td>&minus;35%</td><td>The one option-price rule: if the premium collapses 35% from what we paid (say a sudden gap), we bail immediately, whatever the spot is doing. A disaster backstop.</td></tr>
+</table>
+
+<h3>A worked example — a CE trend day</h3>
+<p>Real numbers, one clean trade. Suppose today a typical 5-minute candle spans about <strong>20 points</strong> (ATR5 &asymp; 20).</p>
+
+<table>
+  <tr><th>Time</th><th>NIFTY spot</th><th>What happens</th></tr>
+  <tr><td>10:15</td><td>~24,270</td><td><strong>Big picture (15m):</strong> peaks rose 24,180 &rarr; 24,260 (higher high), dips rose 24,120 &rarr; 24,190 (higher low). EMA20 (24,230) is above EMA50 (24,205) and rising. Price is above VWAP (24,240). &rarr; <strong>Clear uptrend — look for CE only.</strong></td></tr>
+  <tr><td>10:40</td><td>24,248</td><td><strong>Pullback:</strong> price ran to 24,300, then dipped over 3 candles to 24,248 — right onto the EMA20(5m) at 24,252. Deepest allowed today is 1.5&times;20 = 30 pts below the line (24,222); 24,248 held well above that. &rarr; <strong>Healthy dip, not a break.</strong></td></tr>
+  <tr><td>10:45</td><td>24,272</td><td><strong>Resumption candle:</strong> a green candle opens 24,254, closes 24,272. Body = 18 pts, above the 10-pt minimum (0.5&times;20). It closes above EMA20(5m) 24,252 <em>and</em> above the prior candle's high 24,265. &rarr; <strong>BUY a CE</strong> at spot 24,272. The option (1-step ITM) costs &#8377;190.</td></tr>
+  <tr><td>10:45</td><td>stop 24,248</td><td>Starting stop = the dip low, 24,248. Risk = 24,272 &minus; 24,248 = <strong>24 points (that's our 1R)</strong>. Well within the 8–30 clamp.</td></tr>
+  <tr><td>11:10</td><td>24,296</td><td>Trade is +24 pts — up by a full 1R. &rarr; <strong>Stop lifts to breakeven (24,272).</strong> The trade can no longer lose.</td></tr>
+  <tr><td>11:40</td><td>24,360</td><td>Price keeps climbing. The chandelier trail now sits at best &minus; 2.5&times;20 = 24,360 &minus; 50 = <strong>24,310</strong>, ratcheting up with each new high.</td></tr>
+  <tr><td>12:20</td><td>24,384 (peak)</td><td>Best price so far. Trail rises to 24,384 &minus; 50 = <strong>24,334</strong>.</td></tr>
+  <tr><td>12:25</td><td>24,334</td><td>Price slips back and touches the trail. &rarr; <strong>SELL.</strong> The trend gave what it had.</td></tr>
+</table>
+
+<div class="card">
+  <strong>The tally.</strong> Spot rose from 24,272 to 24,334 = <strong>+62 points</strong>. A slightly-ITM option moves about 60% of that, so the premium climbed roughly 62 &times; 0.6 &asymp; +37 points, from &#8377;190 to about &#8377;227. With one NIFTY lot of 75 units, that's about <strong>(227 &minus; 190) &times; 75 &asymp; &#8377;2,775 profit</strong> — from a trade we entered <em>after</em> the trend proved itself, with the downside capped at breakeven the whole back half of the ride.
+</div>
+
+<div class="card accent">
+  <strong>Why no fixed target and no partials?</strong> If we always sold at "+40%", or sold half early, we'd shrink the few big trend days — and those big days are exactly what pay for all the small losing ones. The chandelier trail keeps us in the move as long as it lasts, while the breakeven and the &minus;35% backstop make sure a bad trade dies small. The skill is in the <em>entry</em>; the exit just decides how much of a good entry we get to keep.
+</div>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 8. VIX                                                  -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="vix">8. The "market too jumpy" filter (VIX)</h2>
+
+<p>VIX is the market's fear gauge. When it's high, options get expensive and price swings turn violent — a riskier time to trade. Trend Pullback has its own optional VIX filter to sit out those days. It's <strong>off by default</strong>, so VIX is ignored unless you switch it on.</p>
+
+<table>
+  <tr><th>Setting</th><th>Default</th><th>In plain words</th></tr>
+  <tr><td><code>TREND_PB_VIX_ENABLED</code></td><td><code>false</code></td><td>The on/off switch for the VIX filter. Off by default.</td></tr>
+  <tr><td><code>TREND_PB_VIX_MAX_ENTRY</code></td><td><code>22</code></td><td>If VIX is above 22, don't take new trades today — too jumpy. (Falls back to the shared global limit if not set.)</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 9. RISK                                                 -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="risk">9. Safety limits &amp; the losing-streak brake</h2>
+
+<p>Several limits protect the account — think of them as circuit-breakers of growing size: per day, and across a bad run.</p>
+
+<table>
+  <tr><th>Limit</th><th>Default</th><th>In plain words</th></tr>
+  <tr><td>Trades per day</td><td><code>3</code></td><td>At most 3 entries in a session. The strategy is picky by design — most days it takes fewer, often none.</td></tr>
+  <tr><td>Daily loss brake</td><td><code>&#8377;5,000</code></td><td>Once the day's losses reach &#8377;5,000, stop taking new trades for the day.</td></tr>
+  <tr><td>Losing-streak brake</td><td><code>3 sessions</code></td><td>After 3 losing sessions in a row, pause new entries to cool off and reset. (Set to 0 to turn off.)</td></tr>
+  <tr><td>Entry window</td><td><code>09:45 – 14:30</code></td><td>No new trades before 9:45 (let the open settle) or after 2:30 PM (too late in the day).</td></tr>
+  <tr><td>Sell everything by</td><td><code>15:15</code></td><td>Any open trade is closed at 3:15 PM. Never overnight.</td></tr>
+  <tr><td>Skip wide spreads</td><td><code>2 pts</code></td><td>Don't trade an option whose buy/sell gap is too wide.</td></tr>
+  <tr><td>Crowd-positioning (OI)</td><td><code>off</code></td><td>An optional filter that avoids buying into a wall of opposing option bets. Off by default (needs the master OI filter on).</td></tr>
+</table>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 10. MODES                                               -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="modes">10. Paper, Live &amp; Backtest</h2>
+
+<h3 style="color:#58a6ff;">Paper — <code>/trend-pb-paper</code> (practice)</h3>
+<p>Real live prices, pretend money. No real orders are ever placed. This is the <strong>official</strong> version of the strategy — whenever live or backtest behaves differently, paper is treated as correct. Every trade is saved to your trading-data folder so you can review it later.</p>
+
+<h3 style="color:#3fb950;">Live — <code>/trend-pb-live</code> (real money)</h3>
+<p>Real orders through Fyers — but it works by <strong>wrapping the paper engine</strong>. When paper decides to buy or sell, live places the matching real order. That means live and paper can never drift apart: they are the same brain. It is <strong>triple-gated</strong> so it can't fire by accident.</p>
+
 <div class="card warn">
-  A real Fyers order can fire <strong>only</strong> when all three are true: <code>TREND_PB_LIVE_ENABLED=true</code> <em>and</em> global <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>TREND_PB_LIVE_DRY_RUN=false</code> — plus a valid Fyers login. Out of the box it is dry-run: it logs the order it <em>would</em> place and sends nothing. Recommended path: watch it on paper, confirm Live decisions match Paper on a recorded <code>/replay</code> session, then consider flipping the gates.
+  <strong>A real Fyers order fires only when all three are true:</strong> <code>TREND_PB_LIVE_ENABLED=true</code> <em>and</em> the global <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>TREND_PB_LIVE_DRY_RUN</code> is not true — plus a valid Fyers login. Out of the box it's in <strong>dry-run</strong>: it prints the order it <em>would</em> have placed and sends nothing. Recommended path: watch it on paper, confirm live and paper match on a recorded <code>/replay</code> session, and only then consider flipping the gates.
 </div>
 
-<h2>Build status</h2>
-<p>All three phases shipped: <strong>Paper</strong> (canonical engine + UI), <strong>Backtest</strong> (walk-forward + baseline + cost haircut), and <strong>Live</strong> (via harness, dry-run by default). Crash-recovery of an open live position across a server restart is a documented deferral (matches ORB) and is not built yet.</p>
+<h3 style="color:#bc8cff;">Backtest — <code>/trend-pb-backtest</code> (test on the past)</h3>
+<p>Runs the strategy over past dates to see how it would have done. Since history has no option prices, it <strong>estimates</strong> the option (starting from a typical slightly-ITM price of &#8377;240 and modelling how it moves), and it subtracts a realistic buy/sell-cost haircut each way so the results don't flatter themselves. It also does two honesty checks:</p>
+<ul>
+  <li><strong>A "dumb baseline" to beat.</strong> It re-runs the same dates with a naive version (just enter in the trend direction at the window open, no pullback filter). If the real strategy can't beat the dumb one, its clever filters were just noise.</li>
+  <li><strong>Walk-forward testing.</strong> Trades are split into rolling out-of-sample chunks, and thin chunks (too few trades) are flagged — because a "win" in a tiny sample is luck, not proven edge.</li>
+</ul>
 
-<p class="muted" style="margin-top:40px;">Trend Pullback is independent of every other strategy — it shares only the single Fyers tick feed and the common guard/charge/instrument infrastructure. ORB and all other strategies are untouched by it.</p>
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 11. CONFIG                                              -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="config">11. All the settings, explained</h2>
+
+<p>The full list of Trend Pullback settings and their defaults — the same names you'll find on the Settings page. You don't need to touch most of them; the defaults are the tuned setup.</p>
+
+<h3>On/off &amp; timing</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_MODE_ENABLED</code></td><td><code>true</code></td><td>The master switch — shows Trend Pullback in the menu and Settings. Off = hidden everywhere.</td></tr>
+  <tr><td><code>TREND_PB_ENTRY_START</code> / <code>TREND_PB_ENTRY_END</code></td><td><code>09:45</code> / <code>14:30</code></td><td>The window in which new trades may start. Nothing before or after.</td></tr>
+  <tr><td><code>TREND_PB_FORCED_EXIT</code></td><td><code>15:15</code></td><td>Sell any open trade by this time. Never hold overnight.</td></tr>
+</table>
+
+<h3>Reading the trend &amp; the pullback</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_SWING_LOOKBACK</code></td><td><code>2</code></td><td>How many candles on each side define a "peak" or "dip" when spotting the staircase. Bigger = only counts more significant swings.</td></tr>
+  <tr><td><code>TREND_PB_BODY_ATR_MULT</code></td><td><code>0.5</code></td><td>How big the resumption candle's body must be, as a fraction of the normal move (ATR). This is the "conviction" test that stands in for volume.</td></tr>
+  <tr><td><code>TREND_PB_PULLBACK_MAX_ATR</code></td><td><code>1.5</code></td><td>How deep a pullback is still allowed, measured in normal-moves (ATR) below the trend line. Deeper than this = the trend's breaking, skip it.</td></tr>
+</table>
+
+<h3>When we sell</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_STOP_CLAMP_MIN</code> / <code>TREND_PB_STOP_CLAMP_MAX</code></td><td><code>8</code> / <code>30</code></td><td>Keeps the starting stop-loss sensible — never tighter than 8 points, never wider than 30 (in spot points).</td></tr>
+  <tr><td><code>TREND_PB_BREAKEVEN_R</code></td><td><code>1.0</code></td><td>How much profit (in "R", i.e. multiples of what we first risked) before the stop moves up to our entry price.</td></tr>
+  <tr><td><code>TREND_PB_TRAIL_ATR_MULT</code></td><td><code>2.5</code></td><td>How far below the best price the chandelier trailing-stop hangs, in normal-moves (ATR). Bigger = looser trail, lets the trade breathe more.</td></tr>
+  <tr><td><code>TREND_PB_TIME_STOP_CANDLES</code></td><td><code>6</code></td><td>Exit a trade that's still going nowhere after this many candles (~30 minutes), to avoid slow time-decay bleed.</td></tr>
+</table>
+
+<h3>Picking the option</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_ITM_STEPS</code></td><td><code>1</code></td><td>How many strikes in-the-money to buy (1 &asymp; a "delta 0.6" option). 0 would be at-the-money.</td></tr>
+</table>
+
+<h3>Jumpiness filter (VIX)</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_VIX_ENABLED</code> / <code>TREND_PB_VIX_MAX_ENTRY</code></td><td><code>false</code> / <code>22</code></td><td>Turn the VIX filter on, and the VIX level above which we don't trade. Off by default.</td></tr>
+  <tr><td><code>TREND_PB_OI_ENABLED</code></td><td><code>false</code></td><td>Block entries that fight a confirmed crowd (OI) buildup. Off by default; needs the master OI filter on.</td></tr>
+</table>
+
+<h3>Safety limits &amp; the losing-streak brake</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_MAX_DAILY_TRADES</code></td><td><code>3</code></td><td>Most trades allowed in one session. Picky by design — usually fewer.</td></tr>
+  <tr><td><code>TREND_PB_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Stop taking new trades once the day's loss hits this (&#8377;).</td></tr>
+  <tr><td><code>TREND_PB_LOSS_STREAK_SKIP</code></td><td><code>3</code></td><td>Pause new entries after this many losing sessions in a row (0 = off).</td></tr>
+</table>
+
+<h3>Going live</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_LIVE_ENABLED</code> / <code>TREND_PB_LIVE_DRY_RUN</code></td><td><code>false</code> / <code>false</code></td><td>The master switch for real orders, plus a per-strategy override that keeps this strategy in "pretend" mode even when others go live. (Still also needs the global dry-run off — see Section 10.)</td></tr>
+</table>
+
+<h3>Backtest only</h3>
+<table>
+  <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
+  <tr><td><code>TREND_PB_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>A realistic buy/sell-cost haircut applied each way in the backtest (in premium points), so results don't ignore trading costs.</td></tr>
+  <tr><td><code>TREND_PB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>The estimated starting option price the backtest builds its option-price model from (history has no real quotes).</td></tr>
+</table>
+
+<p class="muted">The live "as-per-settings" panel at the top of this page reflects the values actually running right now.</p>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- 12. GAPS                                                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<h2 id="gaps">12. What's still missing</h2>
+
+<ul>
+  <li><strong>No crash-recovery yet.</strong> If the server restarts while a <em>live</em> Trend Pullback trade is open, the system won't automatically remember and manage that trade afterward (this is a known deferral, the same as ORB). Until it's added, prefer practice or dry-run mode for trades you can't watch.</li>
+  <li><strong>Backtest option prices are estimated.</strong> History has no option quotes, so backtest profit is a close approximation, not exact fills. Always sanity-check against paper and <code>/replay</code>.</li>
+  <li><strong>It trades rarely — on purpose.</strong> The strategy waits for a real trend, a real pullback, and a real resumption all lining up. Many days it takes nothing. Judge it over weeks, not a single afternoon.</li>
+</ul>
+
+<div class="card">
+  <strong>How it fits with everything else.</strong> Trend Pullback is independent of every other strategy — it shares only the single Fyers price feed and the common safety/cost/option-picking plumbing. ORB and all the other strategies are untouched by it.
+</div>
+
+<div class="card warn">
+  <strong>Last checked: 16 July 2026.</strong> This guide was rewritten in plain English. Every default value above was read straight from the live code and the README — nothing here is invented.
+</div>
+
+<footer style="text-align:center; padding:30px 0 10px; margin-top:40px; border-top:1px solid #21262d;">
+  <p class="muted">Trend Pullback (TREND_PB) — Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 16 July 2026</p>
+</footer>
 
 </div>
 </body>

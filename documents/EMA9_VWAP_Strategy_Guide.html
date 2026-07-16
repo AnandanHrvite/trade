@@ -192,28 +192,29 @@
 
 <header class="hero">
   <h1>EMA 9 + VWAP</h1>
-  <p class="subtitle">EMA 9 Crossing a Session-Anchored VWAP &plusmn;&sigma; Band &mdash; Single-Leg CE / PE, Zerodha Orders</p>
+  <p class="subtitle">Buy a CE or PE when a fast average line pushes out past the day's &ldquo;fair-value&rdquo; band &mdash; then let the move run &mdash; explained in plain English</p>
   <div class="meta">
     <span><span class="badge badge-green">New 2026-06-28</span></span>
-    <span>Verified: 2026-07-05</span>
-    <span>NIFTY Options &mdash; 5-Min &mdash; Pure Signal Exit (No Default SL / Target)</span>
+    <span>Updated: 2026-07-16</span>
+    <span>NIFTY Options &mdash; 5-Min &mdash; Rides Momentum, No Fixed Stop or Target</span>
   </div>
 </header>
 
 <nav class="toc">
-  <h2>&#9776; Table of Contents</h2>
+  <h2>&#9776; What's inside</h2>
   <ol>
-    <li><a href="#overview">Strategy Overview</a></li>
-    <li><a href="#indicators">Indicators &mdash; EMA 9 + VWAP &plusmn;&sigma;</a></li>
-    <li><a href="#entry">Entry Logic &mdash; The Cross</a></li>
-    <li><a href="#exit">Exit Logic &mdash; Precedence Order</a></li>
-    <li><a href="#optstops">Optional Stops (Off by Default)</a></li>
-    <li><a href="#guards">Guards &amp; VIX Filter</a></li>
-    <li><a href="#risk">Risk, Cooldowns &amp; Circuit Breakers</a></li>
-    <li><a href="#example">Worked Example</a></li>
-    <li><a href="#modes">Operating Modes &amp; Live Gating</a></li>
-    <li><a href="#config">Complete Configuration Reference</a></li>
-    <li><a href="#notes">Notes &amp; Known Gaps</a></li>
+    <li><a href="#overview">The idea in one minute</a></li>
+    <li><a href="#glossary">Words you'll see (plain meanings)</a></li>
+    <li><a href="#indicators">The two lines we watch</a></li>
+    <li><a href="#entry">When we buy (the cross)</a></li>
+    <li><a href="#exit">When we sell</a></li>
+    <li><a href="#optstops">Extra emergency stops (off by default)</a></li>
+    <li><a href="#guards">The "market too jumpy" filter (VIX)</a></li>
+    <li><a href="#risk">Safety limits &amp; cooldowns</a></li>
+    <li><a href="#example">A worked example with real numbers</a></li>
+    <li><a href="#modes">Paper, Live &amp; Backtest</a></li>
+    <li><a href="#config">All the settings, explained</a></li>
+    <li><a href="#notes">What's still missing</a></li>
   </ol>
 </nav>
 
@@ -225,139 +226,192 @@
 <!-- 1. OVERVIEW                                                            -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="overview">
-  <h2><span class="section-icon icon-orange">&#9881;</span> 1. Strategy Overview</h2>
+  <h2><span class="section-icon icon-orange">&#9881;</span> 1. The idea in one minute</h2>
 
-  <p><strong>EMA 9 + VWAP</strong> mirrors a TradingView setup traded by eye: the <strong>9-period EMA</strong> (on the 5-minute close) crossing a <strong>session-anchored VWAP with &plusmn;&sigma; Standard-Deviation bands</strong> (price source HLC3). It is a 5-minute, intraday, single-position strategy &mdash; one open CE or PE at a time, single leg, no paired hedge. Data comes off the shared <strong>Fyers</strong> spot feed (the same NIFTY50 tick stream every strategy in this suite subscribes to via <code>socketManager</code>); when live, orders route to <strong>Zerodha</strong> through the paper-wrapping harness (Live = Paper).</p>
+  <p>Picture two things drawn on NIFTY's 5-minute chart. First, a <strong>fast wiggly average line</strong> (the EMA 9) that hugs the price closely. Second, a <strong>calm "fair value" channel</strong> down the middle of the day (the VWAP band) &mdash; think of it as the price range the market has been treating as normal so far today.</p>
 
-  <p>The thesis is <strong>momentum-with-value</strong>: the VWAP&plusmn;1&sigma; band is a statistical envelope around the session's average price. When the fast EMA punches <em>through</em> the top band, price is committing to a directional move that has already stretched a full standard deviation above the mean &mdash; a CE cue. A push below the bottom band is the mirror PE cue. The position is then held to a <strong>pure signal exit</strong> (the EMA re-crossing back inside the band) rather than a fixed stop or target, so a clean trend runs to its natural end.</p>
+  <p>Most of the time the fast line stays <em>inside</em> that channel. This strategy waits for the moment it <strong>bursts out of the channel</strong> &mdash; because that usually means the market has stopped drifting and started to <em>commit</em> to a direction.</p>
 
-  <div class="note note-warn">
-    <strong>VWAP caveat (same as ORB):</strong> the NIFTY spot index carries no real per-bar volume in the Fyers feed, so this VWAP degenerates to a session-anchored <strong>TWAP&plusmn;&sigma;</strong> (equal / tick-count-weighted HLC3, with the &sigma; band computed from the TWAP variance). The band math and the EMA9 cross are <em>exact</em>; the absolute VWAP value tracks TradingView's shape closely but is not tick-identical.
+  <ul>
+    <li>If the fast line pushes <strong>out of the top</strong> of the channel &rarr; buyers are taking over &rarr; we buy a <strong>CE (call option)</strong> to profit from a rise.</li>
+    <li>If the fast line pushes <strong>out of the bottom</strong> of the channel &rarr; sellers are taking over &rarr; we buy a <strong>PE (put option)</strong> to profit from a fall.</li>
+  </ul>
+
+  <p>We hold <strong>one option at a time</strong> (just a CE or just a PE &mdash; never a pair). And here's the unusual part: there is <strong>no fixed profit target and no fixed stop-loss</strong>. We simply hold the trade until the fast line drops <em>back inside</em> the channel &mdash; that's the market telling us the burst is over. The whole point is to <strong>catch a real move and stay in it as long as it lasts</strong>.</p>
+
+  <div class="note note-info">
+    <strong>Where the prices come from.</strong> Live NIFTY prices arrive from <strong>Fyers</strong> (the same single price feed every strategy here shares). When you run it for real money, the actual buy/sell orders go through <strong>Zerodha</strong>. Everything is on the <strong>5-minute</strong> chart.
+  </div>
+
+  <div class="note note-success">
+    <strong>The whole strategy in one sentence:</strong> buy when the fast line breaks out of the fair-value channel, then get out of the way and let the move run until the line folds back inside &mdash; or a sharp reversal candle or the closing bell ends it.
   </div>
 
   <div class="pillars">
-    <div class="pillar">EMA 9 (5-Min Close)</div>
-    <div class="pillar">Session VWAP &plusmn;1&sigma;</div>
-    <div class="pillar">HLC3 Source</div>
-    <div class="pillar">Single-Leg CE / PE</div>
-    <div class="pillar">Candle-Close Entry</div>
-    <div class="pillar">Pure Signal Exit</div>
-    <div class="pillar">2-Candle Reversal Exit</div>
-    <div class="pillar">No Default SL / Target</div>
-    <div class="pillar">Zerodha (Live)</div>
+    <div class="pillar">Fast line = EMA 9</div>
+    <div class="pillar">Channel = VWAP &plusmn;1&sigma;</div>
+    <div class="pillar">Buy on candle close</div>
+    <div class="pillar">One option at a time</div>
+    <div class="pillar">No fixed stop / target</div>
+    <div class="pillar">Sell when line re-enters band</div>
+    <div class="pillar">Zerodha (live)</div>
   </div>
 
-  <h3>Routes &amp; Brokers</h3>
+  <h3>Where you run it</h3>
   <table>
-    <thead><tr><th>Mode</th><th>Route</th><th>Broker</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Mode</th><th>Page</th><th>What happens</th></tr></thead>
     <tbody>
-      <tr><td><strong>Paper</strong></td><td><code>/ema9vwap-paper</code></td><td>Simulated</td><td>Canonical decision/fill/exit logic &mdash; the source of truth for EMA9+VWAP behaviour. Live &amp; backtest are aligned to it, never the reverse.</td></tr>
-      <tr><td><strong>Live</strong></td><td><code>/ema9vwap-live</code></td><td>Zerodha</td><td>Runs the paper engine, places real Zerodha orders via the harness. Double-gated: <code>EMA9VWAP_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code>.</td></tr>
-      <tr><td><strong>Backtest</strong></td><td><code>/ema9vwap-backtest</code></td><td>Historical</td><td>Dedicated candle-loop engine that mirrors the paper reversal / signal / EOD / cooldown / VIX / daily-loss decisions.</td></tr>
-      <tr><td><strong>History</strong></td><td><code>/ema9vwap-paper/history</code></td><td>&mdash;</td><td>Per-session delete + view modal. Restore from the JSONL daily log.</td></tr>
+      <tr><td><strong>Paper</strong></td><td><code>/ema9vwap-paper</code></td><td>Practice mode. Real live prices, but pretend money &mdash; no real orders. This is the "official" behaviour everything else is checked against.</td></tr>
+      <tr><td><strong>Live</strong></td><td><code>/ema9vwap-live</code></td><td>Real money through Zerodha. It runs the exact same brain as Paper, just with real orders. Locked behind <em>two</em> safety switches so it can't fire by accident (see Section 10).</td></tr>
+      <tr><td><strong>Backtest</strong></td><td><code>/ema9vwap-backtest</code></td><td>Test the strategy on past days to see how it would have done.</td></tr>
+      <tr><td><strong>History</strong></td><td><code>/ema9vwap-paper/history</code></td><td>Look back at past sessions and their trades.</td></tr>
     </tbody>
   </table>
 
-  <p>Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; paper capital pools under the shared Zerodha-side amount <code>ZERODHA_INV_AMOUNT</code>. The internal mode key is <code>ema9vwap</code> / <code>EMA9VWAP</code>. This strategy runs in parallel with EMA_RSI_ST / BB_RSI / PA / ORB on the one shared Fyers socket &mdash; it never opens a second connection.</p>
+  <p style="font-size:0.85rem;color:var(--text-secondary);">Every practice trade is saved to a file on disk (<code>ema9vwap_paper_trades.json</code>) so nothing is lost on a restart. This strategy runs side-by-side with all the others on the one shared price feed &mdash; it never opens a second connection.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 2. INDICATORS                                                          -->
+<!-- 2. GLOSSARY                                                             -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<section class="section cyan" id="glossary">
+  <h2><span class="section-icon icon-cyan">&#128218;</span> 2. Words you'll see (plain meanings)</h2>
+
+  <p>A few terms come up again and again. Here's what each one means, in everyday language &mdash; keep this handy and the rest of the guide reads easily.</p>
+
+  <table>
+    <thead><tr><th>Term</th><th>What it really means</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Candle</strong></td><td>A 5-minute price bar showing where NIFTY opened, closed, and its high/low in those 5 minutes. A "green" candle closed higher than it opened; a "red" one closed lower. We only make decisions when a candle <em>finishes</em> ("on candle close").</td></tr>
+      <tr><td><strong>CE / PE</strong></td><td>CE (a call) makes money when NIFTY goes <em>up</em>. PE (a put) makes money when NIFTY goes <em>down</em>. We only ever hold one of them at a time.</td></tr>
+      <tr><td><strong>EMA 9</strong></td><td>A <em>fast smoothed average</em> of the last 9 candle-closing prices. It's the wiggly line that hugs the price. Because it only looks back 9 candles, it reacts quickly &mdash; that's why we use it to spot a move starting. (The "9" is just how many candles it averages; it's adjustable.)</td></tr>
+      <tr><td><strong>VWAP</strong></td><td>The day's <em>fair-value line</em> &mdash; roughly the average price so far today. If price is above it, buyers have had the upper hand today; below it, sellers have.</td></tr>
+      <tr><td><strong>Standard-deviation band / sigma (&sigma;)</strong></td><td>"Sigma" is just a measure of <em>how spread-out</em> the day's prices have been &mdash; a normal-wobble size. We draw two lines, one sigma <em>above</em> the fair-value line and one sigma <em>below</em>, forming a channel. Price sitting inside the band = normal. Price breaking out of it = an unusually strong push. "&plusmn;1&sigma;" means one normal-wobble in each direction.</td></tr>
+      <tr><td><strong>Cross</strong></td><td>When one line moves from one side of another line to the other side. Here it's the fast line (EMA 9) moving from <em>inside</em> the channel to <em>outside</em> it (our buy signal), or back from outside to inside (our sell signal).</td></tr>
+      <tr><td><strong>Session-anchored</strong></td><td>The fair-value line and its band are built up <em>fresh each morning</em> from the market open and thrown away at the end of the day. "Anchored" at 9:15 means the maths starts counting from the opening bell every day.</td></tr>
+      <tr><td><strong>Premium</strong></td><td>The price you pay for the option, in &#8377; per unit. "Premium fell 20%" means the option lost a fifth of its value.</td></tr>
+      <tr><td><strong>ITM / OTM</strong></td><td>In-the-money (ITM) options already have real value baked in and move almost point-for-point with NIFTY. Out-of-the-money (OTM) options are cheaper "lottery tickets" further from the current price. This strategy just buys the standard at-the-money option (the strike nearest the current price).</td></tr>
+      <tr><td><strong>EOD square-off</strong></td><td>"End Of Day square-off" &mdash; selling whatever is still open before the market closes, win or lose. We never hold overnight.</td></tr>
+      <tr><td><strong>VIX</strong></td><td>The market's "fear gauge." High VIX = jumpy, expensive options and bigger swings. The strategy can sit out when VIX is too high.</td></tr>
+      <tr><td><strong>OI (open interest)</strong></td><td>How many option contracts are currently open &mdash; a read on where the big money is positioned. Used as an optional live-only safety check.</td></tr>
+      <tr><td><strong>Opposite-side cooldown</strong></td><td>A short "cooling-off" timer after we exit a trade, during which we're <em>not allowed</em> to immediately flip to the opposite side (CE&rarr;PE or PE&rarr;CE). It stops the strategy from flip-flopping and losing on both sides during a choppy patch.</td></tr>
+      <tr><td><strong>HLC3</strong></td><td>Just a candle's (High + Low + Close) &divide; 3 &mdash; a "typical price" for that candle. It's the number the fair-value line is built from.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- 3. INDICATORS                                                          -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section blue" id="indicators">
-  <h2><span class="section-icon icon-blue">&#128200;</span> 2. Indicators &mdash; EMA 9 + VWAP &plusmn;&sigma; Bands</h2>
+  <h2><span class="section-icon icon-blue">&#128200;</span> 3. The two lines we watch</h2>
 
-  <p>Two indicators, both computed on the closed 5-minute candle series. The EMA is a standard exponential moving average from the <code>technicalindicators</code> package; the VWAP and its &sigma; bands are computed in-strategy, session-anchored and reset every trading day.</p>
+  <p>The whole strategy runs off just two things drawn on the 5-minute chart. Everything else is a reaction to how these two interact.</p>
 
-  <h3>Exponential Moving Average</h3>
-  <p>A <code>EMA9VWAP_EMA_PERIOD</code>-length EMA (default <strong>9</strong>) on the candle <em>close</em>. This is the line that does the crossing. The strategy compares the EMA at the last two closed candles (<code>ema9Now</code> vs <code>ema9Prev</code>) against the band lines at those same candles to detect a series crossover &mdash; not a single-point &ldquo;is it above / below&rdquo; test.</p>
+  <h3>The fast line (EMA 9)</h3>
+  <p>This is a smoothed average of the last <strong>9</strong> candle-closing prices. Because it only looks back a short way, it turns quickly and stays close to the actual price. Think of it as a <em>"where is price leaning right now"</em> line. It's the line that does the crossing.</p>
 
-  <h3>Session-Anchored VWAP with &plusmn;&sigma; Bands</h3>
-  <p>Anchored at <code>EMA9VWAP_VWAP_SESSION_START</code> (default <strong>09:15</strong> IST) and reset each trading day, the VWAP accumulates the typical price <strong>HLC3 = (high + low + close) / 3</strong> across every in-session candle. The bands are placed at &plusmn; the multiplier times the standard deviation of that HLC3 series:</p>
-  <pre><code>VWAP        = &Sigma;(HLC3) / N            (equal-weight TWAP on the volumeless index)
-&sigma;           = sqrt( &Sigma;(HLC3&sup2;)/N &minus; VWAP&sup2; )
-Top line    = VWAP + (EMA9VWAP_BAND_MULT &times; &sigma;)
-Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
+  <div class="note note-info">
+    <strong>How the "cross" is judged.</strong> The strategy doesn't just ask "is the fast line above the channel right now?" &mdash; it compares <em>two candles in a row</em>: was the line inside the channel last candle, and is it outside this candle? That "was in, now out" change is the actual signal. This avoids reacting to a line that was already outside and just wandering along.
+  </div>
+
+  <h3>The fair-value channel (VWAP &plusmn; one sigma)</h3>
+  <p>Each morning, starting at <strong>9:15</strong>, the strategy begins averaging every candle's typical price (HLC3) to build the day's <strong>fair-value line (VWAP)</strong>. It also tracks how spread-out those prices have been &mdash; that spread is "one sigma." It then draws:</p>
+
+  <pre><code>Fair-value line   = the day's running average price
+Top of channel    = fair-value line + (1 &times; the normal wobble)
+Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code></pre>
+
+  <p>The channel <strong>resets every morning</strong> &mdash; yesterday's numbers don't carry over. And it gets a bit narrower or wider through the day as the market calms down or speeds up, so it always reflects <em>today's</em> conditions.</p>
 
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>EMA length crossed against the band</td></tr>
-      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>&sigma; multiplier. <code>1</code> = &plusmn;1&sigma; (the TradingView default). <code>0</code> collapses the band to the plain VWAP line (EMA9-vs-VWAP crossover).</td></tr>
-      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>Session anchor. VWAP + &sigma; accumulate from here and reset daily.</td></tr>
+      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>How many candles the fast line averages. Smaller = faster and twitchier; larger = smoother and slower.</td></tr>
+      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>How wide the channel is, in "normal wobbles." <code>1</code> = one wobble each side (the standard setting). Set it to <code>0</code> and the channel collapses to a single fair-value line &mdash; then we'd just trade the fast line crossing the plain VWAP.</td></tr>
+      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>The time each morning the fair-value maths starts counting from (the market open).</td></tr>
     </tbody>
   </table>
 
+  <div class="note note-warn">
+    <strong>One honest caveat about the fair-value line.</strong> A "proper" VWAP weights each price by how much traded there. But the NIFTY index itself doesn't publish real trading volume on the feed, so this line treats every candle equally instead. In practice it looks and behaves almost identically to the version you'd see on TradingView &mdash; the <em>shape</em> and the cross timing are exact &mdash; but the precise number may be a point or two different. It's the crossing that matters, and that is spot-on.
+  </div>
+
   <div class="note note-info">
-    <strong>Candles build from 09:15, trading starts later.</strong> The VWAP anchors at the open so the band is fully warmed by the time the entry window opens (10:30 by default). If real per-bar volume were ever present, the code auto-switches to a true volume-weighted VWAP and volume-weighted variance &mdash; but on the spot index it always takes the equal-weight TWAP path.
+    <strong>Why the channel is warm before we start trading.</strong> The maths starts at 9:15, but we don't take our first trade until 10:30 (see Section 4). That head-start means the fair-value line and its channel are already settled and reliable by the time we act on anything.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 3. ENTRY LOGIC                                                          -->
+<!-- 4. ENTRY                                                                -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section green" id="entry">
-  <h2><span class="section-icon icon-green">&#9654;</span> 3. Entry Logic &mdash; The Cross</h2>
+  <h2><span class="section-icon icon-green">&#9654;</span> 4. When we buy (the cross)</h2>
 
-  <p>Entries are evaluated on <strong>candle close</strong> (&ldquo;wait for the timeframe close&rdquo;). A single crossover fires the trade &mdash; there is no multi-gate pipeline like ORB. Every signal is classified <code>STRONG</code> (the strategy has no MARGINAL tier).</p>
+  <p>There's no long checklist here like some other strategies &mdash; <strong>a single event triggers the trade</strong>: the fast line breaking out of the channel. We wait for the 5-minute candle to <em>finish</em> before acting (so a brief poke mid-candle that pulls back in doesn't fool us).</p>
 
   <div class="gate">
     <div class="gate-num">CE</div>
     <div class="gate-content">
-      <div class="gate-name">EMA9 crosses ABOVE the top line</div>
-      <div class="gate-desc">The fast EMA was at or below the VWAP+&sigma; band on the prior candle and closes above it on this one &mdash; momentum breaking out above the upper envelope.</div>
-      <div class="gate-rule">ema9Prev &le; upperPrev &nbsp;AND&nbsp; ema9Now &gt; upperNow</div>
+      <div class="gate-name">Fast line breaks out the TOP &rarr; buy a CE</div>
+      <div class="gate-desc">Last candle the fast line was at or below the top of the channel; this candle it closes <em>above</em> the top. Momentum is breaking out to the upside &mdash; we buy a call.</div>
+      <div class="gate-rule">EMA9 was &le; top line, now closes above it</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">PE</div>
     <div class="gate-content">
-      <div class="gate-name">EMA9 crosses BELOW the bottom line</div>
-      <div class="gate-desc">Mirror image &mdash; the EMA was at or above the VWAP&minus;&sigma; band and closes below it, breaking down through the lower envelope.</div>
-      <div class="gate-rule">ema9Prev &ge; lowerPrev &nbsp;AND&nbsp; ema9Now &lt; lowerNow</div>
+      <div class="gate-name">Fast line breaks out the BOTTOM &rarr; buy a PE</div>
+      <div class="gate-desc">The mirror image: last candle the fast line was at or above the bottom of the channel; this candle it closes <em>below</em> it. Momentum is breaking down &mdash; we buy a put.</div>
+      <div class="gate-rule">EMA9 was &ge; bottom line, now closes below it</div>
     </div>
   </div>
 
-  <h3>Entry Window</h3>
-  <p>New entries are only taken inside the intraday window. Candles are built from the 09:15 open (so the VWAP band and EMA are warm), but the strategy waits until the window opens before it will act on a cross.</p>
+  <div class="note note-info">
+    <strong>Every signal is treated as a "strong" one.</strong> Some strategies grade their signals as strong or so-so. This one has only a single kind of signal &mdash; if the line breaks out of the channel, that's a full-strength trade. There is no weaker "maybe" tier.
+  </div>
+
+  <h3>We only trade in the middle of the day</h3>
+  <p>The channel starts building at 9:15, but the strategy <strong>waits until 10:30 to take its first trade</strong> and stops taking <em>new</em> trades after 14:30 (2:30 PM). The first hour is often noisy and directionless, and the last hour is too close to the bell to give a move room to run.</p>
+
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest new entry (IST). Skips the noisy first hour.</td></tr>
-      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest new entry (IST). A position opened before this can still trail past it &mdash; only <em>new</em> entries stop here.</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest we'll open a new trade &mdash; skips the noisy first hour.</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest we'll open a <em>new</em> trade. A trade that's already open can keep running past this time &mdash; only fresh entries stop here.</td></tr>
     </tbody>
   </table>
 
-  <h3>When Does It Fire?</h3>
-  <p>By default both <code>EMA9VWAP_INTRACANDLE_ENTRY</code> and <code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code> are <strong>OFF</strong>, so the entry fills on the <em>cross candle's close</em> &mdash; no waiting for a confirmation candle, and no acting on an intra-candle touch before the bar has closed.</p>
+  <h3>Exactly when the buy fires</h3>
+  <p>By default we buy on the <strong>close of the candle that did the crossing</strong> &mdash; no waiting for a second candle to confirm, and no jumping in mid-candle. Two optional settings can change that, but both are off out of the box:</p>
+
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Behaviour when ON</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does when turned ON</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Act on the cross the instant it happens intra-candle, without waiting for the bar to close.</td></tr>
-      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Require an extra confirmation candle in the signal direction before entering.</td></tr>
+      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Buy the <em>instant</em> the line crosses, without waiting for the candle to finish. (Off = wait for the close, the safer default.)</td></tr>
+      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Demand one <em>extra</em> candle pushing the same way before buying &mdash; more proof, but a later entry. (Off = act on the cross candle itself.)</td></tr>
     </tbody>
   </table>
 
-  <h3>Entry-Reason Fingerprint</h3>
-  <p>The log line surfaces the EMA value, the band line it crossed, and the VWAP/&sigma; that defined it:</p>
-  <pre><code>EMA9 24312.5 crossed ABOVE VWAP top 24298.1 (VWAP 24270.4 +1&sigma;)   [STRONG]</code></pre>
-  <p>This <em>EMA9-crosses-VWAP&plusmn;&sigma;</em> fingerprint is what disambiguates an EMA9+VWAP trade from EMA_RSI_ST / BB_RSI / PA / ORB in a mixed session log &mdash; see the <strong>signal-signatures</strong> memory note.</p>
+  <div class="note note-info">
+    <strong>Reading the trade in the log.</strong> Each entry writes a line like <code>EMA9 24312.5 crossed ABOVE VWAP top 24298.1 (VWAP 24270.4 +1&sigma;)</code>. That tells you the fast-line value, the channel edge it crossed, and the fair-value line and band that defined it &mdash; a fingerprint that identifies this strategy's trades in a mixed log.
+  </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 4. EXIT LOGIC                                                           -->
+<!-- 5. EXIT                                                                 -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section purple" id="exit">
-  <h2><span class="section-icon icon-purple">&#128205;</span> 4. Exit Logic &mdash; Precedence Order</h2>
+  <h2><span class="section-icon icon-purple">&#128205;</span> 5. When we sell</h2>
 
-  <p>The position opens with <code>stopLoss = null</code> &mdash; there is <strong>no default stop-loss, target, or trailing stop</strong>. It is held in full until one of the exits below fires. On each closed candle they are evaluated <em>in this order</em>; the first match squares off the whole position.</p>
+  <p>This is the unusual heart of the strategy. When we buy, we set <strong>no stop-loss, no profit target, and no trailing stop</strong>. We're deliberately giving the move room to breathe. The trade stays fully open until one of the exits below fires. On every finished candle the strategy checks these <em>in order</em>, and the first one that matches sells the whole position.</p>
 
   <div class="gate">
     <div class="gate-num">1</div>
     <div class="gate-content">
-      <div class="gate-name">2-candle reversal engulf &nbsp;<span class="badge badge-green">default ON</span></div>
-      <div class="gate-desc">Bail if the just-closed candle reverses HARD against the position. For a <strong>CE</strong>: a <em>bearish</em> candle (<code>close &lt; open</code>) that closes <strong>below both</strong> of the previous 2 candles' lows. For a <strong>PE</strong>: a <em>bullish</em> candle that closes <strong>above both</strong> of the previous 2 candles' highs. Rolling reference (each closed candle measured against its own prior 2). Candle-close only.</div>
+      <div class="gate-name">A sharp reversal candle &nbsp;<span class="badge badge-green">on by default</span></div>
+      <div class="gate-desc">If the candle that just closed slams hard <em>against</em> us, we bail early &mdash; we don't wait for the slower signal exit. For a <strong>CE</strong>: a red candle that closes <em>below the lows of both</em> of the previous two candles. For a <strong>PE</strong>: a green candle that closes <em>above the highs of both</em> previous candles. That kind of candle is a clear "the move just flipped" warning.</div>
       <div class="gate-rule">EMA9VWAP_REVERSAL_EXIT_ENABLED = true</div>
     </div>
   </div>
@@ -365,295 +419,314 @@ Bottom line = VWAP &minus; (EMA9VWAP_BAND_MULT &times; &sigma;)</code></pre>
   <div class="gate">
     <div class="gate-num">2</div>
     <div class="gate-content">
-      <div class="gate-name">Pure signal exit &mdash; EMA9 re-crosses back inside the band</div>
-      <div class="gate-desc">The core exit. A <strong>CE</strong> exits when the EMA re-crosses back <em>below</em> the top line (VWAP+&sigma;); a <strong>PE</strong> exits when it re-crosses back <em>above</em> the bottom line (VWAP&minus;&sigma;). Momentum has returned inside the statistical envelope &mdash; the reason to be in the trade is gone.</div>
-      <div class="gate-rule">CE: exitCE (EMA9 &lt; upper) &nbsp;|&nbsp; PE: exitPE (EMA9 &gt; lower)</div>
+      <div class="gate-name">The main exit &mdash; the fast line folds back inside the channel</div>
+      <div class="gate-desc">This is the core "the move is over" signal. A <strong>CE</strong> is sold when the fast line drops back <em>below</em> the top of the channel. A <strong>PE</strong> is sold when the fast line climbs back <em>above</em> the bottom. Once the line is back inside the normal band, the reason we entered is gone &mdash; so we're out.</div>
+      <div class="gate-rule">CE: EMA9 back below top line &nbsp;|&nbsp; PE: EMA9 back above bottom line</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">3</div>
     <div class="gate-content">
-      <div class="gate-name">Exit before day close</div>
-      <div class="gate-desc">Any position still open at <code>EMA9VWAP_EOD_EXIT_TIME</code> (default 15:15 IST) is squared off ahead of the engine's auto-stop. A trailing trade that survived the entry window closes here.</div>
-      <div class="gate-rule">time &ge; EMA9VWAP_EOD_EXIT_TIME (15:15)</div>
+      <div class="gate-name">Sell before the close</div>
+      <div class="gate-desc">Anything still open at <strong>15:15</strong> (3:15 PM) is sold, win or lose. This happens a little before the market close so we're never caught holding into the bell.</div>
+      <div class="gate-rule">time reaches EMA9VWAP_EOD_EXIT_TIME (15:15)</div>
     </div>
   </div>
 
   <div class="gate">
     <div class="gate-num">4</div>
     <div class="gate-content">
-      <div class="gate-name">EOD square-off + engine stop</div>
-      <div class="gate-desc">Final backstop &mdash; at <code>EMA9VWAP_STOP_TIME</code> (default 15:30, resolved via <code>TRADE_STOP_TIME</code>) any open position is squared off and the engine auto-stops for the day, releasing its socket callback.</div>
-      <div class="gate-rule">time &ge; EMA9VWAP_STOP_TIME (15:30)</div>
+      <div class="gate-name">Final backstop &mdash; the engine shuts down</div>
+      <div class="gate-desc">At <strong>15:30</strong> the strategy stops for the day. If somehow anything were still open, it's closed here. This is the last-resort net behind the 15:15 sell.</div>
+      <div class="gate-rule">time reaches EMA9VWAP_STOP_TIME (15:30)</div>
     </div>
   </div>
 
   <div class="note note-warn">
-    <strong>&ldquo;Pure signal exit&rdquo; is not the only fast exit.</strong> With the reversal engulf ON by default, a hard reversal candle can square the trade off <em>before</em> the EMA re-crosses the band &mdash; it sits ahead of the signal exit in precedence. Turn <code>EMA9VWAP_REVERSAL_EXIT_ENABLED=false</code> to hold purely to the signal / EOD exit.
+    <strong>So the "let it run" exit isn't the only fast way out.</strong> Because the sharp-reversal exit (rule 1) sits <em>ahead</em> of the main signal exit, a violent candle against us can close the trade before the fast line has folded back inside the channel. If you'd rather hold purely to the channel signal, turn <code>EMA9VWAP_REVERSAL_EXIT_ENABLED=false</code>.
+  </div>
+
+  <div class="note note-success">
+    <strong>Why no fixed target or stop?</strong> A fixed "+30% and I'm out" target would cut the big trend moves short &mdash; and those big moves are exactly where this style makes its money. And a tight stop-loss would keep getting nicked by normal wobble. So instead of a fixed number, the market itself tells us when to leave: the fast line folding back inside the channel means the burst has run out of steam.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 5. OPTIONAL STOPS                                                       -->
+<!-- 6. OPTIONAL STOPS                                                       -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="optstops">
-  <h2><span class="section-icon icon-red">&#128683;</span> 5. Optional Stops (Off by Default)</h2>
+  <h2><span class="section-icon icon-red">&#128683;</span> 6. Extra emergency stops (off by default)</h2>
 
-  <p>None of the following are active out of the box &mdash; the strategy ships as a pure signal-exit engine. They are catastrophe / experimentation levers you can switch on via Settings. All are additive on top of the four exits in &sect;4.</p>
+  <p>Out of the box, none of the following are active &mdash; the strategy ships as a pure "let the move run" engine. These are <strong>optional safety catches</strong> you can switch on if you want extra protection or want to experiment. Each one is an <em>add-on</em> that sits on top of the four exits in Section 5.</p>
 
   <table>
-    <thead><tr><th>Stop</th><th>Variable</th><th>Default</th><th>Effect when enabled</th></tr></thead>
+    <thead><tr><th>Extra stop</th><th>Setting</th><th>Default</th><th>What it does when you turn it on</th></tr></thead>
     <tbody>
       <tr>
-        <td>Option-premium stop</td>
+        <td>Option-price stop</td>
         <td><code>EMA9VWAP_OPT_STOP_PCT</code></td>
         <td><code>0</code></td>
-        <td>Cut the trade when the option LTP falls this fraction below entry premium. <code>0</code> = off.</td>
+        <td>Sell if the option's price falls this fraction below what you paid (e.g. down 30%). Catches a fast bleed even if the chart signal hasn't flipped yet. <code>0</code> = off.</td>
       </tr>
       <tr>
-        <td>Spot-points stop</td>
+        <td>NIFTY-points stop</td>
         <td><code>EMA9VWAP_STOP_LOSS_PTS</code></td>
         <td><code>0</code></td>
-        <td>Hard spot-move stop in points against the position. <code>0</code> = off.</td>
+        <td>Sell once NIFTY itself has moved this many points against you. A hard line in the sand. <code>0</code> = off.</td>
       </tr>
       <tr>
-        <td>Candle-trail stop</td>
+        <td>Candle-trailing stop</td>
         <td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td>
         <td><code>false</code> / <code>3</code></td>
-        <td>N-bar structural trailing stop &mdash; CE trails to the N-bar low, PE to the N-bar high, tighten-only. Enforced intra-candle once set.</td>
+        <td>Trail a stop behind the recent candles &mdash; for a CE it follows the lowest low of the last few candles upward, tightening only, never loosening. <code>_BARS</code> = how many candles it looks back.</td>
       </tr>
       <tr>
-        <td>Negative-candle cut</td>
+        <td>Not-working-yet cut</td>
         <td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td>
         <td><code>0</code></td>
-        <td>Square off a trade that is still in the red after N candles held (winners keep riding). <code>0</code> = off. <em>An in-code comment wrongly says &ldquo;default 2&rdquo; &mdash; the resolved default is 0.</em></td>
+        <td>Give up on a trade that's <em>still in the red</em> after this many candles (winners are left alone to keep running). <code>0</code> = off. <em>(A stray code comment says "default 2" &mdash; ignore it; the real default is 0.)</em></td>
       </tr>
       <tr>
-        <td>Legacy time-stop</td>
+        <td>Old time-based stop</td>
         <td><code>EMA9VWAP_SL_MODE</code></td>
         <td><code>ema</code></td>
-        <td>Set to <code>candle</code> to re-enable the shared candles-held time-stop guard. <code>ema</code> (default) = pure signal exit, the time-stop stays inert.</td>
+        <td>Set this to <code>candle</code> to bring back an older "you've held it long enough, get out" timer. Left at <code>ema</code> (the default), that timer stays switched off and the signal exit runs the show.</td>
       </tr>
     </tbody>
   </table>
 
   <div class="note note-info">
-    <strong>Why default-off?</strong> The strategy's edge is holding a clean trend to the signal exit. A tight premium / points stop would chop the winners short; these levers exist for regime experimentation and live-risk insurance, not as part of the core thesis.
+    <strong>Why leave them off?</strong> The edge of this strategy is patiently holding a clean move to its natural end. A tight stop would chop the winners short and defeat the whole purpose. These levers are here as insurance for live trading or for testing ideas &mdash; not as part of the core plan.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 6. GUARDS & VIX                                                         -->
+<!-- 7. VIX / GUARDS                                                         -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="guards">
-  <h2><span class="section-icon icon-orange">&#128737;</span> 6. Guards &amp; VIX Filter</h2>
+  <h2><span class="section-icon icon-orange">&#128737;</span> 7. The "market too jumpy" filter (VIX)</h2>
 
-  <h3>India VIX Regime Filter &mdash; GLOBAL keys, not per-mode</h3>
-  <p>Unlike ORB / BB_RSI / PA (each of which has its own <code>*_VIX_*</code> block), EMA9+VWAP has <strong>no per-mode VIX keys</strong>. Its VIX check calls the shared filter defaulting to the EMA_RSI_ST/global &ldquo;swing&rdquo; mode, so it reads the <strong>global</strong> <code>VIX_*</code> settings.</p>
-  <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
-    <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>On unless explicitly <code>false</code>. When on, blocks entries when VIX is out of band.</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Above this VIX, entries are blocked entirely &mdash; premiums pumped, R:R deteriorates.</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between this and <code>VIX_MAX_ENTRY</code>, only STRONG signals fire. Every EMA9+VWAP signal is STRONG, so in practice this tier does not filter it out.</td></tr>
-    </tbody>
-  </table>
+  <p>VIX is the market's fear gauge. When it's high, options get expensive and prices swing violently &mdash; a riskier time to trade. This strategy can sit out those days.</p>
+
   <div class="note note-warn">
-    <strong>VIX is not independently tunable for this strategy.</strong> Because it shares the EMA_RSI_ST/global thresholds, changing <code>VIX_MAX_ENTRY</code> moves the gate for EMA_RSI_ST too. There are no <code>EMA9VWAP_VIX_*</code> keys to override it in isolation.
+    <strong>An important quirk: the VIX limits here are the SHARED, global ones.</strong> Most other strategies have their own private VIX dials. EMA9+VWAP does <em>not</em> &mdash; it uses the global <code>VIX_*</code> settings (the same ones the EMA_RSI_ST strategy uses). So if you change <code>VIX_MAX_ENTRY</code> to loosen or tighten it here, you're also changing it for that other strategy. There is no <code>EMA9VWAP_VIX_*</code> dial to adjust this strategy on its own.
   </div>
 
-  <h3>Liquidity Guards (Live-Only)</h3>
-  <p>The shared <strong>OI-buildup</strong> and <strong>bid-ask spread</strong> guards run under the <code>ema9vwap</code> mode key, but only on the live path and only when explicitly enabled. Paper and backtest do not apply them.</p>
+  <table>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The on/off switch. On by default &mdash; so the VIX check is active unless you turn it off.</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>If VIX is above 20, don't take any new trade &mdash; too jumpy, options too pricey.</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between 16 and 20, only take the very best ("strong") signals. Since every EMA9+VWAP signal already counts as strong, in practice this middle band doesn't filter anything out here.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Two more live-only safety checks</h3>
+  <p>When trading real money, two extra guards can run before a buy goes through:</p>
+  <ul>
+    <li><strong>OI (open interest) check</strong> &mdash; a read on where the big money is positioned.</li>
+    <li><strong>Bid-ask spread check</strong> &mdash; skips an option whose buy price and sell price are too far apart, because that gap quietly eats your profit on the way in and out.</li>
+  </ul>
+  <p>Both only apply on the <strong>live</strong> path, and only when you switch them on. Practice mode and backtests don't use them.</p>
 
   <div class="note note-info">
-    <strong>Daily-count gate (pre-filter).</strong> Before any signal is acted on, the strategy checks the daily trade cap and the daily-loss kill-switch (&sect;7). Once either trips, further candles are skipped for the session.
+    <strong>Two counters checked before every trade.</strong> Before acting on any signal, the strategy also checks the day's trade count and the day's loss total (Section 8). If either has hit its limit, it simply stops trading for the rest of the day.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 7. RISK & COOLDOWNS                                                     -->
+<!-- 8. RISK & COOLDOWNS                                                     -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="risk">
-  <h2><span class="section-icon icon-red">&#128721;</span> 7. Risk, Cooldowns &amp; Circuit Breakers</h2>
+  <h2><span class="section-icon icon-red">&#128721;</span> 8. Safety limits &amp; cooldowns</h2>
+
+  <p>Several limits protect the account and stop the strategy from over-trading during a rough patch. Think of them as brakes of increasing strength.</p>
 
   <table>
-    <thead><tr><th>Layer</th><th>Variable</th><th>Default</th><th>Effect</th></tr></thead>
+    <thead><tr><th>Brake</th><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td>Daily trade cap</td><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>After N entries, no more for the session. Falls back to global <code>MAX_DAILY_TRADES</code> if unset.</td></tr>
-      <tr><td>Daily loss kill-switch</td><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>5000</code> &#8377;</td><td>Realised loss &ge; threshold halts entries for the day. Falls back to global <code>MAX_DAILY_LOSS</code>.</td></tr>
-      <tr><td>Consecutive-loss breaker</td><td>&mdash;</td><td>auto</td><td>3 straight losses &rarr; 5-minute pause (4 candles). A 15-minute variant kills the strategy for the day. A profitable trade clears any remaining pause.</td></tr>
-      <tr><td>Chop guard</td><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Sit out the rest of the session after N straight losses. <code>0</code> = off. Any winner resets the streak.</td></tr>
-      <tr><td>Same-side SL cooldown</td><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After an SL hit, block a same-side re-entry for N candles. Inert unless an optional stop (&sect;5) is enabled &mdash; the pure signal exit is not an SL.</td></tr>
-      <tr><td>Opposite-side flip cooldown</td><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After a signal-cross OR reversal-engulf exit, block the <em>flip</em> side for N candles &mdash; prevents whipsaw flips on chop. Skipped for EOD / day-close / manual / opposite-signal exits.</td></tr>
+      <tr><td>Most trades per day</td><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>After this many trades in a day, stop for the day.</td></tr>
+      <tr><td>Daily loss brake</td><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>&#8377;5,000</code></td><td>Once the day's losses reach &#8377;5,000, take no more trades today.</td></tr>
+      <tr><td>Losing-streak breaker</td><td>&mdash;</td><td>automatic</td><td>3 losses in a row &rarr; a 5-minute pause (about 4 candles). A longer 15-minute version shuts the strategy for the day. A single winning trade clears the pause.</td></tr>
+      <tr><td>Chop guard</td><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Optionally sit out the rest of the day after this many straight losses. <code>0</code> = off. Any winner resets the count.</td></tr>
+      <tr><td>Same-side cool-off</td><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After a stop-loss is hit, block re-entering the <em>same</em> side for a few candles. This only matters if you've switched on one of the optional stops in Section 6 &mdash; the normal signal exit isn't a stop-loss, so it doesn't trigger this.</td></tr>
+      <tr><td>Opposite-side cool-off</td><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the <em>opposite</em> side (CE&rarr;PE or PE&rarr;CE) for 3 candles &mdash; stops the strategy whipsawing back and forth in choppy conditions.</td></tr>
     </tbody>
   </table>
 
   <div class="note note-info">
-    <strong>Why the opposite-side cooldown matters here.</strong> With the reversal engulf ON, a CE can be closed on a hard bearish candle &mdash; which is exactly the kind of bar that would also print a PE cross. The 3-candle flip cooldown stops the engine from instantly reversing into that fresh loss, letting the chop pass before it re-engages.
+    <strong>Why the opposite-side cool-off really matters here.</strong> Remember the sharp-reversal exit (Section 5, rule 1): a CE can be closed by a hard <em>red</em> candle &mdash; but that very same candle is exactly what would trigger a fresh <em>PE</em> buy. Without the cool-off, the strategy could sell its CE and instantly buy a PE straight into the same messy candle, and lose on both. The 3-candle timer makes it wait for the chop to pass before re-engaging.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 8. WORKED EXAMPLE                                                       -->
+<!-- 9. WORKED EXAMPLE                                                       -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section green" id="example">
-  <h2><span class="section-icon icon-green">&#129518;</span> 8. Worked Example</h2>
+  <h2><span class="section-icon icon-green">&#129518;</span> 9. A worked example with real numbers</h2>
 
-  <p>A textbook CE trade on a trending morning, all defaults (band mult 1, entry window 10:30&ndash;14:30, reversal exit ON):</p>
+  <p>Here's a textbook CE trade on a trending morning, with all the default settings (channel width 1&sigma;, trade window 10:30&ndash;14:30, sharp-reversal exit on). Follow the fast line and the top of the channel:</p>
 
-  <pre><code>10:20  VWAP = 24270,  &sigma; = 28   &rarr;  top line = 24298, bottom = 24242
-       EMA9 = 24291  (below the top line &mdash; no cross)
+  <pre><code>10:20  The channel right now:
+         Fair-value line  = 24,270
+         Normal wobble    = 28 points
+         Top of channel   = 24,270 + 28 = 24,298
+         Bottom of channel = 24,270 − 28 = 24,242
+       Fast line (EMA9) = 24,291  →  still INSIDE the channel. No trade yet.
 
-10:35  Candle CLOSES. EMA9 ticks up to 24313; top line now 24301.
-       ema9Prev (24296) &le; upperPrev (24299)  AND  ema9Now (24313) &gt; upperNow (24301)
-       &rarr;  CE ENTRY at the candle close. Buy 1 ATM CE. stopLoss = null (no SL/target).
-       Log: "EMA9 24313 crossed ABOVE VWAP top 24301 (VWAP 24274 +1&sigma;) [STRONG]"
+10:35  This candle CLOSES. The fast line has climbed to 24,313,
+       and the top of the channel is now 24,301.
+         Last candle: fast line 24,296 was BELOW the top (24,299)
+         This candle: fast line 24,313 is ABOVE the top (24,301)
+       →  That's the break-out. BUY 1 CE at this candle's close.
+          No stop-loss, no target set — we just hold.
+       Log: "EMA9 24313 crossed ABOVE VWAP top 24301 (VWAP 24274 +1σ) [STRONG]"
 
-11:00&ndash;12:40  Price trends up. EMA9 stays above the top line every close.
-       Position simply HELD &mdash; no trail, no target to hit.
+11:00–12:40  NIFTY keeps grinding up. Every 5-min candle closes with the
+       fast line still poking above the top of the channel. We do nothing —
+       just let the winner run. No trail to tighten, no target to hit.
 
-Three ways this trade can end (whichever comes first):
-  (a) A bearish 5-min candle closes below BOTH of the prior 2 candles' lows
-      &rarr; 2-candle reversal exit, squared off at that candle's close.
-  (b) EMA9 re-crosses back BELOW the top line on a candle close
-      &rarr; pure signal exit ("EMA9 re-entered VWAP top band").
-  (c) Neither happens &mdash; position squared off at 15:15 (exit-before-close),
-      or the 15:30 EOD backstop.
+Now the trade ends the moment ANY ONE of these happens first:
+  (a) A red candle closes below the lows of BOTH previous candles
+      →  sharp-reversal exit; we sell at that candle's close.
+  (b) The fast line finally drops back BELOW the top of the channel
+      →  main signal exit ("the burst is over"); we sell.
+  (c) Neither happens all afternoon  →  we sell at 15:15 no matter what.
 
-After the exit, the opposite (PE) side is blocked for 3 candles by the
-flip cooldown, so a whipsaw bearish poke can't instantly flip the trade.</code></pre>
+Say the option was bought at ₹120 and we exited via (b) at ₹185.
+That's +₹65 per unit of premium — the kind of clean run this style is built to catch.
+
+After we exit, the PE (opposite) side is locked for 3 candles, so a single
+angry red candle can't instantly flip us into a losing put.</code></pre>
 
   <div class="note note-success">
-    <strong>The whole edge in one line:</strong> enter on the EMA punching a full standard deviation through the band, then get out of the way and let the trend run &mdash; capped only by a hard reversal candle, the EMA folding back inside the band, or the clock.
+    <strong>The whole edge in one line:</strong> get in the moment the fast line punches a full normal-wobble out of the fair-value channel, then step back and let the move run &mdash; ended only by a hard reversal candle, the line folding back inside the channel, or the closing bell.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 9. MODES & LIVE GATING                                                  -->
+<!-- 10. MODES & LIVE GATING                                                 -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section cyan" id="modes">
-  <h2><span class="section-icon icon-cyan">&#9881;</span> 9. Operating Modes &amp; Live Gating</h2>
+  <h2><span class="section-icon icon-cyan">&#9881;</span> 10. Paper, Live &amp; Backtest</h2>
 
-  <h3 style="color:var(--accent-blue);">Paper Mode &mdash; <code>/ema9vwap-paper</code></h3>
-  <p>Real-time Fyers tick feed via <code>socketManager</code>; simulated fills (no broker round-trip). This is the <strong>canonical</strong> decision/fill/exit logic &mdash; the source of truth. Sessions persist to <code>~/trading-data/ema9vwap_paper_trades.json</code>; a per-day JSONL audit lands at <code>~/trading-data/trades/ema9vwap_paper_trades_YYYY-MM-DD.jsonl</code>, seeded with a settings snapshot at session start and re-snapshotted on every Settings save during the session. When <code>TICK_RECORDER_ENABLED=true</code> (default) every spot/option/VIX tick is recorded for Replay.</p>
+  <h3 style="color:var(--accent-blue);">Paper &mdash; <code>/ema9vwap-paper</code> (practice)</h3>
+  <p>Real live prices, pretend money. No real orders are ever placed. This is the <strong>"official"</strong> version of the strategy &mdash; whenever live or backtest behaves differently, paper is treated as correct and the others are fixed to match it. Every trade is saved to your trading-data folder, with a day-by-day audit file, and (when tick-recording is on, which it is by default) every price tick is stored so you can replay the exact day later.</p>
 
-  <h3 style="color:var(--accent-green);">Live Mode &mdash; <code>/ema9vwap-live</code> (Live = Paper)</h3>
-  <p>The live route runs the <em>same paper engine</em> and wraps it in the harness, placing real <strong>Zerodha</strong> orders on entry/exit. It is <strong>double-gated</strong>: both <code>EMA9VWAP_LIVE_ENABLED=true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> are required for a real order. A per-mode <code>EMA9VWAP_LIVE_DRY_RUN=true</code> holds this strategy in dry-run (log the broker call, place nothing) even when the global harness is armed &mdash; letting you take other strategies live while EMA9+VWAP stays simulated. Flip DRY-RUN off only after Live and Paper decisions match on a recorded session via <code>/replay</code>.</p>
+  <h3 style="color:var(--accent-green);">Live &mdash; <code>/ema9vwap-live</code> (real money, "Live = Paper")</h3>
+  <p>The live page runs the <em>exact same brain</em> as practice mode &mdash; it just also places real <strong>Zerodha</strong> orders when it decides to buy or sell. It's locked behind <strong>two</strong> safety switches so it can never fire by accident: <code>EMA9VWAP_LIVE_ENABLED</code> must be on <em>and</em> the global dry-run switch (<code>LIVE_HARNESS_DRY_RUN</code>) must be off. There's also a per-strategy switch, <code>EMA9VWAP_LIVE_DRY_RUN</code>, that keeps just this one strategy in "pretend" mode even while others are trading live &mdash; it logs the order it would have placed but sends nothing. Only turn the real dry-run off after you've confirmed on a replayed day that live and paper make the same decisions.</p>
 
-  <h3 style="color:var(--accent-purple);">Backtest Mode &mdash; <code>/ema9vwap-backtest</code></h3>
-  <p>A dedicated candle-loop engine (<code>ema9vwapBacktestEngine.js</code>) that replays historical 5-minute candles and mirrors the paper decisions exactly &mdash; reversal engulf, pure signal exit, EOD, opposite-side cooldown, VIX and daily-loss guards were all ported so the backtest reproduces paper behaviour rather than approximating it.</p>
+  <h3 style="color:var(--accent-purple);">Backtest &mdash; <code>/ema9vwap-backtest</code> (test on the past)</h3>
+  <p>Runs the strategy over past dates to see how it would have done. It was built to copy the practice-mode decisions exactly &mdash; the sharp-reversal exit, the signal exit, the end-of-day sell, the cool-offs, the VIX and daily-loss brakes were all carried across &mdash; so the backtest reproduces the real behaviour rather than roughly approximating it.</p>
 
-  <h3 style="color:var(--accent-orange);">Replay Mode &mdash; <code>/replay</code></h3>
-  <p>Re-runs a recorded paper session through the paper <code>onTick()</code> handler. <strong>Snapshot</strong> applies the recorded session-start settings (deterministic A/A reproduction); <strong>Current Settings</strong> applies the live <code>process.env</code> (A/B for after-hours tuning against real ticks). Outputs land in <code>~/trading-data/_replay_trades/</code> (snapshot) or <code>_replay_trades_sim/</code> (current settings), kept separate from the canonical paper logs.</p>
+  <h3 style="color:var(--accent-orange);">Replay &mdash; <code>/replay</code> (re-run a recorded day)</h3>
+  <p>Takes a day you recorded in practice mode and runs it again, tick by tick. You can replay it with the <em>original</em> settings (to reproduce exactly what happened) or with your <em>current</em> settings (to test a tweak against the same real prices, after market hours). It's the safe way to try changes before trusting them.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 10. CONFIG REFERENCE                                                    -->
+<!-- 11. CONFIG REFERENCE                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section orange" id="config">
-  <h2><span class="section-icon icon-orange">&#128221;</span> 10. Complete Configuration Reference</h2>
+  <h2><span class="section-icon icon-orange">&#128221;</span> 11. All the settings, explained</h2>
 
-  <div class="env-group">Master toggles &amp; live gating</div>
+  <p>This is the full list of EMA9+VWAP settings and their defaults &mdash; the same names you'll find on the Settings page. You don't need to touch most of them; the defaults are the intended setup.</p>
+
+  <div class="env-group">On/off switches &amp; live safety</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show/hide EMA9+VWAP menus in the sidebar (and its Settings section). When off, both are hidden.</td></tr>
-      <tr><td><code>EMA9VWAP_LIVE_ENABLED</code></td><td><code>false</code></td><td>Master switch for Live. Must be <code>true</code> AND <code>LIVE_HARNESS_DRY_RUN=false</code> for real Zerodha orders.</td></tr>
-      <tr><td><code>EMA9VWAP_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Per-strategy DRY-RUN override &mdash; hold EMA9+VWAP in dry-run (log only, no order) even when the global harness dry-run is off.</td></tr>
+      <tr><td><code>EMA9VWAP_MODE_ENABLED</code></td><td><code>true</code></td><td>Show EMA9+VWAP in the menu and Settings. Off = hidden everywhere.</td></tr>
+      <tr><td><code>EMA9VWAP_LIVE_ENABLED</code></td><td><code>false</code></td><td>The master switch for real orders. Needs the global dry-run switch off as well before any real order goes out.</td></tr>
+      <tr><td><code>EMA9VWAP_LIVE_DRY_RUN</code></td><td><code>false</code></td><td>Keep <em>this</em> strategy in "pretend" mode (log only, place nothing) even when others are trading live.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Indicator &amp; band</div>
+  <div class="env-group">The two lines (fast line &amp; channel)</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>EMA length crossed against the band</td></tr>
-      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>VWAP band &sigma; multiplier (1 = &plusmn;1&sigma;, TradingView default; 0 = plain VWAP line)</td></tr>
-      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>VWAP session anchor (resets daily from here)</td></tr>
+      <tr><td><code>EMA9VWAP_EMA_PERIOD</code></td><td><code>9</code></td><td>How many candles the fast line averages.</td></tr>
+      <tr><td><code>EMA9VWAP_BAND_MULT</code></td><td><code>1</code></td><td>Channel width in "normal wobbles" (1 = the standard &plusmn;1&sigma;; 0 = collapse to a single fair-value line).</td></tr>
+      <tr><td><code>EMA9VWAP_VWAP_SESSION_START</code></td><td><code>09:15</code></td><td>Time each morning the fair-value maths starts from (resets daily).</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Entry window &amp; timing</div>
+  <div class="env-group">Trade window &amp; timing</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest new entry (IST)</td></tr>
-      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest new entry (IST) &mdash; open trades may still trail past it</td></tr>
-      <tr><td><code>EMA9VWAP_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td>Exit-before-close: hard square-off for any open position</td></tr>
-      <tr><td><code>EMA9VWAP_STOP_TIME</code></td><td><code>15:30</code></td><td>Engine auto-stop time (resolved via <code>TRADE_STOP_TIME</code>)</td></tr>
-      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Require a confirmation candle after the cross before entering</td></tr>
-      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Enter on the intra-candle cross without waiting for the bar close. Both this and confirm off &rarr; entry on the cross candle's close.</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_START</code></td><td><code>10:30</code></td><td>Earliest a new trade may start.</td></tr>
+      <tr><td><code>EMA9VWAP_ENTRY_END</code></td><td><code>14:30</code></td><td>Latest a <em>new</em> trade may start (open trades can run past it).</td></tr>
+      <tr><td><code>EMA9VWAP_EOD_EXIT_TIME</code></td><td><code>15:15</code></td><td>Sell any open trade at this time &mdash; a little before the close.</td></tr>
+      <tr><td><code>EMA9VWAP_STOP_TIME</code></td><td><code>15:30</code></td><td>Final shutdown time for the day (last-resort net behind 15:15).</td></tr>
+      <tr><td><code>EMA9VWAP_CONFIRM_CANDLE_ENABLED</code></td><td><code>false</code></td><td>Require one extra confirming candle after the cross before buying.</td></tr>
+      <tr><td><code>EMA9VWAP_INTRACANDLE_ENTRY</code></td><td><code>false</code></td><td>Buy the instant the line crosses, without waiting for the candle to close. Both this and confirm off = buy on the cross candle's close.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Exits &amp; optional stops</div>
+  <div class="env-group">When we sell &amp; the optional extra stops</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code></td><td><code>true</code></td><td>2-candle reversal exit &mdash; square off when a candle closes hard against the position (CE: bearish close below both prior-2 lows; PE: bullish close above both prior-2 highs), evaluated on candle close</td></tr>
-      <tr><td><code>EMA9VWAP_OPT_STOP_PCT</code></td><td><code>0</code></td><td>Optional option-premium catastrophe stop (0 = off; pure signal exit)</td></tr>
-      <tr><td><code>EMA9VWAP_STOP_LOSS_PTS</code></td><td><code>0</code></td><td>Optional spot-points stop (0 = off)</td></tr>
-      <tr><td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td><code>false</code> / <code>3</code></td><td>Optional N-bar structural trailing stop (tighten-only)</td></tr>
-      <tr><td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td><td><code>0</code></td><td>Square off a still-red trade after N candles (0 = off)</td></tr>
-      <tr><td><code>EMA9VWAP_SL_MODE</code></td><td><code>ema</code></td><td><code>candle</code> re-enables the legacy candles-held time-stop; <code>ema</code> = pure signal exit</td></tr>
+      <tr><td><code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code></td><td><code>true</code></td><td>Sell early on a sharp reversal candle (CE: a red candle closing below both previous candles' lows; PE: a green candle closing above both previous highs).</td></tr>
+      <tr><td><code>EMA9VWAP_OPT_STOP_PCT</code></td><td><code>0</code></td><td>Optional: sell if the option price drops this fraction below entry (0 = off).</td></tr>
+      <tr><td><code>EMA9VWAP_STOP_LOSS_PTS</code></td><td><code>0</code></td><td>Optional: sell once NIFTY moves this many points against you (0 = off).</td></tr>
+      <tr><td><code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td><code>false</code> / <code>3</code></td><td>Optional trailing stop behind the last few candles (tightens only).</td></tr>
+      <tr><td><code>EMA9VWAP_NEG_CANDLE_LIMIT</code></td><td><code>0</code></td><td>Optional: give up on a still-losing trade after this many candles (0 = off).</td></tr>
+      <tr><td><code>EMA9VWAP_SL_MODE</code></td><td><code>ema</code></td><td>Set to <code>candle</code> to bring back the old "held long enough" timer; <code>ema</code> = let the signal exit decide.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">Risk caps, cooldowns &amp; breakers</div>
+  <div class="env-group">Safety limits, cooldowns &amp; breakers</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>Daily trade cap (falls back to global <code>MAX_DAILY_TRADES</code>)</td></tr>
-      <tr><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Daily loss kill-switch, &#8377; (falls back to global <code>MAX_DAILY_LOSS</code>)</td></tr>
-      <tr><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Chop guard &mdash; sit out the session after N straight losses (0 = off)</td></tr>
-      <tr><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>Same-side SL cooldown (candles) &mdash; inert unless an optional stop is enabled</td></tr>
-      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>Block the flip side for N candles after a signal-cross / reversal exit</td></tr>
+      <tr><td><code>EMA9VWAP_MAX_DAILY_TRADES</code></td><td><code>20</code></td><td>Most trades allowed per day (falls back to the global limit if unset).</td></tr>
+      <tr><td><code>EMA9VWAP_MAX_DAILY_LOSS</code></td><td><code>5000</code></td><td>Stop new trades once the day's loss hits this many &#8377; (falls back to the global limit).</td></tr>
+      <tr><td><code>EMA9VWAP_MAX_CONSEC_LOSSES</code></td><td><code>0</code></td><td>Optional: sit out the rest of the day after this many straight losses (0 = off).</td></tr>
+      <tr><td><code>EMA9VWAP_SL_PAUSE_CANDLES</code></td><td><code>3</code></td><td>After a stop-loss, block a same-side re-entry for this many candles (only relevant if an optional stop is on).</td></tr>
+      <tr><td><code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code></td><td><code>true</code> / <code>3</code></td><td>After an exit, block flipping to the opposite side for this many candles.</td></tr>
     </tbody>
   </table>
 
-  <div class="env-group">VIX filter (GLOBAL keys &mdash; no per-mode override)</div>
+  <div class="env-group">Jumpiness filter (VIX &mdash; global keys, no private dial)</div>
   <table>
-    <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+    <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
     <tbody>
-      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>Global VIX gate (on unless <code>false</code>). EMA9+VWAP has no <code>EMA9VWAP_VIX_*</code> key.</td></tr>
-      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Block all entries above this VIX</td></tr>
-      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between this and <code>VIX_MAX_ENTRY</code>, allow only STRONG signals (all EMA9+VWAP signals are STRONG)</td></tr>
+      <tr><td><code>VIX_FILTER_ENABLED</code></td><td><code>true</code></td><td>The shared VIX on/off switch (this strategy has no <code>EMA9VWAP_VIX_*</code> of its own).</td></tr>
+      <tr><td><code>VIX_MAX_ENTRY</code></td><td><code>20</code></td><td>Above this VIX, take no new trades.</td></tr>
+      <tr><td><code>VIX_STRONG_ONLY</code></td><td><code>16</code></td><td>Between here and the max, take only "strong" signals (all of this strategy's signals count as strong).</td></tr>
     </tbody>
   </table>
 
   <div class="note note-info">
-    <strong>Env-only keys (not in the Settings UI as of 2026-07):</strong> <code>EMA9VWAP_SL_PAUSE_CANDLES</code>, <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code>, <code>EMA9VWAP_MAX_CONSEC_LOSSES</code>, <code>EMA9VWAP_NEG_CANDLE_LIMIT</code>, <code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code>, and <code>EMA9VWAP_SL_MODE</code>. Their defaults match between the settings schema and the paper engine &mdash; the gap is UI coverage, not divergent values. Set them in <code>.env</code> if you want to change them.
+    <strong>A few settings live only in the config file, not the Settings page (as of July 2026):</strong> <code>EMA9VWAP_SL_PAUSE_CANDLES</code>, <code>EMA9VWAP_OPPOSITE_SIDE_COOLDOWN_ENABLED</code> / <code>_CANDLES</code>, <code>EMA9VWAP_MAX_CONSEC_LOSSES</code>, <code>EMA9VWAP_NEG_CANDLE_LIMIT</code>, <code>EMA9VWAP_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code>, and <code>EMA9VWAP_SL_MODE</code>. Their defaults are the same in both places &mdash; the only gap is that the Settings page doesn't show them yet. Edit the <code>.env</code> file if you want to change them.
   </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
-<!-- 11. NOTES & KNOWN GAPS                                                  -->
+<!-- 12. NOTES & KNOWN GAPS                                                  -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <section class="section red" id="notes">
-  <h2><span class="section-icon icon-red">&#9888;</span> 11. Notes &amp; Known Gaps</h2>
+  <h2><span class="section-icon icon-red">&#9888;</span> 12. What's still missing</h2>
 
   <ul>
-    <li><strong>New strategy, no tuning history.</strong> Added 2026-06-28 with no prior analysis cohort. Collect clean live/paper sessions before tuning any threshold &mdash; there is no validated baseline yet.</li>
-    <li><strong>Reversal engulf can double up with the signal exit.</strong> Both are ON in spirit by default; on choppy days the 2-candle reversal may exit eagerly and, combined with the flip cooldown, sit the strategy out of a subsequent re-entry. Watch for over-eager exits before deciding whether to keep <code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code> on.</li>
-    <li><strong>VIX is not independently tunable.</strong> The gate shares EMA_RSI_ST/global <code>VIX_*</code> thresholds &mdash; there is no <code>EMA9VWAP_VIX_*</code> block, so you cannot loosen/tighten VIX for this strategy in isolation.</li>
-    <li><strong>VWAP is a TWAP on the spot index.</strong> No real volume &rarr; the VWAP degenerates to session TWAP&plusmn;&sigma; (same as ORB). Band math and the EMA cross are exact; absolute VWAP tracks TradingView's shape but is not tick-identical. Don't expect the on-screen VWAP number to match TV to the point.</li>
-    <li><strong>In-code comment drift.</strong> The negative-candle-cut comment says &ldquo;default 2&rdquo;, but the resolved default of <code>EMA9VWAP_NEG_CANDLE_LIMIT</code> is <code>0</code> (off). Trust the code default, not the comment.</li>
+    <li><strong>It's a new strategy with no track record yet.</strong> Added 28 June 2026, with no history of tested tweaks behind it. Gather a batch of clean practice sessions before changing any setting &mdash; there's no proven baseline to compare against yet.</li>
+    <li><strong>The sharp-reversal exit can be a little trigger-happy.</strong> On choppy days it may sell out quickly, and combined with the opposite-side cool-off, it can leave you sitting out a good re-entry. Watch for over-eager exits before deciding whether to keep <code>EMA9VWAP_REVERSAL_EXIT_ENABLED</code> on.</li>
+    <li><strong>You can't tune VIX just for this strategy.</strong> It shares the global VIX limits with another strategy, so changing them here changes them there too. There's no private <code>EMA9VWAP_VIX_*</code> dial.</li>
+    <li><strong>The fair-value line is an approximation.</strong> Because the NIFTY index has no real volume on the feed, this "VWAP" is really an equal-weighted average. The channel and the crossing are exact, but the printed VWAP number can be a point or two off what you'd see on TradingView &mdash; don't expect them to match to the point.</li>
   </ul>
 
-  <div class="note note-info">
-    <strong>Tuning posture:</strong> the paper-data-collection no-tuning window was <strong>lifted on 2026-05-27</strong>, so tuning is in scope &mdash; but this strategy has no clean post-launch cohort yet. Gather sessions first, then use <code>/replay</code> Current-Settings mode to A/B named hypotheses against real recorded ticks before changing defaults.
-  </div>
-
-  <div class="note note-success">
-    <strong>Verification:</strong> this guide was checked against <code>src/strategies/ema9_vwap.js</code>, <code>src/routes/ema9vwapPaper.js</code>, the README &ldquo;Strategy 5&rdquo; prose + EMA9+VWAP .env table, and the EMA9+VWAP reference memory on 2026-07-05. Entry/exit precedence, defaults, guard behaviour, cooldowns and the global-VIX coupling all match the code.
+  <div class="note note-warn">
+    <strong>Last checked: 16 July 2026</strong> &mdash; this guide was rewritten in plain English. Every rule and every default above was read straight from the live code (<code>ema9_vwap.js</code> and <code>ema9vwapPaper.js</code>), the README "Strategy 5" section, and the strategy's reference note. Nothing was changed in the strategy itself; only the wording here was simplified.
   </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  EMA 9 + VWAP &mdash; Strategy Guide &nbsp;|&nbsp; New 2026-06-28 &nbsp;|&nbsp; verified 2026-07-05 against ema9_vwap.js / ema9vwapPaper.js
+  EMA 9 + VWAP &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; new 2026-06-28 &nbsp;|&nbsp; updated 16 July 2026
 </footer>
 
 </body>
