@@ -276,6 +276,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | `EMA_RSI_ST_MAX_CONSEC_LOSSES` | `0` | Choppy-day guard — after this many **consecutive losing trades** in a session, halt new EMA_RSI_ST entries for the rest of the day; any winning trade resets the streak. Sits out range days that bleed small stops instead of repeatedly re-entering. Independent of the legacy 3-loss escalating pause. `0` = disabled. |
 | `EMA_RSI_ST_CANDLE_TRAIL_ENABLED` | `false` | Layer an N-bar candle trail on top of the EMA21 SL. Each candle close the stop is set to whichever is **tighter** (closer to price) — the EMA21 line or the N-bar low (CE) / high (PE). Banks more of a winner; never loosens. |
 | `EMA_RSI_ST_CANDLE_TRAIL_BARS` | `3` | Lookback for the candle trail: lowest low (CE) / highest high (PE) of the last N candles. `1` = tightest; higher = looser (gives winners room, fewer chop stop-outs). Only used when `EMA_RSI_ST_CANDLE_TRAIL_ENABLED=true`. |
+| `EMA_RSI_ST_BREAKEVEN_ENABLED` | `false` | Once a trade is `EMA_RSI_ST_BREAKEVEN_PTS` in profit (spot), raise the stop to the entry price (tighten-only) so a winner can't turn into a loss. Applies to paper, live, and backtest identically. Off by default — validate on backtest/replay before enabling. |
+| `EMA_RSI_ST_BREAKEVEN_PTS` | `25` | Profit in spot points that arms the breakeven floor. Only used when `EMA_RSI_ST_BREAKEVEN_ENABLED=true`. |
 | `EMA_RSI_ST_SUPERTREND_PERIOD` / `EMA_RSI_ST_SUPERTREND_MULT` | `10` / `3` | SuperTrend ATR period + multiplier — SuperTrend is the entry directional gate. |
 | `EMA_RSI_ST_SL_PAUSE_CANDLES` | `3` | After an SL / option-stop hit on a side, block that side for N candles (0 = off) |
 | `EMA_RSI_ST_OPPOSITE_SIDE_COOLDOWN_ENABLED` | `true` | When `true`, after any non-flip exit (SL / trail SL / option-stop / EMA touch-back) block entries on the OPPOSITE side for N candles. Prevents whipsaw flips on chop. Opposite-signal / EOD / manual exits do not trigger the cooldown. |
@@ -416,6 +418,8 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `EMA9VWAP_LIVE_DRY_RUN` | `false` | Hold EMA9+VWAP in dry-run even when global harness dry-run is off |
 | `EMA9VWAP_BAND_MULT` | `1` | VWAP band σ multiplier (1 = ±1σ, TradingView default; 0 = plain VWAP line) |
 | `EMA9VWAP_EMA_PERIOD` | `9` | EMA length crossed against the band |
+| `EMA9VWAP_STRENGTH_FILTER` | `false` | Drop WEAK band-breaks (small penetration = likely noise); only STRONG crosses trade. Graded inside `getSignal` so paper/live/backtest match. Off by default — fewer trades, validate before enabling. |
+| `EMA9VWAP_STRONG_MIN_SIGMA` | `0.25` | A break is STRONG if EMA9 clears the band edge by ≥ this many σ; smaller = WEAK. Only used when `EMA9VWAP_STRENGTH_FILTER=true`. |
 | `EMA9VWAP_VWAP_SESSION_START` | `09:15` | VWAP session anchor (resets daily from here) |
 | `EMA9VWAP_ENTRY_START` / `EMA9VWAP_ENTRY_END` | `10:30` / `14:30` | Entry window (IST) |
 | `EMA9VWAP_EOD_EXIT_TIME` | `15:15` | Hard square-off for any open position |
