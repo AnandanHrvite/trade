@@ -2876,8 +2876,12 @@ async function gracefulShutdown(signal) {
       }
     } catch (_) {}
 
-    // Wait for squareOff orders to complete before exiting
-    const waitMs = hasLive ? 8000 : 3000;
+    // Wait for squareOff orders to complete before exiting. The harness exit is
+    // sequential — getPositions reconcile (≤3s) + cancel-SL + SELL (≤HARNESS_BROKER_TIMEOUT_MS,
+    // default 8s) — so the live drain must exceed that or process.exit() abandons an
+    // in-flight square-off. Scale off the configured broker timeout + margin.
+    const _harnessTimeout = Math.max(1500, parseInt(process.env.HARNESS_BROKER_TIMEOUT_MS || "8000", 10));
+    const waitMs = hasLive ? (3000 + _harnessTimeout + 2000) : 3000;
     console.log(`🔄 [SHUTDOWN] Waiting ${waitMs / 1000}s for exits to complete...`);
     setTimeout(() => {
       console.log("👋 [SHUTDOWN] Exiting.");

@@ -612,8 +612,8 @@ function stopSession() {
   state.running = false;
   stopOptionPolling();
   socketManager.removeCallback(CALLBACK_ID);
+  if (typeof sharedSocketState.clearOrb === "function") sharedSocketState.clearOrb();   // clear OWN mode first (else socket never stops → leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
-  if (typeof sharedSocketState.clearOrb === "function") sharedSocketState.clearOrb();
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
   if (state.sessionTrades.length) {
     try {

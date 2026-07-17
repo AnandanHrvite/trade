@@ -876,10 +876,10 @@ function stopSession() {
   } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
+  sharedSocketState.clearOrb();   // clear OWN mode first — else isAnyActive() is always true → socket never stops (leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
-  sharedSocketState.clearOrb();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 

@@ -87,6 +87,12 @@ const _pendingEntries = new Map();
 // doesn't erase our knowledge that we still hold the position).
 const _exiting = new Set();
 
+// Modes whose last BUY errored/timed-out with an UNKNOWN outcome (the order may
+// or may not have reached the exchange). New entries are blocked until the user
+// verifies/clears, so a timed-out-but-filled BUY + a paper re-entry can't create
+// two real longs. Cleared by clearUnconfirmedEntry() or process restart.
+const _unconfirmedEntries = new Set();
+
 // Event log persisted to disk so the "Recent harness events" panel survives a
 // server restart / deploy (the ring buffer used to be wiped on every reboot).
 const DATA_DIR        = path.join(require("os").homedir(), "trading-data");
@@ -226,23 +232,40 @@ function _withTimeout(promise, ms, label) {
 }
 
 // Reconcile a tracked position against the ACTUAL broker book before selling.
-// Returns true (held), false (broker flat / not found), or null (couldn't check).
-// Guards against: a post-accept RMS reject (order id issued but never filled), an
-// MIS/intraday auto-square-off at ~15:20, an exchange SL-M that already fired, or
-// a manual close during downtime — any of which would make our SELL a naked short.
-async function _isPositionHeld(cfg, symbol) {
+// Returns the HELD quantity: null (couldn't verify — DON'T treat as flat), 0
+// (definitively flat), or N>0 (holding N). Guards against a post-accept RMS
+// reject, MIS/intraday auto-square ~15:20, an exchange SL-M that already fired,
+// or a manual close — any of which would make our SELL a naked short.
+//
+// CRITICAL: both brokers return an EMPTY-but-valid book on auth-loss (token
+// expires daily) and on a swallowed API error — indistinguishable from a truly
+// flat account. So an empty book / unauthenticated broker returns `null` (can't
+// verify), NOT 0 — otherwise a routine token expiry would delete the record and
+// skip a real exit, orphaning a live long. `0` (flat) is only returned when a
+// NON-empty book is read and our symbol isn't in it (or shows zero qty).
+async function _heldQty(cfg, symbol) {
   try {
     const broker = _brokerFor(cfg);
     if (typeof broker.getPositions !== "function") return null;
-    const pos = await _withTimeout(broker.getPositions(), Math.min(_brokerTimeoutMs(), 3000), "getPositions");
+    if (typeof broker.isAuthenticated === "function" && !broker.isAuthenticated()) return null;
+    const pos  = await _withTimeout(broker.getPositions(), Math.min(_brokerTimeoutMs(), 3000), "getPositions");
+    const list = cfg.broker === "zerodha" ? ((pos && pos.net) || []) : ((pos && pos.netPositions) || []);
+    if (!Array.isArray(list) || list.length === 0) return null; // empty is ambiguous → can't verify
+    let row, qty;
     if (cfg.broker === "zerodha") {
-      const ts  = String(symbol).replace(/^(NSE:|BSE:)/, "").trim();
-      const row = ((pos && pos.net) || []).find((p) => p.tradingsymbol === ts);
-      return row ? (Number(row.quantity) || 0) !== 0 : false;
+      const ts = String(symbol).replace(/^(NSE:|BSE:)/, "").trim();
+      row = list.find((p) => p.tradingsymbol === ts);
+      qty = row ? Math.abs(Number(row.quantity) || 0) : 0;
+    } else {
+      row = list.find((p) => p.symbol === symbol);
+      qty = row ? Math.abs(Number(row.netQty) || 0) : 0;
     }
-    // Fyers: netPositions[].symbol is the full "NSE:...CE"; netQty 0 = flat.
-    const row = ((pos && pos.netPositions) || []).find((p) => p.symbol === symbol);
-    return row ? (Number(row.netQty) || 0) !== 0 : false;
+    if (!row) {
+      // Book read OK but our symbol absent — genuinely flat for us. Log so a
+      // symbol-format mismatch (which would look identical) is diagnosable.
+      console.warn(`[HARNESS][${cfg.mode}] reconcile: ${symbol} not in broker book (${list.length} other position(s)) — treating as flat.`);
+    }
+    return qty;
   } catch (e) {
     console.warn(`[HARNESS][${cfg.mode}] getPositions reconcile failed: ${e.message}`);
     return null;
@@ -283,12 +306,20 @@ function _makeEntryHook(cfg) {
       return;
     }
 
-    // Dedupe: never fire a second BUY while one is in flight or a position is
-    // already held for this mode (a duplicate notifyEntry would double-buy and
-    // only one would ever get sold).
-    if (_pendingEntries.has(cfg.mode) || _realPositions.has(cfg.mode)) {
+    // Block re-entry after an UNKNOWN-outcome BUY (timeout/error) until verified —
+    // otherwise a timed-out-but-filled order + this entry = two real longs.
+    if (_unconfirmedEntries.has(cfg.mode)) {
+      _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_BLOCKED_UNCONFIRMED", symbol: p.symbol });
+      console.error(`🛑 [HARNESS LIVE][${cfg.mode}] BUY blocked — a prior order's fill is UNCONFIRMED. Verify at the broker, then restart/clear before re-entering.`);
+      return;
+    }
+    // Dedupe: skip only a BUY that's already in flight, or a SAME-SYMBOL position
+    // already held. A DIFFERENT symbol (a same-candle CE→PE flip) must NOT be
+    // blocked just because the old position's exit is still clearing.
+    const _existing = _realPositions.get(cfg.mode);
+    if (_pendingEntries.has(cfg.mode) || (_existing && _existing.symbol === p.symbol)) {
       _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_SKIPPED_DUP", symbol: p.symbol });
-      console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] BUY skipped — entry already in flight / position held for ${p.symbol}.`);
+      console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] BUY skipped — entry already in flight / same position held for ${p.symbol}.`);
       return;
     }
 
@@ -321,10 +352,12 @@ function _makeEntryHook(cfg) {
         }
       } catch (err) {
         // Includes timeouts: the order MAY have reached the exchange — do NOT
-        // record a position (we can't prove the fill) and tell the user to verify.
+        // record a position (we can't prove the fill). Mark the mode UNCONFIRMED
+        // so a paper re-entry can't fire a second real BUY, and tell the user.
+        _unconfirmedEntries.add(cfg.mode);
         _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_EXCEPTION", symbol: p.symbol, error: err.message });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] BUY exception: ${err.message}`);
-        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY ERROR\n${p.symbol}: ${err.message}\nPaper opened a position but the broker order errored/timed out — verify manually.`); } catch (_) {}
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE BUY ERROR — UNCONFIRMED FILL\n${p.symbol}: ${err.message}\nThe order may or may not have filled. Re-entry is BLOCKED for ${cfg.mode} until you verify at the broker and restart/clear.`); } catch (_) {}
       } finally {
         _pendingEntries.delete(cfg.mode);
       }
@@ -369,33 +402,41 @@ function _makeExitHook(cfg) {
     _exiting.add(cfg.mode);
 
     try {
-      // Use the qty we actually bought as authoritative; never send a null qty.
-      const exitQty = real.qty || p.qty || cfg.defaultQty;
+      // Reconcile against the broker before selling — the position may already be
+      // closed (post-accept reject, MIS auto-square, SL-M fired, manual close).
+      // _heldQty: null = couldn't verify, 0 = confirmed flat, N>0 = held qty.
+      const heldQty = await _heldQty(cfg, real.symbol);
+
+      if (heldQty === 0) {
+        // Broker confirms flat — nothing to sell. Cancel any orphaned resting
+        // SL-M (it would otherwise fire on a flat account → naked short), then
+        // clear our record (identity-guarded so a concurrent flip isn't clobbered).
+        await _cancelExchangeSL(cfg, real);
+        if (_realPositions.get(cfg.mode) === real) { _realPositions.delete(cfg.mode); _persistRealPositions(); }
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ALREADY_FLAT", symbol: real.symbol });
+        console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] Broker shows FLAT for ${real.symbol} — skipping SELL (already closed, not short-selling).`);
+        return;
+      }
+      if (heldQty === null && real._restored) {
+        // Restored-from-disk position we cannot verify → do NOT risk a naked
+        // short on a stale record. Alert for manual action; keep the record + SL.
+        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_UNVERIFIED_RESTORED", symbol: real.symbol });
+        console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Could not verify RESTORED position ${real.symbol} against broker — NOT auto-selling.`);
+        try { notify.sendIfMaster(`🚨 ${cfg.mode} — could not verify restored live position ${real.symbol} against the broker; NOT auto-selling (avoids a possible naked short). Check & square off manually.`); } catch (_) {}
+        return;
+      }
+      // heldQty > 0, or (null on an in-session record we trust): sell.
+
+      // Sell qty: never exceed what the broker ACTUALLY holds (partial fill), and
+      // never a null/zero qty. When held qty is unknown, fall back to what we bought.
+      let exitQty = real.qty || p.qty || cfg.defaultQty;
+      if (heldQty && heldQty > 0) exitQty = Math.min(exitQty || heldQty, heldQty);
       if (!exitQty || exitQty <= 0) {
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ABORT_BAD_QTY", symbol: p.symbol });
         console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Exit aborted — could not resolve a valid qty for ${p.symbol}. MANUAL square-off required.`);
         try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE EXIT ABORTED — bad qty for ${p.symbol}. Square off manually NOW.`); } catch (_) {}
         return;
       }
-
-      // Reconcile against the broker before selling — the position may already be
-      // closed (post-accept reject, MIS auto-square, SL-M fired, manual close).
-      const held = await _isPositionHeld(cfg, real.symbol);
-      if (held === false) {
-        _realPositions.delete(cfg.mode); _persistRealPositions();
-        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ALREADY_FLAT", symbol: real.symbol });
-        console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] Broker shows FLAT for ${real.symbol} — skipping SELL (already closed, not short-selling).`);
-        return;
-      }
-      if (held === null && real._restored) {
-        // Restored-from-disk position we cannot verify → do NOT risk a naked
-        // short on a stale record. Alert for manual action; keep the record.
-        _logEvent({ mode: cfg.mode, event: "REAL_EXIT_UNVERIFIED_RESTORED", symbol: real.symbol });
-        console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Could not verify RESTORED position ${real.symbol} against broker — NOT auto-selling.`);
-        try { notify.sendIfMaster(`🚨 ${cfg.mode} — could not verify restored live position ${real.symbol} against the broker; NOT auto-selling (avoids a possible naked short). Check & square off manually.`); } catch (_) {}
-        return;
-      }
-      // held === true, or (held === null on an in-session record we trust): sell.
 
       // Cancel any resting exchange SL-M FIRST so it can't fire on the same
       // position we're selling (→ naked short).
@@ -416,8 +457,9 @@ function _makeExitHook(cfg) {
       }
 
       if (result && result.success) {
-        // Clear ONLY after a confirmed successful SELL.
-        _realPositions.delete(cfg.mode); _persistRealPositions();
+        // Clear ONLY after a confirmed successful SELL, and only if a concurrent
+        // flip hasn't already replaced this record with a new position.
+        if (_realPositions.get(cfg.mode) === real) { _realPositions.delete(cfg.mode); _persistRealPositions(); }
         _logEvent({ mode: cfg.mode, event: "REAL_EXIT_OK", orderId: result.orderId, symbol: p.symbol, paperPnl: p.pnl });
         console.log(`✅ [HARNESS LIVE][${cfg.mode}] SELL filled — orderId=${result.orderId} | paper-pnl=${p.pnl}`);
         try {
@@ -535,6 +577,18 @@ function getRecentEvents(limit = 50, mode) {
   return src.slice(-limit);
 }
 
+// Clear the "unconfirmed entry" block for a mode after the user has verified at
+// the broker whether the timed-out order actually filled. Returns true if a
+// block was cleared. Exposed so a UI/route can re-enable entries without a full
+// process restart.
+function clearUnconfirmedEntry(mode) {
+  return _unconfirmedEntries.delete(mode);
+}
+
+function hasUnconfirmedEntry(mode) {
+  return mode ? _unconfirmedEntries.has(mode) : _unconfirmedEntries.size > 0;
+}
+
 module.exports = {
   installHarness,
   uninstallHarness,
@@ -542,4 +596,6 @@ module.exports = {
   hasLiveHarness,
   getConfig,
   getRecentEvents,
+  clearUnconfirmedEntry,
+  hasUnconfirmedEntry,
 };

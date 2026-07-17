@@ -769,8 +769,8 @@ function stopSession() {
   try { tickRecorder.recordSessionStop({ mode: "trend-pb-paper", sessionId: state._sessionId || null, reason: "user_stop" }); } catch (_) {}
 
   socketManager.removeCallback(CALLBACK_ID);
+  sharedSocketState.clearTrendPb();   // clear OWN mode first (else socket never stops → leak)
   if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) socketManager.stop();
-  sharedSocketState.clearTrendPb();
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 

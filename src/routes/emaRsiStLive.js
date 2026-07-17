@@ -2110,8 +2110,18 @@ router.get("/start", async (req, res) => {
     const _today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     let _realized = 0;
     for (const s of (loadLiveData().sessions || [])) {
+      // s.date is EITHER istNow() "DD/MM/YYYY, HH:MM:SS" (which `new Date()` can't
+      // parse → Invalid Date → never matched, silently disabling this recovery)
+      // OR an ISO string. Handle both explicitly.
       let d = null;
-      try { d = new Date(s.date).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); } catch (_) {}
+      const _sd = String(s.date || "");
+      const _m = _sd.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (_m) {
+        d = `${_m[3]}-${_m[2]}-${_m[1]}`;                         // DD/MM/YYYY → YYYY-MM-DD (already IST)
+      } else {
+        const _dt = new Date(_sd);
+        if (!isNaN(_dt)) d = _dt.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      }
       if (d === _today) _realized += Number(s.pnl) || 0;
     }
     if (_realized !== 0) {
@@ -2371,11 +2381,15 @@ router.get("/stop", async (req, res) => {
     });
   }
   stopOptionPolling();
-  // Only stop socket if no bb_rsi mode is piggybacking
-  if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
+  // Clear THIS (primary EMA_RSI_ST) mode first, then stop the shared Fyers socket
+  // ONLY if no other strategy is still subscribed — the old 2-mode check ignored
+  // ORB / PA / Trend_PB and could tear the socket out from under their live
+  // position (its per-tick stop would stop firing).
+  sharedSocketState.clear();
+  if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
-  } else {
-    log("📡 [LIVE] Socket kept alive — bb_rsi mode still active");
+  } else if (sharedSocketState.isAnyActive()) {
+    log("📡 [LIVE] Socket kept alive — another strategy still active");
   }
   tradeState.optionLtp    = null;
   tradeState.optionLtpUpdatedAt = null;
@@ -2383,7 +2397,6 @@ router.get("/stop", async (req, res) => {
   tradeState.optionSymbol = null;
   tradeState.running      = false;
   clearEODBackupTimer();
-  sharedSocketState.clear();
 
   try {
     tickRecorder.recordSessionStop({
@@ -3933,5 +3946,21 @@ router.post("/reset", (req, res) => {
     return res.status(500).json({ success: false, error: err.message });
   }
 });
+
+/**
+ * stopSession() — square off the open live position on SIGTERM / auto-deploy.
+ * gracefulShutdown maps "EMA_RSI_ST_LIVE" → this route; without this export it was
+ * skipped (typeof stopSession !== "function") and a real Zerodha position was left
+ * open on a deploy while the shutdown alert falsely reported it squared off.
+ * Fire-and-forget (squareOff is async); idempotent (no-op if flat/not running).
+ */
+function stopSession(reason = "Shutdown square-off") {
+  if (!tradeState.running || !tradeState.position) return;
+  try {
+    const _px = tradeState.lastTickPrice || (tradeState.currentBar ? tradeState.currentBar.close : 0);
+    squareOff(_px, reason);
+  } catch (e) { try { log(`⚠️ [LIVE] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+}
+router.stopSession = stopSession;
 
 module.exports = router;
