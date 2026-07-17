@@ -2365,7 +2365,7 @@ router.post("/manualEntry", async (req, res) => {
     const { validateAndGetOptionSymbol } = require("../config/instrument");
     const optResult = await validateAndGetOptionSymbol(spot, side, 'ema_rsi_st');
     const symbol = optResult.symbol;
-    const qty = parseInt(process.env.NIFTY_LOT_SIZE || "65") * parseInt(process.env.LOT_MULTIPLIER || "1");
+    const qty = getLotQty();   // clamped (MAX_LOT_MULTIPLIER) — don't recompute raw and bypass the cap
 
     log(`🖐️ [PAPER] MANUAL ENTRY ${side} by user @ spot ₹${spot} | SL: ₹${sarSL} | Symbol: ${symbol}`);
     simulateBuy(symbol, side, qty, spot, `Manual ${side} entry by user | SL=₹${sarSL}`, sarSL, spot, true);

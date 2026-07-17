@@ -264,7 +264,8 @@ function getLotQty() {
   // configurable via MAX_LOT_MULTIPLIER (default 10); invalid/≤0 falls back to 1.
   let multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
   if (!Number.isFinite(multiplier) || multiplier <= 0) multiplier = 1;
-  const maxMult = Math.max(1, parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10));
+  let maxMult = parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10);
+  if (!Number.isFinite(maxMult) || maxMult < 1) maxMult = 10;   // garbage env must not disable the clamp
   if (multiplier > maxMult) {
     console.warn(`[instrument] LOT_MULTIPLIER=${multiplier} exceeds MAX_LOT_MULTIPLIER=${maxMult} — clamping to ${maxMult}`);
     multiplier = maxMult;
