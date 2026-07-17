@@ -411,12 +411,25 @@ function clearOrderHooks(id) {
 }
 function _fireEntryHooks(p) {
   for (const h of _orderHooks.values()) {
-    if (h.entry) { try { h.entry(p); } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); } }
+    if (h.entry) {
+      try {
+        const _r = h.entry(p);
+        if (_r && typeof _r.catch === "function") _r.catch((e) => console.error(`[notify] entry hook rejection: ${e && e.message}`));
+      } catch (e) { console.error(`[notify] entry hook error: ${e.message}`); }
+    }
   }
 }
 function _fireExitHooks(p) {
   for (const h of _orderHooks.values()) {
-    if (h.exit) { try { h.exit(p); } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); } }
+    if (h.exit) {
+      // The exit hook is async — a sync try/catch won't catch a rejected promise,
+      // so attach a .catch to keep any future unguarded await out of the global
+      // unhandledRejection path.
+      try {
+        const _r = h.exit(p);
+        if (_r && typeof _r.catch === "function") _r.catch((e) => console.error(`[notify] exit hook rejection: ${e && e.message}`));
+      } catch (e) { console.error(`[notify] exit hook error: ${e.message}`); }
+    }
   }
 }
 

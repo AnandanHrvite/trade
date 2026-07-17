@@ -2764,9 +2764,20 @@ async function reconcileOrphanedPositions() {
         console.warn(msg);
         sendTelegram(msg);
       } else {
-        console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
-        if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
-        if (savedEma9Vwap) clearEma9VwapPosition(); // EMA9+VWAP trades Zerodha too — safe to clear
+        // An EMPTY book is ambiguous — both brokers return [] on a swallowed API
+        // error too, so "empty + snapshot present" must NOT clear the snapshot
+        // (that would mask a real orphan). Only clear when the book was provably
+        // readable (non-empty); otherwise retain + warn and re-check next boot.
+        const _zReadable = ((zPos.net || []).length + (zPos.day || []).length) > 0;
+        const _zSnaps = [savedTrade, savedEma9Vwap].filter(Boolean).length;
+        if (_zSnaps > 0 && !_zReadable) {
+          const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
+          console.warn(msg); sendTelegram(msg);
+        } else {
+          console.log("✅ [STARTUP] Zerodha: no orphaned positions.");
+          if (savedTrade) clearTradePosition();  // broker confirms no position — safe to clear stale file
+          if (savedEma9Vwap) clearEma9VwapPosition(); // EMA9+VWAP trades Zerodha too — safe to clear
+        }
       }
     }
 
@@ -2782,12 +2793,22 @@ async function reconcileOrphanedPositions() {
         console.warn(msg);
         sendTelegram(msg);
       } else {
-        console.log("✅ [STARTUP] Fyers: no orphaned positions.");
-        // BB_RSI + PA + ORB + Trend_PB all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
-        if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
-        if (savedPA)      clearPAPosition();
-        if (savedOrb)     clearOrbPosition();
-        if (savedTrendPb) clearTrendPbPosition();
+        // Empty Fyers book is ambiguous (genuinely flat OR a swallowed API error
+        // that also returns []). Only clear snapshots when the book was provably
+        // readable; otherwise retain + warn so a real orphan isn't masked.
+        const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
+        const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb].filter(Boolean).length;
+        if (_fSnaps > 0 && !_fReadable) {
+          const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
+          console.warn(msg); sendTelegram(msg);
+        } else {
+          console.log("✅ [STARTUP] Fyers: no orphaned positions.");
+          // BB_RSI + PA + ORB + Trend_PB all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
+          if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
+          if (savedPA)      clearPAPosition();
+          if (savedOrb)     clearOrbPosition();
+          if (savedTrendPb) clearTrendPbPosition();
+        }
       }
     }
   } catch (err) {

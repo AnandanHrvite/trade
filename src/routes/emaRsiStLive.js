@@ -162,7 +162,12 @@ function saveLiveSession() {
       trades:     tradeState.sessionTrades,
     });
     ensureLiveDir();
-    fs.writeFileSync(LT_FILE, JSON.stringify(data, null, 2));
+    // Atomic write (tmp+rename) — a crash mid-write must not truncate LT_FILE,
+    // which loadLiveData() would then read as {sessions:[]}, silently resetting
+    // the daily-loss kill-switch AND wiping all prior live session history.
+    const _tmp = LT_FILE + ".tmp";
+    fs.writeFileSync(_tmp, JSON.stringify(data, null, 2));
+    fs.renameSync(_tmp, LT_FILE);
     log(`💾 [LIVE] Session saved — ${tradeState.sessionTrades.length} trades, PnL: ₹${tradeState.sessionPnl}`);
 
     // ── Feature 3: Daily Trade Journal / Report ──────────────────────────────
