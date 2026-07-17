@@ -475,6 +475,16 @@ td.pe { color: var(--red); }
       <p class="fs-sm">An earlier version of this strategy chased eight patterns (Engulfing, Hammer / Shooting Star, Inside Bar, Break-of-Structure, and more). Those were removed in the 2026 rebuild &mdash; only the four above are detected now. If you spot one of the old names in an old trade log, that's just a history label; nothing trades on it anymore.</p>
     </div>
 
+    <div class="tip-box">
+      <div class="tip-title">Optional: the "trade with the trend" filter (default OFF)</div>
+      <p class="fs-sm">The oldest rule in price action is <em>don't fight the trend</em>. By default this strategy takes all four patterns in any market. Switch on <code>PA_TREND_FILTER_ENABLED = true</code> and it adds a trend check using a 20-candle moving line (EMA):</p>
+      <ul class="fs-sm">
+        <li><strong>Triangles</strong> (continuation setups) only fire in their own direction &mdash; an Ascending Triangle CE only when price is <strong>above</strong> the line (uptrend), a Descending Triangle PE only when price is <strong>below</strong> it (downtrend).</li>
+        <li><strong>Double Top / Double Bottom</strong> (reversal setups) only fire when the twin high/low is the <strong>actual top or bottom</strong> of the recent range &mdash; not a small wiggle in the middle.</li>
+      </ul>
+      <p class="fs-sm"><strong>Example:</strong> NIFTY is trending up, price 22,540 sits above the 20-EMA at 22,480. A Descending-Triangle PE breaks down at 12:00 &mdash; with the filter <strong>on</strong> it is skipped (that's a bet against the trend); with it <strong>off</strong> the strategy would take that PE. Knobs: <code>PA_TREND_EMA_PERIOD = 20</code> and <code>PA_TREND_FLAT_BAND = 0</code> (a dead-zone around the line where the trend counts as "flat"). It's off until you test it on recorded days in <code>/replay</code>.</p>
+    </div>
+
     <!-- ── Double Top / Double Bottom ── -->
     <div class="pattern-section">
       <div class="pattern-header">
