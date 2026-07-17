@@ -145,27 +145,30 @@ const _MODE_TO_ENV_PREFIX = {
 };
 
 // ── Market-context expiry resolution (the mismatch fix) ──────────────────────
-// Historical option EXPIRY must come from the recorded Market Context Snapshot,
-// never from "today". This resolves the expiry env-overlay a replay run applies:
+// Historical option EXPIRY must come from the recording, never from "today" and
+// never from current settings. This resolves the expiry env-overlay a replay run
+// applies — IDENTICALLY for snapshot and current-settings mode, because expiry is
+// a MARKET fact, not strategy config:
 //
-//   • The expiry TYPE (weekly|monthly) is strategy CONFIG — it comes from the
-//     snapshot in snapshot mode, or from current process.env in current mode.
-//   • The expiry DATE is a MARKET FACT — always the recorded market.jsonl date
-//     for that type. Current settings can NEVER change it.
-//
-// An explicit override present in the active config source (e.g. EMA_RSI_ST
-// deliberately trading next-week to dodge 0DTE) is HONORED as-is — that override
-// is itself historical truth (snapshot) or a deliberate choice (current), and
-// clobbering it would break intentional non-nearest-expiry strategies. Only the
-// auto-detect path (blank override) is redirected to the recorded date — that is
-// exactly the path that used to leak today's expiry via new Date()/live REST.
+//   • Both the expiry TYPE (weekly|monthly) and any explicit override are read
+//     from the RECORDED session snapshot — the config that day actually traded.
+//     Current process.env is deliberately ignored here so a standing override in
+//     today's Settings (e.g. a next-week EMA_RSI_ST date) can't leak into an
+//     old-day replay. Current settings only override NON-expiry strategy config.
+//   • If the recorded day used an explicit override (e.g. EMA_RSI_ST deliberately
+//     traded next-week to dodge 0DTE), that recorded date IS the historical truth
+//     → honored as-is. Only the auto-detect path (blank recorded override) is
+//     redirected to the Market Context Snapshot date — exactly the path that used
+//     to leak today's expiry via new Date()/live REST.
 //
 // When no market.jsonl exists (recordings made before this feature), falls back
 // to the legacy snapshot pin so old days still replay without crashing.
-function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, useCurrentSettings }) {
+// (useCurrentSettings is accepted for signature symmetry but intentionally does
+//  NOT affect expiry — that's the whole point.)
+function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
   const prefix = _MODE_TO_ENV_PREFIX[mode] || null;
   const snap = snapshot || {};
-  const cfg  = useCurrentSettings ? process.env : snap;
+  const cfg  = snap;   // expiry is ALWAYS historical — read from the recording, never current env
 
   const perModeOverride = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
   const commonOverride  = String(cfg.OPTION_EXPIRY_OVERRIDE || "").trim();
@@ -1080,11 +1083,12 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     // 1a. Resolve the historical option expiry ONCE — from the recorded Market
     //     Context Snapshot when available (both toggles), else the legacy pin.
     //     Used for the cache key AND the env applied below, so they never drift.
+    // Expiry is historical for BOTH toggles — resolved from the recording, not
+    // useCurrentSettings (current settings never change the option expiry).
     const expiryResolution = _resolveReplayExpiryEnv({
       marketContext: data.marketContext,
       snapshot: data.sessionStart.settings,
       mode,
-      useCurrentSettings,
     });
     if (!data.marketContext) {
       console.warn(`⚠️ [replay] ${mode} ${date}: no Market Context Snapshot (market.jsonl) — expiry falls back to legacy pin; old-day option contract may mismatch. Re-record to fix.`);
