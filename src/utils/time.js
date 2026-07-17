@@ -20,10 +20,13 @@ function toTimestamp(dateStr) {
 }
 
 /**
- * Get today's date as "YYYY-MM-DD"
+ * Get today's date as "YYYY-MM-DD" in IST (Asia/Kolkata, UTC+5:30).
+ * Using the raw UTC date would roll back to the previous day between
+ * 00:00–05:30 IST, mis-bucketing trades/logs near midnight.
  */
 function today() {
-  return new Date().toISOString().split("T")[0];
+  const ist = new Date(Date.now() + 19800000);
+  return ist.toISOString().split("T")[0];
 }
 
 module.exports = { toDateString, toTimestamp, today };

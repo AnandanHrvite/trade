@@ -548,9 +548,12 @@ async function _optionPollTick(symbol) {
       log(`📌 [PAPER] Option entry LTP: ₹${ltp} (SPOT @ ₹${ptState.position.spotAtEntry} | SL: ₹${ptState.position.stopLoss})`);
     }
 
-    // ── Option LTP stop — 50% mid DISABLED — breakeven stop handles protection ──
+    // ── Option LTP stop — 50% mid DISABLED ──
     // Previously: if option premium dropped below 50% mid threshold, force exit.
-    // Now: breakeven at +25pt moves SL to entry, trail handles everything else.
+    // Now: protection is the EMA21 / candle trail set in onCandleClose (tighten-
+    // only) plus the initial prev-candle SL. NOTE: there is NO "+25pt breakeven"
+    // that moves SL to entry — that was never implemented. Winners can give back
+    // to the (possibly sub-entry) EMA21 stop until the trail rises past entry.
   } finally {
     _optionPollBusy = false;
   }
@@ -701,7 +704,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     ? parseFloat((_lastCandle.low + (_lastCandle.high - _lastCandle.low) * (side === "CE" ? 0.35 : 0.65)).toFixed(2))
     : null;
 
-  // 50% entry gate REMOVED — replaced by breakeven stop at +25pt
+  // 50% entry gate REMOVED — protection is now the EMA21/candle trail (no +25pt breakeven exists)
   const _entrySpot = spotAtEntry || price;
 
   // ── INITIAL SL (EMA_RSI_ST redefined) ──────────────────────────────────────────
