@@ -1268,6 +1268,23 @@ async function onCandleClose(candle) {
         log(`📐 [LIVE] EMA21 trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
+    // Breakeven floor (default OFF) — mirrors emaRsiStPaper. Once >= BE pts in
+    // profit at candle close, raise the stop to entry (tighten-only). Marks
+    // _changed so the persisted snapshot AND the exchange SL-M get updated.
+    if ((process.env.EMA_RSI_ST_BREAKEVEN_ENABLED || "false").toLowerCase() === "true") {
+      const _bePts = parseFloat(process.env.EMA_RSI_ST_BREAKEVEN_PTS || "25");
+      const _profit = pos.side === "CE" ? (candle.close - pos.entryPrice) : (pos.entryPrice - candle.close);
+      if (_profit >= _bePts) {
+        const _be = parseFloat(pos.entryPrice.toFixed(2));
+        if (pos.side === "CE" && (pos.stopLoss == null || pos.stopLoss < _be)) {
+          const _o = pos.stopLoss; pos.stopLoss = _be; _changed = true;
+          log(`🛡️ [LIVE] Breakeven CE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
+        } else if (pos.side === "PE" && (pos.stopLoss == null || pos.stopLoss > _be)) {
+          const _o = pos.stopLoss; pos.stopLoss = _be; _changed = true;
+          log(`🛡️ [LIVE] Breakeven PE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
+        }
+      }
+    }
     if (_changed) {
       saveTradePosition(pos, { sessionPnl: tradeState.sessionPnl || 0 });
       updateHardSL(pos.stopLoss);

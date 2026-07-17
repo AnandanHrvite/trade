@@ -1197,6 +1197,25 @@ async function onCandleClose(candle) {
         log(`📐 [PAPER] EMA21 trail PE: ₹${_o} → ₹${pos.stopLoss} (${_trailTag})`);
       }
     }
+    // ── Breakeven floor (default OFF) ─────────────────────────────────────────
+    // Once the trade is >= EMA_RSI_ST_BREAKEVEN_PTS in profit (spot), raise the
+    // stop to the entry price so a winner can't turn into a loss. Tighten-only:
+    // only ever moves the stop toward entry from below (never loosens a deeper
+    // trail). Measured at candle close so paper + candle-based backtest match.
+    if ((process.env.EMA_RSI_ST_BREAKEVEN_ENABLED || "false").toLowerCase() === "true") {
+      const _bePts = parseFloat(process.env.EMA_RSI_ST_BREAKEVEN_PTS || "25");
+      const _profit = pos.side === "CE" ? (candle.close - pos.entryPrice) : (pos.entryPrice - candle.close);
+      if (_profit >= _bePts) {
+        const _be = parseFloat(pos.entryPrice.toFixed(2));
+        if (pos.side === "CE" && (pos.stopLoss == null || pos.stopLoss < _be)) {
+          const _o = pos.stopLoss; pos.stopLoss = _be;
+          log(`🛡️ [PAPER] Breakeven CE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
+        } else if (pos.side === "PE" && (pos.stopLoss == null || pos.stopLoss > _be)) {
+          const _o = pos.stopLoss; pos.stopLoss = _be;
+          log(`🛡️ [PAPER] Breakeven PE: SL ₹${_o} → entry ₹${_be} (+${_profit.toFixed(1)}pt)`);
+        }
+      }
+    }
     if (_flipExit) {
       // Skip the touch-back on the entry bar (the entry condition trivially
       // satisfies a touch — would cause an instant exit on the entry candle).

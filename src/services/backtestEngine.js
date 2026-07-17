@@ -406,6 +406,17 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
           }
         }
       }
+      // Breakeven floor (default OFF) — mirrors emaRsiStPaper. Once >= BE pts in
+      // profit at candle close, raise the stop to entry (tighten-only).
+      if ((process.env.EMA_RSI_ST_BREAKEVEN_ENABLED || "false").toLowerCase() === "true") {
+        const _bePts = parseFloat(process.env.EMA_RSI_ST_BREAKEVEN_PTS || "25");
+        const _profit = position.side === "CE" ? (candle.close - position.entryPrice) : (position.entryPrice - candle.close);
+        if (_profit >= _bePts) {
+          const _be = quantize(position.entryPrice, 2);
+          if (position.side === "CE" && (position.stopLoss == null || position.stopLoss < _be)) position.stopLoss = _be;
+          else if (position.side === "PE" && (position.stopLoss == null || position.stopLoss > _be)) position.stopLoss = _be;
+        }
+      }
       // Track favourable extreme (best price seen, for analysis)
       if (position.side === "CE") {
         if (!position.bestPrice || candle.high > position.bestPrice) position.bestPrice = candle.high;
