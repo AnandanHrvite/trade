@@ -127,7 +127,7 @@ function shell(title, body) {
     .neg { color: var(--red) !important; }
 
     /* ── Compare cards ── */
-    .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: 16px; }
+    .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(240px,100%),1fr)); gap: 16px; }
     .compare-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: 14px; padding: 24px; position: relative; overflow: hidden;

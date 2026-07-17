@@ -2834,7 +2834,7 @@ ${sidebarCSS()}
 body{font-family:'IBM Plex Sans',sans-serif;background:#060810;color:#a0b8d8;min-height:100vh;}
 .main-content{margin-left:220px;padding:32px 40px;}
 @media(max-width:900px){.main-content{margin-left:0;padding:20px;}}
-.sim-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:20px;}
+.sim-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(280px,100%),1fr));gap:16px;margin-top:20px;}
 .config-row{display:flex;gap:16px;align-items:center;margin-top:24px;flex-wrap:wrap;}
 .config-label{font-size:0.78rem;color:#6b7fa0;}
 .config-input{background:#0d1320;border:1px solid #1a2236;border-radius:8px;padding:8px 14px;color:#e2e8f0;font-family:'IBM Plex Mono',monospace;font-size:0.85rem;width:120px;}

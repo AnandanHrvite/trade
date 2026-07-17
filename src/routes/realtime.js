@@ -126,7 +126,7 @@ ${faviconLink()}
   .toggle button.active[data-mode="LIVE"]  { background:#ef4444; color:#fff; }
 
   /* Broker investment-pool wallets */
-  .wallets { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:18px; }
+  .wallets { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(260px,100%), 1fr)); gap:14px; margin-bottom:18px; }
   .wallet { background:#0a1628; border:1px solid #1c2c47; border-left-width:4px; border-left-color:#3b82f6; border-radius:10px; padding:12px 16px; }
   .wallet#wallet-FYERS { border-left-color:#f59e0b; }
   .w-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
@@ -136,7 +136,7 @@ ${faviconLink()}
   .w-meta { display:flex; justify-content:space-between; font-size:0.72rem; color:#7d8aa3; margin-top:4px; }
   .w-delta { font-variant-numeric:tabular-nums; font-weight:600; }
 
-  .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:18px; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%), 1fr)); gap:14px; margin-bottom:18px; }
 
   .card { background:#0a1628; border:1px solid #1c2c47; border-top-width:3px; border-radius:10px; padding:14px 16px; min-height:280px; display:flex; flex-direction:column; gap:10px; min-width:0; }
   .card.ema_rsi_st    { border-top-color:#3b82f6; }

@@ -180,6 +180,7 @@ ${sidebarCSS()}
 ${modalCSS()}
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin:0; background:#0b1220; color:#e2e8f0; }
 .main { margin-left:260px; padding:24px; max-width:900px; }
+@media(max-width:768px){ .main{ margin-left:0; padding:14px; } }
 h1 { font-size:1.3rem; margin:0 0 4px; color:#f1f5f9; }
 .card { background:#111827; border:1px solid #1e293b; border-radius:8px; padding:16px; margin-bottom:16px; }
 .warn { background:#7f1d1d; border:1px solid #991b1b; border-radius:8px; padding:12px 16px; margin-bottom:16px; color:#fee2e2; }

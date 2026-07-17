@@ -165,7 +165,7 @@ body { font-family:'IBM Plex Sans',sans-serif; background:#080c14; color:#c8d8f0
 .stat-sub   { font-size:0.6rem; color:#2a3a20; margin-top:3px; }
 
 /* ── chart cards ── */
-.chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(400px,1fr)); gap:16px; margin-bottom:22px; }
+.chart-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(400px,100%),1fr)); gap:16px; margin-bottom:22px; }
 @media(max-width:900px){ .chart-grid{grid-template-columns:1fr;} }
 .chart-card { background:#090f09; border:0.5px solid #162416; border-radius:10px; padding:18px 20px; }
 .chart-title { font-size:0.56rem; font-weight:700; color:#2a3a20; text-transform:uppercase; letter-spacing:1.2px; margin-bottom:12px; }
