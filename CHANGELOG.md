@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Fixed — multi-agent audit follow-ups (safety, lifecycle, backtest realism)
+
+- **Harness live-order path hardened** (gated behind `LIVE_HARNESS_DRY_RUN=false`): reconcile against `broker.getPositions()` before any square-off SELL so a position already closed out-of-band (post-accept reject, MIS auto-square ~15:20, exchange SL-M fired, manual close) is never short-sold; await in-flight BUYs before an exit; clear the tracked position only after a confirmed SELL; dedupe double BUYs/SELLs; timeout every broker call (`HARNESS_BROKER_TIMEOUT_MS`).
+- **Shared-socket teardown**: stopping BB_RSI/PA/EMA_RSI_ST no longer tears the one Fyers socket out from under a live ORB/PA/Trend_PB position (guards now use `sharedSocketState.isAnyActive()`).
+- **Graceful shutdown** now squares off EMA_RSI_ST and EMA9VWAP too (their paper routes export `stopSession()`), so a deploy/SIGTERM can't orphan a harness-live position.
+- **Backtest realism**: VIX look-ahead removed (backtests now use the prior day's VIX close, not the current day's close); gap-through stop fills added to bb_rsi/pa/orb/trend_pb; bb_rsi exit-side slippage applied; EMA9_VWAP frictionless default aligned to 1.5pt.
+- **Risk/perf**: portfolio-cap read memoized (no per-tick disk reads when armed); `MAX_LOT_MULTIPLIER` clamps a fat-finger lot multiplier; boot warning for dead `SWING_*`/`SCALP_*` env keys.
+
 ### New: Consolidation Report — daily report reached from the Edge Analytics page
 
 A **day-by-day** consolidated report of every recorded trade (paper + live), mirroring the Telegram "CONSOLIDATED DAY REPORT" layout — the "till-now" report the user asked for. Reached via a **button on the Edge Analytics page**, not a separate sidebar item.

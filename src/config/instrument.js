@@ -259,7 +259,16 @@ function getSymbolSync(side = "CE") {
 }
 
 function getLotQty() {
-  const multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
+  // Clamp the lot multiplier to a sane ceiling so a fat-finger LOT_MULTIPLIER
+  // (e.g. 50) can't silently size every order 50× on the live path. Ceiling is
+  // configurable via MAX_LOT_MULTIPLIER (default 10); invalid/≤0 falls back to 1.
+  let multiplier = parseInt(process.env.LOT_MULTIPLIER || "1", 10);
+  if (!Number.isFinite(multiplier) || multiplier <= 0) multiplier = 1;
+  const maxMult = Math.max(1, parseInt(process.env.MAX_LOT_MULTIPLIER || "10", 10));
+  if (multiplier > maxMult) {
+    console.warn(`[instrument] LOT_MULTIPLIER=${multiplier} exceeds MAX_LOT_MULTIPLIER=${maxMult} — clamping to ${maxMult}`);
+    multiplier = maxMult;
+  }
   return getLotSize()[getInstrument()] * multiplier;
 }
 
