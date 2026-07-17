@@ -154,6 +154,10 @@ const SETTINGS_SCHEMA = [
       { key: "PA_PATTERN_DOUBLE_TOP",    label: "Double Top (M) → PE",    type: "toggle", effect: EFFECT.SESSION, desc: "Bearish reversal — twin equal highs + neckline breakdown → PE", default: "true" },
       { key: "PA_PATTERN_ASC_TRIANGLE",  label: "Ascending Triangle → CE", type: "toggle", effect: EFFECT.SESSION, desc: "Flat resistance + rising lows, breakout → CE", default: "true" },
       { key: "PA_PATTERN_DESC_TRIANGLE", label: "Descending Triangle → PE", type: "toggle", effect: EFFECT.SESSION, desc: "Flat support + falling highs, breakdown → PE", default: "true" },
+      // ── Trend filter (course rule #1: trade breakouts WITH the trend) ──
+      { key: "PA_TREND_FILTER_ENABLED", label: "Trend Filter", type: "toggle", effect: EFFECT.SESSION, desc: "Triangles must align with the EMA trend (Asc→uptrend, Desc→downtrend); Double Top/Bottom must sit at a real range extreme. Default off — replay-validate first.", default: "false" },
+      { key: "PA_TREND_EMA_PERIOD", label: "Trend EMA Period", type: "number", min: 5, max: 100, step: 1, effect: EFFECT.SESSION, desc: "EMA period (on PA candles) used for the trend-bias read", default: "20" },
+      { key: "PA_TREND_FLAT_BAND", label: "Trend Flat Band (pts)", type: "number", min: 0, max: 30, step: 1, effect: EFFECT.SESSION, desc: "Neutral zone around the EMA — inside it the trend counts as FLAT and triangles are blocked", default: "0" },
       // Pattern-shape internals (Min Body / Pattern Tolerance / S/R Lookback) and the
       // structural SL placement (buffer beyond the pattern level) are computed internally
       // by the engine — no knobs. The SL sits at the pattern's invalidation level itself.

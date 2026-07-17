@@ -6,6 +6,14 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — PA trend filter (course rule #1: trade breakouts with the trend)
+
+Optional regime gate for Price Action, distilled from the price-action course notes ([data/pa-course-transcript.txt](data/pa-course-transcript.txt)). The course's single most-repeated rule is *never trade a breakout against the trend*. Our PA fired all four patterns in any regime; this adds a default-**OFF** filter so it can be replay-validated before going live.
+
+- **[src/strategies/price_action.js](src/strategies/price_action.js)** — new `_trendBias()` (EMA-vs-close on PA candles, `technicalindicators` EMA per repo convention) plus range-extreme checks. When `PA_TREND_FILTER_ENABLED=true`: the *continuation* patterns (Ascending/Descending Triangle) only fire when the EMA bias agrees (Asc→UP, Desc→DOWN); the *reversal* patterns (Double Top/Bottom) only fire when their twin level is the actual high/low of the recent swing range (not a mid-range wiggle). Blocked setups log a structured `Trend filter: …` skip reason. Filter OFF = byte-identical behaviour to before (verified).
+- **Knobs**: `PA_TREND_FILTER_ENABLED` (default `false`), `PA_TREND_EMA_PERIOD` (default `20`), `PA_TREND_FLAT_BAND` (default `0`) — all exposed in the Settings UI ([src/routes/settings.js](src/routes/settings.js)) and README env table.
+- Shared `getSignal` means paper/backtest/live inherit the filter identically; no per-mode drift.
+
 ### Added — immutable Market Context Snapshot (fixes replay-vs-paper expiry mismatch)
 
 Replay of an **old** day used to re-resolve the option expiry from *today* — the two resolution paths (`instrument.getNearestThursdayExpiry()`'s `new Date()` and the live Option-Chain REST) are not patched by the replay clock, and the per-session snapshot only stored the *override* env key (blank on auto-detect days). So an auto-detected day replayed on today's expiry → wrong strikes/symbols → `no_data` → spot-proxy P&L that never matched paper. Now the market's own facts are recorded once and pinned on replay.

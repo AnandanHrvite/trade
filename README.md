@@ -343,6 +343,9 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `PA_PATTERN_DOUBLE_TOP` | `true` | Toggle Double Top (M) → PE |
 | `PA_PATTERN_ASC_TRIANGLE` | `true` | Toggle Ascending Triangle → CE |
 | `PA_PATTERN_DESC_TRIANGLE` | `true` | Toggle Descending Triangle → PE |
+| `PA_TREND_FILTER_ENABLED` | `false` | Trade breakouts **with** the trend (course rule #1): triangles must align with the EMA bias (Asc→uptrend, Desc→downtrend); Double Top/Bottom must sit at a real range extreme. Default OFF — replay-validate before enabling |
+| `PA_TREND_EMA_PERIOD` | `20` | EMA period (on PA candles) used for the trend-bias read |
+| `PA_TREND_FLAT_BAND` | `0` | Neutral band (pts) around the EMA — inside it the trend is FLAT and triangles are blocked |
 | `PA_CHART_PATTERN_TOL` | `12` | Tolerance (pts) for "equal" twin tops/bottoms and flat S/R lines (env-only) |
 | `PA_MIN_BODY` | `5` | Minimum breakout-candle body (pts) (env-only) |
 | `PA_SR_LOOKBACK` | `30` | Candles scanned for swing highs/lows — detection + structure trail (env-only) |

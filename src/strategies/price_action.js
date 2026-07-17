@@ -31,10 +31,29 @@
  * Timeframe: 5-min | Window: PA_ENTRY_START – PA_ENTRY_END IST
  */
 
+const { EMA } = require("technicalindicators"); // repo convention — don't hand-roll indicators
+
 const NAME        = "PRICE_ACTION_5M";
 const DESCRIPTION = "5-min | Double Top/Bottom (M/W) + Ascending/Descending Triangle breakouts | pure chart patterns";
 
 function cfg(key, fb) { return process.env[key] !== undefined ? process.env[key] : fb; }
+
+// ── Trend bias (course rule #1: trade breakouts WITH the trend) ───────────────
+// A simple EMA-vs-close read on the trading timeframe. The course teaches that
+// in an uptrend price holds above the 20-period MA (and below it in a downtrend);
+// we use that as the regime gate for the *continuation* patterns (triangles).
+// Returns "UP" | "DOWN" | "FLAT" plus the EMA value (null until warmed up).
+function _trendBias(candles, period, flatBand) {
+  if (candles.length < period + 1) return { bias: "FLAT", ema: null };
+  var closes = candles.map(function (c) { return c.close; });
+  var arr = EMA.calculate({ period: period, values: closes });
+  if (!arr.length) return { bias: "FLAT", ema: null };
+  var ema   = arr[arr.length - 1];
+  var close = closes[closes.length - 1];
+  if (close > ema + flatBand) return { bias: "UP",   ema: ema };
+  if (close < ema - flatBand) return { bias: "DOWN", ema: ema };
+  return { bias: "FLAT", ema: ema };
+}
 
 // ── Trading window ───────────────────────────────────────────────────────────
 function _parseMins(envKey, fallback) {
@@ -220,6 +239,12 @@ function getSignal(candles, opts) {
   var PATTERN_DOUBLE_BOTTOM = cfg("PA_PATTERN_DOUBLE_BOTTOM", "true") === "true";
   var PATTERN_ASC_TRIANGLE  = cfg("PA_PATTERN_ASC_TRIANGLE",  "true") === "true";
   var PATTERN_DESC_TRIANGLE = cfg("PA_PATTERN_DESC_TRIANGLE", "true") === "true";
+  // Trend filter (default OFF — ships dark, replay-validate before enabling).
+  // Continuation patterns (triangles) must align with the EMA trend bias;
+  // reversal patterns (double top/bottom) must sit at a genuine range extreme.
+  var TREND_FILTER  = cfg("PA_TREND_FILTER_ENABLED", "false") === "true";
+  var TREND_PERIOD  = parseInt(cfg("PA_TREND_EMA_PERIOD", "20"), 10);
+  var TREND_FLAT    = parseFloat(cfg("PA_TREND_FLAT_BAND", "0")); // neutral band (pts) around EMA
 
   var base = {
     signal: "NONE", reason: "", stopLoss: null, target: null,
@@ -250,6 +275,24 @@ function getSignal(candles, opts) {
   var swings = findSwingPoints(candles, SR_LOOKBACK);
   base.swingHighs = swings.swingHighs.slice(-3).map(function(s) { return s.price; });
   base.swingLows  = swings.swingLows.slice(-3).map(function(s) { return s.price; });
+
+  // ── Trend bias + range extremes (only used when TREND_FILTER is on) ──────────
+  var trend = TREND_FILTER ? _trendBias(candles, TREND_PERIOD, TREND_FLAT) : { bias: null, ema: null };
+  base.trendBias = trend.bias;
+  base.trendEma  = trend.ema != null ? parseFloat(trend.ema.toFixed(2)) : null;
+  // A double top/bottom only counts as a reversal when its twin level is the
+  // actual high/low of the recent swing range — not a mid-range wiggle.
+  function _isTopExtreme(level) {
+    if (!swings.swingHighs.length) return true;
+    var maxH = Math.max.apply(null, swings.swingHighs.map(function(s){ return s.price; }));
+    return level >= maxH - CHART_PATTERN_TOL;
+  }
+  function _isBottomExtreme(level) {
+    if (!swings.swingLows.length) return true;
+    var minL = Math.min.apply(null, swings.swingLows.map(function(s){ return s.price; }));
+    return level <= minL + CHART_PATTERN_TOL;
+  }
+  var _trendSkip = null; // reason a detected breakout was blocked by the filter
 
   var _ist = "";
   if (!silent) {
@@ -316,27 +359,39 @@ function getSignal(candles, opts) {
 
   if (PATTERN_DOUBLE_TOP) {
     dblTop = checkDoubleTop(sc, swings.swingHighs, candles, CHART_PATTERN_TOL);
-    if (dblTop.detected && candleBody(sc) >= MIN_BODY)
-      return _onBreakout("PE", "Double Top", dblTop.topLevel, dblTop.neckline, dblTop.points, "Above Double Top");
+    if (dblTop.detected && candleBody(sc) >= MIN_BODY) {
+      if (!TREND_FILTER || _isTopExtreme(dblTop.topLevel))
+        return _onBreakout("PE", "Double Top", dblTop.topLevel, dblTop.neckline, dblTop.points, "Above Double Top");
+      _trendSkip = "Double Top " + dblTop.topLevel.toFixed(0) + " not at range-high extreme";
+    }
   }
   if (PATTERN_DOUBLE_BOTTOM) {
     dblBot = checkDoubleBottom(sc, swings.swingLows, candles, CHART_PATTERN_TOL);
-    if (dblBot.detected && candleBody(sc) >= MIN_BODY)
-      return _onBreakout("CE", "Double Bottom", dblBot.bottomLevel, dblBot.neckline, dblBot.points, "Below Double Bottom");
+    if (dblBot.detected && candleBody(sc) >= MIN_BODY) {
+      if (!TREND_FILTER || _isBottomExtreme(dblBot.bottomLevel))
+        return _onBreakout("CE", "Double Bottom", dblBot.bottomLevel, dblBot.neckline, dblBot.points, "Below Double Bottom");
+      _trendSkip = "Double Bottom " + dblBot.bottomLevel.toFixed(0) + " not at range-low extreme";
+    }
   }
   if (PATTERN_ASC_TRIANGLE) {
     ascTri = checkAscendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-    if (ascTri.detected && candleBody(sc) >= MIN_BODY)
-      return _onBreakout("CE", "Ascending Triangle", ascTri.risingLow, ascTri.resistance, ascTri.points, "Rising Swing Low");
+    if (ascTri.detected && candleBody(sc) >= MIN_BODY) {
+      if (!TREND_FILTER || trend.bias === "UP")
+        return _onBreakout("CE", "Ascending Triangle", ascTri.risingLow, ascTri.resistance, ascTri.points, "Rising Swing Low");
+      _trendSkip = "Ascending Triangle CE blocked — trend bias " + trend.bias + " (need UP)";
+    }
   }
   if (PATTERN_DESC_TRIANGLE) {
     descTri = checkDescendingTriangle(sc, swings.swingHighs, swings.swingLows, CHART_PATTERN_TOL);
-    if (descTri.detected && candleBody(sc) >= MIN_BODY)
-      return _onBreakout("PE", "Descending Triangle", descTri.fallingHigh, descTri.support, descTri.points, "Falling Swing High");
+    if (descTri.detected && candleBody(sc) >= MIN_BODY) {
+      if (!TREND_FILTER || trend.bias === "DOWN")
+        return _onBreakout("PE", "Descending Triangle", descTri.fallingHigh, descTri.support, descTri.points, "Falling Swing High");
+      _trendSkip = "Descending Triangle PE blocked — trend bias " + trend.bias + " (need DOWN)";
+    }
   }
 
   // ── No signal — build reason ───────────────────────────────────────────────
-  base.reason = "No setup";
+  base.reason = _trendSkip ? ("Trend filter: " + _trendSkip) : "No setup";
 
   // ── Filter audit (additive logging — does not affect entry decisions) ─────
   // Records which filters passed/failed for CE and PE so the structured skip
