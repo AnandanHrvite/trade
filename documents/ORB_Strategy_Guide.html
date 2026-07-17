@@ -452,7 +452,7 @@
   </table>
 
   <div class="note note-info">
-    <strong>In the backtest, there are no real option prices.</strong> History doesn't record option quotes, so the backtest <em>estimates</em> the option: it starts from a typical slightly-ITM price (&#8377;240) and models how it would move with NIFTY. So backtest profit is a good approximation, not the exact fills you'd get live &mdash; always confirm against paper trading.
+    <strong>In the backtest, there are no real option prices.</strong> History doesn't record option quotes, so the backtest <em>estimates</em> the option: it starts from a typical slightly-ITM price (&#8377;240) and models how it would move with NIFTY. To stay honest it also charges a <strong>spread/slippage haircut on both entry and exit</strong> (<code>ORB_BT_SLIPPAGE_PTS</code>, default <code>1.5</code> pts each way) and <strong>fills a blown stop at the gap-open</strong> when a candle jumps clean through it, not at the stop price &mdash; so a violent bar is costed realistically. Backtest profit is still a good approximation, not the exact fills you'd get live &mdash; always confirm against paper trading.
   </div>
 </section>
 
@@ -554,6 +554,14 @@
   <div class="note note-info">
     <strong>The weekly &amp; streak brakes are new in V3.</strong> The strategy remembers its recent losses (saved to disk, so it survives a restart) and will <strong>stop itself from trading</strong> during a bad run &mdash; even across days. Practice and live mode keep separate memories, so a rough patch in practice never freezes your live trading, and vice-versa.
   </div>
+
+  <h3>Crash-recovery (survives a restart)</h3>
+  <p>ORB now writes its open trade to disk the moment it's opened (<code>.active_orb_position.json</code>) and clears it on close. If the server crashes or is redeployed with a trade still open, on the next boot the system re-reads that snapshot, <strong>checks it against your Fyers positions</strong>, and Telegrams you if it finds an orphan &mdash; and only clears the snapshot once the broker book is proven readable and flat. ORB previously had <em>no</em> such memory (a crash left an untracked position); it now matches the other five engines.</p>
+
+  <div class="note note-warn">
+    <strong>Portfolio-wide daily loss cap <span class="badge badge-red">default OFF</span></strong>
+    Separate from ORB's own <code>ORB_MAX_DAILY_LOSS</code>, there's now a single cap across <em>all six</em> strategies (<code>PORTFOLIO_MAX_DAILY_LOSS</code>, default <code>0</code> = off). It adds up today's realised P&amp;L from every practice mode; once the combined loss hits the cap, it <strong>blocks new entries in every strategy</strong> (ORB included) for the rest of the day. It only ever blocks &mdash; it never places or changes an order &mdash; and if it can't read the totals it fails open (lets trading continue).
+  </div>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -588,6 +596,11 @@
 
   <h3 style="color:var(--accent-green);">Live &mdash; <code>/orb-live</code> (real money)</h3>
   <p>Real orders through Fyers &mdash; but locked behind <strong>two</strong> safety switches so it can never fire by accident: <code>ORB_LIVE_ENABLED</code> must be on <em>and</em> the global dry-run switch must be off. While dry-run is on (the default), the system <em>shows</em> the order it would place but doesn't actually send it. Only turn dry-run off after you've checked that live and paper make the same decisions on a replayed day.</p>
+
+  <div class="note note-warn">
+    <strong>Optional exchange-side disaster stop <span class="badge badge-red">default OFF</span></strong>
+    For live (harness) trades you can also rest a backstop stop-loss <em>at the exchange</em> (<code>HARNESS_EXCHANGE_SL_ENABLED</code>, with <code>HARNESS_SL_PCT</code> the trigger as a % of your entry premium). It's a safety net in case the bot crashes mid-trade &mdash; the normal in-app stops stay in charge. The resting order is always cancelled <em>before</em> any normal sell, so it can't fire on a position you're already exiting. It places real orders, so validate it on a dry-run session first.
+  </div>
 
   <h3 style="color:var(--accent-purple);">Backtest &mdash; <code>/orb-backtest</code> (test on the past)</h3>
   <p>Runs the strategy over past dates to see how it would have done. Since history has no option prices, it estimates the option's price and movement (see Section 6). You get a downloadable summary at the end.</p>
@@ -698,6 +711,7 @@
       <tr><td><code>ORB_LOSS_STREAK_SKIP</code></td><td><code>4</code></td><td>Take a break after this many losing days in a row.</td></tr>
       <tr><td><code>ORB_SIG_WINDOW</code></td><td><code>260</code></td><td>Backtest only: how many past bars to feed in (to seed the rulers).</td></tr>
       <tr><td><code>ORB_BT_SEED_PREMIUM</code></td><td><code>240</code></td><td>Backtest only: the estimated starting option price.</td></tr>
+      <tr><td><code>ORB_BT_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>Backtest only: spread/slippage haircut charged on each of entry and exit (premium points).</td></tr>
       <tr><td><code>FYERS_INV_AMOUNT</code></td><td><code>100000</code></td><td>Starting practice capital (&#8377;) &mdash; shared across Fyers strategies.</td></tr>
     </tbody>
   </table>
@@ -721,18 +735,17 @@
   <h2><span class="section-icon icon-red">&#9888;</span> 13. What's still missing</h2>
 
   <ul>
-    <li><strong>No crash-recovery yet.</strong> If the server crashes while a <em>live</em> ORB trade is open, the system won't automatically remember and manage that trade after restart (the other strategies do). Until this is added, prefer practice or dry-run mode for trades you can't watch.</li>
     <li><strong>Backtest option prices are estimated.</strong> Since history has no option quotes, backtest profit is an approximation, not exact fills. Always sanity-check against paper/replay.</li>
     <li><strong>Results are lumpy by design.</strong> ORB's profit comes from a handful of big trend days. Expect quiet, flat stretches between them &mdash; judge it over a few weeks, not a few days.</li>
     <li><strong>The "fresh ground" check is strict.</strong> Requiring the break to clear yesterday's high/low will skip some otherwise-clean days. It's on because those trapped-trader setups are the best ones &mdash; but you can turn it off if it's too restrictive for you.</li>
   </ul>
 
   <div class="note note-success">
-    <strong>Recently fixed (used to be on this list):</strong> there's now a per-trade rupee stop <em>and</em> an option-meltdown stop; a buy/sell-spread check on the option; a weekly / losing-streak brake that pauses trading in a bad run; and the crowd-positioning (OI) check now behaves the same in practice and live.
+    <strong>Recently fixed (used to be on this list):</strong> there's now a per-trade rupee stop <em>and</em> an option-meltdown stop; a buy/sell-spread check on the option; a weekly / losing-streak brake that pauses trading in a bad run; the crowd-positioning (OI) check now behaves the same in practice and live; and <strong>crash-recovery now works for ORB too</strong> &mdash; an open trade survives a server restart (see Section 9).
   </div>
 
   <div class="note note-warn">
-    <strong>Last checked: 16 July 2026</strong> &mdash; this guide was rewritten in plain English and updated to match the current V3 trend-day engine. All the default values above were read straight from the live code.
+    <strong>Last checked: 17 July 2026</strong> &mdash; synced with the latest safety/persistence work (ORB crash-recovery, portfolio-wide loss cap, exchange-side disaster stop, backtest slippage &amp; gap-through fills). The core V3 trend-day engine is unchanged. All the default values above were read straight from the live code.
   </div>
 </section>
 

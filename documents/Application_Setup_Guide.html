@@ -485,7 +485,7 @@
   <p class="subtitle">How to install the trading app, log the brokers in, and run it &mdash; explained in plain English</p>
   <div class="meta">
     <span><span class="badge badge-blue">Plain-English edition</span></span>
-    <span>Updated: 2026-07-16</span>
+    <span>Updated: 2026-07-17</span>
     <span>Palani Andawar Trading System &mdash; NIFTY options bot</span>
   </div>
 </header>
@@ -673,6 +673,10 @@ openssl req -x509 -newkey rsa:4096 \
   <div class="note note-info">
     <strong>How new code reaches the server.</strong> When approved changes are saved to the project's main branch, the server picks them up automatically: it selects Node 16, installs any new building blocks, and reloads the app with <code>pm2 startOrRestart ecosystem.config.js --update-env</code>. You usually don't run these by hand &mdash; it happens for you.
   </div>
+
+  <div class="note note-success">
+    <strong>A reload won't strand an open real trade.</strong> When the app is stopped for a deploy or restart, it now closes out any real (live) positions across <em>all</em> strategies first, and it's careful not to cut the shared price feed while another strategy still has a live trade running on it. So a routine restart no longer risks leaving a real position open and unwatched.
+  </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -717,7 +721,7 @@ openssl req -x509 -newkey rsa:4096 \
     <tbody>
       <tr><td><code>.fyers_token</code> / <code>.zerodha_token</code></td><td>Your broker login passes (see Section 6).</td></tr>
       <tr><td><code>*_paper_trades.json</code> / <code>*_live_trades.json</code></td><td>Your saved trades &mdash; separate files for each strategy, and separate ones for practice ("paper") vs real money ("live").</td></tr>
-      <tr><td><code>.active_*_position.json</code></td><td>A safety snapshot of any open trade, so that if the app restarts mid-trade it can pick the trade back up. (Kept for most strategies.)</td></tr>
+      <tr><td><code>.active_*_position.json</code></td><td>A safety snapshot of any open trade, so that if the app restarts mid-trade it can pick the trade back up. <strong>Now kept for all six strategies</strong> (EMA_RSI_ST, BB_RSI, PA, EMA9_VWAP, ORB and Trend_PB). On restart the app checks each snapshot against the broker and only clears it when the broker's list of positions is <em>provably readable</em>; if the broker pass has expired (an empty, unreadable list), the snapshot is kept and you're warned &mdash; so a real open trade is never quietly forgotten.</td></tr>
       <tr><td><code>trades/</code> and <code>*_log.jsonl</code></td><td>A day-by-day written record of every trade &mdash; the permanent audit trail.</td></tr>
       <tr><td><code>ticks/</code></td><td>Recorded price ticks for each day. These let you "replay" a past day exactly as it happened, to test tweaks safely after market hours.</td></tr>
       <tr><td><code>backtest_cache/</code> / <code>candle_cache/</code></td><td>Saved copies of past price data so testing is faster. The app cleans these up automatically.</td></tr>
@@ -766,6 +770,23 @@ openssl req -x509 -newkey rsa:4096 \
   </div>
 
   <p>The safe habit: prove a strategy behaves the same in practice and in "pretend live" first &mdash; only then turn the dry-run switch off for real trading.</p>
+
+  <h3>Extra safety nets that protect the whole account</h3>
+  <p>Beyond the two switches, a few newer guards sit above the individual strategies to protect the account as a whole. All of them are safe by default:</p>
+
+  <ul>
+    <li><strong>A whole-account daily loss cap.</strong> Each strategy already limits how much <em>it</em> can lose in a day &mdash; but if every strategy hit its own limit on the same bad day, the combined loss could be much bigger. The new cap (<code>PORTFOLIO_MAX_DAILY_LOSS</code>) adds up today's real profit-and-loss across <strong>all six</strong> strategies and, once the combined loss reaches your figure, quietly stops <em>every</em> strategy from opening new trades for the rest of the day. It only ever <em>blocks</em> a new entry &mdash; it never places or changes an order &mdash; and if it can't read the numbers for any reason it lets trading continue rather than freeze the whole book.</li>
+    <li><strong>An exchange-side "disaster stop" for real trading.</strong> When turned on (<code>HARNESS_EXCHANGE_SL_ENABLED</code>), each real trade also leaves a backup stop-loss <em>parked at the exchange</em>, set as a percentage of the entry price (<code>HARNESS_SL_PCT</code>). So even if the app crashes mid-trade, the exchange itself can still close the position. The app's own moment-to-moment stop stays the main one; this is just a safety net, and it's cancelled before any normal exit so it can't fire twice.</li>
+    <li><strong>A "fat-finger" size limit.</strong> If someone accidentally sets the trade-size multiplier far too high (say 50&times;), a ceiling (<code>MAX_LOT_MULTIPLIER</code>, default 10) clamps it back down &mdash; and this now covers the manual "enter a trade" buttons too, not just the automatic entries.</li>
+  </ul>
+
+  <div class="note note-warn">
+    <strong>These extra guards are OFF or set to safe defaults out of the box.</strong> The whole-account cap is <code>0</code> (off) until you choose a figure, and the exchange-side disaster stop is off until you switch it on &mdash; and because it places a real resting order, prove it on a pretend-live day first. The fat-finger limit is always on at a sensible default.
+  </div>
+
+  <div class="note note-info">
+    <strong>Backtests now behave more like real life.</strong> Testing on the past was made more honest platform-wide: it uses the <em>previous</em> day's volatility (VIX) reading instead of peeking at the day it's testing, it fills stops fairly when the price gaps straight through them, and it assumes realistic slippage. So backtest results are a little more conservative &mdash; and closer to what live trading actually delivers.
+  </div>
 </section>
 
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -793,6 +814,10 @@ openssl req -x509 -newkey rsa:4096 \
 
   <div class="note note-info">
     <strong>The Docs page is just this folder, shown in the browser.</strong> Any guide placed in the app's <code>documents/</code> folder shows up on the <code>/docs</code> page automatically, so that's the one place to look for how each strategy works.
+  </div>
+
+  <div class="note note-success">
+    <strong>New: a day-by-day Consolidation Report.</strong> On the <strong>Edge Analytics</strong> page there's now a <strong>&#128209; Consolidation Report</strong> button. It opens one table with a row per trading day &mdash; each strategy's trades and profit-or-loss, then the day's totals, wins, losses and net &mdash; for practice and real-money trades together. You can filter it by date range (this week, last month, a custom span, and so on) and <strong>Save it as a PDF</strong> straight from the browser. It only reads your existing trade history; it never changes anything. You can hide the button from the Settings page (it's shown by default).
   </div>
 </section>
 
@@ -833,14 +858,14 @@ openssl req -x509 -newkey rsa:4096 \
   </table>
 
   <div class="note note-warn">
-    <strong>Last updated: 16 July 2026.</strong> This guide was rewritten in plain English for non-technical readers. Every command and file path above was checked against the project's own README, its startup settings, and the deployment steps.
+    <strong>Last updated: 17 July 2026.</strong> This guide was rewritten in plain English for non-technical readers, then refreshed to cover the latest safety features (whole-account loss cap, exchange-side disaster stop, wider crash-recovery, safer restarts and more honest backtests). Every command and file path above was checked against the project's own README, its startup settings, and the deployment steps.
   </div>
 </section>
 
 </div><!-- /.container -->
 
 <footer class="page-footer">
-  Application Setup Guide (plain-English edition) &nbsp;|&nbsp; Palani Andawar Trading System &nbsp;|&nbsp; updated 16 July 2026
+  Application Setup Guide (plain-English edition) &nbsp;|&nbsp; Palani Andawar Trading System &nbsp;|&nbsp; updated 17 July 2026
 </footer>
 
 </body>

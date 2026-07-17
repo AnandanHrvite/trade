@@ -719,6 +719,7 @@
 
 <div class="card card-blue">
   <p style="font-size:0.9rem;"><strong>In the backtest there are no real option prices.</strong> History doesn't record option quotes, so the backtest <em>estimates</em> how the option would have moved with NIFTY (using a delta of about 0.55 and a daily time-decay of ~10 points). Backtest profit is therefore a good approximation, not the exact fills you'd get live &mdash; always sanity-check against paper and replay.</p>
+  <p style="font-size:0.9rem;"><strong>The backtest now models the rough edges too.</strong> If price <em>gaps</em> straight past the hard stop &mdash; a candle opens well beyond it &mdash; the exit is filled at that worse gap price, not pretended at the stop line, so a jumpy bar's real loss isn't understated. And every exit now pays a small <strong>slippage</strong> haircut (<code>BB_RSI_SLIPPAGE_PTS</code>, default 1.5 points) on top of the entry-side one, because options fill a touch worse than the spot-implied price. Both changes make backtest results a little more honest and a little less rosy.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -875,6 +876,11 @@
   </tbody>
 </table>
 
+<div class="card card-yellow" style="margin-top:14px;">
+  <h4 style="color:var(--yellow);">New: a whole-book daily loss cap (off by default)</h4>
+  <p style="font-size:0.9rem;">Every limit above only watches <strong>BB_RSI on its own</strong>. But you run several strategies at once, and on a bad day each one could hit its own cap while the account, all added together, loses far more. A new cross-strategy brake &mdash; <code>PORTFOLIO_MAX_DAILY_LOSS</code> (default <code>0</code> = off) &mdash; adds up today's realised profit-and-loss across <strong>all six</strong> paper strategies together. Once that combined loss reaches the cap, <strong>no</strong> strategy (BB_RSI included) may open a new trade for the rest of the day; trades already open are left alone. It only ever <em>blocks</em> new entries &mdash; it never places or changes an order &mdash; and if it can't read the day's numbers it lets trades through (fails open). Leave it at <code>0</code> to keep it off; set it (e.g. <code>12000</code>) to arm it.</p>
+</div>
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 10. OPERATING MODES                                                    -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -978,7 +984,7 @@
     <tr><td><code>BB_RSI_STOP_LOSS_PTS</code></td><td><code>30</code></td><td>The wide hard stop &mdash; exit if the trade moves this many points against entry. Deliberately wide. <code>0</code> = off.</td></tr>
     <tr><td><code>BB_RSI_BB_REENTRY_EXIT</code></td><td><code>true</code></td><td>Exit if price slips back inside the band (the breakout failed).</td></tr>
     <tr><td><code>BB_RSI_BB_REENTRY_ARM_PTS</code></td><td><code>10</code></td><td>Only arm that band-re-entry exit once the breakout has stretched this many points past the band &mdash; stops the entry candle's own noise from knocking us out.</td></tr>
-    <tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td><code>0</code></td><td>Simulated slippage on entry and stop exits (paper/backtest only).</td></tr>
+    <tr><td><code>BB_RSI_SLIPPAGE_PTS</code></td><td><code>1.5</code></td><td>Simulated slippage the backtest applies on both the entry and every exit &mdash; options fill a touch worse than the spot-implied price. <code>0</code> restores the old frictionless fills.</td></tr>
   </tbody>
 </table>
 
@@ -992,6 +998,7 @@
     <tr><td><code>BB_RSI_CONSEC_SL_EXTRA_PAUSE</code></td><td><code>2</code></td><td>Extra pause candles for each stop after the second (2nd stop = +2, 3rd = +4).</td></tr>
     <tr><td><code>BB_RSI_PER_SIDE_PAUSE</code></td><td><code>true</code></td><td>A stop on Calls pauses only Calls; Puts stay free (off = pause both sides).</td></tr>
     <tr><td><code>MAX_BID_ASK_SPREAD_PTS</code></td><td><code>2</code></td><td>Skip an option whose buy/sell gap is wider than this (shared guard).</td></tr>
+    <tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td><code>0</code> (off)</td><td>Whole-book brake shared by all six strategies: once the combined realised loss across every strategy reaches this (&#8377;), no strategy may open a new trade today. <code>0</code> = off; only ever blocks entries.</td></tr>
   </tbody>
 </table>
 
@@ -1043,7 +1050,7 @@
 </div>
 
 <div class="highlight">
-  <strong>Last checked: 16 July 2026</strong> &mdash; this guide was rewritten in plain English and brought up to date with the current V7 (SuperTrend) engine.
+  <strong>Last checked: 17 July 2026</strong> &mdash; this guide was rewritten in plain English and brought up to date with the current V7 (SuperTrend) engine, then refreshed for the portfolio-wide loss cap and the backtest gap-fill / slippage changes.
 </div>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->

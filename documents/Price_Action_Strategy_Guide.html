@@ -1063,6 +1063,12 @@ td.pe { color: var(--red); }
         </tbody>
       </table>
     </div>
+
+    <div class="tip-box mt-2">
+      <div class="tip-title">New: a whole-account brake across every strategy <span class="badge-new">New</span></div>
+      <p class="fs-sm">The &#8377;2,000 daily-loss brake above only watches <em>Price Action</em>. But the bot runs six strategies at once, and on a rough day each one could hit its own limit &mdash; adding up to a much bigger combined loss. So there's now one extra brake that looks at the <strong>whole book</strong>: it adds up today's realised profit and loss across <em>all six</em> strategies, and once the combined loss reaches your cap (<code>PORTFOLIO_MAX_DAILY_LOSS</code>) it stops <strong>every</strong> strategy from taking new trades for the rest of the day.</p>
+      <p class="fs-sm mt-1">It's <strong>off by default</strong> (<code>PORTFOLIO_MAX_DAILY_LOSS = 0</code>) &mdash; set it to a rupee figure (say <code>12000</code>) to switch it on. It can <strong>only ever block a new entry</strong>; it never places, changes, or closes an order. And if it can't read the day's numbers for any reason, it fails <em>open</em> (lets trading continue) rather than freezing the book.</p>
+    </div>
   </div>
 </section>
 
@@ -1090,6 +1096,7 @@ td.pe { color: var(--red); }
     <div class="card mt-2" style="border-top:3px solid var(--purple);">
       <h3 style="color:var(--purple);">Backtest &mdash; <code>/pa-backtest</code> (test on the past)</h3>
       <p class="fs-sm">Runs the strategy over past dates to see how it would have done. History has no real option prices, so the backtest <strong>estimates</strong> the option: it assumes the option moves about 0.55 point for every NIFTY point (delta) and loses about 10 points of value per day to time-decay (theta), then subtracts brokerage and an optional slippage. So backtest profit is a good approximation, not the exact fills you'd get live &mdash; always sanity-check against paper. There's also a per-pattern view (<code>/pa-pattern-backtest</code>) that shows how each of the four patterns did on its own.</p>
+      <p class="fs-sm mt-2"><strong>More honest stop fills.</strong> If a candle <em>gaps straight past</em> the stop-loss &mdash; opening below it (for a CE) or above it (for a PE) rather than trading down to it &mdash; the backtest now fills at that worse gap price, not at the stop level. This matches how a real stop behaves on a fast move and stops the backtest from quietly flattering its losers.</p>
     </div>
 
     <div class="card mt-2">

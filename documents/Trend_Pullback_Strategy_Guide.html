@@ -49,7 +49,7 @@
   <div class="kicker">Strategy 6 · Fyers · Plain-English edition</div>
   <h1>Trend Pullback (TREND_PB)</h1>
   <p>Wait for a clear trend, let the price dip back to a good buying spot, then buy an option only when the trend proves it is starting again. Buy into strength — never guess a turn. Explained here in everyday language.</p>
-  <p class="muted" style="margin-top:10px;">Updated 2026-07-16 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; all defaults read straight from the live code</p>
+  <p class="muted" style="margin-top:10px;">Updated 2026-07-17 &nbsp;·&nbsp; plain-English edition &nbsp;·&nbsp; all defaults read straight from the live code</p>
 </header>
 
 <!--LIVE_STATUS_PANEL-->
@@ -287,6 +287,7 @@
   <tr><td>Trades per day</td><td><code>3</code></td><td>At most 3 entries in a session. The strategy is picky by design — most days it takes fewer, often none.</td></tr>
   <tr><td>Daily loss brake</td><td><code>&#8377;5,000</code></td><td>Once the day's losses reach &#8377;5,000, stop taking new trades for the day.</td></tr>
   <tr><td>Losing-streak brake</td><td><code>3 sessions</code></td><td>After 3 losing sessions in a row, pause new entries to cool off and reset. (Set to 0 to turn off.)</td></tr>
+  <tr><td>Whole-book loss cap</td><td><code>off</code></td><td>A shared, cross-strategy brake (<code>PORTFOLIO_MAX_DAILY_LOSS</code>). It adds up today's realised profit/loss across <em>all six</em> strategies; once the combined loss hits the cap, new entries are blocked in <strong>every</strong> strategy for the rest of the day — not just this one. Off by default (0 = off); it can only ever block a new trade, never place or change an order.</td></tr>
   <tr><td>Entry window</td><td><code>09:45 – 14:30</code></td><td>No new trades before 9:45 (let the open settle) or after 2:30 PM (too late in the day).</td></tr>
   <tr><td>Sell everything by</td><td><code>15:15</code></td><td>Any open trade is closed at 3:15 PM. Never overnight.</td></tr>
   <tr><td>Skip wide spreads</td><td><code>2 pts</code></td><td>Don't trade an option whose buy/sell gap is too wide.</td></tr>
@@ -308,11 +309,16 @@
   <strong>A real Fyers order fires only when all three are true:</strong> <code>TREND_PB_LIVE_ENABLED=true</code> <em>and</em> the global <code>LIVE_HARNESS_DRY_RUN=false</code> <em>and</em> <code>TREND_PB_LIVE_DRY_RUN</code> is not true — plus a valid Fyers login. Out of the box it's in <strong>dry-run</strong>: it prints the order it <em>would</em> have placed and sends nothing. Recommended path: watch it on paper, confirm live and paper match on a recorded <code>/replay</code> session, and only then consider flipping the gates.
 </div>
 
+<div class="card">
+  <strong>Survives a restart (crash-recovery).</strong> When a trade opens, its details are written to a small file (<code>.active_trend_pb_position.json</code>) and wiped when the trade closes. If the server restarts while a trade is still open, on boot the system reads that file back, checks it against the real broker position, and either picks the trade back up or — if the broker shows nothing open — clears the stale note and sends a Telegram alert so a forgotten "orphan" position can't sit unmanaged. (This is the same crash-recovery every other strategy now has.)
+</div>
+
 <h3 style="color:#bc8cff;">Backtest — <code>/trend-pb-backtest</code> (test on the past)</h3>
 <p>Runs the strategy over past dates to see how it would have done. Since history has no option prices, it <strong>estimates</strong> the option (starting from a typical slightly-ITM price of &#8377;240 and modelling how it moves), and it subtracts a realistic buy/sell-cost haircut each way so the results don't flatter themselves. It also does two honesty checks:</p>
 <ul>
   <li><strong>A "dumb baseline" to beat.</strong> It re-runs the same dates with a naive version (just enter in the trend direction at the window open, no pullback filter). If the real strategy can't beat the dumb one, its clever filters were just noise.</li>
   <li><strong>Walk-forward testing.</strong> Trades are split into rolling out-of-sample chunks, and thin chunks (too few trades) are flagged — because a "win" in a tiny sample is luck, not proven edge.</li>
+  <li><strong>Honest stop-fills on gaps.</strong> If a candle gaps straight <em>past</em> the stop-loss, the backtest fills at the worse gap-open price, not the stop price — so a jumpy day isn't flattered by pretending you got out exactly at the stop.</li>
 </ul>
 
 <!-- ══════════════════════════════════════════════════════ -->
@@ -389,7 +395,6 @@
 <h2 id="gaps">12. What's still missing</h2>
 
 <ul>
-  <li><strong>No crash-recovery yet.</strong> If the server restarts while a <em>live</em> Trend Pullback trade is open, the system won't automatically remember and manage that trade afterward (this is a known deferral, the same as ORB). Until it's added, prefer practice or dry-run mode for trades you can't watch.</li>
   <li><strong>Backtest option prices are estimated.</strong> History has no option quotes, so backtest profit is a close approximation, not exact fills. Always sanity-check against paper and <code>/replay</code>.</li>
   <li><strong>It trades rarely — on purpose.</strong> The strategy waits for a real trend, a real pullback, and a real resumption all lining up. Many days it takes nothing. Judge it over weeks, not a single afternoon.</li>
 </ul>
@@ -399,11 +404,11 @@
 </div>
 
 <div class="card warn">
-  <strong>Last checked: 16 July 2026.</strong> This guide was rewritten in plain English. Every default value above was read straight from the live code and the README — nothing here is invented.
+  <strong>Last checked: 17 July 2026.</strong> This guide was rewritten in plain English. Every default value above was read straight from the live code and the README — nothing here is invented.
 </div>
 
 <footer style="text-align:center; padding:30px 0 10px; margin-top:40px; border-top:1px solid #21262d;">
-  <p class="muted">Trend Pullback (TREND_PB) — Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 16 July 2026</p>
+  <p class="muted">Trend Pullback (TREND_PB) — Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 17 July 2026</p>
 </footer>
 
 </div>

@@ -425,8 +425,8 @@
   <div class="sub">Ride a trend: buy a call when the market is clearly going up, a put when it's clearly going down</div>
   <div class="sub2">NIFTY index options &middot; Zerodha (live orders) &middot; Fyers (price data) &middot; 5-minute candles</div>
   <div class="version-box">
-    <strong>Plain-English edition &mdash; updated 2026-07-16.</strong> This guide explains the whole strategy in everyday language, with a glossary up front and a worked example in real rupees. Every setting and default here was read straight from the live code and the README.<br/>
-    <span style="color:var(--text3);">Nothing about how the strategy behaves has been changed &mdash; only how it's written. (One number was corrected: the option safety-stop default is <strong>15%</strong>, not 25%.)</span>
+    <strong>Plain-English edition &mdash; updated 2026-07-17.</strong> This guide explains the whole strategy in everyday language, with a glossary up front and a worked example in real rupees. Every setting and default here was read straight from the live code and the README.<br/>
+    <span style="color:var(--text3);">Latest refresh adds the new safety features from the 2026-07-17 hardening pass: an optional break-even floor (Section 6), a portfolio-wide loss cap and a restart-proof daily loss cap (Section 9), and a square-off-on-shutdown note (Section 11). All new features are <strong>off by default</strong>, so behaviour at the shipped settings is unchanged.</span>
   </div>
   <div class="toc">
     <div class="toc-title">Contents</div>
@@ -479,7 +479,7 @@
     <tr><td><strong>RSI</strong></td><td>A 0&ndash;100 "momentum meter." Low (near 20&ndash;30) means the move down is tired; high (near 70&ndash;80) means the move up is tired. We want RSI strong enough to show real push, but not so extreme that the move is about to run out of steam.</td></tr>
     <tr><td><strong>SuperTrend</strong></td><td>A single line that flips from below the price (it's saying "trend is up") to above the price ("trend is down"). One clean yes/no read on which way the market is leaning.</td></tr>
     <tr><td><strong>Trailing stop (safety line)</strong></td><td>A price level that automatically closes the trade if it's hit. "Trailing" means it <em>follows</em> the price in the winning direction and only ever gets tighter &mdash; it never loosens. It's how we lock in more and more of a winner while capping a loser.</td></tr>
-    <tr><td><strong>Break-even</strong></td><td>Moving your safety line to the price you paid, so the trade can't turn into a loss. (This strategy used to do this; it has since been <em>removed</em> &mdash; see Section 12.)</td></tr>
+    <tr><td><strong>Break-even</strong></td><td>Moving your safety line to the price you paid, so the trade can't turn into a loss. The old <em>always-on</em> version was removed; there is now an <em>optional</em> break-even stop you can switch on (off by default) &mdash; see Section 6.</td></tr>
     <tr><td><strong>Points</strong></td><td>NIFTY index points. If NIFTY goes from 24,300 to 24,325, that's a 25-point move.</td></tr>
     <tr><td><strong>Bid-ask spread</strong></td><td>The gap between the price you can buy an option at and the price you can sell it at. A wide gap quietly eats your profit every time you enter and exit, so a live trade is skipped if the gap is too wide.</td></tr>
     <tr><td><strong>OI (open interest)</strong></td><td>How many option contracts are currently held open &mdash; a read on where the big money is positioned. An optional live-only check.</td></tr>
@@ -597,7 +597,13 @@
     <p><strong>Negative-candle stop:</strong> if a trade is <em>still</em> showing a loss (the option is worth less than we paid) at the close of <strong>2 candles</strong>, we simply cut it. The idea is deliberately lopsided: losers get shown the door quickly, while winners are left alone to keep riding the trail.</p>
   </div>
 
-  <div class="note warn">There is <strong>no</strong> "move-to-break-even" step anymore &mdash; that was removed. The safety line's job is done entirely by the starting level, the EMA21 trail, and the optional tighteners above.</div>
+  <h3 class="green">An optional break-even floor (off by default)</h3>
+  <p>There's also a switch-on-if-you-want <strong>break-even stop</strong>. When it's on and a trade gets <strong><code>EMA_RSI_ST_BREAKEVEN_PTS</code> points in profit</strong> (measured on the NIFTY spot, checked at each candle close), the safety line is lifted straight up to <strong>the exact price we bought at</strong>. From then on the worst case is roughly a scratch &mdash; a winner can no longer flip back into a loss. Like everything else here it only ever <em>tightens</em>: if the EMA21 trail has already climbed past our entry, this floor changes nothing.</p>
+  <div class="card green-border">
+    <h3 class="green">A quick example</h3>
+    <p>We buy a CE with NIFTY spot at <strong>24,358</strong>, and break-even is set to <strong>+25 points</strong>. NIFTY climbs to <strong>24,383</strong> at a candle close &mdash; that's +25, so the safety line jumps up to <strong>24,358</strong>, our entry. Now if the move dies and NIFTY slides back, we're taken out at roughly break-even instead of at a loss. A PE works the same way, just mirrored downward.</p>
+  </div>
+  <div class="note warn">This is <strong>off by default</strong> (<code>EMA_RSI_ST_BREAKEVEN_ENABLED=false</code>). It's the deliberate opt-in replacement for the old <em>always-on</em> "move-to-break-even" that used to be built in and was removed. When switched on it runs identically in practice, live and backtest. With it off, the safety line's job is done entirely by the starting level, the EMA21 trail and the optional tighteners above.</div>
 </div>
 
 <!-- ════════════════════════════════════════════════ 07 ═══ -->
@@ -662,7 +668,8 @@
   <p>On top of the per-trade stops, a few account-level limits act like circuit breakers.</p>
   <table>
     <tr><th>Limit</th><th>What it does</th></tr>
-    <tr><td><strong>Daily loss cap</strong> (<code>MAX_DAILY_LOSS</code>)</td><td>Once the day's losses reach a set rupee amount, stop taking new trades. (Code default &#8377;5,000; the saved Settings use a tighter &#8377;3,000.)</td></tr>
+    <tr><td><strong>Daily loss cap</strong> (<code>MAX_DAILY_LOSS</code>)</td><td>Once the day's losses reach a set rupee amount, stop taking new trades. (Code default &#8377;5,000; the saved Settings use a tighter &#8377;3,000.) In live trading this cap now <strong>survives a restart</strong> &mdash; if the bot crashes or redeploys mid-day, it re-reads today's already-booked live loss and stays stopped, instead of resetting the budget to zero.</td></tr>
+    <tr><td><strong>Portfolio-wide loss cap</strong> (<code>PORTFOLIO_MAX_DAILY_LOSS</code>)</td><td>A cap across <em>all six</em> strategies at once, not just this one. It adds up today's booked profit-and-loss from every strategy; once the combined loss reaches the cap, <strong>new trades are blocked in every strategy</strong> for the rest of the day. It can only ever <em>block</em> a new entry &mdash; it never places or changes an order &mdash; and if it can't read the numbers it lets trading continue. Off by default (0 = off).</td></tr>
     <tr><td><strong>Max trades per day</strong> (<code>MAX_DAILY_TRADES</code>)</td><td>A hard cap on how many trades can be opened in one session &mdash; an anti-over-trading brake. (Code default 20; saved Settings use 5.)</td></tr>
     <tr><td><strong>Trading window</strong> (<code>TRADE_ENTRY_START</code> / <code>TRADE_ENTRY_END</code>)</td><td>New trades only allowed inside set hours (roughly late morning to early afternoon). No entries outside the window.</td></tr>
     <tr><td><strong>VIX filter</strong> (<code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code>)</td><td>The "too jumpy" filter: block new trades when the market's fear gauge (VIX) is above the limit &mdash; those days swing hard and options get expensive.</td></tr>
@@ -708,6 +715,7 @@
     <table>
       <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
       <tr><td><code>OPT_STOP_PCT</code></td><td>0.15</td><td>The option-meltdown stop: exit if the option's price falls this fraction below what we paid. <strong>0.15 = 15%</strong> (e.g. a &#8377;200 option, exit at &#8377;170).</td></tr>
+      <tr><td><code>EMA_RSI_ST_BREAKEVEN_ENABLED</code> / <code>_PTS</code></td><td>false / 25</td><td>Optional break-even floor: once a trade is this many points in profit (spot, at candle close), raise the safety line to the entry price so a winner can't turn into a loss. Tighten-only. Off by default.</td></tr>
       <tr><td><code>EMA_RSI_ST_NEG_CANDLE_LIMIT</code></td><td>2</td><td>Cut a trade that's still losing after this many finished candles. Winners are left alone. 0 = off.</td></tr>
       <tr><td><code>EMA_RSI_ST_STOP_LOSS_PTS</code></td><td>0</td><td>Hard "catastrophe" cap in NIFTY points. 0 = off. (Settings page turns it on at 25.)</td></tr>
       <tr><td><code>EMA_RSI_ST_CANDLE_TRAIL_ENABLED</code> / <code>_BARS</code></td><td>false / 3</td><td>Add a recent-lows trail on top of EMA21; the tighter of the two wins. (Settings page turns this on.)</td></tr>
@@ -722,7 +730,8 @@
     <div class="env-group-title">Risk &amp; the trading day</div>
     <table>
       <tr><th>Setting</th><th>Default</th><th>What it does</th></tr>
-      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Stop new trades once the day's loss hits this (&#8377;). (Settings page uses 3000.)</td></tr>
+      <tr><td><code>MAX_DAILY_LOSS</code></td><td>5000</td><td>Stop new trades once the day's loss hits this (&#8377;). (Settings page uses 3000.) Live: survives a mid-day restart.</td></tr>
+      <tr><td><code>PORTFOLIO_MAX_DAILY_LOSS</code></td><td>0 (off)</td><td>Cross-strategy cap: once the combined loss across all six strategies hits this (&#8377;), block new trades everywhere for the day. Only ever blocks, never touches an order; fails open. 0 = off.</td></tr>
       <tr><td><code>MAX_DAILY_TRADES</code></td><td>20</td><td>Most trades allowed in one day. (Settings page uses 5.)</td></tr>
       <tr><td><code>VIX_FILTER_ENABLED</code> / <code>VIX_MAX_ENTRY</code></td><td>off / 20</td><td>Block new trades when VIX (the fear gauge) is above the limit.</td></tr>
       <tr><td><code>EMA_RSI_ST_OI_ENABLED</code></td><td>false</td><td>Require supportive big-money option positioning before a real trade (live only).</td></tr>
@@ -740,6 +749,7 @@
     <li><code>TRADE_EXPIRY_DAY_ONLY</code> &mdash; the opposite switch: when on, <em>only</em> trade on NIFTY expiry day.</li>
     <li><code>EMA_RSI_ST_OPTION_EXPIRY_OVERRIDE</code> / <code>_TYPE</code> let this strategy trade a different weekly expiry from the other strategies. Left blank, it just follows the shared expiry.</li>
     <li><strong>Live trading has two locks.</strong> Real Zerodha orders only go out when <code>EMA_RSI_ST_LIVE_ENABLED=true</code> <em>and</em> the global dry-run switch (<code>LIVE_HARNESS_DRY_RUN</code>) is off. While dry-run is on (the default), the system <em>shows</em> the order it would have placed but sends nothing. Only turn dry-run off after checking that live and paper make the same decisions on a replayed day.</li>
+    <li><strong>Clean shutdown squares off first.</strong> When the process is asked to stop (a deploy or restart signal), any open live position is now squared off before it exits &mdash; a redeploy can't leave a real trade stranded. And because several strategies share one price feed, stopping this one no longer tears that feed away from another strategy that still has a live position running.</li>
   </ul>
 </div>
 
@@ -757,7 +767,7 @@
     <span class="tag tag-red">SAR-distance rules</span>
     <span class="tag tag-red">"strong / marginal" grading</span>
     <span class="tag tag-red">3-tier trailing</span>
-    <span class="tag tag-red">move-to-break-even</span>
+    <span class="tag tag-red">always-on move-to-break-even</span>
   </p>
   <p><strong>In place now:</strong></p>
   <p>
@@ -770,13 +780,14 @@
     <span class="tag tag-green">optional recent-lows trail</span>
     <span class="tag tag-green">negative-candle stop</span>
     <span class="tag tag-green">EMA21 touch-back exit</span>
+    <span class="tag tag-green">optional break-even floor (off)</span>
   </p>
   <div class="note success">Bottom line: the strategy is now <em>four clear checks &rarr; one candle of proof &rarr; ride the trend behind a climbing safety line</em>. Simple to follow, and every mode (practice, live, backtest, replay) runs the exact same logic.</div>
 </div>
 
 <hr/>
 <p style="text-align:center;color:var(--text3);font-size:0.78rem;">
-  EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 16 July 2026 &nbsp;|&nbsp; all defaults read from the live code &amp; README.
+  EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 17 July 2026 &nbsp;|&nbsp; all defaults read from the live code &amp; README.
   The code is always the final word (<code>strategy1_sar_ema_rsi.js</code>, <code>emaRsiStPaper.js</code>).
 </p>
 </body>
