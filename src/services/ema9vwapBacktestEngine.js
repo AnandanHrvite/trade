@@ -60,7 +60,9 @@ async function runEma9VwapBacktest(candles, capital, onProgress, activeFromTs = 
   // (that only holds for 15-min bars; a 5-min run has ~78, so 26 over-charges theta ~3×).
   const _btResMins      = candles.length >= 2 ? Math.max(1, Math.round((candles[1].time - candles[0].time) / 60)) : 5;
   const CANDLES_PER_DAY = Math.max(1, Math.round(390 / _btResMins));
-  const SLIPPAGE_PTS   = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
+  // Default 1.5pt/side to match every other backtest engine — a 0 default made
+  // EMA9_VWAP the only frictionless backtest, flattering its results vs siblings.
+  const SLIPPAGE_PTS   = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "1.5");
 
   const entryStart     = _parseMins("EMA9VWAP_ENTRY_START", "10:30");
   const entryEnd       = _parseMins("EMA9VWAP_ENTRY_END", "14:30");

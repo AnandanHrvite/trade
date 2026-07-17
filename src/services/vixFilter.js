@@ -175,16 +175,23 @@ function buildVixLookup(vixCandles) {
   const sorted = [...vixCandles].sort((a, b) => a.time - b.time);
   const times  = sorted.map(c => c.time);
   const closes = sorted.map(c => c.close);
+  // IST calendar-day index from unix seconds (India has no DST → fixed +5:30).
+  const istDay = (unixSec) => Math.floor((unixSec + 19800) / 86400);
 
   return function lookupVix(unixSec) {
-    if (unixSec < times[0]) return closes[0];
-    let lo = 0, hi = times.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >>> 1;
-      if (times[mid] <= unixSec) lo = mid;
+    // Backtest VIX candles are DAILY and start-of-day stamped, so the candle
+    // covering an intraday entry is the CURRENT day — whose CLOSE is not known
+    // until 15:30. Returning it was look-ahead (the filter could "foresee" an
+    // afternoon spike at 09:45). Use the PRIOR completed day's close instead:
+    // the latest candle whose IST day is strictly before the entry's IST day.
+    const qDay = istDay(unixSec);
+    let lo = 0, hi = times.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (istDay(times[mid]) < qDay) { ans = mid; lo = mid + 1; }
       else hi = mid - 1;
     }
-    return closes[lo];
+    return ans >= 0 ? closes[ans] : null; // null on first day → fails per VIX_FAIL_MODE
   };
 }
 
