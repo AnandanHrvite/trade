@@ -93,6 +93,7 @@ function runOrbBacktest(allCandles, expirySet) {
   const FORCED_EXIT_MIN = _parseMin("ORB_FORCED_EXIT", "15:15");
   const ENTRY_END_MIN   = _parseMin("ORB_ENTRY_END",   "11:30");
   const SEED_PREMIUM    = parseFloat(process.env.ORB_BT_SEED_PREMIUM || "240");   // slightly-ITM ≈ ATM + one strike intrinsic
+  const SLIPPAGE_PREM   = parseFloat(process.env.ORB_BT_SLIPPAGE_PTS || "1.5");   // spread+slippage haircut EACH way (premium pts); was 0/frictionless
   // V3 (default) handles the OPTIONAL non-blocking retest INSIDE the engine, so the
   // backtest just polls getSignal each candle and enters on the returned BUY (the
   // engine returns BUY on the confirmation / retest / trend-resume candle). The old
@@ -266,7 +267,9 @@ function runOrbBacktest(allCandles, expirySet) {
     const candlesHeld = ((exitTime - pos.entryTime) / 60) / 5;
     const thetaCost = (THETA_DAY * candlesHeld) / 78;
     const spotMove = pos.side === "CE" ? (exitSpot - pos.entrySpot) : (pos.entrySpot - exitSpot);
-    const exitPrem = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE);
+    // Buy high / sell low: haircut the exit premium by slippage on BOTH legs so
+    // fills aren't frictionless (was overstating every ORB trade's P&L).
+    const exitPrem = Math.max(0.05, pos.optionEntryLtp + spotMove * DELTA - thetaCost / LOT_SIZE - 2 * SLIPPAGE_PREM);
     const charges = getCharges({ broker: "fyers", isFutures: false, entryPremium: pos.optionEntryLtp, exitPremium: exitPrem, qty: LOT_SIZE });
     const pnl = parseFloat(((exitPrem - pos.optionEntryLtp) * LOT_SIZE - charges).toFixed(2));
     pos.exitTime = exitTime;

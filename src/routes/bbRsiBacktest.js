@@ -104,7 +104,9 @@ async function runBbRsiBacktest(candles, capital, vixCandles, expiryDates, onPro
   const BB_RSI_CONSEC_EXTRA = parseInt(process.env.BB_RSI_CONSEC_SL_EXTRA_PAUSE || "2", 10);
 
   // Slippage simulation (pts added against you on entry & exit)
-  const SLIPPAGE_PTS = parseFloat(process.env.BB_RSI_SLIPPAGE_PTS || "0");
+  // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
+  // way. Set BB_RSI_SLIPPAGE_PTS=0 to restore the old frictionless fills.
+  const SLIPPAGE_PTS = parseFloat(process.env.BB_RSI_SLIPPAGE_PTS || "1.5");
 
   // Per-side SL pause — when true, an SL on CE only pauses CE entries
   const BB_RSI_PER_SIDE_PAUSE = (process.env.BB_RSI_PER_SIDE_PAUSE || "true") === "true";

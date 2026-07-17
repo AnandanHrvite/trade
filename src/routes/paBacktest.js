@@ -86,7 +86,9 @@ async function runPABacktest(candles, capital, vixCandles, expiryDates, onProgre
   const PA_PAUSE_CANDLES = parseInt(process.env.PA_SL_PAUSE_CANDLES || "2", 10);
 
   // Slippage simulation (pts added against you on entry & exit)
-  const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "0");
+  // Realistic default (was 0 = frictionless, which overstated edge). 1.5pt each
+  // way. Set PA_SLIPPAGE_PTS=0 to restore the old frictionless fills.
+  const SLIPPAGE_PTS = parseFloat(process.env.PA_SLIPPAGE_PTS || "1.5");
 
   // Breakeven config — lift SL to entry+buffer once peak profit clears the trigger
   const PA_BE_TRIGGER = parseFloat(process.env.PA_BREAKEVEN_TRIGGER || "300"); // ₹ (0 = off)

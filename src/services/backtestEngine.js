@@ -171,7 +171,11 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
   // ── Slippage simulation ────────────────────────────────────────────────────
   // Real market orders on NIFTY options see 1-3 pts slippage. Without this,
   // backtest overstates P&L vs live trading. Applied to BOTH entry and exit.
-  const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "0");
+  // Realistic default: real NIFTY-option round trips cross a bid-ask spread +
+  // slippage. Defaulting to 0 made every backtest fill at the ideal price and
+  // overstated edge. 1.5pt each way (entry + exit) is a conservative floor; set
+  // BACKTEST_SLIPPAGE_PTS=0 to restore the old frictionless behaviour.
+  const SLIPPAGE_PTS = parseFloat(process.env.BACKTEST_SLIPPAGE_PTS || "1.5");
 
   // ── EMA_RSI_ST (redefined): exit/stop model ───────────────────────────────────
   //   Initial SL  : previous completed candle's low (CE) / high (PE) — from getSignal.
@@ -431,12 +435,16 @@ async function runBacktest(candles, strategy, capital, vixCandles, expiryDates, 
                            Math.abs(position.stopLoss - position.initialStopLoss) > 1;
         const _slLabel = _isTrailSL ? "Trail SL" : "Initial SL";
 
+        // Gap-through fill: if the candle OPENED beyond the stop, the stop could
+        // only have filled at the (worse) open, not at the stop level. Modelling
+        // the fill at the exact stop understates losses on gap/spike candles —
+        // exactly the trades that hurt live. Use the worse of (stop, open).
         if (position.side === "CE" && candle.low <= position.stopLoss) {
-          exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}`;
-          exitPrice  = position.stopLoss;
+          exitPrice  = candle.open < position.stopLoss ? candle.open : position.stopLoss;
+          exitReason = `${_slLabel} hit — low ${candle.low} <= SL ${position.stopLoss}${exitPrice < position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
         } else if (position.side === "PE" && candle.high >= position.stopLoss) {
-          exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}`;
-          exitPrice  = position.stopLoss;
+          exitPrice  = candle.open > position.stopLoss ? candle.open : position.stopLoss;
+          exitReason = `${_slLabel} hit — high ${candle.high} >= SL ${position.stopLoss}${exitPrice > position.stopLoss ? ` (gap fill @ ${exitPrice})` : ""}`;
         }
       }
 
