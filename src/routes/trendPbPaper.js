@@ -537,6 +537,15 @@ async function onCandleClose(bar) {
     return;
   }
 
+  // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
+  {
+    const _pf = require("../utils/portfolioRisk").checkPortfolioCap();
+    if (_pf.blocked) {
+      skipLogger.appendSkipLog("trend_pb", { gate: "portfolio_loss", reason: _pf.reason, spot: _spot });
+      return;
+    }
+  }
+
   const streakSkip = parseInt(process.env.TREND_PB_LOSS_STREAK_SKIP || "3", 10);
   if (streakSkip > 0 && state.consecutiveLosses >= streakSkip) {
     skipLogger.appendSkipLog("trend_pb", { gate: "loss_streak", reason: `${state.consecutiveLosses} consecutive losses ≥ ${streakSkip} — session cool-off`, spot: _spot });

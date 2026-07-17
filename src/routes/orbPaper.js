@@ -593,6 +593,15 @@ async function onCandleClose(bar) {
     return;
   }
 
+  // Portfolio-wide daily loss cap (across ALL strategies; default disabled).
+  {
+    const _pf = require("../utils/portfolioRisk").checkPortfolioCap();
+    if (_pf.blocked) {
+      skipLogger.appendSkipLog("orb", { gate: "portfolio_loss", reason: _pf.reason, spot: _spot });
+      return;
+    }
+  }
+
   // Portfolio risk breaker — consecutive-losing-days / weekly-loss stop.
   const _throttle = orbRiskState.getThrottle("orb-paper", tradeLogger.istDateString(Date.now()), state.sessionPnl);
   if (_throttle.block) {

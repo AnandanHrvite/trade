@@ -855,6 +855,7 @@ async function onCandleClose(bar) {
   }
   state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [BB_RSI-PAPER] SKIP: daily loss limit hit`); return; }
+  { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [BB_RSI-PAPER] SKIP: ${_pf.reason}`); return; } }
   if (state.sessionTrades.length >= _BB_RSI_MAX_TRADES) { log(`⏭️ [BB_RSI-PAPER] SKIP: max trades (${_BB_RSI_MAX_TRADES}) reached`); return; }
   // Per-side SL cooldown is checked AFTER the strategy returns a side (further below).
   // Keep the legacy global check as a fast-path when both sides are paused (only true

@@ -256,7 +256,8 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
 | Key | Default | Notes |
 |-----|---------|-------|
 | `TRADE_RESOLUTION` | `5` | Candle size in minutes — `3`, `5`, or `15` (logic is resolution-agnostic). |
-| `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR |
+| `MAX_DAILY_LOSS` | `5000` | Daily kill-switch in INR (per-strategy) |
+| `PORTFOLIO_MAX_DAILY_LOSS` | `0` (off) | **Portfolio-wide** daily loss cap in INR across ALL strategies (sums today's realized paper P&L via the per-day JSONL logs). When the book's combined loss reaches this, every strategy stops taking new entries for the day. Fail-safe (only blocks, never places orders). `0`/unset = disabled. |
 | `MAX_DAILY_TRADES` | `20` | Daily entry cap — anti-overtrade on chop days. *(Settings UI seeds a tighter `5`.)* |
 | `EMA_RSI_ST_LIVE_ENABLED` | `false` | Must be `true` AND `LIVE_HARNESS_DRY_RUN=false` for real Zerodha orders. When `LIVE_HARNESS_DRY_RUN=true` (default), EMA_RSI_ST Live logs the broker calls it would make (entry, hard-SL, trail, exit) but places none. |
 | `BACKTEST_OPTION_SIM` | `true` | Realistic option P&L (delta x theta) |

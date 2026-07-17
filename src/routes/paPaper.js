@@ -699,6 +699,7 @@ async function onCandleClose(bar) {
   }
   state._omhLogged = false;
   if (state._dailyLossHit) { log(`⏭️ [PA-PAPER] SKIP: daily loss limit hit`); return; }
+  { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`⏭️ [PA-PAPER] SKIP: ${_pf.reason}`); return; } }
   if (state.sessionTrades.length >= _PA_MAX_TRADES) { log(`⏭️ [PA-PAPER] SKIP: max trades (${_PA_MAX_TRADES}) reached`); return; }
   if (state._slPauseUntil && simNow() < state._slPauseUntil) {
     const secsLeft = Math.ceil((state._slPauseUntil - simNow()) / 1000);

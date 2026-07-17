@@ -1325,6 +1325,7 @@ async function onCandleClose(candle) {
       log(`🛑 [PAPER] Daily loss limit active — candle-close entry blocked (${signal})`);
       return;
     }
+    { const _pf = require("../utils/portfolioRisk").checkPortfolioCap(); if (_pf.blocked) { log(`🛑 [PAPER] ${_pf.reason} — candle-close entry blocked (${signal})`); return; } }
     if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
       const resumeTime = new Date(ptState._pauseUntilTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
       log(`⏸ [PAPER] Consecutive loss pause active — candle-close entry blocked until ~${resumeTime}`);
@@ -1525,6 +1526,8 @@ function onTick(tick) {
       // silently skip — no log spam on every tick
     } else if (ptState._dailyLossHit) {
       // Daily loss kill switch latched — no more entries today (silent to avoid log spam)
+    } else if (require("../utils/portfolioRisk").checkPortfolioCap().blocked) {
+      // Portfolio-wide daily loss cap hit — no entries across any strategy (silent)
     } else if (ptState._pauseUntilTime && simNow() < ptState._pauseUntilTime) {
       // Consecutive loss pause active — silently skip to avoid log spam
     } else if (false) { // 50% pause DISABLED — replaced by breakeven
