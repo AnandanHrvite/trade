@@ -2751,6 +2751,16 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    // Only the retain-on-unreadable-book guard needs to fire when real orders are
+    // possible. In paper-only mode (harness dry-run AND no native live enabled) a
+    // snapshot never maps to a real broker position, so clearing it on an empty
+    // book is always safe — skip the guard to avoid a spurious every-boot warning.
+    const _liveActive =
+      (process.env.LIVE_HARNESS_DRY_RUN || "true").toLowerCase() !== "true" ||
+      ["EMA_RSI_ST", "BB_RSI", "PA", "ORB", "EMA9VWAP", "TREND_PB"].some(
+        (s) => (process.env[`${s}_LIVE_ENABLED`] || "").toLowerCase() === "true",
+      );
+
     // ── Check broker positions (live API) ──
     if (zerodha.isAuthenticated()) {
       const zPos = await zerodha.getPositions();
@@ -2770,7 +2780,7 @@ async function reconcileOrphanedPositions() {
         // readable (non-empty); otherwise retain + warn and re-check next boot.
         const _zReadable = ((zPos.net || []).length + (zPos.day || []).length) > 0;
         const _zSnaps = [savedTrade, savedEma9Vwap].filter(Boolean).length;
-        if (_zSnaps > 0 && !_zReadable) {
+        if (_liveActive && _zSnaps > 0 && !_zReadable) {
           const msg = `⚠️ [STARTUP] Zerodha book came back EMPTY — can't tell flat from an API error. Retaining ${_zSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Zerodha dashboard.`;
           console.warn(msg); sendTelegram(msg);
         } else {
@@ -2798,7 +2808,7 @@ async function reconcileOrphanedPositions() {
         // readable; otherwise retain + warn so a real orphan isn't masked.
         const _fReadable = Array.isArray(fPos.netPositions) && fPos.netPositions.length > 0;
         const _fSnaps = [savedBbRsi, savedPA, savedOrb, savedTrendPb].filter(Boolean).length;
-        if (_fSnaps > 0 && !_fReadable) {
+        if (_liveActive && _fSnaps > 0 && !_fReadable) {
           const msg = `⚠️ [STARTUP] Fyers book came back EMPTY — can't tell flat from an API error. Retaining ${_fSnaps} crash snapshot(s) UNVERIFIED (re-checking next boot). Check Fyers dashboard.`;
           console.warn(msg); sendTelegram(msg);
         } else {
