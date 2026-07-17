@@ -350,9 +350,127 @@ function clearEma9VwapPosition() {
   console.log("[PERSIST] EMA9+VWAP position file cleared.");
 }
 
+// ── ORB (opening-range breakout, Fyers) ─────────────────────────────────────
+
+const ORB_POS_FILE = path.join(DATA_DIR, ".active_orb_position.json");
+
+function saveOrbPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(ORB_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(ORB_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] ORB position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save ORB position: ${err.message}`);
+  }
+}
+
+function loadOrbPosition() {
+  try {
+    if (!fs.existsSync(ORB_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(ORB_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale ORB position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(ORB_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] ORB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load ORB position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearOrbPosition() {
+  _persistAtomic(ORB_POS_FILE, null);
+  console.log("[PERSIST] ORB position file cleared.");
+}
+
+// ── Trend Pullback (5m/15m, Fyers) ──────────────────────────────────────────
+
+const TREND_PB_POS_FILE = path.join(DATA_DIR, ".active_trend_pb_position.json");
+
+function saveTrendPbPosition(position, sessionMeta) {
+  try {
+    if (!position) { _persistAtomic(TREND_PB_POS_FILE, null); return; }
+    const data = {
+      position: {
+        side:            position.side,
+        symbol:          position.symbol,
+        qty:             position.qty,
+        entryPrice:      position.entryPrice,
+        spotAtEntry:     position.spotAtEntry || position.entrySpot,
+        stopLoss:        position.stopLoss || position.slSpot,
+        initialStopLoss: position.initialStopLoss,
+        bestPrice:       position.bestPrice,
+        entryTime:       position.entryTime,
+        orderId:         position.orderId,
+        optionEntryLtp:  position.optionEntryLtp,
+        optionStrike:    position.optionStrike,
+        optionExpiry:    position.optionExpiry,
+        optionType:      position.optionType,
+      },
+      sessionMeta: sessionMeta || {},
+      savedAt: Date.now(),
+      savedDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
+    };
+    _persistAtomic(TREND_PB_POS_FILE, JSON.stringify(data, null, 2));
+    console.log(`💾 [PERSIST] Trend_PB position saved: ${position.side} ${position.symbol} @ ₹${position.entryPrice}`);
+  } catch (err) {
+    console.warn(`⚠️ [PERSIST] Could not save Trend_PB position: ${err.message}`);
+  }
+}
+
+function loadTrendPbPosition() {
+  try {
+    if (!fs.existsSync(TREND_PB_POS_FILE)) return null;
+    const data = JSON.parse(fs.readFileSync(TREND_PB_POS_FILE, "utf-8"));
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    if (data.savedDate && data.savedDate !== today) {
+      console.log(`[PERSIST] Stale Trend_PB position from ${data.savedDate} — discarding.`);
+      fs.unlinkSync(TREND_PB_POS_FILE);
+      return null;
+    }
+    if (data.position) console.log(`[PERSIST] Trend_PB position loaded: ${data.position.side} ${data.position.symbol} @ ₹${data.position.entryPrice}`);
+    return data;
+  } catch (err) {
+    console.warn(`[PERSIST] Could not load Trend_PB position: ${err.message}`);
+    return null;
+  }
+}
+
+function clearTrendPbPosition() {
+  _persistAtomic(TREND_PB_POS_FILE, null);
+  console.log("[PERSIST] Trend_PB position file cleared.");
+}
+
 module.exports = {
   saveTradePosition, loadTradePosition, clearTradePosition,
   saveBbRsiPosition, loadBbRsiPosition, clearBbRsiPosition,
   savePAPosition, loadPAPosition, clearPAPosition,
   saveEma9VwapPosition, loadEma9VwapPosition, clearEma9VwapPosition,
+  saveOrbPosition, loadOrbPosition, clearOrbPosition,
+  saveTrendPbPosition, loadTrendPbPosition, clearTrendPbPosition,
 };

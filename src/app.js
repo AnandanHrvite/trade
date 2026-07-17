@@ -17,7 +17,7 @@ const loginLogStore = require("./utils/loginLogStore");
 const fyersBroker   = require("./services/fyersBroker");
 const { sendTelegram, sendTelegramSync, getTelegramHealth } = require("./utils/notify");
 const consolidatedEodReporter = require("./utils/consolidatedEodReporter");
-const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition } = require("./utils/positionPersist");
+const { loadTradePosition, clearTradePosition, loadBbRsiPosition, clearBbRsiPosition, loadPAPosition, clearPAPosition, loadEma9VwapPosition, clearEma9VwapPosition, loadOrbPosition, clearOrbPosition, loadTrendPbPosition, clearTrendPbPosition } = require("./utils/positionPersist");
 const app = express();
 app.use(compression());
 app.use(express.json());
@@ -2718,6 +2718,28 @@ async function reconcileOrphanedPositions() {
       sendTelegram(msg);
     }
 
+    const savedOrb = loadOrbPosition();
+    if (savedOrb && savedOrb.position) {
+      const p = savedOrb.position;
+      const msg = `🚨 [STARTUP] Persisted ORB position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedOrb.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Fyers dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
+    const savedTrendPb = loadTrendPbPosition();
+    if (savedTrendPb && savedTrendPb.position) {
+      const p = savedTrendPb.position;
+      const msg = `🚨 [STARTUP] Persisted Trend_PB position found (crash recovery)!\n` +
+        `  ${p.side} ${p.symbol}: entry=₹${p.entryPrice} SL=₹${p.stopLoss} qty=${p.qty}\n` +
+        `  Saved at: ${new Date(savedTrendPb.savedAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })}\n` +
+        `Bot was tracking this before crash. Check Fyers dashboard!`;
+      console.warn(msg);
+      sendTelegram(msg);
+    }
+
     // ── Check broker positions (live API) ──
     if (zerodha.isAuthenticated()) {
       const zPos = await zerodha.getPositions();
@@ -2750,9 +2772,11 @@ async function reconcileOrphanedPositions() {
         sendTelegram(msg);
       } else {
         console.log("✅ [STARTUP] Fyers: no orphaned positions.");
-        // BB_RSI + PA both trade on Fyers; broker-flat means either stale snapshot is safe to clear.
-        if (savedBbRsi) clearBbRsiPosition();  // broker confirms no position — safe to clear
-        if (savedPA)    clearPAPosition();
+        // BB_RSI + PA + ORB + Trend_PB all trade on Fyers; broker-flat means any stale snapshot is safe to clear.
+        if (savedBbRsi)   clearBbRsiPosition();  // broker confirms no position — safe to clear
+        if (savedPA)      clearPAPosition();
+        if (savedOrb)     clearOrbPosition();
+        if (savedTrendPb) clearTrendPbPosition();
       }
     }
   } catch (err) {

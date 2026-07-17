@@ -773,6 +773,7 @@ function simulateBuy(symbol, side, qty, price, reason, stopLoss, spotAtEntry, is
     vwapUpperAtEntry:  entryMeta.vwapUpperAtEntry != null ? entryMeta.vwapUpperAtEntry : null,
     vwapLowerAtEntry:  entryMeta.vwapLowerAtEntry != null ? entryMeta.vwapLowerAtEntry : null,
   };
+  try { require("../utils/positionPersist").saveEma9VwapPosition(ptState.position, { sessionPnl: ptState.sessionPnl }); } catch (_) {}
 
   // Set option symbol and start REST polling (no socket changes)
   // Skip option polling for futures and simulation mode — no option premium to track
@@ -1020,6 +1021,7 @@ function simulateSell(exitPrice, reason, spotAtExit) {
   }
 
   ptState.position = null;
+  try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
 
   // Opposite-side (flip) cooldown — block opposite-side entry for N candles.
   _setOppositeCooldown(side, reason);
@@ -1974,6 +1976,7 @@ router.get("/start", async (req, res) => {
   ptState.currentBar    = null;
   ptState.barStartTime  = null;
   ptState.position      = null;
+  try { require("../utils/positionPersist").clearEma9VwapPosition(); } catch (_) {}
   ptState.sessionTrades = [];
   ptState.sessionPnl    = 0;
   ptState.sessionStart  = istNow();

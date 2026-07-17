@@ -307,6 +307,7 @@ async function simulateBuy(side, sig) {
   };
 
   state.position = pos;
+  try { require("../utils/positionPersist").saveTrendPbPosition(pos, { sessionPnl: state.sessionPnl }); } catch (_) {}
   state.optionLtp = optionEntryLtp;
   state.optionLtpUpdatedAt = Date.now();
   state.tradesTaken++;
@@ -421,6 +422,7 @@ function simulateSell(reason) {
   } catch (_) {}
 
   state.position = null;
+  try { require("../utils/positionPersist").clearTrendPbPosition(); } catch (_) {}
   state.optionLtp = null;
   state.optionLtpUpdatedAt = null;
   stopOptionPolling();
