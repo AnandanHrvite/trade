@@ -3,9 +3,13 @@
 
 const tickRecorder = require("./tickRecorder");
 
-const DEFAULT_MAX_SPREAD_PTS = parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2");
-const DEFAULT_TIME_STOP_CANDLES = parseInt(process.env.TIME_STOP_CANDLES || "4", 10);
-const DEFAULT_TIME_STOP_FLAT_PTS = parseFloat(process.env.TIME_STOP_FLAT_PTS || "20");
+// Read thresholds LIVE from process.env on each call — not frozen at require()
+// time. Previously these were module-load constants, so a Settings edit only
+// took effect after a full process restart (the Settings UI wrongly labelled it
+// "session restart"). Live reads make the toggle apply on the next entry check.
+function liveMaxSpreadPts()      { return parseFloat(process.env.MAX_BID_ASK_SPREAD_PTS || "2"); }
+function liveTimeStopCandles()   { return parseInt(process.env.TIME_STOP_CANDLES || "4", 10); }
+function liveTimeStopFlatPts()   { return parseFloat(process.env.TIME_STOP_FLAT_PTS || "20"); }
 
 async function fetchOptionQuote(fyers, symbol) {
   try {
@@ -31,7 +35,7 @@ async function fetchOptionQuote(fyers, symbol) {
 
 // Returns { ok, spread, reason }. Fails OPEN (ok=true) if bid/ask unavailable —
 // we don't want to starve live trading when the broker snapshot lacks depth fields.
-function checkSpread(bid, ask, maxSpreadPts = DEFAULT_MAX_SPREAD_PTS) {
+function checkSpread(bid, ask, maxSpreadPts = liveMaxSpreadPts()) {
   if (!bid || !ask || ask <= 0 || bid <= 0 || ask < bid) {
     return { ok: true, spread: null, reason: "no-quote" };
   }
@@ -43,8 +47,8 @@ function checkSpread(bid, ask, maxSpreadPts = DEFAULT_MAX_SPREAD_PTS) {
 // Fires only when the trade has been held >= maxCandles AND option-premium PnL
 // is still within ±flatPts (i.e., no meaningful move — pure theta bleed risk).
 function checkTimeStop(candlesHeld, pnlPts, {
-  maxCandles = DEFAULT_TIME_STOP_CANDLES,
-  flatPts    = DEFAULT_TIME_STOP_FLAT_PTS,
+  maxCandles = liveTimeStopCandles(),
+  flatPts    = liveTimeStopFlatPts(),
 } = {}) {
   if (!Number.isFinite(candlesHeld) || candlesHeld < maxCandles) return null;
   if (!Number.isFinite(pnlPts))                                 return null;
@@ -57,7 +61,8 @@ module.exports = {
   fetchOptionQuote,
   checkSpread,
   checkTimeStop,
-  DEFAULT_MAX_SPREAD_PTS,
-  DEFAULT_TIME_STOP_CANDLES,
-  DEFAULT_TIME_STOP_FLAT_PTS,
+  // Live getters (kept under the old names for callers that read them for display).
+  get DEFAULT_MAX_SPREAD_PTS()     { return liveMaxSpreadPts(); },
+  get DEFAULT_TIME_STOP_CANDLES()  { return liveTimeStopCandles(); },
+  get DEFAULT_TIME_STOP_FLAT_PTS() { return liveTimeStopFlatPts(); },
 };

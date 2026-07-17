@@ -64,6 +64,22 @@ let _cachedVix   = null;
 let _cachedVixTs = 0;
 let _lastRegime  = null; // "NORMAL" | "ELEVATED" | "HIGH" — uses EMA_RSI_ST thresholds for logging
 const VIX_CACHE_TTL = 60_000;
+// Hard staleness bound: on a persistent fetch outage we must NOT keep admitting
+// entries on an ancient cached VIX (it could be 14 while the market has spiked to
+// 25). Past this age the cache is treated as "no data" so checkLiveVix falls
+// through to VIX_FAIL_MODE (fail-closed by default). Tunable via env.
+function vixMaxStaleMs() {
+  return Math.max(VIX_CACHE_TTL, parseFloat(process.env.VIX_MAX_STALE_SEC || "300") * 1000);
+}
+// Return the cached VIX only if it is within the staleness bound, else null.
+function freshCachedVix() {
+  if (_cachedVix === null) return null;
+  if ((Date.now() - _cachedVixTs) > vixMaxStaleMs()) {
+    console.warn(`[VIX] cached value ${_cachedVix} is stale (>${Math.round(vixMaxStaleMs()/1000)}s) — treating as unavailable`);
+    return null;
+  }
+  return _cachedVix;
+}
 
 /**
  * Fetch live VIX value from Fyers REST API. Cached 60s — shared across modes.
@@ -98,10 +114,10 @@ async function fetchLiveVix({ force = false } = {}) {
       }
     }
     console.warn(`[VIX] getQuotes returned unexpected: s=${response.s}`);
-    return _cachedVix;
+    return freshCachedVix();
   } catch (err) {
-    console.warn(`[VIX] Fetch failed: ${err.message} — using cached or bypassing`);
-    return _cachedVix;
+    console.warn(`[VIX] Fetch failed: ${err.message} — using cached (if fresh) or failing per VIX_FAIL_MODE`);
+    return freshCachedVix();
   }
 }
 
