@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"Answer style: keep it SHORT and crisp (1-3 lines by default). Use very simple, plain English (no jargon). Always add a small real-numbers example so it is easy to understand. No tables or long sections unless the user asks.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}
