@@ -155,8 +155,9 @@ See [BB_RSI.md](BB_RSI.md) for the authoritative spec. Summary:
 
 ### Tick Replay — deterministic re-run of recorded sessions
 - Every paper/live session records spot, option (incl. entry-time bid/ask), VIX, and futures-OI ticks to `~/trading-data/ticks/YYYY-MM-DD/*.jsonl` when `TICK_RECORDER_ENABLED=true` (default; pure observer, no trade-path impact). OI is recorded only while an OI filter is enabled. Retention: `TICK_RECORDER_RETAIN_DAYS=30`.
+- **Market Context Snapshot** (`market.jsonl`): the first live spot tick of each day freezes an immutable, **strategy-independent** snapshot of that day's market facts — weekly + monthly expiry (as `YYYY-MM-DD` dates), strike interval, lot size, instrument/exchange/broker meta, and schema versions — captured once regardless of which (or how many) strategies run. Replay reads this as the **source of truth for historical market data**, so an old day always resolves its own option contract instead of today's expiry. This is what a future strategy uses to replay a day recorded before it existed.
 - `/replay` re-runs a recorded session through the same paper `onTick()` handlers to produce **bit-identical** results.
-- Two modes: **Snapshot mode** uses the session-start settings snapshot from that day's JSONL → identical output every run; **Current-settings mode** uses the live `process.env` so you can A/B settings changes against real ticks after hours.
+- Two modes: **Snapshot mode** uses the session-start settings snapshot from that day's JSONL → identical output every run; **Current-settings mode** uses the live `process.env` so you can A/B settings changes against real ticks after hours. In **both** modes the option **expiry date is pinned from the Market Context Snapshot** — current settings only override strategy config (entry/exit/filters/risk/sizing), never the historical expiry. (Recordings made before this feature have no `market.jsonl` → replay logs a warning and falls back to the legacy per-session expiry pin.)
 - Outputs land in `~/trading-data/_replay_trades/` (snapshot) or `_replay_trades_sim/` (current-settings) — kept separate from the canonical paper logs.
 - Date-range replays loop per session and render a per-row table with one-click re-runs.
 
@@ -238,7 +239,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   trades/                         # Per-day JSONL files: {mode}_paper_trades_YYYY-MM-DD.jsonl
                                   # (one file per strategy per day; seeded with a settings snapshot
                                   #  + checkpoint note, re-snapshotted on every config save)
-  ticks/YYYY-MM-DD/               # Replay source: per-day spot / option / VIX / OI tick recordings
+  ticks/YYYY-MM-DD/               # Replay source: per-day spot / option / VIX / OI ticks + market.jsonl (immutable Market Context Snapshot: expiry/lot/strike-interval/meta)
                                   # (gated by TICK_RECORDER_ENABLED; retention TICK_RECORDER_RETAIN_DAYS)
   _replay_trades/                 # Replay output — snapshot mode (uses session-start settings)
   _replay_trades_sim/             # Replay output — current-settings mode (uses live process.env)

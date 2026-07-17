@@ -6,6 +6,15 @@ All notable changes to the Palani Andawar Trading Bot are documented in this fil
 
 ## Unreleased
 
+### Added — immutable Market Context Snapshot (fixes replay-vs-paper expiry mismatch)
+
+Replay of an **old** day used to re-resolve the option expiry from *today* — the two resolution paths (`instrument.getNearestThursdayExpiry()`'s `new Date()` and the live Option-Chain REST) are not patched by the replay clock, and the per-session snapshot only stored the *override* env key (blank on auto-detect days). So an auto-detected day replayed on today's expiry → wrong strikes/symbols → `no_data` → spot-proxy P&L that never matched paper. Now the market's own facts are recorded once and pinned on replay.
+
+- **`market.jsonl` — one immutable, strategy-independent snapshot per IST day** ([src/services/marketContext.js](src/services/marketContext.js), [src/utils/tickRecorder.js](src/utils/tickRecorder.js) `recordMarketContext`, [src/config/instrument.js](src/config/instrument.js) `getMarketContext`): the first live spot tick freezes weekly + monthly expiry (as `YYYY-MM-DD`), strike interval, lot size, instrument/exchange/broker meta, and schema/recorder versions. Captured on the shared socket fan-out ([src/utils/socketManager.js](src/utils/socketManager.js)) so it's independent of which/how-many strategies run — a day recorded today is replayable by a strategy that doesn't exist yet. Idempotent (once/day), fire-and-forget, no hot-path cost; no-op when `TICK_RECORDER_ENABLED=false`.
+- **Replay pins expiry from the snapshot for BOTH toggles** ([src/services/tickReplay.js](src/services/tickReplay.js) `_resolveReplayExpiryEnv`): the expiry **date** is always the recorded market fact; **Current-settings** mode only overrides strategy config (entry/exit/filters/risk/sizing), never the historical expiry. The expiry **type** (weekly/monthly) still comes from the settings source. An explicit override (e.g. EMA_RSI_ST deliberately trading next-week to dodge 0DTE) is honored as-is — only the auto-detect path is redirected to the recorded date. Replay-result cache bumped to **v8**.
+- **Backward-compatible**: recordings without `market.jsonl` log a warning and fall back to the prior per-session expiry pin — nothing crashes.
+- *Note*: capturing the **full option-chain snapshot** (per-strike bid/ask/volume/OI/tokens) and unifying option/VIX/OI recording into the same strategy-independent recorder is the next phase (enables future strategies to pick strikes the recorded strategies never held).
+
 ### Fixed — deep 5-agent re-audit: blocker/HIGH harness, lifecycle, persistence gaps
 
 Second adversarial pass over the live/harness and crash-recovery paths after the first audit. All fixes are on the real-order / restart-safety surfaces (still gated behind `LIVE_HARNESS_DRY_RUN=false` where they touch orders).

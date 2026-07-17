@@ -18,6 +18,12 @@ const { fyersDataSocket } = require('fyers-api-v3');
 const { notifyAuthError } = require('./notify');
 const { clearFyersToken } = require('../config/fyers');
 const tickRecorder         = require('./tickRecorder');
+// Lazy-loaded to avoid a require-cycle (marketContext → instrument → fyers) at
+// this module's load time, which is very early in app boot.
+let _marketContextMod = null;
+function _marketContext() {
+  return _marketContextMod || (_marketContextMod = require('../services/marketContext'));
+}
 
 const HEARTBEAT_MS         = 20_000;
 const MAX_BACKOFF          = 15_000;
@@ -227,6 +233,9 @@ class SocketManager {
         // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
         // Done before fan-out so even if a strategy throws, the tick is still captured.
         try { tickRecorder.recordSpotTick(t); } catch (_) {}
+        // Capture the day's immutable Market Context Snapshot once (strategy-independent).
+        // Fire-and-forget; cheap boolean guard on every tick, resolves at most once/day.
+        try { _marketContext().maybeCapture(); } catch (_) {}
         // Primary callback
         if (this._onSpotTick) {
           try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }

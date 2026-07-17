@@ -86,7 +86,10 @@ function requestCancel() {
 //     recordings now force the toggle OFF (the key is absent from their snapshot)
 //     so they reproduce their original entries — invalidate any results cached
 //     between the feature deploy and this fix, which may have run confirmation ON.
-const REPLAY_CACHE_VERSION = 7;
+// v8: expiry now resolved from the recorded Market Context Snapshot (market.jsonl)
+//     for BOTH snapshot and current-settings runs — old cache entries used the
+//     blank-auto-detect pin and must be invalidated.
+const REPLAY_CACHE_VERSION = 8;
 
 function _replayCacheDir() {
   return path.join(ROOT_DIR, "_replay_cache");
@@ -131,7 +134,72 @@ function _pinnedExpirySettings(snapshot) {
   return out;
 }
 
-function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) {
+// Map a replay mode to its per-strategy env-key prefix (e.g. "PA_OPTION_EXPIRY_*").
+const _MODE_TO_ENV_PREFIX = {
+  "pa-paper":       "PA",
+  "bb_rsi-paper":   "BB_RSI",
+  "ema_rsi_st-paper": "EMA_RSI_ST",
+  "orb-paper":      "ORB",
+  "ema9vwap-paper": "EMA9VWAP",
+  "trend-pb-paper": "TREND_PB",
+};
+
+// ── Market-context expiry resolution (the mismatch fix) ──────────────────────
+// Historical option EXPIRY must come from the recorded Market Context Snapshot,
+// never from "today". This resolves the expiry env-overlay a replay run applies:
+//
+//   • The expiry TYPE (weekly|monthly) is strategy CONFIG — it comes from the
+//     snapshot in snapshot mode, or from current process.env in current mode.
+//   • The expiry DATE is a MARKET FACT — always the recorded market.jsonl date
+//     for that type. Current settings can NEVER change it.
+//
+// An explicit override present in the active config source (e.g. EMA_RSI_ST
+// deliberately trading next-week to dodge 0DTE) is HONORED as-is — that override
+// is itself historical truth (snapshot) or a deliberate choice (current), and
+// clobbering it would break intentional non-nearest-expiry strategies. Only the
+// auto-detect path (blank override) is redirected to the recorded date — that is
+// exactly the path that used to leak today's expiry via new Date()/live REST.
+//
+// When no market.jsonl exists (recordings made before this feature), falls back
+// to the legacy snapshot pin so old days still replay without crashing.
+function _resolveReplayExpiryEnv({ marketContext, snapshot, mode, useCurrentSettings }) {
+  const prefix = _MODE_TO_ENV_PREFIX[mode] || null;
+  const snap = snapshot || {};
+  const cfg  = useCurrentSettings ? process.env : snap;
+
+  const perModeOverride = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
+  const commonOverride  = String(cfg.OPTION_EXPIRY_OVERRIDE || "").trim();
+  const effOverride     = perModeOverride || commonOverride;
+
+  const perModeType = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_TYPE`] || "").trim().toLowerCase() : "";
+  const commonType  = String(cfg.OPTION_EXPIRY_TYPE || "").trim().toLowerCase();
+  const type        = (perModeType || commonType) === "monthly" ? "monthly" : "weekly";
+
+  const _mirror = (date) => {
+    const env = { OPTION_EXPIRY_OVERRIDE: date, OPTION_EXPIRY_TYPE: type };
+    if (prefix) {
+      env[`${prefix}_OPTION_EXPIRY_OVERRIDE`] = date;
+      env[`${prefix}_OPTION_EXPIRY_TYPE`]     = type;
+    }
+    return env;
+  };
+
+  // Explicit override → honor it (historical truth / deliberate choice).
+  if (effOverride && effOverride.length >= 8) {
+    return { env: _mirror(effOverride), source: "explicit-override", date: effOverride, type };
+  }
+
+  // Auto-detect → redirect to the recorded market fact (the fix).
+  if (marketContext) {
+    const date = type === "monthly" ? marketContext.monthlyExpiry : marketContext.weeklyExpiry;
+    if (date) return { env: _mirror(date), source: "market-context", date, type };
+  }
+
+  // No market context (legacy recording) → prior behaviour (blank pin = auto-compute).
+  return { env: _pinnedExpirySettings(snap), source: "legacy-pin", date: null, type };
+}
+
+function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, expiryEnv }) {
   const dir = path.join(ROOT_DIR, date);
   // Sim mode: the result depends on the CURRENT value of the settings the
   // strategy reads — so key on those keys' current process.env values, using
@@ -142,18 +210,16 @@ function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings }) 
   // Snapshot mode keys on the recorded session-start env (immutable on disk).
   let settingsBasis;
   if (useCurrentSettings) {
-    // Expiry keys are pinned to the recorded snapshot during the run (see
-    // _pinnedExpirySettings), so key the cache on the pinned value — not the
-    // current env — or two different current-expiry values would split the
-    // cache despite producing the identical sim result.
     settingsBasis = {};
-    const pinned = _pinnedExpirySettings(sessionStart.settings);
-    for (const k of Object.keys(sessionStart.settings || {})) {
-      settingsBasis[k] = (k in pinned) ? pinned[k] : process.env[k];
-    }
+    for (const k of Object.keys(sessionStart.settings || {})) settingsBasis[k] = process.env[k];
   } else {
-    settingsBasis = sessionStart.settings || {};
+    settingsBasis = Object.assign({}, sessionStart.settings || {});
   }
+  // Overlay the resolved historical expiry (from the Market Context Snapshot) so
+  // the cache key reflects the contract the run will actually trade — and two
+  // different current-expiry values that both pin to the same recorded date share
+  // one cache entry instead of splitting it.
+  Object.assign(settingsBasis, expiryEnv || {});
   const basis = {
     v: REPLAY_CACHE_VERSION,
     mode,
@@ -273,6 +339,16 @@ async function loadSessionData({ date, mode, sessionId }) {
     throw new Error(`No recording found for ${date} at ${dir}`);
   }
 
+  // Immutable Market Context Snapshot (expiry/lot/strike-interval/meta) — the
+  // replay's source of truth for historical market facts. Absent for recordings
+  // made before this feature shipped; callers fall back to the legacy expiry pin.
+  let marketContext = null;
+  const _mcPath = path.join(dir, "market.jsonl");
+  if (fs.existsSync(_mcPath)) {
+    const _mc = _readJsonl(_mcPath);
+    if (_mc.length) marketContext = _mc[_mc.length - 1];   // one record/day; last wins if re-appended
+  }
+
   const sessions = _readJsonl(path.join(dir, "sessions.jsonl"));
   const startEvts = sessions.filter(s => s.e === "start" && s.mode === mode);
   if (startEvts.length === 0) {
@@ -329,6 +405,7 @@ async function loadSessionData({ date, mode, sessionId }) {
     optionTicks,
     vixTicks,
     oiTicks,
+    marketContext,
     spotPath: path.join(dir, "spot.jsonl"),
   };
 }
@@ -1000,6 +1077,21 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     console.log(`📼 [replay] ${mode} ${sessionId || date}: loading recorded session…`);
     const data = await loadSessionData({ date, mode, sessionId });
 
+    // 1a. Resolve the historical option expiry ONCE — from the recorded Market
+    //     Context Snapshot when available (both toggles), else the legacy pin.
+    //     Used for the cache key AND the env applied below, so they never drift.
+    const expiryResolution = _resolveReplayExpiryEnv({
+      marketContext: data.marketContext,
+      snapshot: data.sessionStart.settings,
+      mode,
+      useCurrentSettings,
+    });
+    if (!data.marketContext) {
+      console.warn(`⚠️ [replay] ${mode} ${date}: no Market Context Snapshot (market.jsonl) — expiry falls back to legacy pin; old-day option contract may mismatch. Re-record to fix.`);
+    } else {
+      console.log(`📼 [replay] expiry pinned from market context: ${expiryResolution.date || "(auto)"} (${expiryResolution.type}, ${expiryResolution.source})`);
+    }
+
     // 1b. Result cache: an identical re-run is deterministic, so short-circuit
     //     the ~80s tick stream if this exact (mode, date, session, settings,
     //     recorded-ticks) combination was computed before. Checked here — after
@@ -1007,6 +1099,7 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
     //     override or harness install — so an early return needs no cleanup.
     const cacheKey = _buildReplayCacheKey({
       mode, date, sessionStart: data.sessionStart, useCurrentSettings,
+      expiryEnv: expiryResolution.env,
     });
     if (!noCache) {
       const hit = _readReplayCache(cacheKey);
@@ -1055,13 +1148,17 @@ async function replaySession({ date, mode, sessionId, speed = 0, useCurrentSetti
       for (const _k of ["EMA_RSI_ST_CONFIRM_CANDLE_ENABLED", "BB_RSI_CONFIRM_CANDLE_ENABLED"]) {
         if (!(_k in _snapSettings)) _snapSettings[_k] = "false";
       }
+      // Overlay the resolved historical expiry LAST so it wins over the snapshot's
+      // own (possibly blank/auto-detected) expiry keys.
+      Object.assign(_snapSettings, expiryResolution.env);
       restoreEnv = _applySettingsOverride(_snapSettings);
       console.log(`📼 [replay] confirmation candle (snapshot): EMA_RSI_ST=${process.env.EMA_RSI_ST_CONFIRM_CANDLE_ENABLED} BB_RSI=${process.env.BB_RSI_CONFIRM_CANDLE_ENABLED}`);
     } else {
       // Simulator mode honors current settings for everything EXCEPT the option
-      // expiry — that's pinned to the recorded session so an old day resolves
-      // its own contract instead of today's (see _pinnedExpirySettings).
-      restoreEnv = _applySettingsOverride(_pinnedExpirySettings(data.sessionStart.settings));
+      // expiry — that's pinned to the recorded day's Market Context Snapshot so an
+      // old day resolves its own contract instead of today's (see
+      // _resolveReplayExpiryEnv). Current settings can never change the expiry date.
+      restoreEnv = _applySettingsOverride(expiryResolution.env);
       console.log(`📼 [replay] confirmation candle (current settings): EMA_RSI_ST=${process.env.EMA_RSI_ST_CONFIRM_CANDLE_ENABLED||'true'} BB_RSI=${process.env.BB_RSI_CONFIRM_CANDLE_ENABLED||'true'}`);
     }
 

@@ -700,6 +700,52 @@ async function isSymbolValidViaQuotes(symbol, _retried = false) {
   }
 }
 
+/**
+ * Resolve a complete, immutable Market Context Snapshot for the CURRENT trading
+ * day. Captured live (once per day) and frozen to disk so replay can reconstruct
+ * the market exactly as it existed — never re-deriving expiry from "today".
+ *
+ * At record time `new Date()` and the live Option-Chain REST are CORRECT (we're
+ * running on the trading day), which is the whole point: we freeze the truth now
+ * so an old-day replay six months later resolves its own contract, not today's.
+ *
+ * The weekly expiry prefers the live Option-Chain API (holiday-adjusted, the real
+ * nearest tradeable expiry), falling back to the computed next-Tuesday. Both
+ * expiries are stored as YYYY-MM-DD dates — the format instrument.js's manual
+ * override consumes — plus their Fyers symbol codes for reference.
+ *
+ * @returns {Promise<object>} market-context snapshot (no secrets/tokens).
+ */
+async function getMarketContext() {
+  let weeklyCode = null;
+  try { weeklyCode = await getNearestExpiryFromOptionChain(); } catch (_) { /* fall back below */ }
+  if (!weeklyCode) weeklyCode = getNearestThursdayExpiry();
+
+  let weeklyDate = null;
+  try { weeklyDate = formatDateToYYYYMMDD(expiryCodeToDate(weeklyCode)); }
+  catch (e) { console.warn(`[instrument] getMarketContext: weekly code→date failed for "${weeklyCode}": ${e.message}`); }
+
+  const monthlyCode = getLastTuesdayOfMonth();
+  let monthlyDate = null;
+  try { monthlyDate = formatDateToYYYYMMDD(expiryCodeToDate(monthlyCode)); }
+  catch (e) { console.warn(`[instrument] getMarketContext: monthly code→date failed for "${monthlyCode}": ${e.message}`); }
+
+  return {
+    index:            "NSE:NIFTY50-INDEX",
+    underlying:       "NIFTY",
+    exchange:         "NSE",
+    instrument:       getInstrument(),
+    strikeInterval:   50,
+    lotSize:          getLotSize().NIFTY_OPTIONS,
+    weeklyExpiry:     weeklyDate,     // YYYY-MM-DD — the historical market fact (replay pins this)
+    weeklyExpiryCode: weeklyCode,     // Fyers symbol code, informational
+    monthlyExpiry:    monthlyDate,    // YYYY-MM-DD
+    monthlyExpiryCode: monthlyCode,
+    futuresExpiry:    getFuturesExpiry(),
+    dataBroker:       "fyers",
+  };
+}
+
 module.exports = {
   get INSTRUMENT()    { return getInstrument(); },
   get STRIKE_OFFSET_CE() { return getStrikeOffsetCE(); },
@@ -713,6 +759,7 @@ module.exports = {
   getNearestThursdayExpiry,
   getFuturesExpiry,
   getProductType,
+  getMarketContext,            // async — resolve the day's immutable Market Context Snapshot
   validateAndGetOptionSymbol,  // ✅ Use this for paper/live option entry
 };
 

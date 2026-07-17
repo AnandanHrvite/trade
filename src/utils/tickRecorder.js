@@ -11,6 +11,10 @@
  *   vix     — every VIX REST fetch (live cache fills only, not cache hits)
  *   oi      — every NIFTY-futures OI sample (only while an OI filter is on)
  *   sessions — start/stop events with full settings + warm-up snapshot
+ *   market  — ONE immutable Market Context Snapshot per day (expiry, lot, strike
+ *             interval, tokens, meta). Strategy-independent; replay's source of
+ *             truth for historical market facts so an old day never resolves
+ *             today's expiry. Written once (first live spot tick).
  *
  * Files (per-day rotation, IST date):
  *   data/ticks/YYYY-MM-DD/spot.jsonl
@@ -18,6 +22,7 @@
  *   data/ticks/YYYY-MM-DD/vix.jsonl
  *   data/ticks/YYYY-MM-DD/oi.jsonl
  *   data/ticks/YYYY-MM-DD/sessions.jsonl
+ *   data/ticks/YYYY-MM-DD/market.jsonl
  *
  * Performance:
  *   - All writes are buffered in memory and flushed every FLUSH_INTERVAL_MS
@@ -44,6 +49,10 @@ const MAX_BUFFER_RECORDS = 30000;
 
 const ENABLED         = (process.env.TICK_RECORDER_ENABLED || "true").toLowerCase() !== "false";
 const RETAIN_DAYS     = parseInt(process.env.TICK_RECORDER_RETAIN_DAYS || "30", 10);
+
+// Bump when the market-context record shape changes so replay can gate on it.
+const MARKET_SCHEMA_VERSION   = 1;
+const RECORDER_VERSION        = 1;
 
 // ── Per-stream in-memory buffers ─────────────────────────────────────────────
 // Each entry is the raw JS object — JSON.stringify happens at flush time so the
@@ -291,6 +300,40 @@ function recordSessionStop({ mode, sessionId, reason }) {
   try { _drainBufferToSync("sessions", buffers.sessions); } catch (_) {}
 }
 
+/**
+ * Record the day's immutable Market Context Snapshot to market.jsonl.
+ * Idempotent: writes exactly once per IST day (first caller wins) — the market
+ * happens once, so the context is captured once and frozen. `ctx` must already
+ * carry a `date` ("YYYY-MM-DD"); everything else is copied verbatim.
+ *
+ * Written synchronously (append) because it's a single tiny record and callers
+ * fire it from an async, best-effort path — a lost async append on shutdown
+ * would leave the day un-replayable with correct expiry.
+ */
+function recordMarketContext(ctx) {
+  if (!ENABLED || !ctx) return false;
+  if (!_initialized) _init();
+  const day = ctx.date || istDateString(Date.now());
+  const dir = path.join(ROOT_DIR, day);
+  const file = path.join(dir, "market.jsonl");
+  try {
+    if (fs.existsSync(file)) return false;   // already captured for the day
+    fs.mkdirSync(dir, { recursive: true });
+    const rec = {
+      t: Date.now(),
+      e: "market_context",
+      schemaVersion:   MARKET_SCHEMA_VERSION,
+      recorderVersion: RECORDER_VERSION,
+      ...ctx,
+    };
+    fs.appendFileSync(file, JSON.stringify(rec) + "\n");
+    return true;
+  } catch (err) {
+    console.warn(`[tickRecorder] market context write failed (${day}): ${err.message}`);
+    return false;
+  }
+}
+
 // ── Settings snapshot helper ─────────────────────────────────────────────────
 // Whitelist of env-key prefixes/exact-names that influence strategy behaviour.
 // Anything matching is captured at session-start so the replay can be run with
@@ -401,6 +444,7 @@ module.exports = {
   recordOi,
   recordSessionStart,
   recordSessionStop,
+  recordMarketContext,
   snapshotSettings,
   flushAll,
   flushAllSync,
