@@ -1,0 +1,36 @@
+#!/bin/sh
+#
+# pre-push: only allow pushing after 16:00 IST on weekdays (Mon-Fri).
+# Weekends (Sat/Sun) have no restriction.
+# Escape hatch: ALLOW_PUSH=1 git push ...
+#
+# Project-level hook. Enable once per clone with:
+#   git config core.hooksPath .githooks
+#
+# Times are computed in Asia/Kolkata regardless of the machine's local timezone.
+
+if [ "$ALLOW_PUSH" = "1" ]; then
+  exit 0
+fi
+
+DOW=$(TZ='Asia/Kolkata' date +%u)   # 1=Mon .. 7=Sun
+HOUR=$(TZ='Asia/Kolkata' date +%H)  # 00..23 (zero-padded)
+HOUR=$((10#$HOUR))                  # force base-10 (avoid octal on 08/09)
+
+# Weekend: no restriction
+if [ "$DOW" -ge 6 ]; then
+  exit 0
+fi
+
+# Weekday before 16:00 IST -> block
+if [ "$HOUR" -lt 16 ]; then
+  echo "----------------------------------------------------------------" >&2
+  echo " PUSH BLOCKED: weekday pushes are only allowed after 16:00 IST." >&2
+  echo " Now: $(TZ='Asia/Kolkata' date '+%a %H:%M IST')" >&2
+  echo " Commit freely; push again after 4 PM, or on the weekend." >&2
+  echo " Emergency override:  ALLOW_PUSH=1 git push" >&2
+  echo "----------------------------------------------------------------" >&2
+  exit 1
+fi
+
+exit 0
