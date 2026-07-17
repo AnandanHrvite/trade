@@ -312,6 +312,7 @@ let tradeState = {
   // Daily loss kill switch — latched true when session loss >= MAX_DAILY_LOSS (₹)
   // Blocks ALL new entries for the rest of the day. Resets only on session restart.
   _dailyLossHit:         false,
+  _priorRealizedToday:   0,      // today's realized P&L from prior sessions (restart recovery; kept out of sessionPnl to avoid double-count)
   _maxTradesLoggedCandle: null,  // last candle time where max-trades log was emitted (avoid spam)
   // ── Pre-fetched option symbols (populated after each candle close, used at entry) ──
   _cachedCE: null,  // { symbol, expiry, strike, spot, invalid } pre-fetched CE symbol
@@ -1039,9 +1040,12 @@ async function squareOff(exitPrice, reason) {
 
   // ── Daily loss kill switch ────────────────────────────────────────────────────
   const MAX_DAILY_LOSS = _MAX_DAILY_LOSS;
-  if (!tradeState._dailyLossHit && tradeState.sessionPnl <= -Math.abs(MAX_DAILY_LOSS)) {
+  // Combine this session's P&L with any realized from earlier sessions today
+  // (restart recovery), so the day's budget can't be reset by a mid-day restart.
+  const _todayRealized = tradeState.sessionPnl + (tradeState._priorRealizedToday || 0);
+  if (!tradeState._dailyLossHit && _todayRealized <= -Math.abs(MAX_DAILY_LOSS)) {
     tradeState._dailyLossHit = true;
-    log(`🛑 [LIVE] DAILY LOSS LIMIT HIT — session loss ₹${Math.abs(tradeState.sessionPnl)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
+    log(`🛑 [LIVE] DAILY LOSS LIMIT HIT — today's loss ₹${Math.abs(_todayRealized)} >= ₹${MAX_DAILY_LOSS}. NO MORE ENTRIES TODAY.`);
   }
   // ── Consecutive loss circuit breaker (mirrors paperTrade v36) ────────────────
   if (netPnl < 0) {
@@ -2090,11 +2094,18 @@ router.get("/start", async (req, res) => {
   tradeState._chopConsecLosses     = 0;   // chop-guard streak (EMA_RSI_ST_MAX_CONSEC_LOSSES)
   tradeState._pauseUntilTime       = null;
   tradeState._dailyLossHit         = false; // reset daily kill switch on new session
+  tradeState._priorRealizedToday   = 0;     // today's realized P&L from PRIOR sessions (restart recovery)
   // ── Restart recovery: re-arm the daily-loss kill-switch from today's realized
   // live P&L. Without this, a crash/restart (or manual stop→start) mid-day reset
   // the loss budget to ₹0, letting the same day breach MAX_DAILY_LOSS repeatedly.
   // Reads this route's own live-session store (LT_FILE) and sums TODAY's (IST)
   // realized P&L across saved sessions.
+  //
+  // IMPORTANT: prior realized is kept in a SEPARATE field, not folded into
+  // sessionPnl. saveLiveSession() persists sessionPnl verbatim, so seeding it
+  // would write prior-P&L INTO the new session record and double-count it on the
+  // NEXT restart. sessionPnl stays this-session-only; the kill-switch checks the
+  // SUM (sessionPnl + _priorRealizedToday).
   try {
     const _today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     let _realized = 0;
@@ -2104,12 +2115,12 @@ router.get("/start", async (req, res) => {
       if (d === _today) _realized += Number(s.pnl) || 0;
     }
     if (_realized !== 0) {
-      tradeState.sessionPnl = parseFloat(_realized.toFixed(2));
-      if (tradeState.sessionPnl <= -Math.abs(_MAX_DAILY_LOSS)) {
+      tradeState._priorRealizedToday = parseFloat(_realized.toFixed(2));
+      if (tradeState._priorRealizedToday <= -Math.abs(_MAX_DAILY_LOSS)) {
         tradeState._dailyLossHit = true;
-        log(`♻️ [LIVE] Restart recovery — today's realized ₹${tradeState.sessionPnl} ≤ -₹${_MAX_DAILY_LOSS}: daily kill-switch RE-ARMED (no new entries)`);
+        log(`♻️ [LIVE] Restart recovery — today's realized ₹${tradeState._priorRealizedToday} ≤ -₹${_MAX_DAILY_LOSS}: daily kill-switch RE-ARMED (no new entries)`);
       } else {
-        log(`♻️ [LIVE] Restart recovery — seeded today's realized live P&L ₹${tradeState.sessionPnl}`);
+        log(`♻️ [LIVE] Restart recovery — today's prior realized live P&L ₹${tradeState._priorRealizedToday} (kill-switch tracks session + prior)`);
       }
     }
   } catch (e) { console.warn(`[LIVE] daily-loss restart recovery failed: ${e.message}`); }
