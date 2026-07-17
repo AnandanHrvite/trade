@@ -1148,16 +1148,14 @@ function stopSession() {
 
   socketManager.removeCallback(CALLBACK_ID);
 
-  if (!sharedSocketState.isActive()) {
-    // No primary mode — check if we should stop socket
-    // Only stop if we're the last user
-    const otherPA = sharedSocketState.getPAMode();
-    if (!otherPA || otherPA === "PA_LIVE") {
-      socketManager.stop();
-    }
-  }
-
+  // Clear THIS mode first, then stop the shared Fyers socket ONLY if no other
+  // strategy is still subscribed. The old guard only checked EMA_RSI_ST, so
+  // stopping PA live could tear the shared socket out from under a live
+  // ORB / BB_RSI / Trend_PB / EMA9_VWAP position.
   sharedSocketState.clearPA();
+  if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+    socketManager.stop();
+  }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 
   savePASession();

@@ -1353,16 +1353,14 @@ function stopSession() {
 
   socketManager.removeCallback(CALLBACK_ID);
 
-  if (!sharedSocketState.isActive()) {
-    // No primary mode — check if we should stop socket
-    // Only stop if we're the last user
-    const otherBbRsi = sharedSocketState.getBbRsiMode();
-    if (!otherBbRsi || otherBbRsi === "BB_RSI_LIVE") {
-      socketManager.stop();
-    }
-  }
-
+  // Clear THIS mode first, then stop the shared Fyers socket ONLY if no other
+  // strategy is still subscribed. The old guard only checked EMA_RSI_ST, so
+  // stopping BB_RSI live could tear the shared socket out from under a live
+  // ORB / PA / Trend_PB / EMA9_VWAP position.
   sharedSocketState.clearBbRsi();
+  if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+    socketManager.stop();
+  }
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 
   saveBbRsiSession();

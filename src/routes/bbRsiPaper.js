@@ -1267,19 +1267,14 @@ function stopSession() {
 
   socketManager.removeCallback(CALLBACK_ID);
 
-  // If we were the only socket user and no primary mode is active, stop socket
-  if (!sharedSocketState.isActive() && !sharedSocketState.isEma9VwapActive() && socketManager.isRunning()) {
-    // Don't stop — primary mode might still need it
-    // Only stop if no primary mode AND no other bb_rsi mode
-    if (!sharedSocketState.isBbRsiActive() || sharedSocketState.getBbRsiMode() === "BB_RSI_PAPER") {
-      // Check if primary mode needs it
-      if (!sharedSocketState.isActive()) {
-        socketManager.stop();
-      }
-    }
-  }
-
+  // Clear THIS mode first, then stop the shared Fyers socket ONLY if no other
+  // strategy is still subscribed. The old guard only knew about EMA_RSI_ST +
+  // EMA9_VWAP, so stopping BB_RSI could tear the shared socket out from under a
+  // live ORB / PA / Trend_PB position (its per-tick stop would stop firing).
   sharedSocketState.clearBbRsi();
+  if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+    socketManager.stop();
+  }
 
   if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
 

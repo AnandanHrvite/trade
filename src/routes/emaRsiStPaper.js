@@ -2240,16 +2240,19 @@ router.get("/stop", async (req, res) => {
   }
 
   stopOptionPolling();
-  // Stop tick simulator if in sim mode, otherwise stop socket
+  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+  // Clear THIS (primary) mode first, then stop the shared socket ONLY if no other
+  // strategy (ORB/PA/BB_RSI/Trend_PB/EMA9_VWAP) is still subscribed. The old guard
+  // only checked BB_RSI + EMA9_VWAP, so stopping EMA_RSI_ST could tear the shared
+  // socket out from under a live ORB / PA / Trend_PB position.
+  sharedSocketState.clear();
   if (ptState._simMode) {
     tickSimulator.stop();
     ptState._simMode = false;
     ptState._simScenario = null;
-  } else if (!sharedSocketState.isBbRsiActive() && !sharedSocketState.isEma9VwapActive()) {
+  } else if (!sharedSocketState.isAnyActive() && socketManager.isRunning()) {
     socketManager.stop();
   }
-  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
-  sharedSocketState.clear();
   ptState.running = false;  // ← FIX: was missing — UI stayed "LIVE" after manual stop
 
   try {
@@ -4710,5 +4713,30 @@ router.post("/simulate/start", async (req, res) => {
     res.json({ success: false, error: err.message });
   }
 });
+
+/**
+ * stopSession() — square off + stop the session, callable by app.js
+ * gracefulShutdown on SIGTERM / auto-deploy. Without this export the shutdown
+ * routeMap skipped EMA_RSI_ST_PAPER (typeof stopSession !== "function"), so a
+ * harness-live Zerodha position was never squared off on a deploy/restart and the
+ * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
+ */
+function stopSession(reason = "Shutdown square-off") {
+  if (!ptState.running) return;
+  try {
+    if (ptState.position && ptState.currentBar) {
+      simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
+    }
+  } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+  try { stopOptionPolling(); } catch (_) {}
+  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+  sharedSocketState.clear();
+  if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+    socketManager.stop();
+  }
+  ptState.running = false;
+  try { saveSession(); } catch (_) {}
+}
+router.stopSession = stopSession;
 
 module.exports = router;

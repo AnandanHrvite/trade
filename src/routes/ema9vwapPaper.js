@@ -4681,4 +4681,29 @@ router.post("/simulate/start", async (req, res) => {
   }
 });
 
+/**
+ * stopSession() — square off + stop the session, callable by app.js
+ * gracefulShutdown on SIGTERM / auto-deploy. Without this export the shutdown
+ * routeMap skipped EMA9VWAP_PAPER (typeof stopSession !== "function"), so a
+ * harness-live position was never squared off on a deploy/restart and the
+ * shutdown Telegram falsely reported it squared. Idempotent: no-op if not running.
+ */
+function stopSession(reason = "Shutdown square-off") {
+  if (!ptState.running) return;
+  try {
+    if (ptState.position && ptState.currentBar) {
+      simulateSell(ptState.currentBar.close, reason, ptState.currentBar.close);
+    }
+  } catch (e) { try { log(`⚠️ [PAPER] stopSession squareoff error: ${e.message}`); } catch (_) {} }
+  try { stopOptionPolling(); } catch (_) {}
+  if (_autoStopTimer) { clearTimeout(_autoStopTimer); _autoStopTimer = null; }
+  sharedSocketState.clearEma9Vwap();
+  if (!ptState._simMode && !sharedSocketState.isAnyActive() && socketManager.isRunning()) {
+    socketManager.stop();
+  }
+  ptState.running = false;
+  try { saveSession(); } catch (_) {}
+}
+router.stopSession = stopSession;
+
 module.exports = router;

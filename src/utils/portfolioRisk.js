@@ -34,13 +34,27 @@ function _recordPnl(t) {
   return null;
 }
 
+// Short-lived memo of the last aggregate. getTodayRealized reads 6 growing JSONL
+// files synchronously; the intra-tick entry gates (EMA_RSI_ST / EMA9_VWAP) can
+// call this on EVERY spot tick while flat, so at ~4-10 ticks/s an armed cap would
+// otherwise do ~24-60 readFileSync+JSON.parse per second on the shared event
+// loop. Realized P&L only changes on an exit, so a few seconds' staleness is
+// harmless for a daily-loss breaker — cache it and cap disk reads at ~1/TTL.
+let _memo = { date: null, ts: 0, val: null };
+const _MEMO_TTL_MS = 3000;
+
 /**
  * Sum today's (IST) realized P&L across all paper strategy modes.
- * Pure read of on-disk logs — safe to call on any entry check.
+ * Pure read of on-disk logs — safe to call on any entry check. Memoized for a few
+ * seconds so per-tick callers can't stall the event loop.
  * @returns {{ total: number, byMode: Object<string, number> }}
  */
 function getTodayRealized() {
   const dateStr = tradeLogger.istDateString();
+  const now = Date.now();
+  if (_memo.val && _memo.date === dateStr && (now - _memo.ts) < _MEMO_TTL_MS) {
+    return _memo.val;
+  }
   const byMode = {};
   let total = 0;
   for (const mode of PAPER_MODES) {
@@ -55,7 +69,9 @@ function getTodayRealized() {
     byMode[mode] = sum;
     total += sum;
   }
-  return { total: parseFloat(total.toFixed(2)), byMode };
+  const val = { total: parseFloat(total.toFixed(2)), byMode };
+  _memo = { date: dateStr, ts: now, val };
+  return val;
 }
 
 function _cap() {
