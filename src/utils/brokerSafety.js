@@ -78,6 +78,27 @@ function isTransientNetwork(err) {
   return TRANSIENT_MSG.some((needle) => msg.includes(needle));
 }
 
+// ── Connect-phase classifier (for NON-idempotent writes only) ─────────────────
+// A write may only be retried if the request PROVABLY never reached the broker —
+// i.e. the failure happened before any bytes were sent (DNS/connect refused).
+// Errors like ETIMEDOUT / ECONNRESET / EPIPE / "socket hang up" / 502 / 503 /
+// 504 / 429 can all occur AFTER the exchange accepted the order (the response
+// was lost, not the request), so retrying them risks a DUPLICATE FILL. Those are
+// deliberately EXCLUDED here even though isTransientNetwork() (reads) treats them
+// as retryable.
+const CONNECT_PHASE_CODES = new Set([
+  "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH",
+]);
+function isConnectPhaseError(err) {
+  if (!err) return false;
+  const code = err.code && String(err.code).toUpperCase();
+  if (code && CONNECT_PHASE_CODES.has(code)) return true;
+  // DNS failures sometimes surface only in the message.
+  const msg = (err.message || String(err)).toLowerCase();
+  return msg.includes("getaddrinfo") || msg.includes("econnrefused")
+      || msg.includes("dns");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CircuitBreaker
 // ─────────────────────────────────────────────────────────────────────────────
@@ -218,9 +239,12 @@ async function withCautiousRetry(fn, { attempts = 2, baseMs = 200, label = "writ
     catch (err) {
       lastErr = err;
       if (i === attempts - 1) throw err;
-      if (!isTransientNetwork(err)) throw err;
+      // ONLY retry when the request provably never reached the broker. A
+      // response-phase transient (ETIMEDOUT/ECONNRESET/5xx/429) may mean the
+      // order is already live — retrying it would double-fill, so we surface it.
+      if (!isConnectPhaseError(err)) throw err;
       const delay = baseMs * (i + 1);
-      console.warn(`[CautiousRetry:${label}] pre-flight network error (${err.message}); retry ${i + 1}/${attempts - 1} in ${delay}ms`);
+      console.warn(`[CautiousRetry:${label}] pre-flight connect error (${err.message}); retry ${i + 1}/${attempts - 1} in ${delay}ms`);
       await sleep(delay);
     }
   }
@@ -273,5 +297,6 @@ module.exports = {
   withRetry,
   withCautiousRetry,
   isTransientNetwork,
+  isConnectPhaseError,
   safetyConfig,
 };

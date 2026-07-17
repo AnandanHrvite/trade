@@ -32,8 +32,12 @@
  *     Use for at least one full session to verify decisions match paper.
  *
  *   LIVE (LIVE_HARNESS_DRY_RUN=false)
- *     Places real orders via fyersBroker (PA, BB_RSI) or zerodhaBroker (EMA_RSI_ST).
- *     Hard SL on exchange via placeSLMOrder when enabled.
+ *     Places real market entry/exit orders via fyersBroker (PA, BB_RSI, ORB)
+ *     or zerodhaBroker (EMA_RSI_ST). NOTE: the harness does NOT place a resting
+ *     exchange stop-loss — paper's stopLoss is a SPOT level, not an option-
+ *     premium trigger, so it can't be forwarded verbatim as an option SL-M. The
+ *     in-process per-tick stop is the only stop today. (See TODO: derive an
+ *     option-premium SL-M from the spot stop before enabling exchange stops.)
  *
  * Concurrency:
  *   Multiple harnesses (one per mode) can be installed at once — each registers
@@ -57,6 +61,13 @@ const _harnesses = new Map();    // mode → config
 
 // In-memory tracking of harness-placed orders for reconciliation + status
 const _liveOrders = new Map();   // sessionId → [{symbol, side, qty, orderId, ts, status, ...}]
+
+// Authoritative record of a CONFIRMED real broker position per mode. Set only
+// when a real BUY actually fills; cleared on real exit. The exit hook must NOT
+// send a SELL unless this says we truly hold the position — otherwise a
+// rejected/failed entry (paper still holds a virtual long) would turn into a
+// naked SHORT when paper later "exits". Keyed by mode → { symbol, qty, orderId }.
+const _realPositions = new Map();
 
 // Event log persisted to disk so the "Recent harness events" panel survives a
 // server restart / deploy (the ring buffer used to be wiped on every reboot).
@@ -138,6 +149,9 @@ function _makeEntryHook(cfg) {
     })
       .then(result => {
         if (result && result.success) {
+          // Record the confirmed real position so the exit hook knows we truly
+          // hold it. Without this, a later paper exit would fire a naked SELL.
+          _realPositions.set(cfg.mode, { symbol: p.symbol, qty: p.qty, orderId: result.orderId, ts: Date.now() });
           _logEvent({ mode: cfg.mode, event: "REAL_ENTRY_OK", orderId: result.orderId, symbol: p.symbol, qty: p.qty });
           console.log(`✅ [HARNESS LIVE][${cfg.mode}] BUY filled — orderId=${result.orderId}`);
           // Log to live trade log (separate from paper log)
@@ -180,10 +194,30 @@ function _makeExitHook(cfg) {
       return;
     }
 
+    // Only square off a position we PROVABLY hold. If the entry never filled
+    // (rejected/errored), paper still carries a virtual long — selling here
+    // would open a naked SHORT. Skip and stay flat.
+    const real = _realPositions.get(cfg.mode);
+    if (!real) {
+      _logEvent({ mode: cfg.mode, event: "REAL_EXIT_SKIPPED_NO_POSITION", symbol: p.symbol });
+      console.warn(`⏭️ [HARNESS LIVE][${cfg.mode}] Paper exit but no confirmed real position — skipping SELL (not short-selling ${p.symbol}).`);
+      return;
+    }
+    // Use the qty we actually bought as authoritative; never send a null qty.
+    const exitQty = real.qty || p.qty || cfg.defaultQty;
+    if (!exitQty || exitQty <= 0) {
+      _logEvent({ mode: cfg.mode, event: "REAL_EXIT_ABORT_BAD_QTY", symbol: p.symbol });
+      console.error(`🚨 [HARNESS LIVE][${cfg.mode}] Exit aborted — could not resolve a valid qty for ${p.symbol}. MANUAL square-off required.`);
+      try { notify.sendIfMaster(`🚨 ${cfg.mode} LIVE EXIT ABORTED — bad qty for ${p.symbol}. Square off manually NOW.`); } catch (_) {}
+      return;
+    }
+    // Clear the record up-front so a duplicate exit notify can't double-sell.
+    _realPositions.delete(cfg.mode);
+
     _placeOrder({
       broker:      cfg.broker,
-      symbol:      p.symbol,
-      qty:         p.qty || cfg.defaultQty,
+      symbol:      real.symbol || p.symbol,
+      qty:         exitQty,
       sideAction:  "SELL",
       isFutures:   cfg.isFutures,
       tag:         `${cfg.mode}-HARN-EXIT`,
@@ -284,6 +318,13 @@ function uninstallHarness(mode) {
 function isInstalled(mode) {
   return mode ? _harnesses.has(mode) : _harnesses.size > 0;
 }
+// True if ANY installed harness is placing REAL orders (not dry-run). Used by
+// the shutdown path: harness-live sessions run under a *_PAPER mode string, so
+// the mode list alone would misclassify them as paper and skip the squareoff.
+function hasLiveHarness() {
+  for (const cfg of _harnesses.values()) if (!cfg.dryRun) return true;
+  return false;
+}
 function getConfig(mode) {
   if (mode) return _harnesses.has(mode) ? { ..._harnesses.get(mode) } : null;
   // No mode → first installed config (legacy single-harness callers).
@@ -299,6 +340,7 @@ module.exports = {
   installHarness,
   uninstallHarness,
   isInstalled,
+  hasLiveHarness,
   getConfig,
   getRecentEvents,
 };

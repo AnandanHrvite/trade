@@ -219,7 +219,7 @@ async function placeMarketOrder(fyersSymbol, side, qty, orderTag = "ALGO_LIVE", 
     product,
     order_type:       kite.ORDER_TYPE_MARKET,
     validity:         kite.VALIDITY_DAY,
-    tag:              orderTag.substring(0, 20),
+    tag:              String(orderTag || "EMA_RSI_ST").substring(0, 20),
   };
   const sideLabel = transactionType === kite.TRANSACTION_TYPE_BUY ? "BUY" : "SELL";
   console.log(`[ZerodhaBroker] placeMarketOrder: ${sideLabel} ${qty} × ${tradingsymbol} (${exchange}) tag=${orderTag}`);
