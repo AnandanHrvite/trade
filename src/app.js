@@ -2790,17 +2790,27 @@ async function gracefulShutdown(signal) {
     }
 
     const modeList = activeModes.join(", ");
-    const hasLive = activeModes.some(m => m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" || m === "ORB_LIVE");
-    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList} — stopping sessions...`);
+    // A harness-live session runs under a *_PAPER mode string, so the mode list
+    // alone can't tell us real orders are in play — ask the harness directly.
+    let _harnessLive = false;
+    try { _harnessLive = require("./services/liveHarness").hasLiveHarness(); } catch (_) {}
+    const hasLive = _harnessLive || activeModes.some(m =>
+      m === "EMA_RSI_ST_LIVE" || m === "BB_RSI_LIVE" || m === "PA_LIVE" ||
+      m === "ORB_LIVE" || m === "EMA9VWAP_LIVE" || m === "TREND_PB_LIVE");
+    console.warn(`⚠️ [SHUTDOWN] Active modes: ${modeList}${_harnessLive ? " (harness LIVE)" : ""} — stopping sessions...`);
 
-    // Call stopSession() on each active route — this triggers squareOff for live modes
+    // Call stopSession() on each active route — this triggers squareOff for live
+    // modes. Routes without a stopSession export are skipped by the guard below.
     const routeMap = {
+      "EMA_RSI_ST_LIVE": require("./routes/emaRsiStLive"),
+      "EMA_RSI_ST_PAPER":require("./routes/emaRsiStPaper"),
       "BB_RSI_LIVE":     require("./routes/bbRsiLive"),
       "BB_RSI_PAPER":    require("./routes/bbRsiPaper"),
       "PA_LIVE":        require("./routes/paLive"),
       "PA_PAPER":       require("./routes/paPaper"),
       "ORB_PAPER":      require("./routes/orbPaper"),
       "ORB_LIVE":       require("./routes/orbLive"),
+      "EMA9VWAP_PAPER": require("./routes/ema9vwapPaper"),
       "TREND_PB_PAPER": require("./routes/trendPbPaper"),
     };
     for (const mode of activeModes) {
