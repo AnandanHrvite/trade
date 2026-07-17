@@ -470,6 +470,9 @@
   </div>
 
   <p>Live orders go through <strong>Zerodha</strong>; all the price data comes from <strong>Fyers</strong>. The maths never changes with the market's mood &mdash; the same rules run whether NIFTY is calm or wild.</p>
+
+  <div class="tv-chart" id="ers-session"></div>
+  <p class="tv-cap"><b>One whole trend day, start to finish.</b> The market drifts <em>down</em> all morning &mdash; the blue EMA20 sits below the purple EMA50, so there's no trend to follow and we simply wait. Around <b>10:50</b> the tide turns: price lifts and the blue line crosses back above the purple one. A green candle closes above the EMAs (yellow dot), the next candle pushes further up as proof, and we <b>BUY a CE near 24,237</b>. From there the position just rides the climb &mdash; the safety line keeps trailing up underneath &mdash; until early afternoon, when a pullback finally dips to that trailing line and the trend breaks, closing us out (<b>EXIT near 24,342</b>, about +105 spot points). This is one clean example day; most days never line up all four checks and we don't trade at all.</p>
 </div>
 
 <!-- ════════════════════════════════════════════════ 02 ═══ -->
@@ -809,10 +812,18 @@
 <!-- (identical block in every strategy guide)                -->
 <!-- ══════════════════════════════════════════════════════ -->
 <script>
+/* ============================================================================
+ * TVChart v2 — dependency-free TradingView-style candlestick renderer.
+ * Adds: OHLC header, subtitle, bottom time axis, last-price tag/line,
+ *       denser-candle support. Backward-compatible spec from v1.
+ * Pure buildSVG(spec) -> string (no DOM), never throws on bad data.
+ * ==========================================================================*/
 (function (global) {
   "use strict";
   function isNum(x) { return typeof x === "number" && isFinite(x); }
   function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function fmt(v) { return isNum(v) ? v.toFixed(2).replace(/\.00$/,"") : "—"; }
+
   function priceRange(spec) {
     var lo = Infinity, hi = -Infinity;
     function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
@@ -824,64 +835,106 @@
     if(lo===hi){ lo-=1; hi+=1; }
     var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
   }
+
   function buildSVG(spec) {
     spec = spec||{};
     var candles = spec.candles||[]; var n = candles.length;
     if(!n) return '<div class="tv-empty">chart data unavailable</div>';
-    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var W=880, H=440, padL=6, padR=74, padT=52, padB=40;
     var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
-    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
-    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    var slot=plotW/n; var cw=Math.max(2,Math.min(20,slot*0.66)); var wickW=Math.max(0.8,cw*0.12);
+    var up="#26a69a",down="#ef5350",grid="#1b2636",axis="#5a7499",txt="#e8eef8",mut="#8b98ac";
     function X(i){ return padL+slot*(i+0.5); }
     function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
     var out=[];
     out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
-    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1421"/>');
+
+    // horizontal price grid + right-side labels
     for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
       out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
-      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="10.5" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+
+    // vertical time grid + bottom axis labels (every ~1/7 of the candles)
+    var times = spec.times || [];
+    var step = Math.max(1, Math.round(n/7));
+    for(var t=0;t<n;t+=step){ var tx=X(t);
+      out.push('<line x1="'+tx+'" y1="'+padT+'" x2="'+tx+'" y2="'+(H-padB)+'" stroke="'+grid+'" stroke-width="0.7" opacity="0.5"/>');
+      if(times[t]) out.push('<text x="'+tx+'" y="'+(H-padB+15)+'" fill="'+axis+'" font-size="10" text-anchor="middle" font-family="system-ui">'+esc(times[t])+'</text>'); }
+
+    // zones (e.g. ORB opening-range box)
     (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
       var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
       out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
-      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="10.5" font-weight="600">'+esc(z.label)+'</text>'); });
+
+    // band envelopes (VWAP band / Bollinger)
     (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
       if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
         for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
-        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.08)")+'"/>');
         [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1.3" opacity="0.85"/>'); }); }
       if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#a78bfa")+'" stroke-width="1" stroke-dasharray="2 3" opacity="0.7"/>'); } });
+
+    // candlesticks
     candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
       var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
-      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
-      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
-      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+      if(isNum(h)&&isNum(lw)) out.push('<rect x="'+(cx-wickW/2)+'" y="'+Y(h)+'" width="'+wickW+'" height="'+Math.max(0.5,Y(lw)-Y(h))+'" fill="'+col+'"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'"/>'); });
+
+    // overlay indicator lines (EMA / VWAP / MAs)
     (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
-      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.6)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+
+    // last-price dashed line + right-axis tag (TradingView style)
+    if(spec.lastPriceTag !== false){ var last=candles[n-1]; if(last&&isNum(last[3])){ var lp=last[3], ly=Y(lp);
+      var lcol=(isNum(last[0])&&lp>=last[0])?up:down;
+      out.push('<line x1="'+padL+'" y1="'+ly+'" x2="'+(W-padR)+'" y2="'+ly+'" stroke="'+lcol+'" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.7"/>');
+      out.push('<rect x="'+(W-padR)+'" y="'+(ly-8)+'" width="'+padR+'" height="16" fill="'+lcol+'"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(ly+3.5)+'" fill="#0d1421" font-size="10.5" font-weight="700" font-family="monospace">'+lp.toFixed(2)+'</text>'); } }
+
+    // markers (buy / exit / dot)
     (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
       var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
       var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
       if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
         out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
-      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'" stroke="#0d1421" stroke-width="1"/>');
       if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
-        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
-        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
-    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
-    var lx=padL, ly=H-8;
-    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
-      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
-      lx+=22+lg.label.length*6.4; });
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.94"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1421" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+
+    // header: title, subtitle, and OHLC readout (TradingView top-left)
+    out.push('<text x="'+padL+'" y="17" fill="'+txt+'" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    if(spec.subtitle) out.push('<text x="'+padL+'" y="32" fill="'+mut+'" font-size="10.5" font-family="system-ui">'+esc(spec.subtitle)+'</text>');
+    if(spec.ohlc !== false){ var f=candles[n-1]; if(f){ var oc=(isNum(f[0])&&isNum(f[3])&&f[3]>=f[0])?up:down;
+      var parts=[["O",f[0]],["H",f[1]],["L",f[2]],["C",f[3]]], hx=spec.subtitle?padL:padL, hy=spec.subtitle?46:32;
+      var lx=padL;
+      parts.forEach(function(p){ out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+mut+'">'+p[0]+'</text>');
+        lx+=11; out.push('<text x="'+lx+'" y="'+hy+'" font-size="10.5" font-family="monospace" fill="'+oc+'">'+fmt(p[1])+'</text>'); lx+=(fmt(p[1]).length*6.4)+10; }); } }
+
+    // legend (bottom-left, above time axis)
+    var lgx=padL, lgy=H-4;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lgx+'" y="'+(lgy-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lgx+18)+'" y="'+(lgy-4)+'" fill="'+axis+'" font-size="10" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lgx+=22+lg.label.length*6.1; });
+
     out.push("</svg>"); return out.join("");
   }
-  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+
+  var TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+  global.TVChart = TVChart;
 })(window);
 </script>
 
 <script>
 (function () {
   var render = function () {
+    // Chart 0 — a whole EMA_RSI_ST trend day: morning down-drift → EMA20 crosses EMA50 → signal+proof → BUY CE → EMA-trail EXIT
+    TVChart.render("ers-session", {"title":"NIFTY 50 Index","subtitle":"5m · NSE · an EMA_RSI_ST trend day","times":["09:15","09:20","09:25","09:30","09:35","09:40","09:45","09:50","09:55","10:00","10:05","10:10","10:15","10:20","10:25","10:30","10:35","10:40","10:45","10:50","10:55","11:00","11:05","11:10","11:15","11:20","11:25","11:30","11:35","11:40","11:45","11:50","11:55","12:00","12:05","12:10","12:15","12:20","12:25","12:30","12:35","12:40","12:45","12:50","12:55","13:00","13:05","13:10","13:15","13:20","13:25","13:30","13:35","13:40","13:45","13:50","13:55","14:00"],"candles":[[24181,24189,24177,24185],[24185,24194.8,24176.2,24186],[24186,24192.6,24177.5,24184.1],[24184.1,24191.5,24171,24178.4],[24178.4,24186.9,24162.8,24171.2],[24171.2,24176.3,24160.5,24165.6],[24165.6,24174.6,24154.7,24163.7],[24163.7,24170.4,24158.1,24164.8],[24164.8,24173.9,24156.6,24165.8],[24165.8,24173.6,24155.9,24163.7],[24163.7,24169.9,24152,24158.1],[24158.1,24167,24141.9,24150.8],[24150.8,24155.4,24140.8,24145.3],[24145.3,24153.9,24134.8,24143.5],[24143.5,24169,24136.5,24162],[24162,24184,24155,24177],[24177,24200.6,24168.4,24192],[24192,24211.5,24187.5,24207],[24207,24222,24198.1,24213],[24213,24228.2,24206.9,24222.1],[24222.1,24238,24214.3,24230.2],[24230.2,24244.7,24222,24236.6],[24236.6,24247.2,24231,24241.6],[24241.6,24255.1,24232.6,24246.1],[24246.1,24256.3,24241,24251.2],[24251.2,24266.2,24242.8,24257.8],[24257.8,24273.4,24250.3,24266],[24266,24281.8,24259.4,24275.2],[24275.2,24293.1,24266.4,24284.3],[24284.3,24296.3,24280.3,24292.3],[24292.3,24307.4,24283.5,24298.6],[24298.6,24310.2,24292.1,24303.6],[24303.6,24315.6,24296.2,24308.1],[24308.1,24321.7,24299.7,24313.3],[24313.3,24325,24308.2,24319.9],[24319.9,24337.1,24310.9,24328.1],[24328.1,24342.9,24322.5,24337.3],[24337.3,24354.6,24329.2,24346.4],[24346.4,24362.2,24338.6,24354.4],[24354.4,24366.8,24348.3,24360.7],[24360.7,24374.6,24351.8,24365.6],[24365.6,24374.7,24361.1,24370.2],[24370.2,24384,24361.5,24375.3],[24375.3,24389,24368.3,24382],[24382,24389,24369.3,24376.3],[24376.3,24384.9,24359.4,24368],[24368,24372.6,24356.4,24360.9],[24360.9,24369.9,24345.9,24354.8],[24354.8,24360.9,24342.7,24348.8],[24348.8,24356.6,24334.2,24342],[24342,24350.1,24322.9,24331],[24331,24336.6,24320.2,24325.8],[24325.8,24334.8,24312.4,24321.4],[24321.4,24326.4,24312.1,24317.1],[24317.1,24325.5,24304.1,24312.5],[24312.5,24319.9,24299.6,24307],[24307,24313.6,24293.9,24300.5],[24300.5,24309.3,24284.2,24293]],"overlays":[{"name":"EMA20","color":"#3b82f6","data":[24185,24185.1,24185,24184.4,24183.1,24181.5,24179.8,24178.3,24177.1,24175.9,24174.2,24171.9,24169.4,24166.9,24166.5,24167.5,24169.8,24173.3,24177.1,24181.4,24186.1,24190.9,24195.7,24200.5,24205.3,24210.3,24215.6,24221.3,24227.3,24233.5,24239.7,24245.8,24251.7,24257.6,24263.5,24269.7,24276.1,24282.8,24289.6,24296.4,24303,24309.4,24315.7,24322,24327.2,24331,24333.9,24335.9,24337.1,24337.6,24337,24335.9,24334.5,24332.9,24330.9,24328.6,24326,24322.8]},{"name":"EMA50","color":"#a78bfa","data":[24185,24185,24185,24184.7,24184.2,24183.5,24182.7,24182,24181.4,24180.7,24179.8,24178.7,24177.3,24176,24175.5,24175.5,24176.2,24177.4,24178.8,24180.5,24182.4,24184.6,24186.8,24189.1,24191.5,24194.1,24197,24200,24203.3,24206.8,24210.4,24214.1,24217.8,24221.5,24225.4,24229.4,24233.6,24238.1,24242.6,24247.2,24251.9,24256.5,24261.2,24265.9,24270.3,24274.1,24277.5,24280.5,24283.2,24285.5,24287.3,24288.8,24290.1,24291.1,24292,24292.6,24292.9,24292.9]}],"markers":[{"i":20,"type":"dot","price":24230.2},{"i":21,"type":"buy","price":24236.6,"text":"BUY CE 24237"},{"i":49,"type":"exit","price":24342,"text":"EXIT 24342"}],"legend":[{"color":"#3b82f6","label":"EMA20"},{"color":"#a78bfa","label":"EMA50"},{"color":"#26a69a","label":"BUY"},{"color":"#ef5350","label":"EXIT / trail"}]});
     // Chart 1 — a clean CE entry: trend intact (EMA20>EMA50) → signal → proof → BUY → EMA21-trail EXIT
     TVChart.render("ers-entry", {
       title: "EMA_RSI_ST — 5-min NIFTY (a clean CE entry)",
