@@ -134,14 +134,17 @@ function _pinnedExpirySettings(snapshot) {
   return out;
 }
 
-// Map a replay mode to its per-strategy env-key prefix (e.g. "PA_OPTION_EXPIRY_*").
+// Map a replay mode to the per-strategy env-key prefix its paper engine actually
+// reads. ONLY strategies that pass a `mode` arg to instrument.validateAndGetOptionSymbol
+// consult a `{PREFIX}_OPTION_EXPIRY_*` key; bb_rsi and pa call it with NO mode, so
+// they read ONLY the common OPTION_EXPIRY_* keys — listing them here would promote
+// an inert per-mode override into the common key and diverge replay from paper.
 const _MODE_TO_ENV_PREFIX = {
-  "pa-paper":       "PA",
-  "bb_rsi-paper":   "BB_RSI",
-  "ema_rsi_st-paper": "EMA_RSI_ST",
-  "orb-paper":      "ORB",
-  "ema9vwap-paper": "EMA9VWAP",
-  "trend-pb-paper": "TREND_PB",
+  "ema_rsi_st-paper": "EMA_RSI_ST",   // validateAndGetOptionSymbol(spot, side, 'ema_rsi_st')
+  "orb-paper":        "ORB",          // (…, 'ORB')
+  "ema9vwap-paper":   "EMA9VWAP",     // (…, 'ema9vwap')
+  "trend-pb-paper":   "TREND_PB",     // (…, 'TREND_PB')
+  // bb_rsi-paper / pa-paper: NO mode arg → common OPTION_EXPIRY_* only (prefix null).
 };
 
 // ── Market-context expiry resolution (the mismatch fix) ──────────────────────
@@ -150,35 +153,38 @@ const _MODE_TO_ENV_PREFIX = {
 // applies — IDENTICALLY for snapshot and current-settings mode, because expiry is
 // a MARKET fact, not strategy config:
 //
-//   • Both the expiry TYPE (weekly|monthly) and any explicit override are read
-//     from the RECORDED session snapshot — the config that day actually traded.
-//     Current process.env is deliberately ignored here so a standing override in
-//     today's Settings (e.g. a next-week EMA_RSI_ST date) can't leak into an
-//     old-day replay. Current settings only override NON-expiry strategy config.
-//   • If the recorded day used an explicit override (e.g. EMA_RSI_ST deliberately
-//     traded next-week to dodge 0DTE), that recorded date IS the historical truth
-//     → honored as-is. Only the auto-detect path (blank recorded override) is
-//     redirected to the Market Context Snapshot date — exactly the path that used
-//     to leak today's expiry via new Date()/live REST.
+//   • Any explicit override is read from the RECORDED session snapshot — the
+//     config that day actually traded. Current process.env is deliberately
+//     ignored so a standing override in today's Settings (e.g. a next-week
+//     EMA_RSI_ST date) can't leak into an old-day replay. Current settings only
+//     override NON-expiry strategy config. If the recorded day used an explicit
+//     override (e.g. EMA_RSI_ST deliberately traded next-week to dodge 0DTE),
+//     that recorded date IS the historical truth → honored as-is, with the
+//     recorded weekly/monthly TYPE (instrument.js only consults the type WHEN an
+//     override date is present).
+//   • Auto-detect (blank recorded override): the paper engine resolved the
+//     NEAREST tradeable expiry via the live Option Chain — and instrument.js
+//     IGNORES OPTION_EXPIRY_TYPE unless an override date is set, so a recorded
+//     `type=monthly` with no override still traded the weekly nearest. We
+//     therefore pin marketContext.weeklyExpiry (which IS that nearest — the same
+//     getNearestExpiryFromOptionChain result captured at record time) as a
+//     weekly-format date, regardless of the recorded type. This is exactly the
+//     path that used to leak today's expiry via new Date()/live REST.
 //
 // When no market.jsonl exists (recordings made before this feature), falls back
 // to the legacy snapshot pin so old days still replay without crashing.
-// (useCurrentSettings is accepted for signature symmetry but intentionally does
-//  NOT affect expiry — that's the whole point.)
 function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
-  const prefix = _MODE_TO_ENV_PREFIX[mode] || null;
+  const prefix = _MODE_TO_ENV_PREFIX[mode] || null;   // null for bb_rsi/pa (common key only)
   const snap = snapshot || {};
   const cfg  = snap;   // expiry is ALWAYS historical — read from the recording, never current env
 
+  // Mirror instrument.validateAndGetOptionSymbol's read order EXACTLY: per-mode
+  // override first (only for strategies that pass a mode), else the common key.
   const perModeOverride = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_OVERRIDE`] || "").trim() : "";
   const commonOverride  = String(cfg.OPTION_EXPIRY_OVERRIDE || "").trim();
   const effOverride     = perModeOverride || commonOverride;
 
-  const perModeType = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_TYPE`] || "").trim().toLowerCase() : "";
-  const commonType  = String(cfg.OPTION_EXPIRY_TYPE || "").trim().toLowerCase();
-  const type        = (perModeType || commonType) === "monthly" ? "monthly" : "weekly";
-
-  const _mirror = (date) => {
+  const _mirror = (date, type) => {
     const env = { OPTION_EXPIRY_OVERRIDE: date, OPTION_EXPIRY_TYPE: type };
     if (prefix) {
       env[`${prefix}_OPTION_EXPIRY_OVERRIDE`] = date;
@@ -187,19 +193,23 @@ function _resolveReplayExpiryEnv({ marketContext, snapshot, mode }) {
     return env;
   };
 
-  // Explicit override → honor it (historical truth / deliberate choice).
+  // Explicit recorded override → honor it exactly, with its recorded weekly/monthly
+  // type (the only case instrument.js consults the type).
   if (effOverride && effOverride.length >= 8) {
-    return { env: _mirror(effOverride), source: "explicit-override", date: effOverride, type };
+    const perModeType = prefix ? String(cfg[`${prefix}_OPTION_EXPIRY_TYPE`] || "").trim().toLowerCase() : "";
+    const commonType  = String(cfg.OPTION_EXPIRY_TYPE || "").trim().toLowerCase();
+    const type        = (perModeType || commonType) === "monthly" ? "monthly" : "weekly";
+    return { env: _mirror(effOverride, type), source: "explicit-override", date: effOverride, type };
   }
 
-  // Auto-detect → redirect to the recorded market fact (the fix).
-  if (marketContext) {
-    const date = type === "monthly" ? marketContext.monthlyExpiry : marketContext.weeklyExpiry;
-    if (date) return { env: _mirror(date), source: "market-context", date, type };
+  // Auto-detect → pin the recorded NEAREST expiry (always weekly-format, type
+  // ignored by instrument.js on this path).
+  if (marketContext && marketContext.weeklyExpiry) {
+    return { env: _mirror(marketContext.weeklyExpiry, "weekly"), source: "market-context", date: marketContext.weeklyExpiry, type: "weekly" };
   }
 
   // No market context (legacy recording) → prior behaviour (blank pin = auto-compute).
-  return { env: _pinnedExpirySettings(snap), source: "legacy-pin", date: null, type };
+  return { env: _pinnedExpirySettings(snap), source: "legacy-pin", date: null, type: "weekly" };
 }
 
 function _buildReplayCacheKey({ mode, date, sessionStart, useCurrentSettings, expiryEnv }) {

@@ -228,14 +228,16 @@ class SocketManager {
       // Real ticks arriving means auth is fine — clear any partial auth-fail count.
       if (this._authFailCount > 0) this._authFailCount = 0;
       const ticks = Array.isArray(msg) ? msg : [msg];
+      // Capture the day's immutable Market Context Snapshot once (strategy-independent),
+      // per message rather than per tick. Fire-and-forget with an async .catch so a
+      // rejection can't escape to the global unhandledRejection handler; cheap
+      // boolean guard, resolves at most once/day.
+      try { _marketContext().maybeCapture().catch(() => {}); } catch (_) {}
       ticks.forEach(t => {
         if (!t || !t.ltp) return;
         // Record raw tick for after-hours replay (no-op when TICK_RECORDER_ENABLED=false).
         // Done before fan-out so even if a strategy throws, the tick is still captured.
         try { tickRecorder.recordSpotTick(t); } catch (_) {}
-        // Capture the day's immutable Market Context Snapshot once (strategy-independent).
-        // Fire-and-forget; cheap boolean guard on every tick, resolves at most once/day.
-        try { _marketContext().maybeCapture(); } catch (_) {}
         // Primary callback
         if (this._onSpotTick) {
           try { this._onSpotTick(t); } catch (e) { this._log(`🚨 [SOCKET] onSpotTick error: ${e.message}`); }

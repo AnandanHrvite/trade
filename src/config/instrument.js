@@ -717,9 +717,22 @@ async function isSymbolValidViaQuotes(symbol, _retried = false) {
  * @returns {Promise<object>} market-context snapshot (no secrets/tokens).
  */
 async function getMarketContext() {
+  // Prefer the live Option Chain (holiday-adjusted, the real nearest tradeable
+  // expiry, and what strategies auto-detect via Step 1). It returns null only on
+  // an ok-but-unknown response shape; in that rare case compute next-Tuesday and
+  // prepone off a holiday — mirroring validateAndGetOptionSymbol Step 2, so the
+  // recorded expiry can't drift from what the strategy trades in a holiday week.
   let weeklyCode = null;
   try { weeklyCode = await getNearestExpiryFromOptionChain(); } catch (_) { /* fall back below */ }
-  if (!weeklyCode) weeklyCode = getNearestThursdayExpiry();
+  if (!weeklyCode) {
+    const ist = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    let d = new Date(ist);
+    let days = (2 - ist.getDay() + 7) % 7;                 // 2 = Tuesday (NIFTY weekly)
+    if (days === 0 && (ist.getHours() * 60 + ist.getMinutes()) >= 930) days = 7;  // past 3:30 PM → next week
+    d.setDate(ist.getDate() + days);
+    try { if (await isNonTradingDay(d)) d = await getPreviousTradingDay(d); } catch (_) { /* keep computed */ }
+    weeklyCode = dateToExpiryCode(d);
+  }
 
   let weeklyDate = null;
   try { weeklyDate = formatDateToYYYYMMDD(expiryCodeToDate(weeklyCode)); }
