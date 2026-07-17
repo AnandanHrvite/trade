@@ -44,6 +44,18 @@ function _utcSecToIstMins(unixSec) {
 
 function _emaPeriod() { return Math.max(2, parseInt(process.env.EMA9VWAP_EMA_PERIOD || "9", 10) || 9); }
 function _bandMult()  { const m = parseFloat(process.env.EMA9VWAP_BAND_MULT); return isNaN(m) ? 1.0 : m; }
+// Strength grading: how far EMA9 broke PAST the band edge, measured in σ units
+// (scale-free, so it adapts to the day's volatility). A break of >= this many σ
+// is "STRONG", anything smaller is "WEAK" (likely noise). Default 0.25σ.
+function _strongMinSigma() { const s = parseFloat(process.env.EMA9VWAP_STRONG_MIN_SIGMA); return isNaN(s) ? 0.25 : Math.max(0, s); }
+// When ON, WEAK crosses are suppressed (fewer, higher-quality entries). Default
+// OFF so behaviour is unchanged until you validate it on backtest/replay.
+function _strengthFilterOn() { return String(process.env.EMA9VWAP_STRENGTH_FILTER || "false").toLowerCase() === "true"; }
+// Classify a break distance (EMA9 beyond the band edge, in points) vs σ.
+function _gradeStrength(distPts, stdev) {
+  if (!(stdev > 0)) return "STRONG";           // no vol estimate → don't filter
+  return distPts >= _strongMinSigma() * stdev ? "STRONG" : "WEAK";
+}
 function _anchorMins() {
   const raw = process.env.EMA9VWAP_VWAP_SESSION_START || "09:15";
   const [h, m] = raw.split(":").map(Number);
@@ -157,12 +169,24 @@ function getSignal(candles, opts) {
 
   if (crossAboveTop) {
     result.signal = "BUY_CE"; result.side = "CE";
-    result.reason = `EMA9 ${result.ema9} crossed ABOVE VWAP top ${upNow} (VWAP ${bandsNow.vwap} +${mult}σ)`;
+    const dist = _round2(ema9Now - upNow);                       // pts EMA9 broke above the top band
+    result.signalStrength = _gradeStrength(dist, bandsNow.stdev);
+    result.reason = `EMA9 ${result.ema9} crossed ABOVE VWAP top ${upNow} (VWAP ${bandsNow.vwap} +${mult}σ) | break ${dist}pt = ${result.signalStrength}`;
   } else if (crossBelowBottom) {
     result.signal = "BUY_PE"; result.side = "PE";
-    result.reason = `EMA9 ${result.ema9} crossed BELOW VWAP bottom ${loNow} (VWAP ${bandsNow.vwap} -${mult}σ)`;
+    const dist = _round2(loNow - ema9Now);                       // pts EMA9 broke below the bottom band
+    result.signalStrength = _gradeStrength(dist, bandsNow.stdev);
+    result.reason = `EMA9 ${result.ema9} crossed BELOW VWAP bottom ${loNow} (VWAP ${bandsNow.vwap} -${mult}σ) | break ${dist}pt = ${result.signalStrength}`;
   } else {
     result.reason = `no cross — EMA9 ${result.ema9} vs band [${loNow}, ${upNow}]`;
+  }
+
+  // Strength filter (default OFF): drop WEAK crosses so only meaningful breaks
+  // trade. Applied here in the shared strategy so paper / live-harness / backtest
+  // all behave identically. Exits (exitCE/exitPE) are left untouched.
+  if (result.signal !== "NONE" && result.signalStrength === "WEAK" && _strengthFilterOn()) {
+    result.reason = `filtered WEAK ${result.side} break — ${result.reason}`;
+    result.signal = "NONE"; result.side = null;
   }
 
   if (!opts.silent) {

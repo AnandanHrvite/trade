@@ -1395,7 +1395,7 @@ async function onCandleClose(candle) {
       }
 
       simulateBuy(symbol, side, getLotQty(), candle.close, reason + _oiTag, stopLoss, candle.close, false, {
-        signalStrength: "STRONG",
+        signalStrength: signalStrength || "STRONG",
         ema9AtEntry:      indicators.ema9      != null ? indicators.ema9      : null,
         vwapAtEntry:      indicators.vwap      != null ? indicators.vwap      : null,
         vwapUpperAtEntry: indicators.vwapUpper != null ? indicators.vwapUpper : null,
@@ -1659,7 +1659,7 @@ function onTick(tick) {
         }
 
         simulateBuy(symbol, side, getLotQty(), ltp, reason + _oiTag, stopLoss, ltp, true, {
-          signalStrength: "STRONG",
+          signalStrength: signalStrength || "STRONG",
           ema9AtEntry:      indicators.ema9      != null ? indicators.ema9      : null,
           vwapAtEntry:      indicators.vwap      != null ? indicators.vwap      : null,
           vwapUpperAtEntry: indicators.vwapUpper != null ? indicators.vwapUpper : null,
