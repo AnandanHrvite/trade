@@ -176,6 +176,12 @@
     border-radius: 16px; font-size: 0.78rem; font-weight: 600;
   }
   hr { border: none; height: 1px; background: var(--border); margin: 24px 0; }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: var(--text-primary); }
+  .tv-empty { color: var(--text-muted); padding: 40px; text-align: center; font-size: 0.9rem; }
   .page-footer {
     text-align: center; padding: 30px 20px;
     border-top: 1px solid var(--border); color: var(--text-muted);
@@ -368,6 +374,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
     </div>
   </div>
 
+  <div class="tv-chart" id="ev-entry"></div>
+  <p class="tv-cap"><b>The break-out entry.</b> The fast line (green EMA 9) sat inside the blue VWAP &plusmn;1&sigma; channel while price drifted, then on one candle it closed <b>above the top band</b> &rarr; <b>BUY CE</b> at that candle's close (24,318). We held with no stop and no target while the move ran. It ended on a <b>sharp reversal candle</b> &mdash; a red candle that closed below the lows of both prior candles &rarr; <b>EXIT</b> (24,334), even though the fast line was still outside the band.</p>
+
   <h3>Strong vs weak break-outs</h3>
   <p>Not every break-out is equal. When the fast line pops out of the channel, the strategy now measures <em>how far</em> it pushed past the edge &mdash; measured in "normal wobbles" (sigma), so the yardstick shrinks or grows with the day's volatility. A break of at least <strong>0.25 of a wobble</strong> past the edge is graded <strong>STRONG</strong>; a smaller poke is graded <strong>WEAK</strong> (likely just noise nudging over the line).</p>
 
@@ -378,6 +387,9 @@ Bottom of channel = fair-value line &minus; (1 &times; the normal wobble)</code>
   <div class="note note-warn">
     <strong>Filtering out the weak ones is optional and OFF by default.</strong> With <code>EMA9VWAP_STRENGTH_FILTER</code> turned on, WEAK crosses are skipped entirely (no trade) &mdash; you get fewer, higher-conviction entries. Left OFF (the default), <em>every</em> break-out still trades exactly as before, but the log now records whether it was STRONG or WEAK so you can see the quality of each entry. The grading happens inside the shared strategy brain, so paper, live and backtest all agree. The threshold itself is adjustable via <code>EMA9VWAP_STRONG_MIN_SIGMA</code> (default <code>0.25</code>).
   </div>
+
+  <div class="tv-chart" id="ev-strength"></div>
+  <p class="tv-cap"><b>STRONG vs WEAK.</b> Same channel, two break-outs. On a calm patch the fast line barely nudged over the top band &mdash; the plain yellow dot marks that <b>WEAK poke</b> (about 3 pts past the edge, well under the 0.25&sigma; &asymp; 7-pt bar). Later the line closed a decisive <b>11 pts</b> above the band &rarr; a <b>STRONG break</b>. With the optional strength filter OFF (the default) both would trade; turn it ON and the WEAK poke is skipped.</p>
 
   <h3>We only trade in the middle of the day</h3>
   <p>The channel starts building at 9:15, but the strategy <strong>waits until 10:30 to take its first trade</strong> and stops taking <em>new</em> trades after 14:30 (2:30 PM). The first hour is often noisy and directionless, and the last hour is too close to the bell to give a move room to run.</p>
@@ -752,5 +764,128 @@ angry red candle can't instantly flip us into a losing put.</code></pre>
   EMA 9 + VWAP &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; new 2026-06-28 &nbsp;|&nbsp; updated 17 July 2026
 </footer>
 
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- CHART KIT — dependency-free TradingView-style renderer   -->
+<!-- (identical block in every strategy guide)                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<script>
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
+    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    var lx=padL, ly=H-8;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lx+=22+lg.label.length*6.4; });
+    out.push("</svg>"); return out.join("");
+  }
+  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+})(window);
+</script>
+
+<script>
+(function () {
+  var render = function () {
+    // Chart 1 — the break-out entry: EMA9 crosses above the VWAP+1σ band → BUY CE, exit on a 2-candle reversal
+    TVChart.render("ev-entry", {
+      title: "EMA9 + VWAP — the break-out entry (5-min NIFTY)",
+      candles: [[24252,24264,24248,24260],[24260,24276,24256,24272],[24272,24290,24268,24286],
+        [24286,24304,24282,24300],[24300,24322,24296,24318],[24318,24340,24314,24336],
+        [24336,24356,24332,24352],[24352,24366,24346,24360],[24360,24368,24350,24356],
+        [24356,24358,24330,24334],[24334,24340,24320,24326]],
+      bands: [{
+        upper: [24286,24290,24295,24300,24305,24311,24317,24323,24328,24332,24335],
+        lower: [24230,24234,24239,24244,24249,24255,24261,24267,24272,24276,24279],
+        mid:   [24258,24262,24267,24272,24277,24283,24289,24295,24300,24304,24307],
+        color: "#7890c8"
+      }],
+      overlays: [{ name:"EMA9", color:"#26a69a",
+        data:[24258,24264,24274,24286,24308,24324,24338,24348,24350,24344,24338] }],
+      markers: [
+        { i:4, type:"buy", price:24318, text:"BUY CE 24,318" },
+        { i:9, type:"exit", price:24334, text:"EXIT reversal" }],
+      legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#7890c8", label:"VWAP ±1σ" }, { color:"#ef5350", label:"EXIT" }]
+    });
+    // Chart 2 — STRONG vs WEAK: a shallow poke (skipped when the filter is on) vs a decisive break past the band
+    TVChart.render("ev-strength", {
+      title: "STRONG break vs WEAK poke",
+      candles: [[24198,24210,24190,24204],[24204,24216,24196,24208],[24208,24224,24202,24220],
+        [24220,24236,24216,24232],[24232,24238,24218,24222],[24222,24230,24210,24216],
+        [24216,24228,24208,24222],[24222,24240,24218,24236],[24236,24262,24234,24258],
+        [24258,24276,24252,24272],[24272,24288,24266,24284]],
+      bands: [{
+        upper: [24228,24228,24228,24228,24228,24228,24228,24228,24228,24228,24228],
+        lower: [24172,24172,24172,24172,24172,24172,24172,24172,24172,24172,24172],
+        mid:   [24200,24200,24200,24200,24200,24200,24200,24200,24200,24200,24200],
+        color: "#7890c8"
+      }],
+      overlays: [{ name:"EMA9", color:"#26a69a",
+        data:[24202,24206,24214,24231,24228,24222,24222,24228,24239,24252,24266] }],
+      markers: [
+        { i:3, type:"dot", color:"#d29922", price:24231 },
+        { i:8, type:"dot", color:"#26a69a", price:24239, text:"STRONG break" }],
+      legend: [{ color:"#26a69a", label:"EMA9 (5m)" }, { color:"#7890c8", label:"VWAP ±1σ" }, { color:"#d29922", label:"WEAK poke (skipped)" }]
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>

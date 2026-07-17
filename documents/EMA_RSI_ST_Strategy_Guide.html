@@ -416,6 +416,13 @@
     color: var(--accent2); font-weight: 700; margin-bottom: 6px;
     padding-bottom: 4px; border-bottom: 1px solid var(--border);
   }
+
+  /* ── TradingView-style chart wrapper ─────────────── */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid var(--card-border); border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: var(--text2); font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: var(--text); }
+  .tv-empty { color: var(--text3); padding: 40px; text-align: center; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -565,6 +572,12 @@
       <div class="lc-condition">&rarr; first safety line = the previous candle's HIGH</div>
     </div>
   </div>
+
+  <div class="tv-chart" id="ers-entry"></div>
+  <p class="tv-cap"><b>A clean CE entry, start to finish.</b> The blue EMA20 stays above the purple EMA50 the whole time &mdash; the up-trend is intact. Price ran up, dipped back and kissed the EMAs, then a green candle closed back above EMA20: that's the <b>signal candle</b> (yellow dot, ~24,244). We don't buy it &mdash; the <em>next</em> candle pushes past its close, giving the proof, so we <b>BUY the CE at 24,266</b>. The trade rides up to ~24,344; when a later candle dips back and its range touches the climbing EMA21 trail, the trend has broken and we <b>EXIT at 24,304</b> for +38 spot points.</p>
+
+  <div class="tv-chart" id="ers-reject"></div>
+  <p class="tv-cap"><b>What we DON'T take.</b> This green candle (yellow dot) closes up and <em>looks</em> tempting, but check&nbsp;1 fails: the blue EMA20 is still <b>below</b> the purple EMA50 &mdash; there is no confirmed up-trend, just chop. One good-looking candle is never enough; all four checks must line up, so this is <b>no trade</b>. Skipping setups like this &mdash; where the trend lines aren't stacked our way &mdash; is most of what keeps the strategy out of sideways days.</p>
 
   <div class="note">The RSI numbers above (52&ndash;80 for CE, 20&ndash;48 for PE) are the built-in code defaults. The saved Settings page uses a slightly tighter band (ceiling 70 for CE, floor 30 for PE) &mdash; so a real install is a touch more cautious than these raw defaults. The "not overheated" ceiling is what keeps us from jumping onto a move that has already run too far.</div>
 </div>
@@ -790,5 +803,118 @@
   EMA_RSI_ST Strategy Guide (plain-English edition) &nbsp;|&nbsp; updated 17 July 2026 &nbsp;|&nbsp; all defaults read from the live code &amp; README.
   The code is always the final word (<code>strategy1_sar_ema_rsi.js</code>, <code>emaRsiStPaper.js</code>).
 </p>
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- CHART KIT — dependency-free TradingView-style renderer   -->
+<!-- (identical block in every strategy guide)                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<script>
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
+    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    var lx=padL, ly=H-8;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lx+=22+lg.label.length*6.4; });
+    out.push("</svg>"); return out.join("");
+  }
+  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+})(window);
+</script>
+
+<script>
+(function () {
+  var render = function () {
+    // Chart 1 — a clean CE entry: trend intact (EMA20>EMA50) → signal → proof → BUY → EMA21-trail EXIT
+    TVChart.render("ers-entry", {
+      title: "EMA_RSI_ST — 5-min NIFTY (a clean CE entry)",
+      candles: [[24200,24224,24196,24220],[24220,24244,24216,24240],[24240,24256,24234,24250],
+        [24250,24254,24224,24228],[24228,24234,24208,24214],[24214,24222,24206,24216],
+        [24216,24248,24214,24244],[24244,24270,24240,24266],[24266,24296,24262,24292],
+        [24292,24322,24288,24318],[24318,24344,24314,24340],[24340,24342,24300,24304]],
+      overlays: [
+        { name:"EMA20", color:"#3b82f6", data:[24206,24214,24222,24224,24220,24216,24218,24228,24242,24260,24280,24298] },
+        { name:"EMA50", color:"#a78bfa", data:[24190,24194,24200,24202,24202,24204,24206,24212,24220,24230,24242,24256] }],
+      markers: [{ i:6, type:"dot", price:24244 },
+        { i:7, type:"buy", price:24266, text:"BUY CE 24,266" },
+        { i:11, type:"exit", price:24304, text:"EXIT 24,304" }],
+      legend: [{ color:"#3b82f6", label:"EMA20" }, { color:"#a78bfa", label:"EMA50" },
+        { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT / trail" }]
+    });
+    // Chart 2 — rejected setup: EMA20 still below EMA50, no confirmed trend → no trade
+    TVChart.render("ers-reject", {
+      title: "Rejected — EMA20 still below EMA50 (no trade)",
+      candles: [[24300,24316,24292,24298],[24298,24310,24284,24290],[24290,24304,24280,24296],
+        [24296,24312,24288,24300],[24300,24318,24294,24314],[24314,24322,24300,24306],
+        [24306,24320,24298,24316],[24316,24324,24302,24308],[24308,24318,24296,24302],
+        [24302,24312,24290,24298]],
+      overlays: [
+        { name:"EMA20", color:"#3b82f6", data:[24306,24304,24302,24301,24303,24304,24306,24306,24305,24303] },
+        { name:"EMA50", color:"#a78bfa", data:[24316,24315,24314,24313,24313,24312,24312,24311,24310,24309] }],
+      markers: [{ i:6, type:"dot", color:"#fbbf24", price:24316, text:"no trade — EMAs not stacked" }],
+      legend: [{ color:"#3b82f6", label:"EMA20" }, { color:"#a78bfa", label:"EMA50" }]
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>

@@ -186,6 +186,12 @@
     nav.toc ol { grid-template-columns: 1fr; }
     .section { padding: 22px 18px; }
   }
+  /* TradingView-style chart wrapper */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: var(--text-primary); }
+  .tv-empty { color: var(--text-muted); padding: 40px; text-align: center; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -431,6 +437,9 @@
   <div class="note note-warn">
     <strong>Important: this backup is optional and never blocks a trade.</strong> If price simply rockets away and never comes back to retest, <strong>we still buy</strong> &mdash; we don't wait for a pullback that may never come. We tried the opposite (forcing a retest before every trade) and it actually made results <em>worse</em>: demanding a pullback kept us in the weak, stall-and-fade breakouts and made us miss the strong ones that never look back &mdash; which are exactly the trades that make the whole strategy profitable. So the retest is only ever a helpful fallback, never a rule.
   </div>
+
+  <div class="tv-chart" id="orb-fakeout"></div>
+  <p class="tv-cap"><b>Why we wait for proof.</b> Price poked above the box top on one green candle &mdash; but it never got clearly above the fair-value (VWAP) line, and the <em>very next</em> candle slammed straight back down <b>inside the box</b>. The confirmation never came, so we <b>never bought</b>. The orange dot marks the failed poke: a classic fakeout that the confirmation-plus-VWAP rule quietly filters out.</p>
 </section>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -500,6 +509,9 @@
 10:40  Trend keeps running; every candle stays above the EMA20 line. We just hold.
 13:10  Finally a candle CLOSES below the EMA20 line  →  SELL. Trend's over.
        Big win banked. The rupee-cap and meltdown stops never had to fire.</code></pre>
+
+  <div class="tv-chart" id="orb-breakout"></div>
+  <p class="tv-cap"><b>The iconic ORB picture.</b> The blue dashed box is the 9:15&ndash;9:30 opening range. Price coiled inside it, then a big green candle closed clearly above the box top <em>and</em> above the fair-value (VWAP) line (orange dot = the breakout candle). We still didn't buy &mdash; only when the <em>next</em> candle pushed higher did we get our proof &rarr; <b>BUY CE at 24,372</b>. We then rode the orange EMA20 trend line up and sold the moment a candle <b>closed back below EMA20</b> &rarr; <b>EXIT 24,378</b>. No fixed target &mdash; the trend trail decided how far the winner ran.</p>
 
   <div class="note note-success">
     <strong>Why no fixed target?</strong> If we always sold at "+40%," we'd throw away the big trend days &mdash; and a few of those big days are what make the whole strategy profitable over a month. The trend trail keeps us in the move as long as it lasts, while the break-even, rupee-cap and meltdown stops make sure a bad trade dies small. The real skill is in the <em>entry</em> checklist &mdash; the exit just decides how much of a good entry we get to keep.
@@ -755,5 +767,118 @@
   Opening Range Breakout (ORB) &mdash; Strategy Guide (plain-English edition) &nbsp;|&nbsp; v6.0.0 &nbsp;|&nbsp; updated 16 July 2026
 </footer>
 
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- CHART KIT — dependency-free TradingView-style renderer   -->
+<!-- (identical block in every strategy guide)                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<script>
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
+    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    var lx=padL, ly=H-8;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lx+=22+lg.label.length*6.4; });
+    out.push("</svg>"); return out.join("");
+  }
+  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+})(window);
+</script>
+
+<script>
+(function () {
+  var render = function () {
+    // The iconic ORB trade: opening-range box → breakout candle → confirmation BUY → EMA20 close-trail EXIT
+    TVChart.render("orb-breakout", {
+      title: "ORB — 5-min NIFTY: box breakout, confirm, EMA20 exit",
+      candles: [[24290,24308,24278,24296],[24296,24312,24284,24288],[24288,24318,24276,24306],
+        [24306,24322,24294,24312],[24314,24356,24312,24352],[24352,24378,24348,24372],
+        [24372,24392,24366,24388],[24388,24406,24382,24400],[24400,24420,24394,24416],
+        [24416,24428,24408,24412],[24412,24420,24398,24404],[24404,24408,24372,24378]],
+      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
+      overlays: [
+        { name:"VWAP", color:"#a78bfa", data:[24292,24290,24292,24296,24304,24314,24326,24338,24350,24360,24368,24374] },
+        { name:"EMA20", color:"#f5a623", data:[24300,24298,24298,24300,24306,24316,24328,24342,24356,24368,24378,24392] }],
+      markers: [{ i:4, type:"dot", price:24352 },
+        { i:5, type:"buy", price:24372, text:"BUY CE 24,372" },
+        { i:11, type:"exit", price:24378, text:"EXIT — EMA20 close" }],
+      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
+        { color:"#f5a623", label:"EMA20" }, { color:"#26a69a", label:"BUY" }, { color:"#ef5350", label:"EXIT" }]
+    });
+    // False breakout: pokes above the box, no VWAP push, next candle falls back inside → no trade
+    TVChart.render("orb-fakeout", {
+      title: "ORB — false breakout falls back into the box (no trade)",
+      candles: [[24286,24306,24276,24298],[24298,24314,24288,24306],[24306,24322,24296,24312],
+        [24312,24324,24300,24318],[24318,24346,24314,24338],[24338,24340,24300,24306],
+        [24306,24316,24292,24298],[24298,24310,24286,24304],[24304,24318,24296,24312],
+        [24312,24326,24300,24308]],
+      zones: [{ from:0, to:2, top:24325, bottom:24265, label:"Opening range", stroke:"#60a5fa" }],
+      overlays: [{ name:"VWAP", color:"#a78bfa", data:[24304,24306,24308,24310,24312,24312,24310,24308,24308,24308] }],
+      markers: [{ i:5, type:"dot", color:"#d29922", price:24306 }],
+      legend: [{ color:"#60a5fa", label:"Opening range" }, { color:"#a78bfa", label:"VWAP" },
+        { color:"#d29922", label:"fell back — no trade" }]
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>

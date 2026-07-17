@@ -195,6 +195,13 @@ td.pe { color: var(--red); }
 .tip-box { background: rgba(45,212,191,0.06); border: 1px solid rgba(45,212,191,0.2); border-left: 4px solid var(--teal); border-radius: var(--radius-sm); padding: 16px 20px; margin: 14px 0; }
 .tip-box .tip-title { font-weight: 700; color: var(--teal); font-size: 0.85rem; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
 
+/* ── TradingView-style chart wrapper ───────────────────────────────────── */
+.tv-chart { margin: 16px 0 6px; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: #0d1626; }
+.tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+.tv-cap { color: var(--text2); font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+.tv-cap b { color: var(--text); }
+.tv-empty { color: var(--text3); padding: 40px; text-align: center; font-size: 0.9rem; }
+
 /* ── Utility ───────────────────────────────────────────────────────────── */
 .mt-1 { margin-top: 8px; } .mt-2 { margin-top: 16px; } .mt-3 { margin-top: 24px; }
 .mb-1 { margin-bottom: 8px; } .mb-2 { margin-bottom: 16px; }
@@ -568,6 +575,9 @@ td.pe { color: var(--red); }
           <li>We do <strong>not</strong> buy on this breakout candle &mdash; we wait for the retest first (Section 5).</li>
         </ul>
       </div>
+
+      <div class="tv-chart" id="pa-double-bottom"></div>
+      <p class="tv-cap"><b>Double Bottom &rarr; CE.</b> Two lows at almost the same price (the two bare dots, ~24,180 and ~24,188, well inside the 12-pt window) with a bounce between them. A green candle then closes above the amber <b>neckline (24,245)</b>. We don't buy that breakout &mdash; we wait one candle for price to dip back and <em>retest</em> the neckline, then close above it &rarr; <b>BUY CE at 24,252</b>. The stop rides up under each new swing low until a candle closes through it &rarr; <b>EXIT near 24,274</b>.</p>
     </div>
 
     <!-- ── Triangles ── -->
@@ -681,6 +691,9 @@ td.pe { color: var(--red); }
           <li>Again, we wait for the retest before buying (Section 5).</li>
         </ul>
       </div>
+
+      <div class="tv-chart" id="pa-asc-triangle"></div>
+      <p class="tv-cap"><b>Ascending Triangle &rarr; CE.</b> Price keeps stalling at the same red <b>flat ceiling (24,300)</b>, but each dip bottoms out higher &mdash; the three green dots climb (~24,232 &rarr; ~24,258 &rarr; ~24,278), buyers squeezing price up. A green candle breaks above the ceiling; we wait for the dip back to <em>retest</em> the flipped ceiling as a floor, then close above &rarr; <b>BUY CE at 24,308</b>. The swing trail rides it up and takes us out at <b>EXIT near 24,326</b>.</p>
     </div>
   </div>
 </section>
@@ -724,6 +737,9 @@ td.pe { color: var(--red); }
       <div class="tip-title">Why bother waiting for the retest?</div>
       <p class="fs-sm">When this was tested, buying the raw breakout candle won only about <strong>1 in 4 times</strong> &mdash; most breakouts reversed instantly. Waiting for price to come back and prove the level holds cuts out most of those fakes. The trade-off: sometimes a breakout rockets away and never comes back, and we simply miss it. That's accepted by design &mdash; we would rather skip a good one than take four bad ones.</p>
     </div>
+
+    <div class="tv-chart mt-2" id="pa-failed-retest"></div>
+    <p class="tv-cap"><b>A breakout that failed its retest &rarr; no trade.</b> A green candle punched above the red level, so we <em>remembered</em> it &mdash; but on the pullback price closed straight back <b>below</b> the level by more than 10 pts (the yellow dot). The level never held, so the retest is voided and <b>we never buy</b>. This is exactly the fake the retest gate is built to skip &mdash; had we bought the breakout candle, we'd be sitting in a loser.</p>
   </div>
 </section>
 
@@ -1347,5 +1363,133 @@ td.pe { color: var(--red); }
   </div>
 </footer>
 
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<!-- CHART KIT — dependency-free TradingView-style renderer                   -->
+<!-- (identical block in every strategy guide)                               -->
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
+    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    var lx=padL, ly=H-8;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lx+=22+lg.label.length*6.4; });
+    out.push("</svg>"); return out.join("");
+  }
+  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+})(window);
+</script>
+
+<script>
+(function () {
+  var render = function () {
+    // Double Bottom (W) → CE — matched twin lows, neckline break, retest entry, swing-trail exit
+    TVChart.render("pa-double-bottom", {
+      title: "Double Bottom (W) → CE — 5-min NIFTY",
+      candles: [
+        [24240,24248,24210,24215],[24215,24220,24178,24188],[24188,24232,24186,24228],
+        [24228,24248,24224,24244],[24244,24246,24212,24216],[24216,24220,24184,24196],
+        [24196,24234,24194,24230],[24230,24262,24228,24256],[24256,24258,24244,24252],
+        [24252,24276,24250,24272],[24272,24298,24270,24294],[24294,24318,24290,24314],
+        [24314,24316,24288,24296],[24296,24298,24270,24274]],
+      zones: [{ from:0, to:13, top:24249, bottom:24241, label:"Neckline 24,245", color:"rgba(245,158,11,0.10)", stroke:"rgba(245,158,11,0.6)" }],
+      markers: [{ i:1, type:"dot", price:24180 },
+        { i:5, type:"dot", price:24188 },
+        { i:8, type:"buy", price:24252, text:"BUY CE 24,252" },
+        { i:13, type:"exit", price:24274, text:"EXIT +22" }],
+      legend: [{ color:"#f59e0b", label:"neckline" }, { color:"#26a69a", label:"BUY (on retest)" }, { color:"#ef5350", label:"EXIT / swing trail" }]
+    });
+    // Ascending Triangle → CE — flat ceiling + rising lows, breakout, retest entry
+    TVChart.render("pa-asc-triangle", {
+      title: "Ascending Triangle → CE — 5-min NIFTY",
+      candles: [
+        [24232,24300,24228,24294],[24294,24296,24232,24238],[24238,24301,24236,24296],
+        [24296,24298,24258,24264],[24264,24299,24262,24294],[24294,24296,24278,24284],
+        [24284,24326,24282,24320],[24320,24322,24300,24308],[24308,24332,24306,24328],
+        [24328,24352,24324,24348],[24348,24368,24344,24364],[24364,24366,24338,24346],
+        [24346,24348,24322,24326]],
+      zones: [{ from:0, to:12, top:24303, bottom:24297, label:"Flat ceiling 24,300", color:"rgba(239,68,68,0.10)", stroke:"rgba(239,68,68,0.6)" }],
+      markers: [{ i:1, type:"dot", color:"#22c55e", price:24232 },
+        { i:3, type:"dot", color:"#22c55e", price:24258 },
+        { i:5, type:"dot", color:"#22c55e", price:24278 },
+        { i:7, type:"buy", price:24308, text:"BUY CE 24,308" },
+        { i:12, type:"exit", price:24326, text:"EXIT +18" }],
+      legend: [{ color:"#ef4444", label:"flat ceiling" }, { color:"#22c55e", label:"rising lows" }, { color:"#26a69a", label:"BUY → EXIT" }]
+    });
+    // A breakout that fails its retest → no trade (why we wait for the retest)
+    TVChart.render("pa-failed-retest", {
+      title: "Failed retest → NO trade — 5-min NIFTY",
+      candles: [
+        [24200,24248,24196,24244],[24244,24246,24214,24220],[24220,24251,24218,24246],
+        [24246,24248,24216,24222],[24222,24272,24220,24266],[24266,24268,24248,24252],
+        [24252,24254,24230,24234],[24234,24236,24210,24214],[24214,24222,24200,24206],
+        [24206,24216,24202,24212],[24212,24220,24206,24216]],
+      zones: [{ from:0, to:10, top:24253, bottom:24247, label:"Broken level (must hold)", color:"rgba(239,68,68,0.10)", stroke:"rgba(239,68,68,0.6)" }],
+      markers: [{ i:6, type:"dot", color:"#f59e0b", price:24234, text:"failed retest — no trade" }],
+      legend: [{ color:"#ef4444", label:"broken level" }, { color:"#f59e0b", label:"failed retest" }]
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>

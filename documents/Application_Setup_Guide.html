@@ -386,6 +386,72 @@
   .ob-orange { background: rgba(210,153,34,0.1); border-color: rgba(210,153,34,0.3); color: var(--accent-orange); }
   .ob-purple { background: rgba(188,140,255,0.1); border-color: rgba(188,140,255,0.3); color: var(--accent-purple); }
 
+  /* ── System Tree (top-down architecture) ─────────────── */
+  .sys-tree {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    margin: 24px 0;
+    padding: 26px 14px;
+    background: linear-gradient(135deg, rgba(13,17,23,0.8), rgba(28,35,51,0.5));
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .sys-node {
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.86rem;
+    text-align: center;
+    border: 1px solid;
+    max-width: 100%;
+  }
+  .sys-node small { display: block; font-weight: 400; opacity: 0.72; font-size: 0.72rem; margin-top: 3px; }
+  .sys-node.n-feed { background: rgba(88,166,255,0.1); border-color: rgba(88,166,255,0.35); color: var(--accent-blue); }
+  .sys-node.n-hub  { background: rgba(57,210,192,0.1); border-color: rgba(57,210,192,0.35); color: var(--accent-cyan); }
+  .sys-down { color: var(--text-muted); font-size: 1.4rem; line-height: 1; padding: 7px 0; }
+  .sys-fanlabel { color: var(--text-secondary); font-size: 0.74rem; padding: 2px 0 6px; text-align: center; }
+  .sys-engines { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 2px; }
+  .sys-engine {
+    background: rgba(188,140,255,0.08);
+    border: 1px solid rgba(188,140,255,0.3);
+    border-radius: 8px;
+    padding: 11px 14px;
+    min-width: 128px;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent-purple);
+  }
+  .sys-engine small { display: block; font-weight: 400; opacity: 0.7; font-size: 0.68rem; margin-top: 4px; color: var(--text-secondary); }
+
+  /* ── Flow (left-to-right, boxes joined by arrows) ────── */
+  .flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; margin: 20px 0; }
+  .flow .step {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 120px;
+    flex: 1;
+  }
+  .flow .step small { display: block; font-weight: 400; opacity: 0.72; font-size: 0.72rem; margin-top: 3px; }
+  .flow .arrow { align-self: center; color: var(--accent-blue); font-weight: 700; font-size: 1.05rem; padding: 0 2px; }
+  .flow .arrow.and { color: var(--accent-orange); font-size: 0.82rem; letter-spacing: 0.5px; }
+  .flow .step.s-blue   { border-color: rgba(88,166,255,0.4); }
+  .flow .step.s-orange { border-color: rgba(210,153,34,0.4); }
+  .flow .step.s-red    { border-color: rgba(248,81,73,0.4); }
+  .flow .step.s-green  { background: rgba(63,185,80,0.1); border-color: rgba(63,185,80,0.5); color: var(--accent-green); }
+  .flow .step.s-cyan   { border-color: rgba(57,210,192,0.4); }
+  .flow .step.s-muted  { background: var(--bg-tertiary); border-color: var(--border); color: var(--text-secondary); }
+  .flow .step code { background: rgba(88,166,255,0.1); color: var(--accent-blue); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
+
   /* ── Callout / Note Boxes ────────────────────────────── */
   .note {
     padding: 14px 18px;
@@ -523,6 +589,29 @@
   <p>This is a <strong>trading bot for NIFTY options</strong> &mdash; a program that watches the live NIFTY price and, following a set of rules, decides when to buy and sell options. What makes it a little unusual is that it runs <strong>several different trading strategies at the same time</strong>, all fed by <em>one</em> shared live price feed. So instead of running four separate programs, one program listens to the market once and hands that same price to every strategy.</p>
 
   <p>Each strategy can run in three ways: <strong>practice</strong> (real prices, pretend money), <strong>real money</strong> (actual orders through your broker), and <strong>testing on the past</strong> (see how it would have done on old data). There's a web dashboard you open in a browser to start and stop everything, watch trades happen, and change settings &mdash; you never need to touch the code to use it day to day.</p>
+
+  <h3>How it's all wired &mdash; one picture</h3>
+  <p>Here's the whole shape of the app. <strong>One</strong> live price line comes in from Fyers. A single sharing hub (the "socket manager") takes each price tick once and hands the very same tick to every strategy &mdash; that's the "fan-out". Each of the six strategies can then run in any of its three ways at once.</p>
+
+  <div class="sys-tree">
+    <div class="sys-node n-feed">Fyers WebSocket &mdash; live NIFTY price<small>one always-open line, streaming ticks</small></div>
+    <div class="sys-down">&#8595;</div>
+    <div class="sys-node n-hub">socketManager<small>one shared connection &middot; hands each tick to every strategy (fan-out)</small></div>
+    <div class="sys-down">&#8595;</div>
+    <div class="sys-fanlabel">the same tick is delivered to all six strategy engines</div>
+    <div class="sys-engines">
+      <div class="sys-engine">EMA_RSI_ST<small>Live &middot; Paper &middot; Backtest</small></div>
+      <div class="sys-engine">BB_RSI<small>Live &middot; Paper &middot; Backtest</small></div>
+      <div class="sys-engine">PA<small>Live &middot; Paper &middot; Backtest</small></div>
+      <div class="sys-engine">ORB<small>Live &middot; Paper &middot; Backtest</small></div>
+      <div class="sys-engine">EMA9_VWAP<small>Live &middot; Paper &middot; Backtest</small></div>
+      <div class="sys-engine">Trend_PB<small>Live &middot; Paper &middot; Backtest</small></div>
+    </div>
+  </div>
+
+  <div class="note note-info">
+    <strong>Why one shared line matters.</strong> Opening a second price line to the broker is not allowed &mdash; every strategy listens through the one hub. That's what lets six strategies run side by side on a single connection without stepping on each other.
+  </div>
 
   <div class="note note-info">
     <strong>You don't need to be a programmer to run it.</strong> This guide walks through the setup one command at a time and explains, in plain words, what each command does and why you're running it. If a word looks technical, check the next section &mdash; it's probably explained there.
@@ -762,12 +851,46 @@ openssl req -x509 -newkey rsa:4096 \
     </tbody>
   </table>
 
+  <h3>What happens for one trade, start to finish</h3>
+  <p>Whichever mode a strategy is in, every trade travels the same path. Live places a real order at the "order" step; practice and testing only pretend at that step &mdash; everything before and after is identical.</p>
+
+  <div class="flow">
+    <span class="step s-blue">Tick received<small>a new live price arrives</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-blue">Signal check<small>do the strategy's rules say "enter"?</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-orange">Risk &amp; guards<small>VIX, bid-ask spread, daily-loss, whole-account cap</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-red">Order placed<small>real order &mdash; or dry-run just logged</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-cyan">Position monitored<small>stop-loss, trail, time-stop watched each tick</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-cyan">Exit<small>a rule fires and closes the trade</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-green">Saved + Telegram<small>trade written to history, you're messaged</small></span>
+  </div>
+
+  <div class="note note-info">
+    <strong>The guards can stop a trade before it ever opens.</strong> If the market is too jumpy (VIX), the option's buy/sell gap is too wide, the day's loss limit is hit, or the whole-account cap has tripped, the "Risk &amp; guards" step quietly blocks the entry &mdash; no order is placed and the strategy waits for the next chance.
+  </div>
+
   <h3>The two safety switches on real-money trading</h3>
   <p>Placing a real order is deliberately hard to do by accident. <strong>Two</strong> separate switches must both be set the right way before a single real order can go out:</p>
 
   <div class="note note-danger">
     <strong>1. The strategy's own live switch</strong> (for example <code>ORB_LIVE_ENABLED</code>) must be turned on, <strong>and 2. the global "dry-run" switch</strong> <code>LIVE_HARNESS_DRY_RUN</code> must be turned <em>off</em>. By default the dry-run switch is <strong>on</strong>, which means even a "Live" page only <em>pretends</em>: it writes down the order it <em>would</em> have placed but sends nothing to the broker. A fresh install therefore cannot place a real trade until you deliberately turn dry-run off.
   </div>
+
+  <div class="flow">
+    <span class="step s-red"><code>{STRATEGY}_LIVE_ENABLED</code><small>this strategy's own live switch is ON</small></span>
+    <span class="arrow and">AND</span>
+    <span class="step s-red"><code>LIVE_HARNESS_DRY_RUN=false</code><small>the global dry-run switch is OFF</small></span>
+    <span class="arrow and">AND</span>
+    <span class="step s-red">per-strategy dry-run OFF<small>where a strategy has its own override</small></span>
+    <span class="arrow">&#8594;</span>
+    <span class="step s-green">Real order goes to the broker</span>
+  </div>
+  <p class="muted" style="text-align:center; color:var(--text-muted); font-size:0.82rem; margin-top:-6px;">If <em>any</em> gate is not set the right way &rarr; the app only writes down the order it <em>would</em> have placed (a dry-run log) and sends nothing.</p>
 
   <p>The safe habit: prove a strategy behaves the same in practice and in "pretend live" first &mdash; only then turn the dry-run switch off for real trading.</p>
 

@@ -344,6 +344,13 @@
   .exit-badge.p3 { background: var(--yellow); color: #000; }
   .exit-badge.p4 { background: var(--text2); }
 
+  /* ── TradingView-style chart wrapper ───────────────────── */
+  .tv-chart { margin: 16px 0 6px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #0d1626; }
+  .tv-chart .tv-svg { width: 100%; height: auto; display: block; }
+  .tv-cap { color: var(--text2); font-size: 0.82rem; margin: 0 0 16px; padding-left: 4px; }
+  .tv-cap b { color: var(--text); }
+  .tv-empty { color: #6e7681; padding: 40px; text-align: center; font-size: 0.9rem; }
+
   /* ── Print ──────────────────────────────────────────────── */
   @media print {
     body { background: #fff; color: #222; max-width: 100%; padding: 0; }
@@ -684,6 +691,9 @@
   <strong>Optional filters (off unless you switch them on):</strong> a "chop gate" (<code>BB_RSI_ADX_ENABLED</code>) can block <em>all</em> trades on sideways, directionless days by requiring a trend-strength meter called ADX to be above 20 &mdash; the strategy wins in trends and bleeds in chop, so this makes it sit out ranging sessions. And <code>BB_RSI_RSI_TURNING</code> can require RSI to be actively moving the trade's way, not just sitting past the threshold.
 </div>
 
+<div class="tv-chart" id="bbr-reject"></div>
+<p class="tv-cap"><b>When there is nothing to trade.</b> On a calm, low-VIX day the bands (tight setting of 1) collapse right onto the price &mdash; the whole channel is barely 12 points wide. Price keeps nudging its edges, and the yellow dot marks a candle that pokes a whisker above the top band. But that "break" is just noise inside a 20-point range, not a real push &mdash; so <b>no trade</b>. This is the regime the strategy sits out; the ADX chop gate above exists precisely to skip days like this.</p>
+
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 5. WAIT FOR PROOF                                                      -->
 <!-- ════════════════════════════════════════════════════════════════════════ -->
@@ -700,6 +710,9 @@
   </ul>
   <p>If both hold, we buy at that second candle's closing price. If the next candle stalls or slips back inside the band, the spring is released and nothing happens &mdash; a fake poke costs us nothing. (Turning <code>BB_RSI_CONFIRM_OUTSIDE_BAND</code> off makes it enter the moment price crosses the arming level during the next bar; turning <code>BB_RSI_CONFIRM_CANDLE_ENABLED</code> off buys straight on the arming candle with no wait. The defaults are the careful setting.)</p>
 </div>
+
+<div class="tv-chart" id="bbr-entry"></div>
+<p class="tv-cap"><b>A band-break trade, start to finish.</b> Price closes above the upper Bollinger Band (yellow dot = the arming candle). The <em>next</em> candle pushes further and stays outside &rarr; <b>BUY CE at 24,060</b>. The move runs for a few candles, then a candle closes back <em>inside</em> the band &mdash; the breakout has failed, so the band-re-entry exit fires &rarr; <b>EXIT at 24,044</b>. (Here SuperTrend never flipped and the 30-point hard stop was never hit; the band re-entry got us out first.)</p>
 
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 <!-- 6. PICK THE OPTION                                                     -->
@@ -1063,5 +1076,119 @@
   </p>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- CHART KIT — dependency-free TradingView-style renderer   -->
+<!-- (identical block in every strategy guide)                -->
+<!-- ══════════════════════════════════════════════════════ -->
+<script>
+(function (global) {
+  "use strict";
+  function isNum(x) { return typeof x === "number" && isFinite(x); }
+  function esc(s) { return String(s == null ? "" : s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+  function priceRange(spec) {
+    var lo = Infinity, hi = -Infinity;
+    function eat(v){ if(isNum(v)){ if(v>hi)hi=v; if(v<lo)lo=v; } }
+    (spec.candles||[]).forEach(function(c){ eat(c[1]); eat(c[2]); });
+    (spec.overlays||[]).forEach(function(o){ (o.data||[]).forEach(eat); });
+    (spec.bands||[]).forEach(function(b){ (b.upper||[]).forEach(eat); (b.lower||[]).forEach(eat); (b.mid||[]).forEach(eat); });
+    (spec.markers||[]).forEach(function(m){ if(isNum(m.price)) eat(m.price); });
+    if(!isFinite(lo)||!isFinite(hi)){ lo=0; hi=1; }
+    if(lo===hi){ lo-=1; hi+=1; }
+    var pad=(hi-lo)*0.10; return { lo:lo-pad, hi:hi+pad };
+  }
+  function buildSVG(spec) {
+    spec = spec||{};
+    var candles = spec.candles||[]; var n = candles.length;
+    if(!n) return '<div class="tv-empty">chart data unavailable</div>';
+    var W=860,H=400,padL=6,padR=66,padT=34,padB=30;
+    var rng=priceRange(spec); var plotW=W-padL-padR, plotH=H-padT-padB;
+    var slot=plotW/n; var cw=Math.max(3,Math.min(22,slot*0.62));
+    var up="#26a69a",down="#ef5350",grid="#1e2a3d",axis="#5a7499";
+    function X(i){ return padL+slot*(i+0.5); }
+    function Y(p){ return padT+(rng.hi-p)/(rng.hi-rng.lo)*plotH; }
+    var out=[];
+    out.push('<svg viewBox="0 0 '+W+' '+H+'" class="tv-svg" role="img" aria-label="'+esc(spec.title||"price chart")+'" preserveAspectRatio="xMidYMid meet">');
+    out.push('<rect x="0" y="0" width="'+W+'" height="'+H+'" fill="#0d1626"/>');
+    for(var g=0;g<=4;g++){ var gp=rng.hi-(rng.hi-rng.lo)*(g/4); var gy=Y(gp);
+      out.push('<line x1="'+padL+'" y1="'+gy+'" x2="'+(W-padR)+'" y2="'+gy+'" stroke="'+grid+'" stroke-width="1"/>');
+      out.push('<text x="'+(W-padR+6)+'" y="'+(gy+3.5)+'" fill="'+axis+'" font-size="11" font-family="monospace">'+gp.toFixed(0)+'</text>'); }
+    (spec.zones||[]).forEach(function(z){ if(!isNum(z.from)||!isNum(z.to)) return;
+      var zx=X(z.from)-cw/2, zw=X(z.to)-X(z.from)+cw; var zTop=Y(isNum(z.top)?z.top:rng.hi), zBot=Y(isNum(z.bottom)?z.bottom:rng.lo);
+      out.push('<rect x="'+zx+'" y="'+zTop+'" width="'+zw+'" height="'+(zBot-zTop)+'" fill="'+(z.color||"rgba(96,165,250,0.10)")+'" stroke="'+(z.stroke||"rgba(96,165,250,0.5)")+'" stroke-dasharray="4 3" stroke-width="1"/>');
+      if(z.label) out.push('<text x="'+(zx+4)+'" y="'+(zTop-4)+'" fill="'+(z.stroke||"#60a5fa")+'" font-size="11" font-weight="600">'+esc(z.label)+'</text>'); });
+    (spec.bands||[]).forEach(function(b){ var u=b.upper||[], l=b.lower||[];
+      if(u.length&&l.length){ var pts=[]; for(var i=0;i<u.length;i++) if(isNum(u[i])) pts.push(X(i)+","+Y(u[i]));
+        for(var j=l.length-1;j>=0;j--) if(isNum(l[j])) pts.push(X(j)+","+Y(l[j]));
+        out.push('<polygon points="'+pts.join(" ")+'" fill="'+(b.fill||"rgba(120,144,200,0.10)")+'"/>');
+        [u,l].forEach(function(line){ var d=line.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+          out.push('<path d="'+d+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1.2" stroke-dasharray="3 2"/>'); }); }
+      if(b.mid){ var dm=b.mid.map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+        out.push('<path d="'+dm+'" fill="none" stroke="'+(b.color||"#7890c8")+'" stroke-width="1" stroke-dasharray="1 3"/>'); } });
+    candles.forEach(function(c,i){ if(!c||!isNum(c[0])||!isNum(c[3])) return;
+      var o=c[0],h=c[1],lw=c[2],cl=c[3]; var col=cl>=o?up:down, cx=X(i);
+      if(isNum(h)&&isNum(lw)) out.push('<line x1="'+cx+'" y1="'+Y(h)+'" x2="'+cx+'" y2="'+Y(lw)+'" stroke="'+col+'" stroke-width="1.3"/>');
+      var yo=Y(o),yc=Y(cl),top=Math.min(yo,yc),bh=Math.max(1.5,Math.abs(yc-yo));
+      out.push('<rect x="'+(cx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+bh+'" fill="'+col+'" rx="0.5"/>'); });
+    (spec.overlays||[]).forEach(function(ov){ var d=(ov.data||[]).map(function(v,i){ return (isNum(v)?(i?"L":"M")+X(i)+" "+Y(v):""); }).join(" ");
+      out.push('<path d="'+d+'" fill="none" stroke="'+(ov.color||"#fbbf24")+'" stroke-width="'+(ov.width||1.8)+'" '+(ov.dash?'stroke-dasharray="5 3" ':"")+'opacity="0.95"/>'); });
+    (spec.markers||[]).forEach(function(m){ if(!isNum(m.i)) return; var mx=X(m.i);
+      var my=isNum(m.price)?Y(m.price):(m.type==="buy"?H-padB-14:padT+14);
+      var isBuy=m.type==="buy", isExit=m.type==="exit"; var col=m.color||(isBuy?"#26a69a":isExit?"#ef5350":"#fbbf24");
+      if(isBuy||isExit){ var ay=isBuy?my+18:my-18, tri=isBuy?(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay-10):(mx-6)+","+ay+" "+(mx+6)+","+ay+" "+mx+","+(ay+10);
+        out.push('<polygon points="'+tri+'" fill="'+col+'"/>'); }
+      else out.push('<circle cx="'+mx+'" cy="'+my+'" r="3.5" fill="'+col+'"/>');
+      if(m.text){ var lblY=isBuy?my+34:(isExit?my-26:my-10); var tw=m.text.length*6.2+10;
+        out.push('<rect x="'+(mx-tw/2)+'" y="'+(lblY-11)+'" width="'+tw+'" height="15" rx="3" fill="'+col+'" opacity="0.92"/>');
+        out.push('<text x="'+mx+'" y="'+lblY+'" fill="#0d1626" font-size="10.5" font-weight="700" text-anchor="middle" font-family="system-ui">'+esc(m.text)+'</text>'); } });
+    out.push('<text x="'+padL+'" y="20" fill="#e8eef8" font-size="13" font-weight="700" font-family="system-ui">'+esc(spec.title||"")+'</text>');
+    var lx=padL, ly=H-8;
+    (spec.legend||[]).forEach(function(lg){ out.push('<rect x="'+lx+'" y="'+(ly-8)+'" width="14" height="3" rx="1.5" fill="'+(lg.color||"#fbbf24")+'"/>');
+      out.push('<text x="'+(lx+18)+'" y="'+(ly-4)+'" fill="'+axis+'" font-size="10.5" font-family="system-ui">'+esc(lg.label)+'</text>');
+      lx+=22+lg.label.length*6.4; });
+    out.push("</svg>"); return out.join("");
+  }
+  global.TVChart = { buildSVG: buildSVG, render: function(elId, spec){ try { var el=document.getElementById(elId); if(!el) return; el.innerHTML=buildSVG(spec); } catch(e){} } };
+})(window);
+</script>
+
+<script>
+(function () {
+  var render = function () {
+    // The entry: band-break BUY CE, then a band-re-entry EXIT
+    TVChart.render("bbr-entry", {
+      title: "BB_RSI — 5-min NIFTY (band-break entry, band-re-entry exit)",
+      candles: [[24020,24034,24012,24026],[24026,24038,24018,24024],[24024,24036,24016,24030],
+        [24030,24044,24024,24032],[24032,24048,24026,24044],[24044,24066,24042,24060],
+        [24060,24082,24056,24074],[24074,24086,24068,24076],[24076,24080,24060,24064],
+        [24064,24066,24040,24044],[24044,24052,24034,24048],[24048,24056,24038,24046]],
+      bands: [{
+        upper: [24038,24039,24040,24042,24044,24047,24051,24056,24060,24061,24060,24060],
+        mid:   [24024,24025,24026,24028,24030,24033,24037,24042,24046,24047,24046,24046],
+        lower: [24010,24011,24012,24014,24016,24019,24023,24028,24032,24033,24032,24032],
+        color: "#7890c8", fill: "rgba(120,144,200,0.12)" }],
+      markers: [{ i:4, type:"dot", price:24044 },
+        { i:5, type:"buy", price:24060, text:"BUY CE 24,060" },
+        { i:9, type:"exit", price:24044, text:"EXIT band re-entry" }],
+      legend: [{ color:"#7890c8", label:"Bollinger Band (20/1)" }, { color:"#26a69a", label:"BUY CE" }, { color:"#ef5350", label:"EXIT" }]
+    });
+    // Rejected setup: band collapsed in low VIX, the "break" is noise → no trade
+    TVChart.render("bbr-reject", {
+      title: "Band too narrow (low VIX) — the break is just noise, no trade",
+      candles: [[24200,24206,24196,24202],[24202,24207,24197,24199],[24199,24205,24195,24203],
+        [24203,24208,24198,24201],[24201,24209,24199,24207],[24207,24210,24200,24202],
+        [24202,24207,24197,24200],[24200,24206,24196,24204],[24204,24208,24198,24201],[24201,24206,24197,24203]],
+      bands: [{
+        upper: [24206,24206,24207,24207,24208,24208,24207,24207,24206,24207],
+        mid:   [24200,24200,24201,24201,24202,24202,24201,24201,24200,24201],
+        lower: [24194,24194,24195,24195,24196,24196,24195,24195,24194,24195],
+        color: "#7890c8", fill: "rgba(120,144,200,0.12)" }],
+      markers: [{ i:4, type:"dot", color:"#fbbf24", price:24208 }],
+      legend: [{ color:"#7890c8", label:"Bollinger Band (collapsed)" }, { color:"#fbbf24", label:"noise poke — no trade" }]
+    });
+  };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render);
+  else render();
+})();
+</script>
 </body>
 </html>
