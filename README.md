@@ -226,6 +226,9 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   .active_ema_rsi_st_position.json     # Crash recovery — EMA_RSI_ST position
   .active_bb_rsi_position.json     # Crash recovery — bb_rsi position
   .active_pa_position.json        # Crash recovery — PA position
+  .active_ema9vwap_position.json  # Crash recovery — EMA9+VWAP position
+  .active_orb_position.json       # Crash recovery — ORB position
+  .active_trend_pb_position.json  # Crash recovery — Trend Pullback position
   .harness_events.json            # Live-harness event log (DRY-RUN/real order events), survives restart
   ema_rsi_st_paper_trades_log.jsonl    # Crash-safe per-trade JSONL audit (cumulative)
   bb_rsi_paper_trades_log.jsonl
@@ -244,7 +247,7 @@ All persistent data lives at `~/trading-data/` — **outside the project folder*
   reports/                        # Daily trade reports
 ```
 
-> ORB does not yet have an `.active_orb_position.json` crash-recovery file — orphan-position reconciliation on boot covers EMA_RSI_ST/BB_RSI/PA only. Add to `positionPersist.js` if/when ORB needs restart-survival of an open position.
+> Boot-time orphan-position reconciliation now covers **all six** engines — EMA_RSI_ST, BB_RSI, PA, EMA9+VWAP, ORB, and Trend Pullback each persist an `.active_*_position.json` snapshot via `positionPersist.js` and are reconciled against broker state on restart. On boot the snapshot is only cleared when the broker book is **provably readable**; an empty/unauthenticated book (expired token or a swallowed API error returning `[]`/`{}`) is treated as "cannot verify" — the snapshot is retained and the user warned to re-check, rather than masking a real orphan. Unverified snapshots are only retained when real orders are possible (harness not dry-run, or a native `*_LIVE_ENABLED`); paper-only boots clear stale snapshots silently.
 
 ## Key .env Settings
 

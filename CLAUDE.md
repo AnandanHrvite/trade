@@ -63,7 +63,7 @@ Paper routes are treated as the source of truth for decision/fill/exit semantics
 Everything stateful lives in `~/trading-data/` — **outside the repo**, so `git pull` and PM2 reloads never wipe it:
 
 - `{swing,bb_rsi,pa,orb}_paper_trades.json` / `_live_trades.json` — session-grouped trades
-- `.active_{trade,bb_rsi,pa}_position.json` — crash-recovery snapshots. **ORB does not have a crash-recovery snapshot yet** — `positionPersist.js` only handles EMA_RSI_ST/BB_RSI/PA. Add helpers there if ORB needs restart survival of an open position.
+- `.active_{trade,bb_rsi,pa,ema9vwap,orb,trend_pb}_position.json` — crash-recovery snapshots. **`positionPersist.js` now covers all six engines** (EMA_RSI_ST/BB_RSI/PA/EMA9_VWAP/ORB/Trend_PB); each is reconciled against broker state on boot. On restart a snapshot is cleared only when the broker book is *provably readable* — an empty/unauthenticated book (expired token or a swallowed API error returning `[]`/`{}`) retains the snapshot and warns rather than masking a real orphan; unverified snapshots are only kept when real orders are possible (harness not dry-run, or a native `*_LIVE_ENABLED`), so paper-only boots clear stale snapshots silently.
 - `trades/{mode}_paper_trades_YYYY-MM-DD.jsonl` — per-day cumulative audit log (canonical export format). Seeded with a settings snapshot + checkpoint note; re-snapshotted whenever a save changes a key that affects that mode.
 - `ticks/YYYY-MM-DD/*.jsonl` — recorded spot/option/VIX ticks, gated by `TICK_RECORDER_ENABLED` (default on). Source of truth for `/replay`. Retention `TICK_RECORDER_RETAIN_DAYS` (default 30).
 - `_replay_trades/` — Replay outputs in snapshot mode (uses recorded session-start settings).
