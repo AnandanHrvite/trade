@@ -394,6 +394,7 @@ Full spec: [BB_RSI.md](BB_RSI.md).
 | `ORB_BREAKEVEN_PTS` / `ORB_BREAKEVEN_OR_MULT` | `20` / `0.5` | Adaptive breakeven: lift hard SL to entry once `max(fixed, mult×OR)` pts in profit (`0` mult = fixed only) |
 | `ORB_OPP_CANDLE_EXIT` / `ORB_OPP_CANDLE_BODY_MULT` | `true` / `0.3` | Exit on a strong opposite candle (body ≥ mult×OR width, closing back inside the box) |
 | `ORB_MAX_TRADE_LOSS` | `1500` | Per-trade unrealised-₹ loss cap (`0` = off) |
+| `ORB_BT_SLIPPAGE_PTS` | `1.5` | ORB backtest slippage haircut, option-premium points per side. |
 | `ORB_PREMIUM_STOP_PCT` | `35` | Exit if option premium collapses ≥ this % from entry (IV-crush/vega backstop; `0` = off) |
 | `ORB_TARGET_RANGE_MULT` | `1.5` | Informational target line only (no longer an exit) |
 | `ORB_WICK_FILTER_ENABLED` / `ORB_MAX_WICK_RATIO` | `true` / `0.6` | **V1 only.** Reject candles whose opposing wick exceeds ratio × body (V2 uses `ORB_WICK_PCT_MAX` instead) |
@@ -474,6 +475,7 @@ Paper capital is pooled per broker, not per strategy. Each strategy's running ca
 | `VIX_MAX_ENTRY` | `20` | EMA_RSI_ST block-all-entries threshold |
 | `VIX_STRONG_ONLY` | `16` | EMA_RSI_ST strong-only threshold |
 | `VIX_FAIL_MODE` | `closed` | When VIX unavailable: closed = block (safe), open = allow |
+| `VIX_MAX_STALE_SEC` | `300` | Max age of a cached VIX before it's treated as unavailable (→ `VIX_FAIL_MODE`). Stops an ancient cached VIX admitting entries during a spike. |
 | `BB_RSI_VIX_ENABLED` | `false` | Independent toggle |
 | `BB_RSI_VIX_MAX_ENTRY` | inherits | Per-mode threshold (falls back to `VIX_MAX_ENTRY` if unset) |
 | `BB_RSI_VIX_STRONG_ONLY` | inherits | Per-mode threshold (falls back to `VIX_STRONG_ONLY`) |
